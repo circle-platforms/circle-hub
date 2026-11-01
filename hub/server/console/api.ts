@@ -5,15 +5,17 @@
 // credential contents never appear. The write interfaces, which run the same commands as the forms, are console/api-write.ts.
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { TASK_RESULT, isEnvironment, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CallLogLine, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
+import { nodeCitations } from './citations.ts';
 import { circlesOf } from './connections.ts';
 import type { JobStore } from './manage.ts';
 import { PERIODS, RECENT_LIMIT, blockers, checkCounts, runsSince, startOfDay } from './overview.ts';
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
 import { NEUTRAL, readableLines, rootReadable, type PageContext } from './pages.ts';
+import { searchHub } from './search.ts';
 import { authorityFingerprint, certificateFacts, secretsOf } from './settings.ts';
 import { pendingCount, primaryResult, taskResultOf } from './status.ts';
 import { TOOL_LABELS, loadTasks, packTitles, taskSteps, taskTitle } from './tasks.ts';
@@ -231,6 +233,32 @@ async function nodes(ctx: PageContext): Promise<ApiResult> {
   return ok({ root, nodes: page.nodes, next: page.next, coverage: page.coverage });
 }
 
+/**
+ * One node: its position, content hash, entries with the source references each rests on, and how many accepted
+ * submissions cited it or its entries in the last 30 days (console/citations.ts), with the window stated.
+ */
+async function node(ctx: PageContext): Promise<ApiResult> {
+  const root = param(ctx, 'root') ?? '';
+  const path = param(ctx, 'path') ?? '/';
+  if (!SHA256.test(root)) return neutral();
+  const page = await ctx.deps.knowledge.getNodes({ root, paths: [path], depth: 0 }, ctx.principal);
+  const found = page?.nodes.find((candidate) => candidate.path === path);
+  if (found === undefined) return neutral();
+  const citations = await nodeCitations(ctx, root, found);
+  return ok({
+    root,
+    path: found.path,
+    name: found.name,
+    level: found.level,
+    level_label: isNodeLevel(found.level) ? uiLabelOf('node_level', found.level) : found.level,
+    reference: found.reference,
+    digest: found.digest,
+    children: found.children,
+    entries: found.entries.map((entry) => ({ ...entry, kind_label: uiLabelOf('entry_kind', entry.kind) })),
+    citations,
+  });
+}
+
 async function diff(ctx: PageContext): Promise<ApiResult> {
   const from = param(ctx, 'from') ?? '';
   const to = param(ctx, 'to') ?? '';
@@ -418,6 +446,7 @@ export async function handleApi(ctx: PageContext, rest: readonly string[], optio
       case 'members': return members(ctx);
       case 'secrets': return secrets(ctx, options);
       case 'hub': return hub(ctx);
+      case 'search': return ok(await searchHub(ctx, param(ctx, 'q') ?? ''));
       default: return neutral();
     }
   }
@@ -427,6 +456,7 @@ export async function handleApi(ctx: PageContext, rest: readonly string[], optio
   if (head === 'knowledge') {
     if (rest.length === 2 && second === 'lines') return lines(ctx);
     if (rest.length === 2 && second === 'nodes') return nodes(ctx);
+    if (rest.length === 2 && second === 'node') return node(ctx);
     if (rest.length === 2 && second === 'diff') return diff(ctx);
     if (second === 'imports' && rest.length <= 3) return imports(ctx, options, third);
   }

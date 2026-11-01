@@ -123,6 +123,7 @@ export interface PageChrome {
 /** Path data of the line icons (24 x 24, stroked), from the design canvas. */
 export const ICONS = {
   home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5',
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.2-4.2',
   review: 'M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3zM9 12l2 2 4-4',
   book: 'M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4V4zM5 16a4 4 0 0 1 4-4h10M9 8h6',
   pack: 'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9',
@@ -178,6 +179,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   return htmlDocument(chrome.title, html`<div class="shell">
 <div class="side-wrap"><nav class="side" aria-label="主导航">
 <div class="brand"><span class="logo" aria-hidden="true"></span><strong>circle-hub</strong></div>
+<form class="search" role="search" method="get" action="/console/search">${icon('search')}<input type="search" name="q" maxlength="100" placeholder="搜索任务、知识、记录" aria-label="搜索"></form>
 ${nav}
 <div class="me"><span class="avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="me-t"><div>${user.name}</div><div class="me-r">${user.role}</div></div>
 <form class="logout" method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>
