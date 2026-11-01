@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "source-read",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "kind": "workflow",
   "title": "来源原件读取",
   "description": "通用技能包：按系统路由读取平台原件（缺陷、需求、构建、脑图、构建页、手册文件、SVN 文件），零要求项，返回原件引用与投影",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f3519f5015313eb07af29c2746a559e2307e315b80eb38ce03e9e93d445e2a80",
-      "size": 4604
+      "sha256": "4985aa3ec02ab9a3086eef37896c80d0f474eb16782d3a848040c491f85d5df3",
+      "size": 4939
     },
     {
       "path": "checks.json",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "7fc63543ffbcfc4ef3e35f7d11e1bfe71d4f5ef2fc6f9b31cc6140589c1471f4",
-      "size": 1484
+      "sha256": "e27df22266909b5d308ba19617f9fbadb167378c056233f165629a143ec12751",
+      "size": 1498
     },
     {
       "path": "requirements.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "1060a014bb0665111a9aba532d9bd2cb9e5b9342242e16f4e0bfc94bb1146702",
-      "size": 2188
+      "sha256": "860277f3e3e3008afbd054501793c72666c03cc585d25dc467237a6e03121d9b",
+      "size": 2873
     }
   ]
 }

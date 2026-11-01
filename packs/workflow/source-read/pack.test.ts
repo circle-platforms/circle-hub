@@ -21,25 +21,26 @@ describe('the source-read pack files', () => {
   it('pack.json lists exactly the pack files with their digests', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['source-read', '0.1.2', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['source-read', '0.1.3', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('workflow.json') && files.includes('requirements.json') && files.includes('checks.json') && files.includes('slots.schema.json') && files.includes('SKILL.md') && files.includes('functions/project.ts'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'README.md' || f === 'pack-files.ts' || f === 'api.ts'));
   });
 
-  it('declares 7 optional system read routes, unbound product catalogs, and zero requirements', () => {
+  it('declares 8 optional system read routes, unbound product catalogs, and zero requirements', () => {
     const workflow = WorkflowFile.parse(json('workflow.json'));
     assert.equal(workflow.schema, 'workflow@1');
     assert.deepEqual(workflow.product, { catalogs: [] });
     assert.equal(workflow.subject, 'defect');
     assert.deepEqual(workflow.projection, { module: 'functions/project.ts' });
-    assert.equal(workflow.inputs.length, 7);
+    assert.equal(workflow.inputs.length, 8);
     for (const input of workflow.inputs) {
       assert.equal(input.required, false, `slot ${input.slot} must be optional`);
       assert.equal(input.role, 'subject');
     }
     const slots = workflow.inputs.map((i) => i.slot);
-    assert.deepEqual(slots, ['defect', 'story', 'build', 'mindmap', 'build_page', 'manual_file', 'svn_file']);
+    assert.deepEqual(slots, ['defect', 'defect_list', 'story', 'build', 'mindmap', 'build_page', 'manual_file', 'svn_file']);
+    assert.deepEqual(workflow.inputs.find((i) => i.slot === 'defect_list')?.accepts, ['plm:bug-list'], 'the bug list read of the plm system pack (decision 111)');
 
     const requirements = RequirementsFile.parse(json('requirements.json'));
     assert.equal(requirements.schema, 'requirements@1');

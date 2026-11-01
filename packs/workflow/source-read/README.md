@@ -14,7 +14,7 @@
 
 ## 契约与文件结构
 
-- `workflow.json`：声明 7 个可选输入槽位（`defect`、`story`、`build`、`mindmap`、`build_page`、`manual_file`、`svn_file`），不绑定产品线（`product: { catalogs: [] }`），投影指向 `functions/project.ts`；
+- `workflow.json`：声明 8 个可选输入槽位（`defect`、`defect_list`、`story`、`build`、`mindmap`、`build_page`、`manual_file`、`svn_file`），不绑定产品线（`product: { catalogs: [] }`），投影指向 `functions/project.ts`；
 - `requirements.json`：零要求项（`requirements: []`）；
 - `checks.json`：零检查项（`checks: []`）；
 - `slots.schema.json`：空槽位模式；
