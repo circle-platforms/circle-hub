@@ -25,3 +25,16 @@ test('read-only management projection takes the named exit from the original jou
   assert.deepEqual(jobs[0].management_exit,{action:'request',request_kind:'disposition',audience:{user:admin.id},due});
   assert.equal(jobs[0].status.decided_by,admin.id);assert.equal(jobs[0].status.decided_at,at);assert.equal(jobs[0].status.frozen,true);
 });
+
+test('a run job names the executor its reservation bound, and none when the reservation names no valid one', async () => {
+  const executor = 'exe_0000000000000000000000000a';
+  const reservation = (job: string, bound: unknown) => ({ body: { detail: { binding: { job, executor: bound, input: { run, plan_run: plan, item: 'verification', items: ['case-a'], sha256: 'b'.repeat(64) } } } } });
+  const records = { store: {
+    find: async () => ({ items: [reservation('a'.repeat(64), executor), reservation('c'.repeat(64), 'not-an-executor')], next: null }),
+    findMany: async (query: { values: string[] }) => [{ digest: 'd'.repeat(64), body: { detail: { job: query.values[0] } } }],
+    put: () => { throw new Error('unexpected write'); },
+  } } as unknown as Pick<RecordsKit, 'store'>;
+  const jobs = await readRunJobs(records, { status: async (_by: Principal, job: string) => ({ job, phase: 'result', outcome: 'effective' as const, frozen: false, events: 1 }) }, admin, run);
+  assert.equal(jobs.find((job) => job.job === 'a'.repeat(64))?.executor, executor);
+  assert.equal(jobs.find((job) => job.job === 'c'.repeat(64))?.executor, undefined);
+});

@@ -8,12 +8,14 @@
 // Knowledge imports of this process signal their start and end directly. The state the records hold of a business system
 // or a runtime environment is its configuration (added, changed, enabled, disabled: resource_config decisions on its res_
 // or executor. id): a later decision is system.status, any decision on an executor environment.status, for administrators.
-// Response times, occupancy and freezing are recorded nowhere, so nothing is sent for them. A new business system waits
+// Occupancy and freezing come from the dispatch journal: a journal record that can change them (a reservation, an intent,
+// an end, a request left uncertain or answered, a disposition, a bed hold) is environment.status for the job's executor,
+// read from its reservation. Response times are recorded nowhere, so nothing is sent for them. A new business system waits
 // until the resource catalog of this process has read it (connectors keeps its list up to 5 s). Every tick checks the session
 // without counting as activity and a heartbeat re-authenticates its token: a closed or expired session, a revoked token, a
 // disabled account, a reader too far behind or close() ends the stream.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PermissionKind } from '../../../contracts/generated/vocabulary.ts';
+import type { EffectOutcome, PermissionKind } from '../../../contracts/generated/vocabulary.ts';
 import { cursorAfter, type Page, type Principal, type RecordKind, type RecordsKit, type StoredRecord } from '../../records/api.ts';
 import { setCommonHeaders } from '../http.ts';
 import { describeError } from '../notes.ts';
@@ -48,7 +50,7 @@ const SOURCES: Readonly<Partial<Record<LiveEventName, readonly RecordKind[]>>> =
   'member.connected': ['call_log'],
   'system.added': ['authorization'],
   'system.status': ['authorization'],
-  'environment.status': ['authorization'],
+  'environment.status': ['authorization', 'action'],
   'pack.published': ['pack_version'],
   'knowledge.published': ['root_pointer'],
 };
@@ -76,6 +78,11 @@ const RESOURCE_ID = /^res_[0-9a-z]{26}$/;
 /** A runtime environment's configuration object: `executor.<id>` (hub/dispatch). */
 const EXECUTOR_OBJECT = /^executor\.([A-Za-z0-9._-]{1,128})$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const EXECUTOR_ID = /^exe_[0-9a-hjkmnp-tv-z]{26}$/;
+/** The effect outcome of a result nobody could confirm: a job in that state keeps its environment frozen. */
+const UNKNOWN_OUTCOME: EffectOutcome = 'unknown';
+/** Jobs whose executor this process already read from their reservation. */
+const JOB_EXECUTORS = 2_000;
 const RESOURCE_CONFIG: PermissionKind = 'resource_config';
 
 /** The events a stream asks for (`?events=a,b`; all when absent); null when one of them is not an event. */
@@ -128,6 +135,25 @@ export function eventsOf(record: Pick<StoredRecord, 'kind' | 'digest' | 'body'>)
     default:
       return [];
   }
+}
+
+/**
+ * The job of a dispatch journal record (hub/dispatch, an action of component dispatch@1) that can change its environment's
+ * occupancy or freezing (holdsPhysicalTarget, isFrozen), with the executor when the record itself names it (a
+ * reservation); null for any other record.
+ */
+export function environmentTransition(record: Pick<StoredRecord, 'kind' | 'body'>): { job: string; executor: string | null } | null {
+  const body = object(record.body);
+  if (record.kind !== 'action' || body.component !== 'dispatch@1') return null;
+  const detail = object(body.detail);
+  const job = typeof detail.job === 'string' && SHA256.test(detail.job) ? detail.job : null;
+  if (job === null) return null;
+  const phase = detail.phase;
+  const changes = phase === 'reservation' || phase === 'intent' || phase === 'probe_intent' || phase === 'bed_hold' || phase === 'dispose'
+    || detail.done === true || detail.uncertain === true || detail.unfreeze === true || detail.outcome === UNKNOWN_OUTCOME;
+  if (!changes) return null;
+  const executor = object(detail.binding).executor;
+  return { job, executor: typeof executor === 'string' && EXECUTOR_ID.test(executor) ? executor : null };
 }
 
 /** Whether the account of `ctx` may see what `event` names, by the rules of the pages that show it. */
@@ -199,6 +225,8 @@ export class LiveEvents {
   #settle = 0;
   /** Whether each token had been used, from when member.connected was first wanted; null until then. */
   #tokens: Map<string, boolean> | null = null;
+  /** The executor of each dispatch job seen, from its reservation (bounded). */
+  readonly #executors = new Map<string, string | null>();
   /** The first tick after idle runs at once, so the baselines are taken when the first stream opens. */
   #fresh = true;
   /** Counts the idle resets: a tick that began before one writes nothing after it. */
@@ -382,6 +410,8 @@ export class LiveEvents {
     this.#mark = mark;
     const events: LiveEvent[] = [];
     const callers = new Set<string>();
+    const environments = wants.has('environment.status');
+    const transitions: { job: string; executor: string | null }[] = [];
     for (const kind of kinds) {
       let cursor: string | null = cursorAfter(after);
       for (let page = 0; page < PAGES && cursor !== null; page += 1) {
@@ -392,6 +422,12 @@ export class LiveEvents {
           this.#seen.add(record.digest);
           if (this.#seen.size > SEEN) this.#seen.delete(this.#seen.values().next().value!);
           events.push(...eventsOf(record));
+          const transition = environments ? environmentTransition(record) : null;
+          if (transition !== null) {
+            transitions.push(transition);
+            // A reservation names its executor: the job's later records are resolved without reading it again.
+            if (transition.executor !== null) this.#remember(transition.job, transition.executor);
+          }
           const user = object(record.body).user;
           if (record.kind === 'call_log' && typeof user === 'string' && USER_ID.test(user)) callers.add(user);
         }
@@ -401,7 +437,39 @@ export class LiveEvents {
     if (connections && this.#tokens !== null) {
       for (const user of callers) if (await this.#connected(this.#tokens, user)) events.push({ name: 'member.connected', data: { user } });
     }
+    const changed = new Set<string>();
+    for (const transition of transitions) {
+      const executor = transition.executor ?? (await this.#executorOf(transition.job));
+      if (generation !== this.#generation) return [];
+      if (executor !== null) changed.add(executor);
+    }
+    for (const environment of changed) events.push({ name: 'environment.status', data: { environment } });
     return events;
+  }
+
+  /** The executor a dispatch job was reserved on, from its reservation record; null when none names one. */
+  async #executorOf(job: string): Promise<string | null> {
+    if (this.#executors.has(job)) return this.#executors.get(job)!;
+    let executor: string | null = null;
+    try {
+      const events = await this.#deps.records.store.findMany<{ detail?: unknown }>({ kind: 'action', key: 'dispatch.job', values: [job] });
+      for (const event of events) {
+        const named = environmentTransition({ kind: 'action', body: event.body })?.executor ?? null;
+        if (named !== null) {
+          executor = named;
+          break;
+        }
+      }
+    } catch {
+      return null;
+    }
+    this.#remember(job, executor);
+    return executor;
+  }
+
+  #remember(job: string, executor: string | null): void {
+    this.#executors.set(job, executor);
+    if (this.#executors.size > JOB_EXECUTORS) this.#executors.delete(this.#executors.keys().next().value!);
   }
 
   async #tokenUse(): Promise<Map<string, boolean>> {

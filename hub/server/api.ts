@@ -3,6 +3,7 @@
 // CLI commands that need them.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
+import type { EnvironmentState } from '../dispatch/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
@@ -54,11 +55,19 @@ export interface ExecutorView {
   endpoint: string;
   enabled: boolean;
   resources: string[];
+  /**
+   * Occupancy, freezing, the bed hold, the latest dispatch and the reported version, as the dispatch journal establishes
+   * them; absent when this process cannot read them (no dispatch service, or the read failed), which the console shows as
+   * unknown.
+   */
+  state?: EnvironmentState;
 }
 
 /** One dispatch job of a run: its outcome and whether its target is frozen until a disposition (V05 R[3] ①). */
 export interface JobView {
   job: string;
+  /** The executor (runtime environment) the job was reserved on, when its reservation names one. */
+  executor?: string;
   outcome: EffectOutcome;
   frozen: boolean;
   phase: string;

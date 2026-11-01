@@ -77,6 +77,14 @@ export const commands = {
     id: dialogId('executor-disable', executor.id), title: `停用运行环境 ${executor.target}`,
     text: '停用后不再向该运行环境派发作业；已派发的作业照旧查询与处置。', command: command('executor', 'disable', executor.id),
   }),
+  bedHoldClear: (executor: { id: string; target: string }): CommandDialog => ({
+    id: dialogId('bed-hold-clear', executor.id), title: `确认运行环境 ${executor.target} 已恢复`,
+    text: '核实运行环境已恢复原状（例如设备已重启、作业留下的配置已清除）后再执行；执行后该运行环境恢复接受派发，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
+  }),
+  jobDispose: (job: string): CommandDialog => ({
+    id: dialogId('job-dispose', job), title: `处置作业 ${job.slice(0, 12)} 的派发结果`,
+    text: '先查看作业状态与处置请求，再按核对结论执行 circle-hub job dispose（核对、保持未知、标记失败三选一）；处置前该运行环境不接受新的派发。', command: command('job', 'status', job),
+  }),
   tlsIssue: (): CommandDialog => ({
     id: 'cmd-tls-issue', title: '重新签发服务器证书',
     text: '由本 Hub 的证书颁发机构重新签发服务器证书；重启 Hub 后生效。颁发机构不变，已信任的浏览器与 Circle 无需重新配置。', command: command('tls', 'issue'),

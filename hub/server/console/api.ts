@@ -9,7 +9,7 @@ import { TASK_RESULT, isEnvironment, isTaskResult, uiLabelOf, type TaskResult } 
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CallLogLine, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
-import { circlesOf } from './connections.ts';
+import { circlesOf, environmentState } from './connections.ts';
 import type { JobStore } from './manage.ts';
 import { PERIODS, RECENT_LIMIT, blockers, checkCounts, runsSince, startOfDay } from './overview.ts';
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
@@ -310,7 +310,14 @@ async function systemPacks(ctx: PageContext): Promise<ApiResult> {
 async function environments(ctx: PageContext): Promise<ApiResult> {
   if (!ctx.admin) return neutral();
   if (ctx.deps.dispatch === undefined) return ok({ wired: false, environments: [] });
-  return ok({ wired: true, environments: await ctx.deps.dispatch.executors(ctx.principal) });
+  return ok({
+    wired: true,
+    environments: (await ctx.deps.dispatch.executors(ctx.principal)).map((view) => {
+      const state = environmentState(view);
+      // The derived state beside the facts it comes from (state, null when not read); detail says why, line by line.
+      return { ...view, state: view.state ?? null, state_label: state.text, state_detail: state.detail };
+    }),
+  });
 }
 
 async function circles(ctx: PageContext): Promise<ApiResult> {
