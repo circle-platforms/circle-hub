@@ -732,9 +732,9 @@ describe('paging through the server', () => {
       const mixed = await client.call('get_nodes', { reference, cursor, [key]: value });
       assert.deepEqual([firstError(mixed).code, firstError(mixed).path], ['SUBMISSION_SCHEMA_VIOLATION', `/${key}`], key);
     }
-    // A cursor never reveals whether a reference it does not belong to exists: absent and forbidden stay alike.
+    // A cursor for a reference the Hub does not hold: the reference is answered as absent (D05 R[3], decision 112).
     const absent = await client.call('get_nodes', { reference: `src:${'f'.repeat(64)}`, cursor });
-    assert.equal(firstError(absent).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     await client.close();
   });
 
@@ -939,7 +939,7 @@ describe('start_run with the engine\'s detail', () => {
 });
 
 describe('records by reference', () => {
-  test('records decide a source artifact for admins too: one read with a person\'s own credential looks absent to an admin', async () => {
+  test('records decide a source artifact for admins too: one read with a person\'s own credential is not permitted to an admin', async () => {
     const owner = await person();
     const personal = await server.records.artifacts.ingest({
       bytes: Buffer.from(`个人凭据读到的页面 ${counter}`),
@@ -952,9 +952,10 @@ describe('records by reference', () => {
     const admin = await connect(server.admin);
     const byRecord = await admin.call('get_nodes', { reference: `rec:${personal.digest}` });
     const absent = await admin.call('get_nodes', { reference: `rec:${'d'.repeat(64)}` });
-    assert.equal(firstError(byRecord).code, 'SOURCE_UNAVAILABLE');
-    assert.deepEqual(comparable(byRecord), comparable(absent), 'admins:false and absent look the same');
-    assert.equal(firstError(await admin.call('get_nodes', { reference: `src:${personal.body.sha256}` })).code, 'SOURCE_UNAVAILABLE', 'the bytes agree');
+    // admins:false: the record exists and an admin may not read it; an unknown digest is absent (D05 R[3], decision 112).
+    assert.equal(firstError(byRecord).code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
+    assert.equal(firstError(await admin.call('get_nodes', { reference: `src:${personal.body.sha256}` })).code, 'SOURCE_NOT_PERMITTED', 'the bytes agree');
     const ownerClient = await connect(owner);
     const own = await ownerClient.call('get_nodes', { reference: `rec:${personal.digest}#/sha256` });
     assert.equal((own.structuredContent.content as { text: string }).text, personal.body.sha256, 'the reader it belongs to reads it');
@@ -979,7 +980,7 @@ describe('records by reference', () => {
     assert.equal(own.isError, false);
     assert.equal((own.structuredContent.content as { text: string }).text, run);
     const otherClient = await connect(await person());
-    assert.equal(firstError(await otherClient.call('get_nodes', { reference: `rec:${stored.digest}` })).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(await otherClient.call('get_nodes', { reference: `rec:${stored.digest}` })).code, 'SOURCE_NOT_PERMITTED');
     await ownerClient.close();
     await otherClient.close();
   });
@@ -991,9 +992,9 @@ describe('records by reference', () => {
     const admin = await connect(server.admin);
     const ownerClient = await connect(owner);
     assert.equal((await admin.call('get_nodes', { reference: `rec:${candidate.digest}` })).isError,false);
-    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${candidate.digest}#/statement` })).code,'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${candidate.digest}#/statement` })).code,'SOURCE_NOT_PERMITTED');
     assert.equal((await admin.call('get_nodes', { reference: `rec:${observation.digest}` })).isError, false);
-    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${observation.digest}` })).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${observation.digest}` })).code, 'SOURCE_NOT_PERMITTED');
     await admin.close();
     await ownerClient.close();
   });
@@ -1032,7 +1033,7 @@ describe('batches and notes', () => {
     const user = await person(['review']);
     const client = await connect(user);
     const absent = await client.call('get_nodes', { root: 'e'.repeat(64), paths: [`/${'a'.repeat(296)}😀`] });
-    assert.equal(firstError(absent).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     server.fakes.runs.script.failNext('startRun', Object.assign(new Error('read failed at\u0000offset 7\ud800'), { code: 'SOURCE_UNAVAILABLE' }));
     assert.equal(firstError(await client.call('start_run', { pack: 'review', inputs: {} })).code, 'SOURCE_UNAVAILABLE');
     const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 20 })).items;
@@ -1091,7 +1092,7 @@ describe('batches and notes', () => {
       return append(input);
     };
     try {
-      assert.equal(firstError(await client.call('get_nodes', { run: 'run_7zzzzzzzzzzzzzzzzzzzzzzzzz' })).code, 'SOURCE_UNAVAILABLE');
+      assert.equal(firstError(await client.call('get_nodes', { run: 'run_7zzzzzzzzzzzzzzzzzzzzzzzzz' })).code, 'SOURCE_ABSENT');
     } finally {
       Reflect.deleteProperty(callLog, 'append');
     }
@@ -1104,7 +1105,7 @@ describe('batches and notes', () => {
 });
 
 describe('neutral answers', () => {
-  test('absent equals forbidden: the same neutral answer and empty shape for every tool', async () => {
+  test('absent and forbidden are told apart for every tool, with the same empty shape otherwise (D05 R[3], decision 112)', async () => {
     const owner = await person(['review']);
     const other = await person(['local-review']);
     const stranger = await person([]);
@@ -1128,22 +1129,27 @@ describe('neutral answers', () => {
       [otherClient, 'resolve_reference', { run: run.run, text: '合成用例一' }, { run: absentRun, text: '合成用例一' }],
       [otherClient, 'submit_result', { run: run.run, model: 'm', items: [] }, { run: absentRun, model: 'm', items: [] }],
     ];
+    // Beyond the error itself, both answers have the tool's empty shape.
+    const shape = (result: ToolCallResult) => ({ isError: result.isError, structured: { ...result.structuredContent, trace: 'TRACE', errors: undefined } });
     for (const [client, tool, forbidden, absent] of pairs) {
       const a = await client.call(tool, forbidden);
       const b = await client.call(tool, absent);
+      const at = `${tool} ${JSON.stringify(forbidden).slice(0, 60)}`;
       assert.equal(a.isError, true, `${tool} forbidden is an error`);
-      assert.equal(firstError(a).code, 'SOURCE_UNAVAILABLE', `${tool} ${JSON.stringify(forbidden).slice(0, 60)}`);
-      assert.equal(firstError(a).message, '对你不可用');
-      assert.deepEqual(comparable(a), comparable(b), `${tool}: forbidden and absent look the same`);
+      assert.equal(firstError(a).code, 'SOURCE_NOT_PERMITTED', at);
+      assert.match(firstError(a).message, /存在，你没有读取权限$/, at);
+      assert.equal(firstError(b).code, 'SOURCE_ABSENT', `${tool} ${JSON.stringify(absent).slice(0, 60)}`);
+      assert.match(firstError(b).message, /^Hub 里没有/, at);
+      assert.deepEqual(shape(a), shape(b), `${tool}: the same empty shape`);
     }
-    // A user's call-log record is not readable by reference: absent and forbidden alike.
+    // A user's call-log record exists and is not readable by reference.
     const ownLine = (await server.records.callLog.query(other.principal, { limit: 1 })).items[0];
     const lineAnswer = await otherClient.call('get_nodes', { reference: `rec:${ownLine.digest}` });
-    assert.equal(firstError(lineAnswer).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(lineAnswer).code, 'SOURCE_NOT_PERMITTED');
     await Promise.all([ownerClient, otherClient, strangerClient].map((c) => c.close()));
   });
 
-  test('the real reason of a neutral answer is in the admin note only', async () => {
+  test('the private reason behind a refused read is in the admin note only', async () => {
     const owner = await person(['review']);
     const other = await person(['review']);
     const ownerClient = await connect(owner);
@@ -1151,7 +1157,7 @@ describe('neutral answers', () => {
     const reference = String((await upload(ownerClient, MINDMAP)).structuredContent.reference);
     const run = (await startRun(ownerClient, reference)).structuredContent.run as { run: string };
     const answer = await otherClient.call('get_nodes', { run: run.run });
-    assert.equal(firstError(answer).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(answer).code, 'SOURCE_NOT_PERMITTED');
     assert.doesNotMatch(JSON.stringify(answer), /not visible|absent/);
     const adminView = await server.records.callLog.query(server.admin.principal, { userId: other.user.id, tool: 'get_nodes' });
     assert.match((adminView.items[0].admin_reasons ?? []).join('\n'), /not visible/);

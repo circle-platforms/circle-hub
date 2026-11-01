@@ -168,7 +168,7 @@ describe('T1-1 知识问答端到端验收', () => {
     });
     assert.equal(getNodesUnavailable.isError, true);
     assert.equal(getNodesUnavailable.out.call_result, 'error');
-    assert.equal(getNodesUnavailable.out.errors[0].code, 'SOURCE_UNAVAILABLE');
+    assert.equal(getNodesUnavailable.out.errors[0].code, 'SOURCE_ABSENT');
 
     const resolveUnavailable = await client.call('resolve_reference', {
       root: unavailableRoot,
@@ -176,7 +176,7 @@ describe('T1-1 知识问答端到端验收', () => {
     });
     assert.equal(resolveUnavailable.isError, true);
     assert.equal(resolveUnavailable.out.call_result, 'error');
-    assert.equal(resolveUnavailable.out.errors[0].code, 'SOURCE_UNAVAILABLE');
+    assert.equal(resolveUnavailable.out.errors[0].code, 'SOURCE_ABSENT');
     assert.equal(resolveUnavailable.out.errors[0].message, getNodesUnavailable.out.errors[0].message);
     assert.equal(resolveUnavailable.out.errors[0].fix, getNodesUnavailable.out.errors[0].fix);
 
@@ -184,7 +184,7 @@ describe('T1-1 知识问答端到端验收', () => {
     const srcRef = resolveManual.out.references[0].reference;
     const getNodesUnauth = await client.call('get_nodes', { reference: srcRef });
     assert.equal(getNodesUnauth.isError, true);
-    assert.equal(getNodesUnauth.out.errors[0].code, 'SOURCE_UNAVAILABLE');
+    assert.equal(getNodesUnauth.out.errors[0].code, 'SOURCE_NOT_PERMITTED');
 
     const resolveUnauth = await client.call('resolve_reference', {
       root: secondRoot,
@@ -192,7 +192,7 @@ describe('T1-1 知识问答端到端验收', () => {
       expect: 'reference',
     });
     assert.equal(resolveUnauth.isError, true);
-    assert.equal(resolveUnauth.out.errors[0].code, 'SOURCE_UNAVAILABLE');
+    assert.equal(resolveUnauth.out.errors[0].code, 'SOURCE_NOT_PERMITTED');
     assert.equal(resolveUnauth.out.errors[0].message, getNodesUnauth.out.errors[0].message);
     assert.equal(resolveUnauth.out.errors[0].fix, getNodesUnauth.out.errors[0].fix);
 

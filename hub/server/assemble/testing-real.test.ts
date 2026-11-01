@@ -183,7 +183,7 @@ describe('createTestHub', () => {
     assert.equal(view.entries.length, 1);
   });
 
-  test('a user without the pack gets the neutral answer; the reason is in the admin note only', async (t) => {
+  test('a user without the pack is told it is not assigned to them; the account is in the admin note only', async (t) => {
     const hub = await createTestHub({ postgres, repositoryPacks: false, packs: [packs.review], stubs: false });
     t.after(() => hub.close());
     const bob = await hub.createUser('乙');
@@ -192,10 +192,10 @@ describe('createTestHub', () => {
     await client.close();
     assert.equal(started.isError, true);
     const errors = started.structuredContent.errors as { code: string; message: string }[];
-    assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_UNAVAILABLE', '对你不可用']]);
+    assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', `任务包 ${REVIEW_PACK} 存在，没有分配给你`]]);
     const asAdmin = (await hub.records.callLog.query(hub.admin.principal, { userId: bob.user.id, tool: 'start_run' })).items;
     assert.equal(asAdmin.length, 1);
-    assert.match((asAdmin[0].admin_reasons ?? []).join('\n'), new RegExp(`start_run: pack ${REVIEW_PACK} is unknown, not assigned to ${bob.user.id}`));
+    assert.match((asAdmin[0].admin_reasons ?? []).join('\n'), new RegExp(`start_run: pack ${REVIEW_PACK} is unassigned for ${bob.user.id}`));
     const asBob = (await hub.records.callLog.query(bob.principal, { tool: 'start_run' })).items;
     assert.equal(asBob.length, 1);
     assert.equal(asBob[0].admin_note, undefined, 'the caller never sees the reason');

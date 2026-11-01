@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { createTestHub } from '../../../hub/server/testing-real.ts';
 import { writePack } from '../../../hub/runs/api.ts';
 
-test('authorized identity size errors stay public while unassigned readers remain neutral', async () => {
+test('authorized identity size errors stay public while unassigned readers are only told the pack is not theirs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'circle-hub-identity-run-'));
   const pack = await writePack(join(root, 'probe'), { id: 'synthetic-identity-probe', version: '1.0.0', kind: 'workflow', title: '合成标识核对', description: '合成输入边界核对', files: {
     'workflow.json': { schema: 'workflow@1', inputs: [{ slot: 'build', role: 'subject', description: '合成构建来源', accepts: ['plm:builds'], required: true, many: false }], parameters: [], product: { catalogs: [] }, subject: 'build', projection: { module: 'functions/project.ts' } },
@@ -27,7 +27,7 @@ test('authorized identity size errors stay public while unassigned readers remai
       const result=await hub.hub.runs.startRun(person.principal,{pack:'synthetic-identity-probe',inputs:{build:{external}}},{traceId:'a'.repeat(32),sessionId:'synthetic-run'});
       assert.equal(result.call_result,'error');
       if(person===outsider){
-        assert.equal(result.errors[0].code,'SOURCE_UNAVAILABLE');
+        assert.equal(result.errors[0].code,'SOURCE_NOT_PERMITTED');
         assert.ok(!JSON.stringify(result).includes('字节上限'));
       }else{
         assert.equal(result.errors[0].code,'SUBMISSION_SCHEMA_VIOLATION');

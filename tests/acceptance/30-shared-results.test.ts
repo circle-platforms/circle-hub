@@ -60,8 +60,9 @@ test('administrator production sharing is read only, carries generated evidence 
   assert.equal((await viewer.call('get_nodes',{reference:original})).isError,true);
   const hidden=await outsider.call('get_nodes',{reference:result,run:runId});assert.equal(hidden.isError,true);
   const nonexistent=await outsider.call('get_nodes',{reference:'rec:'+'f'.repeat(64)});
-  assert.deepEqual(hidden.out.errors.map(e=>e.code),nonexistent.out.errors.map(e=>e.code));
-  const submit=await viewer.call('submit_result',{run:runId,model:'synthetic',items:[]});assert.equal(submit.isError,true);assert.equal(submit.out.errors[0].code,'SOURCE_UNAVAILABLE');
+  // The run exists and is not shared with the outsider; the record does not exist (D05 R[3], decision 112).
+  assert.deepEqual(hidden.out.errors.map(e=>e.code),['SOURCE_NOT_PERMITTED']);assert.deepEqual(nonexistent.out.errors.map(e=>e.code),['SOURCE_ABSENT']);
+  const submit=await viewer.call('submit_result',{run:runId,model:'synthetic',items:[]});assert.equal(submit.isError,true);assert.equal(submit.out.errors[0].code,'SOURCE_NOT_PERMITTED');
   const ownSource=await viewer.upload(Buffer.from(JSON.stringify({schema:'synthetic-view@1',totals:{}})),'synthetic-view.json','application/json');
   const own=await viewer.call('start_run',{pack,product:bed.product.names[0],build:bed.site.RELEASED,client_key:'synthetic-share-key',inputs:{view:{reference:ownSource}}});assert.equal(own.isError,false,JSON.stringify(own.out.errors));assert.notEqual(own.out.run!.run,runId);
   await bed.hub.hub.registry.unassign(bed.hub.admin.principal,readerId,pack);

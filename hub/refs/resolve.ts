@@ -32,6 +32,8 @@ export interface SourceRead {
 /** Permission-aware access to stored source bytes; null means unavailable to this reader (absent or forbidden alike). */
 export interface SourceReader {
   read(sha256: string, reader: ReaderIdentity): Promise<SourceRead | null> | SourceRead | null;
+  /** Optional: whether the Hub holds this source at all, whoever may read it; tells absent from forbidden (D05 R[3]). */
+  exists?(sha256: string): Promise<boolean> | boolean;
 }
 
 export interface TreeRead {
@@ -57,6 +59,9 @@ export interface TreeReader {
    * is a mistake in the reference, REFERENCE_UNRESOLVED like a src selector that locates nothing, not an unavailable source.
    */
   hasRoot?(root: string, reader: ReaderIdentity): Promise<boolean> | boolean;
+  /** Optional: whether the Hub holds this root, or this entry, at all, whoever may read it (D05 R[3]). */
+  rootExists?(root: string): Promise<boolean> | boolean;
+  entryExists?(entry: string): Promise<boolean> | boolean;
 }
 
 export type RecordRead = Pick<RecordEnvelope, 'kind' | 'schema' | 'provenance' | 'created_at' | 'body'>;
@@ -64,6 +69,8 @@ export type RecordRead = Pick<RecordEnvelope, 'kind' | 'schema' | 'provenance' |
 /** Permission-aware access to stored records by digest (implemented by hub/records); null means unavailable. */
 export interface RecordReader {
   read(digest: string, reader: ReaderIdentity): Promise<RecordRead | null> | RecordRead | null;
+  /** Optional: whether the Hub holds this record at all, whoever may read it (D05 R[3]). */
+  exists?(digest: string): Promise<boolean> | boolean;
 }
 
 /** Parsed documents keyed by digest, parser and media type. The owning read/evaluation must dispose them when done. */
@@ -134,7 +141,7 @@ export type Unresolved = {
   parser_missing?:string;
   resolved: false;
   reference: string;
-  code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED' | 'SOURCE_RETRYABLE' | 'SOURCE_INTEGRITY_UNPROVEN'>;
+  code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'SOURCE_ABSENT' | 'SOURCE_NOT_PERMITTED' | 'SOURCE_READ_FAILED' | 'REFERENCE_UNRESOLVED' | 'SOURCE_RETRYABLE' | 'SOURCE_INTEGRITY_UNPROVEN'>;
   message: string;
   fix: string;
   /**
@@ -148,7 +155,7 @@ export type Unresolved = {
 
 export type ResolveResult = Resolved | Unresolved;
 
-/** Text of the neutral answer for absent and forbidden alike (D05 R[3]). */
+/** Text of the neutral answer, kept for the credential and login classes (D05 R[3]). */
 export const UNAVAILABLE_MESSAGE = '对你不可用';
 
 // Record kinds that may serve as grounds (B01 R[4]): results and the Hub's own action and effect records.
@@ -289,6 +296,19 @@ function unavailable(reference: string, ctx:ResolveContext, reason?: UncheckedRe
   return result;
 }
 
+/**
+ * Not found or no permission (D05 R[3], decision 112): the reader's unfiltered probe tells whether the Hub holds the object.
+ * A reader without a probe keeps the neutral answer; a probe that fails is a reader fault (check_error).
+ */
+async function missingOrHidden(reference: string, ctx: ResolveContext, what: string, probe: (() => Promise<boolean> | boolean) | undefined): Promise<Unresolved> {
+  if (probe === undefined) return unavailable(reference, ctx);
+  const { value: exists, error } = await settle(async () => probe(), ctx.retryReads);
+  if (error !== null) return unavailable(reference, ctx, 'check_error');
+  return exists
+    ? { resolved: false, reference, code: 'SOURCE_NOT_PERMITTED', message: `${what} 存在，你没有读取权限`, fix: PROTOCOL_CODES.SOURCE_NOT_PERMITTED.fix }
+    : { resolved: false, reference, code: 'SOURCE_ABSENT', message: `Hub 里没有${what}`, fix: '核对引用；Hub 记录和原件按摘要逐字相等才算，知识树按根、路径和条目' };
+}
+
 function unresolved(reference: string, message: string): Unresolved {
   return { resolved: false, reference, code: 'REFERENCE_UNRESOLVED', message, fix: PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix };
 }
@@ -340,7 +360,8 @@ async function settle<T>(read: () => Promise<T | null> | T | null, retry = false
 
 /**
  * Resolves a reference for a reader. Syntax problems, unknown parsers, unparseable sources, selectors that locate
- * nothing and bad ranges are REFERENCE_UNRESOLVED; null permission answers are SOURCE_UNAVAILABLE. Reader and digest
+ * nothing and bad ranges are REFERENCE_UNRESOLVED; an object the Hub does not hold is SOURCE_ABSENT and one the reader may
+ * not read SOURCE_NOT_PERMITTED, by the reader's existence probe (without one, SOURCE_UNAVAILABLE). Reader and digest
  * faults have actionable recovery codes and preserve the internal `reason`. Never
  * rejects for anything a reference or a stored source can contain.
  */
@@ -401,7 +422,9 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
           }
           if (visible.value === true) return unresolved(canonical, ref.entry ? '知识树里没有这个路径，或这个路径上没有所指的条目' : '知识树里没有这个路径');
         }
-        return unavailable(canonical, ctx);
+        return ref.scheme === 'tree'
+          ? missingOrHidden(canonical, ctx, `知识树根 ${ref.root}`, trees.rootExists ? () => trees.rootExists!(ref.root) : undefined)
+          : missingOrHidden(canonical, ctx, `知识条目 ${ref.entry}`, trees.entryExists ? () => trees.entryExists!(ref.entry) : undefined);
       }
       const seen = visibility(read.readTier, consumer, read.text, () => null);
       const grounds = (read.grounds ?? []).filter((ground) => {
@@ -438,7 +461,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
         diagnose(`record reader failed: ${String(error)}`);
         return unavailable(canonical, ctx, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
       }
-      if (record === null) return unavailable(canonical, ctx);
+      if (record === null) return missingOrHidden(canonical, ctx, `记录 ${ref.record}`, records.exists ? () => records.exists!(ref.record) : undefined);
       let digest: string;
       try {
         digest = recordDigest(record);
@@ -557,7 +580,7 @@ async function resolveSource(
   const parser = ref.parser === undefined ? null : ctx.parsers.get(ref.parser);
   if (ref.parser !== undefined && !parser) {
     const why=ctx.parsers.unavailable?.(ref.parser);
-    if(why)return {resolved:false,reference:canonical,code:'SOURCE_UNAVAILABLE',message:why,fix:why,parser_missing:ref.parser};
+    if(why)return {resolved:false,reference:canonical,code:'SOURCE_READ_FAILED',message:why,fix:why,parser_missing:ref.parser};
     return unresolved(canonical, `解析器 ${ref.parser} 没有登记`);
   }
   if (!ctx.sources) {
@@ -576,7 +599,7 @@ async function resolveSource(
     diagnose(error instanceof IntegrityError ? 'source reader failed: integrity_unproven' : 'source reader failed: check_error');
     return unavailable(canonical, ctx, error instanceof IntegrityError ? 'integrity_unproven' : 'check_error');
   }
-  if (read === null) return unavailable(canonical, ctx);
+  if (read === null) return missingOrHidden(canonical, ctx, `原件 ${ref.sha256}`, sources.exists ? () => sources.exists!(ref.sha256) : undefined);
   const groundable = isGroundable('src');
   const retained = (source: SourceRead): Resolved => ({
     resolved: true, reference: canonical, scheme: 'src', readTier: source.readTier,
@@ -639,7 +662,7 @@ async function resolveSource(
       return {failure:unavailable(canonical,ctx,again.error instanceof IntegrityError ? 'integrity_unproven' : 'check_error')};
     }
     const current=again.value;
-    if (current === null) return {failure:unavailable(canonical,ctx)};
+    if (current === null) return {failure:await missingOrHidden(canonical,ctx,`原件 ${ref.sha256}`,sources.exists?()=>sources.exists!(ref.sha256):undefined)};
     if (current.size!==read.size || current.mediaType!==read.mediaType || current.bytes !== null && (current.bytes.length!==current.size || sha256Hex(current.bytes)!==ref.sha256) || current.bytes===null && current.readTier!=='retain_only') {
       diagnose('source identity or bytes failed the access recheck');
       return {failure:unavailable(canonical,ctx,'integrity_unproven')};

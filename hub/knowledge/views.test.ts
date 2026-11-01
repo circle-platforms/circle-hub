@@ -681,7 +681,13 @@ describe('ids, readers and stored answers', () => {
     await f.w.kit.principals.setDisabled(f.w.admin, gone.id, true);
     assert.match(await refusal(good, gone), /不能读产品/);
     assert.match(await refusal(`knowledge:facets:nothing:${B}?kind=case&by=module`), /没有产品 nothing/);
-    assert.match(await refusal('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), /没有构建 Rel_NONE_9_9_9/);
+    assert.match(await refusal('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), /没有产品 acme 的构建 Rel_NONE_9_9_9/);
+    // Who is told what (D05 R[3], decision 112): an enabled reader gets absent or not permitted; a disabled account gets nothing.
+    const told = async (id: string, principal: Principal = f.w.user) => { const read = await f.read(id, principal); return read.ok ? null : read.inputError?.code ?? null; };
+    assert.equal(await told(good, f.w.outsider), 'SOURCE_NOT_PERMITTED');
+    assert.equal(await told(good, gone), null);
+    assert.equal(await told(`knowledge:facets:nothing:${B}?kind=case&by=module`), 'SOURCE_ABSENT');
+    assert.equal(await told('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), 'SOURCE_ABSENT');
     const malformed: Array<[string, RegExp]> = [
       ['knowledge:facets:acme', /不是知识视图的标识/],
       [`knowledge:graph:acme:${B}`, /没有叫 graph 的知识视图/],

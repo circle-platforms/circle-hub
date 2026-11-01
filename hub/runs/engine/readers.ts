@@ -46,6 +46,10 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
         return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier, cacheable };
       },source=>source?.cacheable ? source.bytes?.byteLength??0 : -1);
     },
+    // Whether the Hub holds the source at all, so refs tells absent from forbidden (D05 R[3], decision 112).
+    async exists(sha256) {
+      return (await artifacts.records(sha256)).length > 0;
+    },
   };
 }
 
@@ -81,6 +85,9 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
         if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
       }
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
+    },
+    async exists(digest) {
+      return (await store.get(digest)) !== null;
     },
   };
 }

@@ -297,12 +297,12 @@ describe('refusals at start_run', { skip }, () => {
     assert.equal((await bed.service.listRuns(bed.runner)).items.length, runs, 'nothing is stored');
   });
 
-  it('a product outside the required command-catalog products is refused, and a user without the pack gets the neutral answer', async () => {
+  it('a product outside the required command-catalog products is refused, and a user without the pack is told it is not assigned to them', async () => {
     const documents = [{ external: onAgile('900901', renamed(baseDocument(), 'r0e2eprod001')) }];
     const named = await start({ inputs: { documents }, product: 'Widget' });
     assert.deepEqual(named.answer.errors.map((e) => [e.code, e.path]), [['REFERENCE_UNRESOLVED', '/product']]);
     const stranger = await start({ inputs: { documents } }, bed.stranger);
-    assert.deepEqual(stranger.answer.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/pack']]);
+    assert.deepEqual(stranger.answer.errors.map((e) => [e.code, e.path]), [['SOURCE_NOT_PERMITTED', '/pack']]);
   });
 
   it('exposes only catalog-bearing products while another product is active', async () => {
@@ -409,7 +409,7 @@ it('locks the command catalog and judges both requirements over agile documents 
   const answer = await judged(detail);
   // 六份文档的逐用例引用超过一次核验 256 个来源的预算。提交拒绝，不把没读到的部分当成通过。
   assert.equal(answer.acceptance, 'not_accepted', JSON.stringify(answer.errors));
-  assert.equal(answer.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+  assert.equal(answer.errors[0]?.code, 'SOURCE_READ_FAILED');
   assert.match(answer.errors[0]?.message ?? '', /256 个来源/);
   const one = async (id: string, source: DocumentSpec, entries: ReturnType<typeof assignedCases>) => {
     const view = indexView(entries, [id]);

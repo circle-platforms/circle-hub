@@ -29,7 +29,7 @@ import { CanonicalizationError, LimitError, sha256Hex, type Principal, type Stor
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import { describe, protocolError, unavailableError } from './errors.ts';
+import { describe, missingError, protocolError } from './errors.ts';
 import { evaluate, type RuntimeAdmission } from './evaluate.ts';
 import { buildScope, createResolver, recordBytes, resolveSubmission } from './exact.ts';
 import type { AuthorOrigin, ProducerOrigin } from './independence.ts';
@@ -171,7 +171,8 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
   if (stored === null || !canSeeRun(user, stored.body)) {
     const named = runId === null ? null : clipText(runId, 64);
     ctx.log({ traceId: call.traceId, run: named, what: 'submit_result', detail: named === null ? 'no run id in the arguments' : `run ${named} is unknown or not visible to ${user.id}` });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+    if (named === null) return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SUBMISSION_SCHEMA_VIOLATION', '提交里没有运行号 run', { path: '/run', fix: '写上 start_run 返回的运行号后重交' })] };
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [missingError(stored !== null, '/run', `运行 ${named}`, stored !== null ? '只能向你自己的运行提交；要接着做，用 start_run 开你自己的运行' : '核对运行号；运行号来自 start_run 的回答')] };
   }
   return ctx.lock(`submit:${stored.body.run}`, async () => {
     try{return await submitLocked(ctx,user,args,call,stored,refresh);}
@@ -247,8 +248,8 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest):frozenWorkflow;
   if (workflow === null) {
     ctx.log({ traceId: call.traceId, run: run.run, what: 'submit_result', detail: `pack version ${run.pack} (${run.pack_digest}) is no longer loadable` });
-    await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+    await action({ acceptance: 'not_accepted', codes: ['SOURCE_READ_FAILED'], repair: [], result: null });
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_READ_FAILED', `运行 ${run.run} 锁定的任务包版本 ${run.pack} 读不出来`, { path: '/run', fix: '请管理员从备份恢复这个任务包版本后原样重交' })] };
   }
   // A job of the run that has not ended verifies the run's latest accepted result again before its submit. While it runs,
   // the same submission reads progress from the stored result, and a different one is kept as received but not validated,
@@ -262,7 +263,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       return { call_result: 'error', acceptance: 'not_accepted', dispatch: flight.notes, errors: [protocolError('IDEMPOTENCY_MISMATCH', `运行 ${run.run} 的派发作业 ${flight.jobs.join('、')} 还在进行；这次提交与派发所用的那次不同，已原样保存但没有核验，派发不受影响`, { path: '/run', fix: '读进展：逐字原样重交派发时的那次提交；要改内容，等作业结束后开新的核验运行' })] };
     }
   }
-  if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[unavailableError('/inputs')]};
+  if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[missingError(true,'/inputs','这次判据复核的来源记录','请复核请求的发起人或管理员把来源分享给你')]};
   const priorMaterial=workflow.workflow.incremental_submissions===true&&existing===null?(await store.find({key:INDEX.submissionRun,value:run.run,kind:'submission',newestFirst:true,limit:2})).items.find(r=>r.digest!==record.digest)?.body??null:null;
   const incrementalGrowth=workflow.workflow.incremental_submissions===true&&existing===null&&parsed?.success===true&&firstDeclarationGrowth(priorMaterial,args);
   const roundsUsed = await roundsUsedOf(ctx, run.run);
@@ -284,7 +285,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       actionResult: 'error', errorCode: error.reason,
       extra: { hub_error: true, source: error.reference, reason: error.reason, retry_attempts: error.attempts,
         message: error.message, fix: error.fix } });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })] };
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_READ_FAILED', error.message, { fix: error.fix })] };
   }
   const sessionMissing = session === null && workflow.requirements.some(t => t.independent_of !== undefined&&!t.independence_by_account);
   if (sessionMissing) {

@@ -4,7 +4,7 @@ import type { ProtocolCode } from '../../../contracts/generated/protocol.ts';
 import type { Reason, ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
 
 export type ReadFailureReason = Extract<Reason, 'check_error' | 'integrity_unproven' | 'missing_input' | 'budget_exhausted'>
-  | Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED'>
+  | Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'SOURCE_ABSENT' | 'SOURCE_NOT_PERMITTED' | 'REFERENCE_UNRESOLVED'>
   | Extract<ValidityStatus, 'credential_unreadable'>;
 export interface ReadAttempt {
   attempt: number;

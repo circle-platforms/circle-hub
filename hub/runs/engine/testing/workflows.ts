@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { ChecksFile, LedgerFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../../contracts/src/pack.ts';
 import type { PackSummary } from '../../../../contracts/src/run.ts';
 import { digestOf, type Principal } from '../../../records/api.ts';
-import type { LoadedWorkflow, WorkflowStore } from '../../../ports.ts';
+import type { LoadedWorkflow, WorkflowAbsence, WorkflowStore } from '../../../ports.ts';
 import { requirementSummary } from '../start.ts';
 
 export class FakeWorkflowStore implements WorkflowStore {
@@ -69,6 +69,18 @@ export class FakeWorkflowStore implements WorkflowStore {
     if (user.role !== 'admin' && !this.#assigned.get(user.id)?.has(id)) return null;
     const versions = this.#versions.get(id) ?? [];
     return (version === null ? versions[versions.length - 1] : versions.find((v) => v.pack.version === version)) ?? null;
+  }
+
+  /** Why forUser had nothing, as the pack registry answers it (D05 R[3], decision 112). */
+  async absence(user: Principal, ref: string): Promise<WorkflowAbsence | null> {
+    const at = ref.indexOf('@');
+    const id = at < 0 ? ref : ref.slice(0, at);
+    const version = at < 0 ? null : ref.slice(at + 1);
+    const versions = this.#versions.get(id) ?? [];
+    if (versions.length === 0 || version !== null && !versions.some((v) => v.pack.version === version)) return 'unknown';
+    if (this.#withdrawn.has(id)) return 'withdrawn';
+    if (user.role !== 'admin' && !this.#assigned.get(user.id)?.has(id)) return 'unassigned';
+    return null;
   }
 
   async byDigest(digest: string): Promise<LoadedWorkflow | null> {

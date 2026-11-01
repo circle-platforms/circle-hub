@@ -42,7 +42,7 @@ test('feeding rechecks the exact source grant after prefetch and rolls back on r
  registry.get=(key:string)=>key==='kityminder@1'?{...base,parse:(bytes,options)=>{const doc=base.parse(bytes,options);return {...doc,prefetch:async()=>{prefetches++;revoked=true;}};}}:originalGet(key);
  const {metaSource:_metaSource,...scope}=w.scope;
  const receipt=await w.knowledge.feeding!.observeSource(w.user,w.document.body.sha256,scope);
- assert.equal(prefetches,1);assert.deepEqual(receipt.objects,[]);assert.ok(receipt.pending.some(value=>value.missing.includes('SOURCE_UNAVAILABLE')&&value.next_action.length>0));
+ assert.equal(prefetches,1);assert.deepEqual(receipt.objects,[]);assert.ok(receipt.pending.some(value=>value.missing.includes('存在，你没有读取权限')&&value.next_action.length>0),JSON.stringify(receipt.pending));
  assert.equal((await w.knowledge.feeding!.entries(w.admin,'apv')).length,0,'no partial object or binding commits after the source becomes unreadable');
 });
 

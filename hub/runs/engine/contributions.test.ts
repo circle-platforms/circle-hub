@@ -292,7 +292,7 @@ test('a nonadmin writes tree-grounded contributions but cannot bind an admin-onl
   assert.ok(page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view)).every(v=>v.contribution.submitted_by===w.user.id));
   assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
   const denied=await w.service.startRun(w.user,{...input,inputs:{...input.inputs,originals:{reference:`src:${w.original}`}}},call);
-  assert.equal(denied.call_result,'error');const neutral=denied.errors.find(e=>e.code==='SOURCE_UNAVAILABLE');assert.equal(neutral?.fix,PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix);
+  assert.equal(denied.call_result,'error');const refused=denied.errors.find(e=>e.code==='SOURCE_NOT_PERMITTED');assert.match(refused?.message??'',/^原件 src:[0-9a-f]{64} 存在，你没有读取权限$/,JSON.stringify(denied.errors));
   const published=(await w.workflows.byDigest(started.run!.pack_digest))!;const skill=published.instructions;
   assert.ok(!Object.hasOwn((published.readJson('examples/start-run.json') as {inputs:object}).inputs,'originals'));
   for(const number of ['1.','3.']) {const step=skill.split('\n').find(line=>line.startsWith(number));assert.match(step??'',/非管理员.*tree:.*不绑定 originals/);}

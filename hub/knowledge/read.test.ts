@@ -134,7 +134,7 @@ describe('references through hub/refs', () => {
     assert.equal(nodeRef.resolved && nodeRef.text, 'ping\ntrace');
     const outsider = await resolveReference(entry.reference, ctx(w.outsider));
     assert.equal(outsider.resolved, false);
-    assert.equal(!outsider.resolved && outsider.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(!outsider.resolved && outsider.code, 'SOURCE_NOT_PERMITTED');
   });
 
   test('provenance of an entry: the composition rows, fragments and the sources with their external identity and basis', async (t) => {

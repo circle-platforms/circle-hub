@@ -160,9 +160,10 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const account = await registry.account(user);
       if (account === null) return 'disabled';
       const parsed = parsePackRef(ref);
-      if (parsed?.version == null) return 'unknown';
-      const info = await registry.getVersion(parsed.id, parsed.version);
-      if (info === null) return 'unknown';
+      if (parsed === null) return 'unknown';
+      // A bare id names the newest version that is not withdrawn; with every version withdrawn there is none to use.
+      const info = parsed.version === null ? await registry.latestVersion(parsed.id) : await registry.getVersion(parsed.id, parsed.version);
+      if (info === null) return parsed.version === null && (await registry.publications(parsed.id)).length > 0 ? 'withdrawn' : 'unknown';
       if (info.withdrawn) return 'withdrawn';
       if (!(await registry.canUse(account.id, parsed.id)) || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'unassigned';
       return null;
