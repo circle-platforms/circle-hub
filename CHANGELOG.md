@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Knowledge integration proposal** — decision 83 inventories requirements and compares personal/team designs; implementation remains outside this task.
+
 - **Circle device lists** — decision 83 shows device names and disconnect actions without token identifiers in tables.
 
 - **Team page** — decision 83 adds the eighth navigation entry and moves member and permission management out of Settings.

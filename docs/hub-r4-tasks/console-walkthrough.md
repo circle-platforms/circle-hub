@@ -73,6 +73,8 @@
 
 ## 做了的
 
+- 知识库调研及整合方案已写入 [`personal-team-knowledge.md`](../design/personal-team-knowledge.md)：核对当前模型与知识库实现，覆盖采集、出处、搜索、计数、版本、共享、权限及维护，参考 Outline 与 Joplin 官方资料，提出个人本地与团队 Hub 共用格式、分开授权的方案。本次没有实现知识库通用化。
+
 - 第 11 项：团队、连接及成员设置按设备名显示 Circle，优先取标准授权客户端名称，其次取访问令牌标签；表格不显示令牌编号，断开命令仍保留精确目标。
 
 - 第 10 项：新增团队导航、成员列表和详情；管理员可查看权限、任务包分配、连接并生成现有管理命令，成员仅查看本人。成员管理移出设置，成员设置保留“我的 Circle”；导航设计与决定 83 同步。
@@ -88,9 +90,11 @@
 
 ## 验证
 
-- 第 11 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console.test.ts hub/server/console-environments.test.ts` 29 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。未运行全量回归。
+- 知识库方案：`npm run typecheck`、`npm run test:docs` 通过（文档 283 项、0 跳过）；没有实现通用化代码，未运行知识库回归或对同类项目做部署验证。第 11 项结果页导航补正后，另跑 `node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-manage.test.ts` 19 项通过、0 跳过。
 
-- 第 10 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-search.test.ts hub/server/console.test.ts` 31 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。新增成员状态显示轴另有确认待答，当前保留原设置页状态用语；未运行全量回归。
+- 第 11 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console.test.ts hub/server/console-environments.test.ts` 29 项通过、0 跳过；`npm run test:docs` 283 项通过、0 跳过。未运行全量回归。
+
+- 第 10 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-search.test.ts hub/server/console.test.ts` 31 项通过、0 跳过；`npm run test:docs` 282 项通过、0 跳过。新增成员状态显示轴另有确认待答，当前保留原设置页状态用语；未运行全量回归。
 
 - 第 9 项：本项仅补范围说明。`npm run typecheck` 通过；`node --test hub/server/console-places.test.ts` 7 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。没有实现或测试定时任务、机器人功能，未运行全量回归。
 

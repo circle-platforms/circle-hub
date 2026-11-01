@@ -287,6 +287,10 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83's personal/team knowledge research is a proposal only: `docs/design/personal-team-knowledge.md`. It inventories
+current requirements and compares primary project documentation. No generic knowledge space or personal server-side
+index is implemented by this task.
+
 Decision 83 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
 last use and disconnect action. Team, Connections and member Settings omit token identifiers from their tables; exact
 identifiers remain inside disconnect command dialogs only.
