@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Account status vocabulary** — decision 83's second round gives account states generated labels in model 15, distinct from occupied runtime environments.
+
 - **Console hover guidance** — decision 83 applies heading hints to the remaining detail, management and authorization pages while retaining facts and commands.
 
 - **Username and password login** — decision 83 adds administrator/member password accounts, first-use changes, Team password resets, bounded browser sessions and stdin-only installer initialization. MCP authorization remains account-bound.

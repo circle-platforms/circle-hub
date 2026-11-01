@@ -242,7 +242,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const kit = await ctx.records();
     const users = await kit.principals.list();
     if (users.length === 0) io.stdout('还没有用户');
-    for (const user of users) out(io, [user.id, user.name, roleText(user.role), user.disabled ? '停用' : '启用', user.created_at].join('\t'));
+    for (const user of users) out(io, [user.id, user.name, roleText(user.role), labelOf('account_status', user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
     return 0;
   }
   if (sub === 'disable' || sub === 'enable') {
@@ -252,7 +252,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const kit = await ctx.records();
     const user = await requireUser(kit, positionals[0]);
     const changed = await kit.principals.setDisabled(act.admin, user.id, sub === 'disable');
-    out(io, `${changed.name}（${changed.id}）已${changed.disabled ? '停用：它的令牌立即失效' : '恢复'}`);
+    out(io, `${changed.name}（${changed.id}）${labelOf('account_status', changed.disabled ? 'disabled' : 'enabled')}${changed.disabled ? '：它的令牌立即失效' : ''}`);
     // Disabling the operator token's own account cuts it off: say so, and how to recover (records keep an enabled admin).
     if (changed.disabled) await sayIfLost(io, act);
     return 0;

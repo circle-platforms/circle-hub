@@ -4,7 +4,7 @@
 // administrator issues: a code is twelve characters shown once, kept as its SHA-256, valid INVITATION_TTL_MS and used once,
 // by the client it authorized; a token issued through the authorization names its client.
 import { randomBytes } from 'node:crypto';
-import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
@@ -246,7 +246,7 @@ export class PgPrincipals implements Principals {
       const decider = await this.#decider(tx, by, false);
       if (decider.role !== ADMIN && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
-      if (target.disabled) throw new ConflictError('用户已停用，不能签发令牌');
+      if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能签发令牌`);
       if (client !== undefined && (await this.#db.query('SELECT 1 FROM oauth_clients WHERE id = $1', [client], tx)).rowCount === 0) throw new ConflictError('没有这个客户端');
       return this.#issue(tx, target.id, label, decider.id, client ?? null);
     });
@@ -287,7 +287,7 @@ export class PgPrincipals implements Principals {
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, true);
       const target = await this.#locked(tx, userId);
-      if (target.disabled) throw new ConflictError('用户已停用，不能邀请');
+      if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能邀请`);
       const code = invitationCode();
       const at = this.#now();
       const row = (
@@ -327,7 +327,7 @@ export class PgPrincipals implements Principals {
       if (taken === undefined) return null;
       const user = await this.#locked(tx, String(taken.user_id));
       // A disabled account leaves the invitation unused: the update is rolled back with the transaction.
-      if (user.disabled) throw new ConflictError('用户已停用');
+      if (user.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}`);
       return user;
     }).catch((error: unknown) => {
       if (error instanceof ConflictError) return null;

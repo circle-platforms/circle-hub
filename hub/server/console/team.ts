@@ -21,7 +21,7 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
     const toggle = user.disabled ? commands.userEnable(user) : commands.userDisable(user);
     const spare = commands.tokenIssue(user), invite = commands.userInvite(user);
     if (ctx.admin) dialogs.push(toggle, spare, ...(user.disabled ? [] : [invite]));
-    members.push([link(`/console/team/${user.id}`, user.name), uiLabelOf('permission_role', user.role), user.disabled ? '已停用' : '使用中',
+    members.push([link(`/console/team/${user.id}`, user.name), uiLabelOf('permission_role', user.role), uiLabelOf('account_status', user.disabled ? 'disabled' : 'enabled'),
       user.role === 'admin' ? '全部任务包' : assigned.join('、') || '—',
       ctx.admin ? html`${commandLink(toggle, user.disabled ? '启用' : '停用')} ${user.disabled ? '' : commandLink(invite, '签发邀请码')} ${commandLink(spare, user.role === 'admin' ? '签发备用登录令牌' : '签发 Circle 访问令牌')}` : '—']);
     if (member !== undefined) {

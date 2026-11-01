@@ -413,7 +413,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
     if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新授权' };
     if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
       open.invitation = null;
-      return { status: 409, error: '邀请码已失效（已使用、已过期，或账号已停用）：请管理员重新签发' };
+      return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status','disabled')}）：请管理员重新签发` };
     }
     const code = store!.grant(open, named.id);
     if (code === null) return { status: 409, error: '该授权请求已处理' };

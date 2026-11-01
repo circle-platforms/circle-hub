@@ -3211,6 +3211,9 @@
    "changes10": [
     "用户可登记清单中的预订类目标，主人和管理员能看持有人并带理由释放，管理员可改登记；分享只增加查看权（来源：任务页 test-bed-ownership 的模型分工、第 1—4 条；决定 35 第 13—16 项；任务页 test-bed-ownership 的模型分工、第 1—4 条；决定 35 第 13—16 项；share-production-results 第 2、3 条）",
     "有名字的变量和密钥只由管理员设置，每次带理由，原租约登记与释放职权保留（来源：所有者 2026-10-23 22:40；决定 44；hub-variables 分工与 model_proposals.json）"
+   ],
+   "changes15": [
+    "增加账户显示状态轴 account_status（enabled 已启用、disabled 已停用），只按既有 disabled 字段推导；“使用中”只用于运行环境占用，不改变账户权限或记录（来源：所有者 2026-11-02 对 console-walkthrough 第二轮第 1 项的授权）。"
    ]
   },
   {
@@ -9479,6 +9482,21 @@
     {
      "code": "admin",
      "label": "管理员"
+    }
+   ]
+  },
+  {
+   "axis": "account_status",
+   "label": "账户状态",
+   "owner": "R01",
+   "values": [
+    {
+     "code": "enabled",
+     "label": "已启用"
+    },
+    {
+     "code": "disabled",
+     "label": "已停用"
     }
    ]
   },

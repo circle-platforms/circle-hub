@@ -222,6 +222,12 @@ describe('operations and commands', () => {
     assert.ok(mine.body.includes(user.user.name));
     assert.ok(!mine.body.includes(other.user.name));
     assert.doesNotMatch(mine.body,/添加成员|circle-hub user disable/);
+    assert.ok(team.body.includes(uiLabelOf('account_status','enabled')));
+    assert.doesNotMatch(team.body,/使用中/);
+    await server.records.principals.setDisabled(server.admin.principal,other.user.id,true);
+    const disabled=await get(`/console/team/${other.user.id}`,admin);
+    assert.ok(disabled.body.includes(uiLabelOf('account_status','disabled')));
+    assert.doesNotMatch(disabled.body,/使用中/);
   });
   test('settings, connections and packs offer the other operations as commands with the real ids, never as forms', async () => {
     const user = await member();

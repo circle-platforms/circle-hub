@@ -134,10 +134,10 @@
 
 - 第 4 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-pagination.test.ts hub/server/console-places.test.ts` 12 项通过、0 跳过；`npm run test:docs` 通过（281 项、0 跳过，附带静态文档检查通过）。没有运行全量回归和来源校验。
 
-## 等待所有者确认
+## 第一轮待确认事项（第二轮已获授权）
 
-- 成员状态：已提出增加 R01 的 `account_status` 显示轴（`enabled` 为“已启用”、`disabled` 为“已停用”），并生成合约、同步版本断言。尚未获答复；团队页暂沿用原设置页的状态用语，不能记为该显示轴已完成。依据是本页“状态词只取自 contracts/generated”及 `contracts/README.md` 的模型变更须由模型所有者决定的规则。
-- 安装检查：`.github/workflows/release.yml` 仍按原来的无交互初始化和设置码页面做检查。已准备最小补丁，首次安装传入合成用户名并从标准输入传入口令，改为检查口令登录页。依 `AGENTS.md` 的发布工作流变更须经所有者决定的规则，尚未修改该工作流，也未运行或声称 CI 通过。
+- 成员状态：第一轮提出增加 R01 的 `account_status` 显示轴，当时尚未获答复。第二轮第 1 项已获授权，完成情况与检查见下文。
+- 安装检查：第一轮只准备了补丁，未修改发布工作流。第二轮第 2 项已获所有者授权；本地修改和检查不代表 CI 已运行。
 
 ## 第二轮：所有者答复与审查意见（2026-11-02）
 
@@ -158,3 +158,11 @@
    - 本轮不做“任务包”改名，种类的叫法还要先定。
 
 完成后回报：分支、各项提交、运行过的检查及其结果（含跳过），以及没有做的事项和原因。
+
+## 第二轮做了的
+
+- 第 1 项：新增 R01 的 `account_status`，保持模型 15 并补 `changes15`；团队页、CLI 账户列表及停用提示从生成词表取状态。账户不再显示“使用中”，权限和存储规则未改。
+
+## 第二轮验证
+
+- 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件一致）。`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/records/principals.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts` 26 项通过、0 跳过；CLI 按 `disabling the operator` 筛选 1 项、词表按 `uses generated axes` 筛选 1 项，均通过、0 跳过，筛选外未运行。`npm run test:docs` 283 项通过、0 跳过。没有运行全量回归。

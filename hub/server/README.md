@@ -287,6 +287,9 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83, second round item 1: member status uses R01's generated `account_status` (enabled/disabled), including the Team
+page and CLI account listings. In-use only describes an occupied runtime environment. Model 15 stays the revision.
+
 Decision 83's remaining-page pass moves reading guidance on task details, neutral pages, operation results, forms,
 background jobs and authorization to heading/label hover hints. Breadcrumbs, measured times, counts, commands, one-time
 values, permission consequences and missing-evidence facts remain visible. Background jobs display the generated action

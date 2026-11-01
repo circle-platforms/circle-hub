@@ -4,6 +4,7 @@
 // a signed-in browser may still switch to an invitation. Approving sends the browser to the client's redirect URI with a
 // one-time code, refusing with access_denied; both end the request. No password is asked (owner-confirmed item 1), and
 // the page carries no script. The confirm page allows its form to lead to the redirect URI's origin (CSP form-action).
+import { labelOf as uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
 import { AUTHORIZATION_REQUEST_TTL_MS, redirectIsLocal } from '../oauth.ts';
@@ -109,6 +110,6 @@ export function refusedPage(message: string): Html {
 export function invitationProblem(reason: Extract<InvitationCheck, { ok: false }>['reason']): string {
   if (reason === 'used') return '邀请码已使用：请管理员重新签发';
   if (reason === 'expired') return '邀请码已过期：请管理员重新签发';
-  if (reason === 'disabled') return '该账号已停用，不能授权';
+  if (reason === 'disabled') return `该账号${uiLabelOf('account_status','disabled')}，不能授权`;
   return '邀请码不正确';
 }
