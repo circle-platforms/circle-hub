@@ -222,7 +222,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
       if (role !== 'admin') throw new CliError('还没有管理员', '先建第一位管理员：circle-hub init-admin <名字>（令牌存进钥匙串），或 circle-hub user create <名字> --role admin（令牌显示一次）');
       const password = initialPassword();
       const { user, token } = await kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:true});
-      io.stdout('初始口令（仅显示一次，首次登录必须修改）：');
+      io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
       io.stdout(password);
       out(io, `已建立第一位管理员 ${user.name}（${user.id}）`);
       io.stdout(`它的令牌 ${token.id} 只显示这一次，请立即保存到只有你能读的地方：`);
@@ -232,7 +232,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const by = await operatorOf(ctx, options);
     const password = initialPassword();
     const user = await kit.principals.createUser(by, positionals[0], role, {password,mustChange:true});
-    io.stdout('初始口令（仅显示一次，首次登录必须修改）：');
+    io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
     io.stdout(password);
     out(io, `已建立用户 ${user.name}（${user.id}，${roleText(user.role)}）；令牌用 circle-hub token issue ${user.name} 签发`);
     return 0;

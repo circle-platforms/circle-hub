@@ -5,7 +5,7 @@
 做法：
 
 - 从本地分支 `console-logo` 开自己的工作树和任务分支（`console-logo` 已在 `circle-hub-logo` 工作树里检出，不要切换它，也不要切换主检出 `circle-hub` 的分支）。只在本机提交；推送、建 PR 先问所有者。
-  实际分支为 `console-walkthrough-local`，基线 `a5a39e1`。本次可改路径：`hub/server/**`（控制台、账号入口与对应测试）、`hub/records/**`（口令存储、追加迁移及对应测试）、`hub/platform/**` 与 `install.sh`（安装初始化及对应测试）、`docs/design/**`（导航说明与知识库调研方案）、`hub/server/README.md`、各受影响包 README、`CHANGELOG.md`、`docs/hub-r4-progress.md` 与本页。合约显示状态轴及版本测试的变更须取得所有者明确授权后补入范围；不改知识库模型或业务代码，不改依赖、来源归档、Circle 仓库或部署。
+  实际分支为 `console-walkthrough-local`，基线 `a5a39e1`。本次可改路径：`hub/server/**`（控制台、账号入口与对应测试）、`hub/records/**`（密码存储、追加迁移及对应测试）、`hub/platform/**` 与 `install.sh`（安装初始化及对应测试）、`docs/design/**`（导航说明与知识库调研方案）、`hub/server/README.md`、各受影响包 README、`CHANGELOG.md`、`docs/hub-r4-progress.md` 与本页。合约显示状态轴及版本测试的变更须取得所有者明确授权后补入范围；不改知识库模型或业务代码，不改依赖、来源归档、Circle 仓库或部署。
 - 规则同 [`console-data.md`](console-data.md)；界面文字用规范术语，只陈述事实，不用“你”“他”，进行中写作“等待××中”，内部用词要译成一般人看得懂的话；状态词只取自 `contracts/generated`。
 - 验证（所有者要求）：不随意加 SHA 校验和全量回归。每项跑 `npm run typecheck` 和受影响包的测试（控制台为 `node --test "hub/server/**/*.test.ts"` 中相关文件）；改了迁移、合约或安装脚本时再跑对应的测试；改了文档跑 `npm run test:docs`。
 - 每项一次提交；完成后在本页“做了的”“验证”两节写明，并在 `docs/hub-r4-progress.md` 记为决定 83（来源：所有者 2026-11-02 走查控制台）。
@@ -45,11 +45,11 @@
     - 第一个账户是管理员的规则保持不变，并在团队页写明（悬停提示）。
     - 同步改设计里的导航说明（导航从 7 项变为 8 项），在决定 83 里写明这是所有者的新决定。
 11. **“已连接的 Circle”不显示令牌**。所有者在设置页的令牌列上说：“这个令牌的方式太恶心了”。已连接的 Circle 按设备列出：设备名（OAuth 客户端名称，如“MacBook 上的 Circle”；以访问令牌连接的用令牌标签）、成员、最近使用时间、操作（断开）；令牌编号不显示在表里。
-12. **控制台登录改为用户名加口令**。所有者：“我建议改成安装的时候必须填写用户名，密码可以选填（如果用户写了就用用户的，如果没有随机生成并告知用户，随机生成密码登录第一次必须修改密码）”。所有者在 2026-11-02 经 Claude 补充授权：本项直接实现，不再等待方案确认；成员同样用口令登录，仅管理员可添加账户，成员的 Circle 令牌绑定到成员账户；添加时生成初始口令、仅显示一次、首次登录须修改，之后在团队页管理。实现涵盖：
-    - 安装：`install.sh` 交互询问管理员用户名（必填）与口令（可选）；不填则随机生成并只显示一次；口令写入方式不经命令行参数（标准输入或交互）。
-    - 存储：新迁移给用户加口令摘要（用 `node:crypto` 的 scrypt，带盐，不加依赖）与“首次登录须修改”标记；不保存明文。
-    - 登录页：用户名 + 口令；随机口令首次登录后必须先改口令才能进入；失败次数限制；访问令牌登录是否保留为管理员备用。
-    - 成员：管理员添加成员时如何拿到初始口令（同样随机生成、只显示一次、首次登录须修改），以及重置口令。
+12. **控制台登录改为用户名加密码**。所有者：“我建议改成安装的时候必须填写用户名，密码可以选填（如果用户写了就用用户的，如果没有随机生成并告知用户，随机生成密码登录第一次必须修改密码）”。所有者在 2026-11-02 经 Claude 补充授权：本项直接实现，不再等待方案确认；成员同样用密码登录，仅管理员可添加账户，成员的 Circle 令牌绑定到成员账户；添加时生成初始密码、仅显示一次、首次登录须修改，之后在团队页管理。实现涵盖：
+    - 安装：`install.sh` 交互询问管理员用户名（必填）与密码（可选）；不填则随机生成并只显示一次；密码写入方式不经命令行参数（标准输入或交互）。
+    - 存储：新迁移给用户加密码摘要（用 `node:crypto` 的 scrypt，带盐，不加依赖）与“首次登录须修改”标记；不保存明文。
+    - 登录页：用户名 + 密码；随机密码首次登录后必须先改密码才能进入；失败次数限制；访问令牌登录是否保留为管理员备用。
+    - 成员：管理员添加成员时如何拿到初始密码（同样随机生成、只显示一次、首次登录须修改），以及重置密码。
     - 与决定 78 的关系：Circle 仍用 MCP 标准授权连接；一次性登录链接是否保留。
     - 不碰本机正在运行的部署；测试用临时数据根与临时钥匙串。
 
@@ -73,11 +73,11 @@
 
 ## 做了的
 
-- 第 5、7、12 项收尾核对：请求期限统一使用 Hub 的时钟；相同知识内容的不同版本仍分别可选；登录与账户创建使用相同的 Unicode 用户名长度口径，口令保留输入时的空格。各修正已合入对应项的提交，仍为每项一次提交。
+- 第 5、7、12 项收尾核对：请求期限统一使用 Hub 的时钟；相同知识内容的不同版本仍分别可选；登录与账户创建使用相同的 Unicode 用户名长度口径，密码保留输入时的空格。各修正已合入对应项的提交，仍为每项一次提交。
 
-- 悬停规则补齐：任务详情与执行过程、完整记录、管理操作结果及字段、后台任务、初始化与标准授权页的阅读说明改为标题或标签悬停；知识条目、构建、版本页检查后保留实际范围、数量、时间与面包屑。命令、一次性口令/令牌、授权后果及证据缺失照常显示。后台任务按生成合约显示动作结果，未收到结果时为未知。
+- 悬停规则补齐：任务详情与执行过程、完整记录、管理操作结果及字段、后台任务、初始化与标准授权页的阅读说明改为标题或标签悬停；知识条目、构建、版本页检查后保留实际范围、数量、时间与面包屑。命令、一次性密码/令牌、授权后果及证据缺失照常显示。后台任务按生成合约显示动作结果，未收到结果时为未知。
 
-- 第 12 项：安装交互要求管理员用户名，可选口令经标准输入交给初始化命令，随机口令只显示一次且须首次修改。迁移 8 保存带盐 scrypt 摘要与首次修改标记，追加口令变更历史；控制台会话独立于 Circle 令牌并有期限。成员也用口令，添加成员时显示初始口令；团队页提供本人修改、管理员重置。强制修改覆盖页面、接口、流式更新和管理操作；失败限制同时覆盖未知账号。保留管理员备用令牌和管理员一次性链接，成员链接转到口令登录；旧成员未设口令的由管理员在团队页重置。MCP 标准授权、邀请码和令牌的账户绑定保留。
+- 第 12 项：安装交互要求管理员用户名，可选密码经标准输入交给初始化命令，随机密码只显示一次且须首次修改。迁移 8 保存带盐 scrypt 摘要与首次修改标记，追加密码变更历史；控制台会话独立于 Circle 令牌并有期限。成员也用密码，添加成员时显示初始密码；团队页提供本人修改、管理员重置。强制修改覆盖页面、接口、流式更新和管理操作；失败限制同时覆盖未知账号。保留管理员备用令牌和管理员一次性链接，成员链接转到密码登录；旧成员未设密码的由管理员在团队页重置。MCP 标准授权、邀请码和令牌的账户绑定保留。
 
 - 知识库调研及整合方案已写入 [`personal-team-knowledge.md`](../design/personal-team-knowledge.md)：核对当前模型与知识库实现，覆盖采集、出处、搜索、计数、版本、共享、权限及维护，参考 Outline 与 Joplin 官方资料，提出个人本地与团队 Hub 共用格式、分开授权的方案。本次没有实现知识库通用化。
 
@@ -98,15 +98,15 @@
 
 - 最终静态收尾：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件与模型一致）；`npm run test:docs` 283 项通过、0 跳过。只报告已运行的检查；筛选外、全量单元、验收、来源、备份恢复及 CI 均未记为通过。
 
-- 迁移补验：`node --test --test-concurrency=1 --test-name-pattern='migrations apply|runtime role|openRecords from' hub/records/store.test.ts hub/records/roles.test.ts hub/records/index.test.ts` 选中的 3 项通过、0 跳过，其他用例未选中；`node --test hub/records/password.test.ts` 2 项通过、0 跳过。覆盖旧版账户、旧 Circle 令牌、只应用迁移 8，以及运行角色的口令创建、修改和会话撤销；同步了原测试中固定到迁移 7 的断言。仍未跑备份恢复或全量回归。
+- 迁移补验：`node --test --test-concurrency=1 --test-name-pattern='migrations apply|runtime role|openRecords from' hub/records/store.test.ts hub/records/roles.test.ts hub/records/index.test.ts` 选中的 3 项通过、0 跳过，其他用例未选中；`node --test hub/records/password.test.ts` 2 项通过、0 跳过。覆盖旧版账户、旧 Circle 令牌、只应用迁移 8，以及运行角色的密码创建、修改和会话撤销；同步了原测试中固定到迁移 7 的断言。仍未跑备份恢复或全量回归。
 
-- 补充边界：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts` 10 项通过、0 跳过（先用同内容的两个版本复现选择丢失，再修正）；`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console-pagination.test.ts` 10 项通过、0 跳过，覆盖 Unicode 用户名、口令空格、Hub 时钟与请求期限。没有扩大为全量回归。
+- 补充边界：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts` 10 项通过、0 跳过（先用同内容的两个版本复现选择丢失，再修正）；`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console-pagination.test.ts` 10 项通过、0 跳过，覆盖 Unicode 用户名、密码空格、Hub 时钟与请求期限。没有扩大为全量回归。
 
 - 最后页面复核：使用临时浏览器配置与模拟钥匙串，在 1440 像素桌面及 390 像素窄屏检查登录、团队、添加成员、知识库和空任务页；这些页面整页宽度未超出视口，宽表格在各自容器内滚动。总览 7 / 14 / 30 天各 3 条涉及窗口的悬停提示均与所选范围一致。临时浏览器配置已删除，临时 Hub 已正常停止；日志与截图留在仓库外。
 
 - 悬停规则：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-manage.test.ts hub/server/console.test.ts hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts hub/server/standard-authorization.test.ts hub/server/console-password.test.ts hub/server/console-systems.test.ts` 74 项通过、0 跳过；`npm run test:docs` 283 项通过、0 跳过。未跑全量回归。
 
-- 第 12 项：`npm run typecheck` 通过；以下口令、迁移、会话、授权、管理及安装相关文件定向检查 153 项通过、0 跳过：
+- 第 12 项：`npm run typecheck` 通过；以下密码、迁移、会话、授权、管理及安装相关文件定向检查 153 项通过、0 跳过：
 
   ```sh
   node --test --test-concurrency=2 hub/records/password.test.ts hub/records/principals.test.ts hub/records/migrations.snapshot.test.ts hub/server/console-password.test.ts hub/server/console.test.ts hub/server/standard-authorization.test.ts hub/server/console-api-write.test.ts hub/server/console-manage.test.ts hub/server/setup-code.test.ts hub/platform/install-script.test.ts hub/server/console-places.test.ts hub/server/console-live.test.ts hub/server/console-api.test.ts hub/server/console-results.test.ts hub/server/console-search.test.ts hub/server/console-systems.test.ts hub/server/console-environments.test.ts hub/server/proxy-cookie.test.ts hub/server/units.test.ts
@@ -161,6 +161,8 @@
 
 ## 第二轮做了的
 
+- 第 3 项：控制台、安装、CLI 与错误提示统一使用“密码”，同步当前任务说明和决定 83。为覆盖配置错误文字，可改路径补入 `hub/config/index.ts`、`hub/config/names.ts` 及对应包说明。历史决定和凭据扫描器的旧词识别、来源合成数据保持原样；本轮授权原文中说明笔误的引文保留。
+
 - 第 2 项：与当前 `install.sh` 的 `--admin-user`、`--password-stdin` 核对后，发布工作流首次安装传合成用户名、从标准输入传密码，检查 HTTPS 密码登录页的两个输入框。按本节明确授权，可改路径补入 `.github/workflows/release.yml` 与对应静态检查 `.github/checks/workflow.test.ts`；没有运行工作流或实际安装。
 
 - 第 1 项：新增 R01 的 `account_status`，保持模型 15 并补 `changes15`；团队页、CLI 账户列表及停用提示从生成词表取状态。账户不再显示“使用中”，权限和存储规则未改。
@@ -169,3 +171,4 @@
 
 - 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件一致）。`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/records/principals.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts` 26 项通过、0 跳过；CLI 按 `disabling the operator` 筛选 1 项、词表按 `uses generated axes` 筛选 1 项，均通过、0 跳过，筛选外未运行。`npm run test:docs` 283 项通过、0 跳过。没有运行全量回归。
 - 第 2 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过（含工作流静态检查）。`node --test --test-name-pattern='valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 4 项通过、0 跳过，筛选外未运行；从工作流提取的 Linux 作业 3 段块脚本均通过 `bash -n`，未执行其中命令。没有运行安装、服务启动、发布工作流或 CI。
+- 第 3 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console.test.ts hub/server/console-api-write.test.ts hub/server/console-places.test.ts hub/server/variables.test.ts` 56 项通过、0 跳过；配置、漂移与密码测试 15 项通过、0 跳过。CLI 按 `initial passwords` 筛选 1 项、数据库按 `pool never falls back` 筛选 1 项、安装脚本按 `valid bash|fresh installation` 筛选 2 项，均通过、0 跳过，筛选外未运行。没有运行全量回归或改动凭据扫描规则。

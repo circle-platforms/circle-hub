@@ -9,7 +9,7 @@ export function validPassword(password: string): boolean {
   return typeof password === 'string' && password.length <= 1024 && password.isWellFormed() && [...password].length >= 12 && [...password].length <= 256 && !/[\p{Cc}]/u.test(password);
 }
 async function derive(password: string, salt: Buffer): Promise<Buffer> {
-  if (active >= 2) throw new LimitError('口令校验繁忙，请稍后重试');
+  if (active >= 2) throw new LimitError('密码校验繁忙，请稍后重试');
   active++;
   try {
     return await new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 32, OPTIONS, (error, key) => error ? reject(error) : resolve(key)));

@@ -62,7 +62,7 @@ export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-us
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
-export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，口令从标准输入读取或随机生成；操作令牌存进钥匙串，不显示';
+export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，密码从标准输入读取或随机生成；操作令牌存进钥匙串，不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖 | remove --confirm-only-operator-token   Linux 仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
 
@@ -1013,8 +1013,8 @@ async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pi
 
 async function initAdminCommand(session: Session, args: readonly string[]): Promise<number> {
   const { positionals, values } = parse(args, { 'password-stdin': { type: 'boolean' } }, 1);
-  const supplied = values['password-stdin'] === true ? await (session.options.readSecret ?? readSecretFromStdin)('管理员口令') : '';
-  if (supplied !== '' && !validPassword(supplied)) throw new UsageError('口令须为 12 至 256 个字符，不含控制字符');
+  const supplied = values['password-stdin'] === true ? await (session.options.readSecret ?? readSecretFromStdin)('管理员密码') : '';
+  if (supplied !== '' && !validPassword(supplied)) throw new UsageError('密码须为 12 至 256 个字符，不含控制字符');
   const password = supplied || initialPassword();
   const kit = await session.records();
   if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
@@ -1030,7 +1030,7 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
   const { user, token } = await decided(() => kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:supplied === ''}));
   await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`);
   session.out(`已建立第一位管理员 ${user.name}（${user.id}）；它的令牌 ${token.id} 已存进${store.where}，没有显示`);
-  if (supplied === '') { session.out('初始口令（仅显示一次，首次登录必须修改）：'); session.out(password); }
+  if (supplied === '') { session.out('初始密码（仅显示一次，首次登录必须修改）：'); session.out(password); }
   session.out('之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个钥匙串项读管理员令牌，不用另外给出令牌');
   return 0;
 }
@@ -1175,7 +1175,7 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
       const admin = await session.admin();
       const sha = positionals[0];
       if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
-      if (values.note === undefined || values.note.trim() === '') throw new UsageError('接受要写说明（--note），例如“手册里的 ftp 示例，口令是占位符”；说明里不要抄命中的内容');
+      if (values.note === undefined || values.note.trim() === '') throw new UsageError('接受要写说明（--note），例如“手册里的 ftp 示例，密码是占位符”；说明里不要抄命中的内容');
       const kit = await session.records();
       const accepted = await decided(() => kit.artifacts.acceptFindings(admin, sha, values.note));
       session.out(`已接受 ${sha} 的 ${accepted.scan.findings.length} 处命中（扫描器 ${accepted.scan.scanner}）；之后重新读到同样字节时按正常内容保存。决定记录 ${accepted.authorization.digest}`);

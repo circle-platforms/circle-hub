@@ -1,5 +1,7 @@
 # records
 
+Decision 83, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.
+
 Persistence layer and identity primitives of the Hub: model elements B01 B02 B04 B05 B08, R01 and R02 (visibility).
 The package owns `hub/records/**`, `hub/config/**` and `hub/testing/**`. Other packages code against
 `hub/records/api.ts` (types and pure helpers) and open the kit through `hub/records/index.ts`.

@@ -26,7 +26,7 @@ const bridge: CommandBridge = {
   async run(argv, input) {
     calls.push({ argv, input });
     if (argv.includes('fails')) return { code: 1, stdout: [], stderr: ['用户名已经存在'] };
-    if (argv[0] === 'user' && argv[1] === 'create') return {code:0,stdout:['初始口令（仅显示一次，首次登录必须修改）：','p'.repeat(24)],stderr:[]};
+    if (argv[0] === 'user' && argv[1] === 'create') return {code:0,stdout:['初始密码（仅显示一次，首次登录必须修改）：','p'.repeat(24)],stderr:[]};
     if (argv[0] === 'user' && argv[1] === 'invite') return { code: 0, stdout: [`已为 ${argv[2]} 签发邀请码，2026-11-02T00:00:00.000Z 前有效，仅可使用一次。邀请码只显示这一次：`, 'ABCD-EFGH-JKMN', '成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码'], stderr: [] };
     if (argv[0] === 'token' && argv[1] === 'issue') return { code: 0, stdout: ['已签发令牌 tok_synthetic。令牌只显示这一次：', 'T'.repeat(43)], stderr: [] };
     if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: [`发布校验通过：synthetic-pack@1.0.0，检查目录 ${argv[2]}`, '试运行：没有发布，也没有写入任何内容'], stderr: [] };

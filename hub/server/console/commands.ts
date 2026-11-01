@@ -48,7 +48,7 @@ export const commands = {
   }),
   tokenIssue: (user: { id: string; name: string; role?: PermissionRole }): CommandDialog => ({
     id: dialogId('token-issue', user.id), title: `${user.role === 'admin' ? '签发备用登录令牌' : '签发 Circle 访问令牌'}：${user.name}`,
-    text: user.role === 'admin' ? '新令牌仅在签发时显示一次；用于管理员备用登录，也可写入新的 Circle。' : '新令牌仅在签发时显示一次；用于该成员的 Circle 连接，成员使用口令登录控制台。', command: command('token', 'issue', user.id, user.role === 'admin' ? '--label=备用登录' : '--label=Circle'),
+    text: user.role === 'admin' ? '新令牌仅在签发时显示一次；用于管理员备用登录，也可写入新的 Circle。' : '新令牌仅在签发时显示一次；用于该成员的 Circle 连接，成员使用密码登录控制台。', command: command('token', 'issue', user.id, user.role === 'admin' ? '--label=备用登录' : '--label=Circle'),
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,

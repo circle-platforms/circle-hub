@@ -36,7 +36,7 @@ export interface VariableCommandSession {
     err(line: string): void;
 }
 export const VAR_USAGE = 'var set <名字> [--file <文件>] [--text] [--not-secret] --reason <理由> | unset <名字> --reason <理由> | list [--run <运行> | --root <根摘要>] | show <名字> [--history] [--value]';
-export const NAMED_SECRET_USAGE = 'secret set --name <名字>… [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> | unset --name <名字> --reason <理由> | list | show --name <名字> [--history] | import --env-file <文件> --key <键>=<名字>… [--basic <用户键>:<口令键>=<名字>] [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> [--dry-run]';
+export const NAMED_SECRET_USAGE = 'secret set --name <名字>… [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> | unset --name <名字> --reason <理由> | list | show --name <名字> [--history] | import --env-file <文件> --key <键>=<名字>… [--basic <用户键>:<密码键>=<名字>] [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> [--dry-run]';
 const CONFIG = 'resource_config' satisfies PermissionKind;
 export interface DeploymentDefinition {
     key: string;
@@ -545,7 +545,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                     const at = input.indexOf('=');
                     const keys = input.slice(0, at).split(':');
                     if (at <= 0 || keys.length !== (basic ? 2 : 1) || keys.some(k => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || scanForCredentials(Buffer.from(k)).findings.length > 0))
-                        throw new UsageError(`第 ${++index} 个映射格式无效；写成 键=名字 或 用户键:口令键=名字`);
+                        throw new UsageError(`第 ${++index} 个映射格式无效；写成 键=名字 或 用户键:密码键=名字`);
                     mappings.push({ name: nameInput(input.slice(at + 1), index++, 'secret'), keys, basic });
                 }
             if (!v['env-file'] || !mappings.length)

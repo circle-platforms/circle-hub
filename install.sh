@@ -40,7 +40,7 @@ usage() {
   --environment <类别>      环境类别 test、shared 或 production（默认 production）
   --bundle <文件>           用本地的发布包代替下载（同目录下要有 SHA256SUMS）
   --admin-user <用户名>     首次安装的管理员用户名；省略时交互询问
-  --password-stdin          首次安装的口令从标准输入读取；空输入则生成初始口令
+  --password-stdin          首次安装的密码从标准输入读取；空输入则生成初始密码
   --dry-run                只显示要做什么，不改动任何东西
 环境变量：
   CIRCLE_HUB_LIBPQ_BIN=<目录>  备份用的 PostgreSQL 18 pg_dump 和 pg_restore 所在的绝对目录（默认 macOS 用 Homebrew 的 libpq，Linux 用 postgresql-client-18）
@@ -277,11 +277,11 @@ if [ "${DRY_RUN}" = 1 ] || ! as_hub test -f "${SETTINGS}"; then
       IFS= read -r HUB_INSTALL_ADMIN_NAME < /dev/tty || fail "没有读到管理员用户名"
     done
     while [ "${HUB_INSTALL_INTERACTIVE}" = 1 ] && [ "${HUB_INSTALL_PASSWORD_STDIN}" != 1 ]; do
-      printf '管理员口令（可选；留空将生成初始口令，首次登录必须修改）：' > /dev/tty
-      IFS= read -r -s HUB_INSTALL_ADMIN_PASSWORD < /dev/tty || fail "没有读到管理员口令"
+      printf '管理员密码（可选；留空将生成初始密码，首次登录必须修改）：' > /dev/tty
+      IFS= read -r -s HUB_INSTALL_ADMIN_PASSWORD < /dev/tty || fail "没有读到管理员密码"
       printf '\n' > /dev/tty
       if [ -z "${HUB_INSTALL_ADMIN_PASSWORD}" ] || { [ "${#HUB_INSTALL_ADMIN_PASSWORD}" -ge 12 ] && [ "${#HUB_INSTALL_ADMIN_PASSWORD}" -le 256 ]; }; then break; fi
-      say "口令须为 12 至 256 个字符"
+      say "密码须为 12 至 256 个字符"
     done
   fi
   say "初始化数据目录和数据库"
@@ -305,7 +305,7 @@ fi
 
 if [ "${FRESH}" = 1 ]; then
   if [ "${DRY_RUN}" = 1 ]; then
-    say "将询问管理员用户名和可选口令；口令通过标准输入交给 init-admin --password-stdin，不进入命令参数"
+    say "将询问管理员用户名和可选密码；密码通过标准输入交给 init-admin --password-stdin，不进入命令参数"
   elif [ "${HUB_INSTALL_PASSWORD_STDIN}" = 1 ]; then
     as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" init-admin "${HUB_INSTALL_ADMIN_NAME}" --password-stdin
   else
@@ -355,7 +355,7 @@ say "  控制台：https://${HOST_FOR_URL}:${HTTPS_PORT}/console/"
 say "  本机 HTTP：http://127.0.0.1:${HTTP_PORT}/console/"
 say "  证书颁发机构：${DATA}/tls/ca.crt（浏览器和 Circle 信任它之前，先用 circle-hub tls status 核对指纹）"
 if [ "${FRESH}" = 1 ] && [ "${DRY_RUN}" != 1 ]; then
-  say "  管理员用户名：${HUB_INSTALL_ADMIN_NAME}；使用设置的口令或上面仅显示一次的初始口令登录。"
+  say "  管理员用户名：${HUB_INSTALL_ADMIN_NAME}；使用设置的密码或上面仅显示一次的初始密码登录。"
 fi
 if [ "${OS}" = darwin ]; then
   case ":${PATH}:" in *":${WRAPPER_DIR}:"*) ;; *) say "  把 ${WRAPPER_DIR} 加进 PATH 后就能直接用 circle-hub 命令" ;; esac

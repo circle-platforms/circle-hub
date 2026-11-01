@@ -22,11 +22,11 @@ test('initial passwords cannot bypass the first change through pages, APIs, mana
   assert.equal((await send('/console/api/status','GET',undefined,session)).status,403);
   assert.equal((await send('/console/admin/do/member-add','POST',{name:'禁止创建'},session)).status,303);
   const form=await send('/console/password','GET',undefined,session);assert.equal(form.status,200);
-  assert.ok(!form.body.includes(initial));assert.match(form.body,/首次登录必须修改口令/);
+  assert.ok(!form.body.includes(initial));assert.match(form.body,/首次登录必须修改密码/);
   const next='synthetic-changed-password';
   assert.equal((await send('/console/password','POST',{current:initial,password:next,confirm:next,csrf:'wrong'},session)).status,403);
   const changed=await send('/console/password','POST',{current:initial,password:next,confirm:next,csrf:csrf(form.body)},session);
-  assert.equal(changed.status,200);assert.match(changed.body,/口令已修改/);
+  assert.equal(changed.status,200);assert.match(changed.body,/密码已修改/);
   assert.equal((await send('/console/team','GET',undefined,session)).status,303,'old console session is revoked');
   assert.equal((await login({username:user.name,password:initial})).status,401);
   const fresh=await login({username:user.name,password:next});assert.equal(fresh.headers.location,'/console/overview');
@@ -39,7 +39,7 @@ test('only administrators reset a member password and the generated value is ret
   const mine=await send('/console/password','GET',undefined,memberSession);
   assert.equal((await send('/console/password/reset','POST',{csrf:csrf(mine.body),user:server.admin.user.id},memberSession)).status,403);
   const loggedAdmin=await login({token:server.admin.token}), adminSession=cookie(loggedAdmin,'circle_hub_session');
-  const team=await send(`/console/team/${user.id}`,'GET',undefined,adminSession);assert.match(team.body,/重置口令/);
+  const team=await send(`/console/team/${user.id}`,'GET',undefined,adminSession);assert.match(team.body,/重置密码/);
   const reset=await send('/console/password/reset','POST',{csrf:csrf(team.body),user:user.id},adminSession);assert.equal(reset.status,200);
   const password=/<pre[^>]*>([^<]+)<\/pre>/.exec(reset.body)?.[1];assert.ok(password);assert.match(reset.body,/仅显示一次/);
   assert.equal((await send('/console/team','GET',undefined,memberSession)).status,303);

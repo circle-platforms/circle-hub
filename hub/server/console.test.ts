@@ -220,7 +220,7 @@ describe('sign-in', () => {
     const { nonce, cookie } = await loginForm();
     const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ token: 'B'.repeat(43), csrf: nonce }) });
     assert.equal(reply.status, 401);
-    assert.match(reply.body, /用户名或口令无效/);
+    assert.match(reply.body, /用户名或密码无效/);
     assert.notEqual(csrfOf(reply.body), nonce);
     const anonymous = await send('/console/runs');
     assert.equal(anonymous.status, 303);

@@ -576,7 +576,7 @@ export async function completeSetup(
   if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
   if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
   const supplied=form.get('password');
-  if (supplied && !validPassword(supplied)) return {ok:false,status:400,message:'口令须为 12 至 256 个字符，不含控制字符'};
+  if (supplied && !validPassword(supplied)) return {ok:false,status:400,message:'密码须为 12 至 256 个字符，不含控制字符'};
   const password=supplied || initialPassword();
   let created;
   try {

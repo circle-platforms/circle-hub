@@ -60,7 +60,7 @@ ${error === null ? '' : html`<p class="error">${error}</p>`}
 
 /** The identity step: the invitation code, or signing in to the console first. */
 export function identityPage(request: AuthorizationRequest, error: string | null): Html {
-  return page(chrome('授权 Circle 连接 Hub', '输入管理员签发的邀请码确认账号；也可用口令登录控制台后授权。'), html`${stepper(STEPS, 0)}
+  return page(chrome('授权 Circle 连接 Hub', '输入管理员签发的邀请码确认账号；也可用密码登录控制台后授权。'), html`${stepper(STEPS, 0)}
 <p class="mt12"><b>${request.client.name}</b> 请求连接本 Hub。</p>
 ${card(null, facts(request), 'mt12')}
 <div class="mt16">${invitationForm(request, error, true)}</div>

@@ -1,5 +1,7 @@
 # hub/platform
 
+Decision 83, second round item 3: the installer’s Chinese prompts and help use “密码”, consistent with console login.
+
 Decision 83's second-round release-workflow approval aligns the fresh-runner install check with `install.sh`:
 `--admin-user` supplies a synthetic account, `--password-stdin` reads its password, and the HTTPS check requires the
 username/password login form. Local static and dry-run checks do not establish a successful deployed install or CI run.

@@ -1,5 +1,7 @@
 # hub/server
 
+Decision 83, second round item 3: Chinese account, login and credential instructions consistently use “密码”, including console forms, CLI output and errors. Legacy source words remain recognized by the credential scanner.
+
 The MCP server, the console (read-only pages, and management for administrators: decision 75), the HTTP surface and the server CLI of the Hub. Model elements: D05 (uniform
 response), D06 (the six tools), B08 (call log), R01 and R02 (roles, visibility); brief sections 3, 6 and 9. The server is
 built against the ports of `hub/ports.ts` (RunsService, KnowledgePort, WorkflowStore, PackCatalogPort,

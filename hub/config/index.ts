@@ -101,7 +101,7 @@ export function loadConfig(
     if (!key.startsWith(HUB_PREFIX) || environment[key] === undefined || isHubEnvironmentName(key) || isPlatformOnlyName(key) || allowed.has(key)) continue;
     problems.push(
       SECRET_LIKE.test(key.slice(HUB_PREFIX.length))
-        ? `${key} 不是 Hub 的配置项；口令、令牌和密钥只经密钥库命令进入 Hub，不从环境变量读取`
+        ? `${key} 不是 Hub 的配置项；密码、令牌和密钥只经密钥库命令进入 Hub，不从环境变量读取`
         : `${key} 不是 Hub 的配置项（可能拼错了）；可用的名字：${Object.keys(HUB_ENVIRONMENT).join('、')}`,
     );
   }
