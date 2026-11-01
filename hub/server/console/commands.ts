@@ -21,6 +21,14 @@ function dialogId(operation: string, object: string): string {
 }
 
 export const commands = {
+  memberPack: (user: string, pack: string, assigned: boolean): CommandDialog => ({
+    id: dialogId(`member-pack-${user}`, pack), title: '调整任务包使用范围',
+    text: '调整后对该成员的新任务生效；已有运行记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
+  }),
+  memberPublish: (user: string, granted: boolean): CommandDialog => ({
+    id: dialogId('member-publish', user), title: '调整发布权',
+    text: '发布权只允许发布本人拥有的任务包。', command: command('pack', granted ? 'revoke-publish' : 'grant-publish', user),
+  }),
   userDisable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-disable', user.id), title: `停用成员 ${user.name}`,
     text: '停用后该成员的全部 Circle 与控制台会话立即失效；记录保留，可再启用。', command: command('user', 'disable', user.id),

@@ -173,6 +173,6 @@ ${sectionHead('知识库', `${results.knowledge.length} 项`)}
 ${card(null, html`${table(['类型', '名称', '所在'], results.knowledge.map(knowledgeRow), '没有匹配的知识')}${partial(results.partial.knowledge, `仅查找了前 ${MAX_LINES} 条产品线或前 ${MAX_ROOTS} 个当前版本，或匹配多于 ${SEARCH_MAX_HITS} 项；可能还有其他匹配。`)}`)}
 ${sectionHead('记录', `${results.records.length} 条`)}
 ${card(null, html`${table(['时间', '工具', '运行', ...(ctx.admin ? ['成员'] : [])], results.records.map((hit) => [when(hit.at), hit.tool_label, hit.run === null ? '—' : link(records, hit.run, { run: hit.run }), ...(ctx.admin ? [hit.user ?? '—'] : [])]), '没有匹配的记录')}${partial(results.partial.records, `仅查找了最近的 ${CALLS_SCANNED} 条调用记录，或匹配多于 ${SEARCH_MAX_HITS} 条；可能还有其他匹配。`)}`)}
-${ctx.admin ? html`${sectionHead('成员', `${results.members.length} 人`)}${card(null, table(['姓名', '角色', '编号'], results.members.map((hit) => [link('/console/settings', hit.name), hit.role_label, code(hit.id)]), '没有匹配的成员'))}` : ''}`;
+${ctx.admin ? html`${sectionHead('成员', `${results.members.length} 人`)}${card(null, table(['姓名', '角色', '编号'], results.members.map((hit) => [link(`/console/team/${hit.id}`, hit.name), hit.role_label, code(hit.id)]), '没有匹配的成员'))}` : ''}`;
   return { status: 200, body: page(chrome, body) };
 }

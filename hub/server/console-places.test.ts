@@ -95,11 +95,11 @@ function assertPage(reply: Reply, path: string): void {
   assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="side" aria-label="主导航">/, path);
-  for (const place of ['总览', '任务', '知识库', '任务包', '连接', '记录', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
+  for (const place of ['总览', '任务', '知识库', '任务包', '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
   assert.doesNotMatch(reply.body, /你/, `${path}: interface text states facts without a subject`);
 }
 
-describe('the seven places', () => {
+describe('the eight places', () => {
   test('an administrator opens every place and every operation; the current place is marked', async () => {
     const user = await member();
     const run = await runWithResult(user);
@@ -107,7 +107,7 @@ describe('the seven places', () => {
     const pages: Record<string, string> = {
       '/console/overview': '总览', '/console/runs': '任务', [`/console/runs/${run}`]: '任务', '/console/knowledge': '知识库',
       '/console/packs': '任务包', '/console/packs/review': '任务包', '/console/connections': '连接', '/console/records': '记录',
-      '/console/settings': '设置', '/console/operations': '设置', '/console/operations/member': '设置', '/console/operations/system': '连接',
+      '/console/settings': '设置', '/console/team': '团队', '/console/operations': '设置', '/console/operations/member': '团队', '/console/operations/system': '连接',
       '/console/operations/pack': '任务包', '/console/operations/knowledge': '知识库', '/console/overview?days=30': '总览',
     };
     for (const [path, place] of Object.entries(pages)) {
@@ -124,7 +124,7 @@ describe('the seven places', () => {
     await runWithResult(user);
     const otherRun = await runWithResult(other);
     const session = await signIn(user.token);
-    for (const path of ['/console/overview', '/console/runs', '/console/knowledge', '/console/packs', '/console/connections', '/console/records', '/console/settings']) assertPage(await get(path, session), path);
+    for (const path of ['/console/overview', '/console/runs', '/console/knowledge', '/console/packs', '/console/connections', '/console/records', '/console/team', '/console/settings']) assertPage(await get(path, session), path);
     for (const path of ['/console/operations', '/console/operations/member', '/console/admin', '/console/admin/calls']) {
       const refused = await get(path, session);
       assert.equal(refused.status, 404, path);
@@ -183,10 +183,30 @@ describe('tasks', () => {
 });
 
 describe('operations and commands', () => {
+  test('team owns members and permissions, settings retains system settings and members cannot browse another account', async () => {
+    const user=await member(), other=await member();
+    const admin=await signIn(server.admin.token), session=await signIn(user.token);
+    const team=await get('/console/team',admin);
+    assert.ok(team.body.includes(`/console/team/${user.user.id}`));
+    assert.ok(team.body.indexOf('href="/console/team"')<team.body.indexOf('href="/console/settings"'));
+    assert.match(team.body,/第一个账户是管理员/);
+    assert.match(team.body,/添加成员/);
+    const settings=await get('/console/settings',admin);
+    assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
+    const detail=await get(`/console/team/${user.user.id}`,admin);
+    assert.match(detail.body,/成员详情|权限|任务包分配|已连接的 Circle/);
+    assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
+    assert.equal((await get(`/console/team/${other.user.id}`,session)).status,404);
+    assert.equal((await get('/console/team/absent',admin)).status,404);
+    const mine=await get('/console/team',session);
+    assert.ok(mine.body.includes(user.user.name));
+    assert.ok(!mine.body.includes(other.user.name));
+    assert.doesNotMatch(mine.body,/添加成员|circle-hub user disable/);
+  });
   test('settings, connections and packs offer the other operations as commands with the real ids, never as forms', async () => {
     const user = await member();
     const admin = await signIn(server.admin.token);
-    const settings = await get('/console/settings', admin);
+    const settings = await get('/console/team', admin);
     const [token] = await server.records.principals.tokens(user.user.id);
     for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token revoke ${token.id}`, `circle-hub token issue ${user.user.id} '--label=备用登录'`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
     assert.match(settings.body, /<div class="modal" id="cmd-user-disable-[^"]+" role="dialog"/);

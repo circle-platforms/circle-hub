@@ -293,8 +293,8 @@ describe('pages', () => {
     // Display rule 13: the three groups derived from the partition list.
     const adopted = page.body.indexOf('已采用的成果（已交付');
     const open = page.body.indexOf('仍需处理的事项（已拒收、派发结果未确认、未完成');
-    const requests = page.body.indexOf('未回答的请求');
-    assert.ok(adopted > 0 && open > adopted && requests > open, 'adopted, still to handle, requests');
+    assert.ok(adopted > 0 && open > adopted, 'adopted and still to handle');
+    assert.doesNotMatch(page.body, /未回答的请求/, 'empty request sections stay hidden');
     // Display rule 3: the submission as received, marked unverified, next to its receipt.
     assert.ok(page.body.includes('提交内容（未经平台验证）'));
     assert.ok(page.body.includes('scripted-model@test'), 'the submitted text is shown');
@@ -333,7 +333,7 @@ describe('pages', () => {
       assert.ok(page.body.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
       assert.ok(page.body.includes('&quot;&gt;&lt;img src=x onerror=alert(2)&gt;'));
       const admin = await signIn(server.admin.token);
-      const adminPage = await get('/console/admin', admin);
+      const adminPage = await get('/console/team', admin);
       assert.ok(!adminPage.body.includes('<b>名字</b>') && adminPage.body.includes('&lt;b&gt;名字&lt;/b&gt;'));
     } finally {
       server.fakes.runs.items = null;
@@ -382,7 +382,7 @@ describe('pages', () => {
 
     const stranger = await person([]);
     const strangerSession = await signIn(stranger.token);
-    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的产品线/);
+    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的团队知识/);
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
@@ -399,7 +399,7 @@ describe('pages', () => {
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
-      assert.match(page.body, /没有可读的产品线/);
+      assert.match(page.body, /没有可读的团队知识/);
     } finally {
       await bare.close();
     }
@@ -433,7 +433,7 @@ describe('pages', () => {
     for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(mine.body.includes(token.id), 'the member\'s own token');
 
     const session = await signIn(server.admin.token);
-    for (const path of ['/console/admin', '/console/settings']) {
+    for (const path of ['/console/admin', '/console/team']) {
       const admin = await get(path, session);
       assert.equal(admin.status, 200, path);
       assert.ok(admin.body.includes(user.user.name));

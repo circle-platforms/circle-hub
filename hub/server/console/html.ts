@@ -101,8 +101,8 @@ export const CONTENT_SECURITY_POLICY = [
   "base-uri 'none'",
 ].join('; ');
 
-/** The seven places of the console (proposal decision 3 of 2026-10-31): no sub-menus and no counters. */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'settings';
+/** The eight places of decision 83: no sub-menus and no counters. */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings';
 
 export interface PageChrome {
   title: string;
@@ -170,6 +170,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['packs', '任务包', '/console/packs', 'pack'],
   ['connections', '连接', '/console/connections', 'sys'],
   ['records', '记录', '/console/records', 'rec'],
+  ['team', '团队', '/console/team', 'users'],
   ['settings', '设置', '/console/settings', 'gear'],
 ];
 

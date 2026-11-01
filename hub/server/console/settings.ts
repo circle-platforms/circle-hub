@@ -184,36 +184,7 @@ export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => P
 }
 
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
-  const { principals } = ctx.deps.records;
-  const users: User[] = await principals.list();
   const dialogs: CommandDialog[] = [];
-  const memberRows = [];
-  const tokenRows = [];
-  for (const user of users) {
-    const tokens = await principals.tokens(user.id);
-    const live = active(tokens);
-    const toggle = user.disabled ? commands.userEnable(user) : commands.userDisable(user);
-    const spare = commands.tokenIssue(user);
-    const invite = commands.userInvite(user);
-    dialogs.push(toggle, spare, ...(user.disabled ? [] : [invite]));
-    memberRows.push([
-      html`<span class="namecell"><span class="avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><span><b>${user.name}</b><span class="digest">${user.id}</span></span></span>`,
-      chip(uiLabelOf('permission_role', user.role), user.role === 'admin' ? 'judgment' : 'plain'),
-      `${live.length} 个`,
-      when(lastUse(tokens)),
-      user.disabled ? chip('已停用', 'unchecked') : chip('使用中', 'pass'),
-      html`${commandLink(toggle, user.disabled ? '启用' : '停用')}${user.disabled ? '' : html` ${commandLink(invite, '签发邀请码')}`} ${commandLink(spare, '签发备用登录令牌')}`,
-    ]);
-    for (const token of tokens) {
-      const revoke = commands.tokenRevoke(token, user.name);
-      if (token.revoked_at === null) dialogs.push(revoke);
-      tokenRows.push([
-        code(token.id), user.name, token.label || '—', token.client === null ? '访问令牌' : '标准授权', when(token.created_at), when(token.last_used_at),
-        token.revoked_at === null ? chip('已连接', 'pass') : chip(`已断开 ${when(token.revoked_at)}`, 'unchecked'),
-        token.revoked_at === null ? commandLink(revoke, '断开') : '',
-      ]);
-    }
-  }
   const secrets = await secretsOf(ctx, run);
   let secretBody: Html;
   if (secrets.rows !== null) {
@@ -240,14 +211,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   const origin = originOf(ctx);
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
   dialogs.push(...stopping);
-  const body = html`<section class="section" id="people">${liveModule('members', ['member.connected'], card({ title: '成员', meta: `${users.length} 人` }, table(['姓名', '角色', '已连接的 Circle', '最近活动', '状态', '操作'], memberRows, '尚无成员')))}</section>
-<div class="mt16">${liveModule('member-circles', ['member.connected'], card({ title: '已连接的 Circle', hint: '每个 Circle 一个令牌，可单独断开；不显示令牌内容' }, table(['令牌', '成员', '标签', '连接方式', '签发时间', '最近使用', '状态', '操作'], tokenRows, '尚无已连接的 Circle')))}</div>
-<p class="note">停用、启用、断开、签发邀请码与签发备用登录令牌生成命令，在管理员的 Circle 中执行；管理员的 Circle 不可用时，在 Hub 所在的主机上执行同一命令。</p>
-<section class="grid g2 section">
-${card({ title: '连接新的 Circle', meta: 'MCP 标准授权' }, html`<p class="sub">把以下配置写入 Circle 的 settings.json${ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : ''}。Circle 首次连接时在浏览器中打开授权页：浏览器已登录控制台时确认授权即可；否则输入${link('/console/operations/member', '添加成员')}时签发的邀请码。</p><pre class="snippet">${circleEntry(origin, false)}</pre>`)}
-${card({ title: '以访问令牌连接', hint: '客户端不支持 MCP 标准授权时使用' }, html`<p class="sub">在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存成员的令牌，再把以下配置写入 Circle 的 settings.json。令牌在添加成员时选择访问令牌签发，或签发备用登录令牌，仅显示一次。</p><pre class="snippet">${circleEntry(origin)}</pre>`)}
-</section>
-${sectionHead('凭据', undefined, undefined, 'secrets', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 Circle 中执行')}
+  const body = html`${sectionHead('凭据', undefined, undefined, 'secrets', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 Circle 中执行')}
 ${card(null, secretBody)}
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
 ${await hubState(ctx)}
@@ -258,8 +222,8 @@ ${liveModule('dialogs', ['member.connected'], dialogs.map(commandModal))}`;
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
-      hint: '按成员、凭据与 Hub 状态组织；需人工处理的事项在对应的 Circle 中完成',
-      actions: html`${seg([['people', '成员'], ['secrets', '凭据'], ['hub', 'Hub 状态']], '设置分区')}${button('/console/operations/member', '添加成员', { primary: true, icon: 'plus' })}`,
+      hint: '凭据与 Hub 状态；需人工处理的事项在对应的 Circle 中完成',
+      actions: seg([['secrets', '凭据'], ['hub', 'Hub 状态']], '设置分区'),
     }), body),
   };
 }

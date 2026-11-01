@@ -29,6 +29,7 @@ import { recordsPage } from './records.ts';
 import { searchPage } from './search.ts';
 import { resultPage, resultsPage } from './results.ts';
 import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings.ts';
+import { teamPage } from './team.ts';
 import { stepper } from './ui.ts';
 import { LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
@@ -494,10 +495,11 @@ const ROUTES: Record<string, Route> = {
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
+  team: (ctx, rest) => rest.length <= 1 ? teamPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx)),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   admin: (ctx, rest, options, session) => {
     if (!ctx.admin) return Promise.resolve(neutralPage(ctx));
-    if (rest.length === 0) return settingsPage(ctx, bridgeRun(options, session));
+    if (rest.length === 0) return teamPage(ctx);
     if (rest.length === 2 && rest[0] === 'jobs') return Promise.resolve(jobPage(ctx, options.jobs.get(rest[1])));
     if (rest.length === 1 && Object.hasOwn(ADMIN_PAGES, rest[0])) return ADMIN_PAGES[rest[0]](ctx, [], options, session);
     return Promise.resolve(neutralPage(ctx));

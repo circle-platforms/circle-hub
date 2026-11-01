@@ -19,7 +19,7 @@ administrator commands of `cli-admin.ts`.
 | `notes.ts` | admin notes and operator log text that records accept (no NUL, no lone surrogate, cut between code points) |
 | `upload.ts` | strict base64, media types (given, by name, sniffed), the parser structure summary |
 | `trace.ts`, `http.ts`, `release.ts` | W3C traceparent, Circle-Session-Id, loopback rules, body limits and the body budget, release.json |
-| `console/` | sign-in, sessions, CSRF, CSP and the seven places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, packs, connections, records, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
+| `console/` | sign-in, sessions, CSRF, CSP and the eight places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, packs, connections, records, team, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
 | `main.ts` | `serve [--migrate-only] [--migrate]`, `loadServerConfig` (serve refuses the operator token, commands accept it) |
 | `cli.ts` | `main(argv)`: user, token, logs, run, platform delegation, `registerCommand` |
 | `assemble.ts`, `assemble/`, `cli-admin.ts`, `testing-real.ts` | the assembly module (`assemble` for serve, `assembleCommand` for one command, `registerCommands`), the administrator commands and `operatorAdmin`, the real Hub for acceptance tests: see `assemble/README.md` |
@@ -286,6 +286,10 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 `CallLog.repairFiles` for the last three days at start.
 
 ## Console
+
+Decision 83 adds Team before Settings. Administrators manage member details, publish rights, task-pack assignments and
+Circle connections there using the existing commands. Members see only their own account. Settings retains system
+secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.
 
 Decision 83 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
 their future management belongs on separate pages with separate navigation entries.
