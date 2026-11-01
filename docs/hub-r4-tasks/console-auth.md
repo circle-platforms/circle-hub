@@ -17,7 +17,8 @@
 - 分支和工作树：`console-auth`（目录 `circle-hub-console`），另开 `console-live`（`circle-hub-live`）做实时更新、`console-pack-stage`（`circle-hub-pack-stage`）做任务包两步发布，都从 main（88483d9，#118 合并后）开出，完成后合进 `console-auth`。
 - 可以改的路径：
   - `hub/records/migrations.ts`（追加迁移 7）及其快照测试，`hub/records/principals.ts`、`hub/records/api.ts`，新测试 `hub/records/standard-authorization.test.ts`；`hub/platform/ownership.test.ts` 里新表的列；
-  - `hub/server/oauth.ts`（新）、`hub/server/app.ts`、`hub/server/mcp.ts`、`hub/server/cli.ts`、`hub/server/cli-admin.ts`（`pack publish --dry-run`）、`hub/server/console/**` 及对应测试；
+  - `hub/server/oauth.ts`（新）、`hub/server/app.ts`、`hub/server/api.ts` 与 `hub/server/testing.ts`（实时更新的可选参数）、`hub/server/mcp.ts`、`hub/server/cli.ts`、`hub/server/cli-admin.ts`（`pack publish --dry-run`）、`hub/server/console/**` 及对应测试；
+  - `hub/records/api.ts` 多导出一个 `cursorAfter`（已有 `encodeCursor` 的别名，供实时更新按插入顺序翻读记录）；`scripts/real/console-page.ts` 不再把页面 CSP 按哈希放行的那段内联脚本算作脚本；
   - `hub/runs/packs/registry.ts`、`hub/runs/packs/types.ts`、`hub/runs/packs/changes.ts`（新）、`hub/runs/api.ts` 和 `hub/runs/packs/publish-check.test.ts`（新）：发布校验的试运行；
   - 受登录后返回原页面影响的验收断言（`tests/acceptance/12-console-security.test.ts`）；
   - `hub/server/README.md`、`hub/records/README.md`、`docs/hub-r4-progress.md`、`CHANGELOG.md` 和本页。
@@ -47,7 +48,16 @@
 
 ## 实时更新
 
-（实时更新分支合并后补写。）
+- `GET /console/api/stream`（服务器推送事件，可用 `?events=` 只订阅部分事件）：与页面同一会话；未登录答 401，事件名不对答 400；每 25 秒一次心跳并重新核验会话的令牌，令牌吊销、账号停用或会话结束即断开；每个会话最多 4 条、全部最多 200 条，超出答 429；Hub 停止时先关闭全部推送。
+- 事件只带编号，只发给有权查看该对象的账号：
+  - `task.updated`、`request.updated`：运行的发起人、管理员和共享对象；
+  - `pack.published`、`knowledge.published`：可见该任务包、可读该产品线的账号；
+  - `system.added`：管理员，推迟 6 秒（业务系统列表缓存 5 秒）；
+  - `member.connected`：某个令牌第一次被使用，发给管理员和该成员；
+  - `import.progress`：本进程的知识导入后台任务，发给管理员。
+- 来源：一个轮询每 2 秒读一次记录和调用日志（只在有推送连接时运行），命令行等其他进程写入的变化也能看到。`environment.status` 和 `system.status` 不发送：没有任何地方记录运行环境或业务系统的状态，未知不作已知。
+- 前端不引入构建步骤（第 7 条）：登录后的页面带一段内联的 JavaScript 模块，由 CSP 按哈希放行（另加 `connect-src 'self'`）；登录、初始化和授权页没有脚本，关闭脚本时页面照常可用。标了 `data-live` 的模块在相关事件到达时重新取本页并替换，保留滚动位置，打开着对话框或正在输入的模块暂不替换；推送断开时显示“连接中断”及数据截至的时间，保留已显示的数据，每 15 秒轮询一次，推送恢复后停止轮询。自动刷新不算会话活动，无人操作的页面仍按空闲期限结束会话。
+- 结果页（例如添加成员后）是 POST 的回答，不能自行刷新；等待连接完成时看设置的“成员”和“已连接的 Circle”，它们随 `member.connected` 刷新。
 
 ## 与接口文档的出入
 

@@ -281,10 +281,12 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
-Server-rendered HTML, no JavaScript, no external assets; `Content-Security-Policy: default-src 'none'; style-src
-'sha256-…'; img-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`, the one stylesheet allowed
-by its hash. Every dynamic value goes through an escaping template (element text or double-quoted attributes only;
-links are fixed paths with encoded query parameters).
+Server-rendered HTML, no external assets; `Content-Security-Policy: default-src 'none'; style-src 'sha256-…'; img-src
+'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
+stylesheet and the one inline module script (`console/script.ts`, the live updates below; signed-in pages with a live
+module only, never the login, setup or authorization pages) allowed by their hashes. The pages work with scripts off.
+Every dynamic value goes through an escaping template (element text or double-quoted attributes only; links are fixed
+paths with encoded query parameters).
 
 The pages follow the design canvas (version 25) and the owner's choices in the simplification proposal of 2026-10-31
 (decision 77 in `docs/hub-r4-progress.md`):
@@ -325,6 +327,22 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   and a JSON object of strings and booleans; 400 for a refused parameter or exit code 2, 409 for exit code 1 (with what the
   command said), 503 without a command bridge, the neutral 404 for members and unknown objects. Adding a member answers the
   invitation code (or the token) once, with the Circle entry.
+- **Live updates** (`console/live.ts`, decision 78; owner-confirmed item 7: no build step, so the script is an inline
+  JavaScript module allowed by its hash): `GET /console/api/stream[?events=a,b]` is a server-sent event stream on the
+  pages' session (401 in JSON without one, 400 for an unknown event name; `retry: 5000`; a heartbeat every 25 s that
+  re-authenticates the session's token, so a revoked token, a disabled account or a closed session ends the stream; at
+  most 4 streams per session and 200 in all, the excess 429; `close()` ends every stream before the app drains its
+  requests). Events carry ids only and reach only an account that may see the object: `task.updated {run}` and
+  `request.updated {run, request}` (the run's owner, administrators and those it is shared with), `pack.published {pack,
+  version}`, `knowledge.published {product, line}` (readable lines), `system.added {system}` (held 6 s, past the resource
+  catalog's cache), `member.connected {user}` (a token used for the first time; administrators and that member) and
+  `import.progress {job}` (administrators). One poller reads the records and call logs every 2 s while a stream is open,
+  so commands of other processes are seen too. `environment.status` and `system.status` are never sent: nothing records
+  the state of an environment or a business system. A live module carries `data-live="<events>"` and a stable id; on an
+  event the script fetches its own page (`circle-hub-refresh: live`, which does not count as session activity, so an
+  unattended page still reaches the idle limit) and swaps those modules, keeping the scroll position and leaving a module
+  alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of
+  its data, keeps it, and polls every 15 s until the stream is back.
 - **The neutral page** says “该内容不存在或无权查看” on the console (the MCP tools keep their own neutral text), the same
   words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
@@ -404,8 +422,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   ping/background/cite/manifest/icon, CSS url(), @import and image-set() image strings in styles, SVG presentation url() attributes, meta refresh targets (bare or URL= targets after a semicolon, comma or whitespace),
   and recursively parsed srcdoc and noscript content. Values with a scheme or protocol-relative address (including slash/backslash spellings) count. SVG set/animate targeting URL attributes also inspect to/from/by and each semicolon-separated values entry; numeric attributes remain plain values. This includes srcset
   and ping candidates. Displayed text, comments, CSS content/type strings and raw-text bodies such as textarea and script are not resource references. HTML and nested srcdoc are scanned with scripting both enabled and disabled; the larger resource count is reported, so noscript raw-text parsing cannot hide a reference. The CSP field reports header presence, as required by the task, and does not validate directive values. Page content,
-  paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, scripts or external addresses
-  makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
+  paths, tokens and raw exception messages are never printed. A non-200 page, absent CSP, a script other than the inline
+  one its CSP allows by hash, or external addresses makes the command fail. Synthetic tests are in `console-results.test.ts` and `console-page.test.ts`; actual deployment
   and real-data checks belong to the integrator.
 
 The refresh target reader follows the [HTML shared declarative refresh steps](https://html.spec.whatwg.org/multipage/semantics.html#shared-declarative-refresh-steps); image-set string handling follows [CSS Images Level 4](https://drafts.csswg.org/css-images-4/#image-set-notation). These are syntax scans only: the probe does not follow any discovered resource URL.
