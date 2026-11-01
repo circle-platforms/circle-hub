@@ -20,6 +20,7 @@ import type { BuildKnowledge } from './probes.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
+import { bindingRun, NEWEST_PAGE_SIZE, reportedVersion, scanNewest, type EnvironmentJob, type EnvironmentFacts } from './environment.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS, missingOwnershipCertification, ownershipUnmet, unmetPremises } from './dynamic.ts';
 import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
 import {
@@ -181,6 +182,86 @@ export class DispatchService {
       for(const key of binding.resources)if(keysSet.has(key))rows.push({key,job});
     }
     return rows.sort((a,b)=>a.key.localeCompare(b.key)||a.job.localeCompare(b.job));
+  }
+  /**
+   * The state of one runtime environment for administrators, read-only (environment.ts): the jobs holding its physical
+   * target and whether they wait for a disposition, its open bed hold, the latest dispatch and the version the target
+   * reported. Null for an id that is not a registered executor. A fact that cannot be read is named in `missing`.
+   */
+  async environment(by: Principal, executor: string): Promise<EnvironmentFacts | null> {
+    await this.registry.admin(by);
+    const source = await this.registry.readSource(executor);
+    if (!source) return null;
+    const missing: string[] = [];
+    const decision = await this.options.records.authorizations.resourceConfig(`executor.${executor}`).catch(() => null);
+    let holding: EnvironmentJob[] | null = null;
+    try {
+      const current = await this.registry.get(executor);
+      if (!current) throw new Error('执行器登记已不可读');
+      const jobs = await this.journal.blockers(executor, current.definition.target, new URL(current.definition.endpoint).origin, current.definition.resources);
+      const held: EnvironmentJob[] = [];
+      for (const job of jobs) {
+        const status = await this.status(by, job);
+        const binding = await this.journal.binding(job).catch(() => null);
+        // Frozen is an open uncertain request (isFrozen), not JobStatus.frozen, which also counts an intent still waiting
+        // for its receipt: a dispatch under way holds the environment without freezing it.
+        held.push({ job, run: bindingRun(binding), frozen: isFrozen(await this.journal.events(job)), outcome: status.outcome, phase: status.phase });
+      }
+      holding = held.sort((left, right) => Number(right.frozen) - Number(left.frozen) || left.job.localeCompare(right.job));
+    } catch {
+      missing.push('占用该运行环境的作业暂不可读');
+    }
+    let bedHold: { job: string; bed: string } | null = null;
+    let bedKnown = true;
+    try {
+      const hold = await this.latestExecutorHold(executor);
+      bedHold = hold !== null && hold.state === 'open' ? { job: hold.job, bed: hold.bed } : null;
+    } catch {
+      bedKnown = false;
+      missing.push('运行环境是否已恢复暂不可读');
+    }
+    let scan: Awaited<ReturnType<typeof scanNewest>> | null = null;
+    try {
+      scan = await scanNewest((cursor) => this.options.records.store.find<ActionBody>({ kind: 'action', key: 'dispatch.executor', value: executor, newestFirst: true, limit: NEWEST_PAGE_SIZE, cursor }));
+    } catch {
+      // Neither the latest dispatch nor the version is established.
+    }
+    let latest: EnvironmentFacts['latest'] = null;
+    let latestKnown = scan !== null && scan.reservation === null && scan.exhausted;
+    if (scan?.reservation) {
+      try {
+        const job = String(scan.reservation.body.detail.job);
+        const status = await this.status(by, job);
+        latest = { job, run: bindingRun(scan.reservation.body.detail.binding), at: scan.reservation.created_at, outcome: status.outcome, frozen: isFrozen(await this.journal.events(job)) };
+        latestKnown = true;
+      } catch {
+        latest = null;
+      }
+    }
+    if (!latestKnown) missing.push('最近派发暂不可读');
+    let version: string | null = null;
+    let versionKnown = scan !== null && scan.initialize === null && scan.exhausted;
+    const kept = scan?.initialize?.body.inputs.find((input) => input.startsWith('src:'));
+    if (kept !== undefined) {
+      // Answer bytes the store no longer holds leave the version unknown, not unreported.
+      const bytes = await this.options.records.objects.get(kept.slice(4)).catch(() => null);
+      if (bytes) {
+        version = reportedVersion(bytes);
+        versionKnown = true;
+      }
+    }
+    if (!versionKnown) missing.push('执行器版本暂不可读');
+    return {
+      executor,
+      enabled: source.source.enabled,
+      registration: { digest: source.digest, decided_at: decision?.created_at ?? null },
+      known: { occupancy: holding !== null && bedKnown, latest: latestKnown, version: versionKnown },
+      holding,
+      bed_hold: bedHold,
+      latest,
+      reported_version: version,
+      missing,
+    };
   }
   async precheck(by: Principal, executor: string, booking?: string): Promise<JobStatus> {
     await this.registry.admin(by);

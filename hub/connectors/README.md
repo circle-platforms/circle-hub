@@ -533,3 +533,17 @@ ReadPlanOutput.concurrency 可为一个计划指定更低的在途上限，实�
 环境边界 Needs：唯一性以“环境类别 + 外部类型”为键。两个不同环境仍可各启用一个同类型资源；外部读端口未声明环境时保留原来的歧义拒绝，不暗选生产或测试。管理员可使当前 Hub 的读取类型只采用一个资源；若要并用，后续需明确声明环境选择接口与绑定规则。
 
 Shared-stop repair messages retain the actual secret names and the resource id supplied by the caller. Both stop paths emit the named `secret set --name …` and complete `resource reset-login <resource>` actions; the stop key still depends only on the shared decision digests.
+
+## 测试连接与近 24 小时读取（决定 79，2026-11-01）
+
+- **测试连接**（`trial.ts`，`connectors.admin.trial`，经可选的 `ServerDeps.systems` 端口接到控制台）：只有启用中的管理员可用。用已发布的系统包和表单里填的访问地址、环境与凭据内容做一次只读试读，不保存任何东西：不建资源，不写密钥、会话条目、对象或记录。
+  - 填的配置按已保存资源的同一套规则核对（resource@1 与 `profileProblem`）。
+  - 凭据内容在发送任何请求之前进入脱敏器。
+  - 一个 HttpSource 走与真实读取相同的路由、来源、明文、跳转拒绝、字节上限与超时处理。
+  - 认证：`none` 不发送；`static_header` 由第一条带它的路由判定；`login_token` 只登录一次，绕过会话管理器，不留会话条目、不重试。可能已到达来源却失败的登录，以 {系统包、登录来源、路径、填好的正文} 的 SHA-256 记在进程内存（至多 1000 条），同样的内容不再发送，改正后的照常发送。
+  - 路由按声明顺序试读：只试不需要参数的（字面路径、无正文、无必填查询项），其余写明“未试读”及原因。至多 20 条，60 秒后不再开始新的一条；不跟随跳转（声明了同源跳转的路由结果未知，其余为 SOURCE_REDIRECT_REFUSED）。读到的内容解释后即丢弃。
+  - 答复只用 CONNECTOR_ERRORS 的通用文字、HTTP 状态与原因码，从不转述来源原文，也从不回显凭据内容。管理员日志写 `resource_trial`、`resource_trial_done` 两条，经脱敏。
+  - 不读密钥库里已有的密钥：之前已设置过密钥的系统，试读时显示“未填写，未登录”。没有审计记录；要写成记录需合约增加记录类型。
+- **近 24 小时读取**（`statistics.ts`，`readStatistics`）：只读已有的 read-manifest@1 记录（action 类，索引 `connectors.resource`），新到旧每页 500 条，每个资源至多 2000 条，不加迁移、表或索引。
+  - 统计开始时间落在 [现在−24 小时, 现在] 的读取，按 ActionResult 分开；中位与最慢耗时只取已完成的读取。
+  - 扫到一条结束于窗口前超过 5 分钟的清单即停（容纳乱序写入）；碰到扫描上限时标 `partial`，页面写“至少 N 次”；存储出错时为 null（“暂不可用”）。试读不写清单，不计入。

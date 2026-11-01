@@ -232,6 +232,13 @@ export interface RecordStore {
   getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   /** All indexed records for these values in insertion order, in one query (no per-value query or truncation). */
   findMany<B = unknown>(query: {key: string; values: readonly string[]; kind?: RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]>;
+  /**
+   * Distinct records indexed under any of the (key, value) pairs, of `kind`, created at or after `since`, counted up to
+   * `cap` (`capped` when at least that many): one query that reads no record body. At most 1000 pairs.
+   */
+  countIndexed?(query: { index: readonly IndexEntry[]; kind?: RecordKind; since?: string; cap?: number }, tx?: Transaction): Promise<{ count: number; capped: boolean }>;
+  /** The size of the Hub's database on disk, in bytes (pg_database_size), for the Hub's state page. */
+  databaseSize?(): Promise<number>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;

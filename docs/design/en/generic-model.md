@@ -74,6 +74,7 @@ Every vocabulary axis is a closed set (list them all with `node tools/show-eleme
 | `partition` | `delivered`, `rejected`, `quarantined`, `incomplete` |
 | `acceptance` | `accepted`, `not_accepted` |
 | `task_result` | `passed`, `delivered_pending`, `delivered_unsatisfied`, `rejected`, `incomplete`, `held`, `awaiting`, `abandoned` |
+| `environment_state` | `available`, `in_use`, `frozen`, `deactivated`, `unknown` |
 
 Values and axes may also carry an interface term (`ui`). The console takes words only through `uiLabelOf(axis, code)` and shows the interface term where there is one (for example `quarantined` as “派发结果未确认”, `unchecked` as “未检查”); the text models read keeps the labels. A task's result is derived from the partitions and the requirement statuses, and unknown is never shown as passed (display rule 20).
 

@@ -13,6 +13,7 @@ import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
 import { card, chip, dot, duration, hbar, track, when, clock, type DotState } from './ui.ts';
 import type { PageContext } from './pages.ts';
+import { environmentState } from './connections.ts';
 
 export interface TaskRow {
   run: RunRecordView;
@@ -204,10 +205,18 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
 
   if (ctx.admin && ctx.deps.dispatch !== undefined) {
     try {
-      for (const job of await ctx.deps.dispatch.jobs(ctx.principal, run.run)) {
+      const jobs = await ctx.deps.dispatch.jobs(ctx.principal, run.run);
+      // The environment each job went to, and its state now, when the registry can be read.
+      const environments = jobs.some((job) => job.executor !== undefined) ? await ctx.deps.dispatch.executors(ctx.principal).catch(() => []) : [];
+      for (const job of jobs) {
         const at = resultAt ?? Date.parse(run.started_at);
         const parts = [uiLabelOf('effect_outcome', job.outcome)];
-        if (job.frozen) parts.push('运行环境已冻结，不可重发');
+        const environment = environments.find((e) => e.id === job.executor);
+        if (environment !== undefined) parts.push(`运行环境 ${environment.target}（当前${environmentState(environment).text}）`);
+        // A job that holds its environment without an open disposition request has not been declared unconfirmed: its
+        // result has not arrived yet (D03 R[1], R[7]: the target is frozen with the disposition request).
+        const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
+        if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待派发结果中，不可重发' : '运行环境已冻结，不可重发');
         if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
         steps.push({ name: '派发到运行环境', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }

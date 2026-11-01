@@ -16,6 +16,7 @@ import { PACK_ID, byId } from './packs.ts';
 import type { PageContext } from './pages.ts';
 import { circleEntry, originOf } from './settings.ts';
 import type { PackStaging } from './staging.ts';
+import { runTrial, trialJson } from './trial.ts';
 import type { CommandDialog } from './ui.ts';
 import { neutral, type ApiResult } from './api.ts';
 
@@ -214,6 +215,12 @@ export async function handleApiWrite(ctx: PageContext, rest: readonly string[], 
     return execute(ctx, options, RUNNING[path], fields);
   }
   if (path === 'packs/stage') return stage(ctx, options);
+  // The read-only trial of a business system: the fields of POST /systems, nothing saved, no command run.
+  if (path === 'systems/test') {
+    const outcome = await runTrial(ctx, formOf(fields));
+    if ('report' in outcome) return { status: 200, body: { report: trialJson(outcome.report) } };
+    return outcome.status === 404 ? neutral() : { status: outcome.status, body: { code: null, message: outcome.message, fix: outcome.status === 503 ? '重启 Hub 后重试' : '按说明改正访问地址、凭据或系统包后重试' } };
+  }
   const step = STAGE_STEP.exec(path);
   if (step !== null && step[2] === 'publish') return publish(ctx, options, step[1]);
   if (step !== null) {

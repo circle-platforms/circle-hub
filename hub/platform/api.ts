@@ -50,7 +50,7 @@ export {
   type KeychainStore,
   type KeyProvider,
 } from './keychain.ts';
-export { BACKUP_SCHEMA, backupPath, createBackup, listBackups, pruneBackups, verifyBackup, type BackupManifest } from './backup.ts';
+export { BACKUP_SCHEMA, MANIFEST_FILE, backupPath, createBackup, listBackups, pruneBackups, verifyBackup, type BackupManifest } from './backup.ts';
 export { TABLE_DIGEST } from './sql.ts';
 export { restoreBackup, setAside, type RestoreReport } from './restore.ts';
 export { launchAgent, renderPlist, serviceDefinition, serviceEnvironment, type ServiceDefinition, type ServiceStatus } from './launchd.ts';

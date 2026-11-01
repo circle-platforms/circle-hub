@@ -13,7 +13,7 @@ import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { createApp } from './app.ts';
 import type { CommandBridge } from './command-bridge.ts';
 import { CONTENT_SECURITY_POLICY, SCRIPT_HASH } from './console/html.ts';
-import { LIVE_EVENTS, eventsOf, visibleTo, wantedEvents, type LiveEvent } from './console/live.ts';
+import { LIVE_EVENTS, environmentTransition, eventsOf, visibleTo, wantedEvents, type LiveEvent } from './console/live.ts';
 import type { PageContext } from './console/pages.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
 import { SessionStore } from './console/session.ts';
@@ -254,6 +254,50 @@ describe('the event stream', () => {
     assert.equal(JSON.parse(refused.body).code, null);
     for (const client of open) client.close();
     await Promise.all(open.map((client) => client.ended));
+  });
+});
+
+describe('runtime environments', () => {
+  const JOB = 'a'.repeat(64);
+  const EXECUTOR = 'exe_0000000000000000000000000a';
+  const dispatchAction = (detail: Record<string, unknown>) => ({ kind: 'action' as const, body: { component: 'dispatch@1', run: null, detail: { job: JOB, ...detail } } });
+
+  test('a dispatch journal record that can change occupancy or freezing names its job, and its executor when it binds one', () => {
+    assert.deepEqual(environmentTransition(dispatchAction({ phase: 'reservation', binding: { executor: EXECUTOR } })), { job: JOB, executor: EXECUTOR });
+    for (const detail of [{ phase: 'intent' }, { phase: 'probe_intent' }, { phase: 'complete', done: true }, { phase: 'unknown', uncertain: true }, { phase: 'answer', unfreeze: true }, { phase: 'dispose' }, { phase: 'bed_hold', state: 'open' }, { phase: 'reconciled', outcome: 'unknown' }]) {
+      assert.deepEqual(environmentTransition(dispatchAction(detail)), { job: JOB, executor: null }, JSON.stringify(detail));
+    }
+    // A read answer, a heartbeat or a record of another component changes neither.
+    assert.equal(environmentTransition(dispatchAction({ phase: 'heartbeat.response' })), null);
+    assert.equal(environmentTransition({ kind: 'action', body: { component: 'requests@1', detail: { job: JOB, phase: 'intent' } } }), null);
+    assert.equal(environmentTransition({ kind: 'call_log', body: { component: 'dispatch@1', detail: { job: JOB, phase: 'intent' } } }), null);
+    assert.equal(environmentTransition(dispatchAction({ phase: 'reservation', binding: { executor: 'bench-1' } }))?.executor, null, 'not an executor id');
+  });
+
+  test('a dispatch on an environment reaches administrators as environment.status, never members', async () => {
+    const someone = await member();
+    // As the journal writes them: indexed by job, so a later record of a job is traced to its reservation.
+    const put = (job: string, detail: Record<string, unknown>) => server.records.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { component: 'dispatch@1', run: null, detail: { job, ...detail } }, index: [{ key: 'dispatch.job', value: job }] });
+    const earlier = createHash('sha256').update(`合成作业 早 ${counter}`).digest('hex');
+    const OTHER = 'exe_0000000000000000000000000b';
+    // A reservation written before any stream opened is not read by the poller; its job's later records still name it.
+    await put(earlier, { phase: 'reservation', binding: { job: earlier, executor: OTHER } });
+    const admin = await openStream('/console/api/stream?events=environment.status', await signIn(server.admin.token));
+    const user = await openStream('/console/api/stream?events=environment.status', await signIn(someone.token));
+    await delay(200);
+    await put(earlier, { phase: 'unknown', uncertain: true });
+    await until(has(admin, 'environment.status', { environment: OTHER }), 'the event traced to an earlier reservation');
+    const job = createHash('sha256').update(`合成作业 ${counter}`).digest('hex');
+    await put(job, { phase: 'reservation', binding: { job, executor: EXECUTOR } });
+    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'the reservation event');
+    admin.events.length = 0;
+    await put(job, { phase: 'complete', done: true, outcome: 'effective' });
+    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'the end event');
+    await delay(300);
+    assert.ok(!user.events.some((e) => e.name === 'environment.status'), 'members never hear of environments');
+    for (const event of admin.events) assert.deepEqual(Object.keys(event.data), ['environment']);
+    for (const client of [admin, user]) client.close();
+    await Promise.all([admin.ended, user.ended]);
   });
 });
 

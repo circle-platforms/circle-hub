@@ -10,6 +10,8 @@ import { html, link, liveModule, page, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
 import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
+import { sizeText, storageFacts } from './settings.ts';
+import { readsText, systemReads } from './trial.ts';
 import { button, card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
 
 export const PERIODS = [7, 14, 30] as const;
@@ -153,7 +155,8 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   const stuckCard = card({ title: '主要阻塞原因', meta: scope }, html`${stuck.length === 0 ? html`<p class="empty">没有被退回或未完成的条目。</p>` : html`<div class="funnel">${stuck.map((s) => html`<div class="frow"><span class="fname" title="${s.label}">${s.label}</span>${hbar(s.value, stuck[0].value, 'fill-wait')}<span class="fval num">${s.value}</span></div>`)}</div>`}
 <p class="note">相关请求已下发至对应的 Circle，在 Circle 中处理。</p>`);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
-  const systems = card({ title: '业务系统', meta: '只读访问' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span></span></a>`)}</div>`}
+  const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id));
+  const systems = card({ title: '业务系统', meta: '只读访问 · 近 24 小时读取' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="sub">${reads === null ? '暂不可用' : readsText(reads.get(r.id))}</span></a>`)}</div>`}
 <div class="card-f"><span class="chip plain">只读访问，不修改业务数据</span>${link('/console/connections', '查看全部')}</div>`);
   const lines = await readableLines(ctx);
   let current = 0;
@@ -163,11 +166,13 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   const knowledge = card({ title: '知识库', meta: '按产品线' }, html`<div class="kstats two"><div><span class="sub">产品线</span><b class="num">${lines.length}</b></div><div><span class="sub">已有知识的产品线</span><b class="num">${current}</b></div></div>
 <p class="sub">每条知识均附出处；成员可读分配给自己的任务包所绑定的产品线。</p><div class="card-f"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
+  const storage = await storageFacts(ctx);
+  const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : `最近 ${when(storage.backups.latest_at)}`;
   const health = html`<div class="health">
 <a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>服务</b><span class="sub">运行中${facts?.release ? ` · ${facts.release}` : ''}</span></span></a>
 <a class="hcell" href="/console/settings#hub"><span class="dot ${facts?.certificate ? 'ok' : 'idle'}" aria-hidden="true"></span><span><b>证书</b><span class="sub">${facts?.certificate ? '内置 HTTPS 已启用' : '未启用 HTTPS'}</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>数据库</b><span class="sub">仅本机连接</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot idle" aria-hidden="true"></span><span><b>备份</b><span class="sub">在主机上执行</span></span></a>
+<a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>数据库</b><span class="sub">仅本机连接${storage.database_bytes === null ? '' : ` · ${sizeText(storage.database_bytes)}`}</span></span></a>
+<a class="hcell" href="/console/settings#hub"><span class="dot ${storage.backups !== null && storage.backups.count > 0 ? 'ok' : 'idle'}" aria-hidden="true"></span><span><b>备份</b><span class="sub">${backupNote}</span></span></a>
 <a class="hcell" href="/console/records"><span class="dot info" aria-hidden="true"></span><span><b>记录</b><span class="sub">仅追加，不可修改</span></span></a>
 </div>`;
   const periods = html`<nav class="seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` class="on" aria-current="true"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;

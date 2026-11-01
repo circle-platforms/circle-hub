@@ -5,18 +5,21 @@
 // credential contents never appear. The write interfaces, which run the same commands as the forms, are console/api-write.ts.
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { TASK_RESULT, isEnvironment, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CallLogLine, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
-import { circlesOf } from './connections.ts';
+import { nodeCitations } from './citations.ts';
+import { circlesOf, environmentState } from './connections.ts';
 import type { JobStore } from './manage.ts';
 import { PERIODS, RECENT_LIMIT, blockers, checkCounts, runsSince, startOfDay } from './overview.ts';
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
 import { NEUTRAL, readableLines, rootReadable, type PageContext } from './pages.ts';
-import { authorityFingerprint, certificateFacts, secretsOf } from './settings.ts';
+import { searchHub } from './search.ts';
+import { authorityFingerprint, certificateFacts, secretsOf, storageFacts } from './settings.ts';
 import { pendingCount, primaryResult, taskResultOf } from './status.ts';
 import { TOOL_LABELS, loadTasks, packTitles, taskSteps, taskTitle } from './tasks.ts';
+import { readsJson, systemReads } from './trial.ts';
 
 export interface ApiResult {
   status: number;
@@ -231,6 +234,32 @@ async function nodes(ctx: PageContext): Promise<ApiResult> {
   return ok({ root, nodes: page.nodes, next: page.next, coverage: page.coverage });
 }
 
+/**
+ * One node: its position, content hash, entries with the source references each rests on, and how many accepted
+ * submissions cited it or its entries in the last 30 days (console/citations.ts), with the window stated.
+ */
+async function node(ctx: PageContext): Promise<ApiResult> {
+  const root = param(ctx, 'root') ?? '';
+  const path = param(ctx, 'path') ?? '/';
+  if (!SHA256.test(root)) return neutral();
+  const page = await ctx.deps.knowledge.getNodes({ root, paths: [path], depth: 0 }, ctx.principal);
+  const found = page?.nodes.find((candidate) => candidate.path === path);
+  if (found === undefined) return neutral();
+  const citations = await nodeCitations(ctx, root, found);
+  return ok({
+    root,
+    path: found.path,
+    name: found.name,
+    level: found.level,
+    level_label: isNodeLevel(found.level) ? uiLabelOf('node_level', found.level) : found.level,
+    reference: found.reference,
+    digest: found.digest,
+    children: found.children,
+    entries: found.entries.map((entry) => ({ ...entry, kind_label: uiLabelOf('entry_kind', entry.kind) })),
+    citations,
+  });
+}
+
 async function diff(ctx: PageContext): Promise<ApiResult> {
   const from = param(ctx, 'from') ?? '';
   const to = param(ctx, 'to') ?? '';
@@ -291,11 +320,14 @@ async function pack(ctx: PageContext, id: string): Promise<ApiResult> {
 
 async function systems(ctx: PageContext): Promise<ApiResult> {
   const resources = await ctx.deps.resources.list(ctx.principal);
+  // The reads of the last day of each system, from its read manifests; null when they cannot be read now.
+  const reads = await systemReads(ctx, resources.map((r) => r.id));
   return ok({
     systems: resources.map((r) => ({
       id: r.id, name: r.name, system_pack: r.system_pack, environment: r.environment, environment_label: isEnvironment(r.environment) ? uiLabelOf('environment', r.environment) : r.environment,
       enabled: r.enabled, ...(r.origins === undefined ? {} : { origins: r.origins }), ...(r.allow_plaintext === undefined ? {} : { allow_plaintext: r.allow_plaintext }),
       ...(r.binding_error === undefined ? {} : { problem: r.binding_error }),
+      reads_24h: reads === null ? null : readsJson(reads.get(r.id)),
     })),
   });
 }
@@ -310,7 +342,15 @@ async function systemPacks(ctx: PageContext): Promise<ApiResult> {
 async function environments(ctx: PageContext): Promise<ApiResult> {
   if (!ctx.admin) return neutral();
   if (ctx.deps.dispatch === undefined) return ok({ wired: false, environments: [] });
-  return ok({ wired: true, environments: await ctx.deps.dispatch.executors(ctx.principal) });
+  return ok({
+    wired: true,
+    environments: (await ctx.deps.dispatch.executors(ctx.principal)).map((view) => {
+      const state = environmentState(view);
+      // The derived status (its code and interface term) beside the facts it comes from (state, null when not read);
+      // detail says why, line by line.
+      return { ...view, state: view.state ?? null, status: state.code, status_label: state.text, status_detail: state.detail };
+    }),
+  });
 }
 
 async function circles(ctx: PageContext): Promise<ApiResult> {
@@ -398,6 +438,8 @@ async function hub(ctx: PageContext): Promise<ApiResult> {
     started_at: facts === undefined ? null : facts.startedAt.toISOString(),
     uptime_ms: facts === undefined ? null : now - facts.startedAt.getTime(),
     https: cert === null ? { enabled: false } : { enabled: true, fingerprint: cert.fingerprint, authority_fingerprint: await authorityFingerprint(ctx.deps.config.dataDir), valid_to: cert.validTo, days_left: cert.daysLeft },
+    // null when it cannot be read (unknown, not none)
+    ...(await storageFacts(ctx)),
   });
 }
 
@@ -418,6 +460,7 @@ export async function handleApi(ctx: PageContext, rest: readonly string[], optio
       case 'members': return members(ctx);
       case 'secrets': return secrets(ctx, options);
       case 'hub': return hub(ctx);
+      case 'search': return ok(await searchHub(ctx, param(ctx, 'q') ?? ''));
       default: return neutral();
     }
   }
@@ -427,6 +470,7 @@ export async function handleApi(ctx: PageContext, rest: readonly string[], optio
   if (head === 'knowledge') {
     if (rest.length === 2 && second === 'lines') return lines(ctx);
     if (rest.length === 2 && second === 'nodes') return nodes(ctx);
+    if (rest.length === 2 && second === 'node') return node(ctx);
     if (rest.length === 2 && second === 'diff') return diff(ctx);
     if (second === 'imports' && rest.length <= 3) return imports(ctx, options, third);
   }

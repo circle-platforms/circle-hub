@@ -43,7 +43,7 @@ export class FormError extends Error {
 }
 
 /** A positional argument from a form: present, one line, and never something the parser would read as a flag. */
-function word(form: Form, name: string, label: string): string {
+export function word(form: Form, name: string, label: string): string {
   const value = form.get(name);
   if (value === '') throw new FormError(`请填写${label}`);
   if (value.startsWith('-') || /[\u0000-\u001f\u007f]/.test(value) || value.length > 512) throw new FormError(`${label}的写法不对`);
@@ -57,7 +57,7 @@ function flag(name: string, value: string): string {
 }
 
 /** Non-empty lines of a textarea, each `left=right` (role=url, key=value, item=secret name). */
-function pairs(form: Form, name: string, label: string): string[] {
+export function pairs(form: Form, name: string, label: string): string[] {
   const lines = form.get(name).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (const line of lines) if (line.indexOf('=') <= 0) throw new FormError(`${label}每行写成 名字=值：${line.slice(0, 80)}`);
   return lines;
@@ -81,7 +81,7 @@ const OPERATIONS = '/console/operations';
 /** Up to three credentials of a business system, each a name and its content (the content is taken as typed). */
 const SECRET_SLOTS = [1, 2, 3] as const;
 
-function credentialValues(form: Form): Record<string, string> {
+export function credentialValues(form: Form): Record<string, string> {
   const out: Record<string, string> = {};
   for (const slot of SECRET_SLOTS) {
     const name = form.get(`secret_name_${slot}`);
