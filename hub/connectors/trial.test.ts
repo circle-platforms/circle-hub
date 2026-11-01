@@ -14,7 +14,7 @@ import { openConnectorKit, type ConnectorKit } from './testing/kit.ts';
 import { writePack } from './testing/packs.ts';
 import { PLM_PRODUCTS, startPlmStub, type PlmStub } from './testing/plm.ts';
 import { json, startStub } from './testing/stub.ts';
-import { TRIAL_LOGIN_STOPS, type SystemTrialReport } from './trial.ts';
+import { TRIAL_LOGIN_STOPS, TrialLoginStops, type SystemTrialReport } from './trial.ts';
 import { TRIAL_REPORT_SCHEMA, TrialRecord } from './trial-report.ts';
 
 let postgres: TemporaryPostgres;
@@ -180,6 +180,82 @@ test('a record of failed logins that cannot be read refuses the login', async (t
   assert.equal(report.auth.sent, false);
   assert.equal(report.auth.reason, '登录失败记录不可读，未登录');
   assert.equal(w.agile.logins, 0);
+});
+
+test('a targeted reset clears only the typed login in memory and the vault, allowing one new attempt here and after restart', async (t) => {
+  const w = await world(t);
+  const a = plmInput(w, 'synthetic-refused-a'), b = plmInput(w, 'synthetic-refused-b');
+  await w.k.connectors.admin.trial(w.k.admin, a);
+  await w.k.connectors.admin.trial(w.k.admin, b);
+  assert.equal(w.agile.logins, 2);
+  await assert.rejects(w.k.connectors.admin.forgetTrialLogin(w.k.user, a), (error: unknown) => error instanceof ConnectorError && error.code === 'ACCESS_DENIED');
+  assert.deepEqual(await w.k.connectors.admin.forgetTrialLogin(w.k.admin, a), { found: true, cleared: true });
+  assert.equal(w.agile.logins, 2, 'forgetting never logs in');
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, b)).auth.sent, false, 'other credentials stay stopped');
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, a)).auth.sent, true);
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, a)).auth.sent, false, 'the next failure stops again');
+  await w.k.connectors.admin.forgetTrialLogin(w.k.admin, a);
+  assert.equal((await w.k.make().admin.trial(w.k.admin, a)).auth.sent, true, 'cleared in the vault too');
+  assert.equal((await w.k.make().admin.trial(w.k.admin, b)).auth.sent, false);
+  assert.equal(w.agile.logins, 4);
+  assert.deepEqual(await w.k.connectors.admin.forgetTrialLogin(w.k.admin, plmInput(w, 'never-sent')), { found: false, cleared: false });
+});
+
+test('a repaired source accepts the same credentials after an explicit reset; incomplete credentials clear nothing', async (t) => {
+  const w = await world(t);
+  w.agile.setPassword('synthetic-temporarily-unavailable-password');
+  await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
+  w.agile.setPassword(PASSWORD);
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, plmInput(w))).auth.sent, false);
+  await assert.rejects(w.k.connectors.admin.forgetTrialLogin(w.k.admin, { ...plmInput(w), credentials: {} }), (error: unknown) => error instanceof ConnectorError && error.code === 'RESOURCE_INVALID');
+  assert.deepEqual(await w.k.connectors.admin.forgetTrialLogin(w.k.admin, plmInput(w)), { found: true, cleared: true });
+  assert.equal(w.agile.logins, 1);
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, plmInput(w))).auth.ok, true);
+  assert.equal(w.agile.logins, 2);
+});
+
+test('concurrent adds and a targeted reset preserve other entries; a failed clear retains the stop', async (t) => {
+  const w = await world(t);
+  const stops = new TrialLoginStops(w.k.records.store, w.k.records.vault);
+  const a = 'a'.repeat(64), b = 'b'.repeat(64), c = 'c'.repeat(64);
+  await stops.add(a); await stops.add(b);
+  await Promise.all([stops.forget(a), stops.add(c)]);
+  assert.equal(await stops.has(a), false);
+  assert.equal(await stops.has(b), true);
+  assert.equal(await stops.has(c), true);
+  const broken = new TrialLoginStops(w.k.records.store, { getText: (name) => w.k.records.vault.getText(name), put: async () => { throw new Error('synthetic write failure'); } });
+  await assert.rejects(broken.forget(b), /synthetic write failure/);
+  assert.equal(await broken.has(b), true);
+});
+
+test('a new failure arriving during a clear is retained even when its later vault write fails', { timeout: 10_000 }, async (t) => {
+  const w = await world(t);
+  const key = 'a'.repeat(64);
+  let release!: () => void, entered!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  t.after(() => release());
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  let clearing = false;
+  const stops = new TrialLoginStops(w.k.records.store, {
+    getText: (name) => w.k.records.vault.getText(name),
+    put: async (name, bytes) => {
+      if (clearing) {
+        const kept = JSON.parse(typeof bytes === 'string' ? bytes : Buffer.from(bytes).toString('utf8')) as { failed: string[] };
+        if (kept.failed.includes(key)) throw new Error('synthetic later write failure');
+        entered(); await waiting;
+      }
+      await w.k.records.vault.put(name, bytes);
+    },
+  });
+  await stops.add(key);
+  clearing = true;
+  const forgotten = stops.forget(key);
+  await writing;
+  const newFailure = stops.add(key);
+  release();
+  assert.deepEqual(await forgotten, { found: true, cleared: false });
+  assert.equal(await newFailure, false);
+  assert.equal(await stops.has(key), true, 'the later failure remains stopped in memory');
 });
 
 test('a trial is for administrators, of a published system pack, with every role and the plaintext rule', async (t) => {

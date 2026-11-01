@@ -8,7 +8,7 @@ import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { ConnectorError, Redactor, TrialLoginStops, readProfile, trialSystem, type ConnectorLogEvent } from '../connectors/api.ts';
+import { ConnectorError, Redactor, TrialLoginStops, forgetTrialLogin, readProfile, trialSystem, type ConnectorLogEvent } from '../connectors/api.ts';
 import { PLM_FUNCTIONS, PLM_PRODUCTS, agileFixture, plmSystem, startAgileStub, startPlmStub, writePack, type AgileStub, type PlmStub } from '../connectors/testing/api.ts';
 import type { PackHandle } from '../ports.ts';
 import { createTestServer, type TestServer } from './testing.ts';
@@ -31,23 +31,20 @@ before(async () => {
   const failedLogins = new TrialLoginStops(server.records.store, server.records.vault);
   const redactor = new Redactor();
   // The trial as the assembly wires it (connectors' admin.trial), over the synthetic PLM pack.
-  server.deps.systems = {
-    trial: (by, input) =>
-      trialSystem(
-        {
+  const options = {
           store: server.records.store,
-          load: async (ref) => {
+          load: async (ref: string) => {
             if (ref !== 'plm-test') throw new ConnectorError('PACK_UNAVAILABLE', `系统包 ${ref} 不可用`);
             return { pack: handle, profile: await readProfile(handle) };
           },
           redactor,
           now: () => new Date(),
-          log: (event) => logged.push(event),
+          log: (event: ConnectorLogEvent) => logged.push(event),
           failedLogins,
-        },
-        input,
-        by.id,
-      ),
+  };
+  server.deps.systems = {
+    trial: (by, input) => trialSystem(options, input, by.id),
+    forgetTrialLogin: (by, input) => forgetTrialLogin(options, input, by.id),
   };
 });
 after(async () => {
@@ -160,6 +157,54 @@ describe('测试连接', () => {
     assert.match(tried.body, /value="PLM_PASS"/, 'the credential names come back');
     const forged = await send('/console/admin/do/system-test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields(), csrf: 'forged' }).toString() });
     assert.equal(forged.status, 403);
+  });
+
+  test('forget is administrator-only, origin/CSRF protected, reports absence neutrally and never sends a request', async () => {
+    const admin = await signIn(server.admin.token);
+    const badFields = fields('synthetic-forget-password');
+    const headers = { cookie: admin.cookie, origin: origin(), 'x-csrf-token': admin.csrf, 'content-type': 'application/json' };
+    await send('/console/api/systems/test', { method: 'POST', headers, body: JSON.stringify(badFields) });
+    const before = agile.logins;
+    assert.equal((await send('/console/api/systems/test/forget', { method: 'POST', headers: { origin: origin(), 'content-type': 'application/json' }, body: JSON.stringify(badFields) })).status, 401);
+    const member = await signIn((await server.createUser('清除记录成员')).token);
+    const request = (extra: Record<string, string> = {}, body = badFields) => send('/console/api/systems/test/forget', { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) });
+    const refused = await request({ cookie: member.cookie, 'x-csrf-token': member.csrf });
+    assert.equal(refused.status, 404);
+    assert.equal(JSON.parse(refused.body).code, 'SOURCE_UNAVAILABLE');
+    assert.equal((await request({ origin: 'http://192.0.2.99' })).status, 403);
+    assert.equal((await request({ 'x-csrf-token': 'forged' })).status, 403);
+    const absent = await request({}, fields('synthetic-not-sent'));
+    assert.deepEqual(JSON.parse(absent.body), { found: false, cleared: false });
+    const cleared = await request();
+    assert.equal(cleared.status, 200);
+    assert.deepEqual(JSON.parse(cleared.body), { found: true, cleared: true });
+    assert.equal(agile.logins, before, 'no login for any clear or refusal');
+    assert.ok(!cleared.body.includes('synthetic-forget-password'));
+    assert.equal(JSON.parse((await send('/console/api/systems/test', { method: 'POST', headers, body: JSON.stringify(badFields) })).body).report.auth.sent, true);
+    assert.equal(JSON.parse((await send('/console/api/systems/test', { method: 'POST', headers, body: JSON.stringify(badFields) })).body).report.auth.sent, false);
+  });
+
+  test('a blocked result offers a form reset with re-entered credentials; write failures never claim a clear', async () => {
+    const admin = await signIn(server.admin.token);
+    const sendForm = (action: string) => send(`/console/admin/do/${action}`, { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields('wrong-password'), csrf: admin.csrf }).toString() });
+    const blocked = await sendForm('system-test');
+    assert.match(blocked.body, /清除这组凭据的失败记录/);
+    assert.match(blocked.body, /formaction="\/console\/admin\/do\/system-test-forget"/);
+    assert.ok(!blocked.body.includes('wrong-password'));
+    const before = agile.logins;
+    const cleared = await sendForm('system-test-forget');
+    assert.equal(cleared.status, 200);
+    assert.match(cleared.body, /失败记录已清除；未发送登录/);
+    assert.ok(!cleared.body.includes('wrong-password'));
+    assert.equal(agile.logins, before);
+    const original = server.deps.systems!.forgetTrialLogin;
+    try {
+      server.deps.systems!.forgetTrialLogin = async () => { throw new ConnectorError('STORE_FAILED', 'synthetic-private-password'); };
+      const failed = await sendForm('system-test-forget');
+      assert.equal(failed.status, 503);
+      assert.match(failed.body, /登录失败记录未能清除/);
+      assert.ok(!failed.body.includes('synthetic-private-password'));
+    } finally { server.deps.systems!.forgetTrialLogin = original; }
   });
 });
 

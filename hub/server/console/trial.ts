@@ -4,7 +4,7 @@
 // the answers is shown: the report names each route's result, status, time and size. The form comes back filled in, except the
 // credential contents, which never go back into a page.
 import { ACTION_RESULT, isEnvironment, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { ConnectorError, readStatistics, type ReadStatistics, type SystemTrialInput, type SystemTrialReport } from '../../connectors/api.ts';
+import { ConnectorError, readStatistics, type ReadStatistics, type SystemTrialInput, type SystemTrialReport, type SystemTrialForget } from '../../connectors/api.ts';
 import { html, table, type Html } from './html.ts';
 import { FormError, credentialValues, pairs, word, type Form } from './manage.ts';
 import type { PageContext } from './pages.ts';
@@ -46,6 +46,25 @@ export function trialInputOf(form: Form): SystemTrialInput {
 }
 
 export type TrialOutcome = { report: SystemTrialReport } | { status: number; message: string };
+export type ForgetOutcome = { forgotten: SystemTrialForget } | { status: number; message: string };
+
+/** The form and JSON interface share the same administrator-only targeted reset; never run a trial afterwards. */
+export async function runForgetTrial(ctx: PageContext, form: Form): Promise<ForgetOutcome> {
+  if (ctx.deps.systems === undefined) return { status: 503, message: '测试连接暂不可用：这个 Hub 进程没有接上业务系统连接' };
+  try {
+    return { forgotten: await ctx.deps.systems.forgetTrialLogin(ctx.principal, trialInputOf(form)) };
+  } catch (error) {
+    if (error instanceof FormError) return { status: 400, message: error.message };
+    if (error instanceof ConnectorError && error.code === 'ACCESS_DENIED') return { status: 404, message: '' };
+    if (error instanceof ConnectorError && error.code === 'STORE_FAILED') return { status: 503, message: '登录失败记录未能清除' };
+    if (error instanceof ConnectorError && ['RESOURCE_INVALID', 'PACK_UNAVAILABLE', 'PROFILE_INVALID'].includes(error.code)) return { status: 400, message: error.message };
+    throw error;
+  }
+}
+
+export function forgetTrialMessage(result: SystemTrialForget): string {
+  return !result.found ? '没有这组凭据的失败记录' : result.cleared ? '这组凭据的失败记录已清除；未发送登录，之后可再次测试连接' : '失败记录在清除期间有更新，未清除；请确认账户状态后重试';
+}
 
 /** Runs the trial of `form` for the signed-in administrator. */
 export async function runTrial(ctx: PageContext, form: Form): Promise<TrialOutcome> {

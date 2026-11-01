@@ -64,6 +64,8 @@
 
 2. **运行环境响应时间**：`readEnvironmentCalls` 只读作业绑定对应的 `dispatch.executor` 索引，不发测量请求、不新增记录。优先统计有显式发送、接收时刻的网络应答记录，读取／回读／租约／预检记录作为旧记录的补充；同一调用的应答和上层读取记录按作业、来源引用及两端时间去重。真实 0 毫秒调用计入，没有显式请求时间的内部记录排除。每个运行环境扫描至多 2,000 条；`calls_24h` 给出 `executor`、`since`、`until`、`calls`、`results`、`results_label`、`median_ms`、`slowest_ms`、`last_at`、`partial`，存储失败为 null。页面显示中位与最慢、无调用或不可用，受限时次数写“至少”、耗时只涵盖已扫描调用。新的计时记录经预约定位执行器，`environment.status` 保留 6 秒合并发送。
 
+3. **按凭据清除失败登录**：管理员可通过结果页的“清除这组凭据的失败记录”或 `POST /console/api/systems/test/forget` 提交同样的表单内容，须重新输入凭据；共用已校验的配置、凭据变换与 `trialLoginKey`。只清除匹配摘要，使用原条目的锁，其他摘要保留，写入成功后清除本进程记忆；并发新失败的内存标记不会被旧清除动作删除，即使新失败的持久写入失败也继续停止。接口只返回 `found` 与 `cleared`，失败如实返回；非管理员、跨站与伪造 CSRF 请求被拒。清除本身不访问业务系统、不自动重试、不加命令行命令。
+
 ## 验证
 
 ### 第 1 项（本机 macOS，Node 24.22.1）
@@ -74,10 +76,18 @@
 - `node --test --test-concurrency=2 "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts" hub/records/pointers.test.ts hub/runs/engine/retry-evidence.test.ts hub/dispatch/journal-identity.test.ts hub/knowledge/operation-records.test.ts`：382 项，380 通过、2 失败、0 跳过。失败均为旧测试固定模型版本 13，而本次模型按版本规则升为 14：`contracts/src/model-w04-w10-v07.test.ts` 的模型修订检查与 `contracts/src/vocab-axes.test.ts` 的模型版本检查。两文件不在原允许路径中，已向所有者请求仅同步版本断言与测试名称；当前保留并如实报告。
 - `node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`：选中的 1 项通过，0 失败、0 跳过；其余名称未选中的测试未运行，不计为通过。
 - `npm run test:docs`：280/280，0 失败、0 跳过。
-- 没有运行整仓单元回归、验收或来源校验；本项没有变更来源工具。
 
 ### 第 2 项（本机 macOS，Node 24.22.1）
 
 - `npm run typecheck`：退出码 0。
 - `node --test --test-concurrency=2 hub/dispatch/environment.test.ts hub/dispatch/environment-statistics.test.ts hub/dispatch/read-runs.test.ts hub/server/console-environments.test.ts hub/server/console-live.test.ts hub/server/console-api.test.ts hub/server/assemble/testing-real.test.ts`：44/44，0 失败、0 跳过；包含真实回环执行器请求数与统计逐次对照、0 毫秒调用、重复记录、窗口、上限、不可读、页面与接口、事件可见范围和合并发送。
 - `npm run test:docs`：280/280，0 失败、0 跳过。
+
+### 第 3 项（本机 macOS，Node 24.22.1）
+
+- `npm run typecheck`：退出码 0。
+- `node --test --test-concurrency=2 hub/connectors/trial.test.ts hub/server/console-systems.test.ts hub/server/console-api-write.test.ts hub/server/console-manage.test.ts hub/server/assemble/testing-real.test.ts`：39/39，0 失败、0 跳过。
+- 覆盖只清匹配项、其他记录保留、同进程和重启后再发送一次、来源修复后相同凭据可用、并发写入及清除期间的新失败、持久写入失败时仍停止、非管理员／未登录／跨站／伪造 CSRF 拒绝、页面重新填凭据、清除不自动登录和失败不报成功。
+- 初轮有两项失败：锁定场景误用了“令牌立即过期”夹具，已改用明确拒绝登录后恢复的夹具；新增 JSON 路径漏接写接口入口，已补入白名单。两处修正后重跑上述定向集为 39/39；没有删减或放宽断言。缺少记录时隐藏清除按钮后另跑 `node --test hub/server/console-systems.test.ts`：5/5，0 失败、0 跳过。
+- `npm run test:docs`：280/280，0 失败、0 跳过。
+- 没有运行整仓单元回归、验收或来源校验；本项没有变更来源工具。

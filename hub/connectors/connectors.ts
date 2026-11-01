@@ -17,7 +17,7 @@ import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
-import { TrialLoginStops, trialSystem, type SystemTrialInput, type SystemTrialReport } from './trial.ts';
+import { TrialLoginStops, trialSystem, forgetTrialLogin, type SystemTrialInput, type SystemTrialReport, type SystemTrialForget } from './trial.ts';
 import { Redactor } from './redact.ts';
 import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
@@ -95,9 +95,11 @@ export interface ResourceAdmin {
   resetLogin(by: Principal, id: string, note?: string | null): Promise<void>;
   /**
    * Admins only: a read-only trial of a system pack with a configuration that is not saved (trial.ts): one login at most,
-   * the routes that need no arguments, nothing stored. Throws RESOURCE_INVALID or PACK_UNAVAILABLE for an unusable input.
+   * the routes that need no arguments, outcomes recorded without the configuration. Throws for an unusable input.
    */
   trial(by: Principal, input: SystemTrialInput): Promise<SystemTrialReport>;
+  /** Clears only the stop of the typed login, without making a request or saving its configuration. */
+  forgetTrialLogin(by: Principal, input: SystemTrialInput): Promise<SystemTrialForget>;
 }
 
 export interface Connectors {
@@ -417,6 +419,11 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
       if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能试读业务系统');
       return trialSystem({ store: records.store, load: (ref) => profiles.load(ref), redactor, now, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.log ? { log: options.log } : {}), failedLogins: failedTrialLogins }, input, viewer.id);
+    },
+    async forgetTrialLogin(by, input) {
+      const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
+      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能清除登录失败记录');
+      return forgetTrialLogin({ load: (ref) => profiles.load(ref), redactor, now, failedLogins: failedTrialLogins }, input, viewer.id);
     },
     addResource: (by, input) => registry.add(by, input),
     // Nested reads cached under the old definition are not served after a change (they are keyed by it as well).

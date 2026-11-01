@@ -545,6 +545,7 @@ Shared-stop repair messages retain the actual secret names and the resource id s
   - 答复只用 CONNECTOR_ERRORS 的通用文字、HTTP 状态与原因码，从不转述来源原文，也从不回显凭据内容。管理员日志写 `resource_trial`、`resource_trial_done` 两条，经脱敏。
   - 不读密钥库里已有的密钥：之前已设置过密钥的系统，试读时显示“未填写，未登录”。
   - `trial-report.ts` 用 zod 定义 `trial-report@1`；保存前校验，记录类别 `action`、动作 `trial`（B05）、来源 `observed`，索引 `action.kind` 与 `action.user`。只保存操作者、开始结束时刻、系统包与版本、环境、登录是否发送及结果与错误码，以及接口编号、是否试过、结果、状态码、错误码和耗时；不含地址、请求头、凭据、原因原文或响应内容。动作的完成表示试读过程结束，不表示全部接口成功。写入失败记 `resource_trial_record_failed`，原答复照常返回，不重发请求。答复的 `saved: false` 指没有保存资源配置与凭据内容。
+  - `admin.forgetTrialLogin`（决定 81）按同一份已校验配置与凭据变换调用共用的 `trialLoginKey`，只清除这一组登录摘要；重新核对管理员。`TrialLoginStops.forget` 在原条目的同一把锁下写入，保留其他摘要，写入成功后清除本进程记忆；失败不报清除成功。并发新失败使用独立的内存标记，清除不能丢掉后来到达的停止状态（即使后一次密钥库写入失败）；此时答 `found: true, cleared: false`。无记录答两个 false。返回只含这两个布尔值，不联系业务系统、不自动重试、不保存配置；没有命令行入口。
 - **近 24 小时读取**（`statistics.ts`，`readStatistics`）：只读已有的 read-manifest@1 记录（action 类，索引 `connectors.resource`），新到旧每页 500 条，每个资源至多 2000 条，不加迁移、表或索引。
   - 统计开始时间落在 [现在−24 小时, 现在] 的读取，按 ActionResult 分开；中位与最慢耗时只取已完成的读取。
   - 扫到一条结束于窗口前超过 5 分钟的清单即停（容纳乱序写入）；碰到扫描上限时标 `partial`，页面写“至少 N 次”；存储出错时为 null（“暂不可用”）。试读不写清单，不计入。

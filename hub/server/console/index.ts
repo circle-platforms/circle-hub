@@ -21,7 +21,7 @@ import { handleApiWrite } from './api-write.ts';
 import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
 import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
-import { operationsPage, systemTrialPage } from './operations.ts';
+import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -32,7 +32,7 @@ import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings
 import { stepper } from './ui.ts';
 import { LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
-import { runTrial } from './trial.ts';
+import { runForgetTrial, runTrial } from './trial.ts';
 import { UploadError, boundaryOf, parseMultipart } from './upload.ts';
 
 export interface ConsoleOptions {
@@ -515,8 +515,8 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     request.resume();
     return neutralPage(ctx);
   }
-  // system-test is the read-only trial of 接入业务系统: no command runs and nothing is saved.
-  if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name) && name !== 'system-test') {
+  // The connection trial and its targeted stop reset run in this process, without a command or a saved configuration.
+  if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name) && name !== 'system-test' && name !== 'system-test-forget') {
     request.resume();
     return neutralPage(ctx);
   }
@@ -563,6 +563,7 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     return null;
   }
   if (name === 'system-test') return systemTrialPage(ctx, form, await runTrial(ctx, form));
+  if (name === 'system-test-forget') return systemForgetPage(ctx, form, await runForgetTrial(ctx, form));
   return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
 }
 
@@ -632,7 +633,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
 }
 
 /** The write interfaces of console/api-write.ts. */
-const WRITE_PATHS = new Set(['members', 'systems', 'systems/test', 'knowledge/imports', 'commands', 'packs/stage']);
+const WRITE_PATHS = new Set(['members', 'systems', 'systems/test', 'systems/test/forget', 'knowledge/imports', 'commands', 'packs/stage']);
 const writePath = (path: string): boolean => WRITE_PATHS.has(path) || /^packs\/stage\/[A-Za-z0-9_-]{1,64}\/(?:publish|discard)$/.test(path);
 
 /**

@@ -3,7 +3,7 @@
 // session entry or object. Each completed trial appends a trial-report@1 action, without those values; a login that failed
 // leaves its digest, never its values, in TRIAL_LOGIN_STOPS. The configuration is checked by the rules of a saved resource (resource@1 and the
 // pack's roles and credentials). The login exchange, when the pack declares one, is sent at most once and never repeated
-// after a failure; the same values that failed are not sent again by any later trial, after a restart too, since an
+// after a failure; those values remain stopped, after a restart too, until an administrator explicitly clears that stop, since an
 // account may lock after repeated failures. Then every route a request can be made on without arguments (a literal path, no required
 // query member, no body) is requested once, in the declared order, with the credential where its role carries it, until
 // TRIAL_ROUTES routes or TRIAL_DEADLINE_MS; the answer is interpreted as a read interprets it (status, envelope, JSON) and
@@ -28,17 +28,21 @@ export const TRIAL_ROUTES = 20;
 export const TRIAL_DEADLINE_MS = 60_000;
 /** The vault entry that keeps the digests of the trial logins that failed (`circle-hub secret list` names it). */
 export const TRIAL_LOGIN_STOPS = 'login-stop.trial';
-/** Digests kept; past it the oldest goes, one at a time (the list is never cleared). */
+export const TRIAL_LOGIN_STOPPED = '同样的凭据此前登录失败，未再次发送；更正凭据后再试';
+/** Digests kept; past it the oldest goes, one at a time. An explicit reset removes only its matching digest. */
 const REMEMBERED_FAILURES = 10_000;
 const DIGEST = /^[0-9a-f]{64}$/;
 
-/** The logins that failed in earlier trials, by digest: the same values are never sent again. */
+/** The logins that failed in earlier trials, by digest: the same values are not sent again without an explicit reset. */
 export interface FailedLogins {
   /** Rejects when the record of failures cannot be read. */
   has(key: string): Promise<boolean>;
   /** False when only this process remembers it: the vault could not be written. */
   add(key: string): Promise<boolean>;
+  forget(key: string): Promise<SystemTrialForget>;
 }
+
+export interface SystemTrialForget { found: boolean; cleared: boolean }
 
 /**
  * The failed trial logins, sealed in the vault entry TRIAL_LOGIN_STOPS so that a restart does not forget them: digests of
@@ -48,7 +52,7 @@ export interface FailedLogins {
 export class TrialLoginStops implements FailedLogins {
   readonly #store: Pick<RecordStore, 'withTransaction' | 'lock'>;
   readonly #vault: Pick<Vault, 'getText' | 'put'>;
-  readonly #memory = new Set<string>();
+  readonly #memory = new Map<string, symbol>();
   constructor(store: Pick<RecordStore, 'withTransaction' | 'lock'>, vault: Pick<Vault, 'getText' | 'put'>) {
     this.#store = store;
     this.#vault = vault;
@@ -68,7 +72,7 @@ export class TrialLoginStops implements FailedLogins {
   }
 
   async add(key: string): Promise<boolean> {
-    this.#memory.add(key);
+    this.#memory.set(key, Symbol());
     try {
       await this.#store.withTransaction(async (tx) => {
         await this.#store.lock(TRIAL_LOGIN_STOPS, tx);
@@ -80,6 +84,23 @@ export class TrialLoginStops implements FailedLogins {
     } catch {
       return false;
     }
+  }
+
+  /** Removes only this digest. A concurrent new failure retains its stop, including when its vault write fails. */
+  async forget(key: string): Promise<SystemTrialForget> {
+    const remembered = this.#memory.get(key);
+    let found = false, cleared = false;
+    await this.#store.withTransaction(async (tx) => {
+      await this.#store.lock(TRIAL_LOGIN_STOPS, tx);
+      const failed = await this.#read();
+      found = failed.includes(key) || this.#memory.has(key);
+      if (!found || this.#memory.get(key) !== remembered) return;
+      await this.#vault.put(TRIAL_LOGIN_STOPS, canonicalBytes({ v: 1, failed: failed.filter((kept) => kept !== key) }));
+      cleared = true;
+    });
+    if (cleared && this.#memory.get(key) === remembered) this.#memory.delete(key);
+    else if (this.#memory.get(key) !== remembered) cleared = false;
+    return { found, cleared };
   }
 }
 
@@ -179,8 +200,8 @@ function argumentFree(route: RouteDeclaration): string | null {
   return null;
 }
 
-/** Runs one trial. The caller has checked that `by` is an administrator. */
-export async function trialSystem(options: SystemTrialOptions, input: SystemTrialInput, by: string): Promise<SystemTrialReport> {
+/** Validate and transform typed login material identically for a trial and a targeted reset, without making a request. */
+async function prepareTrial(options: Pick<SystemTrialOptions, 'load' | 'now' | 'redactor'>, input: SystemTrialInput, by: string) {
   const started = options.now();
   const loaded = await options.load(String(input?.system_pack));
   const { pack, profile } = loaded;
@@ -216,6 +237,31 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     values[credential.name] = storedCredential(value, credential.digest);
     options.redactor.addSent(values[credential.name]);
   }
+  return { started, pack, profile, declared, resource: parsed.data, values };
+}
+
+/** The existing failed-login identity, shared by sending and forgetting. No input value is returned or stored. */
+function trialLoginKey(pack: string, origin: string, path: string, body: unknown): string {
+  return createHash('sha256').update(canonicalBytes({ pack, origin, path, body })).digest('hex');
+}
+
+/** The caller rechecks the administrator; this only clears a stop and never sends a login or route request. */
+export async function forgetTrialLogin(options: Pick<SystemTrialOptions, 'load' | 'now' | 'redactor' | 'failedLogins'>, input: SystemTrialInput, by: string): Promise<SystemTrialForget> {
+  const { pack, profile, declared, resource, values } = await prepareTrial(options, input, by);
+  if (profile.auth.kind !== 'login_token') return { found: false, cleared: false };
+  if (declared.some((credential) => values[credential.name] === undefined)) throw new ConnectorError('RESOURCE_INVALID', '登录凭据未填写完整，未清除失败记录');
+  const login = profile.auth.login;
+  const key = trialLoginKey(pack.id, resource.origins[login.role], login.path, fillTemplate(login.body, values));
+  try {
+    return await options.failedLogins.forget(key);
+  } catch {
+    throw new ConnectorError('STORE_FAILED', '登录失败记录未能清除');
+  }
+}
+
+/** Runs one trial. The caller has checked that `by` is an administrator. */
+export async function trialSystem(options: SystemTrialOptions, input: SystemTrialInput, by: string): Promise<SystemTrialReport> {
+  const { started, pack, profile, declared, resource, values } = await prepareTrial(options, input, by);
   const auth = profile.auth;
   const event = (name: string, detail: Record<string, unknown>) => {
     if (options.log === undefined) return;
@@ -228,8 +274,8 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
   event('resource_trial', { system_pack: `${pack.id}@${pack.version}`, environment: input.environment });
   const http = new HttpSource({
     resource: 'trial',
-    origins: parsed.data.origins,
-    allowPlaintext: parsed.data.allow_plaintext,
+    origins: resource.origins,
+    allowPlaintext: resource.allow_plaintext,
     routes: profile.routes,
     envelope: profile.envelope ?? null,
     login: auth.kind === 'login_token' ? auth.login : null,
@@ -259,11 +305,11 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       report.reason = `凭据 ${missing.join('、')} 未填写，未登录`;
     } else {
       const body = fillTemplate(auth.login.body, values);
-      const key = createHash('sha256').update(canonicalBytes({ pack: pack.id, origin: parsed.data.origins[auth.login.role], path: auth.login.path, body })).digest('hex');
+      const key = trialLoginKey(pack.id, resource.origins[auth.login.role], auth.login.path, body);
       // A record of failures that cannot be read may hold these very values: the login is not sent.
       const failedBefore = await options.failedLogins.has(key).catch(() => null);
       if (failedBefore !== false) {
-        report.reason = failedBefore === true ? '同样的凭据此前登录失败，未再次发送；更正凭据后再试' : '登录失败记录不可读，未登录';
+        report.reason = failedBefore === true ? TRIAL_LOGIN_STOPPED : '登录失败记录不可读，未登录';
       } else {
         const sentAt = options.now().getTime();
         try {

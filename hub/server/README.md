@@ -365,6 +365,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   means no resource configuration or credential content was saved. A failed audit write is logged by connectors and
   does not change the report or repeat a request. The records page lists trial actions for administrators only, with the
   generated action label, member/time filters and its own pagination; tool/run filters select the MCP call log alone.
+  Decision 81 adds `POST /console/api/systems/test/forget`, with the same form fields, administrator session, Origin and
+  CSRF checks as the trial, returning only `{found, cleared}`. The blocked-login result offers 清除这组凭据的失败记录
+  (`system-test-forget`); credential contents must be re-entered, and are never returned. Clearing uses the running
+  connectors instance so its memory and vault agree, preserves other stops, sends no login and never retries. A failed
+  clear returns 503 without private storage details; a newer concurrent failure stays stopped. There is no CLI command.
 - **Runtime environments' state** (decision 79; vocabulary axis `environment_state` of D07): `GET
   /console/api/environments` gives each executor its derived `status` (`available`, `in_use`, `frozen`, `deactivated`,
   `unknown`) with `status_label` and `status_detail` (why, line by line), beside the facts it comes from (`state`, from
