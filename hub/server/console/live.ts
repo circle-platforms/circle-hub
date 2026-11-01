@@ -11,12 +11,14 @@
 // or executor. id): a later decision is system.status, any decision on an executor environment.status, for administrators.
 // Occupancy and freezing come from the dispatch journal: a journal record that can change them (a reservation, an intent,
 // an end, a request left uncertain or answered, a disposition, a bed hold) is environment.status for the job's executor,
-// read from its reservation. Response times are recorded nowhere, so nothing is sent for them. A new business system waits
+// read from its reservation. An explicitly timed executor response also changes that environment's call statistics.
+// A new business system waits
 // until the resource catalog of this process has read it (connectors keeps its list up to 5 s). Every tick checks the session
 // without counting as activity and a heartbeat re-authenticates its token: a closed or expired session, a revoked token, a
 // disabled account, a reader too far behind or close() ends the stream.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { EffectOutcome, PermissionKind } from '../../../contracts/generated/vocabulary.ts';
+import { dispatchCallTiming } from '../../dispatch/api.ts';
 import { cursorAfter, type Page, type Principal, type RecordKind, type RecordsKit, type StoredRecord } from '../../records/api.ts';
 import { setCommonHeaders } from '../http.ts';
 import { describeError } from '../notes.ts';
@@ -71,7 +73,7 @@ const VERDICT_MS = 30_000;
 const RETRY_MS = 5_000;
 const QUEUED = 1_000;
 /** Held back this long: the resource catalog of this process keeps its list up to 5 s (connectors cacheMs). */
-const HOLD_MS: Readonly<Partial<Record<LiveEventName, number>>> = { 'system.added': 6_000, 'system.status': 6_000 };
+const HOLD_MS: Readonly<Partial<Record<LiveEventName, number>>> = { 'system.added': 6_000, 'system.status': 6_000, 'environment.status': 6_000 };
 const LOG_EVERY_MS = 60_000;
 const RUN_ID = /^run_[0-9a-z]{26}$/;
 const USER_ID = /^usr_[0-9a-z]{26}$/;
@@ -155,7 +157,7 @@ export function environmentTransition(record: Pick<StoredRecord, 'kind' | 'body'
   if (job === null) return null;
   const phase = detail.phase;
   const changes = phase === 'reservation' || phase === 'intent' || phase === 'probe_intent' || phase === 'bed_hold' || phase === 'dispose'
-    || detail.done === true || detail.uncertain === true || detail.unfreeze === true || detail.outcome === UNKNOWN_OUTCOME;
+    || detail.done === true || detail.uncertain === true || detail.unfreeze === true || detail.outcome === UNKNOWN_OUTCOME || dispatchCallTiming(body) !== null;
   if (!changes) return null;
   const executor = object(detail.binding).executor;
   return { job, executor: typeof executor === 'string' && EXECUTOR_ID.test(executor) ? executor : null };

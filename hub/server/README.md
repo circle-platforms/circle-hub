@@ -288,9 +288,12 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 ## Console
 
 Server-rendered HTML, no external assets; `Content-Security-Policy: default-src 'none'; style-src 'sha256-…'; img-src
-'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
+'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
 stylesheet and the one inline module script (`console/script.ts`, the live updates below; signed-in pages with a live
-module only, never the login, setup or authorization pages) allowed by their hashes. The pages work with scripts off.
+module only, never the login, setup or authorization pages) allowed by their hashes. The only image of this origin is
+the console's icon, `GET /console/favicon.svg` (static, for anyone, `nosniff`, a day's cache). The mark of circle-hub
+(decision 82: the Hub at the centre and the Circles on an orbit around it, in Circle's four colours) is inline SVG on
+every page (`logo()` in `console/html.ts`, colours `--logo-1`…`--logo-4`), no longer Circle's ring. The pages work with scripts off.
 Every dynamic value goes through an escaping template (element text or double-quoted attributes only; links are fixed
 paths with encoded query parameters).
 
@@ -353,13 +356,23 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   submissions (decision 80), or when the window starts after `indexed_since`, the oldest submission indexed as it was
   stored; otherwise they are a lower bound, and the page says from when it counts. The knowledge tree page shows
   被引用 for the node and 出处 and 近 30 天被引用 for its entries.
-- **The connection test** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
-  测试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
+- **The connection attempt** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
+  尝试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
   says what the trial does and never does) with the typed system pack, origins, environment and credential contents. The
   answer is `{report: {system_pack, environment, auth: {kind, sent, ok, reason, code, message, ms}, routes: [{route, role,
   method, path, tried, reason, ok, status, code, message, ms, bytes}], started_at, ended_at, saved: false}}`; 400 for a
   form error, RESOURCE_INVALID, PACK_UNAVAILABLE or PROFILE_INVALID; 503 without the port (`ServerDeps.systems`, wired by
   the assembly); the neutral 404 for members. The form comes back with the secret names, never their contents.
+  Decision 81 records each completed trial as a `trial-report@1` action (`trial`, B05): actor, times, pack/version,
+  environment, login and route outcomes only, without addresses, credential contents or source text. `saved: false`
+  means no resource configuration or credential content was saved. A failed audit write is logged by connectors and
+  does not change the report or repeat a request. The records page lists trial actions for administrators only, with the
+  generated action label, member/time filters and its own pagination; tool/run filters select the MCP call log alone.
+  Decision 81 adds `POST /console/api/systems/test/forget`, with the same form fields, administrator session, Origin and
+  CSRF checks as the trial, returning only `{found, cleared}`. The blocked-login result offers 清除这组凭据的失败记录
+  (`system-test-forget`); credential contents must be re-entered, and are never returned. Clearing uses the running
+  connectors instance so its memory and vault agree, preserves other stops, sends no login and never retries. A failed
+  clear returns 503 without private storage details; a newer concurrent failure stays stopped. There is no CLI command.
 - **Runtime environments' state** (decision 79; vocabulary axis `environment_state` of D07): `GET
   /console/api/environments` gives each executor its derived `status` (`available`, `in_use`, `frozen`, `deactivated`,
   `unknown`) with `status_label` and `status_detail` (why, line by line), beside the facts it comes from (`state`, from
@@ -372,6 +385,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   with its outcome; two dialogs give `circle-hub bed hold clear <executor> --reason=…` (确认已恢复) and `circle-hub job
   status <job>` (处置派发结果). The task page's dispatch step names the environment and its current status; a job waiting
   for its result with no disposition request open reads 等待派发结果中，不可重发.
+  Decision 81 adds `calls_24h: {executor, since, until, calls, results, results_label, median_ms, slowest_ms, last_at,
+  partial} | null` to each environment. The assembly reads hub/dispatch's existing timed exchange records; null is
+  unreadable, not zero. The connections page adds 响应时间 (median and slowest), or 近 24 小时无调用 when complete and
+  empty. A capped scan says 至少 for the count and the durations cover the scanned calls only. No new measurement request
+  or record is made, and duplicate read/transport records of one exchange count once.
 - **Backups and the database** (decision 79): `GET /console/api/hub` adds `backups: {count, latest_at} | null` (the
   complete backups under the data root that `circle-hub backup` wrote, through hub/platform's `listBackups`, the newest by
   its manifest's `created_at`; a partial one does not count) and `database_bytes: number | null` (the records store's
@@ -399,7 +417,9 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   sent once. Occupancy and freezing come from the dispatch journal: a record that can change
   them (a reservation, an intent, an end, a request left uncertain or answered, a disposition, a bed hold opened or
   cleared, an unknown outcome) is `environment.status` for the executor its job reserved (the last 2,000 jobs are kept in
-  mind). Response times of an environment are recorded nowhere, so no event claims them. A live module carries `data-live="<events>"` and a stable id; on an
+  mind). An explicitly timed executor response changes its call statistics and sends `environment.status` too (decision
+  81), resolved through the job's reservation. Events of one environment are held for 6 s and sent once during that period.
+  A live module carries `data-live="<events>"` and a stable id; on an
   event the script fetches its own page (`circle-hub-refresh: live`, which does not count as session activity, so an
   unattended page still reaches the idle limit) and swaps those modules, keeping the scroll position and leaving a module
   alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of

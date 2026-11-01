@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { uiLabelOf, type EnvironmentState } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentFacts } from '../dispatch/api.ts';
+import type { EnvironmentCalls, EnvironmentFacts } from '../dispatch/api.ts';
 import type { DispatchView, ExecutorView, JobView } from './api.ts';
 import { createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -28,6 +28,10 @@ const environments: ExecutorView[] = [
   { id: id(6), target: '合成运行环境己', endpoint: 'https://192.0.2.15:8443/mcp', enabled: true, resources: [] },
   { id: id(7), target: '合成运行环境庚', endpoint: 'https://192.0.2.16:8443/mcp', enabled: true, resources: [], state: state({ known: { occupancy: false, latest: true, version: true }, holding: null, missing: ['占用该运行环境的作业暂不可读'] }) },
 ];
+const calls: EnvironmentCalls = { executor: id(1), since: '2026-10-31T12:00:00.000Z', until: '2026-11-01T12:00:00.000Z', calls: 3, results: { completed: 3, error: 0, unknown: 0 }, median_ms: 120, slowest_ms: 500, last_at: '2026-11-01T11:00:00.000Z', partial: false };
+environments[0].calls_24h = calls;
+environments[1].calls_24h = { ...calls, executor: id(2), calls: 0, median_ms: null, slowest_ms: null, last_at: null };
+environments[2].calls_24h = { ...calls, executor: id(3), partial: true };
 const jobsByRun = new Map<string, JobView[]>();
 const view: DispatchView = {
   executors: async (by) => {
@@ -94,6 +98,11 @@ describe('runtime environments', () => {
     const page = (await send('/console/connections', { headers: { cookie: await signIn(server.admin.token) } })).body;
     assert.match(rowOf(page, '合成运行环境甲'), /可用/);
     assert.match(rowOf(page, '合成运行环境甲'), /gateway 2\.4\.1/);
+    assert.match(page, /响应时间/);
+    assert.match(rowOf(page, '合成运行环境甲'), /3 次.+中位 120 毫秒 · 最慢 500 毫秒/);
+    assert.match(rowOf(page, '合成运行环境乙'), /近 24 小时无调用/);
+    assert.match(rowOf(page, '合成运行环境丙'), /至少 3 次/);
+    assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
     assert.match(rowOf(page, '合成运行环境甲'), new RegExp(`/console/runs/${RUN}`), 'the latest dispatch leads to its task');
     assert.match(rowOf(page, '合成运行环境乙'), /使用中/);
     assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`作业 ${job(2).slice(0, 12)}（效果结局：已发出）`));
@@ -127,6 +136,8 @@ describe('runtime environments', () => {
     assert.equal(unknown.state, null, 'not read');
     assert.deepEqual(unknown.status_detail, ['占用与冻结状态暂不可读']);
     assert.equal(body.environments[0].state.reported_version, 'gateway 2.4.1');
+    assert.deepEqual(body.environments[0].calls_24h, { ...calls, results_label: { completed: '完成', error: '报错', unknown: '未知' } });
+    assert.equal(body.environments[5].calls_24h, null, 'missing statistics stay unknown');
     assert.deepEqual(body.environments[2].state.known, { occupancy: true, latest: false, version: false });
     assert.deepEqual(body.environments[3].status_detail, [`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`]);
     assert.deepEqual(body.environments[6].status_detail, ['占用该运行环境的作业暂不可读']);

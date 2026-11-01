@@ -8,10 +8,10 @@ import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
-import { code, html, icon, link, liveModule, page, table, type Html } from './html.ts';
+import { code, html, icon, link, liveModule, logo, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { readsText, systemReads } from './trial.ts';
-import { button, callout, card, chip, commandLink, commandModal, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
+import { button, callout, card, chip, commandLink, commandModal, duration, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 
 export interface Circle {
   owner: string;
@@ -111,7 +111,7 @@ ${kpi('业务系统写操作', '未开放', { note: '消息通知与数据回写
   const topology = card({ title: '连接拓扑', meta: '左侧为已连接的 Circle，右侧为业务系统；Hub 只执行只读访问' }, html`<div class="topo">
 <div class="topo-col">${leftNodes.length === 0 ? html`<div class="tnode ghost">尚无已连接的 Circle</div>` : leftNodes}</div>
 ${wires(leftNodes.length, true)}
-<div class="tnode hubn"><span class="logo lg" aria-hidden="true"></span><b>circle-hub</b><span class="sub">MCP 服务</span></div>
+<div class="tnode hubn">${logo(true)}<b>circle-hub</b><span class="sub">MCP 服务</span></div>
 ${wires(rightNodes.length, false)}
 <div class="topo-col">${rightNodes.length === 0 ? html`<div class="tnode ghost">${ctx.admin ? '尚无业务系统' : '业务系统仅管理员可见'}</div>` : rightNodes}</div>
 </div>${circles.length > 5 || resources.length > 5 ? html`<p class="note">各列最多显示 5 个；完整列表见下文。</p>` : ''}`);
@@ -145,13 +145,14 @@ ${wires(rightNodes.length, false)}
   if (!ctx.admin) environmentsBody = html`<p class="sub">运行环境仅管理员可见。</p>`;
   else if (executors === null) environmentsBody = html`<p class="sub">${executorsFailed ? '运行环境列表暂不可用。' : '这个 Hub 进程未接入派发；运行环境在 Hub 所在主机上以 circle-hub executor 登记。'}</p>`;
   else {
-    environmentsBody = table(['运行环境', '执行器', '执行器版本', '网关', '资源', '最近派发', '状态', '操作'], executors.map((e) => {
+    environmentsBody = html`${table(['运行环境', '执行器', '执行器版本', '网关', '资源', '最近派发', '响应时间', '状态', '操作'], executors.map((e) => {
       const disable = commands.executorDisable(e);
       if (e.enabled) dialogs.push(disable);
       let gateway = e.endpoint;
       try { gateway = new URL(e.endpoint).origin; } catch { /* shown as written */ }
       const s = environmentState(e);
       const latest = e.state?.latest ?? null;
+      const calls = e.calls_24h;
       const clear = e.state?.bed_hold ? commands.bedHoldClear(e) : null;
       if (clear !== null) dialogs.push(clear);
       // A frozen job is disposed of on the command line; its status names the disposition request and the choices. Two
@@ -170,10 +171,13 @@ ${wires(rightNodes.length, false)}
           : latest === null
             ? html`<span class="sub">尚无派发</span>`
             : html`${latest.run === null ? when(latest.at) : link(`/console/runs/${latest.run}`, when(latest.at))}<div class="sub">${uiLabelOf('effect_outcome', latest.outcome)}${latest.frozen ? ' · 派发结果未确认' : ''}</div>`,
+        calls === null || calls === undefined ? html`<span class="sub">暂不可用</span>`
+          : calls.calls === 0 && !calls.partial ? '近 24 小时无调用'
+          : html`${calls.partial ? '至少 ' : ''}${calls.calls} 次<div class="sub">中位 ${calls.median_ms === null ? '未知' : duration(calls.median_ms)} · 最慢 ${calls.slowest_ms === null ? '未知' : duration(calls.slowest_ms)}</div>`,
         html`${chip(s.text, s.tone)}${s.detail.map((line) => html`<div class="sub">${line}</div>`)}`,
         html`${e.enabled ? commandLink(disable, '停用') : ''}${clear === null ? '' : html` ${commandLink(clear, '确认已恢复')}`}${dispose === null ? '' : html` ${commandLink(dispose, '处置派发结果')}`}${frozen?.run ? html` ${link(`/console/runs/${frozen.run}`, '查看任务')}` : ''}`,
       ];
-    }), '尚无运行环境');
+    }), '尚无运行环境')}<p class="note">响应时间取近 24 小时内已有发送与应答时刻的执行器调用；耗时为 Hub 发出请求到收到应答的时间，中位与最慢按已完成的调用计算。扫描受限时次数为下限，耗时只涵盖已扫描调用。</p>`;
   }
   const body = html`${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
 <div class="section">${topology}</div>`)}

@@ -1,9 +1,9 @@
-// A read-only trial of a system pack with a configuration that is not saved: the console's 测试连接 before a business system
+// A read-only trial of a system pack with a configuration that is not saved: the console's 尝试连接 before a business system
 // is connected. The typed base URLs and credential values reach one HttpSource and nothing else: no resource, no secret, no
-// session entry, no object, no record (a login that failed leaves its digest, never its values, in the vault entry
-// TRIAL_LOGIN_STOPS). The configuration is checked by the rules of a saved resource (resource@1 and the
+// session entry or object. Each completed trial appends a trial-report@1 action, without those values; a login that failed
+// leaves its digest, never its values, in TRIAL_LOGIN_STOPS. The configuration is checked by the rules of a saved resource (resource@1 and the
 // pack's roles and credentials). The login exchange, when the pack declares one, is sent at most once and never repeated
-// after a failure; the same values that failed are not sent again by any later trial, after a restart too, since an
+// after a failure; those values remain stopped, after a restart too, until an administrator explicitly clears that stop, since an
 // account may lock after repeated failures. Then every route a request can be made on without arguments (a literal path, no required
 // query member, no body) is requested once, in the declared order, with the credential where its role carries it, until
 // TRIAL_ROUTES routes or TRIAL_DEADLINE_MS; the answer is interpreted as a read interprets it (status, envelope, JSON) and
@@ -20,6 +20,7 @@ import { fillTemplate } from './login.ts';
 import type { LoadedProfile } from './profiles.ts';
 import type { Redactor } from './redact.ts';
 import { declaredCredentials, profileProblem, storedCredential } from './resources.ts';
+import { TRIAL_REPORT_SCHEMA, TrialRecord } from './trial-report.ts';
 
 /** Routes one trial requests at most; the rest are reported as not tried. */
 export const TRIAL_ROUTES = 20;
@@ -27,17 +28,21 @@ export const TRIAL_ROUTES = 20;
 export const TRIAL_DEADLINE_MS = 60_000;
 /** The vault entry that keeps the digests of the trial logins that failed (`circle-hub secret list` names it). */
 export const TRIAL_LOGIN_STOPS = 'login-stop.trial';
-/** Digests kept; past it the oldest goes, one at a time (the list is never cleared). */
+export const TRIAL_LOGIN_STOPPED = '同样的凭据此前登录失败，未再次发送；更正凭据后再试';
+/** Digests kept; past it the oldest goes, one at a time. An explicit reset removes only its matching digest. */
 const REMEMBERED_FAILURES = 10_000;
 const DIGEST = /^[0-9a-f]{64}$/;
 
-/** The logins that failed in earlier trials, by digest: the same values are never sent again. */
+/** The logins that failed in earlier trials, by digest: the same values are not sent again without an explicit reset. */
 export interface FailedLogins {
   /** Rejects when the record of failures cannot be read. */
   has(key: string): Promise<boolean>;
   /** False when only this process remembers it: the vault could not be written. */
   add(key: string): Promise<boolean>;
+  forget(key: string): Promise<SystemTrialForget>;
 }
+
+export interface SystemTrialForget { found: boolean; cleared: boolean }
 
 /**
  * The failed trial logins, sealed in the vault entry TRIAL_LOGIN_STOPS so that a restart does not forget them: digests of
@@ -47,7 +52,7 @@ export interface FailedLogins {
 export class TrialLoginStops implements FailedLogins {
   readonly #store: Pick<RecordStore, 'withTransaction' | 'lock'>;
   readonly #vault: Pick<Vault, 'getText' | 'put'>;
-  readonly #memory = new Set<string>();
+  readonly #memory = new Map<string, symbol>();
   constructor(store: Pick<RecordStore, 'withTransaction' | 'lock'>, vault: Pick<Vault, 'getText' | 'put'>) {
     this.#store = store;
     this.#vault = vault;
@@ -59,7 +64,7 @@ export class TrialLoginStops implements FailedLogins {
     const kept: unknown = JSON.parse(text);
     const failed = typeof kept === 'object' && kept !== null && (kept as { v?: unknown }).v === 1 ? (kept as { failed?: unknown }).failed : undefined;
     if (Array.isArray(failed) && failed.every((key) => typeof key === 'string' && DIGEST.test(key))) return failed;
-    throw new ConnectorError('STORE_FAILED', '测试连接的登录失败记录不可读');
+    throw new ConnectorError('STORE_FAILED', '尝试连接的登录失败记录不可读');
   }
 
   async has(key: string): Promise<boolean> {
@@ -67,7 +72,7 @@ export class TrialLoginStops implements FailedLogins {
   }
 
   async add(key: string): Promise<boolean> {
-    this.#memory.add(key);
+    this.#memory.set(key, Symbol());
     try {
       await this.#store.withTransaction(async (tx) => {
         await this.#store.lock(TRIAL_LOGIN_STOPS, tx);
@@ -79,6 +84,23 @@ export class TrialLoginStops implements FailedLogins {
     } catch {
       return false;
     }
+  }
+
+  /** Removes only this digest. A concurrent new failure retains its stop, including when its vault write fails. */
+  async forget(key: string): Promise<SystemTrialForget> {
+    const remembered = this.#memory.get(key);
+    let found = false, cleared = false;
+    await this.#store.withTransaction(async (tx) => {
+      await this.#store.lock(TRIAL_LOGIN_STOPS, tx);
+      const failed = await this.#read();
+      found = failed.includes(key) || this.#memory.has(key);
+      if (!found || this.#memory.get(key) !== remembered) return;
+      await this.#vault.put(TRIAL_LOGIN_STOPS, canonicalBytes({ v: 1, failed: failed.filter((kept) => kept !== key) }));
+      cleared = true;
+    });
+    if (cleared && this.#memory.get(key) === remembered) this.#memory.delete(key);
+    else if (this.#memory.get(key) !== remembered) cleared = false;
+    return { found, cleared };
   }
 }
 
@@ -132,11 +154,12 @@ export interface SystemTrialReport {
   routes: SystemTrialRoute[];
   started_at: string;
   ended_at: string;
-  /** Always false: the trial keeps nothing. */
+  /** Always false: no resource configuration or credential content is saved. The trial action is recorded separately. */
   saved: false;
 }
 
 export interface SystemTrialOptions {
+  store: Pick<RecordStore, 'put'>;
   load: (ref: string) => Promise<LoadedProfile>;
   redactor: Redactor;
   now: () => Date;
@@ -170,15 +193,15 @@ function failure(error: ConnectorError): string {
 
 /** Whether a request can be made on `route` without arguments: a literal path, no required query member, no body. */
 function argumentFree(route: RouteDeclaration): string | null {
-  if (/\{[^}]+\}/.test(route.path)) return '路径含参数，试读时没有可用的取值';
-  if (route.body !== undefined) return '需要请求体，试读时没有可用的取值';
+  if (/\{[^}]+\}/.test(route.path)) return '路径含参数，尝试读取时没有可用的取值';
+  if (route.body !== undefined) return '需要请求体，尝试读取时没有可用的取值';
   const query = route.query as { required?: readonly string[] } | undefined;
-  if (query !== undefined && (query.required ?? []).length > 0) return '需要查询参数，试读时没有可用的取值';
+  if (query !== undefined && (query.required ?? []).length > 0) return '需要查询参数，尝试读取时没有可用的取值';
   return null;
 }
 
-/** Runs one trial. The caller has checked that `by` is an administrator. */
-export async function trialSystem(options: SystemTrialOptions, input: SystemTrialInput, by: string): Promise<SystemTrialReport> {
+/** Validate and transform typed login material identically for a trial and a targeted reset, without making a request. */
+async function prepareTrial(options: Pick<SystemTrialOptions, 'load' | 'now' | 'redactor'>, input: SystemTrialInput, by: string) {
   const started = options.now();
   const loaded = await options.load(String(input?.system_pack));
   const { pack, profile } = loaded;
@@ -188,7 +211,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     id: PLACEHOLDER_RESOURCE,
     system_pack: `${pack.id}@${pack.version}`,
     system_pack_digest: pack.digest,
-    name: '试读',
+    name: '尝试读取',
     environment: input.environment,
     origins: input.origins,
     allow_plaintext: input.allow_plaintext ?? [],
@@ -198,7 +221,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     created_by: /^usr_[0-9a-z]{26}$/.test(by) ? by : PLACEHOLDER_USER,
     created_at: started.toISOString(),
   });
-  if (!parsed.success) throw new ConnectorError('RESOURCE_INVALID', `试读配置不符合资源的规则：${issuesOf(parsed.error)}`);
+  if (!parsed.success) throw new ConnectorError('RESOURCE_INVALID', `尝试连接的配置不符合资源的规则：${issuesOf(parsed.error)}`);
   const problem = profileProblem(parsed.data, profile);
   if (problem !== null) throw new ConnectorError('RESOURCE_INVALID', problem);
   const typed = input.credentials ?? {};
@@ -214,6 +237,31 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     values[credential.name] = storedCredential(value, credential.digest);
     options.redactor.addSent(values[credential.name]);
   }
+  return { started, pack, profile, declared, resource: parsed.data, values };
+}
+
+/** The existing failed-login identity, shared by sending and forgetting. No input value is returned or stored. */
+function trialLoginKey(pack: string, origin: string, path: string, body: unknown): string {
+  return createHash('sha256').update(canonicalBytes({ pack, origin, path, body })).digest('hex');
+}
+
+/** The caller rechecks the administrator; this only clears a stop and never sends a login or route request. */
+export async function forgetTrialLogin(options: Pick<SystemTrialOptions, 'load' | 'now' | 'redactor' | 'failedLogins'>, input: SystemTrialInput, by: string): Promise<SystemTrialForget> {
+  const { pack, profile, declared, resource, values } = await prepareTrial(options, input, by);
+  if (profile.auth.kind !== 'login_token') return { found: false, cleared: false };
+  if (declared.some((credential) => values[credential.name] === undefined)) throw new ConnectorError('RESOURCE_INVALID', '登录凭据未填写完整，未清除失败记录');
+  const login = profile.auth.login;
+  const key = trialLoginKey(pack.id, resource.origins[login.role], login.path, fillTemplate(login.body, values));
+  try {
+    return await options.failedLogins.forget(key);
+  } catch {
+    throw new ConnectorError('STORE_FAILED', '登录失败记录未能清除');
+  }
+}
+
+/** Runs one trial. The caller has checked that `by` is an administrator. */
+export async function trialSystem(options: SystemTrialOptions, input: SystemTrialInput, by: string): Promise<SystemTrialReport> {
+  const { started, pack, profile, declared, resource, values } = await prepareTrial(options, input, by);
   const auth = profile.auth;
   const event = (name: string, detail: Record<string, unknown>) => {
     if (options.log === undefined) return;
@@ -226,8 +274,8 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
   event('resource_trial', { system_pack: `${pack.id}@${pack.version}`, environment: input.environment });
   const http = new HttpSource({
     resource: 'trial',
-    origins: parsed.data.origins,
-    allowPlaintext: parsed.data.allow_plaintext,
+    origins: resource.origins,
+    allowPlaintext: resource.allow_plaintext,
     routes: profile.routes,
     envelope: profile.envelope ?? null,
     login: auth.kind === 'login_token' ? auth.login : null,
@@ -245,7 +293,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
   } else if (auth.kind === 'static_header') {
     carriers = new Set(auth.roles);
     const value = values[auth.credential];
-    if (value === undefined) report.reason = `凭据 ${auth.credential} 未填写，带凭据的接口未试读`;
+    if (value === undefined) report.reason = `凭据 ${auth.credential} 未填写，带凭据的接口未尝试读取`;
     else {
       header = { name: auth.header.name, value: auth.header.scheme === 'bearer' ? `Bearer ${value}` : value };
       report.reason = '固定凭据随第一个带凭据的接口一并检验';
@@ -257,11 +305,11 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       report.reason = `凭据 ${missing.join('、')} 未填写，未登录`;
     } else {
       const body = fillTemplate(auth.login.body, values);
-      const key = createHash('sha256').update(canonicalBytes({ pack: pack.id, origin: parsed.data.origins[auth.login.role], path: auth.login.path, body })).digest('hex');
+      const key = trialLoginKey(pack.id, resource.origins[auth.login.role], auth.login.path, body);
       // A record of failures that cannot be read may hold these very values: the login is not sent.
       const failedBefore = await options.failedLogins.has(key).catch(() => null);
       if (failedBefore !== false) {
-        report.reason = failedBefore === true ? '同样的凭据此前登录失败，未再次发送；更正凭据后再试' : '登录失败记录不可读，未登录';
+        report.reason = failedBefore === true ? TRIAL_LOGIN_STOPPED : '登录失败记录不可读，未登录';
       } else {
         const sentAt = options.now().getTime();
         try {
@@ -302,11 +350,11 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       continue;
     }
     if (tried >= TRIAL_ROUTES) {
-      row.reason = `每次测试最多试读 ${TRIAL_ROUTES} 个接口`;
+      row.reason = `每次尝试连接最多尝试读取 ${TRIAL_ROUTES} 个接口`;
       continue;
     }
     if (options.now().getTime() - started.getTime() >= TRIAL_DEADLINE_MS) {
-      row.reason = `测试已用时超过 ${TRIAL_DEADLINE_MS / 1000} 秒，其余接口未试读`;
+      row.reason = `尝试连接已用时超过 ${TRIAL_DEADLINE_MS / 1000} 秒，其余接口未尝试读取`;
       continue;
     }
     tried += 1;
@@ -327,7 +375,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       // A read plans the hop of a route declared with same-origin redirects; the trial does not, so it cannot tell.
       const declaredHop = error.code === 'SOURCE_REDIRECT_REFUSED' && route.redirects !== undefined;
       row.ok = declaredHop ? null : false;
-      row.message = declaredHop ? `应答要求同源跳转${row.status === null ? '' : `（HTTP ${row.status}）`}，试读不跟随跳转` : failure(error);
+      row.message = declaredHop ? `应答要求同源跳转${row.status === null ? '' : `（HTTP ${row.status}）`}，尝试读取不跟随跳转` : failure(error);
       // A static credential the source refused is checked by this route: the trial says so.
       if (auth.kind === 'static_header' && carries && (error.code === 'CREDENTIAL_REFUSED' || error.code === 'SOURCE_LOGIN_EXPIRED')) report.ok = false;
     }
@@ -335,7 +383,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
   }
   const ended = options.now();
   event('resource_trial_done', { system_pack: `${pack.id}@${pack.version}`, login: report.ok, tried, routes: routes.length });
-  return {
+  const answer: SystemTrialReport = {
     system_pack: { id: pack.id, version: pack.version, digest: pack.digest },
     environment: input.environment,
     auth: report,
@@ -344,4 +392,19 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     ended_at: ended.toISOString(),
     saved: false,
   };
+  try {
+    const body = TrialRecord.parse({
+      action: 'trial', run: null, item: null, inputs: [], component: 'connectors@1', lease: null,
+      started_at: answer.started_at, ended_at: answer.ended_at, result: 'completed', error_code: null,
+      principal: by, system_pack: { id: pack.id, version: pack.version }, environment: input.environment,
+      auth: { sent: report.sent, ok: report.ok, code: report.code },
+      routes: routes.map(({ route, tried, ok, status, code, ms }) => ({ route, tried, ok, status, code, ms })),
+    });
+    await options.store.put({ kind: 'action', schema: TRIAL_REPORT_SCHEMA, provenance: 'observed', body,
+      index: [{ key: 'action.kind', value: body.action }, { key: 'action.user', value: by }],
+    });
+  } catch {
+    event('resource_trial_record_failed', { code: 'STORE_FAILED' });
+  }
+  return answer;
 }

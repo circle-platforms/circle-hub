@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { newestOf, reportedVersion, scanNewest, type EnvironmentFacts } from './environment.ts';
+import { readEnvironmentCalls } from './environment-statistics.ts';
 import { setup } from './testing/context.ts';
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -90,6 +91,9 @@ test('an environment is free, then held during a dispatch, then free with its la
   assert.equal(after.latest?.outcome, 'effective');
   assert.equal(after.latest?.frozen, false);
   assert.equal(after.reported_version, 'synthetic-gateway 2.4.1');
+  const [calls] = await readEnvironmentCalls(c.kit.store, [c.executor.id], c.now());
+  assert.equal(calls.calls, c.endpoint.calls.length, 'each actual request counted once, including initialize and leases');
+  assert.equal(calls.median_ms, 0, 'the synthetic clock gives genuine zero-ms exchanges');
 
   // Disabled by its registration.
   await c.registry.disable(c.admin, c.executor.id);

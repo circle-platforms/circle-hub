@@ -1,6 +1,6 @@
 // The read-only trial of a system pack (trial.ts) and the read statistics of a resource (statistics.ts), against loopback
 // stubs: the trial logs in at most once, never twice with values that failed, tries only the routes that need no
-// arguments, never reaches a write route, stores nothing (no record, no object, no session entry) and keeps every value
+// arguments, never reaches a write route, appends only a trial action (no object or session entry) and keeps every value
 // out of its report and the log; the statistics count the read manifests of the window.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -14,7 +14,8 @@ import { openConnectorKit, type ConnectorKit } from './testing/kit.ts';
 import { writePack } from './testing/packs.ts';
 import { PLM_PRODUCTS, startPlmStub, type PlmStub } from './testing/plm.ts';
 import { json, startStub } from './testing/stub.ts';
-import { TRIAL_LOGIN_STOPS, type SystemTrialReport } from './trial.ts';
+import { TRIAL_LOGIN_STOPS, TrialLoginStops, type SystemTrialReport } from './trial.ts';
+import { TRIAL_REPORT_SCHEMA, TrialRecord } from './trial-report.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -65,7 +66,7 @@ const plmInput = (w: World, password = PASSWORD) => ({
 
 const route = (report: SystemTrialReport, id: string) => report.routes.find((r) => r.route === id)!;
 
-test('a trial logs in once, tries the routes that need no arguments, opens no write route and keeps nothing', async (t) => {
+test('a trial logs in once, tries only argument-free routes and appends one trial action without source content or credentials', async (t) => {
   const w = await world(t);
   const before = await counts(w.k);
   const report = await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
@@ -79,21 +80,56 @@ test('a trial logs in once, tries the routes that need no arguments, opens no wr
   // A route whose query member is required, and POST routes with a body, need arguments: not tried, none invented.
   for (const id of ['builds', 'bug-detail', 'story-detail']) {
     assert.equal(route(report, id).tried, false, id);
-    assert.match(route(report, id).reason!, /试读时没有可用的取值/, id);
+    assert.match(route(report, id).reason!, /尝试读取时没有可用的取值/, id);
   }
   assert.equal(w.plm.writes, 0, 'the write route is never reached');
   assert.equal(report.saved, false);
-  assert.deepEqual(await counts(w.k), before, 'no record, no object, no pointer, no vault entry');
+  assert.deepEqual(await counts(w.k), { ...before, records: before.records + 1 }, 'only a trial action: no object, pointer or vault entry');
+  const actions = await w.k.records.store.find({ kind: 'action', key: 'action.kind', value: 'trial' });
+  assert.equal(actions.items.length, 1);
+  const action = actions.items[0];
+  assert.equal(action.schema, TRIAL_REPORT_SCHEMA);
+  assert.equal(action.provenance, 'observed');
+  const body = TrialRecord.parse(action.body);
+  assert.equal(body.principal, w.k.admin.id);
+  assert.deepEqual(body.system_pack, { id: report.system_pack.id, version: report.system_pack.version });
+  assert.deepEqual(body.auth, { sent: true, ok: true, code: null });
+  assert.deepEqual(body.routes, report.routes.map(({ route, tried, ok, status, code, ms }) => ({ route, tried, ok, status, code, ms })));
+  assert.equal(body.started_at, report.started_at);
+  assert.equal(body.ended_at, report.ended_at);
+  assert.equal((await w.k.records.store.find({ kind: 'action', key: 'action.user', value: w.k.admin.id })).items[0].digest, action.digest);
   // No value of the trial in the report or the log: neither the password, nor the token, nor what the system answered.
   const token = [...w.agile.tokens][0]!;
   const shown = JSON.stringify(report);
   const logged = JSON.stringify(w.k.log);
+  const recorded = JSON.stringify(body);
   for (const secret of [PASSWORD, token]) {
     assert.ok(!shown.includes(secret), 'a value in the report');
     assert.ok(!logged.includes(secret), 'a value in the log');
+    assert.ok(!recorded.includes(secret), 'a value in the record');
   }
-  for (const product of PLM_PRODUCTS) assert.ok(!shown.includes(product.name), 'an answer in the report');
+  for (const product of PLM_PRODUCTS) {
+    assert.ok(!shown.includes(product.name), 'an answer in the report');
+    assert.ok(!recorded.includes(product.name), 'an answer in the record');
+  }
+  for (const origin of Object.values(plmInput(w).origins)) assert.ok(!recorded.includes(origin), 'no address in the record');
   assert.ok(w.k.log.some((event) => event.event === 'resource_trial'));
+});
+
+test('a failed trial record leaves the report intact and never repeats the system requests', async (t) => {
+  const w = await world(t);
+  const store = new Proxy(w.k.records.store, { get(target, key) {
+    if (key === 'put') return async () => { throw new Error('synthetic store failure'); };
+    const value = Reflect.get(target, key);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const connectors = w.k.make({ records: { ...w.k.records, store } });
+  const report = await connectors.admin.trial(w.k.admin, plmInput(w));
+  assert.equal(report.auth.ok, true);
+  assert.equal(w.agile.logins, 1);
+  assert.equal(route(report, 'products').ok, true);
+  assert.equal(w.plm.requests.length, report.routes.filter((row) => row.tried).length, 'each tried route was sent once');
+  assert.ok(w.k.log.some((event) => event.event === 'resource_trial_record_failed'));
 });
 
 test('a refused login is not sent again with the same values; corrected values are', async (t) => {
@@ -110,6 +146,8 @@ test('a refused login is not sent again with the same values; corrected values a
   assert.equal(again.auth.sent, false);
   assert.match(again.auth.reason!, /此前登录失败，未再次发送/);
   assert.equal(w.agile.logins, 1, 'no second login with the values that failed');
+  const actions = await w.k.records.store.find<TrialRecord>({ kind: 'action', key: 'action.kind', value: 'trial' });
+  assert.deepEqual(actions.items.map((a) => a.body.auth), [{ sent: true, ok: false, code: 'LOGIN_FAILED' }, { sent: false, ok: null, code: null }]);
   const corrected = await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
   assert.equal(corrected.auth.ok, true);
   assert.equal(w.agile.logins, 2);
@@ -142,6 +180,82 @@ test('a record of failed logins that cannot be read refuses the login', async (t
   assert.equal(report.auth.sent, false);
   assert.equal(report.auth.reason, '登录失败记录不可读，未登录');
   assert.equal(w.agile.logins, 0);
+});
+
+test('a targeted reset clears only the typed login in memory and the vault, allowing one new attempt here and after restart', async (t) => {
+  const w = await world(t);
+  const a = plmInput(w, 'synthetic-refused-a'), b = plmInput(w, 'synthetic-refused-b');
+  await w.k.connectors.admin.trial(w.k.admin, a);
+  await w.k.connectors.admin.trial(w.k.admin, b);
+  assert.equal(w.agile.logins, 2);
+  await assert.rejects(w.k.connectors.admin.forgetTrialLogin(w.k.user, a), (error: unknown) => error instanceof ConnectorError && error.code === 'ACCESS_DENIED');
+  assert.deepEqual(await w.k.connectors.admin.forgetTrialLogin(w.k.admin, a), { found: true, cleared: true });
+  assert.equal(w.agile.logins, 2, 'forgetting never logs in');
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, b)).auth.sent, false, 'other credentials stay stopped');
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, a)).auth.sent, true);
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, a)).auth.sent, false, 'the next failure stops again');
+  await w.k.connectors.admin.forgetTrialLogin(w.k.admin, a);
+  assert.equal((await w.k.make().admin.trial(w.k.admin, a)).auth.sent, true, 'cleared in the vault too');
+  assert.equal((await w.k.make().admin.trial(w.k.admin, b)).auth.sent, false);
+  assert.equal(w.agile.logins, 4);
+  assert.deepEqual(await w.k.connectors.admin.forgetTrialLogin(w.k.admin, plmInput(w, 'never-sent')), { found: false, cleared: false });
+});
+
+test('a repaired source accepts the same credentials after an explicit reset; incomplete credentials clear nothing', async (t) => {
+  const w = await world(t);
+  w.agile.setPassword('synthetic-temporarily-unavailable-password');
+  await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
+  w.agile.setPassword(PASSWORD);
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, plmInput(w))).auth.sent, false);
+  await assert.rejects(w.k.connectors.admin.forgetTrialLogin(w.k.admin, { ...plmInput(w), credentials: {} }), (error: unknown) => error instanceof ConnectorError && error.code === 'RESOURCE_INVALID');
+  assert.deepEqual(await w.k.connectors.admin.forgetTrialLogin(w.k.admin, plmInput(w)), { found: true, cleared: true });
+  assert.equal(w.agile.logins, 1);
+  assert.equal((await w.k.connectors.admin.trial(w.k.admin, plmInput(w))).auth.ok, true);
+  assert.equal(w.agile.logins, 2);
+});
+
+test('concurrent adds and a targeted reset preserve other entries; a failed clear retains the stop', async (t) => {
+  const w = await world(t);
+  const stops = new TrialLoginStops(w.k.records.store, w.k.records.vault);
+  const a = 'a'.repeat(64), b = 'b'.repeat(64), c = 'c'.repeat(64);
+  await stops.add(a); await stops.add(b);
+  await Promise.all([stops.forget(a), stops.add(c)]);
+  assert.equal(await stops.has(a), false);
+  assert.equal(await stops.has(b), true);
+  assert.equal(await stops.has(c), true);
+  const broken = new TrialLoginStops(w.k.records.store, { getText: (name) => w.k.records.vault.getText(name), put: async () => { throw new Error('synthetic write failure'); } });
+  await assert.rejects(broken.forget(b), /synthetic write failure/);
+  assert.equal(await broken.has(b), true);
+});
+
+test('a new failure arriving during a clear is retained even when its later vault write fails', { timeout: 10_000 }, async (t) => {
+  const w = await world(t);
+  const key = 'a'.repeat(64);
+  let release!: () => void, entered!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  t.after(() => release());
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  let clearing = false;
+  const stops = new TrialLoginStops(w.k.records.store, {
+    getText: (name) => w.k.records.vault.getText(name),
+    put: async (name, bytes) => {
+      if (clearing) {
+        const kept = JSON.parse(typeof bytes === 'string' ? bytes : Buffer.from(bytes).toString('utf8')) as { failed: string[] };
+        if (kept.failed.includes(key)) throw new Error('synthetic later write failure');
+        entered(); await waiting;
+      }
+      await w.k.records.vault.put(name, bytes);
+    },
+  });
+  await stops.add(key);
+  clearing = true;
+  const forgotten = stops.forget(key);
+  await writing;
+  const newFailure = stops.add(key);
+  release();
+  assert.deepEqual(await forgotten, { found: true, cleared: false });
+  assert.equal(await newFailure, false);
+  assert.equal(await stops.has(key), true, 'the later failure remains stopped in memory');
 });
 
 test('a trial is for administrators, of a published system pack, with every role and the plaintext rule', async (t) => {
@@ -187,12 +301,14 @@ test('a redirect is never followed, a declared hop stays unknown, and no route i
   const report = await w.k.connectors.admin.trial(w.k.admin, { system_pack: 'site-test', environment: 'test', origins: { site: site.origin }, allow_plaintext: [site.origin] });
   assert.deepEqual([report.auth.kind, report.auth.sent, report.auth.ok], ['none', false, null]);
   assert.deepEqual([route(report, 'moved').tried, route(report, 'moved').ok, route(report, 'moved').status], [true, null, 302]);
-  assert.match(route(report, 'moved').message!, /试读不跟随跳转/);
+  assert.match(route(report, 'moved').message!, /尝试读取不跟随跳转/);
   assert.deepEqual([route(report, 'jumps').ok, route(report, 'jumps').code], [false, 'SOURCE_REDIRECT_REFUSED']);
   assert.equal(route(report, 'slow').ok, true);
   assert.equal(route(report, 'status').tried, false);
-  assert.match(route(report, 'status').reason!, /其余接口未试读/);
+  assert.match(route(report, 'status').reason!, /其余接口未尝试读取/);
   assert.deepEqual(site.requests.map((r) => r.path), ['/moved/', '/jumps/', '/slow/'], 'no hop followed, nothing after the deadline');
+  const record = (await w.k.records.store.find<TrialRecord>({ kind: 'action', key: 'action.kind', value: 'trial' })).items[0].body;
+  assert.deepEqual(record.routes.map((row) => [row.tried, row.ok]), [[true, null], [true, false], [true, true], [false, null]], 'unknown and untried outcomes stay distinct');
 });
 
 test('the statistics count the reads of the window by result, with the median and longest time of the completed ones', async (t) => {
@@ -221,4 +337,6 @@ test('the statistics count the reads of the window by result, with the median an
   const capped = (await readStatistics(w.k.records.store, [plm.id], w.k.clock.now(), undefined, 2))[0];
   assert.equal(capped.partial, true);
   assert.equal(capped.reads, 2);
+  await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
+  assert.deepEqual(await readStatistics(w.k.records.store, [plm.id, idle.id], new Date(busy.until)), [busy, quiet], 'trial actions never enter real-read statistics');
 });

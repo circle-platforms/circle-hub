@@ -18,10 +18,10 @@ import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPag
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { handleApiWrite } from './api-write.ts';
-import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
+import { CONTENT_SECURITY_POLICY, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
 import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
-import { operationsPage, systemTrialPage } from './operations.ts';
+import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -32,7 +32,7 @@ import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings
 import { stepper } from './ui.ts';
 import { LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
-import { runTrial } from './trial.ts';
+import { runForgetTrial, runTrial } from './trial.ts';
 import { UploadError, boundaryOf, parseMultipart } from './upload.ts';
 
 export interface ConsoleOptions {
@@ -106,7 +106,7 @@ async function loginPage(options: ConsoleOptions, response: ServerResponse, stat
   const body = page(
     anonymous('登录'),
     html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
-<div class="callout info mt16"><span class="logo" aria-hidden="true"></span><span><b>从 Circle 打开</b><br>已连接的 Circle 可获取一次性登录链接（${LOGIN_LINK_TTL_MS / 60_000} 分钟内有效，仅可使用一次），浏览器打开链接并确认后即登录，无需输入。</span></div>
+<div class="callout info mt16">${logo()}<span><b>从 Circle 打开</b><br>已连接的 Circle 可获取一次性登录链接（${LOGIN_LINK_TTL_MS / 60_000} 分钟内有效，仅可使用一次），浏览器打开链接并确认后即登录，无需输入。</span></div>
 <div class="divider">访问令牌登录 · 供 Circle 不可用时使用</div>
 <form method="post" action="/console/login">
 <div class="field"><label for="hub-token">访问令牌</label><input id="hub-token" class="input" type="password" name="token" autocomplete="off" size="50" required placeholder="粘贴管理员签发的令牌"></div>
@@ -515,8 +515,8 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     request.resume();
     return neutralPage(ctx);
   }
-  // system-test is the read-only trial of 接入业务系统: no command runs and nothing is saved.
-  if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name) && name !== 'system-test') {
+  // The connection trial and its targeted stop reset run in this process, without a command or a saved configuration.
+  if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name) && name !== 'system-test' && name !== 'system-test-forget') {
     request.resume();
     return neutralPage(ctx);
   }
@@ -563,6 +563,7 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     return null;
   }
   if (name === 'system-test') return systemTrialPage(ctx, form, await runTrial(ctx, form));
+  if (name === 'system-test-forget') return systemForgetPage(ctx, form, await runForgetTrial(ctx, form));
   return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
 }
 
@@ -632,7 +633,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
 }
 
 /** The write interfaces of console/api-write.ts. */
-const WRITE_PATHS = new Set(['members', 'systems', 'systems/test', 'knowledge/imports', 'commands', 'packs/stage']);
+const WRITE_PATHS = new Set(['members', 'systems', 'systems/test', 'systems/test/forget', 'knowledge/imports', 'commands', 'packs/stage']);
 const writePath = (path: string): boolean => WRITE_PATHS.has(path) || /^packs\/stage\/[A-Za-z0-9_-]{1,64}\/(?:publish|discard)$/.test(path);
 
 /**
@@ -710,6 +711,19 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   // still reaches the idle limit of its session.
   const automatic = request.headers['circle-hub-refresh'] === 'live' || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'stream');
   const session = automatic ? options.sessions.peek(cookieValue, secure) : options.sessions.get(cookieValue, secure);
+  // The console's icon: static, the same for everyone, signed in or not.
+  if (segments.length === 1 && segments[0] === 'favicon.svg') {
+    request.resume();
+    if (request.method !== 'GET' && request.method !== 'HEAD') return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET</p>`), { allow: 'GET, HEAD' });
+    response.writeHead(200, {
+      'content-type': 'image/svg+xml; charset=utf-8',
+      'cache-control': 'public, max-age=86400',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+      'x-content-type-options': 'nosniff',
+    });
+    response.end(request.method === 'HEAD' ? undefined : FAVICON_SVG);
+    return;
+  }
   if (segments[0] === 'login') {
     if (segments.length === 2) return loginLink(request, response, options, secure, segments[1]);
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));

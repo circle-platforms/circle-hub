@@ -24,7 +24,8 @@ export { readProfile } from './profiles.ts';
 
 export { Redactor } from './redact.ts';
 
-export { TRIAL_LOGIN_STOPS, TRIAL_ROUTES, TrialLoginStops, trialSystem, type FailedLogins } from './trial.ts';
-export type { SystemTrialInput, SystemTrialReport, SystemTrialRoute } from './trial.ts';
+export { TRIAL_LOGIN_STOPS, TRIAL_LOGIN_STOPPED, TRIAL_ROUTES, TrialLoginStops, trialSystem, forgetTrialLogin, type FailedLogins } from './trial.ts';
+export type { SystemTrialInput, SystemTrialReport, SystemTrialRoute, SystemTrialForget } from './trial.ts';
+export { TRIAL_REPORT_SCHEMA, TrialRecord } from './trial-report.ts';
 export { STATISTICS_SCAN_LIMIT, STATISTICS_WINDOW_MS, readStatistics } from './statistics.ts';
 export type { ReadStatistics } from './statistics.ts';
