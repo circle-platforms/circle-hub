@@ -22,7 +22,40 @@ export interface PinnedIdentity { identity: string; bytes: string | null }
  * the same digest for the source; when it does not, the digest is the Hub-side declaration only.
  */
 export interface RunnerCleanup { source: string; sha256: string; objects: string[]; rules: Array<{ prefixes: string[]; line: number | null }>; pinned: boolean }
-export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup }
+/**
+ * Device commands the runner is never asked to send (a runtime-contract@2 addition, decision 114). CES and the InfoTest
+ * structural gate ban, unconditionally, the commands that take a shared environment's device down or wipe it with its
+ * management access (InfoTest domain_grammar.json destructive_commands; the source and its digest are declared here). The
+ * same set is written on the locked command tree, never on wording: exact paths, paths with everything under them, and path
+ * segments anywhere (the lifecycle verbs). With it, a device CLI effect that names no command scope authorises every command
+ * the locked tree resolves, except these.
+ */
+export interface DestructiveCommands { source: string; sha256: string; exact: string[]; prefixes: string[]; segments: string[] }
+export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup; destructive?: DestructiveCommands }
+/** Whole path segments of a /commands path, or null when it is not one. */
+const segmentsOf = (path: string): string[] | null => /^\/commands(\/[^/]+)*$/.test(path) ? path.split('/').filter(Boolean) : null;
+const under = (path: string, prefix: string): boolean => { const a = segmentsOf(path), b = segmentsOf(prefix); return !!a && !!b && a.length >= b.length && b.every((segment, i) => a[i] === segment); };
+/**
+ * Which part of the runner contract's destructive-command declaration a command path hits (decision 114), or null: an exact
+ * path, a declared path and everything under it, or a declared path segment anywhere. Compared on whole path segments.
+ */
+export function destructiveHit(contract: RuntimeContract, path: string): string | null {
+  const d = contract.destructive; if (!d) return null;
+  if (d.exact.includes(path)) return `命令 ${path}`;
+  const prefix = d.prefixes.find((p) => under(path, p)); if (prefix) return `${prefix} 及其下的命令`;
+  const segments = segmentsOf(path) ?? []; const segment = d.segments.find((s) => segments.includes(s)); return segment ? `路径段 ${segment}` : null;
+}
+/**
+ * Whether one effect authorises a device command path (decision 114): a declared command scope narrows as before; a device CLI
+ * effect with no scope authorises the whole locked tree when the contract declares its destructive commands. A destructive
+ * command is never authorised, whatever the scope.
+ */
+export function scopeAllows(contract: RuntimeContract, effect: { roles: string[]; command_scope?: string[]; commands?: unknown[] }, path: string): boolean {
+  if (destructiveHit(contract, path) !== null) return false;
+  if (effect.command_scope !== undefined) return effect.command_scope.some((prefix) => under(path, prefix));
+  if (effect.commands !== undefined) return true;
+  return contract.destructive !== undefined && effect.roles.includes('device_cli');
+}
 const sourceDocuments = new WeakMap<RuntimeContract, Record<string, unknown>>();
 export function sourceDocument(contract: RuntimeContract): Record<string, unknown> | null { return sourceDocuments.get(contract) ?? null; }
 export type ParsedRuntimeContract = { ok: true; contract: RuntimeContract } | { ok: false; problems: Problem[] };
@@ -53,7 +86,7 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
   return contract.enabled.find((entry) => entry.object === object && entry.method === method) ?? null;
 }
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
-const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup'];
+const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup', 'destructive'];
 /**
  * Runtime members B1 reads that the pinned original contract does not have. That original (canonical identity
  * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model and
@@ -153,6 +186,19 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       cleanup = { source: String(c.source), sha256: c.sha256, objects: [...c.objects as string[]], rules: rules.map((r) => ({ prefixes: [...(r as { prefixes: string[] }).prefixes], line: typeof (r as { line?: unknown }).line === 'number' ? (r as { line: number }).line : null })), pinned: recorded === c.sha256 };
     }
   }
+  let destructive: DestructiveCommands | undefined;
+  if (value.destructive !== undefined) {
+    const d = value.destructive;
+    const path = (p: unknown): boolean => typeof p === 'string' && p.length <= 300 && /^\/commands(\/[^/\s]+)+$/.test(p);
+    const segment = (p: unknown): boolean => typeof p === 'string' && /^[a-z][a-z0-9_-]{0,63}$/.test(p);
+    const list = (v: unknown, ok: (p: unknown) => boolean): boolean => v === undefined || (Array.isArray(v) && v.length <= 64 && v.every(ok) && new Set(v).size === v.length);
+    if (value.schema !== 'runtime-contract@2' || !isRecord(d) || Object.keys(d).some((key) => !['source', 'sha256', 'exact', 'prefixes', 'segments'].includes(key)) || !nonempty(d.source) || typeof d.sha256 !== 'string' || !SHA.test(d.sha256)
+      || !list(d.exact, path) || !list(d.prefixes, path) || !list(d.segments, segment) || [d.exact, d.prefixes, d.segments].every((v) => !Array.isArray(v) || v.length === 0)) {
+      issue('/destructive', '破坏性命令声明只能是 runtime-contract@2 里的 source、sha256，和至少一项非空的 exact、prefixes（/commands 下的命令树路径，最多 64 条）或 segments（路径段，最多 64 个）');
+    } else {
+      destructive = { source: String(d.source), sha256: d.sha256 as string, exact: [...((d.exact as string[] | undefined) ?? [])], prefixes: [...((d.prefixes as string[] | undefined) ?? [])], segments: [...((d.segments as string[] | undefined) ?? [])] };
+    }
+  }
   const promotedPairs = new Set<string>();
   const enabled: RuntimeEntry[] = [];
   const pairs = new Set<string>();
@@ -223,7 +269,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   }
   if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
   if (problems.length) return { ok: false, problems };
-  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}) };
+  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}), ...(destructive ? { destructive } : {}) };
   sourceDocuments.set(contract, value);
   return { ok: true, contract };
 }

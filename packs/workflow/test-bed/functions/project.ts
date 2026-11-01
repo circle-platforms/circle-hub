@@ -51,12 +51,12 @@ interface Out {
 }
 
 interface Failure {
-  error: { code: string; message: string; fix: string; documents?: string[] } & Claimed;
+  error: { code: string; message: string; fix: string; documents?: string[]; pointer?: string } & Claimed;
   warnings: Array<{ code: string; message: string }>;
 }
 
 /** The claim fields a refusal adds (D05 R[8]): the inventory fragments it rests on and whether its facts are declared. */
-type Claimed = Pick<PlanFailure, 'provenance' | 'grounds'>;
+type Claimed = Pick<PlanFailure, 'provenance' | 'grounds' | 'pointer'>;
 
 function failure(code: string, message: string, fix: string, warnings: Array<{ code: string; message: string }> = [], claim: Claimed = {}): Failure {
   return { error: { code, message, fix, ...claim }, warnings };
@@ -79,7 +79,7 @@ export default function project(input: unknown): Out | Failure {
     return failure('test-bed.no_inventory', '没有自动化测试环境清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:<名字>"}（管理员用 circle-hub doc put 发布）');
   }
   const read = readParameters(isRecord(params.parameters) ? params.parameters : {});
-  if ('code' in read) return failure(read.code, read.message, read.fix);
+  if ('code' in read) return failure(read.code, read.message, read.fix, [], read.pointer === undefined ? {} : { pointer: read.pointer });
   const normalized: Normalized = read;
   const manifest = manifestBeds(slot.model);
   if (!manifest.ok) {

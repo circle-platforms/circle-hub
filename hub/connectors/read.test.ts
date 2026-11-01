@@ -22,6 +22,7 @@ import { PLM_BUGS, startPlmStub, type PlmStub } from './testing/plm.ts';
 import { json, startStub, text, type StubServer } from './testing/stub.ts';
 import { DOCUMENTS, startWebDavStub } from './testing/webdav.ts';
 import type { PackFunctionRunner } from './read.ts';
+import { readExit } from './read-exit.ts';
 import { openHarness } from '../runs/engine/testing/harness.ts';
 import { createTestServer } from '../server/testing.ts';
 
@@ -745,3 +746,28 @@ test('the reader port retains the 404 manifest and returns a determined absence'
  const record=await w.k.records.store.get(result.manifest!);assert.equal(record?.schema,'read-manifest@1');
  const manifest=ReadManifest.parse(record!.body);assert.equal(manifest.external,result.id);assert.equal(manifest.result,'completed');assert.equal(manifest.error_code,null);assert.equal(manifest.requests.at(-1)?.status,404);
 });
+
+for (const refusals of [1, 2] as const) {
+  test(`a sandbox that cannot run the plan function ${refusals === 1 ? 'once is retried inside the Hub and the retry is noted' : 'twice ends in its own code whose fix does not blame the pack'} (decision 114)`, async (t) => {
+    let refused = 0;
+    const wrapped: PackFunctionRunner = async (_target, _input, kind) => {
+      if (kind === 'plan' && refused < refusals) { refused++; throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'resident_observation_unavailable' }); }
+      if (kind === 'plan') return { requests: [{ key: 'original', route: 'list', params: { path: 'spec' } }], done: true };
+      return { artifacts: [{ name: 'content', media_type: 'text/plain', text: 'synthetic listing' }] };
+    };
+    const w = await world(t, { callFunction: wrapped });
+    const read = await w.k.connectors.reader.read('manual:spec-search:sandbox-retry', w.ctx);
+    assert.equal(refused, refusals);
+    const manifest = await w.k.records.store.get<{ reason: string | null; warnings: string[] }>((read as { manifest: string }).manifest);
+    if (refusals === 1) {
+      success(read);
+      assert.ok(manifest?.body.warnings.some((warning) => /第一次没能在沙箱里运行完（resident_observation_unavailable），服务内重试一次成功/.test(warning)), JSON.stringify(manifest?.body.warnings));
+      return;
+    }
+    failure(read, /两次都没能在沙箱里运行完/);
+    assert.equal(manifest?.body.reason, 'SANDBOX_UNAVAILABLE');
+    const exit = readExit('SANDBOX_UNAVAILABLE').caller!;
+    assert.equal(exit.message, 'Hub 的沙箱这次没能运行系统包函数（不是函数的错）');
+    assert.doesNotMatch(exit.fix, /系统包负责人/);
+  });
+}

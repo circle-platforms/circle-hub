@@ -2,8 +2,9 @@
 // wording, facts items, the acquire plan and its lease_requests, the invalid-manifest whole-call refusal, and the
 // frozen groups the check reads. Addresses only 192.0.2.0/24 and 2001:db8::/32.
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, test } from 'node:test';
 import project from './project.ts';
+import { readParameters } from './conclude.ts';
 
 const NOW = '2026-10-22T02:00:00.000Z';
 const LATER = '2026-10-22T05:00:00.000Z';
@@ -315,4 +316,19 @@ it('rejects removed duration inputs and projects owner registration without a TT
   }
   const registered=project(input({action:'register',bed:'bed-a'})) as {lease_requests?:unknown[]};
   assert.deepEqual(registered.lease_requests,[{op:'register',prefix:'bed/bed-a/'}]);
+});
+
+test('a need.devices entry that is not {type, count} is refused for what it is, at its position (decision 114)', () => {
+  const name = readParameters({ action: 'acquire', need: { devices: [{ type: 'router', count: 1 }, 'apv0'] } });
+  assert.ok('code' in name);
+  assert.deepEqual([name.code, name.pointer], ['test-bed.bad_need', '/parameters/need/devices/1']);
+  assert.equal(name.message, 'need.devices 第 2 项是 "apv0"，不是 {type, count} 对象');
+  assert.match(name.fix, /不写设备名/);
+  const untyped = readParameters({ action: 'acquire', need: { devices: [{ count: 2 }] } });
+  assert.ok('code' in untyped);
+  assert.deepEqual([untyped.message, untyped.pointer], ['need.devices 第 1 项没有 type', '/parameters/need/devices/0/type']);
+  assert.doesNotMatch(untyped.message, /""/, 'never a value the caller did not write');
+  const counted = readParameters({ action: 'acquire', need: { devices: [{ type: 'client' }] } });
+  assert.ok('code' in counted);
+  assert.deepEqual([counted.message, counted.pointer], ['need.devices 第 1 项 client 的数量没有写，要 1 到 100 的整数', '/parameters/need/devices/0/count']);
 });

@@ -53,3 +53,13 @@ test('a parameter schema with a regular expression is refused the same way; a pr
   const named = await startWith({ review: { findingsData: { type: 'object', properties: { pattern: { type: 'string' } }, additionalProperties: false } } });
   assert.equal(named.answer.call_result, 'ok', JSON.stringify(named.answer.errors));
 });
+
+test('a value that does not fit a parameter schema is refused where inside it is wrong, with what was given (decision 114)', { skip }, async () => {
+  const schema = { type: 'object', properties: { devices: { type: 'array', items: { type: 'object', properties: { type: { type: 'string', enum: ['rig', 'host'] }, count: { type: 'integer', minimum: 1 } }, required: ['type', 'count'], additionalProperties: false } } } };
+  const { answer, read, runs } = await startWith({ review: { parameterSchema: schema } }, { strict: { devices: [{ type: 'rig', count: 1 }, 'dev-a'] } });
+  assert.deepEqual(answer.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/parameters/strict/devices/1']]);
+  assert.match(answer.errors[0].message, /^参数 strict 的取值不符合任务包声明的模式：\/parameters\/strict\/devices\/1 要的是.*收到的是/);
+  assert.deepEqual([read, runs], [0, 0], 'nothing read, no run');
+  const ok = await startWith({ review: { parameterSchema: schema } }, { strict: { devices: [{ type: 'host', count: 2 }] } });
+  assert.equal(ok.answer.call_result, 'ok', JSON.stringify(ok.answer.errors));
+});

@@ -278,7 +278,9 @@ describe('refusals at start_run', { skip }, () => {
 
   it('a skip of a category the template does not have is refused by the parameter schema', async () => {
     const out = await start({ inputs: { documents: [{ external: onAgile('900801', renamed(baseDocument(), 'r0e2eparam01')) }] }, parameters: { skipped: [{ category: 'performance', reason: 'x' }] } });
-    assert.deepEqual(out.answer.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/parameters/skipped']]);
+    // Decision 114: the refusal names the position inside the value and what is wrong there.
+    assert.deepEqual(out.answer.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/parameters/skipped/0/category']]);
+    assert.match(out.answer.errors[0].message, /^参数 skipped 的取值不符合任务包声明的模式：/);
   });
 
   it('a skip the pack cannot apply is refused with the pack fix naming the run’s documents, never dropped', async () => {

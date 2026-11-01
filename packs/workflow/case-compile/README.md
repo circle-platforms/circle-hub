@@ -1,4 +1,4 @@
-# case-compile 3.9.8
+# case-compile 3.9.9
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -501,3 +501,27 @@ and recompose-adjudication move to 1.0.2 together, as they moved to 1.0.1 with 3
 accepts stage evidence of exactly that version, so the pin moves to 1.0.2 with them (in the parent, the three copies,
 `testing/recompose.ts` and the recompose samples). No recompose run exists on the deployed Hub, so no stored evidence
 is left behind. Each stage pack is signed by its own `api.ts sign`.
+
+### 3.9.9: device commands by the locked command tree, except the destructive ones (decision 114)
+
+The owner's 11-01 rerun of a bug reproduction stopped on a question to the user: the runner contract's apv_cli effect listed
+19 command subtrees in `command_scope`, the DNS ACL commands of the bug were not among them, and the only way on was a
+maintainer revising the contract. The owner: "这三个选项都不应该是操作者应该做的事情，这明显是我们的设计问题", then
+"可以，照 CES 改". CES and the InfoTest structural gate allow every device command the command grammar knows and ban
+only the commands that take a shared environment's device down or wipe it with its management access (InfoTest
+`knowledge/data/compile_ref/domain_grammar.json` `destructive_commands`): the lifecycle verbs reboot, reload, shutdown,
+halt and poweroff anywhere in the command, and the whole-device configuration wipes.
+
+- runtime-contract@2 gets the closed addition `destructive`: `source`, `sha256`, and at least one of `exact`, `prefixes`
+  (paths under `/commands` of the locked command tree) and `segments` (path segments, anywhere in the path). It is matched
+  on the resolved command identity's path, never on wording.
+- A device CLI effect that declares no `command_scope` and no `commands` now authorises every command the locked tree
+  resolves, except the destructive ones, when the contract declares `destructive`; without it, device commands stay
+  refused and the refusal says so. A declared scope still narrows, and a destructive command is refused inside it too.
+- A command address whose position has no declared role must be an address of the environment, a lineage lease or a
+  replacement (the bed address check, bed member); a declared role without `bed_member` is still a gap.
+- The contract-shape support says how commands were authorised (the declaration's source and digest and what it bans).
+- SKILL step 2: the same rule, and a fact only a maintainer can supply goes to that maintainer as an evidence request;
+  the user is told which request the run waits on, never asked to choose for the maintainer.
+
+Everything else, the inverse obligations, the runner cleanup, the bed checks and the dispatch budget, is unchanged.

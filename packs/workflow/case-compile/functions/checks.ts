@@ -62,6 +62,13 @@ function runnerCleanupText(contract: RuntimeContract, covered: readonly RunnerCo
   const pinned = c.pinned ? '原合约的源文件摘要表记了同一摘要' : '原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对';
   return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：每个用例开始前和整本结束时按发过的命令行逐条比前缀、第一条命中即用；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
 }
+/** How device commands are authorised (decision 114): by the locked command tree except the declared destructive commands. */
+function destructiveText(contract: RuntimeContract): string {
+  const d = contract.destructive;
+  if (!d) return '';
+  const parts = [d.exact.length ? `命令 ${d.exact.join('、')}` : '', d.prefixes.length ? `${d.prefixes.join('、')} 及其下的命令` : '', d.segments.length ? `路径里带 ${d.segments.join('、')} 的命令` : ''].filter(Boolean).join('；');
+  return `；设备命令按锁定命令树放行，只拒运行器合约声明的破坏性命令（${d.source}@${d.sha256.slice(0, 12)}，同 CES 与 InfoTest 的禁令：${parts}）`;
+}
 export function checkContractShape(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;
@@ -88,7 +95,7 @@ export function checkContractShape(input: unknown): Outcome[] {
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
   const cleanup = s.contract!.cleanup;
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对${runnerCleanupText(s.contract!, covered)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对${runnerCleanupText(s.contract!, covered)}${destructiveText(s.contract!)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;

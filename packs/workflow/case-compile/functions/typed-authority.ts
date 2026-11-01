@@ -6,7 +6,7 @@ import {commandObligations,definitionKey,type RunnerCovered} from './command-obl
 import {within} from './command-policy.ts';
 import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
-import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
+import { destructiveHit, runtimeMethod, scopeAllows, type RuntimeContract } from './runtime-contract.ts';
 import type { RuntimeProfile } from './profile.ts';
 import {readSlots, type PlanSlots} from './slots.ts';
 import {bindArguments} from './binding.ts';
@@ -41,8 +41,10 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
     const parsed=resolution.byLine.get(String(v.value));const matches=parsed?[parsed]:[];
     if(matches.length!==1)continue;
     const identity=matches[0];if(step.cleanup!==true&&knownIds.length&&!keys.has(definitionKey(identity)))note(v.pointer,'计划命令与用例明确声明的命令身份不一致（已核显式类型化替换）','refute');
-    if(!a.effects.some(e=>(e.command_scope!==undefined||e.commands!==undefined)&&(e.command_scope===undefined||e.command_scope.some(prefix=>within(identity.path,prefix)))&&(e.commands===undefined||e.commands.some(i=>identityKey(replacedIdentity(i,slots))===identityKey(identity)))))note(v.pointer,'完整命令身份不在合约声明范围与逐条允许集合的交集','refute');
-    for(const parameter of identity.parameters)if(parameter.parsed.kind==='address'&&(parameter.parsed.value.kind==='ipv4'||parameter.parsed.value.kind==='ipv6')){const role=commandRole(a,identity,parameter.position,parameter.role?.name);if(!role||typeof a.roles[role]?.bed_member!=='boolean')note(v.pointer,`命令参数位置 ${parameter.position} 缺合约闭集角色及 bed_member 用途声明`);}
+    const destroys=destructiveHit(contract,identity.path);
+    if(destroys!==null)note(v.pointer,`破坏性命令不派发：${identity.path} 命中运行器合约的破坏性命令声明（${destroys}；来源 ${contract.destructive!.source}@${contract.destructive!.sha256.slice(0,12)}，同 CES 与 InfoTest 的禁令）。自动化测试环境是共享的，用例不重启、不关机、不整机清配；改用对象级的配置和 no 形式收尾`,'refute');
+    else if(!a.effects.some(e=>e.commands!==undefined?scopeAllows(contract,e,identity.path)&&e.commands.some(i=>identityKey(replacedIdentity(i,slots))===identityKey(identity)):scopeAllows(contract,e,identity.path)))note(v.pointer,contract.destructive===undefined?'完整命令身份不在合约声明范围与逐条允许集合的交集；合约也没有破坏性命令声明，设备命令不能按命令树放行':'完整命令身份不在合约声明范围与逐条允许集合的交集','refute');
+    for(const parameter of identity.parameters)if(parameter.parsed.kind==='address'&&(parameter.parsed.value.kind==='ipv4'||parameter.parsed.value.kind==='ipv6')){const role=commandRole(a,identity,parameter.position,parameter.role?.name);if(role&&typeof a.roles[role]?.bed_member!=='boolean')note(v.pointer,`命令参数位置 ${parameter.position} 的合约角色 ${role} 缺 bed_member 用途声明`);}
    }
   }
  }
@@ -63,6 +65,7 @@ function commandRole(a:Authority,i:CommandIdentity,position:number,native?:strin
  const roles=[...new Set(declared)];return roles.length===1?roles[0]:null;
 }
 export interface AddressUse {value:string|number;kind:string;bed_member:boolean|undefined;pointer:string}
+/** Typed address positions; a command address whose position has no declared role must be an address of this environment, a lineage lease or a replacement (decision 114). */
 export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog?:unknown):AddressUse[]{
  // Flat callers keep their existing boundary; a block carrier must be lowered even when its steps is empty.
  if(slots.blocks?.length){
@@ -72,7 +75,7 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
  }
  const resolved=planCommands(contract,profile,slots,catalog);
  const uses:AddressUse[]=[];const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
- for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
+ for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:true,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }

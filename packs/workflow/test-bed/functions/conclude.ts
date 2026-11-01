@@ -40,6 +40,8 @@ export interface PlanFailure {
   code: string;
   message: string;
   fix: string;
+  /** Where in the call the problem is (decision 114), e.g. /parameters/need/devices/0; absent: the inventory input. */
+  pointer?: string;
   /** Whether the facts the refusal rests on are declared (the inventory) or observed (D05 R[8]). */
   provenance?: Extract<ProvenanceType, 'declared' | 'observed'>;
   grounds?: string[];
@@ -69,13 +71,18 @@ export function readParameters(params: Record<string, unknown>): Normalized | Pl
   const action: Action = isAction(params.action) ? params.action : 'search';
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];
-  for (const raw of rawDevices) {
-    const type = isRecord(raw) && typeof raw.type === 'string' ? raw.type : '';
-    const count = isRecord(raw) && typeof raw.count === 'number' && Number.isInteger(raw.count) ? raw.count : -1;
+  const SHAPE = `每项写成 {"type":"load-balancer","count":2} 这样的对象，type 是 ${DEVICE_TYPES.join('、')} 之一；预订整个自动化测试环境时按清单的类型和数量写全，不写设备名`;
+  for (const [i, raw] of rawDevices.entries()) {
+    const pointer = `/parameters/need/devices/${i}`;
+    // Say what was given, never a value the caller did not write (decision 114).
+    if (!isRecord(raw)) return { code: 'test-bed.bad_need', message: `need.devices 第 ${i + 1} 项是 ${JSON.stringify(raw)}，不是 {type, count} 对象`, fix: SHAPE, pointer };
+    if (typeof raw.type !== 'string') return { code: 'test-bed.bad_need', message: `need.devices 第 ${i + 1} 项没有 type`, fix: SHAPE, pointer: `${pointer}/type` };
+    const type = raw.type;
     if (!(DEVICE_TYPES as readonly string[]).includes(type)) {
-      return { code: 'test-bed.bad_need', message: `need.devices 里的设备类型 ${JSON.stringify(type)} 不在五种里（${Object.values(DEVICE_TYPE_LABEL).join('、')}）`, fix: `type 写 ${DEVICE_TYPES.join('、')} 之一` };
+      return { code: 'test-bed.bad_need', message: `need.devices 第 ${i + 1} 项的设备类型 ${JSON.stringify(type)} 不在五种里（${Object.values(DEVICE_TYPE_LABEL).join('、')}）`, fix: `type 写 ${DEVICE_TYPES.join('、')} 之一`, pointer: `${pointer}/type` };
     }
-    if (count < 1 || count > 100) return { code: 'test-bed.bad_need', message: `need.devices 里 ${type} 的数量 ${JSON.stringify(raw.count)} 不是 1 到 100 的整数`, fix: 'count 写 1 到 100 的整数' };
+    const count = typeof raw.count === 'number' && Number.isInteger(raw.count) ? raw.count : -1;
+    if (count < 1 || count > 100) return { code: 'test-bed.bad_need', message: `need.devices 第 ${i + 1} 项 ${type} 的数量${raw.count === undefined ? '没有写' : `是 ${JSON.stringify(raw.count)}`}，要 1 到 100 的整数`, fix: 'count 写 1 到 100 的整数', pointer: `${pointer}/count` };
     devices.push({ type, count });
   }
   const build = typeof needRaw.build === 'string' && needRaw.build !== '' ? needRaw.build : undefined;

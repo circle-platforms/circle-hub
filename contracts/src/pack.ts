@@ -685,7 +685,8 @@ export const PackWarning = z.strictObject({
 export type PackWarning = z.infer<typeof PackWarning>;
 
 /** A refusal: the whole call produced nothing usable. It is a claim like the Hub's own errors (B01, D05 R[8]). */
-export const PackError = z.strictObject({ code: z.string().min(1), message: z.string(), fix: z.string(), documents: z.array(z.string()).optional(), ...ErrorClaimFields });
+export const PackError = z.strictObject({ code: z.string().min(1), message: z.string(), fix: z.string(), documents: z.array(z.string()).optional(),
+  pointer: JsonPointer.optional().describe('where in this call the problem is, under /parameters or /inputs (decision 114); absent: the judged input'), ...ErrorClaimFields });
 export type PackError = z.infer<typeof PackError>;
 export const PackFailure = z.strictObject({ error: PackError, warnings: z.array(PackWarning) });
 export type PackFailure = z.infer<typeof PackFailure>;

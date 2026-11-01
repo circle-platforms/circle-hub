@@ -99,6 +99,12 @@
                 "type": "string"
               }
             },
+            "pointer": {
+              "description": "where in this call the problem is, under /parameters or /inputs (decision 114); absent: the judged input",
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+            },
             "grounds": {
               "description": "references and external ids the error rests on",
               "maxItems": 20,

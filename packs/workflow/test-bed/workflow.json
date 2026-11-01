@@ -33,10 +33,25 @@
     },
     {
       "name": "need",
-      "description": "设备数量、类型与构建需求；不再接受 need.hours",
+      "description": "设备类型、数量与构建需求：devices 每项一种设备 {type, count}（type 是 load-balancer、router、client、server、console 之一，count 是 1 到 100 台；预订整个自动化测试环境时按清单的类型和数量写全，不写设备名），build 写要的构建名；不再接受 need.hours",
       "required": false,
       "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "enum": ["load-balancer", "router", "client", "server", "console"] },
+                "count": { "type": "integer", "minimum": 1, "maximum": 100 }
+              },
+              "required": ["type", "count"],
+              "additionalProperties": false
+            }
+          },
+          "build": { "type": "string", "minLength": 1 }
+        }
       }
     },
     {
