@@ -11,7 +11,7 @@ test('bug content echoes only the configured fix field name, with no existence c
     const result = content(detailProject({ ...bugInput, settings: { bug_fix_field: setting } }));
     assert.equal(result.fix_field, setting);
     const { fix_field, ...old } = result;
-    assert.deepEqual(old, { id: '910001', kind: 'bug', title: '合成缺陷', fields: { id: '910001', title: '合成缺陷', fix: '不能当默认字段', repair_notes: '合成修复说明' }, html_fields: ['repair_notes'], fix_notes: null, fix_notes_note: '缺少设置 settings.bug_fix_actions' });
+    assert.deepEqual(old, { id: '910001', kind: 'bug', title: '合成缺陷', fields: { id: '910001', title: '合成缺陷', fix: '不能当默认字段', repair_notes: '合成修复说明' }, html_fields: ['repair_notes'], fix_notes: null, fix_notes_note: '缺少设置 settings.bug_fix_actions', opened_build: { id: null, name: null, note: '缺陷记录的 openedBuild 不是构建编号，没有对应的构建记录可读' } });
   }
   for (const setting of [undefined, '', '   ', null, 3]) assert.equal(content(detailProject({ ...bugInput, settings: { bug_fix_field: setting } })).fix_field, null);
   const result = detailProject({ ...bugInput, settings: { bug_fix_field: 'repair_notes' } }) as { artifacts: Array<{ name: string; json: Record<string, unknown> }> };

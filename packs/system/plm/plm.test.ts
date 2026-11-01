@@ -18,11 +18,12 @@ describe('the profile', () => {
   test('lists every read route one by one and no write route; the write path under the read prefix matches none', () => {
     assert.deepEqual(
       profile.routes.map((r) => `${r.method} ${r.path}`),
-      ['GET /plmquery/product/all/', 'GET /plmquery/build/', 'POST /plmquery/bug/detail/', 'GET /plmquery/bug/', 'POST /plmquery/story/detail/'],
+      ['GET /plmquery/product/all/', 'GET /plmquery/build/', 'GET /plmquery/build/{id}/', 'POST /plmquery/bug/detail/', 'GET /plmquery/bug/', 'POST /plmquery/story/detail/'],
     );
     for (const route of profile.routes) {
       assert.equal(route.read, true);
-      assert.doesNotMatch(route.path, /\{/, 'literal paths: no template can reach another path under the prefix');
+      // A template segment takes digits only, so it cannot name another path under the prefix (decision 111: one build by number).
+      if (/\{/.test(route.path)) assert.deepEqual(Object.values(route.params ?? {}).map((shape) => (shape as { pattern?: string }).pattern), ['^[0-9]{1,15}$'], route.id);
       assert.equal(templateReaches(parsePathTemplate(route.path), parsePathTemplate(WRITE_PATH)), false, route.id);
     }
     const routes = compileRoutes(profile.routes);

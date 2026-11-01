@@ -30,7 +30,8 @@ before(async () => {
         return reply([]);
       }
       if (r.method === 'POST' && r.path === '/plmquery/story/detail/') return reply({ code: 1000, data: [{ id: 21, status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: 22, status: null, stage: null }, { id: 23 }] });
-      if (r.method === 'POST' && r.path === '/plmquery/bug/detail/') return reply({ code: 1000, data: [{ id: 910001, title: '合成缺陷', repair_notes: '<p>合成修复说明</p>' }] });
+      if (r.method === 'POST' && r.path === '/plmquery/bug/detail/') return reply({ code: 1000, data: [{ id: 910001, title: '合成缺陷', repair_notes: '<p>合成修复说明</p>', openedBuild: '810' }] });
+      if (r.method === 'GET' && r.path === '/plmquery/build/810/') return reply({ code: 1000, msg: 'success', data: { id: 810, name: 'Synthetic_10_7_A' } });
       if (r.method === 'GET' && r.path === '/plmquery/bug/') return reply({ code: 1000, msg: 'success', data: [{ id: 910001, title: '合成缺陷', status: 'active', assignedTo: r.query.assignedTo ?? null }, { id: 910003, title: '合成缺陷三', status: 'active', assignedTo: r.query.assignedTo ?? null }] });
     }
     return plmReply(r, (token) => agile.tokens.has(token), () => writes++);
@@ -54,6 +55,9 @@ async function read(key: string, type = 'builds') {
 test('configured fix_field travels through the real sandbox into bug content only', async () => {
   const bug = await read('910001', 'bug');
   assert.equal(bug.fix_field, 'repair_notes'); assert.equal(bug.fields.repair_notes, '合成修复说明');
+  // decision 111: the build the bug was found in, by name, from the one build record its openedBuild names
+  assert.deepEqual(bug.opened_build, { id: '810', name: 'Synthetic_10_7_A' });
+  assert.ok(plm.requests.some((request) => request.method === 'GET' && request.path === '/plmquery/build/810/'));
 });
 test('name planning makes two reads and preserves both build names and configured requirement scope', async () => {
   const at = plm.requests.length;

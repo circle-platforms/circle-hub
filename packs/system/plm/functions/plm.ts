@@ -8,9 +8,9 @@
 
 import type { Resolution } from '../../../../contracts/generated/vocabulary.ts';
 
-type Planned = { key: string; route: string; body?: unknown; query?: Record<string, string> };
+type Planned = { key: string; route: string; body?: unknown; query?: Record<string, string>; params?: Record<string, string> };
 type PlanOutput = { requests: Planned[]; done: boolean; original?: string };
-type Response = { ok?: boolean; json?: unknown };
+type Response = { ok?: boolean; json?: unknown; error?: { code?: string; message?: string } };
 
 const ID = /^[1-9][0-9]{0,14}$/;
 export const MAX_BUGS_BATCH = 50;
@@ -48,12 +48,48 @@ function partsOf(input: unknown): { type: string; key: string; responses: Record
 
 const kindOf = (type: string): Kind | null => (type === 'bug' || type === 'story' ? type : null);
 
-/** Plan of plm:bug:<id> and plm:story:<id>: one detail request for the one id. */
+/**
+ * Plan of plm:bug:<id> and plm:story:<id>: one detail request for the one id. A bug then reads the one build record its
+ * openedBuild names (GET build/{id}/), so the content can say which build the bug was found in, not only a build number.
+ */
 export function detailPlan(input: unknown): PlanOutput {
-  const { type, key } = partsOf(input);
+  const { type, key, responses } = partsOf(input);
   const kind = kindOf(type);
   if (kind === null || !ID.test(key)) return { requests: [], done: true };
-  return { requests: [{ key: 'detail', route: KINDS[kind].route, body: { [KINDS[kind].member]: [Number(key)] } }], done: true };
+  const detail: Planned = { key: 'detail', route: KINDS[kind].route, body: { [KINDS[kind].member]: [Number(key)] } };
+  if (kind !== 'bug') return { requests: [detail], done: true };
+  if (!Object.hasOwn(responses, 'detail')) return { requests: [detail], original: 'detail', done: false };
+  const build = openedBuildId(recordOf(responses.detail, key));
+  return { requests: build === null ? [] : [{ key: 'opened', route: 'build-detail', params: { id: build } }], original: 'detail', done: true };
+}
+
+/** The record of one id in a detail answer, or null. */
+function recordOf(response: Response | undefined, key: string): Record<string, unknown> | null {
+  const data = isRecord(response?.json) ? (response.json as Record<string, unknown>).data : undefined;
+  const record = Array.isArray(data) ? data.find((item) => isRecord(item) && idText(item.id) === key) : undefined;
+  return isRecord(record) ? record : null;
+}
+
+/** The build number a bug record names in openedBuild, when it is one (the service also writes trunk or an empty value). */
+function openedBuildId(record: Record<string, unknown> | null): string | null {
+  const raw = record === null ? null : idText(record.openedBuild);
+  return raw !== null && ID.test(raw) ? raw : null;
+}
+
+/**
+ * The build a bug was found in (D05 R[8]): the number its record gives and the name from that one build record, or why
+ * there is no name: the record names no build number, the build read failed (a held answer says so), or the record has none.
+ */
+function openedBuildOf(record: Record<string, unknown>, response: Response | undefined): { id: string | null; name: string | null; note?: string } {
+  const id = openedBuildId(record);
+  if (id === null) return { id: typeof record.openedBuild === 'string' && record.openedBuild !== '' ? record.openedBuild : null, name: null, note: '缺陷记录的 openedBuild 不是构建编号，没有对应的构建记录可读' };
+  if (response === undefined) return { id, name: null, note: `没有读构建 ${id} 的记录` };
+  if (response.ok === false) return { id, name: null, note: `构建 ${id} 的记录没读到：${(response.error?.message ?? '读取失败').slice(0, 300)}` };
+  const json = response.json;
+  const data = isRecord(json) && Object.hasOwn(json, 'data') ? json.data : json;
+  const build = Array.isArray(data) ? data.find((item) => isRecord(item) && idText(item.id) === id) : data;
+  const name = isRecord(build) && typeof build.name === 'string' && build.name.trim() !== '' ? build.name : null;
+  return name === null ? { id, name: null, note: `构建 ${id} 的记录里没有名字` } : { id, name };
 }
 
 /** Plan of plm:bugs:<id>+<id>+...: one detail request for all ids (at most 50, sorted numerically, deduplicated). */
@@ -149,7 +185,7 @@ export function detailProject(input: unknown): unknown {
   return {
     ...(notes?.fix_notes_note ? { note: notes.fix_notes_note } : {}),
     artifacts: [
-      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField, ...notes } : {}) } },
+      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField, ...notes, opened_build: openedBuildOf(record, responses.opened) } : {}) } },
       { name: 'meta', media_type: 'application/json', json: { id: key, kind, title: title === null ? `${KINDS[kind].label} ${key}` : `${KINDS[kind].label} ${key} ${title}`, status } },
     ],
   };
