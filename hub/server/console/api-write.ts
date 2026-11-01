@@ -215,7 +215,7 @@ export async function handleApiWrite(ctx: PageContext, rest: readonly string[], 
     return execute(ctx, options, RUNNING[path], fields);
   }
   if (path === 'packs/stage') return stage(ctx, options);
-  // The read-only trial of a business system: the fields of POST /systems, nothing saved, no command run.
+  // The read-only trial: fields of POST /systems, outcomes recorded without the configuration, no command run.
   if (path === 'systems/test') {
     const outcome = await runTrial(ctx, formOf(fields));
     if ('report' in outcome) return { status: 200, body: { report: trialJson(outcome.report) } };

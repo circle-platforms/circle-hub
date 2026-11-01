@@ -360,6 +360,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   method, path, tried, reason, ok, status, code, message, ms, bytes}], started_at, ended_at, saved: false}}`; 400 for a
   form error, RESOURCE_INVALID, PACK_UNAVAILABLE or PROFILE_INVALID; 503 without the port (`ServerDeps.systems`, wired by
   the assembly); the neutral 404 for members. The form comes back with the secret names, never their contents.
+  Decision 81 records each completed trial as a `trial-report@1` action (`trial`, B05): actor, times, pack/version,
+  environment, login and route outcomes only, without addresses, credential contents or source text. `saved: false`
+  means no resource configuration or credential content was saved. A failed audit write is logged by connectors and
+  does not change the report or repeat a request. The records page lists trial actions for administrators only, with the
+  generated action label, member/time filters and its own pagination; tool/run filters select the MCP call log alone.
 - **Runtime environments' state** (decision 79; vocabulary axis `environment_state` of D07): `GET
   /console/api/environments` gives each executor its derived `status` (`available`, `in_use`, `frozen`, `deactivated`,
   `unknown`) with `status_label` and `status_detail` (why, line by line), beside the facts it comes from (`state`, from

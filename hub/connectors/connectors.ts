@@ -416,7 +416,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async trial(by, input) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
       if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能试读业务系统');
-      return trialSystem({ load: (ref) => profiles.load(ref), redactor, now, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.log ? { log: options.log } : {}), failedLogins: failedTrialLogins }, input, viewer.id);
+      return trialSystem({ store: records.store, load: (ref) => profiles.load(ref), redactor, now, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.log ? { log: options.log } : {}), failedLogins: failedTrialLogins }, input, viewer.id);
     },
     addResource: (by, input) => registry.add(by, input),
     // Nested reads cached under the old definition are not served after a change (they are keyed by it as well).

@@ -1,6 +1,6 @@
 // The read-only trial of a system pack (trial.ts) and the read statistics of a resource (statistics.ts), against loopback
 // stubs: the trial logs in at most once, never twice with values that failed, tries only the routes that need no
-// arguments, never reaches a write route, stores nothing (no record, no object, no session entry) and keeps every value
+// arguments, never reaches a write route, appends only a trial action (no object or session entry) and keeps every value
 // out of its report and the log; the statistics count the read manifests of the window.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -15,6 +15,7 @@ import { writePack } from './testing/packs.ts';
 import { PLM_PRODUCTS, startPlmStub, type PlmStub } from './testing/plm.ts';
 import { json, startStub } from './testing/stub.ts';
 import { TRIAL_LOGIN_STOPS, type SystemTrialReport } from './trial.ts';
+import { TRIAL_REPORT_SCHEMA, TrialRecord } from './trial-report.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -65,7 +66,7 @@ const plmInput = (w: World, password = PASSWORD) => ({
 
 const route = (report: SystemTrialReport, id: string) => report.routes.find((r) => r.route === id)!;
 
-test('a trial logs in once, tries the routes that need no arguments, opens no write route and keeps nothing', async (t) => {
+test('a trial logs in once, tries only argument-free routes and appends one trial action without source content or credentials', async (t) => {
   const w = await world(t);
   const before = await counts(w.k);
   const report = await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
@@ -83,17 +84,52 @@ test('a trial logs in once, tries the routes that need no arguments, opens no wr
   }
   assert.equal(w.plm.writes, 0, 'the write route is never reached');
   assert.equal(report.saved, false);
-  assert.deepEqual(await counts(w.k), before, 'no record, no object, no pointer, no vault entry');
+  assert.deepEqual(await counts(w.k), { ...before, records: before.records + 1 }, 'only a trial action: no object, pointer or vault entry');
+  const actions = await w.k.records.store.find({ kind: 'action', key: 'action.kind', value: 'trial' });
+  assert.equal(actions.items.length, 1);
+  const action = actions.items[0];
+  assert.equal(action.schema, TRIAL_REPORT_SCHEMA);
+  assert.equal(action.provenance, 'observed');
+  const body = TrialRecord.parse(action.body);
+  assert.equal(body.principal, w.k.admin.id);
+  assert.deepEqual(body.system_pack, { id: report.system_pack.id, version: report.system_pack.version });
+  assert.deepEqual(body.auth, { sent: true, ok: true, code: null });
+  assert.deepEqual(body.routes, report.routes.map(({ route, tried, ok, status, code, ms }) => ({ route, tried, ok, status, code, ms })));
+  assert.equal(body.started_at, report.started_at);
+  assert.equal(body.ended_at, report.ended_at);
+  assert.equal((await w.k.records.store.find({ kind: 'action', key: 'action.user', value: w.k.admin.id })).items[0].digest, action.digest);
   // No value of the trial in the report or the log: neither the password, nor the token, nor what the system answered.
   const token = [...w.agile.tokens][0]!;
   const shown = JSON.stringify(report);
   const logged = JSON.stringify(w.k.log);
+  const recorded = JSON.stringify(body);
   for (const secret of [PASSWORD, token]) {
     assert.ok(!shown.includes(secret), 'a value in the report');
     assert.ok(!logged.includes(secret), 'a value in the log');
+    assert.ok(!recorded.includes(secret), 'a value in the record');
   }
-  for (const product of PLM_PRODUCTS) assert.ok(!shown.includes(product.name), 'an answer in the report');
+  for (const product of PLM_PRODUCTS) {
+    assert.ok(!shown.includes(product.name), 'an answer in the report');
+    assert.ok(!recorded.includes(product.name), 'an answer in the record');
+  }
+  for (const origin of Object.values(plmInput(w).origins)) assert.ok(!recorded.includes(origin), 'no address in the record');
   assert.ok(w.k.log.some((event) => event.event === 'resource_trial'));
+});
+
+test('a failed trial record leaves the report intact and never repeats the system requests', async (t) => {
+  const w = await world(t);
+  const store = new Proxy(w.k.records.store, { get(target, key) {
+    if (key === 'put') return async () => { throw new Error('synthetic store failure'); };
+    const value = Reflect.get(target, key);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const connectors = w.k.make({ records: { ...w.k.records, store } });
+  const report = await connectors.admin.trial(w.k.admin, plmInput(w));
+  assert.equal(report.auth.ok, true);
+  assert.equal(w.agile.logins, 1);
+  assert.equal(route(report, 'products').ok, true);
+  assert.equal(w.plm.requests.length, report.routes.filter((row) => row.tried).length, 'each tried route was sent once');
+  assert.ok(w.k.log.some((event) => event.event === 'resource_trial_record_failed'));
 });
 
 test('a refused login is not sent again with the same values; corrected values are', async (t) => {
@@ -110,6 +146,8 @@ test('a refused login is not sent again with the same values; corrected values a
   assert.equal(again.auth.sent, false);
   assert.match(again.auth.reason!, /此前登录失败，未再次发送/);
   assert.equal(w.agile.logins, 1, 'no second login with the values that failed');
+  const actions = await w.k.records.store.find<TrialRecord>({ kind: 'action', key: 'action.kind', value: 'trial' });
+  assert.deepEqual(actions.items.map((a) => a.body.auth), [{ sent: true, ok: false, code: 'LOGIN_FAILED' }, { sent: false, ok: null, code: null }]);
   const corrected = await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
   assert.equal(corrected.auth.ok, true);
   assert.equal(w.agile.logins, 2);
@@ -193,6 +231,8 @@ test('a redirect is never followed, a declared hop stays unknown, and no route i
   assert.equal(route(report, 'status').tried, false);
   assert.match(route(report, 'status').reason!, /其余接口未试读/);
   assert.deepEqual(site.requests.map((r) => r.path), ['/moved/', '/jumps/', '/slow/'], 'no hop followed, nothing after the deadline');
+  const record = (await w.k.records.store.find<TrialRecord>({ kind: 'action', key: 'action.kind', value: 'trial' })).items[0].body;
+  assert.deepEqual(record.routes.map((row) => [row.tried, row.ok]), [[true, null], [true, false], [true, true], [false, null]], 'unknown and untried outcomes stay distinct');
 });
 
 test('the statistics count the reads of the window by result, with the median and longest time of the completed ones', async (t) => {
@@ -221,4 +261,6 @@ test('the statistics count the reads of the window by result, with the median an
   const capped = (await readStatistics(w.k.records.store, [plm.id], w.k.clock.now(), undefined, 2))[0];
   assert.equal(capped.partial, true);
   assert.equal(capped.reads, 2);
+  await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
+  assert.deepEqual(await readStatistics(w.k.records.store, [plm.id, idle.id], new Date(busy.until)), [busy, quiet], 'trial actions never enter real-read statistics');
 });

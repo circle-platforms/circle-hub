@@ -3,7 +3,7 @@
 // Each form posts to /console/admin/do/<action>, which runs the same `circle-hub` commands as the command line (decision
 // 75). Adding a member issues an invitation code for the standard authorization, or a token for a client without it;
 // publishing a task pack is a check of the upload and then its 发布 step (manage.ts). Connecting a business system may be
-// tried first (测试连接, trial.ts): a read-only trial of the typed configuration that saves nothing.
+// tried first (测试连接, trial.ts): a read-only trial that records its outcomes without saving the typed configuration.
 import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { code, html, link, liveModule, page, type Html } from './html.ts';
 import { actionForm, environmentOptions, jobsSection, roleOptions, stageForms, type Form, type JobStore } from './manage.ts';
@@ -50,13 +50,13 @@ ${field('访问地址', html`<textarea name="origins" rows="3" required placehol
 ${field('设置', html`<textarea name="settings" rows="2" placeholder="tenant=demo">${prefilled(prefill, 'settings')}</textarea>`, { hint: '每行 键=值，可留空', full: true })}
 ${field('凭据项', html`<textarea name="credentials" rows="2" placeholder="token=DEMO_TOKEN">${prefilled(prefill, 'credentials')}</textarea>`, { hint: '每行 凭据项=凭据名称；内容在下面填写，或之后在 Circle 中设置', full: true })}
 ${secretRows}
-<div class="full"><button type="submit" class="btn" formaction="/console/admin/do/system-test" formnovalidate>测试连接</button> <span class="hint">只读试读系统包声明的接口，不保存任何内容</span></div>
+<div class="full"><button type="submit" class="btn" formaction="/console/admin/do/system-test" formnovalidate>测试连接</button> <span class="hint">只读试读并记录结果，不保存配置与凭据内容</span></div>
 </div>`, '接入', { primary: true });
   const trialStep = aside === undefined ? 1 : 2;
   return html`${steps(['选择系统包', '访问地址与凭据', '测试连接', '完成'], trialStep)}
 <section class="grid g-2-1 section">
 ${card({ title: '业务系统', meta: '只读访问，不修改业务数据' }, html`${form}<p class="note">先执行 ${code('circle-hub resource add')}，再以 ${code('circle-hub secret set')} 写入凭据；凭据内容只写入密钥库，之后不再显示，建议通过 HTTPS 打开本页。测试连接后，凭据内容需重新填写。</p>`)}
-${aside ?? card({ title: '测试连接', meta: '可选' }, html`<p class="sub">接入前以只读方式试读系统包声明的接口：登录（若系统包声明）至多一次，只试读不需要参数的接口，显示认证结果、各接口结果与响应时间，不保存任何内容。</p>`)}
+${aside ?? card({ title: '测试连接', meta: '可选' }, html`<p class="sub">接入前以只读方式试读系统包声明的接口：登录（若系统包声明）至多一次，只试读不需要参数的接口，显示认证结果、各接口结果与响应时间。每次测试连接记一条试读记录，不保存配置、凭据内容或来源原文；登录失败时加密保存防止重复登录的摘要。</p>`)}
 </section>`;
 }
 

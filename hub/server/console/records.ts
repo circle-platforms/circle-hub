@@ -4,11 +4,40 @@
 // the same page (decision 75).
 import { CALL_RESULT, uiLabelOf, type CallResult } from '../../../contracts/generated/vocabulary.ts';
 import { TOOLS } from '../../../contracts/src/tools.ts';
+import { TRIAL_REPORT_SCHEMA, TrialRecord } from '../../connectors/api.ts';
 import type { CallLogLine, Page } from '../../records/api.ts';
-import { html, link, page, type Html } from './html.ts';
+import { html, link, page, table, type Html } from './html.ts';
 import { callTable, names, neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { TOOL_LABELS, toolName } from './tasks.ts';
-import { card, count, dayBars, hbar, kpi, plannedCard, sectionHead, stackBar } from './ui.ts';
+import { card, count, dayBars, duration, hbar, kpi, plannedCard, sectionHead, stackBar } from './ui.ts';
+
+/** Trial actions are administrator-only and separate from the MCP call log and the real reads' statistics. */
+async function trials(ctx: PageContext, path: string, user: string | undefined, from: string | undefined, to: string | undefined): Promise<Html> {
+  if (!ctx.admin || param(ctx, 'tool') !== undefined || param(ctx, 'run') !== undefined) return html``;
+  const found = user === '' ? { items: [], next: null } : await ctx.deps.records.store.find({
+    kind: 'action', key: user === undefined ? 'action.kind' : 'action.user', value: user ?? 'trial',
+    newestFirst: true, limit: 100, cursor: param(ctx, 'trial_cursor') ?? null,
+  });
+  const rows = [];
+  for (const record of found.items) {
+    if (record.schema !== TRIAL_REPORT_SCHEMA || (from !== undefined && record.created_at < from) || (to !== undefined && record.created_at > to)) continue;
+    const parsed = TrialRecord.safeParse(record.body);
+    if (!parsed.success) {
+      rows.push([record.created_at, uiLabelOf('action_kind', 'trial'), '记录格式不可读', '', '', '', '']);
+      continue;
+    }
+    const body = parsed.data;
+    const outcome = (ok: boolean | null) => uiLabelOf('action_result', ok === null ? 'unknown' : ok ? 'completed' : 'error');
+    const routes = body.routes.map((r) => [r.route, r.tried ? outcome(r.ok) : '未试读', r.status === null ? '—' : `HTTP ${r.status}`, r.code ?? '—', r.ms === null ? '—' : duration(r.ms)]);
+    rows.push([body.started_at, uiLabelOf('action_kind', body.action), await ctx.userName(body.principal), `${body.system_pack.id}@${body.system_pack.version}`,
+      uiLabelOf('environment', body.environment), body.auth.sent ? `${outcome(body.auth.ok)}${body.auth.code === null ? '' : ` · ${body.auth.code}`}` : '未发送登录',
+      html`<details><summary>${body.routes.length} 个接口</summary>${table(['接口', '结果', '状态码', '错误码', '耗时'], routes, '没有接口')}<p class="sub">结束于 ${body.ended_at}</p></details>`,
+    ]);
+  }
+  const next = found.next === null ? html`` : link(path, '下一页试读记录', { user: param(ctx, 'user'), from: param(ctx, 'from'), to: param(ctx, 'to'), trial_cursor: found.next });
+  return card({ title: `${uiLabelOf('action_kind', 'trial')}记录`, meta: '仅管理员可见 · 新的在前' },
+    html`${table(['开始时间', '操作', '成员', '系统包', '环境', '登录', '接口结果'], rows, '本页没有试读记录')}${next}`);
+}
 
 const param = (ctx: PageContext, name: string): string | undefined => {
   const value = ctx.url.searchParams.get(name);
@@ -118,7 +147,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   const list = card({ title: '调用记录', meta: `本页 ${lines.items.length} 条 · 新的在前` }, html`${filters}${callTable(lines.items, ctx.admin, await names(ctx, lines.items))}${next}`);
   return {
     status: 200,
-    body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div>
+    body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div><div class="mt16">${await trials(ctx, path, userId, from, to)}</div>
 ${sectionHead('知识流向', '按成员、任务包追踪知识的来源、去向及所用流程')}
 ${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`),
   };

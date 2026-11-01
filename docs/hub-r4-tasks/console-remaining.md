@@ -12,6 +12,7 @@
 做法：
 
 - 分支和工作树：从本页所在的分支 `console-remaining`（基于 `console-finish`）开自己的工作树和任务分支。不要切换主检出（`circle-hub` 目录，停在 main）的分支，也不要改 `console-finish`。
+  实际工作分支：`console-remaining-local`，基线为 `ae2b19c`。
 - 只在本机提交；推送、建 PR 之前先问所有者。
 - 可以改的路径：
   - `contracts/model.json`（`action_kind` 加代码，B05 的变更记录）、`contracts/generated/`（只用 `npm run gen:contracts` 生成，不手改）、`docs/design/generic-model.md` 与 `docs/design/en/` 中列出动作种类的地方；
@@ -59,8 +60,16 @@
 
 ## 做了的
 
-（未开始。）
+1. **试读记录**：B05 增加动作 `trial`，模型第 14 版，合约由生成器更新；中英文设计说明列出新动作。`trial-report@1` 在连接器中用 zod 定义，只从答复中提取允许记录的字段，保存前校验，使用 `action.kind=trial` 与 `action.user` 索引；不写正式读取的资源索引。写入失败记 `resource_trial_record_failed`，保留原答复、不重发请求。管理员记录页可按成员、时间查试读记录并查看各接口结果，成员看不到。测试连接说明已区分试读记录、失败登录摘要与不保存的配置和凭据内容。
 
 ## 验证
 
-（未开始。）
+### 第 1 项（本机 macOS，Node 24.22.1）
+
+- `npm ci` 完成；未改依赖或锁文件。
+- `npm run typecheck`、`npm run verify:contracts`：退出码 0；生成物 140 份与模型一致。
+- `node --test --test-concurrency=2 "hub/connectors/**/*.test.ts" "hub/server/**/*.test.ts"`：726/726，0 失败、0 跳过。
+- `node --test --test-concurrency=2 "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts" hub/records/pointers.test.ts hub/runs/engine/retry-evidence.test.ts hub/dispatch/journal-identity.test.ts hub/knowledge/operation-records.test.ts`：382 项，380 通过、2 失败、0 跳过。失败均为旧测试固定模型版本 13，而本次模型按版本规则升为 14：`contracts/src/model-w04-w10-v07.test.ts` 的模型修订检查与 `contracts/src/vocab-axes.test.ts` 的模型版本检查。两文件不在原允许路径中，已向所有者请求仅同步版本断言与测试名称；当前保留并如实报告。
+- `node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`：选中的 1 项通过，0 失败、0 跳过；其余名称未选中的测试未运行，不计为通过。
+- `npm run test:docs`：280/280，0 失败、0 跳过。
+- 没有运行整仓单元回归、验收或来源校验；本项没有变更来源工具。

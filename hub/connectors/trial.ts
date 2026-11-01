@@ -1,7 +1,7 @@
 // A read-only trial of a system pack with a configuration that is not saved: the console's 测试连接 before a business system
 // is connected. The typed base URLs and credential values reach one HttpSource and nothing else: no resource, no secret, no
-// session entry, no object, no record (a login that failed leaves its digest, never its values, in the vault entry
-// TRIAL_LOGIN_STOPS). The configuration is checked by the rules of a saved resource (resource@1 and the
+// session entry or object. Each completed trial appends a trial-report@1 action, without those values; a login that failed
+// leaves its digest, never its values, in TRIAL_LOGIN_STOPS. The configuration is checked by the rules of a saved resource (resource@1 and the
 // pack's roles and credentials). The login exchange, when the pack declares one, is sent at most once and never repeated
 // after a failure; the same values that failed are not sent again by any later trial, after a restart too, since an
 // account may lock after repeated failures. Then every route a request can be made on without arguments (a literal path, no required
@@ -20,6 +20,7 @@ import { fillTemplate } from './login.ts';
 import type { LoadedProfile } from './profiles.ts';
 import type { Redactor } from './redact.ts';
 import { declaredCredentials, profileProblem, storedCredential } from './resources.ts';
+import { TRIAL_REPORT_SCHEMA, TrialRecord } from './trial-report.ts';
 
 /** Routes one trial requests at most; the rest are reported as not tried. */
 export const TRIAL_ROUTES = 20;
@@ -132,11 +133,12 @@ export interface SystemTrialReport {
   routes: SystemTrialRoute[];
   started_at: string;
   ended_at: string;
-  /** Always false: the trial keeps nothing. */
+  /** Always false: no resource configuration or credential content is saved. The trial action is recorded separately. */
   saved: false;
 }
 
 export interface SystemTrialOptions {
+  store: Pick<RecordStore, 'put'>;
   load: (ref: string) => Promise<LoadedProfile>;
   redactor: Redactor;
   now: () => Date;
@@ -335,7 +337,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
   }
   const ended = options.now();
   event('resource_trial_done', { system_pack: `${pack.id}@${pack.version}`, login: report.ok, tried, routes: routes.length });
-  return {
+  const answer: SystemTrialReport = {
     system_pack: { id: pack.id, version: pack.version, digest: pack.digest },
     environment: input.environment,
     auth: report,
@@ -344,4 +346,19 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     ended_at: ended.toISOString(),
     saved: false,
   };
+  try {
+    const body = TrialRecord.parse({
+      action: 'trial', run: null, item: null, inputs: [], component: 'connectors@1', lease: null,
+      started_at: answer.started_at, ended_at: answer.ended_at, result: 'completed', error_code: null,
+      principal: by, system_pack: { id: pack.id, version: pack.version }, environment: input.environment,
+      auth: { sent: report.sent, ok: report.ok, code: report.code },
+      routes: routes.map(({ route, tried, ok, status, code, ms }) => ({ route, tried, ok, status, code, ms })),
+    });
+    await options.store.put({ kind: 'action', schema: TRIAL_REPORT_SCHEMA, provenance: 'observed', body,
+      index: [{ key: 'action.kind', value: body.action }, { key: 'action.user', value: by }],
+    });
+  } catch {
+    event('resource_trial_record_failed', { code: 'STORE_FAILED' });
+  }
+  return answer;
 }

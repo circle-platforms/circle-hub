@@ -1,7 +1,7 @@
 // 接入业务系统's 测试连接 (connectors' trial.ts through ServerDeps.systems) and the reads each business system had in the last
 // day (connectors' statistics.ts over the read manifests). The trial takes the very form of the operation: its addresses,
-// plaintext roles, credential items and the credential contents typed with them. Nothing is saved and nothing of the
-// answers is shown: the report names each route's result, status, time and size. The form comes back filled in, except the
+// plaintext roles, credential items and the credential contents typed with them. Only the trial action is saved; nothing of
+// the answers is shown: the report names each route's result, status, time and size. The form comes back filled in, except the
 // credential contents, which never go back into a page.
 import { ACTION_RESULT, isEnvironment, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { ConnectorError, readStatistics, type ReadStatistics, type SystemTrialInput, type SystemTrialReport } from '../../connectors/api.ts';
@@ -93,7 +93,7 @@ export function trialCard(report: SystemTrialReport): Html {
   const spent = Date.parse(report.ended_at) - Date.parse(report.started_at);
   return card(
     { title: '测试连接结果', meta: `${report.system_pack.id}@${report.system_pack.version} · ${uiLabelOf('environment', report.environment)} · 试读 ${tried} 个接口 · 用时 ${duration(spent)}` },
-    html`${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '系统包没有声明接口')}<p class="note">只读试读，未保存任何内容：没有建立业务系统，没有写入凭据，没有保存读到的内容。需要参数的接口不试读；登录失败后，同样的凭据不再发送。</p>`,
+    html`${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '系统包没有声明接口')}<p class="note">每次测试连接记一条试读记录，包含操作者、时间与各接口的结果；不保存配置、凭据内容或来源原文。登录失败时，加密保存用于防止重复登录的摘要。需要参数的接口不试读；登录失败后，同样的凭据不再发送。</p>`,
   );
 }
 

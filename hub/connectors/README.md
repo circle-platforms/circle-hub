@@ -536,14 +536,15 @@ Shared-stop repair messages retain the actual secret names and the resource id s
 
 ## 测试连接与近 24 小时读取（决定 79，2026-11-01）
 
-- **测试连接**（`trial.ts`，`connectors.admin.trial`，经可选的 `ServerDeps.systems` 端口接到控制台）：只有启用中的管理员可用。用已发布的系统包和表单里填的访问地址、环境与凭据内容做一次只读试读，不保存任何东西：不建资源，不写密钥、会话条目、对象或记录。
+- **测试连接**（`trial.ts`，`connectors.admin.trial`，经可选的 `ServerDeps.systems` 端口接到控制台）：只有启用中的管理员可用。用已发布的系统包和表单里填的访问地址、环境与凭据内容做一次只读试读；不保存配置、凭据内容、会话或来源原文。结束后追加一条试读记录（决定 81）。
   - 填的配置按已保存资源的同一套规则核对（resource@1 与 `profileProblem`）。
   - 凭据内容在发送任何请求之前进入脱敏器。
   - 一个 HttpSource 走与真实读取相同的路由、来源、明文、跳转拒绝、字节上限与超时处理。
   - 认证：`none` 不发送；`static_header` 由第一条带它的路由判定；`login_token` 只登录一次，绕过会话管理器，不留会话条目、不重试。可能已到达来源却失败的登录，以 {系统包、登录来源、路径、填好的正文} 的 SHA-256 记在密钥库条目 `login-stop.trial`（`TrialLoginStops`，决定 80）：加密保存，只有摘要，不含凭据内容；`circle-hub secret list` 列为登录状态条目；写入时取记录库对该条目的锁（同 `CredentialStop`）；至多 10,000 条，满了只去掉最早的一条。重启后同样的内容也不再发送，改正后的照常发送；这份记录读不出时不登录（“登录失败记录不可读，未登录”）；写入密钥库失败时本进程仍记得，并记 `resource_trial_failure_unkept` 事件。
   - 路由按声明顺序试读：只试不需要参数的（字面路径、无正文、无必填查询项），其余写明“未试读”及原因。至多 20 条，60 秒后不再开始新的一条；不跟随跳转（声明了同源跳转的路由结果未知，其余为 SOURCE_REDIRECT_REFUSED）。读到的内容解释后即丢弃。
   - 答复只用 CONNECTOR_ERRORS 的通用文字、HTTP 状态与原因码，从不转述来源原文，也从不回显凭据内容。管理员日志写 `resource_trial`、`resource_trial_done` 两条，经脱敏。
-  - 不读密钥库里已有的密钥：之前已设置过密钥的系统，试读时显示“未填写，未登录”。没有审计记录；要写成记录需合约增加记录类型。
+  - 不读密钥库里已有的密钥：之前已设置过密钥的系统，试读时显示“未填写，未登录”。
+  - `trial-report.ts` 用 zod 定义 `trial-report@1`；保存前校验，记录类别 `action`、动作 `trial`（B05）、来源 `observed`，索引 `action.kind` 与 `action.user`。只保存操作者、开始结束时刻、系统包与版本、环境、登录是否发送及结果与错误码，以及接口编号、是否试过、结果、状态码、错误码和耗时；不含地址、请求头、凭据、原因原文或响应内容。动作的完成表示试读过程结束，不表示全部接口成功。写入失败记 `resource_trial_record_failed`，原答复照常返回，不重发请求。答复的 `saved: false` 指没有保存资源配置与凭据内容。
 - **近 24 小时读取**（`statistics.ts`，`readStatistics`）：只读已有的 read-manifest@1 记录（action 类，索引 `connectors.resource`），新到旧每页 500 条，每个资源至多 2000 条，不加迁移、表或索引。
   - 统计开始时间落在 [现在−24 小时, 现在] 的读取，按 ActionResult 分开；中位与最慢耗时只取已完成的读取。
   - 扫到一条结束于窗口前超过 5 分钟的清单即停（容纳乱序写入）；碰到扫描上限时标 `partial`，页面写“至少 N 次”；存储出错时为 null（“暂不可用”）。试读不写清单，不计入。

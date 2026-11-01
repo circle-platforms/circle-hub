@@ -31,7 +31,7 @@ export const AXES = {
   trigger: { label: '触发', owner: 'W09', values: [{ code: 'session', label: '会话' }, { code: 'event_or_schedule', label: '事件或定时' }, { code: 'requirement', label: '要求项' }, { code: 'standing_obligation', label: '常设义务' }] },
   execution_host: { label: '执行宿主', ui: '执行位置', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle', ui: '本机 Circle' }, { code: 'bot', label: 'bot', ui: '机器人' }, { code: 'hub', label: 'Hub（仅确定性函数）', ui: 'Hub 校验' }] },
   item_handling: { label: '条目处理声明', owner: 'W07', values: [{ code: 'handled', label: '已处理' }, { code: 'skipped', label: '跳过' }] },
-  action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验', ui: '校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根', ui: '发布新版本' }, { code: 'lease', label: '租约' }] },
+  action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'trial', label: '试读' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验', ui: '校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根', ui: '发布新版本' }, { code: 'lease', label: '租约' }] },
   lease_op: { label: '租约操作', owner: 'D04', values: [{ code: 'acquire', label: '取得' }, { code: 'extend', label: '续租' }, { code: 'release', label: '释放' }, { code: 'force_release', label: '强制释放' }, { code: 'take_over', label: '接管' }, { code: 'register', label: '登记' }, { code: 'unregister', label: '注销' }] },
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
@@ -372,10 +372,10 @@ export function isItemHandling(value: unknown): value is ItemHandling {
 }
 
 /** 动作种类 (B05) */
-export const ACTION_KIND = ['read', 'parse', 'generate', 'read_back', 'validate', 'dispatch', 'classify', 'move_root', 'lease'] as const;
+export const ACTION_KIND = ['read', 'trial', 'parse', 'generate', 'read_back', 'validate', 'dispatch', 'classify', 'move_root', 'lease'] as const;
 export type ActionKind = (typeof ACTION_KIND)[number];
-export const ACTION_KIND_LABEL = { 'read': '读取', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '边界校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '移动当前根', 'lease': '租约' } as const satisfies { readonly [K in ActionKind]: string };
-export const ACTION_KIND_UI = { 'read': '读取', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '发布新版本', 'lease': '租约' } as const satisfies { readonly [K in ActionKind]: string };
+export const ACTION_KIND_LABEL = { 'read': '读取', 'trial': '试读', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '边界校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '移动当前根', 'lease': '租约' } as const satisfies { readonly [K in ActionKind]: string };
+export const ACTION_KIND_UI = { 'read': '读取', 'trial': '试读', 'parse': '解析', 'generate': '生成', 'read_back': '回读', 'validate': '校验', 'dispatch': '派发', 'classify': '归类', 'move_root': '发布新版本', 'lease': '租约' } as const satisfies { readonly [K in ActionKind]: string };
 export const ActionKindSchema = z.enum(ACTION_KIND);
 export function isActionKind(value: unknown): value is ActionKind {
   return (ACTION_KIND as readonly unknown[]).includes(value);
