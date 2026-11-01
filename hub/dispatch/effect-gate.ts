@@ -25,9 +25,11 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
    if(!o.recheck||!detail.latest)throw new Error('缺少冻结提交的检查重核接口；请恢复接口后重核');
    return o.recheck({run:o.run,submission:detail.latest.result.submission,result:detail.latest.record,checks});
  };
- const supports=async(checks:readonly string[])=>{
+ const supports=async(checks:readonly string[]):Promise<boolean|'unknown'>=>{
    const outcomes=await replay(checks);
-   return checks.every(id=>Array.isArray(outcomes[id])&&outcomes[id].length>0&&outcomes[id].every(outcome=>outcome.verdict==='support'));
+   if(checks.every(id=>Array.isArray(outcomes[id])&&outcomes[id].length>0&&outcomes[id].every(outcome=>outcome.verdict==='support')))return true;
+   // A refutation is a verdict on the frozen submission; a check without a conclusion is not (decision 116).
+   return checks.some(id=>Array.isArray(outcomes[id])&&outcomes[id].some(outcome=>outcome.verdict==='refute'))?false:'unknown';
  };
  const budget=async(row:AllowedEffect,tx?:Transaction)=>{
    const intents=await o.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.effect_row',values:[`${o.run}:${row.id}`]},tx);

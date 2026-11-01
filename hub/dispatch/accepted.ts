@@ -91,7 +91,10 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   const { status } = job;
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '结果未知' : '进行中';
   const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
-  if (status.result) parts.push(`结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
+  // Before anything is sent the reference holds the pre-dispatch device checks, never results of the cases (decision 116).
+  if (status.result) parts.push(status.outcome === 'not_dispatched'
+    ? `派发前核对的结论 ${status.result}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）`
+    : `结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   if (status.reason) parts.push(`原因：${status.reason}`);
   parts.push(...details(status), `下一步：${nextStep(job, admin)}`);
   return { job: job.job, ...(status.result ? { result: status.result } : {}), text: clip(parts.join('；')) };

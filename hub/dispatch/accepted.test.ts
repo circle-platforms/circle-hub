@@ -90,6 +90,16 @@ test('the runner note names no administrator command in any job state', () => {
   }
 });
 
+test('before anything is sent the reference is called the pre-dispatch checks, never the results of the cases (decision 116)', () => {
+  const job = 'a'.repeat(64);
+  const status = (extra: Record<string, unknown>) => ({ job, phase: 'device_probe', outcome: 'not_dispatched', frozen: false, events: 3, result: `src:${'c'.repeat(64)}`, ...extra }) as unknown as JobStatus;
+  const early = runnerNote({ job, boundary_refused: false, ended: null, status: status({}) }, 'admin-1').text;
+  assert.match(early, /派发前核对的结论 src:c{64}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）/);
+  assert.doesNotMatch(early, /结果引用|逐条结论/);
+  const done = runnerNote({ job, boundary_refused: false, ended: 'done', status: status({ outcome: 'effective', phase: 'done' }) }, 'admin-1').text;
+  assert.match(done, /结果引用 src:c{64}（每个派发条目一行/);
+});
+
 test('a dispatch refused at the effect boundary before any reservation says that nothing was sent and why', async (t) => {
   // The lease on the target belongs to another lineage, as when the run's own booking does not cover the executor's target.
   const c = await setup({ mode: 'lineage' }); t.after(() => c.close());

@@ -17,7 +17,8 @@ export interface BoundaryContext {
  budget:(row:AllowedEffect)=>Promise<{count:number;duration_ms:number}>;
  lease:()=>Promise<{ok:boolean;code?:Extract<ProtocolCode,'LEASE_UNAVAILABLE'|'LEASE_EXPIRED'|'FENCING_STALE'>;message?:string}>;
  global:(row:AllowedEffect)=>Promise<boolean>;
- policies:(row:AllowedEffect)=>Promise<boolean>;
+ /** true: every replayed policy check supports; false: one refutes; 'unknown': no refutation, but not all concluded (decision 116). */
+ policies:(row:AllowedEffect)=>Promise<boolean|'unknown'>;
  content:(input:VerifiedInput)=>Promise<boolean>;
  audience:()=>Promise<boolean>;
  until?:4;
@@ -47,7 +48,11 @@ export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;
  let lease;try{lease=await ctx.lease();}catch{return deny(5,'LEASE_UNAVAILABLE','缺少当前租约与围栏事实；请恢复租约并重证基线',row);}
  if(!lease.ok)return deny(5,lease.code??'LEASE_UNAVAILABLE',lease.message??'当前租约或围栏没有通过',row);
  try{if(!await ctx.global(row))return deny(6,'BOUNDARY_POLICY_DENIED','核心政策、所用执行器登记或声明环境与运行快照不符；请开新修订',row);}catch{return deny(6,'BOUNDARY_POLICY_DENIED','缺少可回读的核心政策或所用执行器快照；请恢复记录后开新修订',row);}
- try{if(!await ctx.policies(row))return deny(7,'PACK_POLICY_DENIED','冻结包的同脚本同政策表重核未通过；请修正后重核',row);}catch{return deny(7,'PACK_POLICY_DENIED','冻结包的政策重核没有完整结论；请修复检查及来源后重核',row);}
+ try{const verdict=await ctx.policies(row);
+  // A recheck that reached no conclusion refutes nothing: say so, never ask to fix the plan or the pack (decision 116).
+  if(verdict==='unknown')return deny(7,'PACK_POLICY_DENIED','派发前用冻结包重核时有检查没出结论（原因只记在管理员记录里，Hub 的沙箱没能运行检查时也会这样），不是计划、工作簿或包被驳回；什么都没发出；原样重交，或开新的核验运行再派发',row);
+  if(verdict!==true)return deny(7,'PACK_POLICY_DENIED','冻结包的同脚本同政策表重核未通过；请修正后重核',row);}
+ catch{return deny(7,'PACK_POLICY_DENIED','冻结包的政策重核没有完整结论；请修复检查及来源后重核',row);}
  try{if(!await ctx.content(input))return deny(8,'EFFECT_CONTENT_UNVERIFIED','外发字节未通过摘要、重算依据或完整凭据扫描；请修复产物后重新核验',row);}catch{return deny(8,'EFFECT_CONTENT_UNVERIFIED','缺少可回读并完整检查的外发内容；请修复原件或解析能力后重新核验',row);}
  try{if(!await ctx.audience())return deny(9,'AUDIENCE_VISIBILITY_EXCEEDED','所引内容不能覆盖声明的目标受众；请收窄受众或取得有效分享',row);}catch{return deny(9,'AUDIENCE_VISIBILITY_EXCEEDED','缺少完整受众与引用可见性事实；请管理员补齐映射后重新核验',row);}
  return {ok:true,row,input,checked:9};

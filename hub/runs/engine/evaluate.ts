@@ -750,7 +750,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         const selection=(await callPackFunction({packDir:workflow.pack.directory,...check.catalog_select!},raw,ctx.deps.sandboxLimits,sandboxFor('catalog_select',check.catalog_select!.module,it.id))).output;
         if(!isObject(selection)||typeof selection.base!=='string'||!Array.isArray(selection.lines)||selection.lines.length>128||selection.lines.some(line=>typeof line!=='string'||Buffer.byteLength(line)>8192))throw new RangeError('目录选择必须声明路径和至多 128 条完整命令，每条至多 8192 字节；拆分计划后重核');
         return run.root?ctx.deps.knowledge.catalog(run.root,check.catalog!,selection as {base:string;lines:string[]}):null;
-      })().catch(error=>{onError(error,'catalog selection');selectionMissing.set(key,error instanceof RangeError?error.message:'缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替');return null;});selectedViews.set(key,pending);}
+      })().catch(error=>{onError(error,'catalog selection');selectionMissing.set(key,error instanceof RangeError?error.message:error instanceof SandboxError&&error.code==='SANDBOX_UNAVAILABLE'?'缺所选命令目录：Hub 的沙箱这次没能运行目录选择函数（不是目录、计划或包的错），已在服务内重试过；原样重交再核':'缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替');return null;});selectedViews.set(key,pending);}
       view=await pending;
     }
     return {...raw,...(check.catalog?{catalog:view?.entries()??[],catalog_complete:view?.complete??false,...(selectionMissing.has(selectionKey(check,it.id))?{catalog_missing:selectionMissing.get(selectionKey(check,it.id))}:{})}:{})};
