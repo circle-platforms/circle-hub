@@ -101,4 +101,8 @@ A regression feeds this actual projection into story-traceability instead of man
 
 ## 缺陷读法带出发现构建（1.3.7）
 
-PLM 的缺陷详情只给 `openedBuild`（构建编号，如 17401 这样的数字，或 trunk、空值），构建名要另读。决定 111 起，`plm:bug:<编号>` 读完详情后，按 openedBuild 的编号再读那一条构建记录（只读路由 `GET /plmquery/build/{id}/`，id 只能是数字），content 里加 `opened_build: {id, name}`。读不到名字时 name 为 null，并写明原因：openedBuild 不是构建编号、构建记录没读到（被凭据扫描扣下或读取失败，照原因写）、记录里没有名字。缺陷本身照常读出，不受构建记录的影响。按编号读单条构建，是因为整个产品的构建列表可能因个别记录带凭据而被整份扣下。
+PLM 的缺陷详情只给 `openedBuild`（构建编号，如 17401 这样的数字，或 trunk、空值），构建名要另读。决定 112 起，`plm:bug:<编号>` 读完详情后，按 openedBuild 的编号再读那一条构建记录（只读路由 `GET /plmquery/build/{id}/`，id 只能是数字），content 里加 `opened_build: {id, name}`。读不到名字时 name 为 null，并写明原因：openedBuild 不是构建编号、构建记录没读到（被凭据扫描扣下或读取失败，照原因写）、记录里没有名字。缺陷本身照常读出，不受构建记录的影响。按编号读单条构建，是因为整个产品的构建列表可能因个别记录带凭据而被整份扣下。
+
+## 单条构建记录的读取上限（1.3.8）
+
+1.3.7 上线后实测：一条构建记录的应答声明了约 2.4 MB（构建里带着它的全部变更），超过 `build-detail` 路由原定的 1 MiB 上限，读取按规则拒绝且不截断保存，`opened_build.name` 因此为 null 并写明原因。上限改成和缺陷详情、需求详情、构建列表一样的 16 MiB；其余不变。
