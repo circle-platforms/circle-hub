@@ -2,17 +2,20 @@
 // operations as JSON, for an administrator's session, with the session's CSRF token in X-CSRF-Token and this console's
 // Origin (checked by console/index.ts). Each runs the very `circle-hub` commands of the HTML forms, built by the same
 // builders of manage.ts and run through the command bridge as the signed-in administrator, so the checks, records and
-// messages are those of the command line. Every other operation is only described: POST /commands answers the command for
+// messages are those of the command line; publishing a task pack is its two steps, a check of the uploaded zip that keeps a
+// stage (POST /packs/stage) and the publication of that stage (POST /packs/stage/<id>/publish, or /discard), by the
+// administrator who staged it. Every other operation is only described: POST /commands answers the command for
 // the administrator's Circle to run on the Hub's host, and runs nothing. Answers follow the doc: 200 (202 for a knowledge
 // import, which runs in the background) when every command finished; 400 for a parameter the builders refuse or a usage
 // error (exit code 2); 409 when a command did not finish (exit code 1), with what it said; 503 when this process has no
 // command bridge. An error is {code, message, fix}; none of these situations has a registered code, so code is null.
 import type { CommandBridge } from '../command-bridge.ts';
 import { commands } from './commands.ts';
-import { ACTIONS, FormError, type Built, type Form, type JobStore } from './manage.ts';
+import { ACTIONS, FormError, discardStage, publishStage, stagePack, type Built, type Form, type JobStore, type StepRefusal } from './manage.ts';
 import { PACK_ID, byId } from './packs.ts';
 import type { PageContext } from './pages.ts';
 import { circleEntry, originOf } from './settings.ts';
+import type { PackStaging } from './staging.ts';
 import type { CommandDialog } from './ui.ts';
 import { neutral, type ApiResult } from './api.ts';
 
@@ -20,8 +23,11 @@ export interface WriteOptions {
   bridge: CommandBridge | undefined;
   jobs: JobStore;
   log: (line: string) => void;
+  staging: PackStaging;
   /** The session's token: the commands act as its administrator. */
   token: string;
+  /** The zip of POST /packs/stage. */
+  upload?: Buffer;
 }
 
 type Fields = Readonly<Record<string, unknown>>;
@@ -164,6 +170,38 @@ async function described(ctx: PageContext, operation: string, object: string): P
   }
 }
 
+// ---------------------------------------------------------------- publishing a task pack
+
+const refusal = (refused: StepRefusal): ApiResult => (refused.status === 404
+  ? neutral()
+  : { status: refused.status, body: { code: null, message: refused.message, fix: refused.status === 503 ? '在管理员的 Circle 中执行同一命令（Circle 需在 Hub 所在的主机上）' : '按说明处理后重新上传' } });
+
+async function stage(ctx: PageContext, options: WriteOptions): Promise<ApiResult> {
+  const result = await stagePack(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, options.token, options.upload);
+  if (result.refused !== null) return refusal(result.refused);
+  const run = result.run!;
+  const check = { command: 'circle-hub pack publish <目录> --stage --dry-run', code: run.code, stdout: run.stdout, stderr: run.stderr };
+  if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '未通过发布校验', fix: '按校验结果中每条问题的处理修改后重新上传', check } };
+  if (result.published !== null) return { status: 200, body: { check, stage: null, published: result.published } };
+  if (result.stage === null) return { status: 409, body: { code: null, message: '发布校验已通过，但暂存未能保存', fix: '重新上传', check } };
+  const staged = result.stage;
+  return {
+    status: 200,
+    body: { check, stage: { id: staged.id, pack: staged.pack, version: staged.version, digest: staged.digest, expires_at: new Date(staged.expires).toISOString() }, publish_url: `/console/api/packs/stage/${staged.id}/publish` },
+  };
+}
+
+async function publish(ctx: PageContext, options: WriteOptions, id: string): Promise<ApiResult> {
+  const result = await publishStage(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, options.token, id);
+  if (result.refused !== null) return refusal(result.refused);
+  const run = result.run!;
+  const steps = [{ command: 'circle-hub pack publish <目录> --stage', code: run.code, stdout: run.stdout, stderr: run.stderr }];
+  if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '操作未完成', fix: run.stderr[run.stderr.length - 1] ?? '按命令的输出处理后重新上传', steps } };
+  return { status: 200, body: { steps, pack: result.stage!.pack, version: result.stage!.version } };
+}
+
+const STAGE_STEP = /^packs\/stage\/([A-Za-z0-9_-]{1,64})\/(publish|discard)$/;
+
 /** Handles a POST under /console/api for an administrator; `fields` is the parsed JSON object of the body. */
 export async function handleApiWrite(ctx: PageContext, rest: readonly string[], fields: Fields, options: WriteOptions): Promise<ApiResult> {
   if (!ctx.admin) return neutral();
@@ -174,6 +212,13 @@ export async function handleApiWrite(ctx: PageContext, rest: readonly string[], 
   if (Object.hasOwn(RUNNING, path)) {
     // The knowledge import runs the sync itself; a dry run is the import's preview (dry_run true).
     return execute(ctx, options, RUNNING[path], fields);
+  }
+  if (path === 'packs/stage') return stage(ctx, options);
+  const step = STAGE_STEP.exec(path);
+  if (step !== null && step[2] === 'publish') return publish(ctx, options, step[1]);
+  if (step !== null) {
+    const discarded = await discardStage(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, step[1]);
+    return discarded === null ? neutral() : { status: 200, body: { discarded: { id: discarded.id, pack: discarded.pack, version: discarded.version } } };
   }
   if (path === 'commands') {
     const operation = typeof fields.operation === 'string' ? fields.operation : '';

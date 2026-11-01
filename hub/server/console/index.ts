@@ -575,7 +575,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
  */
 async function api(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" };
-  if (request.method === 'POST' && WRITE_PATHS.has(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
+  if (request.method === 'POST' && writePath(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     request.resume();
     return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Circle 中执行' }, { ...headers, allow: 'GET, HEAD' });
@@ -602,7 +602,8 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
 }
 
 /** The write interfaces of console/api-write.ts. */
-const WRITE_PATHS = new Set(['members', 'systems', 'knowledge/imports', 'commands']);
+const WRITE_PATHS = new Set(['members', 'systems', 'knowledge/imports', 'commands', 'packs/stage']);
+const writePath = (path: string): boolean => WRITE_PATHS.has(path) || /^packs\/stage\/[A-Za-z0-9_-]{1,64}\/(?:publish|discard)$/.test(path);
 
 /**
  * A write interface: an administrator's session, this console's Origin (required, as every browser sends it on a POST),
@@ -623,11 +624,28 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
     request.resume();
     return sendJson(response, 403, { code: null, message: 'CSRF 令牌不正确', fix: '在请求头 X-CSRF-Token 中带上 GET /console/api/me 返回的 csrf' }, headers);
   }
-  if (mediaTypeOf(request) !== 'application/json') {
+  // The pack check takes the zip as multipart/form-data (field archive); every other write a JSON object.
+  let upload: Buffer | undefined;
+  if (rest.join('/') === 'packs/stage') {
+    const boundary = boundaryOf(request.headers['content-type']);
+    if (boundary === null) {
+      request.resume();
+      return sendJson(response, 400, { code: null, message: '上传请求的格式不对', fix: '以 multipart/form-data 上传，任务包 zip 放在字段 archive' }, headers);
+    }
+    const sent = await readBody(request, options.deps.config.limits.maxUploadBytes + ACTION_FORM_LIMIT);
+    if (!sent.ok) return sent.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '上传的文件太大', fix: `zip 不超过 ${options.deps.config.limits.maxUploadBytes} 字节` }, headers);
+    try {
+      upload = parseMultipart(sent.bytes, boundary).files.find((file) => file.field === 'archive')?.bytes;
+    } catch (error) {
+      if (!(error instanceof UploadError)) throw error;
+      return sendJson(response, 400, { code: null, message: error.message, fix: '以 multipart/form-data 上传，任务包 zip 放在字段 archive' }, headers);
+    }
+  }
+  if (upload === undefined && rest.join('/') !== 'packs/stage' && mediaTypeOf(request) !== 'application/json') {
     request.resume();
     return sendJson(response, 400, { code: null, message: '请求正文须为 JSON', fix: 'Content-Type 写 application/json，正文为一个对象' }, headers);
   }
-  const body = await readBody(request, ACTION_FORM_LIMIT);
+  const body = rest.join('/') === 'packs/stage' ? { ok: true as const, bytes: Buffer.from('{}') } : await readBody(request, ACTION_FORM_LIMIT);
   if (!body.ok) return body.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '请求正文太大', fix: `正文不超过 ${ACTION_FORM_LIMIT} 字节` }, headers);
   let fields: Record<string, unknown>;
   try {
@@ -640,7 +658,7 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: ApiResult;
   try {
-    result = await handleApiWrite(ctx, rest, fields, { bridge: options.bridge, jobs: options.jobs, log: options.log, token: session!.token });
+    result = await handleApiWrite(ctx, rest, fields, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log, token: session!.token, ...(upload === undefined ? {} : { upload }) });
   } catch (error) {
     options.log(`控制台写接口出错（${url.pathname}）：${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
     result = { status: 500, body: { code: null, message: 'Hub 内部错误，原因已记入服务日志', fix: '稍后重试；仍出错时由管理员查看服务日志' } };

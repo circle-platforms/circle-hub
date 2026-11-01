@@ -3,7 +3,9 @@
 // argv as the HTML forms; the value shown once in a structured answer; 400, 409 and 503 as the doc maps them; commands
 // that are only described; and the neutral answer for members and unknown objects.
 import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
 import { request } from 'node:http';
+import { strToU8, zipSync } from 'fflate';
 import { after, before, test } from 'node:test';
 import type { ServerDeps } from './api.ts';
 import { createApp } from './app.ts';
@@ -26,6 +28,8 @@ const bridge: CommandBridge = {
     if (argv.includes('fails')) return { code: 1, stdout: [], stderr: ['用户名已经存在'] };
     if (argv[0] === 'user' && argv[1] === 'invite') return { code: 0, stdout: [`已为 ${argv[2]} 签发邀请码，2026-11-02T00:00:00.000Z 前有效，仅可使用一次。邀请码只显示这一次：`, 'ABCD-EFGH-JKMN', '成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码'], stderr: [] };
     if (argv[0] === 'token' && argv[1] === 'issue') return { code: 0, stdout: ['已签发令牌 tok_synthetic。令牌只显示这一次：', 'T'.repeat(43)], stderr: [] };
+    if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: [`发布校验通过：synthetic-pack@1.0.0，检查目录 ${argv[2]}`, '试运行：没有发布，也没有写入任何内容'], stderr: [] };
+    if (argv[0] === 'pack' && argv[1] === 'publish') return { code: 0, stdout: ['已发布 synthetic-pack@1.0.0'], stderr: [] };
     return { code: 0, stdout: [`已执行 ${argv.slice(0, 2).join(' ')}`], stderr: [] };
   },
 };
@@ -69,7 +73,7 @@ after(async () => {
 
 interface Answer { status: number; body: string; headers: Record<string, string | string[] | undefined> }
 
-function send(method: string, path: string, options: { cookie?: string; body?: string; type?: string; origin?: string | null; csrf?: string; port?: number } = {}): Promise<Answer> {
+function send(method: string, path: string, options: { cookie?: string; body?: string | Buffer; type?: string; origin?: string | null; csrf?: string; port?: number } = {}): Promise<Answer> {
   const at = options.port ?? port;
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port: at, path, method, agent: false, headers: {
@@ -178,6 +182,47 @@ test('every other operation is only described, for an object that exists', async
     assert.equal((await post('commands', { operation, object })).status, 404, `${operation} ${object}`);
   }
   assert.deepEqual(calls, [], 'describing runs nothing');
+});
+
+const BOUNDARY = 'synthetic-boundary-27182';
+
+function zipUpload(): Buffer {
+  const zip = Buffer.from(zipSync({ 'synthetic-pack/pack.json': strToU8(JSON.stringify({ id: 'synthetic-pack', version: '1.0.0', kind: 'workflow', files: [] })) }));
+  return Buffer.concat([
+    Buffer.from(`--${BOUNDARY}\r\nContent-Disposition: form-data; name="archive"; filename="pack.zip"\r\nContent-Type: application/zip\r\n\r\n`),
+    zip,
+    Buffer.from(`\r\n--${BOUNDARY}--\r\n`),
+  ]);
+}
+
+test('a task pack is checked from its zip into a stage, then published by the administrator who staged it', async () => {
+  calls.length = 0;
+  const staged = await send('POST', '/console/api/packs/stage', { cookie: admin.cookie, csrf: admin.csrf, body: zipUpload(), type: `multipart/form-data; boundary=${BOUNDARY}` });
+  assert.equal(staged.status, 200, staged.body);
+  const answer = JSON.parse(staged.body);
+  const dir = calls[0].argv[2];
+  assert.deepEqual([calls[0].argv[0], calls[0].argv[1], calls[0].argv[3], calls[0].argv[4]], ['pack', 'publish', '--stage', '--dry-run']);
+  assert.equal(answer.stage.pack, 'synthetic-pack');
+  assert.ok(!staged.body.includes(dir), 'the private directory never appears in an answer');
+  await access(dir);
+  assert.equal((await send('POST', '/console/api/packs/stage', { cookie: admin.cookie, csrf: admin.csrf, body: 'x', type: 'text/plain' })).status, 400);
+
+  // Another administrator's session cannot publish it: the stage belongs to the one who checked it.
+  users.push({ id: 'usr_00000000000000000000000003', name: 'root2', role: 'admin', disabled: false, created_at: users[0].created_at, updated_at: users[0].updated_at });
+  TOKENS.set('C'.repeat(43), 'usr_00000000000000000000000003');
+  const other = await signIn('C'.repeat(43));
+  assert.equal((await post(`packs/stage/${answer.stage.id}/publish`, {}, other)).status, 404);
+
+  const published = await post(answer.publish_url.replace('/console/api/', ''), {});
+  assert.equal(published.status, 200, published.body);
+  assert.deepEqual(calls.at(-1)!.argv, ['pack', 'publish', dir, '--stage']);
+  assert.equal(JSON.parse(published.body).version, '1.0.0');
+  await assert.rejects(access(dir), 'the stage is gone after publishing');
+  assert.equal((await post(answer.publish_url.replace('/console/api/', ''), {})).status, 404, 'a stage is published once');
+
+  const again = JSON.parse((await send('POST', '/console/api/packs/stage', { cookie: admin.cookie, csrf: admin.csrf, body: zipUpload(), type: `multipart/form-data; boundary=${BOUNDARY}` })).body);
+  assert.equal(JSON.parse((await post(`packs/stage/${again.stage.id}/discard`, {})).body).discarded.id, again.stage.id);
+  assert.equal((await post(`packs/stage/${again.stage.id}/publish`, {})).status, 404);
 });
 
 test('without a command bridge the operations answer 503 and point to the administrator\'s Circle', async () => {
