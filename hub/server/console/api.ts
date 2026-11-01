@@ -16,7 +16,7 @@ import { PERIODS, RECENT_LIMIT, blockers, checkCounts, runsSince, startOfDay } f
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
 import { NEUTRAL, readableLines, rootReadable, type PageContext } from './pages.ts';
 import { searchHub } from './search.ts';
-import { authorityFingerprint, certificateFacts, secretsOf } from './settings.ts';
+import { authorityFingerprint, certificateFacts, secretsOf, storageFacts } from './settings.ts';
 import { pendingCount, primaryResult, taskResultOf } from './status.ts';
 import { TOOL_LABELS, loadTasks, packTitles, taskSteps, taskTitle } from './tasks.ts';
 import { readsJson, systemReads } from './trial.ts';
@@ -438,6 +438,8 @@ async function hub(ctx: PageContext): Promise<ApiResult> {
     started_at: facts === undefined ? null : facts.startedAt.toISOString(),
     uptime_ms: facts === undefined ? null : now - facts.startedAt.getTime(),
     https: cert === null ? { enabled: false } : { enabled: true, fingerprint: cert.fingerprint, authority_fingerprint: await authorityFingerprint(ctx.deps.config.dataDir), valid_to: cert.validTo, days_left: cert.daysLeft },
+    // null when it cannot be read (unknown, not none)
+    ...(await storageFacts(ctx)),
   });
 }
 

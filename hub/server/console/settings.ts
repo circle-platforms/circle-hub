@@ -6,6 +6,7 @@ import { X509Certificate } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
 import type { TokenInfo, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { commands } from './commands.ts';
@@ -74,6 +75,39 @@ export function trustSteps(): Html {
 <p class="sub">Circle 在设置的 ${code('trust_cert_files')} 中写入证书路径后即信任本 Hub。</p></details>`;
 }
 
+/**
+ * The Hub's storage as it can be read now: the complete backups under the data root (`circle-hub backup` writes them;
+ * the newest by its manifest's created_at) and the database's size. Each is null when it cannot be read: unknown, not none.
+ */
+export async function storageFacts(ctx: PageContext): Promise<{ backups: { count: number; latest_at: string | null } | null; database_bytes: number | null }> {
+  let backups: { count: number; latest_at: string | null } | null = null;
+  try {
+    const dirs = await listBackups(layoutAt(ctx.deps.config.dataDir));
+    const newest = dirs.at(-1);
+    let latest: string | null = null;
+    if (newest !== undefined) {
+      const created = (JSON.parse(await readFile(join(newest, MANIFEST_FILE), 'utf8')) as { created_at?: unknown } | null)?.created_at;
+      latest = typeof created === 'string' && !Number.isNaN(Date.parse(created)) ? created : null;
+    }
+    backups = { count: dirs.length, latest_at: latest };
+  } catch {
+    backups = null;
+  }
+  let bytes: number | null = null;
+  try {
+    const size = await ctx.deps.records.store.databaseSize?.();
+    bytes = typeof size === 'number' && Number.isFinite(size) ? size : null;
+  } catch {
+    bytes = null;
+  }
+  return { backups, database_bytes: bytes };
+}
+
+/** Bytes as the page shows them: MB with one decimal from 1 MB on. */
+export function sizeText(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 async function hubState(ctx: PageContext): Promise<Html> {
   const facts = ctx.hub;
   const now = (ctx.deps.now?.() ?? new Date()).getTime();
@@ -91,11 +125,19 @@ async function hubState(ctx: PageContext): Promise<Html> {
         ['服务器证书指纹', html`<code title="${cert.fingerprint}">${shortPrint(cert.fingerprint)}</code>`],
         ['有效期至', when(cert.validTo)],
       ])}${ctx.admin ? trustSteps() : ''}`);
+  const storage = await storageFacts(ctx);
   const database = card({ title: '数据库', lead: html`<span class="dot ok" aria-hidden="true"></span>`, meta: 'PostgreSQL' }, kv([
+    ['大小', storage.database_bytes === null ? '暂不可读' : sizeText(storage.database_bytes)],
     ['连接', '仅本机连接，未开放网络端口'],
     ['记录', '仅追加，已写入的记录不可修改'],
   ]));
-  const backup = card({ title: '备份', lead: html`<span class="dot idle" aria-hidden="true"></span>` }, html`<p class="sub">备份在 Hub 所在的主机上执行；控制台不记录备份时间。</p>${ctx.admin ? html`<div class="card-f">${commandLink(commands.backup(), '备份命令')}</div>` : ''}`);
+  const backups = storage.backups;
+  const backupState = backups === null
+    ? html`<p class="sub">备份信息暂不可读。</p>`
+    : backups.count === 0
+      ? html`<p class="sub">尚无备份。</p>`
+      : kv([['最近备份', backups.latest_at === null ? '时间未读到' : when(backups.latest_at)], ['份数', `${backups.count} 份`]]);
+  const backup = card({ title: '备份', lead: html`<span class="dot ${backups !== null && backups.count > 0 ? 'ok' : 'idle'}" aria-hidden="true"></span>` }, html`${backupState}<p class="sub">备份在 Hub 所在的主机上执行。</p>${ctx.admin ? html`<div class="card-f">${commandLink(commands.backup(), '备份命令')}</div>` : ''}`);
   return html`<section class="grid g4">${service}${certificate}${backup}${database}</section>`;
 }
 

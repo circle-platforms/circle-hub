@@ -10,6 +10,7 @@ import { html, link, liveModule, page, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
 import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
+import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
 import { button, card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
 
@@ -165,11 +166,13 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   const knowledge = card({ title: '知识库', meta: '按产品线' }, html`<div class="kstats two"><div><span class="sub">产品线</span><b class="num">${lines.length}</b></div><div><span class="sub">已有知识的产品线</span><b class="num">${current}</b></div></div>
 <p class="sub">每条知识均附出处；成员可读分配给自己的任务包所绑定的产品线。</p><div class="card-f"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
+  const storage = await storageFacts(ctx);
+  const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : `最近 ${when(storage.backups.latest_at)}`;
   const health = html`<div class="health">
 <a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>服务</b><span class="sub">运行中${facts?.release ? ` · ${facts.release}` : ''}</span></span></a>
 <a class="hcell" href="/console/settings#hub"><span class="dot ${facts?.certificate ? 'ok' : 'idle'}" aria-hidden="true"></span><span><b>证书</b><span class="sub">${facts?.certificate ? '内置 HTTPS 已启用' : '未启用 HTTPS'}</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>数据库</b><span class="sub">仅本机连接</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot idle" aria-hidden="true"></span><span><b>备份</b><span class="sub">在主机上执行</span></span></a>
+<a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>数据库</b><span class="sub">仅本机连接${storage.database_bytes === null ? '' : ` · ${sizeText(storage.database_bytes)}`}</span></span></a>
+<a class="hcell" href="/console/settings#hub"><span class="dot ${storage.backups !== null && storage.backups.count > 0 ? 'ok' : 'idle'}" aria-hidden="true"></span><span><b>备份</b><span class="sub">${backupNote}</span></span></a>
 <a class="hcell" href="/console/records"><span class="dot info" aria-hidden="true"></span><span><b>记录</b><span class="sub">仅追加，不可修改</span></span></a>
 </div>`;
   const periods = html`<nav class="seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` class="on" aria-current="true"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;

@@ -2,7 +2,9 @@
 // 401 without a session instead of a redirect, absent and forbidden alike (SOURCE_UNAVAILABLE), interface terms beside the
 // codes, bad parameters as code null, and no token value or credential content in any answer.
 import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
+import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
@@ -191,6 +193,25 @@ describe('the read-only interface', () => {
     assert.equal((await send(`/console/api/members/usr_${'0'.repeat(26)}`, { headers: { cookie: admin } })).status, 404);
     const own = await signIn(user.token);
     assert.equal((await send(`/console/api/members/${user.user.id}`, { headers: { cookie: own } })).status, 404, 'members read no member detail');
+  });
+
+  test('the Hub\'s state gives the newest backup under the data root and the database size, or null when unreadable', async () => {
+    const admin = await signIn(server.admin.token);
+    const before = await json('/console/api/hub', admin);
+    assert.deepEqual(before.backups, { count: 0, latest_at: null });
+    assert.ok(typeof before.database_bytes === 'number' && before.database_bytes > 0, 'the size PostgreSQL reports');
+    // A complete backup is a directory with a manifest (hub/platform writes them; the newest by created_at).
+    for (const [name, at] of [['20261030T000000Z', '2026-10-30T00:00:00.000Z'], ['20261031T000000Z', '2026-10-31T00:00:00.000Z']]) {
+      const dir = join(server.deps.config.dataDir, 'backups', name);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, 'manifest.json'), JSON.stringify({ created_at: at }));
+    }
+    await mkdir(join(server.deps.config.dataDir, 'backups', '.partial-20261101T000000Z-x'), { recursive: true });
+    const after = await json('/console/api/hub', admin);
+    assert.deepEqual(after.backups, { count: 2, latest_at: '2026-10-31T00:00:00.000Z' }, 'a partial backup is not counted');
+    const settings = await send('/console/settings', { headers: { cookie: admin } });
+    assert.match(settings.body, /最近备份/);
+    assert.match(settings.body, /2 份/);
   });
 
   test('knowledge is read with the same visibility as the pages', async () => {

@@ -371,6 +371,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   with its outcome; two dialogs give `circle-hub bed hold clear <executor> --reason=…` (确认已恢复) and `circle-hub job
   status <job>` (处置派发结果). The task page's dispatch step names the environment and its current status; a job waiting
   for its result with no disposition request open reads 等待派发结果中，不可重发.
+- **Backups and the database** (decision 79): `GET /console/api/hub` adds `backups: {count, latest_at} | null` (the
+  complete backups under the data root that `circle-hub backup` wrote, through hub/platform's `listBackups`, the newest by
+  its manifest's `created_at`; a partial one does not count) and `database_bytes: number | null` (the records store's
+  `databaseSize`, PostgreSQL's `pg_database_size`); null is unreadable, never none. The settings page's Hub state and the
+  overview's health row show them.
 - **Reads of the last day**: each system in `GET /console/api/systems` carries `reads_24h: {since, until, reads,
   results, results_label, median_ms, slowest_ms, last_at, partial} | null`, from hub/connectors' read manifests. The
   connections page (column 近 24 小时读取) and the overview's systems card show it, naming the window; `partial` reads

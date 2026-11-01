@@ -138,6 +138,11 @@ export class PgRecordStore implements RecordStore {
     return result.rows.map(row => verifiedRecord<B>(row));
   }
 
+  async databaseSize(): Promise<number> {
+    const row = (await this.#db.query<{ size: string }>('SELECT pg_database_size(current_database())::text AS size')).rows[0];
+    return Number(row.size);
+  }
+
   async countIndexed(query: { index: readonly IndexEntry[]; kind?: import('./api.ts').RecordKind; since?: string; cap?: number }, tx?: Transaction): Promise<{ count: number; capped: boolean }> {
     if (!Array.isArray(query.index) || query.index.length > 1000) throw new TypeError('countIndexed takes at most 1000 index entries');
     for (const entry of query.index) if (typeof entry?.key !== 'string' || !INDEX_KEY.test(entry.key)) throw new TypeError('invalid index key');
