@@ -92,3 +92,20 @@ test('a list past the limit names every build with a root of its own first and s
   assert.match(error.options_coverage?.note ?? '', /start_run 写上 version（版本线），这里就只列这条线的全部构建/);
   assert.match(errorLine(error), /可选（列出 400 个，共 481 个；/);
 });
+
+test('the build basis says the scope the default chose from and which root the run locks (B01 qualifier)', async () => {
+  const builds = [
+    { ...build('Rel_MERIDIAN_10_9_0_12', '10.9', true), released_at: '2026-01-24T00:00:00.000Z' },
+    build('Beta_MERIDIAN_10_9_0_585', '10.9', true),
+    build('Beta_MERIDIAN_10_9_0_668', '10.9', true),
+  ];
+  const seedling: RootInfo = { root, composition, product: 'meridian', build: builds[1]!, produced_at: AT };
+  const ctx = context(builds, new Set());
+  (ctx.deps.knowledge as unknown as { rootForRead: unknown }).rootForRead = async () => ({ info: seedling, source: 'seedling', sync: { ...seedling, root: 'f'.repeat(64), build: builds[0]! } });
+  const target = await resolveTarget(ctx, user, workflow, StartRunInput.parse({ pack: 'synthetic', product: 'Meridian', version: '10.9', inputs: {} }), AT, 'synthetic');
+  assert.equal(target.buildName, 'Rel_MERIDIAN_10_9_0_12');
+  const text = target.basis.find((claim) => (claim.statement.data as { field?: string }).field === 'build')!.statement.text;
+  assert.match(text, /按默认规则选定版本线 10\.9 中最新的已发布构建 Rel_MERIDIAN_10_9_0_12/);
+  assert.match(text, /另有 2 个可以锁定知识根的未发布构建不参加默认选择，要用它们就在 build 里写名字/);
+  assert.match(text, /锁定的是版本线 10\.9 的树苗根 aaaaaaaaaaaa，这个根产自构建 Beta_MERIDIAN_10_9_0_585；这个构建另有同步根 ffffffffffff，没有锁定/);
+});

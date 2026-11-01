@@ -134,3 +134,21 @@ test('only the facet and index views can carry unknown entries; an impact view c
   assert.equal(FacetView.safeParse(facet({ truncated: true, unknown_entries: 0 })).success, false, 'zero is written as absent');
   assert.equal(FacetView.safeParse(facet({ truncated: true, unknown_entries: 2, unknown_only: false })).success, false, 'false is written as absent');
 });
+
+test('the refusal says which truncation it is, carries the view notes as the missing fact, and fixes that cause (D05 R[8])', async () => {
+  const w = world({ [FACET_ID]: facet(UNKNOWN) });
+  const refused = (await w.bind(FACET_ID)).read as Extract<ExternalRead, { ok: false }>;
+  const error = refused.inputError!;
+  assert.match(error.message, /知识视图仍有未交付的内容，不能作为完整绑定：只因 40 个条目取值未知而截断，这个输入槽不接受带未知条目的视图/);
+  assert.equal(error.missing, `40 个条目的取值；视图说明：${UNKNOWN.notes[0]}`);
+  assert.deepEqual(error.grounds, [`src:${sha(FACET_ID)}`], 'the refusal rests on the view page it read');
+  assert.equal(error.provenance, 'projected');
+  assert.equal(error.coverage?.complete, false);
+  assert.match(error.fix, /收窄 only= 或 fields= 去不掉这些未知条目/);
+  assert.doesNotMatch(error.fix, /^索引用 only=/, 'narrowing is not offered as the fix for unknown entries');
+  // Any other truncation keeps the narrowing fix and says it is not only unknown entries.
+  const other = (await world({ [FACET_ID]: facet({ truncated: true, notes: ['2 种取值组合的文字有凭据扫描命中，没有列出'] }) }).bind(FACET_ID, { unknownEntries: 'disclose' })).read as Extract<ExternalRead, { ok: false }>;
+  assert.match(other.inputError!.message, /最后一页被截断，不只是因为条目取值未知/);
+  assert.match(other.inputError!.missing ?? '', /视图说明：2 种取值组合的文字有凭据扫描命中，没有列出/);
+  assert.match(other.inputError!.fix, /^索引用 only= /);
+});

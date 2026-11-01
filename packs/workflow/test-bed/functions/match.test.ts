@@ -126,7 +126,8 @@ describe('matchNeed with a build requirement', () => {
     assert.ok(gap);
     assert.equal(gap.verdict, 'unknown');
     assert.match(gap.missing, /没有任何自动化测试环境声明在装 Rel_APV_10_6_1_9（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）/);
-    assert.match(gap.missing, /bed-a\/apv0 装的是 Rel_APV_10_6_1_8/);
+    assert.match(gap.missing, /清单声明的在装构建是别的构建：bed-a\/apv0 装的是 Rel_APV_10_6_1_8/);
+    assert.doesNotMatch(gap.missing, /版本线/, 'a different build is not called a different version line');
     assert.match(gap.missing, /缺在装构建记录：bed-b\/lb0/);
     assert.equal(gap.fix, '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作');
     assert.doesNotMatch(gap.fix, /升级到|先升级|把某台升级/);

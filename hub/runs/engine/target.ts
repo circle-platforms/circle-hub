@@ -277,7 +277,8 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
       }
       build = picked;
       buildName = picked.name;
-      buildText = chosen.basis;
+      // The rule's own basis, then the scope it chose from (A05 R[1]): how many builds could be locked and how many were released.
+      buildText = `${chosen.basis}（规则从 ${candidates.length} 个可以锁定知识根的构建里选，其中已发布的 ${candidates.filter((b) => b.released_at !== null).length} 个）`;
       alternatives = (chosen.alternatives ?? []).filter((a) => a !== picked.name && candidates.some((c) => c.name === a));
       buildWarrant = { producer: 'function', id: `${product.id}@${product.version}/${select.module}#${select.export ?? 'default'}` };
     } else {
@@ -289,13 +290,22 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
       build = released[0];
       buildName = build.name;
       alternatives = released.slice(1, 6).map((b) => b.name);
-      buildText = `按默认规则选定${line ? `${line}中` : ''}最新的已发布构建 ${build.name}（发布于 ${build.released_at}）${alternatives.length > 0 ? `；可用 build 参数改选：${alternatives.join('、')}` : ''}`;
+      const unreleased = candidates.length - released.length;
+      buildText = `按默认规则选定${line ? `${line}中` : ''}最新的已发布构建 ${build.name}（发布于 ${build.released_at}）${alternatives.length > 0 ? `；可用 build 参数改选：${alternatives.join('、')}（列出 ${alternatives.length} 个，已发布的共 ${released.length - 1} 个）` : ''}${unreleased > 0 ? `；另有 ${unreleased} 个可以锁定知识根的未发布构建不参加默认选择，要用它们就在 build 里写名字` : ''}`;
       buildWarrant = { producer: 'function', id: DEFAULT_RULE };
     }
   }
+  const read = knowledge.rootForRead ? await knowledge.rootForRead(pid, { build: buildName, line: build.line }) : null;
   const root = knowledge.rootForRead
-    ? (await knowledge.rootForRead(pid, { build: buildName, line: build.line }))?.info ?? null
+    ? read?.info ?? null
     : await knowledge.seedlingRoot?.(pid, build.line) ?? await knowledge.rootOfBuild(pid, buildName);
+  // Which tree the run reads (B01 qualifier): the line's seedling root or the build's own sync root, and the build it was produced from.
+  if (root !== null && read !== null) {
+    const from = root.build !== null && root.build.name !== buildName && root.build.name !== build.base ? `，这个根产自构建 ${root.build.name}` : '';
+    buildText += read.source === 'seedling'
+      ? `；锁定的是版本线 ${build.line} 的树苗根 ${root.root.slice(0, 12)}${from}${read.sync ? `；这个构建另有同步根 ${read.sync.root.slice(0, 12)}，没有锁定` : ''}`
+      : `；锁定的是这个构建的同步根 ${root.root.slice(0, 12)}${from}`;
+  }
   if (root === null) {
     const [options, extra] = withBuilds(await withRoot(), '可以锁定知识根的构建', { provenance: 'projected', collected_at: at });
     throw unresolved('/build', `构建 ${buildName} 还没有知识根`, options, '换下面列出的一个构建；要这个构建的知识，请管理员同步这条产品线（circle-hub knowledge sync）', extra);

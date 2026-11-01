@@ -75,7 +75,8 @@ describe('select_build candidates', () => {
     const answer = await service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: map } } }, h.call());
     assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
     const basis = answer.run!.target_basis.find((claim) => claim.statement.data?.field === 'build')!;
-    assert.match(basis.statement.text, /^roles tree(;tree)*$/, `the candidates as the function saw them: ${basis.statement.text.slice(0, 200)}`);
+    // The rule's own basis, then the scope it chose from (D05 R[8]).
+    assert.match(basis.statement.text, /^roles tree(;tree)*（规则从 \d+ 个可以锁定知识根的构建里选，其中已发布的 \d+ 个）$/, `the candidates as the function saw them: ${basis.statement.text.slice(0, 200)}`);
     assert.equal(basis.qualifier.provenance, 'projected');
     assert.equal(answer.run!.build, 'Rel_PASTURE_3_2_9', 'the newest released candidate, chosen by the function');
   });
