@@ -305,7 +305,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   of the interface doc first): `me`, `overview?days=7|14|30`, `tasks[?pack&result&cursor]`, `tasks/<run>` (the waterfall's
   steps, the requests and the calls), `knowledge/lines`, `knowledge/nodes?root&path&cursor`, `knowledge/diff?from&to`,
   `knowledge/imports[/<job>]`, `packs`, `packs/<id>`, `systems`, `system-packs`, `environments`, `circles`, `records[?…]`,
-  `members`, `secrets`, `hub`. The pages' session and visibility, built from the same helpers; GET or HEAD only (405
+  `members`, `members/<id>` (with the invitations issued for the member: when, until when, used or open, by which client;
+  never a code), `secrets`, `hub`. The pages' session and visibility, built from the same helpers; GET or HEAD only (405
   otherwise); 401 in JSON without a session (no redirect); absent and forbidden alike 404 `SOURCE_UNAVAILABLE`; an error is
   `{code, message, fix}` with `code` null where no code is registered (not signed in, a bad parameter); codes come with their
   interface terms (`*_label`); token values and credential contents never appear.

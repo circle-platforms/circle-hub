@@ -179,6 +179,20 @@ describe('the read-only interface', () => {
     }
   });
 
+  test('a member\'s detail lists the invitations issued for them, never a code, for administrators only', async () => {
+    const user = await member();
+    const invitation = await server.records.principals.invite(server.admin.principal, user.user.id);
+    const admin = await signIn(server.admin.token);
+    const detail = await json(`/console/api/members/${user.user.id}`, admin);
+    assert.equal(detail.name, user.user.name);
+    assert.deepEqual(detail.invitations.map((i: { id: string; open: boolean }) => [i.id, i.open]), [[invitation.id, true]]);
+    assert.ok(!JSON.stringify(detail).includes(invitation.code), 'an invitation code is shown once, when issued');
+    assert.ok(detail.tokens.every((t: { client: unknown }) => t.client === null), 'tokens say which client they went to');
+    assert.equal((await send(`/console/api/members/usr_${'0'.repeat(26)}`, { headers: { cookie: admin } })).status, 404);
+    const own = await signIn(user.token);
+    assert.equal((await send(`/console/api/members/${user.user.id}`, { headers: { cookie: own } })).status, 404, 'members read no member detail');
+  });
+
   test('knowledge is read with the same visibility as the pages', async () => {
     const reader = await signIn((await member(['review'])).token);
     const stranger = await signIn((await member([])).token);
