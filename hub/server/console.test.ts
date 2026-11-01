@@ -126,7 +126,8 @@ describe('sign-in', () => {
     assert.match(csp, /style-src 'sha256-[A-Za-z0-9+/=]+'/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.match(csp, /form-action 'self'/);
-    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|script-src/);
+    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'the live module of the signed-in pages, by its hash only');
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
     assert.doesNotMatch(page.body, /<script/i);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     const login = cookieHeader(page, 'circle_hub_login') ?? '';

@@ -15,7 +15,8 @@ import { SandboxError } from '../rules/api.ts';
 
 import { parseTarget } from './app.ts';
 import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './claims.ts';
-import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, page } from './console/html.ts';
+import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, liveModule, page } from './console/html.ts';
+import { LIVE_SCRIPT } from './console/script.ts';
 import { SessionStore, cookie } from './console/session.ts';
 import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './http.ts';
 import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError, cleanStack, sanitizeStackLine } from './notes.ts';
@@ -88,13 +89,21 @@ test('html escapes every interpolation once, keeps nested markup and encodes lin
   assert.equal(html`<a href="${href('/x', { q: '"><script>' })}">t</a>`.text, '<a href="/x?q=%22%3E%3Cscript%3E">t</a>');
 });
 
-test('the CSP allows exactly the page stylesheet by its hash, and nothing else', () => {
+test('the CSP allows exactly the page stylesheet and the live module by their hashes, and nothing else', () => {
   const text = page({ title: 't', user: null, csrf: null }, html``).text;
   const style = /<style>([\s\S]*?)<\/style>/.exec(text)?.[1] ?? '';
   const hash = createHash('sha256').update(style, 'utf8').digest('base64');
   assert.ok(CONTENT_SECURITY_POLICY.includes(`style-src 'sha256-${hash}'`));
-  assert.doesNotMatch(CONTENT_SECURITY_POLICY, /unsafe|script-src|\*/);
-  assert.doesNotMatch(text, /<script/i);
+  assert.ok(CONTENT_SECURITY_POLICY.includes(`script-src 'sha256-${createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64')}'`));
+  assert.ok(CONTENT_SECURITY_POLICY.includes("connect-src 'self'"));
+  assert.doesNotMatch(CONTENT_SECURITY_POLICY, /unsafe|\*/);
+  assert.doesNotMatch(text, /<script/i, 'a page without an account has no script');
+  const user = { name: '合成', role: '成员', admin: false };
+  assert.doesNotMatch(page({ title: 't', user, csrf: 'c' }, html`<p>x</p>`).text, /<script/i, 'nor a page without a live module');
+  const lively = page({ title: 't', user, csrf: 'c' }, liveModule('m', ['task.updated'], html`<p>x</p>`)).text;
+  assert.equal([...lively.matchAll(/<script\b/g)].length, 1);
+  assert.ok(lively.includes(`<script type="module">${LIVE_SCRIPT}</script>`));
+  assert.match(lively, /<div class="live-module" id="live-m" data-live="task\.updated"><p>x<\/p><\/div>/);
 });
 
 test('loopback origins and the Host values the server answers to', () => {

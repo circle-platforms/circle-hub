@@ -9,7 +9,7 @@ import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { TokenInfo, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { commands } from './commands.ts';
-import { code, html, link, page, pre, table, type Html } from './html.ts';
+import { code, html, link, liveModule, page, pre, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { button, card, chip, commandLink, commandModal, duration, kv, plannedCard, sectionHead, seg, when, type CommandDialog } from './ui.ts';
 
@@ -192,8 +192,8 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   const origin = originOf(ctx);
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
   dialogs.push(...stopping);
-  const body = html`<section class="section" id="people">${card({ title: '成员', meta: `${users.length} 人` }, table(['姓名', '角色', '已连接的 Circle', '最近活动', '状态', '操作'], memberRows, '尚无成员'))}</section>
-<div class="mt16">${card({ title: '已连接的 Circle', meta: '每个 Circle 一个令牌，可单独断开；不显示令牌内容' }, table(['令牌', '成员', '标签', '签发时间', '最近使用', '状态', '操作'], tokenRows, '尚无已连接的 Circle'))}</div>
+  const body = html`<section class="section" id="people">${liveModule('members', ['member.connected'], card({ title: '成员', meta: `${users.length} 人` }, table(['姓名', '角色', '已连接的 Circle', '最近活动', '状态', '操作'], memberRows, '尚无成员')))}</section>
+<div class="mt16">${liveModule('member-circles', ['member.connected'], card({ title: '已连接的 Circle', meta: '每个 Circle 一个令牌，可单独断开；不显示令牌内容' }, table(['令牌', '成员', '标签', '签发时间', '最近使用', '状态', '操作'], tokenRows, '尚无已连接的 Circle')))}</div>
 <p class="note">停用、启用、断开与签发备用登录令牌生成命令，在管理员的 Circle 中执行。</p>
 <section class="grid g2 section">
 ${plannedCard('连接新的 Circle', '在 Circle 中填写 Hub 地址、核对证书指纹，在浏览器中完成一次授权即可连接（MCP 标准授权），无需复制令牌。', 'chat')}
@@ -205,7 +205,7 @@ ${sectionHead('Hub 状态', '服务、证书、备份与数据库', undefined, '
 ${await hubState(ctx)}
 ${sectionHead('需停机或在主机上执行的操作', '控制台不执行这些操作；在 Hub 所在主机上的管理员 Circle 中执行')}
 ${card(null, html`<div class="row">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div><p class="sub mt12">部署与回滚见 ${code('circle-hub deploy')} 与 ${code('circle-hub rollback')}。</p>`)}
-${dialogs.map(commandModal)}`;
+${liveModule('dialogs', ['member.connected'], dialogs.map(commandModal))}`;
   return {
     status: 200,
     body: page(ctx.chrome('设置', {
@@ -220,7 +220,7 @@ async function memberSettings(ctx: PageContext): Promise<PageResult> {
   const tokens = await ctx.deps.records.principals.tokens(ctx.principal.id);
   const rows = tokens.map((token) => [code(token.id), token.label || '—', when(token.created_at), when(token.last_used_at), token.revoked_at === null ? chip('已连接', 'pass') : chip(`已断开 ${when(token.revoked_at)}`, 'unchecked')]);
   const body = html`<section class="grid g-2-1 section" id="mine">
-${card({ title: ctx.principal.name, lead: html`<span class="avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的 Circle', '每台设备上的 Circle 独立连接；不显示令牌内容')}${table(['令牌', '标签', '签发时间', '最近使用', '状态'], rows, '尚无已连接的 Circle')}<p class="sub mt12">断开连接由管理员在 Circle 中执行。</p>`)}
+${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的 Circle', '每台设备上的 Circle 独立连接；不显示令牌内容')}${table(['令牌', '标签', '签发时间', '最近使用', '状态'], rows, '尚无已连接的 Circle')}<p class="sub mt12">断开连接由管理员在 Circle 中执行。</p>`))}
 ${plannedCard('连接新的 Circle', '在新设备的 Circle 中填写 Hub 地址、核对证书指纹，在浏览器中完成授权即可连接，无需管理员签发令牌。', 'chat')}
 </section>
 ${sectionHead('Hub 状态', '服务、证书、备份与数据库', undefined, 'hub')}

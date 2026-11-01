@@ -11,7 +11,7 @@ import type { Principal, RecordsKit, User } from '../records/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
-import type { HubApp, ServerDeps } from './api.ts';
+import type { AppOptions, HubApp, ServerDeps } from './api.ts';
 import { createApp } from './app.ts';
 import { FakeKnowledge, FakePackCatalog, FakeProducts, FakeResources, FakeRuns, FakeWorkflows, defaultPacks, type FakePack } from './fakes.ts';
 
@@ -27,6 +27,8 @@ export interface TestServerOptions {
   withoutProducts?: boolean;
   /** Leave out the engine's extras (ServerDeps.runsDetail): start_run through RunsService.startRun, no record references. */
   withoutRunsDetail?: boolean;
+  /** Intervals and limits of the console's live updates. */
+  live?: AppOptions['live'];
 }
 
 export interface TestUser {
@@ -134,7 +136,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
-    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000 });
+    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }) });
     const info = await app.listen();
     const boot = await records.principals.bootstrapAdmin('管理员');
     const admin: TestUser = { user: boot.user, principal: principalOf(boot.user), token: boot.token.token };

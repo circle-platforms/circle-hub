@@ -14,6 +14,7 @@ import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
+import { LiveEvents } from './console/live.ts';
 import { JobStore } from './console/manage.ts';
 import { SessionStore } from './console/session.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
@@ -92,9 +93,11 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const inflight = new Set<Promise<void>>();
 
   const mcpOptions = { deps, serverVersion: packageVersion(), log, budget };
+  const jobs = new JobStore(clock);
+  const live = new LiveEvents({ records: deps.records, sessions, log }, options.live);
+  jobs.watch((job) => live.publish({ name: 'import.progress', data: { job: job.id } }));
   const consoleOptions = {
-    deps, sessions, ownOrigins: () => origins, log,
-    jobs: new JobStore(clock),
+    deps, sessions, ownOrigins: () => origins, log, jobs, live,
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.bridge ? { bridge: options.bridge } : {}),
     // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy
@@ -228,6 +231,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       stopping = true;
+      // An event stream is a request in flight that never ends by itself.
+      live.close();
       const current = server;
       const listeners = [server, secureServer].filter((s): s is Server => s !== null);
       if (current !== null) {
