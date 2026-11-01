@@ -117,6 +117,27 @@ async function runWithResult(user: TestUser, findings: string[] = ['期望结果
   return id;
 }
 
+describe('the mark of circle-hub', () => {
+  test('every page carries the mark inline and names the icon, served to anyone as an image of this origin only', async () => {
+    const login = await send('/console/login');
+    assert.match(login.body, /<svg class="logo lg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">/);
+    assert.match(login.body, /<link rel="icon" type="image\/svg\+xml" href="\/console\/favicon\.svg">/);
+    assert.match(String(login.headers['content-security-policy']), /img-src 'self'(?:;|$)/);
+    const overview = await send('/console/overview', { headers: { cookie: await signIn((await person()).token) } });
+    assert.match(overview.body, /<div class="brand"><svg class="logo" viewBox="0 0 64 64"/);
+    assert.doesNotMatch(overview.body, /<span class="logo/, 'the ring of Circle is gone');
+
+    const icon = await send('/console/favicon.svg');
+    assert.equal(icon.status, 200);
+    assert.equal(icon.headers['content-type'], 'image/svg+xml; charset=utf-8');
+    assert.equal(icon.headers['x-content-type-options'], 'nosniff');
+    assert.equal(icon.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'");
+    assert.match(icon.body, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 64 64">/);
+    assert.equal((await send('/console/favicon.svg', { method: 'HEAD' })).body, '');
+    assert.equal((await send('/console/favicon.svg', { method: 'POST' })).status, 405);
+  });
+});
+
 describe('sign-in', () => {
   test('the login page has a strict CSP without script, frames denied, and a one-time nonce cookie scoped to the login path', async () => {
     const page = await send('/console/login');

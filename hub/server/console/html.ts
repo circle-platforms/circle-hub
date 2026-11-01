@@ -88,14 +88,14 @@ export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').dige
 
 /**
  * No external asset and no framing; only the stylesheet of style.ts and the module of script.ts by their hashes, its event
- * stream and page fetches to this server, and forms to this console.
+ * stream and page fetches to this server, the console's own icon (favicon.svg) and forms to this console.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   `style-src 'sha256-${CSS_HASH}'`,
   `script-src 'sha256-${SCRIPT_HASH}'`,
   "connect-src 'self'",
-  "img-src 'none'",
+  "img-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -145,6 +145,18 @@ export const ICONS = {
   flow: 'M3 6h5c5 0 5 12 10 12h3M3 18h5c2.5 0 3.5-3 4.5-6M15 6h6',
 } as const;
 
+/**
+ * The mark of circle-hub (owner decision 82): the Hub at the centre, the Circles it serves on an orbit around it, in
+ * Circle's four colours. The centre and the orbit take the text colour; the colours are the --logo-* tokens of style.ts.
+ */
+export function logo(large = false): Html {
+  return html`<svg class="logo${large ? ' lg' : ''}" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.35"></circle><circle cx="32" cy="32" r="8" fill="currentColor"></circle><circle class="s1" cx="32" cy="12" r="6.5"></circle><circle class="s2" cx="52" cy="32" r="6.5"></circle><circle class="s3" cx="32" cy="52" r="6.5"></circle><circle class="s4" cx="12" cy="32" r="6.5"></circle></svg>`;
+}
+
+/** The same mark as the browser's icon of the console (/console/favicon.svg): its own colours, darker ink on a dark tab bar. */
+export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><style>.k{fill:#141a20}.o{stroke:#141a20}@media (prefers-color-scheme:dark){.k{fill:#e8edf2}.o{stroke:#e8edf2}}</style><circle class="o" cx="32" cy="32" r="20" fill="none" stroke-width="2.5" stroke-opacity="0.35"/><circle class="k" cx="32" cy="32" r="8"/><circle cx="32" cy="12" r="6.5" fill="#0894ff"/><circle cx="52" cy="32" r="6.5" fill="#c959dd"/><circle cx="32" cy="52" r="6.5" fill="#ff2e54"/><circle cx="12" cy="32" r="6.5" fill="#ff9004"/></svg>
+`;
+
 export function icon(name: keyof typeof ICONS, cls = 'ico'): Html {
   return html`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"></path></svg>`;
 }
@@ -162,7 +174,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
 function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · circle-hub</title><style>${new Html(CSS)}</style></head>
+<title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg"><style>${new Html(CSS)}</style></head>
 <body class="hub">${body}${script ? html`<script type="module">${new Html(LIVE_SCRIPT)}</script>` : ''}</body></html>`;
 }
 
@@ -178,7 +190,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const nav = NAV.map(([key, label, path, name]) => html`<a class="nav-item${key === chrome.active ? ' on' : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}>${icon(name, 'nav-ico')}<span>${label}</span></a>`);
   return htmlDocument(chrome.title, html`<div class="shell">
 <div class="side-wrap"><nav class="side" aria-label="主导航">
-<div class="brand"><span class="logo" aria-hidden="true"></span><strong>circle-hub</strong></div>
+<div class="brand">${logo()}<strong>circle-hub</strong></div>
 <form class="search" role="search" method="get" action="/console/search">${icon('search')}<input type="search" name="q" maxlength="100" placeholder="搜索任务、知识、记录" aria-label="搜索"></form>
 ${nav}
 <div class="me"><span class="avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="me-t"><div>${user.name}</div><div class="me-r">${user.role}</div></div>
@@ -189,5 +201,5 @@ ${nav}
 }
 
 function brand(): Html {
-  return html`<div class="row"><span class="logo lg" aria-hidden="true"></span><div><div class="brand-name">circle-hub</div><div class="sub">Circle 结果校验与共享知识服务</div></div></div>`;
+  return html`<div class="row">${logo(true)}<div><div class="brand-name">circle-hub</div><div class="sub">Circle 结果校验与共享知识服务</div></div></div>`;
 }

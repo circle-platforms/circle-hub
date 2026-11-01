@@ -18,7 +18,7 @@ import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPag
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { handleApiWrite } from './api-write.ts';
-import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
+import { CONTENT_SECURITY_POLICY, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
 import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
@@ -106,7 +106,7 @@ async function loginPage(options: ConsoleOptions, response: ServerResponse, stat
   const body = page(
     anonymous('登录'),
     html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
-<div class="callout info mt16"><span class="logo" aria-hidden="true"></span><span><b>从 Circle 打开</b><br>已连接的 Circle 可获取一次性登录链接（${LOGIN_LINK_TTL_MS / 60_000} 分钟内有效，仅可使用一次），浏览器打开链接并确认后即登录，无需输入。</span></div>
+<div class="callout info mt16">${logo()}<span><b>从 Circle 打开</b><br>已连接的 Circle 可获取一次性登录链接（${LOGIN_LINK_TTL_MS / 60_000} 分钟内有效，仅可使用一次），浏览器打开链接并确认后即登录，无需输入。</span></div>
 <div class="divider">访问令牌登录 · 供 Circle 不可用时使用</div>
 <form method="post" action="/console/login">
 <div class="field"><label for="hub-token">访问令牌</label><input id="hub-token" class="input" type="password" name="token" autocomplete="off" size="50" required placeholder="粘贴管理员签发的令牌"></div>
@@ -711,6 +711,19 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   // still reaches the idle limit of its session.
   const automatic = request.headers['circle-hub-refresh'] === 'live' || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'stream');
   const session = automatic ? options.sessions.peek(cookieValue, secure) : options.sessions.get(cookieValue, secure);
+  // The console's icon: static, the same for everyone, signed in or not.
+  if (segments.length === 1 && segments[0] === 'favicon.svg') {
+    request.resume();
+    if (request.method !== 'GET' && request.method !== 'HEAD') return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET</p>`), { allow: 'GET, HEAD' });
+    response.writeHead(200, {
+      'content-type': 'image/svg+xml; charset=utf-8',
+      'cache-control': 'public, max-age=86400',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+      'x-content-type-options': 'nosniff',
+    });
+    response.end(request.method === 'HEAD' ? undefined : FAVICON_SVG);
+    return;
+  }
   if (segments[0] === 'login') {
     if (segments.length === 2) return loginLink(request, response, options, secure, segments[1]);
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));

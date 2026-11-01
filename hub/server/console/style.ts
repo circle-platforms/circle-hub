@@ -11,7 +11,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
   --read-bg:#e7ebff;--write-bg:#e2f1e6;--think-bg:#f3e7f3;--agent-bg:#d9f8f8;--removed-bg:#ffdee4;
   --accent:#0894ff;--violet:#c959dd;--negative:#ff2e54;--attention:#d97a03;--positive:#2d7844;--call:#c026d3;
   --accent-strong:#0a6fd1;--on-accent:#ffffff;
-  --logo-gradient:conic-gradient(#0894ff 0%,#c959dd 30%,#ff2e54 65%,#d97a03 90%,#0894ff 100%);
+  --logo-1:#0894ff;--logo-2:#c959dd;--logo-3:#ff2e54;--logo-4:#d97a03;
   /* the model's states: fills for marks, text on their tints */
   --s-pass:var(--positive);--s-fail:var(--negative);--s-judgment:var(--accent);--s-unchecked:#b8bbbf;--s-incomplete:var(--attention);--s-unknown:var(--violet);
   --t-pass:#2d7844;--t-fail:#c8102e;--t-judgment:#0a66b8;--t-incomplete:#955300;--t-unknown:#9b2fb0;--t-unchecked:#5b5f64;
@@ -30,7 +30,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
   --secondary:#aab2b9;--muted:#899096;--subtle:#151a1f;
   --read-bg:#1b243c;--write-bg:#172a24;--think-bg:#282030;--agent-bg:#0e3135;--removed-bg:#361923;
   --attention:#ff9004;--positive:#46a562;--accent-strong:#0894ff;--on-accent:#10151a;
-  --logo-gradient:conic-gradient(#0894ff 0%,#c959dd 30%,#ff2e54 65%,#ff9004 90%,#0894ff 100%);
+  --logo-4:#ff9004;
   --s-unchecked:#4f565d;
   --t-pass:#5cc27a;--t-fail:#ff6b85;--t-judgment:#5cb6ff;--t-incomplete:#ffa53d;--t-unknown:#dc8cec;--t-unchecked:#aab2b9;
   --b-incomplete:#33240f;
@@ -62,10 +62,9 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .brand{display:flex;align-items:center;gap:9px;height:60px;padding:0 8px}
 .brand strong{font-size:calc(var(--ui) + 5px);letter-spacing:-.6px;font-weight:650}
 .env{margin-left:auto;font-size:var(--ui-tiny);letter-spacing:1px;color:var(--secondary);border:1px solid var(--border);border-radius:999px;padding:0 8px;line-height:18px}
-.logo{display:inline-block;width:22px;height:22px;border-radius:50%;background:var(--logo-gradient);position:relative;flex-shrink:0}
-.logo::after{content:'';position:absolute;inset:4px;background:var(--sidebar);border-radius:50%}
+.logo{display:inline-block;width:22px;height:22px;flex-shrink:0}
 .logo.lg{width:64px;height:64px}
-.logo.lg::after{inset:10px;background:var(--bg)}
+.logo .s1{fill:var(--logo-1)}.logo .s2{fill:var(--logo-2)}.logo .s3{fill:var(--logo-3)}.logo .s4{fill:var(--logo-4)}
 .logo.spin{animation:spin 10s linear infinite}
 .search{display:flex;align-items:center;gap:8px;height:34px;margin:2px 0 6px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--secondary)}
 .search input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:var(--ui-small);color:var(--fg)}

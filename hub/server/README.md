@@ -288,9 +288,12 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 ## Console
 
 Server-rendered HTML, no external assets; `Content-Security-Policy: default-src 'none'; style-src 'sha256-…'; img-src
-'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
+'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
 stylesheet and the one inline module script (`console/script.ts`, the live updates below; signed-in pages with a live
-module only, never the login, setup or authorization pages) allowed by their hashes. The pages work with scripts off.
+module only, never the login, setup or authorization pages) allowed by their hashes. The only image of this origin is
+the console's icon, `GET /console/favicon.svg` (static, for anyone, `nosniff`, a day's cache). The mark of circle-hub
+(decision 82: the Hub at the centre and the Circles on an orbit around it, in Circle's four colours) is inline SVG on
+every page (`logo()` in `console/html.ts`, colours `--logo-1`…`--logo-4`), no longer Circle's ring. The pages work with scripts off.
 Every dynamic value goes through an escaping template (element text or double-quoted attributes only; links are fixed
 paths with encoded query parameters).
 
