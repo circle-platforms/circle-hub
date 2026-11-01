@@ -5,15 +5,19 @@
       "slot": "inventory",
       "role": "subject",
       "description": "自动化测试环境清单：管理员用 circle-hub doc put 发布的命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1），缺省写 doc:doc:bed-topology",
-      "accepts": ["doc:doc"],
+      "accepts": [
+        "doc:doc"
+      ],
       "required": true,
       "many": false
     },
     {
       "slot": "request",
       "role": "artifact_under_verification",
-      "description": "装构建请求：客户端写好、upload_file 上传的 JSON {\"schema\":\"bed-install@1\",\"build\":\"<要装的构建>\",\"image\":\"<构建库里这个构建的镜像文件名>\"}。Hub 原样核对，受理后把这份字节交给自动化测试环境",
-      "accepts": ["application/json"],
+      "description": "装构建请求：客户端写好、upload_file 上传的 JSON {\"schema\":\"bed-install@1\",\"build\":\"<要装的构建>\",\"image\":\"<镜像文件名>\"}。镜像文件名是构建站列表页上这个构建的条目里镜像链接的文件名：用 source-read 的 build_page 读入口页 {\"external\":\"buildsite:listing:index\"}，它列出各版本线的导航页；再读这个构建所在版本线的导航页，它列出各平台的列表页；再读列有这个构建的列表页（页面名照链接写）。不要让用户提供。Hub 原样核对，受理后把这份字节交给自动化测试环境",
+      "accepts": [
+        "application/json"
+      ],
       "required": true,
       "many": false
     }
@@ -23,12 +27,24 @@
       "name": "bed",
       "description": "要装构建的自动化测试环境名（清单里的名字）；整台须已由本运行的前驱（test-bed 的整台预订）持有",
       "required": true,
-      "schema": { "type": "string", "minLength": 1, "maxLength": 64 }
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
     }
   ],
-  "product": { "catalogs": [] },
-  "context": ["leases"],
-  "leases": { "prefix": "bed/" },
+  "product": {
+    "catalogs": []
+  },
+  "context": [
+    "leases"
+  ],
+  "leases": {
+    "prefix": "bed/"
+  },
   "subject": "inventory",
-  "projection": { "module": "functions/project.ts" }
+  "projection": {
+    "module": "functions/project.ts"
+  }
 }
