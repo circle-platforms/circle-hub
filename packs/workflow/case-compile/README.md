@@ -1,4 +1,4 @@
-# case-compile 3.9.10
+# case-compile 3.9.11
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -545,3 +545,21 @@ is kept and disclosed.
 - An inverse that parses with several leading-parameter counts accepts the plan's own cleanup when it is one of them, and
   otherwise lists every valid form (as CES: the author writes the teardown); it no longer waits for a product declaration.
 - SKILL step 2 states the address rule.
+
+### 3.9.11: cleanup pairs in reverse order per device, as InfoTest (decision 118)
+
+Reproducing a defect on the two load balancers of a real environment, the plan registered a sync peer on each device in turn
+and undid them device by device in the same order. The cleanup pairing walked one reverse order across all devices: the
+second device's peer, covered by the runner's own cleanup, was skipped, its explicit inverse was left over and refused as "清理段含
+没有对应执行命令的额外配置操作" although the plan had executed exactly that command. InfoTest's teardown check
+(`main/case_compiler/tau_coverage.py`, carried into CES) counts a configuration as covered by any later inverse and records
+`ordering_sensitive: False`; a device does not undo another device's state.
+
+- Reverse order binds within one device only: each device's live configurations, latest first, take that device's cleanup
+  steps; the order between devices is free.
+- An explicit inverse of a configuration the runner's own cleanup covers is accepted wherever it stands on its device (the
+  runner tears down whatever is left, and InfoTest's check is order-free); the case then undid it itself, so the contract
+  support no longer lists it as the runner's.
+- A left-over cleanup step that is the declared inverse of a live configuration of the same device is named as out of reverse
+  order, with the configuration it undoes; "清理段含没有对应执行命令的额外配置操作" stays for a step that undoes nothing live there.
+- Within one device the uncovered configurations still take their inverses in reverse order, unchanged.

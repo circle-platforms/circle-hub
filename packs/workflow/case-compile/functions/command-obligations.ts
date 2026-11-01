@@ -144,15 +144,34 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   if(undone>=0)live.splice(undone,1);else live.push(operation);
  }
  const configured=live.reverse();
- // In reverse order each live configuration takes the next cleanup step that is its declared inverse. One the runner's own
- // cleanup covers (InfoTest clear.py: every sent line against the prefix rules, first hit) needs none; any other still does.
- let next=0;
- for(const operation of configured){
-  if(next<actual.length&&inverseProblem(operation,actual[next])===null){next++;continue;}
-  const rule=runnerRule(runner,operation.object,operation.line);
-  if(rule){covered?.push({pointer:operation.pointer,object:operation.object,line:operation.line,...rule});continue;}
-  const problem=inverseProblem(operation,actual[next]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);next++;
+ // Reverse order binds within one device: a device does not undo another's state, so the order between devices is free
+ // (InfoTest's teardown check, tau_coverage, is not order-sensitive at all). One the runner's own cleanup covers (InfoTest
+ // clear.py: every sent line against the prefix rules, first hit) needs none, and its explicit inverse is accepted wherever it
+ // stands on that device, the runner tearing down whatever is left anyway; the case then undid it itself. Each other live
+ // configuration, latest first, takes the device's next remaining cleanup step, which must be its declared inverse.
+ const objects=[...new Set([...configured,...actual].sort((a,b)=>ordinal(a.pointer)-ordinal(b.pointer)).map(operation=>operation.object))];
+ for(const object of objects){
+  const own=actual.filter(step=>step.object===object),mine=configured.filter(operation=>operation.object===object);
+  const taken=new Set<number>(),ordered:typeof mine=[],runnerOwned:RunnerCovered[]=[];
+  for(const operation of mine){
+   const rule=runnerRule(runner,operation.object,operation.line);
+   if(!rule){ordered.push(operation);continue;}
+   const k=own.findIndex((step,index)=>!taken.has(index)&&inverseProblem(operation,step)===null);
+   if(k>=0)taken.add(k);else runnerOwned.push({pointer:operation.pointer,object:operation.object,line:operation.line,...rule});
+  }
+  const rest=own.filter((_,index)=>!taken.has(index));
+  let next=0;
+  for(const operation of ordered){
+   if(next<rest.length&&inverseProblem(operation,rest[next])===null){next++;continue;}
+   const problem=inverseProblem(operation,rest[next]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);next++;
+  }
+  // A left-over step that is the declared inverse of a live configuration of the same device stands out of reverse order; only
+  // one that undoes nothing still live there is without an executed command.
+  for(const extra of rest.slice(next)){
+   const undoes=ordered.find(operation=>inverseProblem(operation,extra)===null);
+   note(extra.pointer,undoes?`清理步骤是第 ${ordinal(undoes.pointer)+1} 步配置“${undoes.line}”的逆操作，但不在同一设备的逆序位置：同一设备上后执行的配置先清理`:'清理段含没有对应执行命令的额外配置操作');
+  }
+  covered?.push(...runnerOwned);
  }
- for(const extra of actual.slice(next))note(extra.pointer,'清理段含没有对应执行命令的额外配置操作');
  return gaps;
 }
