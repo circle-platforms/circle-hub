@@ -21,6 +21,7 @@ Hub 保证：
 | 输入槽位 | 说明 | 接受的外部对象格式 | 示例 |
 | --- | --- | --- | --- |
 | `defect` | PLM 缺陷记录详情 | `plm:bug` | `{"external": "plm:bug:57001"}` |
+| `defect_list` | 按条件列出的 PLM 缺陷（条件 名=值 用 & 连接，名取 product、status、severity、assignedTo、openedBy、lastEditedDate_start、lastEditedDate_end；不分页，回答带条件和行数，空列表不说明没有） | `plm:bug-list` | `{"external": "plm:bug-list:assignedTo=alice&status=active"}` |
 | `story` | PLM 需求记录详情 | `plm:story` | `{"external": "plm:story:20931"}` |
 | `build` | PLM 产品构建列表 | `plm:builds` | `{"external": "plm:builds:101"}` |
 | `mindmap` | 敏捷测试平台脑图文档 | `agile:mindmap` | `{"external": "agile:mindmap:880001"}` |

@@ -92,3 +92,9 @@ A regression feeds this actual projection into story-traceability instead of man
 真实 PLM 服务的构建列表应答带标准信封：`{"code": 1000, "data": [ ... ], "msg": "success"}`。`buildsProject` 投影函数同时兼容信封形应答（从 `json.data` 取构建数组）与裸数组应答（旧测试兼容）；若既不是数组且没有数组形的 `data`，则报 `plm.no_records`（`构建列表不是数组，应答既不是数组也没有数组形的 data；核对原始应答，重新读取该产品的构建原件`）。
 
 原件保存服务端完整的原始应答（带信封时原件保存整个信封，裸数组时保存数组），构建数组是其中的 `data`。`chooseProduct` 读取产品列表时同样支持信封（`json.data`）与裸数组。
+
+## 按条件列出缺陷（1.3.6）
+
+决定 111 加一条只读读法 `plm:bug-list:<条件>`，读查询服务的缺陷列表接口 `GET /plmquery/bug/`。条件写成 `名=值`，多个用 `&` 连接，值做 URI 编码；名只取 product、status（active、resolved、closed）、severity（1–5）、assignedTo、openedBy、lastEditedDate_start、lastEditedDate_end，每个最多一次，至少一个。路由的 query 只放行这七个参数，读法函数再逐个核对值的格式；不认识的条件、重复的条件、格式不对的值都不发请求，拒绝写明正确写法。
+
+这个接口的参数是 2026-10-12 用所有者本人 token 做只读探测时记下的结构（旧 S2 文档），列表不分页。回答原样给出每一行的标量字段（不改名、不按 deleted 或 status 筛掉），带过滤条件和行数；说明写明：Hub 没有核对服务端是否另有行数上限，按哪些行计数由读者判断，空列表只说明读取时刻按这些条件没有匹配，不说明没有。

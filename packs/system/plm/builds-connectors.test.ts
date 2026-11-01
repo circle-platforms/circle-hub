@@ -31,6 +31,7 @@ before(async () => {
       }
       if (r.method === 'POST' && r.path === '/plmquery/story/detail/') return reply({ code: 1000, data: [{ id: 21, status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: 22, status: null, stage: null }, { id: 23 }] });
       if (r.method === 'POST' && r.path === '/plmquery/bug/detail/') return reply({ code: 1000, data: [{ id: 910001, title: '合成缺陷', repair_notes: '<p>合成修复说明</p>' }] });
+      if (r.method === 'GET' && r.path === '/plmquery/bug/') return reply({ code: 1000, msg: 'success', data: [{ id: 910001, title: '合成缺陷', status: 'active', assignedTo: r.query.assignedTo ?? null }, { id: 910003, title: '合成缺陷三', status: 'active', assignedTo: r.query.assignedTo ?? null }] });
     }
     return plmReply(r, (token) => agile.tokens.has(token), () => writes++);
   });
@@ -172,4 +173,16 @@ test('connector reads enveloped build list, projects content and preserves full 
     data: [{ id: 812, name: 'Synthetic_12_Enveloped', synthetic_links: [910001] }],
     msg: 'success',
   });
+});
+test('a bug list reaches the service as one GET with only its filters and comes back with every row, the count and its note', async () => {
+  const at = plm.requests.length;
+  const out = await read('assignedTo=synthetic.user&status=active', 'bug-list');
+  const sent = plm.requests.slice(at).filter((request) => request.path === '/plmquery/bug/');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.method, 'GET');
+  assert.deepEqual(sent[0]!.query, { assignedTo: 'synthetic.user', status: 'active' });
+  assert.deepEqual(out.filters, { assignedTo: 'synthetic.user', status: 'active' });
+  assert.equal(out.count, 2);
+  assert.deepEqual(out.bugs.map((bug: { id: number }) => bug.id), [910001, 910003]);
+  assert.match(out.note, /列表接口不分页（2026-10-12 观察），Hub 没有核对服务端是否另有行数上限/);
 });
