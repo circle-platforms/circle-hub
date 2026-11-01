@@ -4,9 +4,10 @@
 // pack's roles and credentials). The login exchange, when the pack declares one, is sent at most once and never repeated
 // after a failure; the same values that failed are not sent again by a later trial of this process, since an account may
 // lock after repeated failures. Then every route a request can be made on without arguments (a literal path, no required
-// query member, no body) is requested once, in the declared order, with the credential where its role carries it; the
-// answer is interpreted as a read interprets it (status, envelope, JSON) and dropped. A route that needs arguments is
-// reported as not tried: no argument is invented. The report names routes, statuses, codes, sizes and times, never a body,
+// query member, no body) is requested once, in the declared order, with the credential where its role carries it, until
+// TRIAL_ROUTES routes or TRIAL_DEADLINE_MS; the answer is interpreted as a read interprets it (status, envelope, JSON) and
+// dropped. A redirect is never followed: on a route declared with same-origin hops its result is unknown, on any other it
+// is the refusal a read meets. A route that needs arguments is reported as not tried: no argument is invented. The report names routes, statuses, codes, sizes and times, never a body,
 // a header value, a host or a credential; the admin log events pass the redactor.
 import { createHash } from 'node:crypto';
 import type { Environment } from '../../contracts/generated/vocabulary.ts';
@@ -21,6 +22,8 @@ import { declaredCredentials, profileProblem, storedCredential } from './resourc
 
 /** Routes one trial requests at most; the rest are reported as not tried. */
 export const TRIAL_ROUTES = 20;
+/** After this long no further route is requested; the rest are reported as not tried. */
+export const TRIAL_DEADLINE_MS = 60_000;
 /** Failed logins this process remembers (as digests) so that the same values are not sent again. */
 const REMEMBERED_FAILURES = 1000;
 
@@ -248,6 +251,10 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       row.reason = `每次测试最多试读 ${TRIAL_ROUTES} 个接口`;
       continue;
     }
+    if (options.now().getTime() - started.getTime() >= TRIAL_DEADLINE_MS) {
+      row.reason = `测试已用时超过 ${TRIAL_DEADLINE_MS / 1000} 秒，其余接口未试读`;
+      continue;
+    }
     tried += 1;
     row.tried = true;
     const sentAt = options.now().getTime();
@@ -260,11 +267,13 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       row.ms = reply.endedAt - reply.startedAt;
     } catch (error) {
       if (!(error instanceof ConnectorError)) throw error;
-      row.ok = false;
       row.code = error.code;
-      row.message = failure(error);
       row.status = typeof error.detail.status === 'number' ? error.detail.status : null;
       row.ms = options.now().getTime() - sentAt;
+      // A read plans the hop of a route declared with same-origin redirects; the trial does not, so it cannot tell.
+      const declaredHop = error.code === 'SOURCE_REDIRECT_REFUSED' && route.redirects !== undefined;
+      row.ok = declaredHop ? null : false;
+      row.message = declaredHop ? `应答要求同源跳转${row.status === null ? '' : `（HTTP ${row.status}）`}，试读不跟随跳转` : failure(error);
       // A static credential the source refused is checked by this route: the trial says so.
       if (auth.kind === 'static_header' && carries && (error.code === 'CREDENTIAL_REFUSED' || error.code === 'SOURCE_LOGIN_EXPIRED')) report.ok = false;
     }

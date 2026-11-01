@@ -9,6 +9,8 @@ export const STATISTICS_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Read manifests examined per resource at most. */
 export const STATISTICS_SCAN_LIMIT = 2000;
 const PAGE = 500;
+/** Reads that end together may be stored in either order: the scan goes this far past the window before it stops. */
+const ORDER_SLACK_MS = 5 * 60 * 1000;
 
 export interface ReadStatistics {
   resource: string;
@@ -57,9 +59,9 @@ export async function readStatistics(
       for (const record of page.items) {
         const started = typeof record.body.started_at === 'string' ? Date.parse(record.body.started_at) : Number.NaN;
         const ended = typeof record.body.ended_at === 'string' ? Date.parse(record.body.ended_at) : Number.NaN;
-        // Manifests are written when a read ends, so the newest first are the latest to end: one that ended before the
-        // window closes the scan.
-        if (Number.isFinite(ended) && ended < since) break scan;
+        // Manifests are written when a read ends, so the newest first are the latest to end, give or take reads that ended
+        // together: one that ended well before the window closes the scan.
+        if (Number.isFinite(ended) && ended < since - ORDER_SLACK_MS) break scan;
         if (examined >= limit) {
           partial = true;
           break scan;

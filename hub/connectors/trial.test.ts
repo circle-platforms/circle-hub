@@ -1,4 +1,3 @@
-import { addSyntheticResource, setSyntheticCredentials } from './testing/credentials.ts';
 // The read-only trial of a system pack (trial.ts) and the read statistics of a resource (statistics.ts), against loopback
 // stubs: the trial logs in at most once, never twice with values that failed, tries only the routes that need no
 // arguments, never reaches a write route, stores nothing (no record, no object, no session entry) and keeps every value
@@ -10,8 +9,11 @@ import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ConnectorError } from './errors.ts';
 import { readStatistics } from './statistics.ts';
 import { agileFixture, startAgileStub, type AgileStub } from './testing/agile.ts';
+import { addSyntheticResource, setSyntheticCredentials } from './testing/credentials.ts';
 import { openConnectorKit, type ConnectorKit } from './testing/kit.ts';
+import { writePack } from './testing/packs.ts';
 import { PLM_PRODUCTS, startPlmStub, type PlmStub } from './testing/plm.ts';
+import { json, startStub } from './testing/stub.ts';
 import type { SystemTrialReport } from './trial.ts';
 
 let postgres: TemporaryPostgres;
@@ -45,6 +47,8 @@ async function counts(k: ConnectorKit): Promise<Record<string, number>> {
   try {
     const out: Record<string, number> = {};
     for (const table of ['records', 'objects', 'pointers']) out[table] = Number((await client.query(`SELECT count(*) AS n FROM ${table}`)).rows[0].n);
+    // Secrets and the login sessions of resources are vault entries.
+    out.vault = (await k.records.vault.list()).length;
     return out;
   } finally {
     await client.end();
@@ -79,7 +83,7 @@ test('a trial logs in once, tries the routes that need no arguments, opens no wr
   }
   assert.equal(w.plm.writes, 0, 'the write route is never reached');
   assert.equal(report.saved, false);
-  assert.deepEqual(await counts(w.k), before, 'no record, no object, no pointer');
+  assert.deepEqual(await counts(w.k), before, 'no record, no object, no pointer, no vault entry');
   // No value of the trial in the report or the log: neither the password, nor the token, nor what the system answered.
   const token = [...w.agile.tokens][0]!;
   const shown = JSON.stringify(report);
@@ -128,6 +132,38 @@ test('a trial is for administrators, of a published system pack, with every role
   assert.match(blank.auth.reason!, /未填写，未登录/);
   assert.equal(route(blank, 'products').tried, false);
   assert.equal(w.agile.logins, 0);
+});
+
+test('a redirect is never followed, a declared hop stays unknown, and no route is requested past the deadline', async (t) => {
+  const w = await world(t);
+  const site = await startStub((request) => {
+    if (request.path === '/slow/') w.k.clock.advance(61_000);
+    return ['/slow/', '/status/'].includes(request.path) ? json({ ok: true }) : { status: 302, headers: { location: '/status/' } };
+  });
+  t.after(() => site.close());
+  const get = (id: string, extra: Record<string, unknown> = {}) => ({ id, role: 'site', method: 'GET', path: `/${id}/`, response: 'json', max_bytes: 4096, read: true, ...extra });
+  w.k.packs.set(
+    await writePack(w.k.packRoot, {
+      id: 'site-test',
+      system: {
+        schema: 'system@1',
+        title: '合成站点',
+        roles: [{ name: 'site' }],
+        auth: { kind: 'none' },
+        routes: [get('moved', { redirects: { same_origin: true, max_hops: 1 } }), get('jumps'), get('slow'), get('status')],
+        reads: [{ name: 'status', external: 'site:status', request: { route: 'status' } }],
+      },
+    }),
+  );
+  const report = await w.k.connectors.admin.trial(w.k.admin, { system_pack: 'site-test', environment: 'test', origins: { site: site.origin }, allow_plaintext: [site.origin] });
+  assert.deepEqual([report.auth.kind, report.auth.sent, report.auth.ok], ['none', false, null]);
+  assert.deepEqual([route(report, 'moved').tried, route(report, 'moved').ok, route(report, 'moved').status], [true, null, 302]);
+  assert.match(route(report, 'moved').message!, /试读不跟随跳转/);
+  assert.deepEqual([route(report, 'jumps').ok, route(report, 'jumps').code], [false, 'SOURCE_REDIRECT_REFUSED']);
+  assert.equal(route(report, 'slow').ok, true);
+  assert.equal(route(report, 'status').tried, false);
+  assert.match(route(report, 'status').reason!, /其余接口未试读/);
+  assert.deepEqual(site.requests.map((r) => r.path), ['/moved/', '/jumps/', '/slow/'], 'no hop followed, nothing after the deadline');
 });
 
 test('the statistics count the reads of the window by result, with the median and longest time of the completed ones', async (t) => {
