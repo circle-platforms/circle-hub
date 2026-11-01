@@ -5,7 +5,8 @@
 // One poller, running only while a stream is open, reads what the database already holds, so a change made by a command in
 // another process is seen too: the records appended since the last watermark, by kind, and the tokens of the accounts whose
 // MCP calls just appeared in the call log (a token used for the first time is a Circle that completed its connection).
-// Knowledge imports of this process signal their start and end directly. The state the records hold of a business system
+// Knowledge imports of this process signal their start and end directly. A read manifest (a read of a business system
+// ended, changing its reads and response times of the last day) is system.status for that system. The state the records hold of a business system
 // or a runtime environment is its configuration (added, changed, enabled, disabled: resource_config decisions on its res_
 // or executor. id): a later decision is system.status, any decision on an executor environment.status, for administrators.
 // Occupancy and freezing come from the dispatch journal: a journal record that can change them (a reservation, an intent,
@@ -49,7 +50,7 @@ const SOURCES: Readonly<Partial<Record<LiveEventName, readonly RecordKind[]>>> =
   'request.updated': ['request', 'action'],
   'member.connected': ['call_log'],
   'system.added': ['authorization'],
-  'system.status': ['authorization'],
+  'system.status': ['authorization', 'action'],
   'environment.status': ['authorization', 'action'],
   'pack.published': ['pack_version'],
   'knowledge.published': ['root_pointer'],
@@ -112,9 +113,13 @@ export function eventsOf(record: Pick<StoredRecord, 'kind' | 'digest' | 'body'>)
     case 'request':
       return run === null ? [] : [...task, { name: 'request.updated', data: { run, request: record.digest } }];
     case 'action': {
+      // A read of a business system ended (its read manifest, hub/connectors): its reads and response times changed.
+      const read: LiveEvent[] = typeof body.resource === 'string' && RESOURCE_ID.test(body.resource) && typeof body.started_at === 'string'
+        ? [{ name: 'system.status', data: { system: body.resource } }]
+        : [];
       // An answer to a request is a validate action naming the request (hub/requests).
       const answered = object(body.detail).request;
-      return run !== null && typeof answered === 'string' && SHA256.test(answered) ? [...task, { name: 'request.updated', data: { run, request: answered } }] : task;
+      return run !== null && typeof answered === 'string' && SHA256.test(answered) ? [...task, ...read, { name: 'request.updated', data: { run, request: answered } }] : [...task, ...read];
     }
     case 'pack_version':
       return typeof body.pack === 'string' && typeof body.version === 'string' ? [{ name: 'pack.published', data: { pack: body.pack, version: body.version } }] : [];
@@ -379,7 +384,8 @@ export class LiveEvents {
     for (const event of read) {
       const hold = HOLD_MS[event.name];
       if (hold === undefined) events.push(event);
-      else this.#held.push({ at: now + hold, event });
+      // A busy system ends many reads a second: one held event per system is enough.
+      else if (!this.#held.some((entry) => entry.event.name === event.name && JSON.stringify(entry.event.data) === JSON.stringify(event.data))) this.#held.push({ at: now + hold, event });
     }
     const due = this.#held.filter((entry) => entry.at <= now);
     this.#held = this.#held.filter((entry) => entry.at > now);
