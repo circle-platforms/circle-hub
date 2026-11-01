@@ -68,12 +68,16 @@
 
 ## 做了的
 
+- 第 7 项：无可读产品线时显示对应角色的团队知识说明；有产品线时按其已产出版本选择比较对象，默认上一版本到当前版本。“导入知识”保留名称，增加范围与管理员权限的悬停说明。
+
 - 第 6 项：知识入库待处理移到知识库页，保留当前成员的读取范围；没有事项时隐藏。
 
 - 第 4 项：无任务、无筛选时只显示空状态；筛选期间保留清除条件的入口。任务数量按本页与筛选后分别显示，排序说明悬停显示。
 - 第 5 项：两个请求入口共用一个列表；按记录身份合并、逾期优先、显示成员名字，无请求时隐藏整段。状态取自新生成的 B07 显示轴；原请求记录不变。
 
 ## 验证
+
+- 第 7 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts hub/server/console-places.test.ts` 15 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。未运行全量回归。
 
 - 第 6 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts` 6 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。未运行全量回归。
 

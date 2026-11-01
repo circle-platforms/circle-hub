@@ -19,3 +19,43 @@ test('knowledge intake pending items live only in knowledge and an empty list is
   assert.doesNotMatch(String((await runsPage(ctx)).body),/知识入库待处理|知识喂入|合成缺失内容/);
   assert.doesNotMatch(String((await knowledgePage(context({products,knowledge:{}}))).body),/知识入库待处理/);
 });
+test('knowledge empty states reflect the reader and import remains an administrator action with a hover explanation', async () => {
+  const deps={products,knowledge:{}};
+  const memberBody=String((await knowledgePage(context(deps))).body);
+  const adminBody=String((await knowledgePage(context(deps,true))).body);
+  assert.match(memberBody,/没有可读的团队知识；成员可读分配给自己的任务包所绑定的产品线/);
+  assert.match(adminBody,/还没有团队知识；团队知识按产品线组织，发布产品包后可在此浏览和导入/);
+  for(const body of [memberBody,adminBody]) assert.doesNotMatch(body,/按产品线浏览|版本差异|name="from"|name="to"/);
+  assert.doesNotMatch(memberBody,/导入知识<\/a>/);
+  assert.match(adminBody,/title="从产品包声明的来源导入到团队知识库（所有人可见）；仅管理员可用"/);
+});
+test('version comparison offers only the product line builds and defaults to previous and current produced roots', async () => {
+  const current='a'.repeat(64),previous='b'.repeat(64),foreign='c'.repeat(64);
+  const deps={products:{products:async()=>[{product:{id:'synthetic',title:'合成产品',names:[]}}]},knowledge:{builds:async()=>[
+    {name:'build-3',line:'3',root:current,family:'synthetic',released_at:null},
+    {name:'build-2',line:'2',root:previous,family:'synthetic',released_at:null},
+    {name:'build-1',line:'1',root:null,family:'synthetic',released_at:null},
+  ],currentRoot:async()=>null}};
+  const body=String((await knowledgePage(context(deps,true))).body);
+  assert.match(body,/<select name="from">/);
+  assert.match(body,/<select name="to">/);
+  assert.doesNotMatch(body,/<input name="from"|<input name="to"/);
+  const from=/<select name="from">([\s\S]*?)<\/select>/.exec(body)![1];
+  const to=/<select name="to">([\s\S]*?)<\/select>/.exec(body)![1];
+  assert.ok(from.includes(`value="${previous}" selected`));
+  assert.ok(to.includes(`value="${current}" selected`));
+  assert.ok(!body.includes(foreign));
+  assert.doesNotMatch(from,/build-1/);
+});
+test('different versions remain selectable when their knowledge content is identical', async () => {
+  const root='d'.repeat(64);
+  const deps={products:{products:async()=>[{product:{id:'synthetic',title:'合成产品',names:[]}}]},knowledge:{builds:async()=>[
+    {name:'current-build',line:'3',root,family:'synthetic',released_at:null},
+    {name:'previous-build',line:'2',root,family:'synthetic',released_at:null},
+  ],currentRoot:async()=>null}};
+  const body=String((await knowledgePage(context(deps,true))).body);
+  const from=/<select name="from">([\s\S]*?)<\/select>/.exec(body)![1];
+  const to=/<select name="to">([\s\S]*?)<\/select>/.exec(body)![1];
+  assert.match(from,/selected>2 \/ previous-build<\/option>/);
+  assert.match(to,/selected>3 \/ current-build<\/option>/);
+});

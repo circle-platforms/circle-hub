@@ -493,14 +493,17 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
     rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
       unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
+    const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
+    if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
+    const options = versions;
+    const diff = options.length === 0 ? html`` : html`<form class="filters" method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">版本差异</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button type="submit">比较</button></form>`;
     blocks.push(
       card(
-        { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}` },
-        html`${table(['版本', '名称族', '构建', '已发布', '已产出版本', '当前版本'], rows, '还没有构建')}<div class="card-f"><span class="sub">当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。</span>${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>`,
+        { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
+        html`${table(['版本', '名称族', '构建', '已发布', '已产出版本', '当前版本'], rows, '还没有构建')}<div class="card-f">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
   }
-  const diffForm = html`<form class="filters" method="get" action="/console/knowledge/diff"><label>从版本（内容哈希） <input name="from" size="66"></label><label>到版本（内容哈希） <input name="to" size="66"></label><button type="submit">比较</button></form>`;
   const flow = card({ title: '知识入库流程', hint: '共享知识须经 Hub 出处校验' }, html`<div class="stages">
 <div class="stage planned-stage"><span class="host"><span class="dot idle"></span>仅本人可见</span><b>原文归档</b><span class="sub">Circle 读取的网页、文件、系统数据连同出处归档</span>${planned()}</div>
 <div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>模型归纳</b><span class="sub">模型生成的归纳保留在本机，不上传 Hub</span></div>
@@ -508,14 +511,11 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
 <div class="stage on-hub"><span class="host"><span class="dot info"></span>Hub</span><b>出处校验</b><span class="sub">可追溯至原文且引文一致方可入库</span></div>
 <div class="stage"><span class="host"><span class="dot ok"></span>所有人可见</span><b>共享知识</b><span class="sub">按产品线与版本组织，所有 Circle 可读取、可引用</span></div>
 </div><p class="note">从业务系统与文档导入的知识同样经 Hub 校验；个人账号读取的内容不会自动成为共享知识。</p>`);
-  const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload' }) : undefined;
+  const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品包声明的来源导入到团队知识库（所有人可见）；仅管理员可用' }) : undefined;
   return {
     status: 200,
     body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${flow}${pending}
-${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}
-${liveModule('lines', ['knowledge.published'], blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`)}
-<div class="mt16">${card({ title: '版本差异', meta: '两个版本之间新增、删除与修改的条目' }, diffForm)}</div>`),
-  };
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: '团队知识' }, html`<p class="empty">${ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品包后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的任务包所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {
