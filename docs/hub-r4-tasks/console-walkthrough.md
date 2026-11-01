@@ -161,6 +161,8 @@
 
 ## 第二轮做了的
 
+- 第 5 项：安装不再用设置文件是否存在决定管理员初始化；部署迁移后以 `user list --json` 读取公开账户字段，没有管理员才重新询问并初始化。无法询问时列出 `circle-hub init-admin`、`circle-hub setup-code`；读取失败不假定为空。新增脚本测试执行实际设置检查到初始化流程，只有 CLI 与终端输入用合成夹具替代；已有管理员时不重置、不消耗密码标准输入。
+
 - 第 4 项：新增 `user password-reset <用户>`，使用操作令牌的管理员身份；包括唯一管理员首次修改前的恢复。团队页通过现有命令桥执行，初始密码只在结果中显示一次，复用原密码历史和会话撤销规则；移除旧页面直接重置入口。备用令牌失败按 socket 来源分别计数，用户名登录继续按账户锁定。
 
 - 第 3 项：控制台、安装、CLI 与错误提示统一使用“密码”，同步当前任务说明和决定 83。为覆盖配置错误文字，可改路径补入 `hub/config/index.ts`、`hub/config/names.ts` 及对应包说明。历史决定和凭据扫描器的旧词识别、来源合成数据保持原样；本轮授权原文中说明笔误的引文保留。
@@ -175,3 +177,4 @@
 - 第 2 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过（含工作流静态检查）。`node --test --test-name-pattern='valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 4 项通过、0 跳过，筛选外未运行；从工作流提取的 Linux 作业 3 段块脚本均通过 `bash -n`，未执行其中命令。没有运行安装、服务启动、发布工作流或 CI。
 - 第 3 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console.test.ts hub/server/console-api-write.test.ts hub/server/console-places.test.ts hub/server/variables.test.ts` 56 项通过、0 跳过；配置、漂移与密码测试 15 项通过、0 跳过。CLI 按 `initial passwords` 筛选 1 项、数据库按 `pool never falls back` 筛选 1 项、安装脚本按 `valid bash|fresh installation` 筛选 2 项，均通过、0 跳过，筛选外未运行。没有运行全量回归或改动凭据扫描规则。
 - 第 4 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。最终 `node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console-manage.test.ts hub/server/command-bridge.test.ts hub/server/console-places.test.ts` 29 项通过、0 跳过；CLI 按 `password-reset` 筛选的 2 项通过、0 跳过，筛选外未运行。初次检查发现新测试夹具的 TCP/套接字配置错误及管理返回路径断言未含团队页，修正后重跑上述受影响测试；另一次失败夹具的调试进程已中止并清理，不记为通过。全部使用临时 PostgreSQL 和文件密钥，没有全量回归或真实部署操作。
+- 第 5 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-name-pattern='administrator bootstrap|valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 7 项通过、0 跳过；CLI 按 `user list JSON|initial passwords` 筛选 2 项通过、0 跳过，筛选外未运行。脚本覆盖已有设置下初始化失败与重跑、重新询问、无终端恢复提示、显式用户名、读取失败拒绝及已有管理员时保留输入；实际执行隔离的 Bash 控制流程，CLI、终端输入为合成夹具。没有运行整机安装、服务管理、备份恢复或全量回归。

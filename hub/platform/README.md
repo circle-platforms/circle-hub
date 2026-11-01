@@ -81,10 +81,14 @@ SHA-256, unpacks it under `<data root>/runtime/bundles/` and points `<data root>
 the Hub's own commands with that Node: `init` (HTTP on loopback, `--https-port`, and `--https-host` with the allowed hosts
 when one is given) unless settings exist, `key init` and `tls init` unless present, `deploy --bundle … --node
 <data root>/runtime/node/bin/node` unless that commit is current; it writes a `circle-hub` wrapper and
-prints the console address and authority certificate to trust. Fresh installs require an administrator username and ask
+prints the console address and authority certificate to trust. After deploy applies the bundle’s migrations, the installer
+queries `user list --json` even when settings already exist. With no administrator it requires a username and asks
 for an optional password through the terminal. `init-admin --password-stdin` receives it through stdin; an empty input
 generates an initial password, shown once, with a mandatory first change. Neither password nor token is put in argv;
-upgrades leave existing accounts unchanged. Unattended installation supplies `--admin-user` and `--password-stdin`;
+existing administrator accounts are never reinitialized. If `init-admin` fails, rerunning checks the database again.
+Without a terminal or `--admin-user`, the error names `circle-hub init-admin <username>` and `circle-hub setup-code`; an
+unreadable account list refuses initialization. The shell tests execute this actual control flow using a synthetic CLI
+and scratch files; they do not perform an install or touch services. Unattended installation supplies `--admin-user` and `--password-stdin`;
 a blank stdin generates an initial password. Every deploy backs up first, so the
 installer provides a PostgreSQL 18 client: Homebrew `libpq` on macOS, `postgresql-client-18` on Linux (from the system
 sources, else apt.postgresql.org), passed as `CIRCLE_HUB_LIBPQ_BIN`; a `CIRCLE_HUB_LIBPQ_BIN` already set names the client
@@ -92,7 +96,7 @@ to use instead (an absolute directory with PostgreSQL 18's `pg_dump` and `pg_res
 (its data root is `lib/circle-hub` under `/var`, as for that account above; lingering, its user manager started), installs bubblewrap and AppArmor and loads the
 Hub's AppArmor policy for the bundled Node (`hub/rules/sandbox/linux.ts`). Running it again upgrades through deploy.
 `.github/workflows/release.yml` installs a freshly built bundle with install.sh on a fresh Ubuntu runner and checks HTTP,
-HTTPS and the setup page, runs the macOS bundle's Node and PostgreSQL, and on a version tag attaches all four bundles
+HTTPS and the username/password login page, runs the macOS bundle's Node and PostgreSQL, and on a version tag attaches all four bundles
 with SHA256SUMS to a draft release for the owner to publish.
 
 ## Data root

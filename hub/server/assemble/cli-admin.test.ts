@@ -200,6 +200,20 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 describe('init-admin and the operator token', () => {
+  test('user list JSON distinguishes an empty database and existing administrators without exposing password material', async () => {
+    const admin=await setup({initAdmin:false});
+    assert.deepEqual(JSON.parse((await expectOk(admin,['user','list','--json'])).text),[]);
+    const created=await admin.run(['init-admin','合成列表管理员']);assert.equal(created.code,0,created.text);
+    const initial=created.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(initial);
+    await expectOk(admin,['user','create','合成列表成员']);
+    await expectOk(admin,['user','disable','合成列表成员']);
+    const listed=await expectOk(admin,['user','list','--json']);const users=JSON.parse(listed.text);
+    assert.equal(users.length,2);assert.equal(users.find((user:any)=>user.role==='admin')?.name,'合成列表管理员');
+    assert.equal(users.find((user:any)=>user.role==='user')?.disabled,true);
+    assert.deepEqual(Object.keys(users[0]).sort(),['id','name','role','disabled','created_at','updated_at'].sort());
+    assert.doesNotMatch(listed.text,/password|token/);assert.ok(!listed.text.includes(initial));
+  });
+
   test('password-reset recovers the sole administrator before the first change and revokes console sessions only', async () => {
     const admin=await setup();
     const original=admin.init!.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(original);

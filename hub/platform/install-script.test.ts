@@ -5,13 +5,90 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
-import { mkdir, mkdtemp, readlink, rm, symlink, writeFile } from 'node:fs/promises';
+import { test, type TestContext } from 'node:test';
+import { access, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BUNDLED_NODE, hydratePostgresLinks, nodeTarball, npmTarget, shasumOf } from '../../tools/build-bundle.ts';
 
 const SCRIPT = fileURLToPath(new URL('../../install.sh', import.meta.url));
+
+/** Execute the installer's actual settings-to-bootstrap flow with a synthetic CLI, without machine setup or services. */
+async function administratorFixture(t: TestContext) {
+  const dir=await mkdtemp(join(tmpdir(),'circle-hub-install-admin-'));
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  const source=await readFile(SCRIPT,'utf8');
+  const functions=source.split('# BEGIN administrator bootstrap\n')[1]?.split('# END administrator bootstrap')[0];
+  assert.ok(functions,'the isolated bootstrap functions exist');
+  const start=source.indexOf('\nSETTINGS="${DATA}/config/platform.json"'),end=source.indexOf('\nsay "安装命令 circle-hub');
+  assert.ok(start>0&&end>start);const main=source.slice(start,end);
+  const cli=join(dir,'synthetic-cli.mjs'), calls=join(dir,'calls.jsonl');
+  await mkdir(join(dir,'config'));await writeFile(join(dir,'config','platform.json'),'{}');
+  await mkdir(join(dir,'current'));await writeFile(join(dir,'current','release.json'),'{}');
+  await writeFile(join(dir,'users.json'),'[]');
+  await writeFile(cli,`import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
+import {join} from 'node:path';
+const root=process.env.CIRCLE_HUB_DATA_DIR, args=process.argv.slice(2);
+if((args[0]==='key'||args[0]==='tls')&&args[1]==='status')process.exit(0);
+if(args.join(' ')==='user list --json'){
+  if(process.env.SYNTHETIC_QUERY_ERROR==='1')process.exit(1);
+  process.stdout.write(process.env.SYNTHETIC_BAD_LIST==='1'?'invalid':readFileSync(join(root,'users.json'),'utf8'));
+}else if(args[0]==='init-admin'&&args[2]==='--password-stdin'){
+  const input=readFileSync(0,'utf8');appendFileSync(join(root,'calls.jsonl'),JSON.stringify({args,input})+'\\n');
+  if(process.env.SYNTHETIC_INIT_ERROR==='1')process.exit(1);
+  writeFileSync(join(root,'users.json'),JSON.stringify([{name:args[1],role:'admin'}]));
+  console.log('管理员已创建');
+}else process.exit(2);
+`);
+  return {dir,calls,run:(options:{name?:string;stdin?:boolean;input?:string;interactive?:boolean;env?:NodeJS.ProcessEnv;after?:string}={})=>{
+    const script=`set -euo pipefail\n${functions}
+say() { printf '%s\\n' "$*"; }
+fail() { printf '错误：%s\\n' "$*" >&2; exit 1; }
+as_hub() { "$@"; }
+hub() { as_hub "$NODE" "$SETUP_HUB" "$@"; }
+run_as_hub() { as_hub "$@"; }
+commit_in() { printf 'synthetic-current'; }
+installer_has_terminal() { return ${options.interactive?0:1}; }
+${options.interactive?'installer_prompt_admin() { HUB_INSTALL_ADMIN_NAME="synthetic-prompt-admin"; HUB_INSTALL_ADMIN_PASSWORD="synthetic-prompt-password"; }':''}
+${main}
+${options.after??''}`;
+    const result=spawnSync('bash',['-c',script],{encoding:'utf8',timeout:10_000,input:options.input??'',env:{
+      PATH:process.env.PATH,DATA:dir,BUNDLE:dir,NODE:process.execPath,SETUP_HUB:cli,DRY_RUN:'0',HUB_INSTALL_ADMIN_NAME:options.name??'',
+      HUB_INSTALL_PASSWORD_STDIN:options.stdin?'1':'0',...options.env}});
+    return {code:result.status??-1,out:result.stdout,err:result.stderr};
+  }};
+}
+
+test('administrator bootstrap retries after init-admin failed with settings already present and leaves existing accounts alone',async t=>{
+  const f=await administratorFixture(t), password='synthetic-installer-password';
+  const failed=f.run({name:'synthetic-admin',stdin:true,input:password+'\n',env:{SYNTHETIC_INIT_ERROR:'1'}});
+  assert.equal(failed.code,1);assert.match(failed.err,/管理员初始化未完成.*circle-hub init-admin.*circle-hub setup-code/);
+  await access(join(f.dir,'config','platform.json'));
+  const retry=f.run({interactive:true});assert.equal(retry.code,0,retry.err);
+  const calls=(await readFile(f.calls,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+  assert.equal(calls.length,2);assert.deepEqual(calls[1],{args:['init-admin','synthetic-prompt-admin','--password-stdin'],input:'synthetic-prompt-password\n'});
+  assert.ok(!JSON.stringify(calls[0].args).includes(password));assert.ok(!failed.out.includes(password));
+  const existing=f.run({stdin:true,input:'synthetic-unused-password\n',after:'IFS= read -r remaining; printf "stdin-left=%s\\n" "$remaining"'});
+  assert.equal(existing.code,0,existing.err);assert.match(existing.out,/stdin-left=synthetic-unused-password\n$/);
+  assert.ok(!existing.out.includes('管理员已创建'));
+  assert.equal((await readFile(f.calls,'utf8')).trim().split('\n').length,2,'an existing administrator is never reinitialized');
+});
+
+test('administrator bootstrap without a terminal names both recovery commands and supports an explicit username',async t=>{
+  const f=await administratorFixture(t);
+  const refused=f.run();assert.equal(refused.code,1);assert.match(refused.err,/没有终端.*--admin-user.*circle-hub init-admin.*circle-hub setup-code/);
+  await assert.rejects(access(f.calls));
+  const explicit=f.run({name:'synthetic-admin'});assert.equal(explicit.code,0,explicit.err);
+  assert.deepEqual(JSON.parse((await readFile(f.calls,'utf8')).trim()),{args:['init-admin','synthetic-admin','--password-stdin'],input:'\n'});
+});
+
+test('administrator bootstrap refuses unreadable account listings instead of assuming there is no administrator',async t=>{
+  const f=await administratorFixture(t);
+  for(const env of [{SYNTHETIC_QUERY_ERROR:'1'},{SYNTHETIC_BAD_LIST:'1'}]){
+    const refused=f.run({name:'synthetic-admin',env});assert.equal(refused.code,1);assert.match(refused.err,/管理员账户|管理员账户列表/);
+    await assert.rejects(access(f.calls));
+  }
+});
 
 function install(args: string[], os: string, arch = 'arm64', extra: NodeJS.ProcessEnv = {}): { code: number; out: string; err: string } {
   const result = spawnSync('bash', [SCRIPT, ...args], {
