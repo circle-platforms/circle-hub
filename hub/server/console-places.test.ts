@@ -217,7 +217,7 @@ describe('sign-in states', () => {
     for (const token of await server.records.principals.tokens(user.user.id)) await server.records.principals.revokeToken(server.admin.principal, token.id);
     const ended = await get('/console/runs', session);
     assert.equal(ended.status, 303);
-    assert.equal(ended.headers.location, '/console/login');
+    assert.equal(ended.headers.location, '/console/login?next=%2Fconsole%2Fruns', 'signing in again leads back to the page');
     const flag = cookieOf(ended, 'circle_hub_ended');
     assert.match(flag ?? '', /^circle_hub_ended=1; Path=\/console\/login; HttpOnly; SameSite=Strict; Max-Age=120$/);
     const login = await send('/console/login', { headers: { cookie: `circle_hub_ended=1` } });

@@ -1,4 +1,5 @@
-// The HTTP surface of the Hub: POST /mcp, the console under /console and GET /healthz, on a loopback address unless the
+// The HTTP surface of the Hub: POST /mcp, the console under /console, the MCP standard authorization (the metadata under
+// /.well-known and the endpoints under /oauth, hub/server/oauth.ts) and GET /healthz, on a loopback address unless the
 // configuration declares the allowed hosts; the same routes also over the built-in HTTPS when it is configured (a second
 // listener with the certificate of <data root>/tls). Every request first passes the Host check of the listener it arrived
 // on (127.0.0.1:<port>, localhost:<port> and the declared names, against DNS rebinding) and the Origin check (absent, or
@@ -13,12 +14,13 @@ import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
-import { handleConsole } from './console/index.ts';
+import { authorizeRefusal, handleConsole } from './console/index.ts';
 import { JobStore } from './console/manage.ts';
-import { SessionStore } from './console/session.ts';
+import { LoginLinkStore, SessionStore } from './console/session.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import { handleMcp } from './mcp.ts';
+import { AuthorizationStore, handleOAuth, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
 
@@ -80,6 +82,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const closeGraceMs = options.closeGraceMs ?? 15_000;
   const clock = deps.now ?? (() => new Date());
   const sessions = new SessionStore(() => clock().getTime());
+  const authorizations = new AuthorizationStore(() => clock().getTime());
+  const loginLinks = new LoginLinkStore(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
   let hosts = allowedHosts(host, deps.config.port, declared);
   let secureHosts = https ? allowedHosts(https.host, https.port, declared, 443) : new Set<string>();
@@ -91,17 +95,20 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   let closing: Promise<void> | null = null;
   const inflight = new Set<Promise<void>>();
 
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget };
+  // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy authority
+  // and peer, do.
+  const secureRequest = (request: IncomingMessage): boolean => encrypted(request) || (proxyAuthority !== null
+    && request.headers.host?.toLowerCase() === proxyAuthority
+    && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
+  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)) };
+  // Read when a request comes: an app may be created before its records are (the listener checks build one without).
+  const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, secureRequest, log };
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
     jobs: new JobStore(clock),
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.bridge ? { bridge: options.bridge } : {}),
-    // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy
-    // authority and peer, do.
-    secureRequest: (request: IncomingMessage) => encrypted(request) || (proxyAuthority !== null
-      && request.headers.host?.toLowerCase() === proxyAuthority
-      && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer),
+    authorizations, loginLinks, secureRequest,
   };
 
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
@@ -132,6 +139,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       return sendJson(response, 200, { status: 'ok', release });
     }
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
+    if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
     if (url.pathname === '/console' || url.pathname.startsWith('/console/')) return handleConsole(request, response, url, consoleOptions);
     request.resume();
     sendText(response, 404, '没有这个地址');
@@ -245,6 +253,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
         await Promise.allSettled([...inflight]);
       }
       sessions.clear();
+      authorizations.clear();
+      loginLinks.clear();
     })());
 
   return { handler, listen, close, release };

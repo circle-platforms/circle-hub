@@ -23,6 +23,8 @@ export interface McpOptions {
   log: (line: string) => void;
   /** Request body bytes held at once over all requests (the app's budget). */
   budget: BodyBudget;
+  /** The resource metadata URL an unauthenticated answer names (RFC 9728 5.1), for the MCP standard authorization. */
+  resourceMetadata?: (request: IncomingMessage) => string;
 }
 
 /** Same body for missing, unknown, revoked and disabled tokens. */
@@ -155,7 +157,11 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   const principal = await deps.records.principals.authenticate(typeof authorization === 'string' ? authorization : null);
   if (principal === null) {
     request.resume();
-    sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': 'Bearer realm="circle-hub"', connection: 'close' });
+    // RFC 6750 3.1: a request without credentials gets no error code; one with a token that does not work gets invalid_token.
+    const challenge = ['Bearer realm="circle-hub"'];
+    if (options.resourceMetadata !== undefined) challenge.push(`resource_metadata="${options.resourceMetadata(request)}"`);
+    if (typeof authorization === 'string') challenge.push('error="invalid_token"');
+    sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': challenge.join(', '), connection: 'close' });
     return;
   }
   const traceId = traceIdFrom(request.headers.traceparent) ?? newTraceId();

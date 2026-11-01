@@ -202,7 +202,7 @@ describe('sign-in', () => {
     assert.notEqual(csrfOf(reply.body), nonce);
     const anonymous = await send('/console/runs');
     assert.equal(anonymous.status, 303);
-    assert.equal(anonymous.headers.location, '/console/login');
+    assert.equal(anonymous.headers.location, '/console/login?next=%2Fconsole%2Fruns');
   });
 
   test('revoking the token ends the console session at the next page; signing out needs the session CSRF token', async () => {
@@ -223,7 +223,7 @@ describe('sign-in', () => {
     await server.records.principals.revokeToken(server.admin.principal, token.id);
     const after = await get('/console/runs', again);
     assert.equal(after.status, 303);
-    assert.equal(after.headers.location, '/console/login');
+    assert.equal(after.headers.location, '/console/login?next=%2Fconsole%2Fruns');
   });
 });
 

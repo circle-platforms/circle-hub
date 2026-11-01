@@ -23,8 +23,13 @@ export interface HubFacts {
 }
 
 /** The Circle entry of this Hub (the `mcp_servers` block of Circle's settings), with the token as a secret reference. */
-export function circleEntry(origin: string): string {
-  return JSON.stringify({ mcp_servers: [{ name: 'circle-hub', url: `${origin}/mcp`, transport: 'streamable_http', headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } }] }, null, 2);
+/**
+ * The Circle settings entry for this Hub: without headers for the MCP standard authorization (the client opens the
+ * authorization page in a browser), or with the token kept as a Circle secret for a client without it.
+ */
+export function circleEntry(origin: string, token = true): string {
+  const entry = { name: 'circle-hub', url: `${origin}/mcp`, transport: 'streamable_http' };
+  return JSON.stringify({ mcp_servers: [token ? { ...entry, headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } } : entry] }, null, 2);
 }
 
 /** The origin a browser reached this console on: the scheme of the channel and the Host it sent. */
