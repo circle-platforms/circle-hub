@@ -13,6 +13,7 @@ import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, listRuns, runsFor, type StoredResult } from './queries.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
+import { backfillCitations } from './store.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
 import { wellFormed } from './util.ts';
 
@@ -82,15 +83,26 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   let ongoing:Promise<void>|null=null;
   let timer:ReturnType<typeof setInterval>|null=null;
   const maintain=():Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current)).finally(()=>{ongoing=null;}));
+  // Submissions stored before citations were indexed get their index in the background: a pass at the start and at every
+  // tick until one reaches its end (backfillCitations). Stopping aborts the pass under way; the next one resumes it.
+  let indexing:Promise<void>|null=null;
+  let indexed=false;
+  let stopIndexing=new AbortController();
+  const indexCitations=():Promise<void>=>indexing??=(backfillCitations(ctx.deps.records.store,{signal:stopIndexing.signal})
+    .then(outcome=>{indexed=outcome.complete;if(outcome.indexed>0)ctx.log({traceId:null,run:null,what:'citation index',detail:`indexed the citations of ${outcome.indexed} submissions stored before citations were indexed (${outcome.examined} examined)`});})
+    .catch((error:unknown)=>{if(!stopIndexing.signal.aborted)ctx.log({traceId:null,run:null,what:'citation index',detail:String(error)});})
+    .finally(()=>{indexing=null;}));
   return {
     abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
     async startMaintenance(){
       await maintain();
-      timer??=setInterval(()=>{void maintain().catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));},60000);
+      if(stopIndexing.signal.aborted)stopIndexing=new AbortController();
+      void indexCitations();
+      timer??=setInterval(()=>{void maintain().catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));if(!indexed)void indexCitations();},60000);
       timer.unref();
     },
-    async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}await ongoing;},
+    async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}stopIndexing.abort();await indexing;await ongoing;},
     listRequests(user,run) { return requestsOf(ctx,user,run); },
     async startRun(user, input, context) {
       return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer);

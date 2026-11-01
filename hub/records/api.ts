@@ -239,6 +239,11 @@ export interface RecordStore {
   countIndexed?(query: { index: readonly IndexEntry[]; kind?: RecordKind; since?: string; cap?: number }, tx?: Transaction): Promise<{ count: number; capped: boolean }>;
   /** The size of the Hub's database on disk, in bytes (pg_database_size), for the Hub's state page. */
   databaseSize?(): Promise<number>;
+  /**
+   * Adds index entries to a stored record (the index is derived and append-only; the record and its digest do not change):
+   * the entries it already has are kept, and a record holds at most 200. The number added; 0 for a record that is not stored.
+   */
+  addIndex?(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;

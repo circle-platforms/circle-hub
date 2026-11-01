@@ -605,3 +605,5 @@ error. A source reference without the authorized run continues to use the reader
 运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销记在这些可变存储里，与此前的令牌一样不写记录；合约里没有对应的记录类型。测试：`standard-authorization.test.ts`。
 
 `RecordStore.countIndexed`（决定 79）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
+
+`RecordStore.addIndex`（决定 80）：给一条已存的记录追加索引项。索引是派生的、只追加的（`record_index` 的触发器不许修改和删除），记录本身和摘要不变；已有的项保留、不重复，一条记录合计至多 200 项，不存在的记录不加，返回加了几项。运行引擎用它给索引之前受理的提交补上所引知识的索引。测试：`add-index.test.ts`。
