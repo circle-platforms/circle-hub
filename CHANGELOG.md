@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Knowledge intake pending items** — decision 83 moves the pending queue to knowledge and hides it when empty.
+
 - **Console requests** — decision 83 combines waiting and overdue requests, showing member names and generated status labels without record digests.
 
 - **Console walkthrough task lists** (owner decision 83). Empty unfiltered task lists show their empty state without filters or zero counters; active filters remain available to clear, and ordering explanations use a hover hint.

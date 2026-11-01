@@ -127,7 +127,6 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   ], '按任务结果筛选');
   const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p class="mt12">${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
-  const feedingTodos=await ctx.deps.knowledge.feeding?.todos(ctx.principal)??[];
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
   const empty = tasks.length === 0 && !filtering;
   const list = empty
@@ -136,7 +135,6 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${empty ? '' : filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
-${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
 ${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, listing.overdue_requests, true))}`),
   };
 }
@@ -466,6 +464,8 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   const lines = await readableLines(ctx);
+  const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
+  const pending = todos.length === 0 ? html`` : section('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [code(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? code(JSON.stringify(row.detail)) : '—'])));
   const blocks: Html[] = [];
   for (const line of lines) {
     const builds = await ctx.deps.knowledge.builds(line.id);
@@ -511,7 +511,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload' }) : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${flow}
+    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${flow}${pending}
 ${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}
 ${liveModule('lines', ['knowledge.published'], blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`)}
 <div class="mt16">${card({ title: '版本差异', meta: '两个版本之间新增、删除与修改的条目' }, diffForm)}</div>`),

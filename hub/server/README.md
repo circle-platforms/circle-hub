@@ -287,6 +287,9 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83 places knowledge intake pending items on the knowledge page. Empty queues are hidden and the same
+principal-scoped feeding query remains the source; the tasks page no longer reads it.
+
 Decision 83 combines pending and overdue requests in one shared list on the task and task-detail pages. It deduplicates
 record identities, resolves member names, puts overdue requests first and hides an empty list. Labels use B07's generated
 display axis; requests and their answer rules are unchanged.
