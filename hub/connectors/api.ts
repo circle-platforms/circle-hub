@@ -23,3 +23,8 @@ export { shapeProblem } from './shape.ts';
 export { readProfile } from './profiles.ts';
 
 export { Redactor } from './redact.ts';
+
+export { TRIAL_ROUTES, trialSystem } from './trial.ts';
+export type { SystemTrialInput, SystemTrialReport, SystemTrialRoute } from './trial.ts';
+export { STATISTICS_SCAN_LIMIT, STATISTICS_WINDOW_MS, readStatistics } from './statistics.ts';
+export type { ReadStatistics } from './statistics.ts';
