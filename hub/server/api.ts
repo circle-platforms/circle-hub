@@ -4,6 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
 import type { HubConfig } from '../config/index.ts';
+import type { SystemTrialInput, SystemTrialReport } from '../connectors/api.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
@@ -44,6 +45,13 @@ export interface ServerDeps {
   products?: Pick<PacksPort, 'products' | 'readableProducts'>;
   /** Registered executors and the jobs of a run, read-only, for the console's administrators; absent where dispatch is not wired. */
   dispatch?: DispatchView;
+  /** The read-only trial of a business system before it is connected (connectors' admin.trial); absent where not wired. */
+  systems?: SystemsView;
+}
+
+/** Business systems as the console's administrators try them; the connectors recheck the administrator themselves. */
+export interface SystemsView {
+  trial(by: Principal, input: SystemTrialInput): Promise<SystemTrialReport>;
 }
 
 /** One registered executor as the console lists it (the runtime environment of the design canvas). */

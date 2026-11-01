@@ -219,6 +219,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(now === undefined ? {} : { now }),
     products: packs,
+    // The trial of a business system before it is connected: the connectors recheck the administrator.
+    systems: { trial: (by, input) => connectors.admin.trial(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
       executors: async (by) => (await new ExecutorRegistry(records).sources(by)).map((entry) => ({

@@ -17,6 +17,7 @@ import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
+import { trialSystem, type SystemTrialInput, type SystemTrialReport } from './trial.ts';
 import { Redactor } from './redact.ts';
 import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
@@ -92,6 +93,11 @@ export interface ResourceAdmin {
    * session entry, so a running Hub in another process ends the stop it holds at its next read that needs the credential.
    */
   resetLogin(by: Principal, id: string, note?: string | null): Promise<void>;
+  /**
+   * Admins only: a read-only trial of a system pack with a configuration that is not saved (trial.ts): one login at most,
+   * the routes that need no arguments, nothing stored. Throws RESOURCE_INVALID or PACK_UNAVAILABLE for an unusable input.
+   */
+  trial(by: Principal, input: SystemTrialInput): Promise<SystemTrialReport>;
 }
 
 export interface Connectors {
@@ -404,7 +410,14 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     },
   };
 
+  // Login values that failed in a trial of this process (digests only): never sent again by a trial.
+  const failedTrialLogins = new Set<string>();
   const admin: ResourceAdmin = {
+    async trial(by, input) {
+      const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
+      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能试读业务系统');
+      return trialSystem({ load: (ref) => profiles.load(ref), redactor, now, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.log ? { log: options.log } : {}), failedLogins: failedTrialLogins }, input, viewer.id);
+    },
     addResource: (by, input) => registry.add(by, input),
     // Nested reads cached under the old definition are not served after a change (they are keyed by it as well).
     updateResource: async (by, id, changes) => {

@@ -10,6 +10,7 @@ import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
 import { code, html, icon, liveModule, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
+import { readsText, systemReads } from './trial.ts';
 import { button, callout, card, chip, commandLink, commandModal, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 
 export interface Circle {
@@ -80,6 +81,7 @@ ${wires(rightNodes.length, false)}
   if (!ctx.admin) {
     systemsBody = html`<p class="sub">业务系统的配置仅管理员可见；任务中对业务系统的读取显示在各任务的执行过程中。</p>`;
   } else {
+    const reads = await systemReads(ctx, resources.map((r) => r.id));
     const rows = resources.map((r) => {
       const s = systemState(r);
       const toggle = commands.resourceToggle(r);
@@ -92,10 +94,12 @@ ${wires(rightNodes.length, false)}
         r.origins === undefined ? '—' : html`${Object.entries(r.origins).map(([role, origin]) => html`<div>${role}：${code(origin)}</div>`)}`,
         html`${chip('只读', 'judgment')}${(r.allow_plaintext ?? []).length > 0 ? html` <span class="sub">明文 http：${(r.allow_plaintext ?? []).join('、')}</span>` : ''}`,
         html`${chip(s.text, s.tone)}${r.binding_error ? html`<div class="error small">${r.binding_error.message}</div>` : ''}`,
+        reads === null ? '暂不可用' : readsText(reads.get(r.id)),
         html`${commandLink(toggle, r.enabled ? '停用' : '启用')} ${commandLink(relogin, '重新认证')}`,
       ];
     });
-    systemsBody = table(['系统', '系统包', '环境', '访问地址', '访问方式', '状态', '操作'], rows, '尚无业务系统');
+    const period = reads === null ? undefined : [...reads.values()][0];
+    systemsBody = html`${table(['系统', '系统包', '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统')}<p class="note">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
   }
   let environmentsBody: Html;
   if (!ctx.admin) environmentsBody = html`<p class="sub">运行环境仅管理员可见。</p>`;

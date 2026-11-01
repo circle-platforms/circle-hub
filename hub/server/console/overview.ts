@@ -10,6 +10,7 @@ import { html, link, liveModule, page, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
 import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
+import { readsText, systemReads } from './trial.ts';
 import { button, card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
 
 export const PERIODS = [7, 14, 30] as const;
@@ -153,7 +154,8 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   const stuckCard = card({ title: '主要阻塞原因', meta: scope }, html`${stuck.length === 0 ? html`<p class="empty">没有被退回或未完成的条目。</p>` : html`<div class="funnel">${stuck.map((s) => html`<div class="frow"><span class="fname" title="${s.label}">${s.label}</span>${hbar(s.value, stuck[0].value, 'fill-wait')}<span class="fval num">${s.value}</span></div>`)}</div>`}
 <p class="note">相关请求已下发至对应的 Circle，在 Circle 中处理。</p>`);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
-  const systems = card({ title: '业务系统', meta: '只读访问' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span></span></a>`)}</div>`}
+  const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id));
+  const systems = card({ title: '业务系统', meta: '只读访问 · 近 24 小时读取' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="sub">${reads === null ? '暂不可用' : readsText(reads.get(r.id))}</span></a>`)}</div>`}
 <div class="card-f"><span class="chip plain">只读访问，不修改业务数据</span>${link('/console/connections', '查看全部')}</div>`);
   const lines = await readableLines(ctx);
   let current = 0;

@@ -19,6 +19,7 @@ import { searchHub } from './search.ts';
 import { authorityFingerprint, certificateFacts, secretsOf } from './settings.ts';
 import { pendingCount, primaryResult, taskResultOf } from './status.ts';
 import { TOOL_LABELS, loadTasks, packTitles, taskSteps, taskTitle } from './tasks.ts';
+import { readsJson, systemReads } from './trial.ts';
 
 export interface ApiResult {
   status: number;
@@ -319,11 +320,14 @@ async function pack(ctx: PageContext, id: string): Promise<ApiResult> {
 
 async function systems(ctx: PageContext): Promise<ApiResult> {
   const resources = await ctx.deps.resources.list(ctx.principal);
+  // The reads of the last day of each system, from its read manifests; null when they cannot be read now.
+  const reads = await systemReads(ctx, resources.map((r) => r.id));
   return ok({
     systems: resources.map((r) => ({
       id: r.id, name: r.name, system_pack: r.system_pack, environment: r.environment, environment_label: isEnvironment(r.environment) ? uiLabelOf('environment', r.environment) : r.environment,
       enabled: r.enabled, ...(r.origins === undefined ? {} : { origins: r.origins }), ...(r.allow_plaintext === undefined ? {} : { allow_plaintext: r.allow_plaintext }),
       ...(r.binding_error === undefined ? {} : { problem: r.binding_error }),
+      reads_24h: reads === null ? null : readsJson(reads.get(r.id)),
     })),
   });
 }
