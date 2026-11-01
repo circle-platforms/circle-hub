@@ -109,18 +109,18 @@ ${wires(rightNodes.length, false)}
       return [html`<b>${e.target}</b>`, code(e.id), code(gateway), e.resources.length, e.enabled ? chip('可用', 'pass') : chip('已停用', 'unchecked'), e.enabled ? commandLink(disable, '停用') : ''];
     }), '尚无运行环境');
   }
-  const body = html`${liveModule('connections', ['member.connected', 'system.added'], html`${kpis}
+  const body = html`${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
 <div class="section">${topology}</div>`)}
 ${sectionHead('已连接的 Circle', ctx.admin ? '每台设备上的 Circle 以各自的令牌连接；断开在设置中生成命令' : '本人的 Circle，每台设备以各自的令牌连接', undefined, 'circles')}
 ${liveModule('circles', ['member.connected'], circlesCard)}
 ${sectionHead('业务系统', '凭据加密保存，页面与模型只可见名称；停用、启用与重新认证在 Circle 中执行', undefined, 'systems')}
-${liveModule('systems', ['system.added'], card(null, systemsBody))}
+${liveModule('systems', ['system.added', 'system.status'], card(null, systemsBody))}
 ${sectionHead('运行环境', '派发作业的执行环境，由管理员登记；派发结果未确认时冻结，不接受新的派发', undefined, 'envs')}
-${card(null, environmentsBody)}
+${liveModule('environments', ['environment.status'], card(null, environmentsBody))}
 ${executors !== null && executors.length > 0 ? callout('info', '运行环境的占用与冻结状态显示在各任务执行过程的派发步骤中。') : ''}
 ${sectionHead('多终端协同与消息通知', '各终端 Circle 的工作状态同步，经 Hub 收发消息、转交任务', undefined, 'more')}
 <section class="grid g2">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端查看并继续任务。', 'terminal')}${plannedCard('消息通知', '接入 Telegram、微信、企业微信、飞书，经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}</section>
-${liveModule('dialogs', ['member.connected', 'system.added'], dialogs.map(commandModal))}`;
+${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'environment.status'], dialogs.map(commandModal))}`;
   return {
     status: 200,
     body: page(ctx.chrome('连接', {

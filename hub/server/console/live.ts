@@ -5,9 +5,11 @@
 // One poller, running only while a stream is open, reads what the database already holds, so a change made by a command in
 // another process is seen too: the records appended since the last watermark, by kind, and the tokens of the accounts whose
 // MCP calls just appeared in the call log (a token used for the first time is a Circle that completed its connection).
-// Knowledge imports of this process signal their start and end directly. Nothing records the state of a business system
-// or a runtime environment, so system.status and environment.status are never sent. A new business system waits until the
-// resource catalog of this process has read it (connectors keeps its list up to 5 s). Every tick checks the session
+// Knowledge imports of this process signal their start and end directly. The state the records hold of a business system
+// or a runtime environment is its configuration (added, changed, enabled, disabled: resource_config decisions on its res_
+// or executor. id): a later decision is system.status, any decision on an executor environment.status, for administrators.
+// Response times, occupancy and freezing are recorded nowhere, so nothing is sent for them. A new business system waits
+// until the resource catalog of this process has read it (connectors keeps its list up to 5 s). Every tick checks the session
 // without counting as activity and a heartbeat re-authenticates its token: a closed or expired session, a revoked token, a
 // disabled account, a reader too far behind or close() ends the stream.
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -45,6 +47,8 @@ const SOURCES: Readonly<Partial<Record<LiveEventName, readonly RecordKind[]>>> =
   'request.updated': ['request', 'action'],
   'member.connected': ['call_log'],
   'system.added': ['authorization'],
+  'system.status': ['authorization'],
+  'environment.status': ['authorization'],
   'pack.published': ['pack_version'],
   'knowledge.published': ['root_pointer'],
 };
@@ -64,11 +68,13 @@ const VERDICT_MS = 30_000;
 const RETRY_MS = 5_000;
 const QUEUED = 1_000;
 /** Held back this long: the resource catalog of this process keeps its list up to 5 s (connectors cacheMs). */
-const HOLD_MS: Readonly<Partial<Record<LiveEventName, number>>> = { 'system.added': 6_000 };
+const HOLD_MS: Readonly<Partial<Record<LiveEventName, number>>> = { 'system.added': 6_000, 'system.status': 6_000 };
 const LOG_EVERY_MS = 60_000;
 const RUN_ID = /^run_[0-9a-z]{26}$/;
 const USER_ID = /^usr_[0-9a-z]{26}$/;
 const RESOURCE_ID = /^res_[0-9a-z]{26}$/;
+/** A runtime environment's configuration object: `executor.<id>` (hub/dispatch). */
+const EXECUTOR_OBJECT = /^executor\.([A-Za-z0-9._-]{1,128})$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const RESOURCE_CONFIG: PermissionKind = 'resource_config';
 
@@ -107,11 +113,18 @@ export function eventsOf(record: Pick<StoredRecord, 'kind' | 'digest' | 'body'>)
       return typeof body.pack === 'string' && typeof body.version === 'string' ? [{ name: 'pack.published', data: { pack: body.pack, version: body.version } }] : [];
     case 'root_pointer':
       return typeof body.product === 'string' ? [{ name: 'knowledge.published', data: { product: body.product, line: typeof body.line === 'string' ? body.line : null } }] : [];
-    case 'authorization':
-      // A business system is a resource configuration of the whole Hub; the first decision for its id adds it.
-      return body.permission === RESOURCE_CONFIG && body.revoked === false && body.supersedes === null && typeof body.object === 'string' && RESOURCE_ID.test(body.object)
-        ? [{ name: 'system.added', data: { system: body.object } }]
-        : [];
+    case 'authorization': {
+      // A business system is a resource configuration of the whole Hub: the first decision for its id adds it, a later
+      // one changes it (enabled, disabled, changed). A runtime environment is the configuration of an executor.
+      if (body.permission !== RESOURCE_CONFIG || typeof body.object !== 'string') return [];
+      if (RESOURCE_ID.test(body.object)) {
+        return body.revoked === false && body.supersedes === null
+          ? [{ name: 'system.added', data: { system: body.object } }]
+          : [{ name: 'system.status', data: { system: body.object } }];
+      }
+      const executor = EXECUTOR_OBJECT.exec(body.object);
+      return executor === null ? [] : [{ name: 'environment.status', data: { environment: executor[1] } }];
+    }
     default:
       return [];
   }
@@ -129,7 +142,10 @@ export async function visibleTo(ctx: PageContext, event: LiveEvent, runVisible: 
     case 'member.connected':
       return ctx.admin || ctx.principal.id === data.user;
     case 'system.added':
-      return (await ctx.deps.resources.list(ctx.principal)).some((system) => system.id === data.system);
+    case 'system.status':
+      return ctx.admin && (await ctx.deps.resources.list(ctx.principal)).some((system) => system.id === data.system);
+    case 'environment.status':
+      return ctx.admin;
     case 'pack.published':
       return (await ctx.deps.packs.list(ctx.principal)).some((pack) => pack.id === data.pack);
     case 'knowledge.published':
