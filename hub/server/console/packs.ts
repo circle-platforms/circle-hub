@@ -57,15 +57,14 @@ ${kpi(uiLabelOf('pack_kind', 'system'), kinds('system').length, { unit: '个', n
 ${kpi('已退役版本', listings.filter((p) => p.withdrawn).length, { unit: '个', note: '只保留记录，不再用于新任务' })}
 </section>`;
   const body = html`${liveModule('packs', ['pack.published'], html`${kpis}
-${sectionHead('任务包', ctx.admin ? '全部任务包；点击查看要求项、检查项、版本与使用范围' : '本人可用的任务包；点击查看要求项与检查项')}
+${sectionHead('任务包', undefined, undefined, undefined, ctx.admin ? '全部任务包；点击查看要求项、检查项、版本与使用范围' : '本人可用的任务包；点击查看要求项与检查项')}
 ${cards.length === 0 ? html`<article class="card"><p class="empty">尚无可用的任务包</p><p class="sub mt4">${ctx.admin ? '在“发布任务包”中上传任务包。' : '任务包由管理员分配。'}</p></article>` : html`<div class="packs">${cards}</div>`}`)}
-${sectionHead('定时任务与机器人', '按时间或事件自动执行：知识导入、系统巡检、未知项汇总')}
-<section class="grid g2">${plannedCard('定时任务', '按计划或事件触发任务；需先开放“消息通知”与“数据回写”（当前均未开放），定时任务方可输出结果。', 'clock')}${plannedCard('机器人', '无人值守执行任务；机器人发出的请求在负责人的 Circle 下次连接时送达，或经消息渠道送达，待“消息通知”开放后确定。', 'users')}</section>`;
+`;
   return {
     status: 200,
     body: page(ctx.chrome('任务包', {
       active: 'packs',
-      sub: '任务包定义统一的流程与检查项；所有成员按同一流程执行，结果按同一标准校验。',
+      hint: '任务包定义统一的流程与检查项；所有成员按同一流程执行，结果按同一标准校验',
       ...(ctx.admin ? { actions: button('/console/operations/pack', '发布任务包', { primary: true, icon: 'upload' }) } : {}),
     }), body),
   };
@@ -96,7 +95,7 @@ ${ctx.admin ? html`<div class="actions">${button('/console/operations/pack', '�
   if (loaded !== null) {
     const judged = loaded.requirements.some((r) => r.accepted_producer !== 'fact');
     const effects = (loaded.effects ?? []).length > 0;
-    flow = card({ title: '流程', meta: '各步骤的执行位置' }, html`<div class="stages">
+    flow = card({ title: '流程', hint: '各步骤的执行位置' }, html`<div class="stages">
 <div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>读取</b><span class="sub">${loaded.workflow.inputs.map((input) => input.description).join('；') || '—'}</span></div>
 ${judged ? html`<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>生成结论</b><span class="sub">模型在本机运行，按任务包规程提交</span></div>` : ''}
 <div class="stage on-hub"><span class="host"><span class="dot info"></span>Hub</span><b>校验</b><span class="sub">${loaded.checks.length} 个检查项 · 引用校验与沙箱复验</span></div>
@@ -108,7 +107,7 @@ ${effects ? html`<div class="stage on-hub"><span class="host"><span class="dot i
     loaded.requirements.map((r) => [html`<b>${r.name}</b><div class="digest">${r.key}</div>`, r.description, r.layers.map((layer) => uiLabelOf('layer', layer)).join('、'), uiLabelOf('done_rule', r.done_rule), uiLabelOf('accepted_producer', r.accepted_producer), r.required ? '必需' : '可选', r.checks.length === 0 ? '未配置检查' : r.checks.join('、')]),
     '没有要求项',
   ));
-  const checks = loaded === null ? html`` : card({ title: '检查项', meta: '阻断项未通过时结果不可用；提示项仅作标记' }, table(
+  const checks = loaded === null ? html`` : card({ title: '检查项', hint: '阻断项未通过时结果不可用；提示项仅作标记' }, table(
     ['检查项', axisUiLabel('check_tier'), '检查脚本', axisUiLabel('source_role')],
     loaded.checks.map((c) => [html`<b>${c.title ?? c.id}</b><div class="digest">${c.id}</div>`, c.tier === undefined ? '—' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), code(c.function ?? c.interpreter ?? '—'), uiLabelOf('source_role', c.judges)]),
     '没有检查项',

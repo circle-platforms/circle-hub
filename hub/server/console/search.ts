@@ -154,7 +154,7 @@ async function memberNamed(ctx: PageContext, q: string): Promise<string | null> 
 export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const raw = ctx.url.searchParams.get('q') ?? '';
   const results = await searchHub(ctx, raw);
-  const chrome = ctx.chrome('搜索', { sub: results.q === '' ? '在任务、任务包、知识库与记录中查找' : `“${results.q}”的查找结果` });
+  const chrome = ctx.chrome('搜索', results.q === '' ? { hint: '在任务、任务包、知识库与记录中查找' } : { sub: `“${results.q}”的查找结果` });
   const form = html`<form class="filters" method="get" action="/console/search"><label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label><button type="submit">搜索</button></form>`;
   if (results.q === '') return { status: 200, body: page(chrome, card(null, html`${form}<p class="sub mt12">可按任务的运行编号、任务包、产品线、版本、知识条目路径（以 / 开头）、工具名称或成员姓名查找。</p>`)) };
   const partial = (yes: boolean, what: string) => (yes ? html`<p class="sub">${what}</p>` : '');

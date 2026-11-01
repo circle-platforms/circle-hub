@@ -30,7 +30,7 @@ export interface PageContext {
   admin: boolean;
   url: URL;
   /** The chrome of a page: its title, and the place of the navigation, a line and buttons when the page has them. */
-  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'actions'>) => PageChrome;
+  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'hint' | 'actions'>) => PageChrome;
   /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
   csrf?: string;
   /** The request came over HTTPS (the built-in listener or the configured proxy). */
@@ -130,7 +130,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const list = card({ title: listing.items.length === 0 ? '尚无任务' : '任务', meta: `本页 ${tasks.length} 个任务${wanted === undefined ? '' : `，筛选后 ${shown.length} 个`} · 按开始时间` }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, listing.items.length === 0 ? 'Circle 启动任务后在此列出。' : '本页没有符合筛选的任务')}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', sub: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验。' }), html`${filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
 ${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
 ${liveModule('task-requests', ['request.updated'], html`${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
 ${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`)}
@@ -498,7 +498,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     );
   }
   const diffForm = html`<form class="filters" method="get" action="/console/knowledge/diff"><label>从版本（内容哈希） <input name="from" size="66"></label><label>到版本（内容哈希） <input name="to" size="66"></label><button type="submit">比较</button></form>`;
-  const flow = card({ title: '知识入库流程', meta: '共享知识须经 Hub 出处校验' }, html`<div class="stages">
+  const flow = card({ title: '知识入库流程', hint: '共享知识须经 Hub 出处校验' }, html`<div class="stages">
 <div class="stage planned-stage"><span class="host"><span class="dot idle"></span>仅本人可见</span><b>原文归档</b><span class="sub">Circle 读取的网页、文件、系统数据连同出处归档</span>${planned()}</div>
 <div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>模型归纳</b><span class="sub">模型生成的归纳保留在本机，不上传 Hub</span></div>
 <div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>提交共享</b><span class="sub">确认为事实后，连同出处提交</span></div>
@@ -508,8 +508,8 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload' }) : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识库', { active: 'knowledge', sub: '统一的知识库：每条知识均附出处，按产品线与版本组织。', ...(actions === undefined ? {} : { actions }) }), html`${flow}
-${sectionHead('按产品线浏览', '可读的产品线及其版本')}
+    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${flow}
+${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}
 ${liveModule('lines', ['knowledge.published'], blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`)}
 <div class="mt16">${card({ title: '版本差异', meta: '两个版本之间新增、删除与修改的条目' }, diffForm)}</div>`),
   };

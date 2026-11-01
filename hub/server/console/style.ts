@@ -69,6 +69,8 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .search{display:flex;align-items:center;gap:8px;height:34px;margin:2px 0 6px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--secondary)}
 .search input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:var(--ui-small);color:var(--fg)}
 .search input::placeholder{color:var(--secondary)}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.top h1[title],.card-h h3[title],.section-h h2[title],.hub section h2[title]{cursor:help}
 .search kbd{font-family:var(--mono);font-size:var(--ui-tiny);padding:0 5px;border:1px solid var(--border);border-radius:4px;line-height:16px}
 .nav-label{padding:14px 10px 4px;font-size:var(--ui-tiny);color:var(--secondary);letter-spacing:.5px}
 .nav-item{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;border-radius:var(--radius);color:var(--secondary);transition:background .1s,color .1s}
@@ -547,9 +549,9 @@ pre.error{color:var(--t-fail);background:var(--b-fail)}
 .hub form.inline{display:inline-block;margin:0 6px 4px 0}
 .hub form.filters{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end}
 .hub label{font-size:var(--ui-small);color:var(--secondary)}
-.hub input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),.hub select,.hub textarea{min-height:34px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:var(--ui-small);outline:none}
+.hub input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]):not([type=search]),.hub select,.hub textarea{min-height:34px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:var(--ui-small);outline:none}
 .hub textarea{font-family:var(--mono);width:100%;min-height:72px}
-.hub input:focus,.hub select:focus,.hub textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.hub input:not([type=search]):focus,.hub select:focus,.hub textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
 .hub form button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:var(--ui-small);font-weight:500;cursor:pointer;color:var(--fg)}
 .hub form button:hover{background:var(--hover)}
 .hub form button.primary{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}

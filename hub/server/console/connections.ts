@@ -108,7 +108,7 @@ ${kpi('业务系统写操作', '未开放', { note: '消息通知与数据回写
 </section>`;
   const leftNodes = circles.slice(0, 5).map((c) => html`<div class="tnode"><span class="dot ${c.token.last_used_at !== null && now - Date.parse(c.token.last_used_at) < DAY ? 'ok' : 'idle'}" aria-hidden="true"></span><b>${c.owner}</b><span class="sub">${c.token.label || c.token.id}</span></div>`);
   const rightNodes = resources.slice(0, 5).map((r) => { const s = systemState(r); return html`<div class="tnode"><span class="dot ${s.dot}" aria-hidden="true"></span><b>${r.name}</b><span class="sub">${r.system_pack}</span></div>`; });
-  const topology = card({ title: '连接拓扑', meta: '左侧为已连接的 Circle，右侧为业务系统；Hub 只执行只读访问' }, html`<div class="topo">
+  const topology = card({ title: '连接拓扑', hint: '左侧为已连接的 Circle，右侧为业务系统；Hub 只执行只读访问' }, html`<div class="topo">
 <div class="topo-col">${leftNodes.length === 0 ? html`<div class="tnode ghost">尚无已连接的 Circle</div>` : leftNodes}</div>
 ${wires(leftNodes.length, true)}
 <div class="tnode hubn">${logo(true)}<b>circle-hub</b><span class="sub">MCP 服务</span></div>
@@ -181,21 +181,21 @@ ${wires(rightNodes.length, false)}
   }
   const body = html`${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
 <div class="section">${topology}</div>`)}
-${sectionHead('已连接的 Circle', ctx.admin ? '每台设备上的 Circle 以各自的令牌连接；断开在设置中生成命令' : '本人的 Circle，每台设备以各自的令牌连接', undefined, 'circles')}
+${sectionHead('已连接的 Circle', undefined, undefined, 'circles', ctx.admin ? '每台设备上的 Circle 以各自的令牌连接；断开在设置中生成命令' : '本人的 Circle，每台设备以各自的令牌连接')}
 ${liveModule('circles', ['member.connected'], circlesCard)}
-${sectionHead('业务系统', '凭据加密保存，页面与模型只可见名称；停用、启用与重新认证在 Circle 中执行', undefined, 'systems')}
+${sectionHead('业务系统', undefined, undefined, 'systems', '凭据加密保存，页面与模型只可见名称；停用、启用与重新认证在 Circle 中执行')}
 ${liveModule('systems', ['system.added', 'system.status'], card(null, systemsBody))}
-${sectionHead('运行环境', '派发作业的执行环境，由管理员登记；派发结果未确认时冻结，不接受新的派发', undefined, 'envs')}
+${sectionHead('运行环境', undefined, undefined, 'envs', '派发作业的执行环境，由管理员登记；派发结果未确认时冻结，不接受新的派发')}
 ${liveModule('environments', ['environment.status'], card(null, environmentsBody))}
 ${executors !== null && executors.length > 0 ? callout('info', '占用与冻结取自派发记录：有作业持有时为使用中，派发结果未确认或作业结束后未恢复时为已冻结；执行器版本取自 Hub 与该执行器最近一次会话。') : ''}
-${sectionHead('多终端协同与消息通知', '各终端 Circle 的工作状态同步，经 Hub 收发消息、转交任务', undefined, 'more')}
+${sectionHead('多终端协同与消息通知', undefined, undefined, 'more', '各终端 Circle 的工作状态同步，经 Hub 收发消息、转交任务')}
 <section class="grid g2">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端查看并继续任务。', 'terminal')}${plannedCard('消息通知', '接入 Telegram、微信、企业微信、飞书，经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}</section>
 ${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'environment.status'], dialogs.map(commandModal))}`;
   return {
     status: 200,
     body: page(ctx.chrome('连接', {
       active: 'connections',
-      sub: 'Hub 以只读方式访问业务系统，不修改业务数据；派发作业的运行环境在此查看。',
+      hint: 'Hub 以只读方式访问业务系统，不修改业务数据；派发作业的运行环境在此查看',
       actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' }) : ''}`,
     }), body),
   };
