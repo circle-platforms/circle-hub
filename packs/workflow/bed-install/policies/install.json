@@ -1,0 +1,15 @@
+{
+  "schema": "bed-install.install@1",
+  "basis": "InfoTest 的升级就是普通用例 smoke_test/system/upgrade/99999999{0,1,2}.py：conf 里第 i 台设备一个（APV.upgrade 在 lib/apv/apv.py），镜像名取环境变量 test_build，用例从镜像名推出目标版本（第一个 - 之后到最后一个 . 之前，_ 读作 .），设备 show version 已是目标就跳过；用例清理的镜像文件是 *.click 和 *.array。自动化测试环境网关 build_install 原样跑这些用例",
+  "device_types": ["load-balancer"],
+  "cases": ["999999990", "999999991", "999999992"],
+  "image_extensions": ["click", "array"],
+  "parameters": {
+    "target": "/bed/id",
+    "manifest_sha256": "/bed/manifest_sha256",
+    "build": "/build",
+    "sha256": "/sha256",
+    "items": "/autoids",
+    "generator": "/generator"
+  }
+}

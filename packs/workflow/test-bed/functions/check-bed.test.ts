@@ -178,8 +178,8 @@ describe('bedOutcomes refute and unknown', () => {
     assert.equal(gap.verdict, 'unknown');
     assert.equal(gap.reason, 'missing_input');
     assert.match(gap.missing ?? '', /最近一次观察到装的是 Rel_APV_10_6_1_9/);
-    assert.ok(gap.statement.endsWith(`。下一步：要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作`));
-    assert.equal(gap.data?.next_action, '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作');
+    assert.ok(gap.statement.endsWith(`。下一步：要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次`));
+    assert.equal(gap.data?.next_action, '要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次');
     assert.ok(gap.grounds.length > 0, 'the unknown cites the inventory beds it compared');
   });
 

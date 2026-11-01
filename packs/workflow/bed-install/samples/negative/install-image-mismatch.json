@@ -1,0 +1,63 @@
+{
+  "id": "install_image_mismatch",
+  "source": "author",
+  "check": "install",
+  "note": "合成反例：镜像按升级用例的读法装的是另一个构建",
+  "subject": {
+    "item": {
+      "id": "999999990",
+      "label": "lb0 的升级用例 999999990",
+      "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0/devices/0",
+      "fields": {
+        "bed": "bed-a",
+        "device": "lb0",
+        "position": 0,
+        "case": "999999990"
+      }
+    },
+    "claimed": "Beta_SYN-K_1_2_0_7",
+    "group": {
+      "bed": "bed-a",
+      "devices": [
+        "lb0",
+        "lb1",
+        "client1"
+      ],
+      "targets": [
+        "lb0",
+        "lb1"
+      ],
+      "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bed_pointer": "p/beds/0",
+      "request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "request": {
+        "schema": "bed-install@1",
+        "build": "Beta_SYN-K_1_2_0_7",
+        "image": "brandOS-Beta_SYN-K_1_2_0_8.click"
+      }
+    },
+    "predecessor": "run_synthetic_booking",
+    "build": "Beta.SYN-K.1.2.0.5",
+    "leases": [
+      {
+        "key": "bed/bed-a/lb0",
+        "run": "run_synthetic_booking"
+      },
+      {
+        "key": "bed/bed-a/lb1",
+        "run": "run_synthetic_booking"
+      },
+      {
+        "key": "bed/bed-a/client1",
+        "run": "run_synthetic_booking"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "bed-install.request_invalid",
+      "item": "999999990"
+    }
+  ]
+}

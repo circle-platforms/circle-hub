@@ -246,7 +246,7 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
     chosen = matches.find((m) => m.bed === bedParam);
     if (chosen === undefined) return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${bedParam}`, fix: 'bed 写清单里的一个自动化测试环境名，或不写按 need 选最佳匹配' } };
     if (!chosen.devices_ok) return { ok: false, failure: { code: 'test-bed.bed_short', message: `自动化测试环境 ${bedParam} 不满足需求：${chosen.conclusion}`, fix: '换 need 或换自动化测试环境' } };
-    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '换一个最近一次观察到装着这个构建的自动化测试环境（search 的结论列出各环境的观察和时间）；要用这个环境现有的构建，去掉 need.build 再预订。test-bed 没有升级设备的动作', provenance: 'observed' } };
+    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '换一个最近一次观察到装着这个构建的自动化测试环境（search 的结论列出各环境的观察和时间）；要在这个环境上跑这个构建，去掉 need.build 整台预订，再用 bed-install 装上；只用这个环境现有的构建，去掉 need.build 再预订', provenance: 'observed' } };
   } else {
     // matchNeed's order is idle first: the first fitting bed is idle when one exists, else the earliest to free; a
     // taken bed is refused by the Hub's lease grant with LEASE_UNAVAILABLE and the earliest free moment, not here.

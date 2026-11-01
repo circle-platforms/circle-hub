@@ -1,0 +1,115 @@
+{
+  "schema": "pack@1",
+  "id": "bed-install",
+  "version": "1.0.0",
+  "kind": "workflow",
+  "title": "自动化测试环境装构建",
+  "description": "照 InfoTest 的升级用例给整台预订的自动化测试环境装构建：上传装构建请求（要装的构建与构建库镜像文件名），Hub 核对镜像名按升级用例的读法正是这个构建、前驱运行持有整台环境、运行锁定设备现在装的构建；受理后由 Hub 派发，每台负载均衡设备一个框架升级用例，已是目标构建的设备跳过",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "9e3eb7f52a6d58e2f8c4b5cc04d7dce8672890fa47a5daa15863c0bed68939c8",
+      "size": 2446
+    },
+    {
+      "path": "checks.json",
+      "sha256": "a65093e3880b22e2690c0d35c9effae7247e83d2b12a731323addf2472edc9c3",
+      "size": 1088
+    },
+    {
+      "path": "examples/install-request.json",
+      "sha256": "0222cf065c85559f46160f99760832428629ee53cca88200439d20680bda386e",
+      "size": 112
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "e1f213437f422eecf5607d4c5b1e5ae5dbe7cdd6b51b0bdc79796983449c825a",
+      "size": 358
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "903e380fab8d729a6a30c1d0907d7fed03e7ac7cb0a4672ae14b0f6b3c61a65f",
+      "size": 3618
+    },
+    {
+      "path": "functions/dispatch-policy.ts",
+      "sha256": "65c199ee50a219b694b176ac5c52ea42843f5f0665d314feb3dd1ddc35bcdad6",
+      "size": 1686
+    },
+    {
+      "path": "functions/install.ts",
+      "sha256": "0d6072acc50f137435d6363c9fbea0871482434b3bc34e8bc65cbeb2a08d169e",
+      "size": 7075
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "311ced110262003f1443154f35b2b8a930dd11ac42615ed872a0fa1bc0bbc6f7",
+      "size": 5705
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "0775ba4d20fe335ec5dc493062503451a57b71e6771bdd22b8c87fad0c6cfc2b",
+      "size": 3632
+    },
+    {
+      "path": "policies/install.json",
+      "sha256": "51e58b23006d8381920fcbfa5722f0592fd44ebaafcbda9de53799fa107755f4",
+      "size": 834
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "a9d53c81c613ac8024f5e7cd935ce20c83e788db9678c9dab5ae24db98c69250",
+      "size": 1993
+    },
+    {
+      "path": "samples/negative/dispatch-policy-image-mismatch.json",
+      "sha256": "a8b2c835869fb03f893b133800f19a211600c16d887a2cf12d45cd0d4159d4ff",
+      "size": 1618
+    },
+    {
+      "path": "samples/negative/install-booking-missing.json",
+      "sha256": "cd062f4f1db74db0a37ee9a497fae8ee384cac7e3473e52c734d9f31b8ad2462",
+      "size": 1517
+    },
+    {
+      "path": "samples/negative/install-build-unlocked.json",
+      "sha256": "07b633fbc893b0faa36a1cea9442ab1d72a4f442f7714f359c0d0034b7252d1f",
+      "size": 1555
+    },
+    {
+      "path": "samples/negative/install-claim-mismatch.json",
+      "sha256": "9903a6d5721b60eed67c077756ff8bc13777168f7a41b5f94659220aa4fc9ecd",
+      "size": 1600
+    },
+    {
+      "path": "samples/negative/install-image-mismatch.json",
+      "sha256": "a1e3a14df3d7c0d9728c03166a5713b61781b1711392aa0de8abb74410593ac6",
+      "size": 1602
+    },
+    {
+      "path": "samples/negative/install-request-shape.json",
+      "sha256": "8a9ef513dfb7f026f28a7e91d2baaa5c3e9ee3a886ea09c628d8c7d48fa4674a",
+      "size": 1622
+    },
+    {
+      "path": "samples/positive/dispatch-policy-support.json",
+      "sha256": "73b0a11cdbd7666ba7fce2b6e523930a76ad89cca98fc6050f1342c0be85c323",
+      "size": 1597
+    },
+    {
+      "path": "samples/positive/install-support.json",
+      "sha256": "88c739b7933d1785a5e532fa8847f5c862499bc7a86539ac5242df984982bf07",
+      "size": 1581
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "cde7241f5d7dee7a7662fbc633b3ef2ad0c87e03899fd9e03c72b73c5305b365",
+      "size": 338
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "3a691d09c766043e370dc61137e2be4790ce6ea5947a699d0d896cab2ff26613",
+      "size": 1324
+    }
+  ]
+}
