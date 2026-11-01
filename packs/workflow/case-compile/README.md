@@ -1,4 +1,4 @@
-# case-compile 3.9.9
+# case-compile 3.9.10
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -525,3 +525,23 @@ halt and poweroff anywhere in the command, and the whole-device configuration wi
   the user is told which request the run waits on, never asked to choose for the maintainer.
 
 Everything else, the inverse obligations, the runner cleanup, the bed checks and the dispatch budget, is unchanged.
+
+### 3.9.10: the author's own addresses stay, as InfoTest (decision 115)
+
+The 11-01 rerun stopped again: the bug's own DNS ACL network was not on the environment, the plan could only replace it,
+and a replacement source had to be a typed identity from the knowledge base's case index, which an uploaded repro case never
+has; the refusal sent the model to declare `data.command_identities` in the document, which is not read. The owner asked to
+compare with InfoTest and CES ("对比infotest和ces skill 查找这个问题是老问题还是新版本设计问题"), then "可以，照 InfoTest 改".
+InfoTest `main/ist_core/tools/device/emit_xlsx_tool.py` `_gate_unreachable_ips` (carried into CES verbatim): "拒无作者出处的不可达
+部署值，作者值改落环境披露" — it refuses an unreachable address only when the compiling model made it up; one the author wrote
+is kept and disclosed.
+
+- `bed_addresses`: the author's addresses are the address parameters of the case's own command lines, parsed by the locked
+  command tree (no text scan). A plan address off the environment or in a blind segment is kept and disclosed when it is one
+  of them, refused otherwise; the support says which addresses were kept. A declared role with `bed_member: false` is still
+  not checked; a position without a declared use is checked like a member.
+- A replacement may replace any address of the author's commands, not only one from the case index; any other source is a
+  plan error (`replacement_invalid`, naming the source and the author's addresses), no longer a missing fact for a maintainer.
+- An inverse that parses with several leading-parameter counts accepts the plan's own cleanup when it is one of them, and
+  otherwise lists every valid form (as CES: the author writes the teardown); it no longer waits for a product declaration.
+- SKILL step 2 states the address rule.

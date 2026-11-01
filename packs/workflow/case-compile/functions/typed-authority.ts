@@ -65,7 +65,7 @@ function commandRole(a:Authority,i:CommandIdentity,position:number,native?:strin
  const roles=[...new Set(declared)];return roles.length===1?roles[0]:null;
 }
 export interface AddressUse {value:string|number;kind:string;bed_member:boolean|undefined;pointer:string}
-/** Typed address positions; a command address whose position has no declared role must be an address of this environment, a lineage lease or a replacement (decision 114). */
+/** Typed address positions; a command address whose position has no declared role is checked like an environment member, where the author's own addresses are kept and disclosed (decisions 114, 115). */
 export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog?:unknown):AddressUse[]{
  // Flat callers keep their existing boundary; a block carrier must be lowered even when its steps is empty.
  if(slots.blocks?.length){

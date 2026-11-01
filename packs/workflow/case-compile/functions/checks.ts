@@ -4,7 +4,7 @@ import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
 import {labelOf} from './generated/vocabulary.ts';
 import {planCommands} from './plan-commands.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
-import type { RunnerCovered } from './command-obligations.ts';
+import { authoredAddresses, type RunnerCovered } from './command-obligations.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
 import { encodeG, GSyntaxError } from './g-syntax.ts';
@@ -107,12 +107,15 @@ export function checkAddresses(input: unknown): Outcome[] {
   const out:Outcome[]=[];
   const uses=typedAddressUses(s.contract!,s.profile!,slots,s.command_catalog);
   const sourceIdentities=Array.isArray(s.command_identities)?s.command_identities:[];
-  const sourceValues=new Set(sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}));
+  // The author's own addresses (decision 115, as InfoTest): parsed from the case's command lines by the locked tree.
+  const authored=authoredAddresses(s.command_catalog,Array.isArray(s.case_texts)?s.case_texts as string[]:[]);
+  const sourceValues=new Set([...sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}),...authored]);
+  const kept:string[]=[];
   const from=new Set<string>(),to=new Set<string>();
   for(const [i,replacement]of slots.replacements.entries()){
     const source=addressKey(replacement.case),target=addressKey(replacement.bed),at='/data/replacements/'+i;
     if(!source||!target||from.has(source)||to.has(target)||source.split(':')[0]!==target.split(':')[0])out.push(refute(s,'replacement_invalid','替换必须是同一声明地址族的一一对应数值映射',at));
-    if(source&&!sourceValues.has(source))return [{verdict:'unknown',reason:'missing_input',missing:'替换来源的冻结类型化参数身份；下一步由用例生产器补 data.command_identities 并重开运行',statement:'不能把原文中外形像地址的文字作为替换依据；缺冻结类型化参数身份，下一步补源声明后重跑',grounds:[],tier:TIER,item:s.item}];
+    if(source&&!sourceValues.has(source))out.push(refute(s,'replacement_invalid',`替换的来源 ${replacement.case} 不是作者命令里的地址：只能替换锁定命令树从作者原文命令里解析出的地址参数（这里解析出 ${authored.size} 个${authored.size?`：${[...authored].slice(0,10).join('、')}`:''}），不按外形从散文里找地址`,at));
     if(source&&target&&source!==target&&slots.replacements.some((other,j)=>j!==i&&addressKey(other.case)===target))out.push(refute(s,'replacement_invalid','替换映射不能形成链或环',at));
     if(source)from.add(source);if(target)to.add(target);
     if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',at));
@@ -120,13 +123,18 @@ export function checkAddresses(input: unknown): Outcome[] {
   }
   for(const use of uses){
     if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
-    if(typeof use.bed_member!=='boolean')return [{verdict:'unknown',reason:'missing_input',missing:'地址参数的合约闭集角色及 bed_member 用途；下一步合约发布管理员补字段并重新绑定',statement:'地址用途未声明，当前阻止派发；下一步由合约发布管理员补角色用途后重开运行',grounds:[],tier:TIER,item:s.item}];
-    if(!use.bed_member)continue;
+    // A role that says the address is not on the environment is not checked; a missing use is checked like a member (decision 115).
+    if(use.bed_member===false)continue;
     const value=String(use.value);if(slots.replacements.some(r=>addressKey(r.case)===addressKey(value)&&addressKey(r.case)!==addressKey(r.bed)))out.push(refute(s,'replacement_missing','声明地址位置仍保留替换前的值',use.pointer));
-    if(readAddress(bed,s.leases,s.now,value).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',use.pointer));
-    else if(inBlindSegment(bed,value,triggerTypes))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
+    const off=readAddress(bed,s.leases,s.now,value).kind==='off_bed',blind=!off&&inBlindSegment(bed,value,triggerTypes);
+    if(!off&&!blind)continue;
+    // As InfoTest's _gate_unreachable_ips: an address the author wrote is kept and disclosed; only one the plan made up is refused.
+    const key=addressKey(value);if(key&&authored.has(key)){if(!kept.includes(value))kept.push(value);continue;}
+    if(off)out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址，也不是作者原文命令里的地址（作者写的地址照原值保留并披露，只拒计划自己改出来的）。下一步：换用有触发设备的网段里的接口地址，或用作者原文里的地址，或先取得本血缘租约后再编译',use.pointer));
+    else out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段，也不是作者原文命令里的地址。下一步：把计划地址改到有触发设备的网段，或用作者原文里的地址，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
   }
-  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描',{typed_positions:uses,replacements:slots.replacements})];
+  const disclosed=kept.length?`；作者原文命令里的 ${kept.length} 个地址不在本环境可达范围里，照原值保留（同 InfoTest：只拒计划自己编的地址，作者写的写进披露），上机时可能连不通：${kept.join('、')}`:'';
+  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描'+disclosed,{typed_positions:uses,replacements:slots.replacements,author_kept:kept})];
 }
 export function checkExpectedSources(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;

@@ -3,6 +3,7 @@ import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDefinition} from './generated/command-grammar.ts';
 import {isRecord} from './text.ts';
+import {addressKey} from './manifest.ts';
 import {readCommandPolicy,within,pathSegments,type CommandPolicy} from './command-policy.ts';
 import {identityOf,identityKey,commandLine} from './typed-contract.ts';
 import type {PlanSlots} from './slots.ts';
@@ -26,6 +27,18 @@ function definitions(raw:unknown):CommandDefinition[]{
   if(entry.reference!==ref&&!(entry.reference.slice(0,ref.length+1)===ref+'@'&&entry.reference.slice(ref.length+1).length===64))return [];
   return [{path,words:entry.words,signatures:entry.signatures} as CommandDefinition];
  });
+}
+/**
+ * The typed addresses of the author's own commands (decision 115, as InfoTest's author provenance in _gate_unreachable_ips):
+ * every address parameter of each case-text command line the locked tree resolves, compared by address. An address the
+ * author wrote stays when it is not on the environment and is disclosed; only an address the plan made up is refused.
+ */
+export function authoredAddresses(raw:unknown,sourceTexts:readonly string[]):Set<string>{
+ const out=new Set<string>();
+ if(!isRecord(raw)||typeof raw.root!=='string'||!sourceTexts.length)return out;
+ const grammar=compileGrammar(definitions(raw));
+ for(const text of sourceTexts)for(const line of commandLines(text)){const identity=identityOf(commandIdentity(grammar,line.text));if(!identity)continue;for(const p of identity.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const key=addressKey(String(p.parsed.value.value));if(key)out.add(key);}}
+ return out;
 }
 export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[],runner?:RunnerCleanup,covered?:RunnerCovered[]):AuthorityGap[]{
  if(!operations.length&&!sourceTexts.length&&!slots.steps.some(step=>step.restore_for!==undefined))return [];
@@ -112,7 +125,13 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const copied=parameters.map((parameter,position)=>{const proposed=received.identity!.parameters.find(value=>value.position===position);return proposed&&commandTokens(parameter.raw)?.[0]?.value===commandTokens(proposed.raw)?.[0]?.value?proposed.raw:parameter.raw;});
   const inverses=new Map<string,CommandIdentity>();
   for(const count of counts){if(count>parameters.length)continue;const line=[...path.split('/').slice(2).map(decodeURIComponent),...copied.slice(0,count)].join(' ');const inverse=identityOf(commandIdentity(grammar,line));if(inverse&&inverse.path===path&&inverse.parameters.length===count)inverses.set(identityKey(inverse),inverse);if(inverses.size>1)break;}
-  if(inverses.size!==1)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 的逆操作 ${path} ${inverses.size>1?'没有唯一前导身份参数声明':'不能按锁定树完整解析'}；由产品包作者核对规则与命令树`,verdict:inverses.size>1?'unknown':'refute'};
+  if(inverses.size>1){
+   // Several leading-parameter counts parse (decision 115, as CES: the case author writes the teardown): the plan's own cleanup
+   // stands when it is exactly one of them; otherwise the refusal lists every valid form.
+   if([...inverses.values()].some(candidate=>identityKey(candidate)===identityKey(received.identity!)))return null;
+   return {pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理应是下面之一：${[...inverses.values()].map(commandLine).join('；')}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
+  }
+  if(inverses.size!==1)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 的逆操作 ${path} 不能按锁定树完整解析；由产品包作者核对规则与命令树`,verdict:'refute'};
   const inverse=[...inverses.values()][0];
   return identityKey(received.identity!)!==identityKey(inverse)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理参数不等于声明的前导身份参数：${commandLine(inverse)}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse,missing_count:1}}:null;
  };
