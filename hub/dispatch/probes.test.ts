@@ -38,6 +38,8 @@ test('per-seat version and complete address sets are checked in the dispatch lea
     assert.equal(c.calls.filter(n=>n==='send_blob').length,good?1:0);
     assert.ok(c.calls.includes('close_slot'));
     if(good)assert.ok(c.calls.lastIndexOf('inspect_seat')<c.calls.indexOf('send_blob'));
+    // The version probe before a dispatch is also each seat's newest device observation, from that job (decision 112).
+    if(mismatch==='none')assert.deepEqual((await c.service.latestDeviceObservations()).map(o=>[o.device,o.build,o.job!==null,o.run]),[['/devices/0','synthetic-build',true,null],['/devices/1','synthetic-build',true,null]]);
     await c.close();
   }
 });

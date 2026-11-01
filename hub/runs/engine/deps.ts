@@ -1,7 +1,8 @@
+import type { DeviceObservation } from '../../../contracts/src/pack.ts';
 import type { ContributionLayer } from '../../knowledge/api.ts';
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
-import type { Principals, RecordsKit } from '../../records/api.ts';
+import type { Principal, Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
 import type { LeaseService } from '../../leases/service.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
@@ -53,6 +54,11 @@ export interface RunsEngineDeps {
   leases?: LeaseService;
   /** Trusted, read-only unfinished jobs by resource key; no fencing data leaves this port. */
   leaseJobs?: (keys: readonly string[]) => Promise<Array<{ key: string; job: string }>>;
+  /** What devices behind leases showed (decision 112): the newest observation of each probed seat, and a look at booked devices. */
+  observations?: {
+    latest(): Promise<DeviceObservation[]>;
+    observe(user: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }>;
+  };
 }
 
 export const ENGINE_COMPONENT = 'runs.engine@1';

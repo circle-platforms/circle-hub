@@ -37,6 +37,8 @@ export interface Projection {
   warnings: PackWarning[];
   /** The lease operations the run asks the Hub to perform before it is stored (absent when the function asked for none). */
   leaseRequests: LeaseRequest[];
+  /** Devices the Hub looks at once the acquire is granted (workflow context observations, decision 112). */
+  observe: Array<{ inventory: string; device: string; label: string }>;
 }
 
 function refusal(path: string, message: string, fix: string, note: string | null = null): Refusal {
@@ -82,6 +84,8 @@ export async function projectItems(
   }
   const { items: projected, warnings } = parsed.data;
   const leaseRequests = parsed.data.lease_requests ?? [];
+  const observe = parsed.data.observe ?? [];
+  if (observe.length > 0 && !(workflow.workflow.context ?? []).includes('observations')) throw refusal(path, '投影要 Hub 观察设备，但任务包没有要 observations 上下文', '请联系任务包作者：要观察设备的工作流在 context 里写上 observations', 'observe without the observations context');
   const groups = parsed.data.groups ?? [];
   const seen = new Set<string>();
   for (const item of projected) {
@@ -144,7 +148,7 @@ export async function projectItems(
     items.push({ id: item.id, label: item.label, ...(item.summary !== undefined ? { summary: item.summary } : {}), location: located[0], fields: item.fields, digest });
   }
   if (warnings.length > 0) ctx.log({ traceId, run: null, what: 'projection warnings', detail: JSON.stringify(warnings).slice(0, 2000) });
-  return { items, projected, groups, warnings, leaseRequests };
+  return { items, projected, groups, warnings, leaseRequests, observe };
 }
 
 /** An expected source that could not be bound; the real reason goes to the admin log only. */

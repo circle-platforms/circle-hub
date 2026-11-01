@@ -660,6 +660,111 @@
             "entries"
           ],
           "additionalProperties": false
+        },
+        "observations": {
+          "description": "present only when the workflow asked for the observations context: the latest observation of each device an executor covers under the workflow's lease prefix; a device never observed is absent, never declared",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "inventory": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "device": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "build": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "base": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "the knowledge-base build the echoed name resolves to, aliases followed; null when it resolves to none"
+              },
+              "values": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "run": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "the booking run whose granted lease caused the observation, or null"
+              },
+              "job": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "the dispatch job whose version probe made the observation, or null"
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1,
+                "description": "src: of the stored probe output; readable by the one who caused the observation and admins"
+              },
+              "note": {
+                "description": "why build is null",
+                "type": "string"
+              }
+            },
+            "required": [
+              "inventory",
+              "device",
+              "label",
+              "build",
+              "base",
+              "values",
+              "observed_at",
+              "run",
+              "job",
+              "reference"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

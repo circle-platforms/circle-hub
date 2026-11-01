@@ -13,10 +13,11 @@ import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type Qu
 import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import {Redactor} from '../connectors/api.ts';
 import {resolveExecutor} from './source.ts';
-import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret } from './executors.ts';
+import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
-import type { BuildKnowledge } from './probes.ts';
+import { probeValues, type BuildKnowledge, type SeatEcho } from './probes.ts';
+import { DeviceObservation } from '../../contracts/src/pack.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
@@ -56,6 +57,9 @@ import {
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
+
+/** Index of device observations: the inventory digest and the device's JSON Pointer in it, newest first (decision 112). */
+const OBSERVATION_KEY = 'dispatch.device_observation';
 /** Only validated generated outcomes can prove a submission retry is safe. */
 function retrySafeOutcome(value:unknown):boolean {
   if(!isEffectOutcome(value))return false;
@@ -946,7 +950,97 @@ export class DispatchService {
   private async probeSeats(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string,unknown>): Promise<boolean> {
     if (!d.probes) return false;
     const { assessProbes } = await import('./probes.ts');
-    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep);
+    // What the version probe saw before a dispatch is also the device's latest observation (decision 112).
+    const observed = d.manifest_sha256 ? (echo: SeatEcho) => this.recordObservation({ inventory: d.manifest_sha256!, ...echo, run: null, job: binding.job, executor: binding.executor, product: d.precheck_context?.product }).then(() => undefined) : undefined;
+    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed);
+  }
+
+  /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
+  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> {
+    const now = this.now().toISOString();
+    const build = input.values.length === 1 ? input.values[0]! : null;
+    // The echoed name is resolved to its knowledge-base build (aliases followed), so a reader compares builds, not spellings.
+    const known = build !== null && typeof input.product === 'string' && this.options.knowledge ? await this.options.knowledge.resolveBuild(input.product, build).catch(() => null) : null;
+    const observation = DeviceObservation.parse({
+      inventory: input.inventory, device: input.device, label: input.label, build, base: known?.base ?? null, values: input.values.slice(0, 20), observed_at: now, run: input.run, job: input.job, reference: input.reference,
+      ...(build === null ? { note: input.values.length > 1 ? `版本探针抽到 ${input.values.length} 个值，不是唯一的一个` : '版本探针的回显里没有抽到构建' } : {}),
+    });
+    await this.options.records.store.put<ActionBody>({
+      kind: 'action', schema: 'action@1', provenance: 'observed', created_at: now,
+      body: { action: 'validate', run: input.run, item: null, inputs: [input.reference], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, observation } },
+      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' }],
+    });
+    return observation;
+  }
+
+  /** The newest observation of every version-probe seat of every enabled executor (decision 112); a seat never looked at is absent. */
+  async latestDeviceObservations(): Promise<DeviceObservation[]> {
+    const out: DeviceObservation[] = [];
+    for (const registered of await this.registry.probed()) {
+      const d = registered.definition;
+      for (const seat of d.probes!.seats) {
+        const found = (await this.options.records.store.find<ActionBody>({ kind: 'action', key: OBSERVATION_KEY, value: `${d.manifest_sha256}#${seat.manifest.device}`, limit: 1, newestFirst: true })).items[0];
+        const parsed = DeviceObservation.safeParse((found?.body.detail as { observation?: unknown } | undefined)?.observation);
+        if (parsed.success) out.push(parsed.data);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Looks at the installed build of devices a booking was just granted (decision 112): for each enabled executor bound to the
+   * same inventory, the version-probe seats that point at a requested device are probed read-only inside one short gateway
+   * lease; nothing is dispatched. Each observation is recorded and returned; what could not be looked at is said in `missing`.
+   */
+  async observeDevices(by: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }> {
+    const pending = new Map(targets.map((t) => [`${t.inventory}#${t.device}`, t]));
+    const observed: DeviceObservation[] = [];
+    const problems: string[] = [];
+    for (const registered of await this.registry.probed()) {
+      const d = registered.definition;
+      const seats = d.probes!.seats.filter((seat) => pending.has(`${d.manifest_sha256}#${seat.manifest.device}`));
+      if (!seats.length) continue;
+      try {
+        for (const o of await this.observeSeats(by, run, registered, seats, pending)) observed.push(o);
+      } catch (error) {
+        this.options.adminLog?.({ traceId: null, run, what: 'device_observation', detail: `executor ${registered.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
+        problems.push(`执行器 ${registered.id} 这次没能连上设备（原因在管理员记录里）`);
+      }
+      for (const seat of seats) pending.delete(`${d.manifest_sha256}#${seat.manifest.device}`);
+    }
+    for (const t of pending.values()) problems.push(`${t.label}：没有绑定同一份清单、指向这台设备的执行器版本探针`);
+    return { observed, missing: problems.length ? problems.join('；') : null };
+  }
+
+  private async observeSeats(by: Principal, run: string, registered: RegisteredExecutor, seats: NonNullable<ExecutorDefinition['probes']>['seats'], targets: ReadonlyMap<string, { label: string }>): Promise<DeviceObservation[]> {
+    const d = registered.definition;
+    const binding: JobBinding = {
+      job: newJob(), initiated_by: by.id, executor: registered.id, executor_digest: registered.resolved_digest, executor_source_digest: registered.digest, variables: registered.variables,
+      scope: { target: d.target, origin: new URL(d.endpoint).origin }, target_key: digestOfValue([...d.resources].sort()), input: null, user: by.id, resources: [],
+      context: { ...d.precheck_context, target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), manifest_sha256: d.manifest_sha256 },
+    };
+    await this.assertNoSecrets(binding);
+    const material = await this.secret(binding, d);
+    if (material === null) throw new Error('执行器凭据不可用');
+    const client = this.session(binding, d, material);
+    let lease: RemoteLease | undefined;
+    let stop = async () => {};
+    try {
+      await client.connect();
+      lease = await this.acquire(binding, d, client, this.context(binding));
+      stop = this.heartbeat(binding, d, client, lease).stop;
+      const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
+      const out: DeviceObservation[] = [];
+      for (const seat of seats) {
+        const response = await client.declaredRead(d.probes!.call, { ...context, command: seat.version.command, seat_index: seat.index }, `observe.${seat.index}.version`);
+        const label = targets.get(`${d.manifest_sha256}#${seat.manifest.device}`)?.label ?? seat.seat;
+        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product }));
+      }
+      return out;
+    } finally {
+      await stop();
+      if (lease) await this.release(binding, client, lease);
+    }
   }
   private async frozenValue(binding: JobBinding, d: ExecutorDefinition, pointer: string): Promise<unknown> {
     if (!d.manifest_sha256) return undefined;

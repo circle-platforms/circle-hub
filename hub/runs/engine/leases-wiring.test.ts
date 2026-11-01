@@ -19,8 +19,18 @@ import { INDEX } from './store.ts';
 import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
 import { standardDocument, toyMap } from './testing/mindmap.ts';
 import { writePack, type PackSpec } from './testing/packs.ts';
+import { toolText } from '../../server/text.ts';
 
 const skip = await sandboxSkip();
+/** A device observation the synthetic observations port says is the newest (decision 112). */
+const OBSERVED_BEFORE = { inventory: 'e'.repeat(64), device: '/devices/0', label: 'meadow/obs/1', build: 'synthetic-build', base: 'synthetic-build', values: ['synthetic-build'], observed_at: '2026-10-21T00:00:00.000Z', run: null, job: 'job_synthetic', reference: `src:${'f'.repeat(64)}` };
+const observeCalls: Array<{ user: string; run: string; targets: unknown[] }> = [];
+/** Books one key, names its device for the Hub to look at, and echoes the observations it was given into its group. */
+const OBSERVE_PROJECTION = `export default function project(input: unknown): unknown {
+  const context = (input as { context?: { observations?: unknown } }).context ?? {};
+  return { items: [], warnings: [], groups: [{ seen: context.observations ?? null }], lease_requests: [{ keys: ['meadow/obs/1'], ttl_seconds: 300 }], observe: [{ inventory: '${'e'.repeat(64)}', device: '/devices/0', label: 'meadow/obs/1' }] };
+}
+`;
 let postgres: TemporaryPostgres;
 let h: Harness;
 let leases: LeaseService;
@@ -80,7 +90,7 @@ const ECHO_CHECK = `export default function echo(input: unknown): unknown {
 
 function leasesPack(
   id: string,
-  options: { declare?: { prefix: string; max_ttl_seconds?: number }; askContext?: boolean; projection: string } ,
+  options: { declare?: { prefix: string; max_ttl_seconds?: number }; askContext?: boolean; observations?: boolean; projection: string } ,
 ): PackSpec {
   const workflow: Record<string, unknown> = {
     schema: 'workflow@1',
@@ -90,7 +100,7 @@ function leasesPack(
     subject: 'map',
     projection: { module: 'functions/project.ts' },
     ...(options.declare !== undefined ? { leases: options.declare } : {}),
-    ...(options.askContext ? { context: ['leases'] } : {}),
+    ...(options.askContext ? { context: options.observations ? ['leases', 'observations'] : ['leases'] } : {}),
   };
   return {
     id,
@@ -123,7 +133,10 @@ function leasesPack(
 before(async () => {
   postgres = await startPostgres();
   if (skip) return;
-  h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.filter(key=>key==='meadow/visibility/k'||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})) });
+  h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.filter(key=>key==='meadow/visibility/k'||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})), observations: {
+    latest: async () => [OBSERVED_BEFORE],
+    observe: async (user, run, targets) => { observeCalls.push({ user: user.id, run, targets: [...targets] }); return { observed: [{ ...OBSERVED_BEFORE, build: 'synthetic-build-now', base: 'synthetic-build-now', values: ['synthetic-build-now'], observed_at: '2026-10-22T08:00:30.000Z', run, reference: `src:${'d'.repeat(64)}` }], missing: null }; },
+  } });
   leases = h.leases!;
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-leases-engine-'));
@@ -137,10 +150,11 @@ before(async () => {
     ['toy-lease-plain', leasesPack('toy-lease-plain', { askContext: true, projection: plainProjection })],
     ['toy-lease-read', leasesPack('toy-lease-read', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection('meadow/zone-2/target-1') })],
     ['toy-book', leasesPack('toy-book', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection("[{ keys: ['meadow/lin/1'], ttl_seconds: 300 }]") })],
+    ['toy-observe', leasesPack('toy-observe', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, observations: true, projection: OBSERVE_PROJECTION })],
     ['toy-held', leasesPack('toy-held', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection("[{ keys: ['meadow/held/1'], ttl_seconds: 300 }]") })],
   ];
   for (const [name, spec] of specs) void name, await h.workflows.add(await writePack(packRoot, spec));
-  for (const name of ['toy-held', 'toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read', 'toy-op-extend', 'toy-op-release', 'toy-op-release-acquire', 'toy-op-deep', 'toy-book', 'toy-op-cap']) {
+  for (const name of ['toy-observe', 'toy-held', 'toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read', 'toy-op-extend', 'toy-op-release', 'toy-op-release-acquire', 'toy-op-deep', 'toy-book', 'toy-op-cap']) {
       h.workflows.assign(h.alice.id, name);
       h.workflows.assign(h.bob.id, name);
     }
@@ -181,6 +195,27 @@ const addOpPack = async (id: string, requests: string): Promise<void> => {
   h.workflows.assign(h.alice.id, id);
   h.workflows.assign(h.bob.id, id);
 };
+
+describe('device observations at a booking (decision 112)', () => {
+  it('freezes the newest observations into the context and the record, looks at the booked device, and answers what it showed', async () => {
+    observeCalls.length = 0;
+    const detail = await h.service.startRunDetailed(h.alice, { pack: 'toy-observe', inputs: { map: { reference: map } } }, h.call('s-observe-1'));
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const run = detail.answer.run!;
+    const record = await storedRun(run.run);
+    assert.deepEqual(record.observation_context, [OBSERVED_BEFORE], 'the newest observations, frozen with the run');
+    assert.deepEqual((record.groups?.[0] as { seen?: unknown })?.seen, [OBSERVED_BEFORE], 'the projection saw them in its context');
+    assert.deepEqual(observeCalls, [{ user: h.alice.id, run: run.run, targets: [{ inventory: 'e'.repeat(64), device: '/devices/0', label: 'meadow/obs/1' }] }], 'asked after the grant, for the device the projection named');
+    const claim = run.device_observations?.[0];
+    assert.ok(claim);
+    assert.equal(claim.statement.text, 'meadow/obs/1 装的是 synthetic-build-now（设备回显，观察于 2026-10-22T08:00:30.000Z）');
+    assert.equal(claim.qualifier.provenance, 'observed');
+    assert.equal(claim.qualifier.collected_at, '2026-10-22T08:00:30.000Z');
+    assert.deepEqual(claim.grounds, [`src:${'d'.repeat(64)}`]);
+    const text = toolText('start_run', detail.answer);
+    assert.match(text, /预订时在设备上看到的构建：\n- 陈述：meadow\/obs\/1 装的是 synthetic-build-now（设备回显，观察于 2026-10-22T08:00:30.000Z）；性质与依据等级：事实；限定：观察，采集于 2026-10-22T08:00:30.000Z/);
+  });
+});
 
 describe('a taken key is answered as a claim (D05 R[8])', () => {
   it('names the holding run and when it took the key, and says when that run is the caller own', async () => {

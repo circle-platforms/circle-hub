@@ -48,26 +48,35 @@ interface Visibility {
 }
 function once<T>(cache:Map<string,Promise<T>>,key:string,load:()=>Promise<T>):Promise<T>{let pending=cache.get(key);if(!pending){pending=load();cache.set(key,pending);}return pending;}
 
-interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown }
+interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown; device_observations?: unknown }
 
 function leaseRows(body: LeaseBody | null | undefined): Array<{ lease?: unknown; op?: unknown; keys?: unknown }> {
   return Array.isArray(body?.leases) ? body.leases.filter((row): row is { lease?: unknown; op?: unknown; keys?: unknown } => row !== null && typeof row === 'object') : [];
 }
 
-/** Installed builds of devices this run actually booked (`bed/<bed>/<device>`), read from its frozen manifest. */
+/**
+ * Installed builds of devices this run actually booked (`bed/<bed>/<device>`): what each device showed when the booking
+ * was granted (decision 112). A manifest no longer declares installed builds; a booked device nobody looked at adds none.
+ */
 export function bookedInstalls(body: LeaseBody | null | undefined): string[] {
-  const group = Array.isArray(body?.groups) ? body.groups[0] : undefined;
-  const beds = group !== null && typeof group === 'object' && 'manifest' in group && group.manifest !== null && typeof group.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
-  if (!Array.isArray(beds)) return [];
+  const group = Array.isArray(body?.groups) ? body.groups[0] as { manifest?: unknown; inventory?: unknown } | null : undefined;
+  const beds = group?.manifest !== null && typeof group?.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
+  if (!Array.isArray(beds) || typeof group?.inventory !== 'string') return [];
+  const observed = new Map<string, string>();
+  for (const claim of Array.isArray(body?.device_observations) ? body.device_observations as Array<{ statement?: { data?: { inventory?: unknown; device?: unknown; build?: unknown } }; qualifier?: { provenance?: unknown } }> : []) {
+    const data = claim?.statement?.data;
+    if (claim?.qualifier?.provenance === 'observed' && data?.inventory === group.inventory && typeof data.device === 'string' && typeof data.build === 'string' && data.build.length > 0) observed.set(data.device, data.build);
+  }
   const keys = leaseRows(body).flatMap(row => Array.isArray(row.keys) ? row.keys.filter((key): key is string => typeof key === 'string') : []);
   const out: string[] = [];
   for (const key of keys) {
     const parts = key.split('/');
     if (parts.length !== 3 || parts[0] !== 'bed') continue;
-    const bed = beds.find(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[1]) as { devices?: unknown } | undefined;
-    const devices = Array.isArray(bed?.devices) ? bed.devices : [];
-    const device = devices.find(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[2]) as { installed?: { build?: unknown } } | undefined;
-    if (typeof device?.installed?.build === 'string' && device.installed.build.length > 0) out.push(device.installed.build);
+    const bi = beds.findIndex(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[1]);
+    const devices = bi >= 0 && Array.isArray((beds[bi] as { devices?: unknown }).devices) ? (beds[bi] as { devices: unknown[] }).devices : [];
+    const di = devices.findIndex(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[2]);
+    const build = di >= 0 ? observed.get(`/beds/${bi}/devices/${di}`) : undefined;
+    if (build !== undefined) out.push(build);
   }
   return out;
 }
@@ -621,7 +630,7 @@ export class FeedingLayer {
   if(locked&&bed&&locked!==bed)return {source:'conflict',run_lock:{build:locked,line},bed_installed:{build:bed,line:null}};
   if(bed)return {source:'bed_installed',build:bed,line};
   if(locked)return {source:'run_lock',build:locked,line};
-  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，自动化测试环境结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在自动化测试环境结构里登记在装构建后再交；不要在提交里写版本'};
+  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，预订自动化测试环境时也没有在设备上看到在装构建',next_action:'用锁定了构建的运行重交，或以预订了这台设备的运行作前序再交（预订时 Hub 在设备上看一次装的构建；看不到的原因写在那次预订的结果里）；不要在提交里写版本'};
  }
  private async operationArtifact(principal:Principal,bytes:string,runId:string|null):Promise<SourceArtifact>{
   const candidates=(await this.context.records.artifacts.records(bytes)).filter(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||principal.role==='admin'));

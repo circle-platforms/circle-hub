@@ -1,3 +1,6 @@
+import type { Claim } from '../../../contracts/src/claim.ts';
+import { observationClaims } from './observations.ts';
+import type { DeviceObservation } from '../../../contracts/src/pack.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -99,7 +102,7 @@ export function hasRulingSummary(record:RunRecord):record is RunRecordView {
   return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
 }
 export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'> & { workflow?: Pick<import('../../../contracts/src/pack.ts').WorkflowFile,'work_class'>; effects?: LoadedWorkflow['effects'] }): RunSummary {
-  const {product_pack_digest:_productPackDigest,command_policy:_commandPolicy,accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
+  const {product_pack_digest:_productPackDigest,command_policy:_commandPolicy,accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, observation_context: _oc, ...summary } = record;
   const requirements=record.requirements.map(row=>{
     if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
     const template=workflow?.requirements.find(t=>t.key===row.key);
@@ -142,6 +145,12 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
     jobs:jobs.filter(job=>job.key===row.key).map(job=>job.job),
     ...(user.role==='admin'||registered.some(r=>r.owner===user.id&&row.key.startsWith(r.prefix))?{holder:await identity(row.user)}:{})}))),
     registrations:await Promise.all(registered.map(async row=>({prefix:row.prefix,mine:row.owner===user.id,...(user.role==='admin'?{owner:await identity(row.owner)}:{})})))};
+}
+
+/** The newest observation of every probed device (decision 112), for a workflow that asked for the observations context. */
+async function contextObservations(ctx: EngineContext): Promise<DeviceObservation[]> {
+  if (!ctx.deps.observations) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','设备观察端口未配置',{path:'/pack',fix:'请管理员配置派发服务（设备观察）后重开运行'})]);
+  return ctx.deps.observations.latest();
 }
 
 /** Grants the projection's lease requests for the workflow's declared prefix and cap (C3); a refusal answers LEASE_*
@@ -556,6 +565,8 @@ async function startFresh(
   // replaying the projection from the record's context asks for the same keys again.
   const leaseView = await contextLeases(ctx, workflow, user);
   const leaseRows = leaseView?.entries ?? null;
+  // What the devices behind the workflow's leases last showed (decision 112): frozen before the projection, like the leases.
+  const observationContext = (workflow.workflow.context ?? []).includes('observations') ? await contextObservations(ctx) : null;
   let leaseLineageHolders = new Set<string>();
   if (leaseRows !== null && leaseRows.length > 0 && predecessor !== null && workflow.workflow.predecessor_access!=='view' && ctx.deps.leases !== undefined) {
     const lineage = await lineageOf(ctx, runId, predecessor.body.run);
@@ -576,6 +587,7 @@ async function startFresh(
     root: target.root?.root ?? null,
     parameters,
     groups: [],
+    ...(observationContext !== null ? { observations: observationContext } : {}),
     ...(builds !== null ? { builds } : {}),
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
@@ -584,8 +596,13 @@ async function startFresh(
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
+  let deviceClaims: Claim[] = [];
   try {
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run);
+    // Once an acquire is granted, the Hub looks at the booked devices the projection named (decision 112); it never throws.
+    if (projection.observe.length > 0 && grantedLeases.some((done) => !('op' in done) || done.op === 'acquire') && ctx.deps.observations) {
+      deviceClaims = observationClaims(await ctx.deps.observations.observe(user, runId, projection.observe), ctx.now().toISOString());
+    }
   let items = projection.items;
   const packId = workflow.pack.id;
   const previous = predecessor;
@@ -673,6 +690,8 @@ async function startFresh(
       : {}),
     ...(grantedLeases.length > 0 ? { leases: grantedLeases } : {}),
     ...(frozenLeaseRows !== null ? { lease_context: frozenLeaseRows, lease_registrations: leaseView!.registrations } : {}),
+    ...(observationContext !== null ? { observation_context: observationContext } : {}),
+    ...(deviceClaims.length > 0 ? { device_observations: deviceClaims } : {}),
   } satisfies RunRecord);
   const subjectPath = `/inputs/${workflow.workflow.subject}`;
   const runTooLarge = tooLarge(ctx, record, `这个被判对象投影出 ${items.length} 个条目，运行记录`, subjectPath);

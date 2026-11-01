@@ -939,6 +939,20 @@ function startText(v: StartOut, context: TextContext): string {
       more: () => `版本依据：${seeConsole(r.run)}`,
     });
   }
+  // What the booked devices showed when the booking was granted (decision 112): observed claims, each with its moment.
+  if (r.device_observations !== undefined && r.device_observations.length > 0) {
+    blocks.push({
+      priority: 2,
+      head: ['预订时在设备上看到的构建：'],
+      entries: r.device_observations.map((c) => {
+        const clip = new Clip(null, seeConsole(r.run));
+        return clip.entry(`- ${claimText(c, clip, CLIP.field)}`);
+      }),
+      unit: '设备观察',
+      measure: '条',
+      more: () => `设备观察：${seeConsole(r.run)}`,
+    });
+  }
   // A page of the run record's text has the same lines as here, so a cursor names the same line in both.
   const paged = (pointer: string, from: number): string | null => {
     if (record === null || !paging) return null;

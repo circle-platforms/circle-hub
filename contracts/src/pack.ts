@@ -302,8 +302,12 @@ export const ContextBuild = z.strictObject({
 });
 export type ContextBuild = z.infer<typeof ContextBuild>;
 
-/** The run-context parts a workflow may ask for beyond the defaults (W06): the builds of the bound product, and the leases of the declared prefixes. */
-export const CONTEXT_KEY = ['builds', 'leases'] as const;
+/**
+ * The run-context parts a workflow may ask for beyond the defaults (W06): the builds of the bound product, the leases of the
+ * declared prefixes, and what the devices behind those leases last showed (observations, decision 112: the device is the
+ * authority on what it runs, not a declaration).
+ */
+export const CONTEXT_KEY = ['builds', 'leases', 'observations'] as const;
 export type ContextKey = (typeof CONTEXT_KEY)[number];
 export const ContextKeySchema = z.enum(CONTEXT_KEY);
 
@@ -315,6 +319,27 @@ export const LeaseContextRow = z.strictObject({
 });
 export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
   owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
+/**
+ * What a device showed when the Hub last looked (A05 R[3]: it holds for that moment only), named structurally: the inventory
+ * an executor is bound to (its digest) and the device's JSON Pointer in it, with the label the asking pack gave for display
+ * (the seat name for a dispatch probe). The build is what the version probe echoed (null unless exactly one value), with
+ * the values it extracted, when, the booking run or dispatch job that caused it, and the stored probe output.
+ */
+export const DeviceObservation = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  build: z.string().min(1).nullable(),
+  base: z.string().min(1).nullable().describe('the knowledge-base build the echoed name resolves to, aliases followed; null when it resolves to none'),
+  values: z.array(z.string()).max(20),
+  observed_at: IsoTime,
+  run: z.string().min(1).nullable().describe('the booking run whose granted lease caused the observation, or null'),
+  job: z.string().min(1).nullable().describe('the dispatch job whose version probe made the observation, or null'),
+  reference: z.string().min(1).describe('src: of the stored probe output; readable by the one who caused the observation and admins'),
+  note: z.string().optional().describe('why build is null'),
+}).refine((o) => (o.run === null) !== (o.job === null), 'an observation comes from exactly one booking run or one dispatch job');
+export type DeviceObservation = z.infer<typeof DeviceObservation>;
+
 export const RunContext = z.strictObject({
   run: z.string().min(1).optional().describe('Actual Hub run identity; not supplied by a model'),
   predecessor: z.string().min(1).nullable().optional().describe('Actual Hub predecessor; null for a new lineage, absent only in historical contexts'),
@@ -347,6 +372,10 @@ export const RunContext = z.strictObject({
     })
     .optional()
     .describe('present only when the workflow asked for the leases context (workflow.context)'),
+  observations: z
+    .array(DeviceObservation)
+    .optional()
+    .describe('present only when the workflow asked for the observations context: the latest observation of each device an executor covers under the workflow\'s lease prefix; a device never observed is absent, never declared'),
 });
 export type RunContext = z.infer<typeof RunContext>;
 
@@ -611,6 +640,9 @@ export const WorkflowFile = z
     if (w.leases !== undefined && !(w.context ?? []).includes('leases')) {
       ctx.addIssue({ code: 'custom', path: ['leases'], message: 'a workflow that declares leases asks for the leases context (context: ["leases"])' });
     }
+    if ((w.context ?? []).includes('observations') && w.leases === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['context'], message: 'observations are of the devices behind a lease prefix: a workflow that asks for them declares leases' });
+    }
     if (!w.inputs.some((i) => i.slot === w.subject)) ctx.addIssue({ code: 'custom', path: ['subject'], message: 'the subject names an input slot' });
     w.inputs.forEach((i, k) => {
       if (w.inputs.findIndex((x) => x.slot === i.slot) !== k) ctx.addIssue({ code: 'custom', path: ['inputs', k, 'slot'], message: `slot ${i.slot} is declared twice` });
@@ -693,6 +725,11 @@ export const ProjectionOutput = z.union([
       )
       .optional()
       .describe('the lease operations the run asks the Hub to perform before it is stored (extend and release checks run first; a failing acquire later compensates the ones already granted); keys must sit under the workflow\'s declared prefix and the TTL under its cap'),
+    observe: z
+      .array(z.strictObject({ inventory: Sha256, device: JsonPointer, label: z.string().min(1).max(200) }))
+      .max(64)
+      .optional()
+      .describe('devices whose installed build the Hub looks at once the run\'s acquire is granted, by the digest of the inventory and the device\'s JSON Pointer in it (an executor seat bound to the same inventory and pointer is probed), with a label for display; only for a workflow that asks for the observations context'),
   }),
   PackFailure,
 ]);

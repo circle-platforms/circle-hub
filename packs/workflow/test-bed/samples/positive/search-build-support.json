@@ -15,9 +15,9 @@
           "missing": [],
           "earliest_free": null,
           "build_ok": "match",
-          "build_source": "declared",
+          "build_source": "observed",
           "spare_devices": 0,
-          "conclusion": "Hub 记录里空闲（未排除本地操作）；构建一致（Rel_APV_10_6_1_8，声明，未核对）；未登记；apv0：Hub 记录里空闲（未排除本地操作）"
+          "conclusion": "Hub 记录里空闲（未排除本地操作）；构建一致（Rel_APV_10_6_1_8，观察于 2026-10-21T11:00:00.000Z）；未登记；apv0：Hub 记录里空闲（未排除本地操作）"
         }
       }
     ],
@@ -51,11 +51,7 @@
                     "ipv4": [
                       "192.0.2.10/26"
                     ],
-                    "ipv6": [],
-                    "installed": {
-                      "build": "Rel_NSAE_10_6_1_8",
-                      "base": "Rel_APV_10_6_1_8"
-                    }
+                    "ipv6": []
                   }
                 ],
                 "services": [],
@@ -63,6 +59,23 @@
               }
             ]
           },
+          "inventory": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "observations": [
+            {
+              "inventory": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "device": "/beds/0/devices/0",
+              "label": "bed-a/apv0",
+              "build": "Rel_NSAE_10_6_1_8",
+              "base": "Rel_APV_10_6_1_8",
+              "values": [
+                "Rel_NSAE_10_6_1_8"
+              ],
+              "observed_at": "2026-10-21T11:00:00.000Z",
+              "run": "run_synthetic",
+              "job": null,
+              "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+          ],
           "leases": {
             "now": "2026-10-22T02:00:00.000Z",
             "entries": [],

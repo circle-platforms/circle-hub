@@ -122,17 +122,48 @@ export interface SearchFields {
   conclusion: string;
 }
 
-/** The manifest's declared install records (每台设备的 installed): the lease-key record matchNeed reads, and the
- * alias map of a build name to its base build. Declared, never checked — the conclusions say 声明，未核对 (I03). */
-export function declaredInstalls(beds: readonly ManifestBed[]): { installed: Record<string, Installed>; builds: Record<string, string> } {
+/** A device observation as the Hub gives it in the run context (DeviceObservation, decision 112). */
+export interface Observation { inventory: string; device: string; label: string; build: string | null; base: string | null; observed_at: string }
+
+/** The JSON Pointer of a device in the raw manifest, by its bed's and its own name; null when either is not there. */
+export function devicePointer(model: unknown, bed: string, device: string): string | null {
+  const beds = isRecord(model) && Array.isArray(model.beds) ? model.beds : [];
+  const bi = beds.findIndex((b) => isRecord(b) && b.name === bed);
+  const devices = bi >= 0 && isRecord(beds[bi]) && Array.isArray((beds[bi] as Record<string, unknown>).devices) ? ((beds[bi] as Record<string, unknown>).devices as unknown[]) : [];
+  const di = devices.findIndex((d) => isRecord(d) && d.name === device);
+  return bi < 0 || di < 0 ? null : `/beds/${bi}/devices/${di}`;
+}
+
+/** The observations a run context or a frozen group carries, the malformed ones dropped. */
+export function observationsOf(value: unknown): Observation[] {
+  return (Array.isArray(value) ? value : []).filter((o): o is Observation => isRecord(o) && typeof o.inventory === 'string' && typeof o.device === 'string' && typeof o.label === 'string' && (o.build === null || typeof o.build === 'string') && (o.base === null || typeof o.base === 'string') && typeof o.observed_at === 'string');
+}
+
+/** The installs of a raw manifest bound with this digest, from the observations (decision 112). */
+export function installsOf(model: unknown, beds: readonly ManifestBed[], inventory: string | null, observations: readonly Observation[]): Installs {
+  return observedInstalls(beds, observations, inventory, (bed, device) => devicePointer(model, bed, device));
+}
+
+/** The installed builds of the manifest's devices and the alias map matchNeed reads; built by observedInstalls. */
+export interface Installs { installed: Record<string, Installed>; builds: Record<string, string> }
+
+/**
+ * The installed builds from what the devices showed (decision 112: the device is the authority, the manifest declares
+ * nothing): for each device, the newest observation of this inventory at the device's JSON Pointer that gave a build,
+ * with its moment; the alias map takes an observed name to its knowledge-base build. A device never observed has none.
+ */
+export function observedInstalls(beds: readonly ManifestBed[], observations: readonly Observation[], inventory: string | null, pointerOf: (bed: string, device: string) => string | null): Installs {
   const installed: Record<string, Installed> = {};
   const builds: Record<string, string> = {};
+  if (inventory === null) return { installed, builds };
   for (const bed of beds) {
     for (const device of bed.devices) {
-      const record = device.installed ?? null;
-      if (record === null) continue;
-      installed[`bed/${bed.name}/${device.name}`] = { build: record.build, source: 'declared' };
-      if (record.base !== null) builds[record.build] = record.base;
+      const pointer = pointerOf(bed.name, device.name);
+      if (pointer === null) continue;
+      const seen = observations.filter((o) => o.inventory === inventory && o.device === pointer && o.build !== null).sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0))[0];
+      if (seen === undefined || seen.build === null) continue;
+      installed[`bed/${bed.name}/${device.name}`] = { build: seen.build, source: 'observed', at: seen.observed_at };
+      if (seen.base !== null) builds[seen.build] = seen.base;
     }
   }
   return { installed, builds };
@@ -142,17 +173,16 @@ export function declaredInstalls(beds: readonly ManifestBed[]): { installed: Rec
  * Search-level unknown when a build is required and every bed that has the devices fails it. Null when some bed
  * matches, the need names no build, or no bed has the devices. Per-bed fields stay whatever searchFields computed.
  */
-export function unmatchedBuild(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string): UnmatchedBuild | null {
-  const { installed, builds } = declaredInstalls(beds);
+export function unmatchedBuild(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string, installs: Installs): UnmatchedBuild | null {
+  const { installed, builds } = installs;
   const shaped = matchNeedOf(need);
   return unmatchedBuildExit(beds, shaped, installed, builds, leases, now, matchNeed(beds, shaped, installed, builds, leases, now));
 }
 
-/** One search conclusion per bed (matchNeed's order); the build verdict reads the manifest's declared installs. */
-export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string, frozen?: FrozenLeases): SearchFields[] {
-  // The manifest's installed entries are the phase-1 install records (declared, unchecked; the observed tier comes
-  // with the executor). A device without one stays 没有记录（未知）, never a mismatch.
-  const { installed, builds } = declaredInstalls(beds);
+/** One search conclusion per bed (matchNeed's order); the build verdict reads the devices' newest observations. */
+export function searchFields(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string, installs: Installs, frozen?: FrozenLeases): SearchFields[] {
+  // What the devices last showed (decision 112); a device never observed stays 没有观察记录（未知）, never a mismatch.
+  const { installed, builds } = installs;
   const matches = matchNeed(beds, matchNeedOf(need), installed, builds, leases, now);
   return matches.map((m) => ({
     bed: m.bed,
@@ -173,20 +203,20 @@ export interface FactsFields {
   blind: unknown[];
   backends: unknown[];
   unknowns: unknown[];
-  /** The manifest's declared installs of this bed's devices (声明，未核对); empty when none. */
   occupancy: string[];
-  installed: Array<{ device: string; build: string; base: string | null }>;
+  /** What this bed's devices last showed, each with its moment; empty when none was observed. */
+  installed: Array<{ device: string; build: string; base: string | null; observed_at: string | null }>;
   /** Present only when this run froze a bed-surface declaration. */
   surface?: Record<string, unknown>;
 }
 
 /** One facts conclusion per bed (the manifest's order). */
-export function factsFields(beds: ManifestBed[], frozen?: FrozenLeases, surface?: { declaration: unknown; probes: unknown }): FactsFields[] {
+export function factsFields(beds: ManifestBed[], installs: Installs, frozen?: FrozenLeases, surface?: { declaration: unknown; probes: unknown }): FactsFields[] {
   return beds.map((bed) => {
     const facts = bedFacts(bed);
     const installed = bed.devices.flatMap((device) => {
-      const record = device.installed ?? null;
-      return record === null ? [] : [{ device: device.name, build: record.build, base: record.base }];
+      const record = installs.installed[`bed/${bed.name}/${device.name}`];
+      return record === undefined ? [] : [{ device: device.name, build: record.build, base: installs.builds[record.build] ?? null, observed_at: record.at ?? null }];
     });
     const judged = surface ? declaredSurface(bed, surface.declaration, surface.probes) : undefined;
     return { bed: bed.name, occupancy: frozen ? occupancyText(bed,frozen) : [], segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns, installed, ...(judged ? { surface: judged } : {}) };
@@ -202,14 +232,14 @@ export interface AcquirePlan {
 }
 
 /** The lease request of an acquire: the bed, the picked devices and addresses, the keys and the TTL, or the failure. */
-export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string | null, addressesParam: Normalized['addresses'], leases: Record<string, LeaseEntry>, now: string): { ok: true; plan: AcquirePlan } | { ok: false; failure: PlanFailure } {
-  const matches = searchFields(beds, need, leases, now);
+export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string | null, addressesParam: Normalized['addresses'], leases: Record<string, LeaseEntry>, now: string, installs: Installs): { ok: true; plan: AcquirePlan } | { ok: false; failure: PlanFailure } {
+  const matches = searchFields(beds, need, leases, now, installs);
   let chosen: SearchFields | undefined;
   if (bedParam !== null) {
     chosen = matches.find((m) => m.bed === bedParam);
     if (chosen === undefined) return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${bedParam}`, fix: 'bed 写清单里的一个自动化测试环境名，或不写按 need 选最佳匹配' } };
     if (!chosen.devices_ok) return { ok: false, failure: { code: 'test-bed.bed_short', message: `自动化测试环境 ${bedParam} 不满足需求：${chosen.conclusion}`, fix: '换 need 或换自动化测试环境' } };
-    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '换一个清单声明在装这个构建的自动化测试环境（search 的结论列出各环境声明的在装构建）；要用这个环境现有的构建，去掉 need.build 再预订。test-bed 没有升级设备的动作', provenance: 'declared' } };
+    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '换一个最近一次观察到装着这个构建的自动化测试环境（search 的结论列出各环境的观察和时间）；要用这个环境现有的构建，去掉 need.build 再预订。test-bed 没有升级设备的动作', provenance: 'observed' } };
   } else {
     // matchNeed's order is idle first: the first fitting bed is idle when one exists, else the earliest to free; a
     // taken bed is refused by the Hub's lease grant with LEASE_UNAVAILABLE and the earliest free moment, not here.

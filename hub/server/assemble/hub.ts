@@ -199,6 +199,15 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     ...(leases !== undefined ? { leases, leaseJobs: async (keys: readonly string[]) => {
       if (!dispatch) throw new Error('作业读取端口未就绪，请管理员检查装配');
       return dispatch.activeLeaseJobs(keys);
+    }, observations: {
+      latest: async () => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.latestDeviceObservations();
+      },
+      observe: async (user, run, targets) => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.observeDevices(user, run, targets);
+      },
     } } : {}),
     adminLog: notes.engine,
   };

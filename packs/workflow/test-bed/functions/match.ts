@@ -123,17 +123,17 @@ export function matchNeed(
       const known = records.filter((r) => r.record !== undefined);
       if (known.length === 0) {
         buildOk = 'unknown';
-        buildText = '设备上装的构建没有记录（未知）';
+        buildText = '设备上装的构建没有观察记录（未知；预订时 Hub 会在设备上看一次）';
       } else if (known.every((r) => baseOf(builds, r.record!.build) === want)) {
         buildOk = 'match';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = one.source === 'observed' ? `构建一致（${need.build}，观察）` : `构建一致（${need.build}，声明，未核对）`;
+        buildText = one.source === 'observed' ? `构建一致（${need.build}，观察于 ${one.at ?? '未记时刻'}）` : `构建一致（${need.build}，声明，未核对）`;
       } else {
         buildOk = 'mismatch';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = `构建不一致（装的是 ${one.build}，要的是 ${need.build}${one.source === 'observed' ? '，观察' : '，声明，未核对'}）`;
+        buildText = `构建不一致（装的是 ${one.build}，要的是 ${need.build}${one.source === 'observed' ? `，观察于 ${one.at ?? '未记时刻'}` : '，声明，未核对'}）`;
       }
     }
     const parts: string[] = [];
@@ -158,7 +158,7 @@ export interface UnmatchedBuild {
  * The next steps of an unmatched build, each with who takes it and by which existing means (D05 R[8]). test-bed has no
  * action that upgrades a device, so no step says to upgrade one.
  */
-const UNMATCHED_FIX = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作';
+const UNMATCHED_FIX = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作';
 
 /** The deciding devices of one fitting bed, the same pick matchNeed uses for the build verdict. */
 function decidingDevices(bed: ManifestBed, need: Need, leases: Record<string, LeaseEntry>, now: string): string[] {
@@ -172,8 +172,8 @@ function decidingDevices(bed: ManifestBed, need: Need, leases: Record<string, Le
 }
 
 /**
- * When a build is required and every bed that has the devices fails it: unknown, naming the version line and each
- * deciding device (a missing install record, or the build it actually holds) and the one exit. A matching bed, a need
+ * When a build is required and every bed that has the devices fails it: unknown, naming the build and each deciding
+ * device (never observed, or the build it last showed and when) and the one exit. A matching bed, a need
  * without a build, or a search where no bed has the devices returns null. Existing per-bed fields are not rewritten.
  */
 export function unmatchedBuildExit(
@@ -198,13 +198,13 @@ export function unmatchedBuildExit(
       const record = installed[`bed/${bed.name}/${name}`];
       const where = `${bed.name}/${name}`;
       if (record === undefined) absent.push(where);
-      else if (baseOf(builds, record.build) !== want) other.push(`${where} 装的是 ${record.build}`);
+      else if (baseOf(builds, record.build) !== want) other.push(`${where} 装的是 ${record.build}${record.at ? `（观察于 ${record.at}）` : ''}`);
     }
   }
-  const parts = [`没有任何自动化测试环境声明在装 ${need.build}（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）`];
-  if (absent.length > 0) parts.push(`缺在装构建记录：${absent.join('、')}`);
-  // A different build is not a different version line: say only what the inventory declares (D05 R[8]).
-  if (other.length > 0) parts.push(`清单声明的在装构建是别的构建：${other.join('、')}`);
+  const parts = [`没有任何自动化测试环境最近一次观察到装的是 ${need.build}（构建名或它的基础构建逐字相等才算；观察只对它被观察的时刻成立）`];
+  if (absent.length > 0) parts.push(`没有观察记录：${absent.join('、')}`);
+  // A different build is not a different version line: say only what the devices last showed (D05 R[8]; decision 112).
+  if (other.length > 0) parts.push(`最近一次观察到的是别的构建：${other.join('、')}`);
   return { verdict: 'unknown', missing: parts.join('。'), fix: UNMATCHED_FIX };
 }
 

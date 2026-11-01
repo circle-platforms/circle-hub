@@ -5,7 +5,7 @@ import type { Verdict } from '../../../../contracts/generated/vocabulary.ts';
 // frozen fields equal the recomputation; refute (test-bed.<action>_mismatch) with the fields that differ. Grounds are
 // the item's location (its bed in the inventory document) and the fields it was checked against.
 import { isRecord } from './common.ts';
-import { isAction, acquirePlan, factsFields, leaseRecord, manifestBeds, readParameters, releasePlan, searchFields, unmatchedBuild, type Action, type BedNeed, type FrozenLeases } from './conclude.ts';
+import { isAction, acquirePlan, factsFields, installsOf, leaseRecord, manifestBeds, observationsOf, readParameters, releasePlan, searchFields, unmatchedBuild, type Action, type BedNeed, type FrozenLeases, type Observation } from './conclude.ts';
 
 const TIER = 'advisory' as const;
 
@@ -56,14 +56,14 @@ function support(item: string, at: number, statement: string, location: unknown,
 }
 
 /** The frozen run context: the groups' first record carries the manifest, the parameters and the lease view. */
-function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; reason:string; devices:string[]|null; manifest: unknown; leases: FrozenLeases; surface: { declaration: unknown; probes: unknown } | null } | null {
+function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; reason:string; devices:string[]|null; manifest: unknown; inventory: string | null; observations: Observation[]; leases: FrozenLeases; surface: { declaration: unknown; probes: unknown } | null } | null {
   const raw = isRecord(subject) && isRecord(subject.context) && Array.isArray(subject.context.groups) ? subject.context.groups[0] : undefined;
   if (!isRecord(raw) || raw.manifest === undefined) return null;
   const read = readParameters({ action: raw.action, need: raw.need, reason:raw.reason,devices:Array.isArray(raw.devices)?raw.devices:undefined, bed: raw.bed, addresses: raw.addresses, booking: raw.booking });
   if ('code' in read) return null;
   const leases = isRecord(raw.leases) && typeof raw.leases.now === 'string' && Array.isArray(raw.leases.entries) ? (raw.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const surface = raw.surface !== undefined ? { declaration: raw.surface, probes: raw.probes } : null;
-  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, reason:read.reason, devices:read.devices, manifest: raw.manifest, leases, surface };
+  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, reason:read.reason, devices:read.devices, manifest: raw.manifest, leases, surface, inventory: typeof raw.inventory === 'string' ? raw.inventory : null, observations: observationsOf(raw.observations) };
 }
 
 /** Outcomes of the bed check for a subject: one per item whose fields carry an action. */
@@ -75,6 +75,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
   const manifest = manifestBeds(frozen.manifest);
   if (!manifest.ok) return [transitional({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('冻结的清单不再能解析（任务包缺陷）'), reason: 'check_error', statement: '冻结的清单不再能解析（任务包缺陷）', grounds: [], tier: TIER })];
   const leases = leaseRecord(frozen.leases);
+  const installs = installsOf(frozen.manifest, manifest.beds, frozen.inventory, frozen.observations);
   const out: CheckOutcome[] = [];
   for (const [at, item] of items.entries()) {
     if (!isRecord(item) || typeof item.id !== 'string' || item.id === '' || !isRecord(item.fields)) continue;
@@ -83,7 +84,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
     const action = fields.action;
     try {
       if (action === 'search') {
-        const expected = searchFields(manifest.beds, frozen.need, leases, frozen.leases.now, frozen.leases).find((f) => f.bed === fields.bed);
+        const expected = searchFields(manifest.beds, frozen.need, leases, frozen.leases.now, installs, frozen.leases).find((f) => f.bed === fields.bed);
         if (expected === undefined) {
           out.push(refute(id, at, 'test-bed.search_mismatch', `自动化测试环境 ${String(fields.bed)} 不在清单里`, item.location, { bed: fields.bed }));
           continue;
@@ -98,7 +99,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         continue;
       }
       if (action === 'facts') {
-        const expected = factsFields(manifest.beds,frozen.leases,frozen.surface ?? undefined).find((f) => f.bed === fields.bed);
+        const expected = factsFields(manifest.beds,installs,frozen.leases,frozen.surface ?? undefined).find((f) => f.bed === fields.bed);
         if (expected === undefined) {
           out.push(refute(id, at, 'test-bed.facts_mismatch', `自动化测试环境 ${String(fields.bed)} 不在清单里`, item.location, { bed: fields.bed }));
           continue;
@@ -114,7 +115,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         continue;
       }
       if (action === 'acquire') {
-        const planned = acquirePlan(manifest.beds, frozen.need, frozen.bed, frozen.addresses, leases, frozen.leases.now);
+        const planned = acquirePlan(manifest.beds, frozen.need, frozen.bed, frozen.addresses, leases, frozen.leases.now, installs);
         if (!planned.ok) {
           out.push(refute(id, at, 'test-bed.acquire_mismatch', `按冻结内容重算预订失败：${planned.failure.message}`, item.location, { failure: planned.failure.code }));
           continue;
@@ -169,7 +170,7 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
     }
   }
   if (frozen.action === 'search') {
-    const gap = unmatchedBuild(manifest.beds, frozen.need, leases, frozen.leases.now);
+    const gap = unmatchedBuild(manifest.beds, frozen.need, leases, frozen.leases.now, installs);
     // The search-level unknown rests on the inventory beds it compared (their locations), and its exit is a plan said apart.
     const beds = items.flatMap((item) => (typeof item.location === 'string' ? [item.location] : []));
     if (gap) out.push({ verdict: 'unknown', reason: 'missing_input', missing: gap.missing, statement: `${gap.missing}。下一步：${gap.fix}`, grounds: beds, tier: TIER, data: { missing_fact: gap.missing, next_action: gap.fix } });
