@@ -24,6 +24,7 @@ export type { FunctionEntry, ImportPolicy } from './packs/imports.ts';
 export { PackFileError } from './packs/load.ts';
 export type { TamperEvent } from './packs/extract.ts';
 export { compareVersions, highestVersion, isCanonicalVersion, MAX_PACK_REF_LENGTH, parsePackRef } from './packs/versions.ts';
+export { packChanges, type PackFileChange } from './packs/changes.ts';
 export type { PackRef } from './packs/versions.ts';
 export { DEFAULT_PACK_LIMITS } from './packs/types.ts';
 export type {
@@ -41,6 +42,7 @@ export type {
   PackVersionBody,
   PackVersionInfo,
   ProductDeclarations,
+  PublishCheck,
   PublishOutcome,
   PublishReport,
   SampleFailure,
