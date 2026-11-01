@@ -33,4 +33,18 @@
 
 ## 验证（2026-11-01，本机 macOS，Node 24.21）
 
-（跑完后补写。）
+在 b81fb2a 上（之后只改了文档）：
+
+- 本次改动直接相关的测试：`hub/records/add-index`、`hub/runs/engine/citations`、`maintenance-citations`、`deadlines`、`hub/connectors/trial`、`hub/server/console-search`、`console-systems`、`console-live`，41/41。
+- `npm run typecheck`、`npm run verify:contracts`：退出码 0。
+- `npm run test:unit`（共享通道并行度 4）：
+  - 隔离通道 175 项，173 通过，2 项跳过；
+  - 共享通道 190/190；
+  - 主通道 8140 项，8133 通过，0 失败，7 项跳过。
+  - 跳过的 9 项中，8 项只在 Linux 上运行；1 项（没有 `sandbox-exec` 时拒绝运行）在有 `sandbox-exec` 的本机不适用。
+- `npm run test:acceptance`：201 项，199 通过，2 项失败，都发生在本机负载较高时（可用内存约 2.4 GB）：
+  - 场景 28 的派发结果为 `not_dispatched`；
+  - 场景 42 报沙箱进程树的内存观测缺失，任务包样例检查出错。
+  - 两项随后单独重跑都通过（7/7、3/3）。全量以本 PR 的 CI 为准。
+- `npm run verify:references`、`npm run test:references`：8/8。
+- `npm run test:docs`：279/279，改正文档后重跑仍为 279/279。
