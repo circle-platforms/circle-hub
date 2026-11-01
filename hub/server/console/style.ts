@@ -625,4 +625,6 @@ a.wf-row{color:inherit}
 .f-hub{background:var(--accent)}.f-circle{background:var(--violet)}.f-wait{background:var(--attention)}
 table.calls td{white-space:nowrap}
 table.calls td:nth-child(n+9){white-space:normal}
+.live-module{display:contents}
+.live-state{margin-top:4px;color:var(--t-incomplete);font-size:var(--ui-small)}
 `;

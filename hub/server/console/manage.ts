@@ -21,7 +21,7 @@ import type { CommandBridge, CommandRun } from '../command-bridge.ts';
 import { NEUTRAL, neutralPage } from './pages.ts';
 import { stagedDigest, type PackStaging, type StagedPack } from './staging.ts';
 import { checkSetupCode, removeSetupCode } from '../setup-code.ts';
-import { code, html, link, page, pre, section, table, type Html } from './html.ts';
+import { code, html, link, liveModule, page, pre, section, table, type Html } from './html.ts';
 import { circleEntry, originOf } from './settings.ts';
 import { callout, card, chip, stepper, when } from './ui.ts';
 import type { PageContext, PageResult } from './pages.ts';
@@ -225,22 +225,40 @@ export class JobStore {
   readonly #jobs: Job[] = [];
   readonly #keep: number;
   readonly #now: () => Date;
+  readonly #watchers: ((job: Job) => void)[] = [];
   constructor(now: () => Date = () => new Date(), keep = 50) {
     this.#now = now;
     this.#keep = keep;
+  }
+
+  /** Called when a job starts and when it ends (the live updates' import.progress). */
+  watch(watcher: (job: Job) => void): void {
+    this.#watchers.push(watcher);
   }
 
   start(title: string, argv: readonly string[], by: Principal, run: () => Promise<CommandRun>): Job {
     const job: Job = { id: randomBytes(6).toString('hex'), title, argv, by: by.name, started: this.#now().toISOString(), finished: null, result: null };
     this.#jobs.unshift(job);
     this.#jobs.splice(this.#keep);
+    this.#tell(job);
     void run()
       .catch((error: unknown): CommandRun => ({ code: 1, stdout: [], stderr: [`执行出错：${error instanceof Error ? error.message : String(error)}`] }))
       .then((result) => {
         job.result = result;
         job.finished = this.#now().toISOString();
+        this.#tell(job);
       });
     return job;
+  }
+
+  #tell(job: Job): void {
+    for (const watcher of this.#watchers) {
+      try {
+        watcher(job);
+      } catch {
+        // A watcher's failure never changes the job.
+      }
+    }
   }
 
   list(): readonly Job[] {
@@ -325,7 +343,7 @@ export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
     : runLines(job.result, null);
   return {
     status: 200,
-    body: page(chrome, html`${card({ title: job.title, tail: jobState(job), meta: `发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`),
+    body: page(chrome, html`${liveModule('job', ['import.progress'], card({ title: job.title, tail: jobState(job), meta: `发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`), { job: job.id })}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`),
   };
 }
 

@@ -19,6 +19,7 @@ import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { handleApiWrite } from './api-write.ts';
 import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
+import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
@@ -46,6 +47,8 @@ export interface ConsoleOptions {
   jobs: JobStore;
   /** Task packs that passed the check of 发布任务包 and wait for its 发布 step, in this process. */
   staging: PackStaging;
+  /** The event stream of the live updates (/console/api/stream); without it the stream is the neutral answer. */
+  live?: LiveEvents;
   /** The process serving the console, for the Hub's state on the settings and overview pages. */
   hub?: HubFacts;
   /** Open requests of the MCP standard authorization (hub/server/oauth.ts); without it /console/authorize is absent. */
@@ -573,8 +576,9 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
 }
 
 /**
- * The read-only JSON interface (console/api.ts): GET or HEAD only, the session of the pages; without one a 401 answer, not
- * the redirect a page gets, so a client can tell the sign-in ended.
+ * The read-only JSON interface (console/api.ts) and the event stream of the live updates (console/live.ts): GET or HEAD
+ * only, the session of the pages; without one a 401 answer, not the redirect a page gets, so a client can tell the sign-in
+ * ended.
  */
 async function api(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" };
@@ -587,6 +591,13 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   if (principal === null) {
     if (session !== null) options.sessions.close(session.id);
     return sendJson(response, 401, { code: null, message: '登录已过期或已退出', fix: '重新登录控制台后再读取' }, headers);
+  }
+  if (rest.length === 1 && rest[0] === 'stream' && options.live !== undefined) {
+    const wants = wantedEvents(url.searchParams.get('events'));
+    if (wants === null) return sendJson(response, 400, { code: null, message: '请求参数不正确', fix: `events 取以逗号分隔的事件名：${LIVE_EVENTS.join('、')}` }, headers);
+    const refused = options.live.refusal(session!.id);
+    if (refused !== null) return sendJson(response, refused.status, { code: null, message: refused.message, fix: refused.fix }, headers);
+    return options.live.serve(request, response, { session: session!, secure, principal, wants, context: (current) => pageContext(options, request, url, current, session!, secure) });
   }
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: ApiResult;
@@ -673,7 +684,11 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
 export async function handleConsole(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions): Promise<void> {
   const segments = url.pathname.split('/').slice(2).filter((s) => s.length > 0);
   const secure = options.secureRequest(request);
-  const session = options.sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
+  const cookieValue = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE);
+  // The live updates' own requests (the stream and the page fetches of script.ts) are not activity: an unattended page
+  // still reaches the idle limit of its session.
+  const automatic = request.headers['circle-hub-refresh'] === 'live' || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'stream');
+  const session = automatic ? options.sessions.peek(cookieValue, secure) : options.sessions.get(cookieValue, secure);
   if (segments[0] === 'login') {
     if (segments.length === 2) return loginLink(request, response, options, secure, segments[1]);
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));

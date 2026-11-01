@@ -6,7 +6,7 @@ import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/gene
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
 import type { CallLogLine } from '../../records/api.ts';
-import { html, link, page, type Html } from './html.ts';
+import { html, link, liveModule, page, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
 import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
@@ -171,10 +171,10 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
 <a class="hcell" href="/console/records"><span class="dot info" aria-hidden="true"></span><span><b>记录</b><span class="sub">仅追加，不可修改</span></span></a>
 </div>`;
   const periods = html`<nav class="seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` class="on" aria-current="true"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
-  const body = html`${kpis}
-<section class="card section"><div class="card-h"><h3>今日任务</h3><span class="meta">每行一个任务，点击查看执行过程</span></div>${await todayTasks(ctx, today, titles, now)}</section>
-<section class="grid g-2-1 section">${daily}${checkCard}</section>
-<section class="grid g3 section">${stuckCard}${systems}${knowledge}</section>
+  const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
+${liveModule('overview-today', ['task.updated'], html`<section class="card section"><div class="card-h"><h3>今日任务</h3><span class="meta">每行一个任务，点击查看执行过程</span></div>${await todayTasks(ctx, today, titles, now)}</section>`)}
+${liveModule('overview-results', ['task.updated'], html`<section class="grid g-2-1 section">${daily}${checkCard}</section>`)}
+${liveModule('overview-state', ['task.updated', 'system.added', 'knowledge.published'], html`<section class="grid g3 section">${stuckCard}${systems}${knowledge}</section>`)}
 ${sectionHead('规划中的功能', '已规划、尚未上线的功能，上线后在此处启用')}
 <section class="grid g3">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section>
 ${sectionHead('运行状况', '服务、证书、数据库、备份与记录')}

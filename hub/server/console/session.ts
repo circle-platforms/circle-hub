@@ -85,6 +85,15 @@ export class SessionStore {
     return session;
   }
 
+  /** Like get(), but a look does not count as activity: a live stream must not keep an unattended session open. */
+  peek(id: string | undefined, secure = false): ConsoleSession | null {
+    if (id === undefined) return null;
+    const session = this.#sessions.get(id);
+    if (session === undefined || session.secure !== secure) return null;
+    const at = this.#now();
+    return at - session.seen > this.#limits.idleMs || at - session.created > this.#limits.absoluteMs ? null : session;
+  }
+
   close(id: string | undefined): void {
     if (id !== undefined) this.#sessions.delete(id);
   }

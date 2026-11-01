@@ -19,7 +19,7 @@ import type { ServerDeps } from '../api.ts';
 import type { HubFacts } from './settings.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
-import { code, definitions, html, icon, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
+import { code, definitions, html, icon, link, liveModule, page, pre, section, table, type Html, type PageChrome } from './html.ts';
 import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell } from './tasks.ts';
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 
@@ -129,10 +129,10 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const list = card({ title: listing.items.length === 0 ? '尚无任务' : '任务', meta: `本页 ${tasks.length} 个任务${wanted === undefined ? '' : `，筛选后 ${shown.length} 个`} · 按开始时间` }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, listing.items.length === 0 ? 'Circle 启动任务后在此列出。' : '本页没有符合筛选的任务')}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', sub: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验。' }), html`${filters}<div class="mt16">${list}</div>
+    body: page(ctx.chrome('任务', { active: 'tasks', sub: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验。' }), html`${filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
 ${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
-${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
-${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
+${liveModule('task-requests', ['request.updated'], html`${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
+${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`)}
 <p class="note">请求的处理在接收人的 Circle 中完成；本页只显示请求的接收人、期限与状态。</p>`),
   };
 }
@@ -367,8 +367,8 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     status: 200,
     body: page(
       ctx.chrome('任务', { active: 'tasks', sub: html`${link('/console/runs', '全部任务')} · ${taskTitle(run, titles)}` }),
-      html`${head}<div class="mt16">${process}</div>
-<div class="record"><h2>完整记录</h2><p class="sub">结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。</p>
+      html`${liveModule('task', ['task.updated', 'request.updated'], html`${head}<div class="mt16">${process}</div>`, { run: run.run })}
+${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="record"><h2>完整记录</h2><p class="sub">结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。</p>
 ${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${summary}
 ${await runSharing(ctx,run)}
 ${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${code(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
@@ -383,7 +383,7 @@ ${commentary}
 ${section('未回答的请求', table(['请求','种类','接收人','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
 ${section('提交与回执', submissions)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}
-</div>`,
+</div>`, { run: run.run })}`,
     ),
   };
 }
@@ -509,7 +509,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     status: 200,
     body: page(ctx.chrome('知识库', { active: 'knowledge', sub: '统一的知识库：每条知识均附出处，按产品线与版本组织。', ...(actions === undefined ? {} : { actions }) }), html`${flow}
 ${sectionHead('按产品线浏览', '可读的产品线及其版本')}
-${blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`}
+${liveModule('lines', ['knowledge.published'], blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`)}
 <div class="mt16">${card({ title: '版本差异', meta: '两个版本之间新增、删除与修改的条目' }, diffForm)}</div>`),
   };
 }

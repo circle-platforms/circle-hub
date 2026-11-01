@@ -5,7 +5,7 @@
 // publishing a task pack is a check of the upload and then its 发布 step (manage.ts). The step the backend does not have
 // yet (a read-only connection test) is marked as planned.
 import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { code, html, link, page, type Html } from './html.ts';
+import { code, html, link, liveModule, page, type Html } from './html.ts';
 import { actionForm, environmentOptions, jobsSection, roleOptions, stageForms, type JobStore } from './manage.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import type { PackStaging } from './staging.ts';
@@ -77,7 +77,7 @@ ${field('版本线', html`<input name="line" placeholder="可留空">`, { hint: 
 ${card({ title: '导入知识', meta: '后台执行' }, html`${form}<p class="note">执行 ${code('circle-hub knowledge sync')}：从产品包声明的来源以只读方式读取构建、手册与命令树，更新知识库；每条知识均附出处。可能需要几分钟。</p>`)}
 ${plannedCard('上传文档导入', '从上传的文档与业务系统按条目导入，导入前预览差异；上线后在此选择来源。', 'book')}
 </section>
-<div class="mt16">${card(null, jobsSection(jobs.list()))}</div>
+<div class="mt16">${liveModule('imports', ['import.progress', 'knowledge.published'], card(null, jobsSection(jobs.list())))}</div>
 <p class="note">Hub 重启时，进行中的导入需重新发起；已导入的内容不受影响。</p>`;
 }
 

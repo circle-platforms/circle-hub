@@ -15,6 +15,7 @@ import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { authorizeRefusal, handleConsole } from './console/index.ts';
+import { LiveEvents } from './console/live.ts';
 import { JobStore } from './console/manage.ts';
 import { LoginLinkStore, SessionStore } from './console/session.ts';
 import { PackStaging } from './console/staging.ts';
@@ -105,9 +106,11 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
   const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, secureRequest, log };
+  const jobs = new JobStore(clock);
+  const live = new LiveEvents({ records: deps.records, sessions, log }, options.live);
+  jobs.watch((job) => live.publish({ name: 'import.progress', data: { job: job.id } }));
   const consoleOptions = {
-    deps, sessions, ownOrigins: () => origins, log,
-    jobs: new JobStore(clock),
+    deps, sessions, ownOrigins: () => origins, log, jobs, live,
     staging,
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.bridge ? { bridge: options.bridge } : {}),
@@ -239,6 +242,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       stopping = true;
+      // An event stream is a request in flight that never ends by itself.
+      live.close();
       const current = server;
       const listeners = [server, secureServer].filter((s): s is Server => s !== null);
       if (current !== null) {
