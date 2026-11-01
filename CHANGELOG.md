@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Installer workflow login check** — the fresh-runner install uses synthetic credentials on stdin and checks the username/password page, as approved in decision 83's second round.
+
 - **Account status vocabulary** — decision 83's second round gives account states generated labels in model 15, distinct from occupied runtime environments.
 
 - **Console hover guidance** — decision 83 applies heading hints to the remaining detail, management and authorization pages while retaining facts and commands.

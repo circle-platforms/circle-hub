@@ -161,8 +161,11 @@
 
 ## 第二轮做了的
 
+- 第 2 项：与当前 `install.sh` 的 `--admin-user`、`--password-stdin` 核对后，发布工作流首次安装传合成用户名、从标准输入传密码，检查 HTTPS 密码登录页的两个输入框。按本节明确授权，可改路径补入 `.github/workflows/release.yml` 与对应静态检查 `.github/checks/workflow.test.ts`；没有运行工作流或实际安装。
+
 - 第 1 项：新增 R01 的 `account_status`，保持模型 15 并补 `changes15`；团队页、CLI 账户列表及停用提示从生成词表取状态。账户不再显示“使用中”，权限和存储规则未改。
 
 ## 第二轮验证
 
 - 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件一致）。`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/records/principals.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts` 26 项通过、0 跳过；CLI 按 `disabling the operator` 筛选 1 项、词表按 `uses generated axes` 筛选 1 项，均通过、0 跳过，筛选外未运行。`npm run test:docs` 283 项通过、0 跳过。没有运行全量回归。
+- 第 2 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过（含工作流静态检查）。`node --test --test-name-pattern='valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 4 项通过、0 跳过，筛选外未运行；从工作流提取的 Linux 作业 3 段块脚本均通过 `bash -n`，未执行其中命令。没有运行安装、服务启动、发布工作流或 CI。

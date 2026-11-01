@@ -1,5 +1,9 @@
 # hub/platform
 
+Decision 83's second-round release-workflow approval aligns the fresh-runner install check with `install.sh`:
+`--admin-user` supplies a synthetic account, `--password-stdin` reads its password, and the HTTPS check requires the
+username/password login form. Local static and dry-run checks do not establish a successful deployed install or CI run.
+
 Persistent single-machine deployment of the Hub on macOS: the data root, a socket-only PostgreSQL from the pinned
 embedded-postgres binaries, the deployment's keychain items (the vault master key and the operator token), backups and
 restores with SHA-256 manifests, the user LaunchAgent for `circle-hub serve`, deploy with automatic recovery, rollback,
