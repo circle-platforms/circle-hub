@@ -611,7 +611,7 @@ export class ReadEngine {
       let requestCount = 0;
       let nestedCount = 0;
       for (let round = 1; round <= MAX_READ_ROUNDS && !done; round++) {
-        const plan = await this.#plan(runtime, read, subject, args, round, views(), nestedViews());
+        const plan = await this.#plan(runtime, read, subject, args, round, views(), nestedViews(), warnings);
         // The original: what the planner names, else the first request of the first round that has one.
         if (plan.original !== undefined) original = plan.original;
         else if (original === null) original = plan.requests[0]?.key ?? null;
@@ -645,7 +645,7 @@ export class ReadEngine {
         // No response is invented: this sentinel names no original, and no successful projection or artifact is accepted.
         if (order.length === 0 && nestedOrder.length === 0 && read.project !== undefined) {
           try {
-            const projected = await this.#project(runtime, read, subject, args, 'unavailable', views(), nestedViews());
+            const projected = await this.#project(runtime, read, subject, args, 'unavailable', views(), nestedViews(), warnings);
             if ('error' in projected) this.#adminReasons.set(failed, this.#o.redactor.text(`${projected.error.code}：${projected.error.message}`));
           } catch (error) {
             if (error instanceof ConnectorError) this.#adminReasons.set(failed, this.#adminReason(error));
@@ -663,7 +663,7 @@ export class ReadEngine {
       content = first.view.json !== undefined ? first.view.json : (first.view.text ?? null);
       complete = [...responses.keys()].every(key=>covered(key)) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
-        const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews());
+        const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews(), warnings);
         if ('error' in projected && read.absent_codes?.includes(projected.error.code) && [...responses.values()].every(state=>state.view.ok || state.view.error?.code==='SOURCE_ABSENT')) {
           throw new ConnectorError('SOURCE_ABSENT','投影按声明确认本对象缺席',{layer:'plugin',detail:{absence_responses:order}});
         }
@@ -938,6 +938,7 @@ export class ReadEngine {
     round: number,
     responses: Record<string, ReadResponse>,
     reads: Record<string, NestedRead>,
+    warnings: string[],
   ): Promise<ReadPlanOutput> {
     if (read.request !== undefined) {
       const request = read.request;
@@ -957,7 +958,7 @@ export class ReadEngine {
       };
     }
     const input = { round, external: subject, args, settings: runtime.resource.settings, responses, reads };
-    const output = await this.#call(runtime, read.plan!, input, 'plan');
+    const output = await this.#call(runtime, read.plan!, input, 'plan', warnings);
     const parsed = ReadPlanOutput.safeParse(output);
     if (!parsed.success) throw new ConnectorError('PLAN_INVALID', `规划函数第 ${round} 轮的输出不符合 read-plan-output@1：${zodProblem(parsed.error)}`, { layer: 'plugin' });
     return parsed.data;
@@ -971,23 +972,43 @@ export class ReadEngine {
     original: string,
     responses: Record<string, ReadResponse>,
     reads: Record<string, NestedRead>,
+    warnings: string[],
   ): Promise<ReadProjectionOutput> {
     const input = { external: subject, args, settings: runtime.resource.settings, responses, reads, original };
-    const output = await this.#call(runtime, read.project!, input, 'project');
+    const output = await this.#call(runtime, read.project!, input, 'project', warnings);
     const parsed = ReadProjectionOutput.safeParse(output);
     if (!parsed.success) throw new ConnectorError('PROJECTION_FAILED', `投影函数的输出不符合 read-projection-output@1：${zodProblem(parsed.error)}`, { layer: 'plugin' });
     return parsed.data;
   }
 
-  async #call(runtime: ResourceRuntime, ref: { module: string; export?: string }, input: unknown, kind: 'plan' | 'project'): Promise<unknown> {
+  async #call(runtime: ResourceRuntime, ref: { module: string; export?: string }, input: unknown, kind: 'plan' | 'project', warnings: string[]): Promise<unknown> {
+    const target = { packDir: runtime.pack.directory, module: ref.module, ...(ref.export === undefined ? {} : { export: ref.export }) };
+    const retried: { first?: SandboxError } = {};
     try {
-      return await this.#o.callFunction({ packDir: runtime.pack.directory, module: ref.module, ...(ref.export === undefined ? {} : { export: ref.export }) }, input, kind);
+      try {
+        return await this.#o.callFunction(target, input, kind);
+      } catch (error) {
+        // A sandbox that could not run or watch the function says nothing about the function (decision 114, D05 R[3]: a reader
+        // error is retried inside the service first). Pack functions have no effects, so one more call is safe.
+        if (!(error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE')) throw error;
+        retried.first = error;
+        const output = await this.#o.callFunction(target, input, kind);
+        if (warnings.length < 50) warnings.push(`系统包函数 ${ref.module} 第一次没能在沙箱里运行完（${typeof error.detail.reason === 'string' ? error.detail.reason : error.code}），服务内重试一次成功`);
+        return output;
+      }
     } catch (error) {
       if (error instanceof ConnectorError) throw error;
       const code = error instanceof SandboxError ? error.code : error instanceof RangeError ? 'INPUT_TOO_LARGE' : 'FUNCTION_ERROR';
       const reason = error instanceof SandboxError && typeof error.detail.reason === 'string' ? `，${error.detail.reason}` : '';
       const what = error instanceof SandboxError ? SANDBOX_ERRORS[error.code] : '函数调用无效';
-      const failed: ConnectorErrorCode = kind === 'plan' ? 'FUNCTION_FAILED' : 'PROJECTION_FAILED';
+      const unavailable = error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE';
+      const failed: ConnectorErrorCode = unavailable ? 'SANDBOX_UNAVAILABLE' : kind === 'plan' ? 'FUNCTION_FAILED' : 'PROJECTION_FAILED';
+      if (unavailable && retried.first !== undefined) {
+        const earlier = typeof retried.first.detail.reason === 'string' ? retried.first.detail.reason : 'SANDBOX_UNAVAILABLE';
+        const failure = new ConnectorError(failed, `系统包函数 ${ref.module} 两次都没能在沙箱里运行完（${code}${reason}；第一次 ${earlier}）：${what}`, { layer: 'plugin', detail: { module: ref.module, sandbox: code, attempts: 2 } });
+        if (typeof error.detail.message === 'string' && error.detail.message.trim() !== '') this.#adminReasons.set(failure, this.#o.redactor.text(error.detail.message));
+        throw failure;
+      }
       const failure = new ConnectorError(failed, `系统包函数 ${ref.module} 失败（${code}${reason}）：${what}`, { layer: 'plugin', detail: { module: ref.module, sandbox: code } });
       if (error instanceof SandboxError && typeof error.detail.message === 'string' && error.detail.message.trim() !== '') {
         this.#adminReasons.set(failure, this.#o.redactor.text(error.detail.message));

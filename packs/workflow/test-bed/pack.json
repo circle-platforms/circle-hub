@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "kind": "workflow",
   "title": "自动化测试环境",
   "description": "读管理员发布的自动化测试环境清单（命名文档），按需求搜索自动化测试环境（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订自动化测试环境（租约键 bed/<自动化测试环境>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "cab008b407b4fdc5f6ed49fa2d23d5e091ed511eb3284b256ea0edde98ebbbb5",
-      "size": 22745
+      "sha256": "aa4c6cd8574ba1d3385e27df242019c876bfb453499aaab72b72fff87811c9a3",
+      "size": 23664
     },
     {
       "path": "functions/facts.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "473572a933b23723d26e0367dfa6471b8f2281ce037dd13e7755aa097fcdae61",
-      "size": 10990
+      "sha256": "0d72886750fcaed1c3fd888e4b821783318a16e51c7166bc0129a200bb64dff5",
+      "size": 11085
     },
     {
       "path": "functions/subject.ts",
@@ -203,8 +203,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "80d9b6cc17c8ea9addc1571c49293c6bf99a87386fee23be5c45f89313696165",
-      "size": 3372
+      "sha256": "7bba0845cb073d9e17a2e47a1ac7a03c476fa8e770054631e72cbb94fc239fa4",
+      "size": 4182
     }
   ]
 }

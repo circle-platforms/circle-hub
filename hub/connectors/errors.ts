@@ -28,6 +28,7 @@ export const CONNECTOR_ERRORS = {
   PLAN_INVALID: '系统包的读取规划函数给出的计划无效',
   PROJECTION_FAILED: '系统包的投影函数失败',
   FUNCTION_FAILED: '系统包的函数没能在沙箱里运行完',
+  SANDBOX_UNAVAILABLE: 'Hub 的沙箱这次没能运行系统包函数（不是函数的错）',
   READ_LIMIT: '一次读取超过了请求数、字节数或嵌套层数的上限',
   STORE_FAILED: '保存读到的内容失败，读取已中止',
   RESOURCE_UNAVAILABLE: '没有可用的资源能读这个外部对象',

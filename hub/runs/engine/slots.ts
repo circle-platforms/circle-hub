@@ -318,17 +318,17 @@ export function specificFix(path: string, issue: z.ZodIssue, schema?: Record<str
   return null;
 }
 
-/** zod issues as structure violations with JSON Pointers into the submission (cut to a readable length). */
-export function issuesOf(error: z.ZodError, base: string, schema?: Record<string, unknown>): Problem[] {
+/** zod issues as structure violations with JSON Pointers into the submission (cut to a readable length); `lead` says what was checked. */
+export function issuesOf(error: z.ZodError, base: string, schema?: Record<string, unknown>, lead = '提交的结构不对'): Problem[] {
   return error.issues.map((issue) => {
     const keys = issue.code === 'unrecognized_keys' ? (issue as { keys?: string[] }).keys ?? [] : [];
     const path = clipPointer(wellFormed(`${base}${pointerOfPath(issue.path)}${keys.length === 1 ? pointerOf(keys[0]) : ''}`));
     const specific = specificFix(path, issue, schema);
     if (specific !== null) {
-      return protocolError('SUBMISSION_SCHEMA_VIOLATION', `提交的结构不对：${specific.message}`, { path, fix: specific.fix });
+      return protocolError('SUBMISSION_SCHEMA_VIOLATION', `${lead}：${specific.message}`, { path, fix: specific.fix });
     }
     const detail = keys.length > 0 ? `不认识的字段 ${keys.map((k) => wellFormed([...k].slice(0, 80).join(''))).join('、')}` : wellFormed(issue.message);
-    return violation(path, `提交的结构不对：${detail}`);
+    return violation(path, `${lead}：${detail}`);
   });
 }
 

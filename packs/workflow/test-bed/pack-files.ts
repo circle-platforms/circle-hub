@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'test-bed',
-  version: '1.2.14',
+  version: '1.2.15',
   kind: 'workflow',
   title: '自动化测试环境',
   description: '读管理员发布的自动化测试环境清单（命名文档），按需求搜索自动化测试环境（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订自动化测试环境（租约键 bed/<自动化测试环境>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果',

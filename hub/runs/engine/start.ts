@@ -313,9 +313,9 @@ function checkParameters(workflow: LoadedWorkflow, given: Record<string, unknown
       errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包为参数 ${p.name} 声明的模式不能在 Hub 里执行，取值无法核对`, { path: pointerOf('parameters', p.name), fix: '请联系任务包作者' }));
       continue;
     }
-    if (!compiled.schema.safeParse(given[p.name]).success) {
-      errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', `参数 ${p.name} 的取值不符合任务包声明的模式`, { path: pointerOf('parameters', p.name) }));
-    }
+    const checked = compiled.schema.safeParse(given[p.name]);
+    // Where inside the value and what was given (decision 114): the same structure problems a submission gets.
+    if (!checked.success) errors.push(...issuesOf(checked.error, pointerOf('parameters', p.name), p.schema, `参数 ${p.name} 的取值不符合任务包声明的模式`).slice(0, 8));
   }
   if (errors.length > 0) throw new Refusal(errors);
   return given;
