@@ -50,11 +50,28 @@ test('run log pagination uses the stored cursor and historical missing exits rem
   assert.equal(paged[1].cursor,'synthetic-next');
 });
 
-test('runs page separates overdue unanswered requests from the ordinary request list',async()=>{
+test('task requests merge both projections, name their audience and put overdue requests first',async()=>{
   const request={record:'d'.repeat(64),run:runRecord.run,kind:'clarification',audience:runRecord.runner,due:'2026-10-22T01:00:00.000Z',missing:'合成逾期事实',next_action:'管理员核对原请求',source:'e'.repeat(64),code:'awaiting_step',answered_by:null};
-  const deps={knowledge:{},runs:{listRuns:async()=>({items:[],next:null,overdue_requests:[request]}),listRequests:async()=>[request]}};
+  const future={...request,record:'f'.repeat(64),due:'2099-01-01T00:00:00.000Z',missing:'合成未来事实'};
+  const flagged={...future,record:'c'.repeat(64),missing:'合成列表逾期事实'};
+  const deps={knowledge:{},runs:{listRuns:async()=>({items:[],next:null,overdue_requests:[request,flagged]}),listRequests:async()=>[future,request]}};
   const body=String((await runsPage(context(deps,'/console/runs'))).body);
-  assert.ok(body.includes('已到期未回答的请求'));
-  assert.ok(body.indexOf('合成逾期事实')<body.lastIndexOf('未回答的请求'));
-  assert.ok(body.includes(request.record)&&body.includes(request.due));
+  assert.match(body,/等待回应中的请求/);
+  assert.doesNotMatch(body,/已到期未回答的请求|未回答的请求/);
+  assert.equal(body.split(request.missing).length,2);
+  assert.ok(body.indexOf(request.missing)<body.indexOf(future.missing));
+  assert.ok(body.indexOf(flagged.missing)<body.indexOf(future.missing));
+  assert.doesNotMatch(body,new RegExp(`${request.record}|${flagged.record}|${request.audience}`));
+  assert.match(body,/<td>合成用户<\/td>/);
+  assert.match(body,/<td>已逾期<\/td>/);
+  assert.match(body,/<td>等待回应中<\/td>/);
+  const detailDeps={records:{callLog:{query:async()=>({items:[],next:null})}},runs:{getRun:async()=>({run:runRecord,latest:null,production:null,submissions:[],requests:[request,future,{...flagged,answered_by:'a'.repeat(64)}]})}};
+  const detail=String((await runPage(context(detailDeps,`/console/runs/${runRecord.run}`),runRecord.run)).body);
+  assert.match(detail,/等待回应中的请求/);
+  assert.doesNotMatch(detail,/<th>所属任务<\/th>|合成列表逾期事实/);
+  const empty=String((await runsPage(context({knowledge:{},runs:{listRuns:async()=>({items:[],next:null})}},'/console/runs'))).body);
+  assert.doesNotMatch(empty,/等待回应中的请求/);
+  const atLaterClock={knowledge:{},now:()=>new Date('2100-01-01T00:00:00.000Z'),runs:{listRuns:async()=>({items:[],next:null}),listRequests:async()=>[future]}};
+  const expiredByClock=String((await runsPage(context(atLaterClock,'/console/runs'))).body);
+  assert.match(expiredByClock,/<td>已逾期<\/td>/,'request state uses the Hub clock, like the task timeline');
 });

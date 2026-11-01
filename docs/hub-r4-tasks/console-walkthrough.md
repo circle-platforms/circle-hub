@@ -64,10 +64,15 @@
 - 所有者 2026-11-02 补充：暂不改“导入知识”的名称，本次仅加悬停说明；命名纳入知识库调研方案。定时任务与机器人以后各用独立页面，本次不实现。
 - 设计画布（claude.ai 上的《circle-hub 控制台设计稿》）与接口文档由 Claude 事后同步。
 
+显示轴追加授权（所有者在本任务中的答复）：允许新增 B07 的 `request_status` 并同步版本测试。可改路径补入 `contracts/model.json`、`contracts/generated/**`、`contracts/README.md`、`contracts/src/model-w04-w10-v07.test.ts`、`contracts/src/vocab-axes.test.ts`。
+
 ## 做了的
 
 - 第 4 项：无任务、无筛选时只显示空状态；筛选期间保留清除条件的入口。任务数量按本页与筛选后分别显示，排序说明悬停显示。
+- 第 5 项：两个请求入口共用一个列表；按记录身份合并、逾期优先、显示成员名字，无请求时隐藏整段。状态取自新生成的 B07 显示轴；原请求记录不变。
 
 ## 验证
+
+- 第 5 项：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=2 hub/server/console-pagination.test.ts hub/server/console-places.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/vocab-axes.test.ts` 24 项通过、0 跳过；`node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts` 选中的词表扫描 1 项通过、0 跳过，其他测试未选中；`npm run test:docs` 281 项通过、0 跳过。未运行全量回归。
 
 - 第 4 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-pagination.test.ts hub/server/console-places.test.ts` 12 项通过、0 跳过；`npm run test:docs` 通过（281 项、0 跳过，附带静态文档检查通过）。没有运行全量回归和来源校验。

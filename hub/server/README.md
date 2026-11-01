@@ -287,6 +287,10 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83 combines pending and overdue requests in one shared list on the task and task-detail pages. It deduplicates
+record identities, resolves member names, puts overdue requests first and hides an empty list. Labels use B07's generated
+display axis; requests and their answer rules are unchanged.
+
 Owner decision 83 (2026-11-02), walkthrough item 4: an empty, unfiltered task page hides the pack/result filters and
 zero-page counts. An active filter remains visible even when empty. Nonempty lists keep factual page/filter counts;
 the ordering explanation is a title hint. The walkthrough task page records each scoped check.

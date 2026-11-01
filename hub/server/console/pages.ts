@@ -23,6 +23,7 @@ import { code, definitions, html, icon, link, liveModule, page, pre, section, ta
 import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell } from './tasks.ts';
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
+import { awaitingRequests } from './requests.ts';
 
 export interface PageContext {
   deps: ServerDeps;
@@ -136,9 +137,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
     status: 200,
     body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${empty ? '' : filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
 ${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
-${liveModule('task-requests', ['request.updated'], html`${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
-${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`)}
-<p class="note">请求的处理在接收人的 Circle 中完成；本页只显示请求的接收人、期限与状态。</p>`),
+${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, listing.overdue_requests, true))}`),
   };
 }
 
@@ -385,7 +384,7 @@ ${projectedFields}
 ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / 请求','条目 / 判据','原断言','旧值 / 新值','状态 / 复核人 / 理由','接收人 / 期限','下一步'],run.criterion_changes.map(change=>[html`${code(change.declaration)}<br>${code(change.request)}`,html`${code(change.item)}<br>${code(change.criterion)}`,change.assertion,html`${pre(change.old)}${pre(change.new)}`,change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.accepted===false?`未接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.expired?'请求已过期，仍在等待作者以外的账号复核；新修订不带这条声明':'等待作者以外的账号复核中',html`${code(change.audience)}<br>${change.due}`,change.next_action]),'没有判据变更声明')):''}
 ${section(axisUiLabel('partition'), results)}
 ${commentary}
-${section('未回答的请求', table(['请求','种类','接收人','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
+${await awaitingRequests(ctx, detail.requests ?? [])}
 ${section('提交与回执', submissions)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}
 </div>`, { run: run.run })}`,

@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 72 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 73 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -45,6 +45,9 @@ Bump `version` when the meaning of anything changes; it is generated as `MODEL_V
 
 Owner decision 81 (2026-11-01) adds B05's `trial` action kind (尝试读取) in model 14. Connection trials remain `action`
 records; connectors owns and validates their local `trial-report@1` body schema. No new record kind is introduced.
+
+Owner decision 83 (2026-11-02) adds B07's derived `request_status` display axis in model 15. Waiting, overdue and answered
+labels are generated; the axis changes neither the stored request schema nor its answer rules.
 
 ## Editing `contracts/codes.json`
 
