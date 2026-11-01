@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Same-version bundle upgrades** — the installer stages each commit separately, deploys with its fixed Node path and updates the compatibility runtime link only after success; previous runtimes remain available for recovery.
+
 - **Knowledge decision 84** — records the owner’s personal/team knowledge and workflow naming decisions; the earlier local-only proposal is retained as superseded research, with implementation and renaming deferred. The future 工作流 page distinguishes 通用技能 (no acceptance) and 工作流 (existing packs with acceptance); product/system placement remains open.
 
 - **Resumable administrator initialization** — the installer checks database accounts after deployment migrations, retries an incomplete first-admin setup and gives explicit host recovery commands without a terminal.

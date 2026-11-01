@@ -161,6 +161,8 @@
 
 ## 第二轮做了的
 
+- 第 7 项（所有者 2026-11-02 追加）：合成包先复现同版本、不同提交未进入部署；现改为临时解包后按完整提交保存独立目录，用候选包内的固定 Node 路径执行命令。部署成功或提交已在运行后才更新兼容链接；保留旧包和失败候选包供恢复，不改当前发布文件。新增脚本测试覆盖相同版本的新提交部署、相同提交跳过、部署失败恢复及重试。
+
 - 第 6 项：记入决定 84 的三项知识库要求及“工作流”称呼决定，补记通用技能（不验收）与工作流（现有 packs，有验收）两类，明确产品包、系统包的位置只是待定建议，注明完整方案与其余问题在所有者的方案文档，定稿后再写入设计。草稿文首标为被取代，并移到设计索引的“已被取代”；正文原样保留，以保留需求核对和资料来源，旧建议不再作为实施方案。
 
 - 第 5 项：安装不再用设置文件是否存在决定管理员初始化；部署迁移后以 `user list --json` 读取公开账户字段，没有管理员才重新询问并初始化。无法询问时列出 `circle-hub init-admin`、`circle-hub setup-code`；读取失败不假定为空。新增脚本测试执行实际设置检查到初始化流程，只有 CLI 与终端输入用合成夹具替代；已有管理员时不重置、不消耗密码标准输入。
@@ -182,6 +184,12 @@
 - 第 5 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-name-pattern='administrator bootstrap|valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 7 项通过、0 跳过；CLI 按 `user list JSON|initial passwords` 筛选 2 项通过、0 跳过，筛选外未运行。脚本覆盖已有设置下初始化失败与重跑、重新询问、无终端恢复提示、显式用户名、读取失败拒绝及已有管理员时保留输入；实际执行隔离的 Bash 控制流程，CLI、终端输入为合成夹具。没有运行整机安装、服务管理、备份恢复或全量回归。
 - 第 6 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。本项仅修改决定、调研记录及相关说明，没有改知识模型或代码，因此未重复运行知识库业务测试。
 
+- 第 7 项：修复前先运行新增脚本测试，2 项均按预期失败（新提交没有进入部署），不记为通过。修复后 `npm run typecheck` 通过；`node --test hub/platform/install-upgrade-script.test.ts` 2 项通过、0 跳过，执行真实 tar 解包、Bash 控制流程及退出清理，CLI 和服务启动用合成夹具替代。`node --test --test-name-pattern='administrator bootstrap|valid bash|fresh installation|macOS dry run|Linux dry run|other systems|CIRCLE_HUB_LIBPQ_BIN' hub/platform/install-script.test.ts` 9 项通过、0 跳过；`node --test --test-name-pattern='success: build|failed health check restores|rollback restores the backup' hub/platform/deploy.test.ts` 3 项通过、0 跳过，均为合成部署与回滚流程，没有真实 PostgreSQL、备份恢复或服务管理。筛选外未运行；保留原有发布包 SHA 校验，没有新增数据 SHA 扫描。
+
+## 第二轮第 7 项追加要求
+
+来源：所有者在本任务中的追加要求（2026-11-02）。所有者报告本地部署时，同为 0.2.0 的新提交被已有目录跳过；本任务只复现其结构，不读取或操作真实部署。包的提交不同就必须解包、部署；部署成功前不得改写运行服务使用的 `runtime/node` 或当前发布，回滚仍须有可用 Node。仍为一次本机提交，只做定向检查，不推送、不建 PR。可改路径沿用 `install.sh`、`hub/platform/**`、相关说明和本任务页。
+
 ## 第二轮没有做的
 
 - 知识库通用化、双向同步、个人空间权限及“任务包”改名：按决定 84，本轮只记录要求和草稿取代关系，完整方案与产品包、系统包的展示位置待所有者定稿；“工作流”改名及两种分类另立任务，没有实施代码或模型变更。
@@ -197,3 +205,5 @@
 - 第 5 项 CLI：`node --test --test-concurrency=1 --test-name-pattern='user list JSON|initial passwords' hub/server/assemble/cli-admin.test.ts`。
 
 第 6 项追加更正（所有者 2026-11-02，由 Claude 转达）：名称改为“工作流”，决定 84 原样记录两句原话；通用技能不验收，现有 packs 所在的工作流有验收。产品包、系统包的展示位置仍待定，建议不记成决定。只修正文档并折入第 6 项提交，未实现改名；重跑 `npm run test:docs` 283 项通过、0 跳过。
+
+第 7 项文档收尾：新测试文件纳入暂存范围后重跑 `npm run test:docs`，283 项通过、0 跳过；`git diff --check` 通过。修复及本地结果不代表真实安装、Linux AppArmor 装载、实际备份恢复或 CI 已通过；这些检查本轮未运行。没有推送或建 PR。

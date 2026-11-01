@@ -54,6 +54,7 @@ ${main}
 ${options.after??''}`;
     const result=spawnSync('bash',['-c',script],{encoding:'utf8',timeout:10_000,input:options.input??'',env:{
       PATH:process.env.PATH,DATA:dir,BUNDLE:dir,NODE:process.execPath,SETUP_HUB:cli,DRY_RUN:'0',HUB_INSTALL_ADMIN_NAME:options.name??'',
+      RUNTIME:dir,BUNDLE_DIR_NAME:'synthetic-bundle',HUB_INSTALL_BUNDLE_COMMIT:'a'.repeat(40),
       HUB_INSTALL_PASSWORD_STDIN:options.stdin?'1':'0',...options.env}});
     return {code:result.status??-1,out:result.stdout,err:result.stderr};
   }};
@@ -120,7 +121,7 @@ test('a macOS dry run plans init with HTTPS, key, tls and a bundle deploy with t
   assert.match(out, /init --environment production --port 7420 --https-port 7443/);
   assert.match(out, /key init/);
   assert.match(out, /tls init/);
-  assert.match(out, /deploy --bundle \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64 --node \/srv\/synthetic-hub\/runtime\/node\/bin\/node/);
+  assert.match(out, /deploy --bundle \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit> --node \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit>\/node\/bin\/node/);
   assert.match(out, /https:\/\/127\.0\.0\.1:7443\/console\//);
   assert.doesNotMatch(out, /useradd|apparmor_parser/, 'no Linux step on macOS');
 });

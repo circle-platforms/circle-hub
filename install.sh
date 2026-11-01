@@ -112,7 +112,8 @@ fi
 # ---------------------------------------------------------------- the bundle
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
+HUB_INSTALL_UNPACK=""
+trap 'if [ -n "${HUB_INSTALL_UNPACK}" ]; then as_hub rm -rf "${HUB_INSTALL_UNPACK}"; fi; rm -rf "${WORK}"' EXIT
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -185,8 +186,8 @@ else
   WRAPPER_DIR="/usr/local/bin"
 fi
 RUNTIME="${DATA}/runtime"
-BUNDLE="${RUNTIME}/bundles/${BUNDLE_DIR_NAME}"
-NODE="${RUNTIME}/node/bin/node"
+BUNDLE="${RUNTIME}/bundles/${BUNDLE_DIR_NAME}-<commit>"
+NODE="${BUNDLE}/node/bin/node"
 SETUP_HUB="${BUNDLE}/app/bin/circle-hub"
 
 # Runs a command as the account that owns the data directory: this user on macOS, circle-hub on Linux. A function, not an
@@ -290,7 +291,8 @@ if [ "${OS}" = linux ]; then
   fi
 fi
 
-say "解开发布包到 ${BUNDLE}"
+# BEGIN bundle staging
+say "解开发布包"
 run_as_hub mkdir -p "${RUNTIME}/bundles" "${RUNTIME}/downloads"
 if [ "${DRY_RUN}" != 1 ]; then
   DOWNLOAD="${RUNTIME}/downloads/${NAME}"
@@ -299,13 +301,28 @@ if [ "${DRY_RUN}" != 1 ]; then
   else
     install -m 0600 "${WORK}/${NAME}" "${DOWNLOAD}"
   fi
-  if ! as_hub test -d "${BUNDLE}"; then
-    as_hub tar -x -z -f "${DOWNLOAD}" -C "${RUNTIME}/bundles"
+  # Never extract over an existing bundle: it may supply the Node of the running service or of a rollback.
+  HUB_INSTALL_UNPACK="$(as_hub mktemp -d "${RUNTIME}/bundles/.unpack.XXXXXX")"
+  as_hub tar -x -z -f "${DOWNLOAD}" -C "${HUB_INSTALL_UNPACK}"
+  HUB_INSTALL_BUNDLE_SOURCE="${HUB_INSTALL_UNPACK}/${BUNDLE_DIR_NAME}"
+  as_hub test -f "${HUB_INSTALL_BUNDLE_SOURCE}/bundle.json" || fail "发布包里没有 bundle.json"
+  HUB_INSTALL_BUNDLE_COMMIT="$(commit_in "${HUB_INSTALL_BUNDLE_SOURCE}/bundle.json")"
+  [[ "${HUB_INSTALL_BUNDLE_COMMIT}" =~ ^[0-9a-f]{40,64}$ ]] || fail "发布包没有有效的提交编号"
+  BUNDLE="${RUNTIME}/bundles/${BUNDLE_DIR_NAME}-${HUB_INSTALL_BUNDLE_COMMIT}"
+  if as_hub test -d "${BUNDLE}"; then
+    [ "$(commit_in "${BUNDLE}/bundle.json")" = "${HUB_INSTALL_BUNDLE_COMMIT}" ] || fail "已有发布包目录与提交编号不符：${BUNDLE}"
+  else
+    # A rename publishes the completed directory atomically; an existing non-empty directory is never overwritten.
+    as_hub "${HUB_INSTALL_BUNDLE_SOURCE}/node/bin/node" -e 'require("node:fs").renameSync(process.argv[1],process.argv[2])' "${HUB_INSTALL_BUNDLE_SOURCE}" "${BUNDLE}"
   fi
+  as_hub rm -rf "${HUB_INSTALL_UNPACK}"
+  HUB_INSTALL_UNPACK=""
   as_hub rm -f "${DOWNLOAD}"
-  as_hub test -f "${BUNDLE}/bundle.json" || fail "发布包里没有 bundle.json"
-  as_hub ln -sfn "bundles/${BUNDLE_DIR_NAME}/node" "${RUNTIME}/node"
 fi
+NODE="${BUNDLE}/node/bin/node"
+SETUP_HUB="${BUNDLE}/app/bin/circle-hub"
+say "发布包目录：${BUNDLE}"
+# END bundle staging
 
 if [ "${OS}" = linux ]; then
   say "装载 Hub 的 AppArmor 策略（对这个 Node）"
@@ -350,6 +367,11 @@ if [ "${DRY_RUN}" = 1 ] || [ -z "${COMMIT}" ] || [ "${COMMIT}" != "${CURRENT}" ]
   run_as_hub env ${LIBPQ_BIN:+CIRCLE_HUB_LIBPQ_BIN="${LIBPQ_BIN}"} "${NODE}" "${SETUP_HUB}" deploy --bundle "${BUNDLE}" --node "${NODE}"
 else
   say "这一版已经在运行，不重新部署"
+fi
+
+# Deploy and recovery use the immutable bundle's Node. Keep the legacy link unchanged until deploy has succeeded.
+if [ "${DRY_RUN}" != 1 ]; then
+  as_hub ln -sfn "bundles/${BUNDLE_DIR_NAME}-${HUB_INSTALL_BUNDLE_COMMIT}/node" "${RUNTIME}/node"
 fi
 
 # Query accounts after deploy has applied the bundle's migrations, including on an upgrade from an older schema.

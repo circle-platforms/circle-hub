@@ -77,10 +77,15 @@ deploy: backup, migration, service, health and recovery.
 
 `install.sh` (repository root, `curl … | bash`) checks the system and architecture (anything but macOS and Linux on arm64
 or x64 is refused), downloads the bundle and SHA256SUMS of the GitHub release (latest, or `--version`), checks the
-SHA-256, unpacks it under `<data root>/runtime/bundles/` and points `<data root>/runtime/node` at its Node. It then runs
-the Hub's own commands with that Node: `init` (HTTP on loopback, `--https-port`, and `--https-host` with the allowed hosts
+SHA-256 and unpacks it into a fresh staging directory under `<data root>/runtime/bundles/`. The completed bundle is
+renamed to `<bundle name>-<full commit>`; a same-version archive with a different commit therefore has a separate
+directory. Existing bundle files remain untouched, including the Node used by a running or previous release. It runs
+the Hub's own commands with the candidate bundle’s fixed `node/bin/node` path: `init` (HTTP on loopback, `--https-port`, and `--https-host` with the allowed hosts
 when one is given) unless settings exist, `key init` and `tls init` unless present, `deploy --bundle … --node
-<data root>/runtime/node/bin/node` unless that commit is current; it writes a `circle-hub` wrapper and
+<data root>/runtime/bundles/<bundle name>-<full commit>/node/bin/node` unless that commit is current. Only after deploy
+succeeds (or the commit is already current) is the compatibility `runtime/node` link updated. Deploy failure leaves
+that link unchanged and retains both bundles, so recovery still has its Node executable. The installer writes a
+`circle-hub` wrapper with the fixed candidate Node path and
 prints the console address and authority certificate to trust. After deploy applies the bundle’s migrations, the installer
 queries `user list --json` even when settings already exist. With no administrator it requires a username and asks
 for an optional password through the terminal. `init-admin --password-stdin` receives it through stdin; an empty input
@@ -116,7 +121,7 @@ name). Every directory is 0700.
 | `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
 | `current` | relative symlink to `releases/<id>` |
 | `config/platform.json` | the deployment instance (`circle-hub-platform@2`): environment class, HTTP port, database name, role and socket port, keychain service and account, backups kept, optional node path |
-| `runtime/` | the installer's unpacked bundles (`bundles/<name>/`) and `node`, the link to the Node the service runs |
+| `runtime/` | the installer's unpacked bundles (`bundles/<name>-<full commit>/`, with older version-only directories retained) and `node`, a compatibility link updated after successful deploy; service definitions use the fixed bundle Node path |
 | `tls/` | the built-in HTTPS: the private certificate authority and the server certificate it signed (`tls init`); never backed up |
 | `set-aside/<time>-<reason>/` | data moved out of the way by a failed deploy, a rollback or a failed restore; never deleted automatically |
 
