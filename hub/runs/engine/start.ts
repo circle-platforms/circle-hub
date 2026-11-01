@@ -147,9 +147,13 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
     registrations:await Promise.all(registered.map(async row=>({prefix:row.prefix,mine:row.owner===user.id,...(user.role==='admin'?{owner:await identity(row.owner)}:{})})))};
 }
 
-/** The newest observation of every probed device (decision 112), for a workflow that asked for the observations context. */
+/**
+ * The newest observation of every probed device (decision 112), for a workflow that asked for the observations context. A Hub
+ * without device observations (no dispatch service) has observed nothing: the view is empty, and each device reads as never
+ * observed, never as a mismatch.
+ */
 async function contextObservations(ctx: EngineContext): Promise<DeviceObservation[]> {
-  if (!ctx.deps.observations) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','设备观察端口未配置',{path:'/pack',fix:'请管理员配置派发服务（设备观察）后重开运行'})]);
+  if (!ctx.deps.observations) return [];
   return ctx.deps.observations.latest();
 }
 
@@ -600,8 +604,9 @@ async function startFresh(
   try {
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run);
     // Once an acquire is granted, the Hub looks at the booked devices the projection named (decision 112); it never throws.
-    if (projection.observe.length > 0 && grantedLeases.some((done) => !('op' in done) || done.op === 'acquire') && ctx.deps.observations) {
-      deviceClaims = observationClaims(await ctx.deps.observations.observe(user, runId, projection.observe), ctx.now().toISOString());
+    if (projection.observe.length > 0 && grantedLeases.some((done) => !('op' in done) || done.op === 'acquire')) {
+      const looked = ctx.deps.observations ? await ctx.deps.observations.observe(user, runId, projection.observe) : { observed: [], missing: 'Hub 没有接设备观察（派发服务）' };
+      deviceClaims = observationClaims(looked, ctx.now().toISOString());
     }
   let items = projection.items;
   const packId = workflow.pack.id;
