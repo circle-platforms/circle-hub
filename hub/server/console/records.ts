@@ -28,15 +28,15 @@ async function trials(ctx: PageContext, path: string, user: string | undefined, 
     }
     const body = parsed.data;
     const outcome = (ok: boolean | null) => uiLabelOf('action_result', ok === null ? 'unknown' : ok ? 'completed' : 'error');
-    const routes = body.routes.map((r) => [r.route, r.tried ? outcome(r.ok) : '未试读', r.status === null ? '—' : `HTTP ${r.status}`, r.code ?? '—', r.ms === null ? '—' : duration(r.ms)]);
+    const routes = body.routes.map((r) => [r.route, r.tried ? outcome(r.ok) : '未尝试读取', r.status === null ? '—' : `HTTP ${r.status}`, r.code ?? '—', r.ms === null ? '—' : duration(r.ms)]);
     rows.push([body.started_at, uiLabelOf('action_kind', body.action), await ctx.userName(body.principal), `${body.system_pack.id}@${body.system_pack.version}`,
       uiLabelOf('environment', body.environment), body.auth.sent ? `${outcome(body.auth.ok)}${body.auth.code === null ? '' : ` · ${body.auth.code}`}` : '未发送登录',
       html`<details><summary>${body.routes.length} 个接口</summary>${table(['接口', '结果', '状态码', '错误码', '耗时'], routes, '没有接口')}<p class="sub">结束于 ${body.ended_at}</p></details>`,
     ]);
   }
-  const next = found.next === null ? html`` : link(path, '下一页试读记录', { user: param(ctx, 'user'), from: param(ctx, 'from'), to: param(ctx, 'to'), trial_cursor: found.next });
+  const next = found.next === null ? html`` : link(path, '下一页尝试读取记录', { user: param(ctx, 'user'), from: param(ctx, 'from'), to: param(ctx, 'to'), trial_cursor: found.next });
   return card({ title: `${uiLabelOf('action_kind', 'trial')}记录`, meta: '仅管理员可见 · 新的在前' },
-    html`${table(['开始时间', '操作', '成员', '系统包', '环境', '登录', '接口结果'], rows, '本页没有试读记录')}${next}`);
+    html`${table(['开始时间', '操作', '成员', '系统包', '环境', '登录', '接口结果'], rows, '本页没有尝试读取记录')}${next}`);
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {

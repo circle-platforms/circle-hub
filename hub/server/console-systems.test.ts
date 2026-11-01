@@ -1,4 +1,4 @@
-// 接入业务系统's 测试连接 and the reads of the last day, over HTTP with the test server and loopback stubs: the trial through
+// 接入业务系统's 尝试连接 and the reads of the last day, over HTTP with the test server and loopback stubs: the trial through
 // POST /console/api/systems/test and the operation's form (system-test), for administrators only, recording the trial and
 // showing no value of the trial; the 24-hour reads of a system from its read manifests on the interface, the connections
 // page and the overview.
@@ -104,7 +104,7 @@ const fields = (password = PASSWORD): Record<string, string> => ({
   value_2: password,
 });
 
-describe('测试连接', () => {
+describe('尝试连接', () => {
   test('the interface tries the system read-only, records the trial and never exposes credential values', async () => {
     const admin = await signIn(server.admin.token);
     const listedBefore = await server.deps.resources.list(server.admin.principal);
@@ -129,29 +129,31 @@ describe('测试连接', () => {
     const bad = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'x-csrf-token': admin.csrf, 'content-type': 'application/json' }, body: JSON.stringify({ ...fields(), origins: `plm-api=${plm.origin}` }) });
     assert.equal(bad.status, 400);
     assert.equal(JSON.parse(bad.body).code, null);
-    const member = await signIn((await server.createUser('试读成员')).token);
+    const member = await signIn((await server.createUser('尝试读取成员')).token);
     const refused = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: member.cookie, origin: origin(), 'x-csrf-token': member.csrf, 'content-type': 'application/json' }, body: JSON.stringify(fields()) });
     assert.equal(refused.status, 404);
     assert.equal(agile.logins, 1, 'nothing sent for a refused request');
     const records = await send('/console/records', { headers: { cookie: admin.cookie } });
-    assert.match(records.body, /试读记录/);
+    assert.match(records.body, /尝试读取记录/);
     assert.match(records.body, /plm-test@1.0.0/);
     assert.match(records.body, /HTTP 200/);
     const memberRecords = await send('/console/records', { headers: { cookie: member.cookie } });
-    assert.doesNotMatch(memberRecords.body, /试读记录|plm-test@/);
+    assert.doesNotMatch(memberRecords.body, /尝试读取记录|plm-test@/);
   });
 
   test('the operation page tries the form and comes back filled in, without the credential contents', async () => {
     const admin = await signIn(server.admin.token);
     const page = await send('/console/operations/system', { headers: { cookie: admin.cookie } });
     assert.match(page.body, /formaction="\/console\/admin\/do\/system-test"/);
+    assert.match(page.body, />尝试连接<\/button>/);
+    assert.doesNotMatch(page.body, /测试连接|未试读|试读记录/, 'the page uses only the approved current labels');
     assert.doesNotMatch(page.body, /规划中/);
     const tried = await send('/console/admin/do/system-test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields('wrong-password'), csrf: admin.csrf }).toString() });
     assert.equal(tried.status, 200, tried.body.slice(0, 300));
-    assert.match(tried.body, /测试连接结果/);
+    assert.match(tried.body, /尝试连接结果/);
     assert.match(tried.body, /登录失败/);
-    assert.match(tried.body, /未试读/);
-    assert.match(tried.body, /每次测试连接记一条试读记录/);
+    assert.match(tried.body, /未尝试读取/);
+    assert.match(tried.body, /每次尝试连接记一条尝试读取记录/);
     assert.ok(tried.body.includes(agile.origin), 'the addresses come back in the form');
     assert.ok(!tried.body.includes('wrong-password'), 'a credential content never comes back into a page');
     assert.match(tried.body, /value="PLM_PASS"/, 'the credential names come back');

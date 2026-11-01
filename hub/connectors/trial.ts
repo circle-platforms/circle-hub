@@ -1,4 +1,4 @@
-// A read-only trial of a system pack with a configuration that is not saved: the console's 测试连接 before a business system
+// A read-only trial of a system pack with a configuration that is not saved: the console's 尝试连接 before a business system
 // is connected. The typed base URLs and credential values reach one HttpSource and nothing else: no resource, no secret, no
 // session entry or object. Each completed trial appends a trial-report@1 action, without those values; a login that failed
 // leaves its digest, never its values, in TRIAL_LOGIN_STOPS. The configuration is checked by the rules of a saved resource (resource@1 and the
@@ -64,7 +64,7 @@ export class TrialLoginStops implements FailedLogins {
     const kept: unknown = JSON.parse(text);
     const failed = typeof kept === 'object' && kept !== null && (kept as { v?: unknown }).v === 1 ? (kept as { failed?: unknown }).failed : undefined;
     if (Array.isArray(failed) && failed.every((key) => typeof key === 'string' && DIGEST.test(key))) return failed;
-    throw new ConnectorError('STORE_FAILED', '测试连接的登录失败记录不可读');
+    throw new ConnectorError('STORE_FAILED', '尝试连接的登录失败记录不可读');
   }
 
   async has(key: string): Promise<boolean> {
@@ -193,10 +193,10 @@ function failure(error: ConnectorError): string {
 
 /** Whether a request can be made on `route` without arguments: a literal path, no required query member, no body. */
 function argumentFree(route: RouteDeclaration): string | null {
-  if (/\{[^}]+\}/.test(route.path)) return '路径含参数，试读时没有可用的取值';
-  if (route.body !== undefined) return '需要请求体，试读时没有可用的取值';
+  if (/\{[^}]+\}/.test(route.path)) return '路径含参数，尝试读取时没有可用的取值';
+  if (route.body !== undefined) return '需要请求体，尝试读取时没有可用的取值';
   const query = route.query as { required?: readonly string[] } | undefined;
-  if (query !== undefined && (query.required ?? []).length > 0) return '需要查询参数，试读时没有可用的取值';
+  if (query !== undefined && (query.required ?? []).length > 0) return '需要查询参数，尝试读取时没有可用的取值';
   return null;
 }
 
@@ -211,7 +211,7 @@ async function prepareTrial(options: Pick<SystemTrialOptions, 'load' | 'now' | '
     id: PLACEHOLDER_RESOURCE,
     system_pack: `${pack.id}@${pack.version}`,
     system_pack_digest: pack.digest,
-    name: '试读',
+    name: '尝试读取',
     environment: input.environment,
     origins: input.origins,
     allow_plaintext: input.allow_plaintext ?? [],
@@ -221,7 +221,7 @@ async function prepareTrial(options: Pick<SystemTrialOptions, 'load' | 'now' | '
     created_by: /^usr_[0-9a-z]{26}$/.test(by) ? by : PLACEHOLDER_USER,
     created_at: started.toISOString(),
   });
-  if (!parsed.success) throw new ConnectorError('RESOURCE_INVALID', `试读配置不符合资源的规则：${issuesOf(parsed.error)}`);
+  if (!parsed.success) throw new ConnectorError('RESOURCE_INVALID', `尝试连接的配置不符合资源的规则：${issuesOf(parsed.error)}`);
   const problem = profileProblem(parsed.data, profile);
   if (problem !== null) throw new ConnectorError('RESOURCE_INVALID', problem);
   const typed = input.credentials ?? {};
@@ -293,7 +293,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
   } else if (auth.kind === 'static_header') {
     carriers = new Set(auth.roles);
     const value = values[auth.credential];
-    if (value === undefined) report.reason = `凭据 ${auth.credential} 未填写，带凭据的接口未试读`;
+    if (value === undefined) report.reason = `凭据 ${auth.credential} 未填写，带凭据的接口未尝试读取`;
     else {
       header = { name: auth.header.name, value: auth.header.scheme === 'bearer' ? `Bearer ${value}` : value };
       report.reason = '固定凭据随第一个带凭据的接口一并检验';
@@ -350,11 +350,11 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       continue;
     }
     if (tried >= TRIAL_ROUTES) {
-      row.reason = `每次测试最多试读 ${TRIAL_ROUTES} 个接口`;
+      row.reason = `每次尝试连接最多尝试读取 ${TRIAL_ROUTES} 个接口`;
       continue;
     }
     if (options.now().getTime() - started.getTime() >= TRIAL_DEADLINE_MS) {
-      row.reason = `测试已用时超过 ${TRIAL_DEADLINE_MS / 1000} 秒，其余接口未试读`;
+      row.reason = `尝试连接已用时超过 ${TRIAL_DEADLINE_MS / 1000} 秒，其余接口未尝试读取`;
       continue;
     }
     tried += 1;
@@ -375,7 +375,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
       // A read plans the hop of a route declared with same-origin redirects; the trial does not, so it cannot tell.
       const declaredHop = error.code === 'SOURCE_REDIRECT_REFUSED' && route.redirects !== undefined;
       row.ok = declaredHop ? null : false;
-      row.message = declaredHop ? `应答要求同源跳转${row.status === null ? '' : `（HTTP ${row.status}）`}，试读不跟随跳转` : failure(error);
+      row.message = declaredHop ? `应答要求同源跳转${row.status === null ? '' : `（HTTP ${row.status}）`}，尝试读取不跟随跳转` : failure(error);
       // A static credential the source refused is checked by this route: the trial says so.
       if (auth.kind === 'static_header' && carries && (error.code === 'CREDENTIAL_REFUSED' || error.code === 'SOURCE_LOGIN_EXPIRED')) report.ok = false;
     }

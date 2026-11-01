@@ -80,7 +80,7 @@ test('a trial logs in once, tries only argument-free routes and appends one tria
   // A route whose query member is required, and POST routes with a body, need arguments: not tried, none invented.
   for (const id of ['builds', 'bug-detail', 'story-detail']) {
     assert.equal(route(report, id).tried, false, id);
-    assert.match(route(report, id).reason!, /试读时没有可用的取值/, id);
+    assert.match(route(report, id).reason!, /尝试读取时没有可用的取值/, id);
   }
   assert.equal(w.plm.writes, 0, 'the write route is never reached');
   assert.equal(report.saved, false);
@@ -301,11 +301,11 @@ test('a redirect is never followed, a declared hop stays unknown, and no route i
   const report = await w.k.connectors.admin.trial(w.k.admin, { system_pack: 'site-test', environment: 'test', origins: { site: site.origin }, allow_plaintext: [site.origin] });
   assert.deepEqual([report.auth.kind, report.auth.sent, report.auth.ok], ['none', false, null]);
   assert.deepEqual([route(report, 'moved').tried, route(report, 'moved').ok, route(report, 'moved').status], [true, null, 302]);
-  assert.match(route(report, 'moved').message!, /试读不跟随跳转/);
+  assert.match(route(report, 'moved').message!, /尝试读取不跟随跳转/);
   assert.deepEqual([route(report, 'jumps').ok, route(report, 'jumps').code], [false, 'SOURCE_REDIRECT_REFUSED']);
   assert.equal(route(report, 'slow').ok, true);
   assert.equal(route(report, 'status').tried, false);
-  assert.match(route(report, 'status').reason!, /其余接口未试读/);
+  assert.match(route(report, 'status').reason!, /其余接口未尝试读取/);
   assert.deepEqual(site.requests.map((r) => r.path), ['/moved/', '/jumps/', '/slow/'], 'no hop followed, nothing after the deadline');
   const record = (await w.k.records.store.find<TrialRecord>({ kind: 'action', key: 'action.kind', value: 'trial' })).items[0].body;
   assert.deepEqual(record.routes.map((row) => [row.tried, row.ok]), [[true, null], [true, false], [true, true], [false, null]], 'unknown and untried outcomes stay distinct');

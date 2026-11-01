@@ -353,8 +353,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   submissions (decision 80), or when the window starts after `indexed_since`, the oldest submission indexed as it was
   stored; otherwise they are a lower bound, and the page says from when it counts. The knowledge tree page shows
   被引用 for the node and 出处 and 近 30 天被引用 for its entries.
-- **The connection test** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
-  测试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
+- **The connection attempt** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
+  尝试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
   says what the trial does and never does) with the typed system pack, origins, environment and credential contents. The
   answer is `{report: {system_pack, environment, auth: {kind, sent, ok, reason, code, message, ms}, routes: [{route, role,
   method, path, tried, reason, ok, status, code, message, ms, bytes}], started_at, ended_at, saved: false}}`; 400 for a

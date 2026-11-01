@@ -43,7 +43,7 @@ Only on the model author's decision. The generator refuses (exit 2, every proble
 
 Bump `version` when the meaning of anything changes; it is generated as `MODEL_VERSION`.
 
-Owner decision 81 (2026-11-01) adds B05's `trial` action kind (试读) in model 14. Connection trials remain `action`
+Owner decision 81 (2026-11-01) adds B05's `trial` action kind (尝试读取) in model 14. Connection trials remain `action`
 records; connectors owns and validates their local `trial-report@1` body schema. No new record kind is introduced.
 
 ## Editing `contracts/codes.json`
