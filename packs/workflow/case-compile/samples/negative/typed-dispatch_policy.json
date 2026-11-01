@@ -821,7 +821,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.9.10"
+      "generator": "case-compile@3.9.11"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -855,7 +855,7 @@
           },
           {
             "name": "xl/worksheets/sheet1.xml",
-            "size": 3398,
+            "size": 3399,
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
           }
         ],
@@ -920,14 +920,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.9.10",
+                    "text": "case-compile@3.9.11",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "602a8447e1431959f4ea5d8bff8dfab2be37b0697d58e6940b3c325fcd58aa39",
+                    "text": "dc48be1648988acb13003f17d05e672f67ece8daae99fc67ddcd5e36124d4c3a",
                     "formula": false,
                     "style": null
                   }
