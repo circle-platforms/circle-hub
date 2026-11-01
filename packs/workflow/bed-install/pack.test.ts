@@ -23,7 +23,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['bed-install', '1.0.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['bed-install', '1.0.1', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/install.ts') && files.includes('policies/install.json') && files.includes('samples/negative/install-booking-missing.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'README.md' || f === 'pack-files.ts'));

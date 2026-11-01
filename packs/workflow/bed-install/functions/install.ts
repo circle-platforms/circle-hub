@@ -57,10 +57,10 @@ export function installOutcome(subjectInput: unknown, tableInput: unknown): Outc
   const { build, image } = read.request;
   const version = imageVersion(image, table.image_extensions);
   if (version === null) {
-    return refute('bed-install.request_invalid', `镜像名 ${image} 不是构建库的镜像文件名（字母、数字和 . _ -，以 ${table.image_extensions.map((extension) => `.${extension}`).join(' 或 ')} 结尾，构建名前有 -）；照构建站上 ${build} 的镜像链接文件名写，重新上传后开运行`);
+    return refute('bed-install.request_invalid', `镜像名 ${image} 不是构建库的镜像文件名（字母、数字和 . _ -，以 ${table.image_extensions.map((extension) => `.${extension}`).join(' 或 ')} 结尾，构建名前有 -）；照构建站列表页上 ${build} 条目里镜像链接的文件名写（source-read 的 build_page 从 buildsite:listing:index 读起，经版本线导航页到列有它的列表页），重新上传后开运行`);
   }
   if (version !== versionOfBuild(build)) {
-    return refute('bed-install.request_invalid', `镜像 ${image} 装的是 ${version}（按 InfoTest 升级用例的读法：第一个 - 之后到最后一个 . 之前，_ 读作 .），不是 ${build}；照构建站上 ${build} 的镜像链接文件名写，重新上传后开运行`);
+    return refute('bed-install.request_invalid', `镜像 ${image} 装的是 ${version}（按 InfoTest 升级用例的读法：第一个 - 之后到最后一个 . 之前，_ 读作 .），不是 ${build}；照构建站列表页上 ${build} 条目里镜像链接的文件名写（source-read 的 build_page 从 buildsite:listing:index 读起，经版本线导航页到列有它的列表页），重新上传后开运行`);
   }
   if (subject.claimed === null) return unknown('missing_input', '提交里没有 reason（要装的构建和依据）；按包的提交格式补上后原样再交');
   if (subject.claimed !== build) return refute('bed-install.claim_mismatch', `提交的 reason 写要装 ${subject.claimed}，上传的装构建请求是 ${build}；两处写同一个构建`);
