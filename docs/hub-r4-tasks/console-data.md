@@ -42,6 +42,14 @@
 - 早于索引的提交不回填被引用次数。
 - 失败登录的记忆只在 Hub 进程内，重启后同样的内容可以再试一次。
 
-## 验证
+## 验证（2026-11-01，本机 macOS，Node 24.21）
 
-（合并后补写。）
+三个分支合进 `console-data` 后（9425840）：
+
+- `npm run typecheck`、`npm run verify:contracts`：退出码 0。
+- `npm run test:unit`（共享通道并行度 4）：隔离通道 175 项，173 通过，2 项跳过（只在 Linux 上运行的检查）；共享通道 190/190；主通道 8133 项，8126 通过，0 失败，7 项跳过（同样是只在 Linux 上运行的检查与本机有 `sandbox-exec` 而不适用的一项）。
+- `npm run test:acceptance`：201/201，没有跳过。
+- `npm run verify:references`、`npm run test:references`：8/8。
+- `npm run test:docs`：278/278。
+
+之后合入“最近备份与数据库大小”（692e6e7）：`npm run typecheck` 通过；`node --test "hub/server/**/*.test.ts"` 499/499；`hub/records/store`、`count-indexed`、`hub/platform/backup` 31/31；`npm run test:docs` 278/278。全量以本 PR 的 CI 为准。
