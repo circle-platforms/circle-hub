@@ -287,6 +287,9 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
+their future management belongs on separate pages with separate navigation entries.
+
 Decision 83 groups knowledge intake by personal and team visibility, with the share/verification boundary between two
 columns. Runtime explanations are hover hints. This diagram grants no new read rights; source archiving stays planned.
 
