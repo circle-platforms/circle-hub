@@ -3,7 +3,8 @@
 // builds an invalid record fails loudly instead of storing it.
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
-import { IntegrityError, recordDigest, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
+import { IntegrityError, recordDigest, sha256Hex, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
+import { parseReference } from '../../refs/api.ts';
 import { ENGINE_COMPONENT } from './deps.ts';
 import { isObject } from './util.ts';
 
@@ -22,7 +23,77 @@ export const INDEX = {
   resultSubmission: 'runs.result.submission',
   actionRun: 'runs.action.run',
   actionSubmission: 'runs.action.submission',
+  /** The knowledge an accepted submission cites (citationIndex): a node by its root and path, an entry by its digest. */
+  citesNode: 'runs.submission.cites.node',
+  citesEntry: 'runs.submission.cites.entry',
+  /** On every accepted submission stored since citations are indexed: where the index starts. */
+  citesIndexed: 'runs.submission.cites.indexed',
 } as const;
+
+/** Cited nodes and entries indexed per submission (a record takes at most 200 index entries, two are the run's). */
+export const MAX_CITED_NODES = 100;
+export const MAX_CITED_ENTRIES = 95;
+
+/** The index value of a cited knowledge node: its root and canonical path, hashed (a path may be long). */
+export const citedNodeKey = (root: string, path: string): string => sha256Hex(`${root}${path}`);
+
+/**
+ * The knowledge an accepted submission cites: every string of its body that is a tree reference, as index entries for
+ * its node (root and path) and, when pinned, its entry; at most MAX_CITED_NODES and MAX_CITED_ENTRIES, and a marker.
+ */
+export function citationIndex(body: unknown): IndexEntry[] {
+  const nodes = new Set<string>();
+  const entries = new Set<string>();
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 64) return;
+    if (typeof value === 'string') {
+      if (!value.startsWith('tree:')) return;
+      try {
+        const reference = parseReference(value);
+        if (reference.scheme !== 'tree') return;
+        if (nodes.size < MAX_CITED_NODES) nodes.add(citedNodeKey(reference.root, reference.path));
+        if (reference.entry !== undefined && entries.size < MAX_CITED_ENTRIES) entries.add(reference.entry);
+      } catch {
+        // Not a well-formed reference: the checks of the submission say so; nothing is cited by it.
+      }
+      return;
+    }
+    if (Array.isArray(value)) for (const item of value) visit(item, depth + 1);
+    else if (isObject(value)) for (const item of Object.values(value)) visit(item, depth + 1);
+  };
+  visit(body, 0);
+  return [
+    { key: INDEX.citesIndexed, value: '1' },
+    ...[...nodes].map((value) => ({ key: INDEX.citesNode, value })),
+    ...[...entries].map((value) => ({ key: INDEX.citesEntry, value })),
+  ];
+}
+
+export interface CitationCount {
+  /** Accepted submissions created in the window that cite the knowledge. */
+  count: number;
+  /** At least `count`: the count stopped at its cap. */
+  capped: boolean;
+}
+
+/** Accepted submissions created at or after `since` that cite any of `nodes` or `entries`, counted up to `cap`. */
+export async function countCitations(
+  store: RecordStore,
+  query: { nodes: readonly { root: string; path: string }[]; entries: readonly string[]; since: string; cap?: number },
+): Promise<CitationCount | null> {
+  if (store.countIndexed === undefined) return null;
+  const index = [
+    ...query.nodes.map((node) => ({ key: INDEX.citesNode, value: citedNodeKey(node.root, node.path) })),
+    ...query.entries.map((entry) => ({ key: INDEX.citesEntry, value: entry })),
+  ];
+  return store.countIndexed({ index, kind: 'submission', since: query.since, ...(query.cap === undefined ? {} : { cap: query.cap }) });
+}
+
+/** When citations started to be indexed: the oldest accepted submission that carries the marker; null before any. */
+export async function citationsIndexedSince(store: RecordStore): Promise<string | null> {
+  const first = await store.find<unknown>({ key: INDEX.citesIndexed, value: '1', kind: 'submission', limit: 1 });
+  return first.items[0]?.created_at ?? null;
+}
 
 export const SCHEMAS = {
   run: 'run@1',
@@ -129,6 +200,8 @@ export async function putSubmission(
     index: [
       { key: INDEX.submissionRun, value: input.run },
       { key: INDEX.submissionDigest, value: `${input.run}:${input.digest}` },
+      // What an accepted submission cites, for the console's citation counts; a submission that does not parse cites nothing.
+      ...(input.parses ? citationIndex(input.body) : []),
     ],
   });
 }

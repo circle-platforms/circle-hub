@@ -22,6 +22,7 @@ import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, icon, link, liveModule, page, pre, section, table, type Html, type PageChrome } from './html.ts';
 import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell } from './tasks.ts';
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
+import { citationsLine, countText, nodeCitations } from './citations.ts';
 
 export interface PageContext {
   deps: ServerDeps;
@@ -583,22 +584,43 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
   if (!SHA256.test(root)) return neutralPage(ctx);
   const nodes = await ctx.deps.knowledge.getNodes({ root, paths: [path], depth: 1, cursor: cursor ?? null }, ctx.principal);
   if (nodes === null) return neutralPage(ctx);
-  const parts = nodes.nodes.map((node) =>
-    section(
+  // The node asked for gets its citations and its entries' provenance; the nodes below it are listed as before.
+  const main = nodes.nodes.find((node) => node.path === path);
+  const citations = main === undefined ? null : await nodeCitations(ctx, root, main);
+  const parts = nodes.nodes.map((node) => {
+    const cited = node === main ? citations : null;
+    const byEntry = new Map((cited?.entries ?? []).map((entry) => [entry.entry, entry]));
+    const grounds = (entry: string) => {
+      const found = byEntry.get(entry);
+      if (found === undefined || found.grounds === null) return '—';
+      if (found.grounds.length === 0) return '未记录出处';
+      return html`${found.grounds.map((ground) => html`<div>${code(ground)}</div>`)}${found.grounds_truncated ? html`<div class="sub">仅列出前 ${found.grounds.length} 条</div>` : ''}`;
+    };
+    return section(
       `${node.path}（${isNodeLevel(node.level) ? uiLabelOf('node_level', node.level) : node.level}）`,
       html`${definitions([
         ['名称', node.name],
         ['引用', code(node.reference)],
         ['内容哈希', code(node.digest)],
+        ...(cited === null ? [] : [['被引用', citationsLine(cited)] as [string, string]]),
       ])}
 ${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), code(child.path)]), '没有下级')}
-${table(
-  ['种类', '陈述', '适用', '引用', '数据'],
-  node.entries.map((entry) => [entry.kind, entry.statement, entry.applicability, code(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
-  '没有条目',
-)}`,
-    ),
-  );
+${cited === null
+  ? table(
+    ['种类', '陈述', '适用', '引用', '数据'],
+    node.entries.map((entry) => [entry.kind, entry.statement, entry.applicability, code(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
+    '没有条目',
+  )
+  : table(
+    ['种类', '陈述', '适用', '引用', '出处', `近 ${cited.days} 天被引用`, '数据'],
+    node.entries.map((entry) => {
+      const counted = byEntry.get(entry.entry);
+      return [entry.kind, entry.statement, entry.applicability, code(entry.reference), grounds(entry.entry), counted === undefined ? '—' : countText(cited, counted.count, counted.capped), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))];
+    }),
+    '没有条目',
+  )}${cited?.entries_truncated ? html`<p class="sub">条目较多，仅前 ${cited.entries.length} 条给出出处与被引用次数。</p>` : ''}`,
+    );
+  });
   const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
   const next = nodes.next === null ? html`` : html`<p>${link('/console/knowledge/tree', '下一页', { root, path, cursor: nodes.next })}</p>`;
   return {

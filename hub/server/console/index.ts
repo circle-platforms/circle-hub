@@ -26,6 +26,7 @@ import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
+import { searchPage } from './search.ts';
 import { resultPage, resultsPage } from './results.ts';
 import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings.ts';
 import { stepper } from './ui.ts';
@@ -490,6 +491,7 @@ const ROUTES: Record<string, Route> = {
   packs: (ctx, rest) => (rest.length === 0 ? packsPage(ctx) : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
+  search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   admin: (ctx, rest, options, session) => {

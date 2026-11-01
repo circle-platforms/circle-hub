@@ -138,6 +138,31 @@ export class PgRecordStore implements RecordStore {
     return result.rows.map(row => verifiedRecord<B>(row));
   }
 
+  async countIndexed(query: { index: readonly IndexEntry[]; kind?: import('./api.ts').RecordKind; since?: string; cap?: number }, tx?: Transaction): Promise<{ count: number; capped: boolean }> {
+    if (!Array.isArray(query.index) || query.index.length > 1000) throw new TypeError('countIndexed takes at most 1000 index entries');
+    for (const entry of query.index) if (typeof entry?.key !== 'string' || !INDEX_KEY.test(entry.key)) throw new TypeError('invalid index key');
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const cap = query.cap ?? 10_000;
+    if (!Number.isInteger(cap) || cap < 1 || cap > 100_000) throw new TypeError('cap is an integer from 1 to 100000');
+    const pairs = query.index.filter((entry) => isIndexValue(entry.value));
+    if (pairs.length === 0) return { count: 0, capped: false };
+    const since = query.since === undefined ? null : normalizeTime(query.since, 'since');
+    const result = await this.#db.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM (
+         SELECT DISTINCT r.digest
+           FROM unnest($1::text[], $2::text[]) AS wanted(k, v)
+           JOIN record_index i ON i.key = wanted.k AND i.value = wanted.v
+           JOIN records r ON r.digest = i.digest
+          WHERE ($3::text IS NULL OR r.kind = $3) AND ($4::timestamptz IS NULL OR r.created_at >= $4)
+          LIMIT $5
+       ) AS found`,
+      [pairs.map((entry) => entry.key), pairs.map((entry) => entry.value), query.kind ?? null, since, cap],
+      tx,
+    );
+    const count = Number(result.rows[0]?.n ?? 0);
+    return { count, capped: count >= cap };
+  }
+
   async findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: import('./api.ts').RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
     if (!INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
     if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
