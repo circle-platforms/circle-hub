@@ -2,7 +2,7 @@
 // 模块与接口”, owner's choice of 2026-11-01 to build the read part first). Same session and same visibility as the pages,
 // built from the same helpers, so a page and its interface never disagree: GET only; absent and forbidden alike answer 404
 // with SOURCE_UNAVAILABLE (D05 R[3]); every value is its code plus its interface term (display rule 20); token values and
-// credential contents never appear. There is no write interface: the console's operations stay forms (decisions 75, 77).
+// credential contents never appear. The write interfaces, which run the same commands as the forms, are console/api-write.ts.
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { TASK_RESULT, isEnvironment, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';

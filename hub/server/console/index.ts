@@ -17,6 +17,7 @@ import { issuerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
 import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage } from './authorize.ts';
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
+import { handleApiWrite } from './api-write.ts';
 import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
 import { ACTIONS, completeSetup, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage } from './operations.ts';
@@ -570,6 +571,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
  */
 async function api(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" };
+  if (request.method === 'POST' && WRITE_PATHS.has(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     request.resume();
     return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Circle 中执行' }, { ...headers, allow: 'GET, HEAD' });
@@ -591,6 +593,53 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
       options.log(`控制台接口出错（${url.pathname}）：${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
       result = { status: 500, body: { code: null, message: 'Hub 内部错误，原因已记入服务日志', fix: '稍后重试；仍出错时由管理员查看服务日志' } };
     }
+  }
+  sendJson(response, result.status, result.body, headers);
+}
+
+/** The write interfaces of console/api-write.ts. */
+const WRITE_PATHS = new Set(['members', 'systems', 'knowledge/imports', 'commands']);
+
+/**
+ * A write interface: an administrator's session, this console's Origin (required, as every browser sends it on a POST),
+ * the session's CSRF token in X-CSRF-Token and a JSON object body; then the operation of console/api-write.ts.
+ */
+async function apiWrite(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[], headers: Record<string, string>): Promise<void> {
+  if (typeof request.headers.origin !== 'string' || !sameOrigin(request, options.ownOrigins())) {
+    request.resume();
+    return sendJson(response, 403, { code: null, message: '写接口只接受本控制台页面发出的请求', fix: '从控制台的页面发起请求' }, headers);
+  }
+  const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
+  if (principal === null) {
+    request.resume();
+    if (session !== null) options.sessions.close(session.id);
+    return sendJson(response, 401, { code: null, message: '登录已过期或已退出', fix: '重新登录控制台后再操作' }, headers);
+  }
+  if (request.headers['x-csrf-token'] !== session!.csrf) {
+    request.resume();
+    return sendJson(response, 403, { code: null, message: 'CSRF 令牌不正确', fix: '在请求头 X-CSRF-Token 中带上 GET /console/api/me 返回的 csrf' }, headers);
+  }
+  if (mediaTypeOf(request) !== 'application/json') {
+    request.resume();
+    return sendJson(response, 400, { code: null, message: '请求正文须为 JSON', fix: 'Content-Type 写 application/json，正文为一个对象' }, headers);
+  }
+  const body = await readBody(request, ACTION_FORM_LIMIT);
+  if (!body.ok) return body.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '请求正文太大', fix: `正文不超过 ${ACTION_FORM_LIMIT} 字节` }, headers);
+  let fields: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(body.bytes.toString('utf8'));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('not an object');
+    fields = parsed as Record<string, unknown>;
+  } catch {
+    return sendJson(response, 400, { code: null, message: '请求正文不是 JSON 对象', fix: '正文写成一个 JSON 对象' }, headers);
+  }
+  const ctx = pageContext(options, request, url, principal, session!, secure);
+  let result: ApiResult;
+  try {
+    result = await handleApiWrite(ctx, rest, fields, { bridge: options.bridge, jobs: options.jobs, log: options.log, token: session!.token });
+  } catch (error) {
+    options.log(`控制台写接口出错（${url.pathname}）：${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+    result = { status: 500, body: { code: null, message: 'Hub 内部错误，原因已记入服务日志', fix: '稍后重试；仍出错时由管理员查看服务日志' } };
   }
   sendJson(response, result.status, result.body, headers);
 }
