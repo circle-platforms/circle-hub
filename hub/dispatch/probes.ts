@@ -16,7 +16,15 @@ function addresses(values: unknown[]): string[] {
     return family===6 ? new URL(`http://[${ip}]/`).hostname.slice(1,-1) : ip;
   }))].sort();
 }
-export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>):Promise<boolean> {
+/** The values a probe pattern extracts from an echo: every named group of every match, empty ones dropped. */
+export function probeValues(text: unknown, pattern: string): string[] {
+  return typeof text === 'string' ? [...text.matchAll(new RegExp(pattern, 'gm'))].flatMap(m => Object.values(m.groups ?? {})).filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
+}
+
+/** What a version probe saw on one seat, for the device observation record (decision 112). */
+export interface SeatEcho { device: string; label: string; values: string[]; reference: string }
+
+export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>,observed?:(echo:SeatEcho)=>Promise<void>):Promise<boolean> {
   const spec=d.probes!; const owner=await records.principals.get(binding.user);
   if(!owner || owner.disabled || !d.manifest_sha256)throw new PrecheckFactError('缺少有效探测主体或绑定清单','管理员恢复预订运行的有效主体，核对清单来源及摘要绑定后再采证');
   let source;
@@ -64,8 +72,8 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
     let matched=false,actual:string[]=[],expected:string[]=[],reason='回显里没有所需字段';
     try {
       const text=response && at(response.value,spec.output);
-      if(typeof text==='string') actual=[...text.matchAll(new RegExp(check.pattern,'gm'))].flatMap(m=>Object.values(m.groups??{})).filter((v):v is string=>typeof v==='string' && v.length>0);
-      if(key==='version') {expected=[...names].sort();matched=actual.length===1 && names.has(actual[0]);}
+      if(typeof text==='string') actual=probeValues(text,check.pattern);
+      if(key==='version') {expected=[...names].sort();matched=actual.length===1 && names.has(actual[0]);if(response&&observed)await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}
       else { const entries=at(at(manifest,seat.manifest.device),seat.manifest.addresses); if(!Array.isArray(entries) || !entries.length)throw new Error('清单里没有座位接口地址'); expected=addresses(entries.map(e=>at(e,seat.manifest.address))); actual=addresses(actual); matched=JSON.stringify(actual)===JSON.stringify(expected); }
       if(actual.length)reason='回显值与锁定构建或绑定清单不符';
     }catch{reason='清单或回显中缺少有效接口地址；请核对提取规则和清单';}

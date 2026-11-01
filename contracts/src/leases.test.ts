@@ -46,7 +46,8 @@ test('the three lease protocol codes are registered with Chinese when and fix te
 });
 
 test('CONTEXT_KEY gains leases and RunContext carries the frozen lease view (no tokens, only mine)', () => {
-  assert.deepEqual(CONTEXT_KEY, ['builds', 'leases']);
+  // observations: what the devices behind leases last showed (decision 112).
+  assert.deepEqual(CONTEXT_KEY, ['builds', 'leases', 'observations']);
   const parsed = RunContext.safeParse({
     product: null,
     names: [],

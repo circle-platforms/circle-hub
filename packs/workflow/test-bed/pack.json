@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "kind": "workflow",
   "title": "自动化测试环境",
   "description": "读管理员发布的自动化测试环境清单（命名文档），按需求搜索自动化测试环境（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订自动化测试环境（租约键 bed/<自动化测试环境>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "dbcc9c6aa40c69fde5ca777e83c6e39d6d115ddea9e0e160b6f54e10f8d7550b",
-      "size": 2593
+      "sha256": "64f809bf999ba317e7b115414b6a0e89b9e384b93fc3c14bf520cfe8a570cba9",
+      "size": 3066
     },
     {
       "path": "checks.json",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "e2324f83c4fc655c18306bac9a25968670dc294c6a0897dcb788672acc5a1515",
-      "size": 14678
+      "sha256": "543e551c0e09f85b6af778e4b6ac27cf1c96c1984f301c8f64101f6ec4ed5c26",
+      "size": 15037
     },
     {
       "path": "functions/common.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "063a60ed1bd85421c4c4134920e9789c706785dac7199c8cec9c788389d1c46a",
-      "size": 20112
+      "sha256": "cab008b407b4fdc5f6ed49fa2d23d5e091ed511eb3284b256ea0edde98ebbbb5",
+      "size": 22745
     },
     {
       "path": "functions/facts.ts",
@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/match.ts",
-      "sha256": "c1cbcf98b8ac516a01b83ff3221435e5bdef9fe496e83827879127b71a4f750f",
-      "size": 11246
+      "sha256": "aa3e871f08ab02945a6ea5f2946e380816f46976fa36b22b13dfa7c81cf162f4",
+      "size": 11387
     },
     {
       "path": "functions/ownership.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "62d9cb9a5aeac16d7e41fa4feddb5800f7b6c02cdde745b8ba4e57fc1dc4b103",
-      "size": 9541
+      "sha256": "473572a933b23723d26e0367dfa6471b8f2281ce037dd13e7755aa097fcdae61",
+      "size": 10990
     },
     {
       "path": "functions/subject.ts",
@@ -113,8 +113,8 @@
     },
     {
       "path": "samples/negative/facts-mismatch.json",
-      "sha256": "8fc64da502a225ffc3be38365c566fb0d340ace2b3de8af91c7ff5d62371d6c5",
-      "size": 3478
+      "sha256": "30d96b51e9d442d35c8eebbb4e7e75372677d00a753b85b9506381620232270e",
+      "size": 4413
     },
     {
       "path": "samples/negative/force_release-negative.json",
@@ -133,8 +133,8 @@
     },
     {
       "path": "samples/negative/search-build-mismatch.json",
-      "sha256": "cdf81d71a2b90358eddaa5e39dc20000b05373281cd399edf7ee2f616586ccaf",
-      "size": 2079
+      "sha256": "0ec40023c488678a1d334c89900efcc14691115dd5a86c453e0c3cc86a8034a0",
+      "size": 2642
     },
     {
       "path": "samples/negative/search-mismatch.json",
@@ -153,8 +153,8 @@
     },
     {
       "path": "samples/positive/facts-support.json",
-      "sha256": "65d2eb28a0443c68588319e1f7ca34cc75ee075837cb7852d7bdcd3596ee1422",
-      "size": 3750
+      "sha256": "be17939cb1b042d5edd4967ef870c6dfa2f3f1d9f60fc41b35292ce46f22d832",
+      "size": 4370
     },
     {
       "path": "samples/positive/force_release-positive.json",
@@ -173,8 +173,8 @@
     },
     {
       "path": "samples/positive/search-build-support.json",
-      "sha256": "22da067ecce60102a88b3d33fd72e8730f0aaa064270ddc25a68486220374890",
-      "size": 2185
+      "sha256": "d6b8dce185262f648b03847c6a722fb605be3b00f946ccfddc4b6b1751f93b80",
+      "size": 2764
     },
     {
       "path": "samples/positive/search-support.json",
@@ -203,8 +203,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "6c5e805a8402c6496f780876464d580048d791467e213c596bb954fa45489661",
-      "size": 3352
+      "sha256": "80d9b6cc17c8ea9addc1571c49293c6bf99a87386fee23be5c45f89313696165",
+      "size": 3372
     }
   ]
 }

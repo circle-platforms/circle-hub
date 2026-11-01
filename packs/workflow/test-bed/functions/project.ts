@@ -28,6 +28,9 @@ import {
   type FrozenLeases,
   type Normalized,
   type PlanFailure,
+  devicePointer,
+  installsOf,
+  observationsOf,
 } from './conclude.ts';
 
 interface Slot {
@@ -43,6 +46,8 @@ interface Out {
   groups?: Array<Record<string, unknown>>;
   warnings: Array<{ code: string; message: string }>;
   lease_requests?: LeaseRequest[];
+  /** The booked devices the Hub looks at once the booking is granted (decision 112), by the inventory digest and pointer. */
+  observe?: Array<{ inventory: string; device: string; label: string }>;
 }
 
 interface Failure {
@@ -91,6 +96,10 @@ export default function project(input: unknown): Out | Failure {
   const now = typeof frozenLeases?.now === 'string' ? frozenLeases.now : new Date(0).toISOString();
   const leases = leaseRecord(frozenLeases);
   const action: Action = normalized.action;
+  // What the devices last showed is the installed build (decision 112); the manifest declares none any more.
+  const inventory = typeof slot.sha256 === 'string' ? slot.sha256 : null;
+  const observations = observationsOf(context.observations).filter((o) => o.inventory === inventory);
+  const installs = installsOf(slot.model, beds, inventory, observations);
 
   const surface = context.surface !== undefined ? { declaration: context.surface, probes: context.probes } : undefined;
   const groups = [
@@ -103,15 +112,20 @@ export default function project(input: unknown): Out | Failure {
       reason: normalized.reason,
       devices: normalized.devices,
       manifest: slot.model,
+      inventory,
+      observations,
       leases: { now, entries: frozenLeases?.entries ?? [], registrations: frozenLeases?.registrations ?? [] },
       ...(surface ? { surface: context.surface, probes: context.probes } : {}),
     },
   ];
   const warnings: Array<{ code: string; message: string }> = [];
+  if (beds.some((bed) => bed.devices.some((device) => device.installed !== undefined && device.installed !== null))) {
+    warnings.push({ code: 'test-bed.declared_install_ignored', message: '清单里写了在装构建，现在不再使用：以设备上实际看到的为准（搜索给出最近一次观察和它的时间，预订时 Hub 会在设备上看一次）' });
+  }
 
   if (action === 'search') {
-    const fields = searchFields(beds, normalized.need, leases, now, frozenLeases);
-    const gap = unmatchedBuild(beds, normalized.need, leases, now);
+    const fields = searchFields(beds, normalized.need, leases, now, installs, frozenLeases);
+    const gap = unmatchedBuild(beds, normalized.need, leases, now, installs);
     if (gap) warnings.push({ code: 'test-bed.no_matching_build', message: `${gap.missing}。下一步：${gap.fix}` });
     return {
       items: fields.map((f) => ({
@@ -126,12 +140,12 @@ export default function project(input: unknown): Out | Failure {
     };
   }
   if (action === 'facts') {
-    const fields = factsFields(beds, frozenLeases, surface);
+    const fields = factsFields(beds, installs, frozenLeases, surface);
     return {
       items: fields.map((f) => ({
         id: f.bed,
         label: f.bed,
-        summary: `监听 ${f.listeners.length}，盲地址 ${f.blind.length}，后端 ${f.backends.length}，网段 ${f.segments.length}${f.installed.length > 0 ? `，装机声明 ${f.installed.length} 项（声明，未核对）` : ''}；${f.occupancy.join('；')}`,
+        summary: `监听 ${f.listeners.length}，盲地址 ${f.blind.length}，后端 ${f.backends.length}，网段 ${f.segments.length}${f.installed.length > 0 ? `，最近观察到的构建 ${f.installed.length} 项（观察，各带时间）` : ''}；${f.occupancy.join('；')}`,
         location: locationOf(slot.model, f.bed),
         fields: { action, ...f },
       })),
@@ -166,7 +180,7 @@ export default function project(input: unknown): Out | Failure {
     };
   }
   // acquire
-  const planned = acquirePlan(beds, normalized.need, normalized.bed, normalized.addresses, leases, now);
+  const planned = acquirePlan(beds, normalized.need, normalized.bed, normalized.addresses, leases, now, installs);
   if (!planned.ok) {
     // A refusal about a named bed rests on that bed's fragment of the frozen inventory.
     const named = normalized.bed !== null && beds.some((bed) => bed.name === normalized.bed) && typeof slot.sha256 === 'string';
@@ -187,5 +201,10 @@ export default function project(input: unknown): Out | Failure {
     groups: [{ ...groups[0], lease_requests: [{ keys: plan.keys }] }],
     warnings,
     lease_requests: [{ keys: plan.keys }],
+    // The Hub looks at every booked device once the booking is granted; it probes those an executor has a version seat for.
+    observe: inventory === null ? [] : plan.devices.flatMap((name) => {
+      const pointer = devicePointer(slot.model, plan.bed, name);
+      return pointer === null ? [] : [{ inventory, device: pointer, label: `${plan.bed}/${name}` }];
+    }),
   };
 }

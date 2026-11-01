@@ -462,6 +462,37 @@
               }
             ]
           }
+        },
+        "observe": {
+          "description": "devices whose installed build the Hub looks at once the run's acquire is granted, by the digest of the inventory and the device's JSON Pointer in it (an executor seat bound to the same inventory and pointer is probed), with a label for display; only for a workflow that asks for the observations context",
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "inventory": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "device": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "inventory",
+              "device",
+              "label"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

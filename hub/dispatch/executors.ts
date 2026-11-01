@@ -129,6 +129,8 @@ export class ExecutorRegistry {
     async get(id: string, snapshot?: VariableSnapshot): Promise<RegisteredExecutor | null> { const current = await this.readSource(id); if (!current)
         return null; const resolved = await resolveExecutor(this.records, current.source, snapshot); return { ...current, ...resolved, resolved_digest: sha256Hex(canonicalBytes(resolved.definition)) }; }
     async sources(by: Principal) {await this.admin(by);return this.internalSources();}
+    /** Every enabled executor that declares version probes and an inventory, read without borrowing a caller's privileges: for the Hub's own device observations (decision 112). */
+    async probed(): Promise<RegisteredExecutor[]> { const sources = await this.internalSources(); const entries = await Promise.all(sources.map(e => this.get(e.id))); return entries.filter((e): e is RegisteredExecutor => e !== null && e.definition.enabled && e.definition.probes !== undefined && typeof e.definition.manifest_sha256 === 'string'); }
     private async internalSources() { const ids = new Set<string>(); let cursor: string | null = null; do {
         const page = await this.records.authorizations.history({ permission: 'resource_config', limit: 500, cursor });
         for (const r of page.items)

@@ -18,7 +18,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild, IndexBindingDefault, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault, RunResultSource } from './pack.ts';
+import { ContextBuild, DeviceObservation, IndexBindingDefault, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault, RunResultSource } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -149,6 +149,10 @@ export const RunSummary = z.strictObject({
   target_basis: z
     .array(Claim)
     .describe('how product, version and build were fixed: one claim each; provenance declared when the caller gave the value, projected when the pack rule chose it, observed when a target echoed it; grounds cite what the choice read'),
+  device_observations: z
+    .array(Claim)
+    .optional()
+    .describe('what each device behind the leases this run acquired showed when the booking was granted: one observed claim per probed device, the build its version probe echoed, the probe output as ground; absent when the workflow did not ask for observations'),
   unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),
   root: Sha256.optional().describe('knowledge root locked for this run'),
   sources: z.array(SourceBinding).describe('every source bound to the run besides the knowledge root: inputs and the expected sources the pack bound'),
@@ -218,6 +222,7 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
     .optional()
     .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
   lease_registrations: z.array(LeaseRegistrationRow).optional(),
+  observation_context: z.array(DeviceObservation).optional().describe('the latest device observations frozen at start_run for the projection and checks (workflow context observations)'),
   lease_context: z
     .array(PersistedLeaseContextRow)
     .optional()

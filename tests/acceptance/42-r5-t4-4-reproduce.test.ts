@@ -1,10 +1,16 @@
 // T4-4: a synthetic problem ticket, source-read, a test-bed search, then an observation.
 // The phenomenon quote is verbatim from the ticket. The echo quote is verbatim from the uploaded capture.
-// The recorded version comes from the booked bed's installed build. A model-supplied version is refused.
+// The recorded version comes from what the booked device showed when the booking was granted (decision 112): the
+// manifest declares another build, which is ignored. A model-supplied version is refused.
 // ORBIT/COMET names and 192.0.2.0/24 only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { KnowledgeContributionView } from '../../contracts/src/contributions.ts';
+import { ExecutorDefinition } from '../../hub/dispatch/api.ts';
+import { addSyntheticExecutor } from '../../hub/dispatch/testing/credentials.ts';
+import { definition } from '../../hub/dispatch/testing/definition.ts';
+import { probes } from '../../hub/dispatch/testing/probes.ts';
+import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { parseReference } from '../../hub/refs/api.ts';
 import { INDEX } from '../../hub/runs/engine/store.ts';
 import { startPostgres } from '../../hub/testing/postgres.ts';
@@ -14,7 +20,7 @@ import type { McpClient } from './support/mcp.ts';
 const PHENOMENON = 'ORBIT 合成监听没有应答';
 const ECHO = 'ORBIT 合成回显：没有应答';
 // The exit of an unmatched build: who takes each step and by which existing means; test-bed has no upgrade action (D05 R[8]).
-const EXIT = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作';
+const EXIT = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作';
 
 interface Claim { statement: { text: string } }
 interface ResultBody { partitions?: Record<string, Array<{ requirements?: Array<{ claims?: Claim[] }> }>>; cross_item?: Claim[] }
@@ -114,7 +120,8 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
       {
         name: 'orbit-bed',
         devices: [
-          { name: 'orbit0', type: 'load-balancer', ipv4: ['192.0.2.10/26'], ipv6: [], installed: { build: ticketBuild } },
+          // A declaration the device contradicts: the device shows the ticket's build, and the declaration is ignored.
+          { name: 'orbit0', type: 'load-balancer', ipv4: ['192.0.2.10/26'], ipv6: [], installed: { build: otherBuild } },
           { name: 'comet0', type: 'client', ipv4: ['192.0.2.20/26'], ipv6: [] },
         ],
         services: [],
@@ -132,33 +139,55 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   const inputs = { inventory: { external: 'doc:doc:orbit-bed' } };
   const need = { devices: [{ type: 'load-balancer', count: 1 }], build: ticketBuild };
 
-  const matched = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need } });
-  assert.equal(matched.isError, false, matched.text.slice(0, 800));
-  const matchedRun = matched.out.run?.run;
-  assert.ok(matchedRun);
-  const matchedClaims = (await claimsOf(bed, matchedRun)).map((claim) => claim.statement.text);
-  assert.ok(matchedClaims.some((text) => text.includes('orbit-bed') && text.includes(`构建一致（${ticketBuild}，声明，未核对）`)), JSON.stringify(matchedClaims).slice(0, 500));
-  assert.ok(!matchedClaims.some((text) => text.includes('没有任何自动化测试环境声明在装')));
+  // An executor bound to this inventory has a version seat at orbit-bed/orbit0; its synthetic gateway echoes the ticket's
+  // build. comet-bed/comet0 has no seat, so nobody can look at it.
+  const gateway = await startEndpoint([...definition('x').allowed_tools, 'inspect_seat'], (name, args) => {
+    if (name === 'open_slot' || name === 'touch_slot') return { ok: true, ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: 30000 };
+    if (name === 'inspect_seat') return { output: args.command === 'inspect version' ? `version: ${ticketBuild}` : 'address: 192.0.2.10/26' };
+    return { ok: true };
+  });
+  t.after(() => gateway.close());
+  const sha = (await bed.hub.hub.docs.show('orbit-bed'))!.sha256;
+  const raw = definition(gateway.endpoint);
+  const seat = { ...probes.seats[0]!, seat: 'orbit0', manifest: { ...probes.seats[0]!.manifest, device: '/beds/0/devices/0' } };
+  const executor = ExecutorDefinition.parse({ ...raw, probes: { ...probes, seats: [seat] }, allowed_tools: [...raw.allowed_tools, 'inspect_seat'], manifest_sha256: sha });
+  await addSyntheticExecutor(bed.hub.records, bed.hub.hub.dispatch!.registry, bed.hub.admin.principal, executor, 'synthetic-orbit-key');
 
-  const missed = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need: { ...need, build: otherBuild } } });
-  assert.equal(missed.isError, false, missed.text.slice(0, 800));
-  const missedRun = missed.out.run?.run;
-  assert.ok(missedRun);
-  const missedClaims = (await claimsOf(bed, missedRun)).map((claim) => claim.statement.text);
-  assert.ok(missedClaims.some((text) => text.includes('orbit-bed') && text.includes(`要的是 ${otherBuild}`)));
-  assert.ok(missedClaims.some((text) => text.includes('comet-bed') && text.includes('没有记录（未知）')));
-  const unknown = missedClaims.find((text) => text.includes('没有任何自动化测试环境声明在装'));
-  assert.ok(unknown, JSON.stringify(missedClaims).slice(0, 800));
-  assert.ok(unknown.includes(`声明在装 ${otherBuild}（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）`), unknown);
-  assert.match(unknown, new RegExp(`orbit-bed/orbit0 装的是 ${ticketBuild}`));
-  assert.match(unknown, /缺在装构建记录：comet-bed\/comet0/);
-  assert.ok(unknown.includes(`。下一步：${EXIT}`), unknown);
-  assert.doesNotMatch(unknown, /升级到|先升级|把某台升级/);
+  // Before anyone looked: no observation, unknown, never the declared build.
+  const unseen = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need } });
+  assert.equal(unseen.isError, false, unseen.text.slice(0, 800));
+  const unseenClaims = (await claimsOf(bed, unseen.out.run!.run!)).map((claim) => claim.statement.text);
+  assert.ok(unseenClaims.some((text) => text.includes('orbit-bed') && text.includes('设备上装的构建没有观察记录（未知；预订时 Hub 会在设备上看一次）')), JSON.stringify(unseenClaims).slice(0, 800));
+  assert.ok(!unseenClaims.some((text) => text.includes(otherBuild)), 'the declared build is not used');
 
+  // The booking looks at the booked device and says what it showed and when.
   const booked = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'acquire', bed: 'orbit-bed', need } });
   assert.equal(booked.isError, false, booked.text.slice(0, 800));
   const booking = booked.out.run?.run;
   assert.ok(booking);
+  assert.match(booked.text, /预订时在设备上看到的构建：/);
+  assert.match(booked.text, new RegExp(`orbit-bed/orbit0 装的是 ${ticketBuild}（设备回显，观察于 \\d{4}-`));
+  assert.ok(gateway.calls.some((call) => call.params.name === 'inspect_seat' && (call.params.arguments as Record<string, unknown>).command === 'inspect version'));
+  assert.ok(!gateway.calls.some((call) => call.params.name === 'send_blob'), 'nothing is dispatched');
+
+  const matched = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need } });
+  assert.equal(matched.isError, false, matched.text.slice(0, 800));
+  const matchedClaims = (await claimsOf(bed, matched.out.run!.run!)).map((claim) => claim.statement.text);
+  assert.ok(matchedClaims.some((text) => text.includes('orbit-bed') && text.includes(`构建一致（${ticketBuild}，观察于 `)), JSON.stringify(matchedClaims).slice(0, 500));
+  assert.ok(!matchedClaims.some((text) => text.includes('没有任何自动化测试环境最近一次观察到')));
+
+  const missed = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need: { ...need, build: otherBuild } } });
+  assert.equal(missed.isError, false, missed.text.slice(0, 800));
+  const missedClaims = (await claimsOf(bed, missed.out.run!.run!)).map((claim) => claim.statement.text);
+  assert.ok(missedClaims.some((text) => text.includes('orbit-bed') && text.includes(`构建不一致（装的是 ${ticketBuild}，要的是 ${otherBuild}，观察于 `)), JSON.stringify(missedClaims).slice(0, 800));
+  assert.ok(missedClaims.some((text) => text.includes('comet-bed') && text.includes('没有观察记录（未知')));
+  const unknown = missedClaims.find((text) => text.includes('没有任何自动化测试环境最近一次观察到装的是'));
+  assert.ok(unknown, JSON.stringify(missedClaims).slice(0, 800));
+  assert.ok(unknown.includes(`最近一次观察到装的是 ${otherBuild}（构建名或它的基础构建逐字相等才算；观察只对它被观察的时刻成立）`), unknown);
+  assert.match(unknown, new RegExp(`最近一次观察到的是别的构建：orbit-bed/orbit0 装的是 ${ticketBuild}（观察于 `));
+  assert.match(unknown, /没有观察记录：comet-bed\/comet0/);
+  assert.ok(unknown.includes(`。下一步：${EXIT}`), unknown);
+  assert.doesNotMatch(unknown, /升级到|先升级|把某台升级/);
   const bookingBody = (await bed.hub.records.store.find({ key: INDEX.runId, value: booking, kind: 'run' })).items[0]!.body as { leases?: Array<{ lease: string; keys: string[] }> };
   const lease = bookingBody.leases?.find((row) => row.keys.some((key) => key === 'bed/orbit-bed/orbit0'));
   assert.ok(lease);

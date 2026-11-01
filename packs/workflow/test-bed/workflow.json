@@ -98,7 +98,8 @@
     "catalogs": []
   },
   "context": [
-    "leases"
+    "leases",
+    "observations"
   ],
   "leases": {
     "prefix": "bed/"

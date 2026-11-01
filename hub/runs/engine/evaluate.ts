@@ -226,6 +226,7 @@ export function runContextOf(run: RunRecord): RunContext {
     groups: run.groups ?? [],
     ...(run.builds !== undefined ? { builds: run.builds } : {}),
     ...(run.lease_context !== undefined ? { leases: contextLeasesOf(run) } : {}),
+    ...(run.observation_context !== undefined ? { observations: run.observation_context } : {}),
   };
 }
 
