@@ -56,7 +56,7 @@ export interface PageResult {
 export const NEUTRAL = '该内容不存在或无权查看';
 
 export function neutralPage(ctx: PageContext): PageResult {
-  return { status: 404, body: page(ctx.chrome(NEUTRAL), html`${callout('info', '对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。')}<p class="mt16">${link('/console/overview', '返回总览')}</p>`) };
+  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。'}), html`<p class="mt16">${link('/console/overview', '返回总览')}</p>`) };
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -370,7 +370,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     body: page(
       ctx.chrome('任务', { active: 'tasks', sub: html`${link('/console/runs', '全部任务')} · ${taskTitle(run, titles)}` }),
       html`${liveModule('task', ['task.updated', 'request.updated'], html`${head}<div class="mt16">${process}</div>`, { run: run.run })}
-${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="record"><h2>完整记录</h2><p class="sub">结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。</p>
+${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="record"><h2 title="结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。">完整记录</h2>
 ${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${summary}
 ${await runSharing(ctx,run)}
 ${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${code(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}

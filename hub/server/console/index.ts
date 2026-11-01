@@ -459,9 +459,9 @@ async function setupPage(options: ConsoleOptions, response: ServerResponse, stat
   }
   const nonce = options.sessions.issueNonce(secure);
   const body = page(
-    { ...anonymous('创建首位管理员'), wide: true },
+    { ...anonymous('创建首位管理员'), wide: true, hint: '使用初始化码创建首位管理员；管理员用户名必填，口令可留空。' },
     html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error mt12">${message}</p>`}
-<p class="sub mt12">输入安装时显示的初始化码，创建首位管理员。初始化码仅可使用一次，24 小时内有效；也可在 Hub 所在的主机上执行 ${code('circle-hub setup-code')} 重新生成。</p>
+<p class="sub mt12">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
 <form method="post" action="/console/setup">
 <div class="field"><label for="setup-code">初始化码</label><input id="setup-code" class="input" name="code" autocomplete="off" size="40" required value="${prefill}"></div>
 <div class="field"><label for="admin-name">管理员用户名</label><input id="admin-name" class="input" name="name" autocomplete="off" size="24" required></div>

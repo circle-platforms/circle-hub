@@ -289,7 +289,7 @@ function onceNotice(argv: readonly string[]): string | null {
 }
 
 function runLines(run: CommandRun, notice: string | null): Html {
-  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${run.code === 0 ? '已完成' : run.code === 2 ? '参数不正确，未执行' : '未完成'}（退出码 ${run.code}）</p>
+  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${labelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
 ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
@@ -297,7 +297,7 @@ ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
 function actionChrome(ctx: PageContext, action: Action) {
-  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/member') ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', sub: '与命令行执行相同的命令，写入相同的记录' });
+  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/member') ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', hint: '与命令行执行相同的命令，写入相同的记录' });
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
@@ -325,7 +325,7 @@ export function formErrorPage(ctx: PageContext, action: Action, message: string)
   return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
 }
 
-const jobState = (job: Job): Html => job.result === null ? chip('进行中', 'judgment') : job.result.code === 0 ? chip('已完成', 'pass') : chip(`未完成，退出码 ${job.result.code}`, 'fail');
+const jobState = (job: Job): Html => chip(labelOf('action_result', job.result === null ? 'unknown' : job.result.code === 0 ? 'completed' : 'error'), job.result === null ? 'unknown' : job.result.code === 0 ? 'pass' : 'fail');
 
 export function jobsSection(jobs: readonly Job[]): Html {
   return section('后台任务', table(['开始', '任务', '发起人', '状态'], jobs.map((job) => [
@@ -337,10 +337,10 @@ export function jobsSection(jobs: readonly Job[]): Html {
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
-  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务` });
-  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务（服务重启后，之前的任务不再列出；它们写下的记录照常保留）</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
+  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
+  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
-    ? html`<p class="notice">进行中，刷新本页查看进展</p>`
+    ? html`<p class="notice">尚未收到命令执行结果</p>`
     : runLines(job.result, null);
   return {
     status: 200,

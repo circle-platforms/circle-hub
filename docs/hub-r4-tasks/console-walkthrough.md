@@ -73,6 +73,10 @@
 
 ## 做了的
 
+- 第 5、7、12 项收尾核对：请求期限统一使用 Hub 的时钟；相同知识内容的不同版本仍分别可选；登录与账户创建使用相同的 Unicode 用户名长度口径，口令保留输入时的空格。各修正已合入对应项的提交，仍为每项一次提交。
+
+- 悬停规则补齐：任务详情与执行过程、完整记录、管理操作结果及字段、后台任务、初始化与标准授权页的阅读说明改为标题或标签悬停；知识条目、构建、版本页检查后保留实际范围、数量、时间与面包屑。命令、一次性口令/令牌、授权后果及证据缺失照常显示。后台任务按生成合约显示动作结果，未收到结果时为未知。
+
 - 第 12 项：安装交互要求管理员用户名，可选口令经标准输入交给初始化命令，随机口令只显示一次且须首次修改。迁移 8 保存带盐 scrypt 摘要与首次修改标记，追加口令变更历史；控制台会话独立于 Circle 令牌并有期限。成员也用口令，添加成员时显示初始口令；团队页提供本人修改、管理员重置。强制修改覆盖页面、接口、流式更新和管理操作；失败限制同时覆盖未知账号。保留管理员备用令牌和管理员一次性链接，成员链接转到口令登录；旧成员未设口令的由管理员在团队页重置。MCP 标准授权、邀请码和令牌的账户绑定保留。
 
 - 知识库调研及整合方案已写入 [`personal-team-knowledge.md`](../design/personal-team-knowledge.md)：核对当前模型与知识库实现，覆盖采集、出处、搜索、计数、版本、共享、权限及维护，参考 Outline 与 Joplin 官方资料，提出个人本地与团队 Hub 共用格式、分开授权的方案。本次没有实现知识库通用化。
@@ -92,6 +96,16 @@
 
 ## 验证
 
+- 最终静态收尾：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件与模型一致）；`npm run test:docs` 283 项通过、0 跳过。只报告已运行的检查；筛选外、全量单元、验收、来源、备份恢复及 CI 均未记为通过。
+
+- 迁移补验：`node --test --test-concurrency=1 --test-name-pattern='migrations apply|runtime role|openRecords from' hub/records/store.test.ts hub/records/roles.test.ts hub/records/index.test.ts` 选中的 3 项通过、0 跳过，其他用例未选中；`node --test hub/records/password.test.ts` 2 项通过、0 跳过。覆盖旧版账户、旧 Circle 令牌、只应用迁移 8，以及运行角色的口令创建、修改和会话撤销；同步了原测试中固定到迁移 7 的断言。仍未跑备份恢复或全量回归。
+
+- 补充边界：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts` 10 项通过、0 跳过（先用同内容的两个版本复现选择丢失，再修正）；`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console-pagination.test.ts` 10 项通过、0 跳过，覆盖 Unicode 用户名、口令空格、Hub 时钟与请求期限。没有扩大为全量回归。
+
+- 最后页面复核：使用临时浏览器配置与模拟钥匙串，在 1440 像素桌面及 390 像素窄屏检查登录、团队、添加成员、知识库和空任务页；这些页面整页宽度未超出视口，宽表格在各自容器内滚动。总览 7 / 14 / 30 天各 3 条涉及窗口的悬停提示均与所选范围一致。临时浏览器配置已删除，临时 Hub 已正常停止；日志与截图留在仓库外。
+
+- 悬停规则：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-manage.test.ts hub/server/console.test.ts hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts hub/server/standard-authorization.test.ts hub/server/console-password.test.ts hub/server/console-systems.test.ts` 74 项通过、0 跳过；`npm run test:docs` 283 项通过、0 跳过。未跑全量回归。
+
 - 第 12 项：`npm run typecheck` 通过；以下口令、迁移、会话、授权、管理及安装相关文件定向检查 153 项通过、0 跳过：
 
   ```sh
@@ -100,7 +114,7 @@
 
   `node --test --test-concurrency=1 --test-name-pattern='init-admin|initial passwords' hub/server/assemble/cli-admin.test.ts` 选中的 16 项通过、0 跳过，其余用例未选中；补充安装参数后 `node --test hub/platform/install-script.test.ts` 8 项通过、0 跳过。`npm run test:docs` 283 项通过、0 跳过。只复用现有迁移保护并追加迁移，没有新增数据 SHA 扫描。未跑全量单元、验收、来源、备份恢复或 Linux 隔离套件；未验证实际安装、发布或现有部署。
 
-- 合成页面预览：用全新临时浏览器配置查看登录、团队、知识库与空任务页，并检查团队和知识库 390 像素窄屏；未使用个人浏览器配置。浏览器配置和临时 Hub 均已停止并清理；截图与日志不入 Git。发布工作流仍期待设置码，最小同步补丁已准备，依 `AGENTS.md` 等待所有者授权后才能修改。
+- 合成页面预览：用全新临时浏览器配置查看登录、团队、知识库与空任务页，并检查团队和知识库 390 像素窄屏；未使用个人浏览器配置。临时浏览器配置已删除，临时 Hub 已停止；截图与日志不入 Git。发布工作流仍期待设置码，最小同步补丁已准备，依 `AGENTS.md` 等待所有者授权后才能修改。
 
 - 知识库方案：`npm run typecheck`、`npm run test:docs` 通过（文档 283 项、0 跳过）；没有实现通用化代码，未运行知识库回归或对同类项目做部署验证。第 11 项结果页导航补正后，另跑 `node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-manage.test.ts` 19 项通过、0 跳过。
 
@@ -119,3 +133,8 @@
 - 第 5 项：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=2 hub/server/console-pagination.test.ts hub/server/console-places.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/vocab-axes.test.ts` 24 项通过、0 跳过；`node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts` 选中的词表扫描 1 项通过、0 跳过，其他测试未选中；`npm run test:docs` 281 项通过、0 跳过。未运行全量回归。
 
 - 第 4 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-pagination.test.ts hub/server/console-places.test.ts` 12 项通过、0 跳过；`npm run test:docs` 通过（281 项、0 跳过，附带静态文档检查通过）。没有运行全量回归和来源校验。
+
+## 等待所有者确认
+
+- 成员状态：已提出增加 R01 的 `account_status` 显示轴（`enabled` 为“已启用”、`disabled` 为“已停用”），并生成合约、同步版本断言。尚未获答复；团队页暂沿用原设置页的状态用语，不能记为该显示轴已完成。依据是本页“状态词只取自 contracts/generated”及 `contracts/README.md` 的模型变更须由模型所有者决定的规则。
+- 安装检查：`.github/workflows/release.yml` 仍按原来的无交互初始化和设置码页面做检查。已准备最小补丁，首次安装传入合成用户名并从标准输入传入口令，改为检查口令登录页。依 `AGENTS.md` 的发布工作流变更须经所有者决定的规则，尚未修改该工作流，也未运行或声称 CI 通过。

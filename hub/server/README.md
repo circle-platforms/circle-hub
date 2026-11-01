@@ -287,6 +287,11 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83's remaining-page pass moves reading guidance on task details, neutral pages, operation results, forms,
+background jobs and authorization to heading/label hover hints. Breadcrumbs, measured times, counts, commands, one-time
+values, permission consequences and missing-evidence facts remain visible. Background jobs display the generated action
+result: an outstanding result is unknown, rather than success or failure.
+
 Decision 83 makes username/password the ordinary sign-in for administrators and members. Only administrators create
 accounts; `user create` generates an initial password shown once and requires a first-login change. Team manages
 resets; members change their own password there. Passwords travel through forms or stdin, never command arguments or logs.

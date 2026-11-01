@@ -19,7 +19,7 @@ type Operation = (typeof OPERATIONS)[number];
 export const isOperation = (value: string): value is Operation => (OPERATIONS as readonly string[]).includes(value);
 
 const field = (label: string, control: Html, options: { hint?: string; full?: boolean } = {}): Html =>
-  html`<label${options.full ? html` class="full"` : ''}>${label}${control}${options.hint === undefined ? '' : html`<span class="hint">${options.hint}</span>`}</label>`;
+  html`<label${options.full ? html` class="full"` : ''}${options.hint === undefined ? '' : html` title="${options.hint}"`}>${label}${control}</label>`;
 
 function memberPage(ctx: PageContext): Html {
   const form = actionForm('member-add', ctx.csrf ?? '', html`<div class="fields">
@@ -31,7 +31,7 @@ ${field('令牌标签', html`<input name="label" autocomplete="off" maxlength="2
   return html`${steps(['填写成员', '生成初始口令', '成员授权', '等待连接中'], 0)}
 <section class="grid g-2-1 section">
 ${card({ title: '成员信息' }, html`${form}<p class="note">执行 ${code('circle-hub user create')}，再执行 ${code('circle-hub user invite')}（选访问令牌时为 ${code('circle-hub token issue')}）；初始口令、邀请码与令牌只在结果页显示一次；首次口令登录必须修改。</p>`)}
-${card({ title: '成员如何连接', meta: 'MCP 标准授权' }, html`<ol class="small"><li>把结果页给出的配置写入该成员的 Circle。</li><li>Circle 首次连接时在浏览器中打开授权页。</li><li>成员输入邀请码并确认授权，Circle 即完成连接。</li></ol><p class="sub">邀请码 24 小时内有效，仅可使用一次；过期后在团队页重新签发。</p>`)}
+${card({ title: '成员如何连接', meta: 'MCP 标准授权', hint:'把结果页的配置写入成员的 Circle；首次连接时在浏览器授权页输入邀请码并确认。邀请码过期后在团队页重新签发。' }, html`<p class="sub">邀请码 24 小时内有效，仅可使用一次。</p>`)}
 </section>`;
 }
 
@@ -58,7 +58,7 @@ ${canForget ? html`<div class="full"><button type="submit" class="btn" formactio
   return html`${steps(['选择系统包', '访问地址与凭据', '尝试连接', '完成'], trialStep)}
 <section class="grid g-2-1 section">
 ${card({ title: '业务系统', hint: '只读访问，不修改业务数据' }, html`${form}<p class="note">先执行 ${code('circle-hub resource add')}，再以 ${code('circle-hub secret set')} 写入凭据；凭据内容只写入密钥库，之后不再显示，建议通过 HTTPS 打开本页。尝试连接后，凭据内容需重新填写。</p>`)}
-${aside ?? card({ title: '尝试连接', meta: '可选' }, html`<p class="sub">接入前以只读方式尝试读取系统包声明的接口：登录（若系统包声明）至多一次，只尝试读取不需要参数的接口，显示认证结果、各接口结果与响应时间。每次尝试连接记一条尝试读取记录，不保存配置、凭据内容或来源原文；登录失败时加密保存防止重复登录的摘要。</p>`)}
+${aside ?? card({ title: '尝试连接', meta: '可选', hint: '接入前以只读方式尝试读取系统包声明的接口：登录（若系统包声明）至多一次，只尝试读取不需要参数的接口，显示认证结果、各接口结果与响应时间。每次尝试连接记一条尝试读取记录，不保存配置、凭据内容或来源原文；登录失败时加密保存防止重复登录的摘要。' }, html``)}
 </section>`;
 }
 
@@ -120,7 +120,7 @@ const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 
 export async function operationsPage(ctx: PageContext, operation: string | undefined, jobs: JobStore, staging: PackStaging): Promise<PageResult> {
   if (!ctx.admin) return neutralPage(ctx);
   if (operation === undefined) {
-    const cards = OPERATIONS.map((name) => card({ title: link(`/console/operations/${name}`, TITLES[name].title) }, html`<p class="sub">${TITLES[name].hint}</p>`));
+    const cards = OPERATIONS.map((name) => card({ title: link(`/console/operations/${name}`, TITLES[name].title), hint:TITLES[name].hint }, html``));
     return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '控制台只执行这四种管理操作；其余操作在相关页面生成命令，在管理员的 Circle 中执行' }), html`<section class="grid g2 section">${cards}</section>`) };
   }
   if (!isOperation(operation)) return neutralPage(ctx);
