@@ -70,7 +70,7 @@ for(const [label,make] of SHAPES)test(`XML sandbox bound: ${label}`,{timeout:120
  // same sandbox wrapper, wire hydration, and operation cache as production.
  const skill=JSON.parse(await readFile(join(packDir,'skill.json'),'utf8'));
  const digest='a'.repeat(64);
- const opened={info:{id:'xml-format',version:'1.0.2',digest,manifest:{}},declarations:{kind:'skill',skill},handle:{directory:packDir}};
+ const opened={info:{id:'xml-format',version:'1.0.3',digest,manifest:{}},declarations:{kind:'skill',skill},handle:{directory:packDir}};
  const registry={installedSkills:async()=>[opened],open:async()=>opened} as unknown as PackRegistry;
  let output=0;
  const attempts:number[]=[];

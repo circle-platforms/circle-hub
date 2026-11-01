@@ -40,7 +40,7 @@ import { canonicalize, sha256Hex, type Page, type Principal, type RecordsKit } f
 import type { ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import type { ProductionResult, StartRunDetail, StoredResult } from '../runs/api.ts';
 import { effectiveSubmission } from '../runs/engine/api.ts';
-import { pointerOfPath, unavailable } from './tools.ts';
+import { missingObject, pointerOfPath } from './tools.ts';
 import type { z } from 'zod';
 import type { ResolveReferenceOutput, StartRunOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
 
@@ -432,6 +432,14 @@ export class FakeKnowledge implements KnowledgePort {
         }
         return null;
       },
+      // Whether the fake holds the root or entry at all, whoever may read it (D05 R[3]).
+      async rootExists(root: string): Promise<boolean> {
+        return self.#trees.has(root);
+      },
+      async entryExists(entry: string): Promise<boolean> {
+        for (const [root, nodes] of self.#trees) for (const node of nodes) if (node.entries.some((e) => sha(`${root}${node.path}#${e.statement}`) === entry)) return true;
+        return false;
+      },
     };
   }
 
@@ -487,7 +495,6 @@ const FAKE_SLOT_SCHEMA = {
   required: ['findings'],
 } as const;
 
-const UNAVAILABLE: ProtocolError = unavailable();
 const RUN_ID = /^run_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
 /** Items a fake run projects when the test does not choose its own: invented cases. */
@@ -536,8 +543,9 @@ export class FakeRuns implements RunsService {
     if (scripted !== undefined) return scripted.value as StartOut;
     const pack = this.#workflows.find(input.pack);
     if (pack === undefined || pack.kind !== 'workflow' || !(await this.#workflows.usable(user)).includes(pack)) {
+      // Not found or no permission, as the engine answers (D05 R[3], decision 112).
       this.#note(context, pack === undefined ? `pack ${input.pack} does not exist` : `pack ${input.pack} is not assigned to ${user.id}`);
-      return { call_result: 'error', errors: [UNAVAILABLE] };
+      return { call_result: 'error', errors: [{ ...missingObject(pack !== undefined, `任务包 ${input.pack}`), path: '/pack' }] };
     }
     const summary = pack.summary!;
     const sources: RunSummary['sources'] = [];
@@ -547,14 +555,15 @@ export class FakeRuns implements RunsService {
           const digest = /^src:([0-9a-f]{64})/.exec(binding.reference)?.[1];
           if (digest === undefined || (await this.#records.artifacts.readable(user, digest)) === null) {
             this.#note(context, `input ${binding.reference} is absent or not readable`);
-            return { call_result: 'error', errors: [UNAVAILABLE] };
+            const exists = digest !== undefined && (await this.#records.artifacts.records(digest)).length > 0;
+            return { call_result: 'error', errors: [{ ...missingObject(exists, `原件 ${binding.reference}`), path: `/inputs/${slot}` }] };
           }
           sources.push({ reference: binding.reference, role: 'subject', slot });
         } else if ('external' in binding) {
           sources.push({ reference: `src:${sha(binding.external)}`, role: 'subject', slot, external: binding.external });
         } else {
           this.#note(context, `input run ${binding.run} is absent or not readable`);
-          return { call_result: 'error', errors: [UNAVAILABLE] };
+          return { call_result: 'error', errors: [{ ...missingObject(this.runs.has(binding.run), `运行 ${binding.run}`), path: `/inputs/${slot}` }] };
         }
       }
     }
@@ -684,7 +693,7 @@ export class FakeRuns implements RunsService {
     const stored = await this.#visible(user, runId);
     if (stored === null) {
       this.#note(context, `run ${runId} is absent or not visible to ${user.id}`);
-      return { call_result: 'error', acceptance: 'not_accepted', errors: [UNAVAILABLE] };
+      return { call_result: 'error', acceptance: 'not_accepted', errors: [{ ...missingObject(this.runs.has(runId), `运行 ${runId}`), path: '/run' }] };
     }
     let text: string;
     try {
@@ -797,7 +806,7 @@ export class FakeRuns implements RunsService {
       const stored = await this.#visible(user, input.run);
       if (stored === null) {
         this.#note(context, `run ${input.run} is absent or not visible to ${user.id}`);
-        return { call_result: 'error', errors: [UNAVAILABLE], references: [], diagnostics: [] };
+        return { call_result: 'error', errors: [{ ...missingObject(this.runs.has(input.run), `运行 ${input.run}`), path: '/run' }], references: [], diagnostics: [] };
       }
       const found = stored.record.items.filter((item) => item.label.includes(input.text));
       if (found.length === 0) return { call_result: 'ok', errors: [], resolution: 'unresolved', references: [], diagnostics: [`没有找到 ${input.text}`] };

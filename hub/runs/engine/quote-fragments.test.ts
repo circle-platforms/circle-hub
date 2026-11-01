@@ -334,7 +334,7 @@ test('a corrupted bound record preserves the integrity cause through Hub retry r
   });
   const {answer,run,submission} = await submitQuote(h, map, { text: '合成记录片段', reference: `rec:${action.digest}#/text` }, `rec:${action.digest}`, () => { tampered = true; });
   assert.equal(answer.call_result,'error');assert.equal(answer.acceptance,'not_accepted');assert.equal(answer.result,undefined);
-  assert.deepEqual(answer.errors.map(e=>e.code),['SOURCE_UNAVAILABLE']);
+  assert.deepEqual(answer.errors.map(e=>e.code),['SOURCE_READ_FAILED']);
   assert.ok(answer.errors.every(e=>e.rounds_left===undefined && e.requirement===undefined));
   assert.match(answer.errors[0].fix ?? '',/管理员.*恢复.*原样重交.*不计修复轮/);
   const actions=(await h.kit.store.find<ActionBody>({key:INDEX.actionRun,value:run.run,kind:'action'})).items.filter(r=>r.body.action==='validate');

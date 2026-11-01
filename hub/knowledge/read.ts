@@ -503,6 +503,9 @@ export class TreeReading {
       readEntry: (entry, reader) => this.#readEntry(entry, reader),
       // A path or entry that `read` does not find in a root the reader may read is a mistake in the reference.
       hasRoot: async (root, reader) => (await this.mayReadRoot({ id: reader.user }, root)) && (await this.#context.store.node(root)) !== null,
+      // Whether the Hub holds the root or entry at all, so refs tells absent from forbidden (D05 R[3], decision 112).
+      rootExists: async (root) => SHA256.test(root) && (await this.#context.store.node(root)) !== null,
+      entryExists: async (entry) => SHA256.test(entry) && (await this.#context.store.entry(entry)) !== null,
     };
   }
 

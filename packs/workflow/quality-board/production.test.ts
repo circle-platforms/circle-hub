@@ -191,7 +191,7 @@ describe('a production run of quality-board', { skip }, () => {
     const refused = await hub.service.startRun(hub.bob, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID }, placement: { external: PLACEMENT_ID } } }, call());
     assert.deepEqual(
       refused.errors.map((e) => e.code),
-      ['SOURCE_UNAVAILABLE'],
+      ['SOURCE_NOT_PERMITTED'],
     );
     const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: { external: FACETS_ID }, placement: { external: PLACEMENT_ID } } }, call());
     const run = detail.answer.run!;

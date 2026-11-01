@@ -245,7 +245,7 @@ describe('start-up order and failure modes', () => {
         assert.deepEqual(listed.structuredContent?.packs, [], 'the real registry: nothing published yet');
         const run = (await client.callTool({ name: 'start_run', arguments: { pack: 'demo-none', inputs: {} } })) as { isError?: boolean; structuredContent?: { errors?: { code: string }[] } };
         assert.equal(run.isError, true);
-        assert.equal(run.structuredContent?.errors?.[0]?.code, 'SOURCE_UNAVAILABLE');
+        assert.equal(run.structuredContent?.errors?.[0]?.code, 'SOURCE_ABSENT');
       } finally {
         await client.close();
       }
@@ -403,7 +403,7 @@ describe('call notes', () => {
       const RLO = String.fromCodePoint(0x202e);
       const pack = `x is unknown\n2026-10-22T09:00:00Z circle-hub 已停止（数据库保持运行）\r\n\u001b]0;pwned\u0007\u009b2J${RLO}`;
       const answer = await hub.runs.startRun({ id: admin.id, name: admin.name, role: admin.role }, { pack, inputs: {} }, { traceId: trace, sessionId: null, adminNote: () => {} });
-      assert.equal(answer.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+      assert.equal(answer.errors[0]?.code, 'SOURCE_ABSENT');
       for (const line of log) assert.ok(![...'\n\r\u001b\u0007\u009b', RLO].some((char) => line.includes(char)), JSON.stringify(line));
       const engine = log.filter((line) => line.startsWith('运行引擎'));
       assert.equal(engine.length, 1, 'one line, no forged second one');
@@ -466,7 +466,7 @@ describe('the wiring of the engine', () => {
     }
   });
 
-  test('the engine notes a neutral answer\'s reason on the call itself, once, through the assembled service', async () => {
+  test('the engine notes a refusal\'s reason on the call itself, once, through the assembled service', async () => {
     const kit = await openTestRecords({ postgres });
     try {
       const log: string[] = [];
@@ -474,7 +474,7 @@ describe('the wiring of the engine', () => {
       const admin = (await kit.principals.bootstrapAdmin('管理员')).user;
       const notes: string[] = [];
       const answer = await hub.runs.startRun({ id: admin.id, name: admin.name, role: admin.role }, { pack: 'demo-none', inputs: {} }, { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', sessionId: null, adminNote: (reason) => notes.push(reason) });
-      assert.equal(answer.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+      assert.equal(answer.errors[0]?.code, 'SOURCE_ABSENT');
       assert.equal(notes.filter((note) => note.startsWith('start_run: pack demo-none is unknown')).length, 1, `once: ${JSON.stringify(notes)}`);
       assert.ok(log.some((line) => line.includes('start_run: pack demo-none is unknown')), 'and the operator log has it');
     } finally {

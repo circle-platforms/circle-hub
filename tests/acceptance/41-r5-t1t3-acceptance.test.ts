@@ -432,7 +432,7 @@ describe('T1-1 知识问答只给根引用核对（A6）', () => {
     assert.equal(resTamperedQuote.isError, false);
     assert.equal(resTamperedQuote.out.resolution, 'unresolved');
 
-    // 4. Alien root fails resolution with SOURCE_UNAVAILABLE
+    // 4. A root the Hub does not hold fails resolution with SOURCE_ABSENT
     const alienRoot = '1'.repeat(64);
     const resAlien = await client.call('resolve_reference', {
       root: alienRoot,
@@ -440,7 +440,7 @@ describe('T1-1 知识问答只给根引用核对（A6）', () => {
       expect: 'command',
     });
     assert.equal(resAlien.isError, true);
-    assert.equal(resAlien.out.errors[0].code, 'SOURCE_UNAVAILABLE');
+    assert.equal(resAlien.out.errors[0].code, 'SOURCE_ABSENT');
 
     // 5. Schema error when neither root nor run is provided
     const neither = await client.call('resolve_reference', {

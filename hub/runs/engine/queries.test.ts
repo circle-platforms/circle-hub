@@ -115,11 +115,12 @@ test('resolve_reference previews quotations, commands and references against the
   assert.equal(await records(), before);
 });
 
-test('resolve_reference on a run the caller may not see gives the same empty shape', { skip }, async () => {
+test('resolve_reference on a run the caller may not see, or on no run at all, answers which with the same empty shape', { skip }, async () => {
   const forbidden = await h.service.resolveReference(h.bob, { run: run.run, text: '设置' }, h.call());
   const absent = await h.service.resolveReference(h.alice, { run: 'run_01m5h9zh07x7amhg4bwmye5yhw', text: '设置' }, h.call());
-  assert.deepEqual(forbidden, absent);
-  assert.deepEqual(forbidden, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/run' }], references: [], diagnostics: [] });
+  // D05 R[3], decision 112: absent and not permitted are told apart; nothing else of the run is shown.
+  assert.deepEqual(forbidden, { call_result: 'error', errors: [{ code: 'SOURCE_NOT_PERMITTED', message: `运行 ${run.run} 存在，你没有读取权限`, fix: '用你自己的运行，或请这个运行的运行者分享给你', path: '/run' }], references: [], diagnostics: [] });
+  assert.deepEqual(absent, { call_result: 'error', errors: [{ code: 'SOURCE_ABSENT', message: 'Hub 里没有运行 run_01m5h9zh07x7amhg4bwmye5yhw', fix: '核对运行号；运行号来自 start_run 的回答', path: '/run' }], references: [], diagnostics: [] });
   assert.ok(ResolveReferenceOutput.safeParse({ ...forbidden, trace: '0af7651916cd43dd8448eb211c80319c' }).success);
 });
 
@@ -197,10 +198,10 @@ test('resolve_reference in root mode resolves commands and quotations against ro
   assert.equal(both.call_result, 'error');
   assert.equal(both.errors[0].code, 'SUBMISSION_SCHEMA_VIOLATION');
 
-  // 7. Unavailable root
-  const forbiddenRoot = await h.service.resolveReference(h.alice, { root: '0'.repeat(64), text: 'zone set' }, h.call());
-  assert.equal(forbiddenRoot.call_result, 'error');
-  assert.equal(forbiddenRoot.errors[0].code, 'SOURCE_UNAVAILABLE');
+  // 7. A root the Hub does not hold
+  const absentRoot = await h.service.resolveReference(h.alice, { root: '0'.repeat(64), text: 'zone set' }, h.call());
+  assert.equal(absentRoot.call_result, 'error');
+  assert.equal(absentRoot.errors[0].code, 'SOURCE_ABSENT');
 });
 
 test('sharing grants read queries and preview but never submission or predecessor rights', { skip }, async t => {
@@ -225,10 +226,10 @@ test('sharing grants read queries and preview but never submission or predecesso
   const noTree = await h.service.resolveReference(h.bob,{run:run.run,text:'zone set 2 5',expect:'command'},h.call());
   assert.equal(noTree.call_result,'ok'); assert.equal(noTree.resolution,'unresolved'); assert.deepEqual(noTree.references,[]);
   const submission = await h.service.submitResult(h.bob,{...accepted,run:run.run},h.call());
-  assert.equal(submission.acceptance,'not_accepted'); assert.equal(submission.errors[0].code,'SOURCE_UNAVAILABLE');
+  assert.equal(submission.acceptance,'not_accepted'); assert.equal(submission.errors[0].code,'SOURCE_NOT_PERMITTED');
   h.workflows.assign(h.bob.id,'toy-review');
   const next = await h.service.startRun(h.bob,{pack:'toy-review',predecessor:run.run,inputs:{map:{reference:map}}},h.call());
-  assert.equal(next.call_result,'error'); assert.equal(next.errors[0].code,'SOURCE_UNAVAILABLE'); assert.equal(next.errors[0].path,'/predecessor');
+  assert.equal(next.call_result,'error'); assert.equal(next.errors[0].code,'SOURCE_NOT_PERMITTED'); assert.equal(next.errors[0].path,'/predecessor');
   await a.unshare(h.admin,run.run,{kind:'pack_users',pack:'toy-review'});
   assert.equal(await h.service.getRun(h.bob,run.run),null);
   assert.equal(await records.read(stored.digest,identityOf(h.bob)),null);

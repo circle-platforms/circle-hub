@@ -1,11 +1,11 @@
-// Scenario 6 (brief section 9): A user without the pack gets "对你不可用" and the same empty shape;
-// the real reason is only in the admin log.
+// Scenario 6 (brief section 9), as decision 112 changed it: a user without the pack is told the pack exists and is not
+// assigned to them (SOURCE_NOT_PERMITTED); a pack the Hub does not have is SOURCE_ABSENT. Neither answer shows anything of
+// the pack, and the account behind the refusal is only in the admin log.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
-import type { McpClient } from './support/mcp.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -22,7 +22,7 @@ after(async () => {
 });
 
 describe('scenario 6: user without pack', () => {
-  test('a user without the pack gets SOURCE_UNAVAILABLE ("对你不可用") with empty shape matching a non-existent pack', async () => {
+  test('a user without the pack gets SOURCE_NOT_PERMITTED, a non-existent pack SOURCE_ABSENT, both with the empty shape', async () => {
     // Create a user with NO packs assigned
     const outsider = await bed.user('外人', []);
     const client = await bed.connect(outsider, 'sess-s06-outsider');
@@ -36,8 +36,9 @@ describe('scenario 6: user without pack', () => {
     });
     assert.equal(unassignedAnswer.isError, true);
     assert.equal(unassignedAnswer.out.call_result, 'error');
-    assert.equal(unassignedAnswer.out.errors[0]?.code, 'SOURCE_UNAVAILABLE');
-    assert.ok(unassignedAnswer.text.includes('对你不可用'), 'response text contains 对你不可用');
+    assert.equal(unassignedAnswer.out.errors[0]?.code, 'SOURCE_NOT_PERMITTED');
+    assert.ok(unassignedAnswer.text.includes('任务包 case-review 存在，没有分配给你'), unassignedAnswer.text);
+    assert.ok(unassignedAnswer.text.includes('请管理员把它分配给你'), 'the fix names who can assign it');
     assert.equal(unassignedAnswer.out.run, undefined);
 
     // 2. Calling start_run for a completely non-existent pack
@@ -49,22 +50,20 @@ describe('scenario 6: user without pack', () => {
     });
     assert.equal(nonExistentAnswer.isError, true);
     assert.equal(nonExistentAnswer.out.call_result, 'error');
-    assert.equal(nonExistentAnswer.out.errors[0]?.code, 'SOURCE_UNAVAILABLE');
-    assert.ok(nonExistentAnswer.text.includes('对你不可用'));
+    assert.equal(nonExistentAnswer.out.errors[0]?.code, 'SOURCE_ABSENT');
+    assert.ok(nonExistentAnswer.text.includes('Hub 里没有任务包 totally-fictitious-pack-999'), nonExistentAnswer.text);
 
-    // Absent and forbidden give the same empty shape (apart from trace id)
-    assert.deepEqual(
-      { ...unassignedAnswer.out, trace: 'fixed' },
-      { ...nonExistentAnswer.out, trace: 'fixed' },
-      'absent and forbidden give the exact same empty shape',
-    );
+    // Apart from the error itself, both answers have the same empty shape: nothing of the pack is shown.
+    const shape = (out: Record<string, unknown>) => ({ ...out, trace: 'fixed', errors: undefined });
+    assert.deepEqual(shape(unassignedAnswer.out), shape(nonExistentAnswer.out), 'the same empty shape');
+    assert.ok(!unassignedAnswer.text.includes(outsider.user.id), 'the account id stays in the admin log');
 
     // 3. Admin log holds the real reason
     const logs = await bed.hub.records.callLog.query(bed.hub.admin.principal, { userId: outsider.user.id });
     const unassignedCall = logs.items.find((l) => l.session === 'sess-s06-outsider');
     assert.ok(unassignedCall, 'call log entry exists');
     assert.equal(unassignedCall.call_result, 'error');
-    assert.equal(unassignedCall.error_code, 'SOURCE_UNAVAILABLE');
+    assert.ok(['SOURCE_NOT_PERMITTED', 'SOURCE_ABSENT'].includes(String(unassignedCall.error_code)), String(unassignedCall.error_code));
     // Private administrator reasons capture the internal cause, outside the bounded summary.
     assert.ok(unassignedCall.admin_reasons?.some(reason=>reason.length>0), 'admin_reasons contains the real reason');
     assert.equal(unassignedCall.admin_note, `管理员理由 ${unassignedCall.admin_reasons?.length} 条；详见管理员调用日志详情`);
@@ -72,6 +71,6 @@ describe('scenario 6: user without pack', () => {
     // 4. Console log check
     const callsPage = await consoleClient.get('/console/admin/calls');
     assert.equal(callsPage.status, 200);
-    assert.ok(callsPage.body.includes('SOURCE_UNAVAILABLE') || callsPage.body.includes(outsider.user.id));
+    assert.ok(callsPage.body.includes('SOURCE_NOT_PERMITTED') || callsPage.body.includes(outsider.user.id));
   });
 });

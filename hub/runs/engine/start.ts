@@ -28,7 +28,7 @@ import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, ca
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import { Refusal, describe, protocolError, unavailable } from './errors.ts';
+import { Refusal, describe, missing, protocolError, unavailable } from './errors.ts';
 import { HubReadFailure } from './retry-read.ts';
 import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
 import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
@@ -94,7 +94,7 @@ export function requirementSummary(t: RequirementTemplate, ledger?: import('../.
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
 export class MissingRulingSummaryError extends RecordsError {
   constructor(record:RunRecord,requirement:string){
-    super(`旧运行的要求项 ${requirement} 缺少锁定任务包的判定声明`,{code:'SOURCE_UNAVAILABLE',fix:'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行',detail:{pack_digest:record.pack_digest,requirement}});
+    super(`旧运行的要求项 ${requirement} 缺少锁定任务包的判定声明`,{code:'SOURCE_READ_FAILED',fix:'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行',detail:{pack_digest:record.pack_digest,requirement}});
     this.name='MissingRulingSummaryError';
   }
 }
@@ -413,11 +413,26 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
       return fresh();
     });
   } catch (error) {
-    if(error instanceof MissingRulingSummaryError)return refused([protocolError('SOURCE_UNAVAILABLE',error.message,{path:'/pack',fix:error.fix!})]);
+    if(error instanceof MissingRulingSummaryError)return refused([protocolError('SOURCE_READ_FAILED',error.message,{path:'/pack',fix:error.fix!})]);
     if (!(error instanceof Refusal)) throw error;
     if (error.adminNote !== null) ctx.log({ traceId: call.traceId, run: null, what: 'start_run', detail: error.adminNote });
     return refused(error.errors);
   }
+}
+
+/**
+ * Why the caller cannot use this pack (D05 R[3], decision 112): no such pack or only withdrawn versions, a pack not assigned to
+ * the caller, or a pack that is not a workflow pack. A disabled account stays the neutral answer (the identity class).
+ */
+async function packMissing(ctx: EngineContext, user: Principal, pack: string, found: LoadedWorkflow | null): Promise<Refusal> {
+  const LIST = '用 list_task_packs 看你能用的任务包';
+  if (found !== null) return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${found.pack.kind === 'skill' ? '技能包' : '产品或系统包'}，不是任务包`, { path: '/pack', fix: LIST })]);
+  const absence = await ctx.deps.workflows.absence?.(user, pack) ?? null;
+  const note = absence === null ? `pack ${pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack` : `pack ${pack} is ${absence} for ${user.id}`;
+  if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${LIST}` })], note);
+  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已下架）`, { path: '/pack', fix: LIST })], note);
+  if (absence === 'unassigned') return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `任务包 ${pack} 存在，没有分配给你`, { path: '/pack', fix: `请管理员把它分配给你；${LIST}` })], note);
+  return unavailable('/pack', note);
 }
 
 async function packRefusal(ctx:EngineContext,workflow:LoadedWorkflow,at:Date,errors:ProtocolError[],adminNote:string|null=null):Promise<Refusal>{
@@ -438,7 +453,7 @@ async function authorizedStart(
   variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
   const workflow = await ctx.deps.workflows.forUser(user, input.pack);
-  if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
+  if (workflow === null || workflow.pack.kind !== 'workflow') throw await packMissing(ctx, user, input.pack, workflow);
   const declaration=PublishableRequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
   if(!declaration.success){
     const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest);
@@ -510,13 +525,13 @@ async function startFresh(
   let skills:import('../../../contracts/src/skills.ts').SkillLock[]=[];
   if(ctx.parsers.freeze){
     try{const frozen=await ctx.parsers.freeze(dependencies);skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
-    catch(error){throw new Refusal([protocolError('SOURCE_UNAVAILABLE',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
-  }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_UNAVAILABLE','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
+    catch(error){throw new Refusal([protocolError('SOURCE_READ_FAILED',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
+  }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_READ_FAILED','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
   const startedAt = at.toISOString();
   let predecessor: StoredRecord<RunRecord> | null = null;
   if (input.predecessor !== undefined) {
     predecessor = await runById(store, input.predecessor);
-    if (predecessor === null || !(workflow.workflow.predecessor_access==='view'?await canViewRun(user,predecessor.body,store):canSeeRun(user, predecessor.body))) throw unavailable('/predecessor', `predecessor ${input.predecessor} is unknown or not visible to ${user.id}`);
+    if (predecessor === null || !(workflow.workflow.predecessor_access==='view'?await canViewRun(user,predecessor.body,store):canSeeRun(user, predecessor.body))) throw missing(predecessor !== null, '/predecessor', `运行 ${input.predecessor}`, `predecessor ${input.predecessor} is ${predecessor === null ? 'unknown' : `not visible to ${user.id}`}`, predecessor === null ? '核对运行号；用你自己的运行或别人分享给你的运行作前序' : '用你自己的运行作前序，或请这个运行的运行者分享给你');
   }
   if (workflow.requirements.some(t => t.independent_of !== undefined&&!t.independence_by_account)) {
     if (sessionOf(call) === null) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核运行缺少本会话的 id，运行没有开始', {path:'',fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），原样再开始'})]);
@@ -769,7 +784,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
     // A source the checks needed could not be read: say which fact is missing and the next step, as submit_result does,
     // instead of letting the caller see an internal error.
     if (!(error instanceof HubReadFailure)) throw error;
-    throw new Refusal([protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })], `production evaluation of ${run.run} stopped by a source read failure (${error.reason}) on ${error.reference}`);
+    throw new Refusal([protocolError('SOURCE_READ_FAILED', error.message, { fix: error.fix })], `production evaluation of ${run.run} stopped by a source read failure (${error.reason}) on ${error.reference}`);
   }
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
   if (notes.length === 0) return {evaluation, startedAt};
@@ -791,8 +806,10 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
       const resolved = await resolver.resolve(reference);
       if (!resolved.ok) throw new Refusal([protocolError(resolved.code ?? 'REFERENCE_UNRESOLVED', `任务包的确定说明 ${at} 的根据解析不出：${resolved.message}`, {
         fix:resolved.code === 'SOURCE_UNAVAILABLE'
-          ? `请 ${user.name} 先重读该引用并核对权限、读取档位和解析器；恢复可读后重开运行，不能恢复时把追踪号交给管理员核查`
-          : '按本次运行绑定的源文件和锁定根修正投影函数的引用，再重开运行',
+          ? '请管理员按追踪号查看管理员记录、恢复读取后重开运行'
+          : resolved.code === 'SOURCE_NOT_PERMITTED'
+            ? `这个根据存在，${user.name} 没有读取权限：请它的主人或管理员分享后重开运行`
+            : '按本次运行绑定的源文件和锁定根修正投影函数的引用，再重开运行',
       })]);
       grounds.push(resolved.value.reference);
       roles.push(resolved.value.role);

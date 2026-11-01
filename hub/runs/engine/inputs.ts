@@ -15,7 +15,7 @@ import type { Principal, VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import { Refusal, protocolError, unavailableError } from './errors.ts';
+import { Refusal, missingError, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
 import { identityOf, recordReader, runOfRecord } from './readers.ts';
 import { essence, isObject } from './util.ts';
@@ -81,8 +81,18 @@ export async function bindInputs(
   const schemaError = (path: string, message: string, fix?: string): void => {
     errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', message, { path, ...(fix ? { fix } : {}) }));
   };
+  // The neutral answer is for the credential and login classes only (D05 R[3]): held bytes, a refused Hub account.
   const gone = (path: string, note: string): void => {
     errors.push(unavailableError(path));
+    notes.push(`${path}: ${note}`);
+  };
+  // Not found or no permission (decision 112): the caller is told which, the admin note keeps the detail.
+  const missingAt = (exists: boolean, path: string, what: string, note: string, fix?: string): void => {
+    errors.push(missingError(exists, path, what, fix));
+    notes.push(`${path}: ${note}`);
+  };
+  const readFailed = (path: string, message: string, fix: string, note: string): void => {
+    errors.push(protocolError('SOURCE_READ_FAILED', message, { path, fix }));
     notes.push(`${path}: ${note}`);
   };
   for (const name of Object.keys(inputs)) {
@@ -116,8 +126,13 @@ export async function bindInputs(
         return null;
       }
       const source = await artifacts.source(user, ref.sha256, { consumer: 'function' });
-      if (source === null || source.bytes === null) {
-        gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
+      if (source === null) {
+        const exists = (await artifacts.records(ref.sha256)).length > 0;
+        missingAt(exists, path, `原件 src:${ref.sha256}`, exists ? 'source not readable by the caller' : 'no such source', exists ? '请上传者或管理员把这份原件分享给你，或换一份你能读的原件' : '核对摘要；先用 upload_file 上传，再用它返回的引用');
+        return null;
+      }
+      if (source.bytes === null) {
+        gone(path, `bytes withheld (${source.readTier})`);
         return null;
       }
       if (!mediaAccepted(slot, source.mediaType)) {
@@ -138,7 +153,8 @@ export async function bindInputs(
     if (ref.scheme === 'rec') {
       const record = await recordReader(store, ctx.deps.knowledge.layers?.contributions).read(ref.record, identityOf(user));
       if (record === null) {
-        gone(path, 'record absent or not visible to the caller');
+        const exists = (await store.get(ref.record)) !== null;
+        missingAt(exists, path, `记录 rec:${ref.record}`, exists ? 'record not visible to the caller' : 'no such record', exists ? '请记录所在运行的运行者分享给你，或换一条你能读的记录' : '核对记录摘要');
         return null;
       }
       const bytes = recordBytes(record, ref.pointer);
@@ -184,7 +200,7 @@ export async function bindInputs(
       return null;
     }
     if (!(await ctx.deps.external.accepts(id,{principal:user,run:runId,purpose:`运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`)}))) {
-      gone(path, `no enabled resource reads ${externalType(id)}`);
+      readFailed(path, `Hub 没有能读 ${externalType(id)} 的已启用资源`, '请管理员配置能读这类外部对象的资源（circle-hub resource list）后，用同样参数重新开始', `no enabled resource reads ${externalType(id)}`);
       return null;
     }
     const readContext={ feeding_offset:feeding?.feeding_offset,principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
@@ -226,12 +242,16 @@ export async function bindInputs(
     }
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
     if (chosen === undefined) {
-      gone(path, 'the read gave no original or content artifact');
+      readFailed(path, `读取 ${id} 没有给出原件或内容件`, '由系统包负责人核对这类外部对象的读取声明和投影后重读', 'the read gave no original or content artifact');
       return null;
     }
     const source = await artifacts.source(user, chosen.artifact.body.sha256, { consumer: 'function',record:chosen.artifact.digest });
-    if (source === null || source.bytes === null) {
-      gone(path, source === null ? 'read artifact not readable by the caller' : `bytes withheld (${source.readTier})`);
+    if (source === null) {
+      missingAt(true, path, `${id} 的原件`, 'read artifact not readable by the caller', '请资源管理员把这份原件分享给你');
+      return null;
+    }
+    if (source.bytes === null) {
+      gone(path, `bytes withheld (${source.readTier})`);
       return null;
     }
     let meta: Record<string, unknown> | null = null;

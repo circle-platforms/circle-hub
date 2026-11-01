@@ -173,7 +173,7 @@ Scenarios 1–16 below were the initial set written with this brief; later scena
 3. A statement that a command does not exist while the catalog has it: that finding is a violation routed through the error table into repair, not a whole-submission rejection.
 4. A negative case with an out-of-range parameter: the catalog check refutes as expected, shown at advisory tier.
 5. A cross-item fact plus a judgment that rests on it: listed separately, not counted in partitions.
-6. A user without the pack gets "对你不可用" and the same empty shape; the real reason is only in the admin log.
+6. A user without the pack gets SOURCE_NOT_PERMITTED ("任务包 X 存在，没有分配给你") when starting it, an unknown pack SOURCE_ABSENT, and list_task_packs lists only the packs the user may use (decision 112 replaced the neutral answer; the credential and login classes keep it).
 7. Call log: one line per call with trace id and session id; argument digest and size only.
 8. A second, non-APV synthetic product pack reviews with the same workflow pack and the core code does not change.
 9. Connectors: a route outside the allow-list is refused; an expired token logs in once and a second failure stops; originals are stored by SHA-256.

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "workbook-format",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "kind": "skill",
   "title": "工作簿格式",
   "description": "按原件结构读取 XLSX 工作簿，不承担工作角色判断",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "c834495644e47d2da4a567dbc1f586021c139b8d90dcba447cf9ff723f6233af",
-      "size": 6074
+      "sha256": "d271d25ad4fc429b7f21999740f603e9dba58a7bf11482966f0701e2540f6392",
+      "size": 6512
     },
     {
       "path": "functions/parse.ts",

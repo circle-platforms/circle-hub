@@ -206,7 +206,8 @@ export class ContributionLayer {
       let shas: string[] = [];
       if (ref.scheme === 'src') {
         const actual=await this.#context.records.artifacts.readable(reader,ref.sha256);
-        if(actual===null)return fail('引用的原件当前不可读；恢复读取权限后重交','SOURCE_UNAVAILABLE');
+        // Not found or no permission (D05 R[3], decision 112).
+        if(actual===null){const exists=(await this.#context.records.artifacts.records(ref.sha256)).length>0;return fail(exists?`引用的原件 ${ref.sha256} 存在，你没有读取权限；请上传者或管理员分享后重交`:`Hub 里没有引用的原件 ${ref.sha256}；先用 upload_file 上传，再按它返回的引用重交`,exists?'SOURCE_NOT_PERMITTED':'SOURCE_ABSENT');}
         if(actual.body.provenance_type==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或教训，或改引锁定根里的原文。');
         await inspect(actual); // distinguish a session declaration from an outside-root Hub original
         shas = [ref.sha256];
@@ -236,7 +237,7 @@ export class ContributionLayer {
         const source = originals.get(sha);
         if (source === undefined) return refuse("core.contribution.source_outside_root", OUTSIDE);
         const record = await this.#context.records.store.get(source.artifact);
-        if (record?.kind !== 'source_artifact') return fail('来源记录不可读', 'SOURCE_UNAVAILABLE');
+        if (record?.kind !== 'source_artifact') return fail('原件的来源记录找不到；请管理员从备份恢复后重交', 'SOURCE_INTEGRITY_UNPROVEN');
         let promise = lineage.get(record.digest);
         if (promise === undefined) { promise = inspect(record as SourceArtifact); lineage.set(record.digest, promise); }
         await promise;
@@ -292,7 +293,12 @@ export class ContributionLayer {
       return fragment === null ? null : sha256Hex(fragment.text);
     })());
     const fragment = await fragments.get(input.path)!;
-    if (fragment === null) return fail('被归位节点此刻不可读，须恢复节点读取后重交', 'SOURCE_UNAVAILABLE');
+    if (fragment === null) {
+      const trees = this.#reading.treeReader({composition:composition.record});
+      if (await trees.hasRoot?.(input.root, { user: reader.id, role: reader.role })) return fail(`知识树根 ${input.root} 里没有路径 ${input.path}；按 get_nodes 给出的路径重交`, 'REFERENCE_UNRESOLVED');
+      const exists = await trees.rootExists?.(input.root);
+      return exists === undefined ? fail('被归位节点此刻读不到；请管理员按管理员记录恢复读取后重交', 'SOURCE_UNAVAILABLE') : fail(exists ? `知识树根 ${input.root} 存在，你没有读取权限；请管理员给你分配绑定这条产品线的任务包后重交` : `Hub 里没有知识树根 ${input.root}；按 get_nodes 给出的根重交`, exists ? 'SOURCE_NOT_PERMITTED' : 'SOURCE_ABSENT');
+    }
     return { layer: 'contribution', product: scope.product, root: input.root, path: input.path,
       cited_fragment: fragment, kind: input.kind, statement: input.statement, source,
       ...(applicabilityClaim===undefined?{}:{applicability_claim:applicabilityClaim}),

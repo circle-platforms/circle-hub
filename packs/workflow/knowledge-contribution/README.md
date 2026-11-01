@@ -3,6 +3,7 @@
 ## 1.3.14
 
 - 回注的版本绑定里，自动化测试环境的在装构建取自预订时在设备上看到的构建（决定 112）；清单里写的在装构建不再使用。说明和未声明时的下一步随之改写。
+- 非管理员绑定只有管理员可读的根原件时，回答改为 SOURCE_NOT_PERMITTED（决定 112：读不到时分清没有和没有权限）。
 
 ## 1.3.13
 
@@ -144,7 +145,7 @@ read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json�
 
 1.0.1 删除包内重复码表；回注准入码由 contracts/codes.json 的核心登记和生成物唯一提供，发出方是核心准入核对，不是包解释器。凭据拒绝使用 CREDENTIAL_IN_UPLOAD。每个异常在抛出时绑定生成码与登记修正动作，不依赖包名或错误文案分类。
 
-普通产品读者按 get_nodes 返回的 tree:<root><path>[@entry] 回注，默认示例不绑定 originals。根原件是管理员可读输入；非管理员请求它仍收到中性 SOURCE_UNAVAILABLE，操作指引由 SKILL 第 1、3 步给出，不通过错误细节泄露权限事实。
+普通产品读者按 get_nodes 返回的 tree:<root><path>[@entry] 回注，默认示例不绑定 originals。根原件是管理员可读输入；非管理员请求它收到 SOURCE_NOT_PERMITTED（原件存在，你没有读取权限），操作指引由 SKILL 第 1、3 步给出。
 
 ## 结构声明与适用条件主张
 

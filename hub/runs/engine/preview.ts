@@ -1,7 +1,7 @@
 // resolve_reference (T04, D06): a preview of how an exact value resolves against what is bound to a run: a reference given
 // as text, a command through the locked catalogs, a quotation verbatim in the bound sources the reader may read. It returns
 // the resolution state, the candidates citable as grounds with their text and the diagnostics; it is never evidence and
-// writes nothing. Absent and forbidden runs give the same SOURCE_UNAVAILABLE and the same empty shape.
+// writes nothing. An absent run or root is SOURCE_ABSENT, one the caller may not read SOURCE_NOT_PERMITTED (D05 R[3]).
 import type { z } from 'zod';
 import type { Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
@@ -10,7 +10,7 @@ import type { Principal } from '../../records/api.ts';
 import type { CallContext, Untraced } from '../../ports.ts';
 import { findQuote, normalizeReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import { unavailableError } from './errors.ts';
+import { missingError, protocolError, unavailableError } from './errors.ts';
 import { buildRootScope, buildScope, createResolver, resolveCommand, type RunScope } from './exact.ts';
 import { canViewRun } from './readers.ts';
 import { issuesOf } from './slots.ts';
@@ -44,16 +44,16 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     const stored = await runById(ctx.deps.records.store, input.run);
     if (stored === null || !await canViewRun(user, stored.body, ctx.deps.records.store)) {
       ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `run ${input.run} is unknown or not visible to ${user.id}` });
-      return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+      return { call_result: 'error', errors: [missingError(stored !== null, '/run', `运行 ${input.run}`, stored !== null ? '用你自己的运行，或请这个运行的运行者分享给你' : '核对运行号；运行号来自 start_run 的回答')], references: [], diagnostics: [] };
     }
     const workflow = await ctx.deps.workflows.byDigest(stored.body.pack_digest);
     if (workflow === null) {
       ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `pack version ${stored.body.pack} is no longer loadable` });
-      return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+      return { call_result: 'error', errors: [protocolError('SOURCE_READ_FAILED', `运行 ${input.run} 锁定的任务包版本 ${stored.body.pack} 读不出来`, { path: '/run', fix: '请管理员从备份恢复这个任务包版本后重读' })], references: [], diagnostics: [] };
     }
     if (ctx.parsers.forRun) {
       try { ctx = { ...ctx, parsers: await ctx.parsers.forRun(stored.body.run) }; }
-      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '缺少本运行锁定的解析技能包摘要', fix: '管理员恢复原技能包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明后重读' }], references: [], diagnostics: [] }; }
+      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_READ_FAILED', message: '缺少本运行锁定的解析技能包摘要', fix: '管理员恢复原技能包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明后重读' }], references: [], diagnostics: [] }; }
     }
     // What the model will be shown: text the model may read (consumer model).
     const artifacts = ctx.deps.records.artifacts;
@@ -80,7 +80,9 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     : (await ctx.deps.knowledge.rootInfo(input.root)).length > 0;
   if (!hasRoot) {
     ctx.log({ traceId: call.traceId, run: null, what: 'resolve_reference', detail: `root ${input.root} is absent or not readable by ${user.id}` });
-    return { call_result: 'error', errors: [unavailableError()], references: [], diagnostics: [] };
+    const exists = treeReader.rootExists !== undefined ? await treeReader.rootExists(input.root) : null;
+    // The same words as get_nodes for the same root (hub/server/tools.ts ROOT_ABSENT_FIX, ROOT_FORBIDDEN_FIX).
+    return { call_result: 'error', errors: [exists === null ? unavailableError() : missingError(exists, undefined, `知识树根 ${input.root}`, exists ? '请管理员给你分配一个绑定这条产品线的任务包；或改读你的运行锁定的根' : '核对知识根；知识根来自运行或 get_nodes')], references: [], diagnostics: [] };
   }
 
   if (input.text.trim().startsWith('rec:')) {
@@ -142,8 +144,8 @@ async function resolveAgainstScope(
       if (r.retryable) {
         return { call_result: 'error', errors: [{ code: r.code ?? 'SOURCE_UNAVAILABLE', message: r.message, fix: r.fix ?? '管理员恢复来源核对能力后重新解析', path: '/text' }], references: [], diagnostics: [] };
       }
-      if (isRootMode && r.code === 'SOURCE_UNAVAILABLE') {
-        return { call_result: 'error', errors: [unavailableError()], references: [], diagnostics: [] };
+      if (isRootMode && (r.code === 'SOURCE_UNAVAILABLE' || r.code === 'SOURCE_ABSENT' || r.code === 'SOURCE_NOT_PERMITTED')) {
+        return { call_result: 'error', errors: [r.code === 'SOURCE_UNAVAILABLE' ? unavailableError() : protocolError(r.code, r.message, r.fix ? { fix: r.fix } : {})], references: [], diagnostics: [] };
       }
       diagnostics.push(r.message);
       return answer('unresolved');

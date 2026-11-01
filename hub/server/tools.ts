@@ -116,9 +116,21 @@ export function errorAnswer(tool: ToolName, errors: ProtocolError[], extra: Answ
   return { call_result: 'error', errors, ...EMPTY[tool], ...extra };
 }
 
-/** The neutral answer for absent and forbidden alike (D05 R[3]); the real reason goes to the admin note only. */
+/** The neutral answer, for the credential and login classes only (D05 R[3]); the real reason goes to the admin note only. */
 export function unavailable(): ProtocolError {
   return { code: 'SOURCE_UNAVAILABLE', message: UNAVAILABLE_MESSAGE, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix };
+}
+
+/** The fixes for a knowledge root a caller cannot read, the same in get_nodes and resolve_reference. */
+export const ROOT_ABSENT_FIX = '核对知识根；知识根来自运行或 get_nodes';
+export const ROOT_FORBIDDEN_FIX = '请管理员给你分配一个绑定这条产品线的任务包；或改读你的运行锁定的根';
+
+/** Not found or no permission (D05 R[3], decision 112): `what` as the caller wrote it, e.g. "运行 run_…". */
+export function missingObject(exists: boolean, what: string, fix?: string): ProtocolError {
+  const gap = /[\x21-\x7e]$/.test(what) ? ' ' : '';
+  return exists
+    ? { code: 'SOURCE_NOT_PERMITTED', message: `${what}${gap}存在，你没有读取权限`, fix: fix ?? PROTOCOL_CODES.SOURCE_NOT_PERMITTED.fix }
+    : { code: 'SOURCE_ABSENT', message: `Hub 里没有${what}`, fix: fix ?? '核对写法；运行号来自 start_run，知识根来自运行或 get_nodes' };
 }
 
 /** RFC 6901 JSON Pointer of a zod issue path. */
@@ -462,11 +474,18 @@ const getNodes: Handler = async (deps, call, args) => {
     if (detail === null) note(`run ${run} is absent or not visible to ${call.principal.id}`);
     return detail;
   };
+  // A run the caller cannot read: absent, or present and not theirs nor shared with them (D05 R[3]).
+  const runMissing = async (run: string): Promise<ProtocolError> => {
+    const found = deps.records?.store ? await deps.records.store.find({ key: 'runs.id', value: run, kind: 'run', limit: 1 }).catch(() => null) : null;
+    if (found === null) return unavailable();
+    const exists = found.items.length > 0;
+    return missingObject(exists, `运行 ${run}`, exists ? '读你自己的运行，或请这个运行的运行者分享给你' : '核对运行号；运行号来自 start_run 的回答');
+  };
   if (input.reference !== undefined) {
     // A cursor goes with the reference it pages (TextContext.cursor); a subtree read never mixes in.
     const mixed = (['root', 'paths', 'depth'] as const).filter((key) => input[key] !== undefined);
     if (mixed.length > 0) return { answer: errorAnswer('get_nodes', [violation('get_nodes', `/${mixed[0]}`, '按引用读取时不再给 root、paths 或 depth', READ_FIX)]) };
-    if (input.run !== undefined && (await runDetail(input.run)) === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    if (input.run !== undefined && (await runDetail(input.run)) === null) return { answer: errorAnswer('get_nodes', [await runMissing(input.run)]) };
     return readReference(deps, call, input.reference, input.run, cursor);
   }
   let root = input.root;
@@ -474,7 +493,7 @@ const getNodes: Handler = async (deps, call, args) => {
   let feedingOffset:import('../../contracts/src/feeding.ts').FeedingOffset|undefined;
   if (input.run !== undefined) {
     const detail = await runDetail(input.run);
-    if (detail === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    if (detail === null) return { answer: errorAnswer('get_nodes', [await runMissing(input.run)]) };
     root ??= detail.run.root;feedingOffset=detail.run.feeding_offset;
     if(root===detail.run.root){composition=null;const ids=detail.run.target_basis.flatMap(claim=>{const data=claim.statement.data;return data&&data.root===root&&typeof data.composition==='string'?[data.composition]:[];});if(new Set(ids).size===1)composition=ids[0];}
     if (root === undefined) {
@@ -508,7 +527,10 @@ const getNodes: Handler = async (deps, call, args) => {
   }
   if (page === null) {
     note(`knowledge root ${root} (paths ${clipNote(JSON.stringify(input.paths ?? ['/']), 300)}) is absent or not readable by ${call.principal.id}`);
-    return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    // Without a tree reader that can tell, the answer stays neutral; a probe is never a reason for an internal error.
+    const probe = typeof deps.knowledge.treeReader === 'function' ? deps.knowledge.treeReader().rootExists : undefined;
+    const exists = probe ? await Promise.resolve(probe(root)).catch(() => null) : null;
+    return { answer: errorAnswer('get_nodes', [exists === null ? unavailable() : missingObject(exists, `知识树根 ${root}`, exists ? ROOT_FORBIDDEN_FIX : ROOT_ABSENT_FIX)]) };
   }
   return { answer: { call_result: 'ok', errors: [], root, nodes: page.nodes, coverage: page.coverage, next: page.next } };
 };

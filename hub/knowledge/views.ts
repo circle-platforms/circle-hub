@@ -10,9 +10,9 @@
 //     the same entries; impact stays the entries on changed paths
 // Products resolve by id or any name, builds of any name family through their aliases to the root they use. The answer is
 // canonical JSON with deterministic list order, sized exactly against the byte budget, checked against its schema and stored
-// as the original of the read (equal content, equal bytes); the revision is built from the root digests. A reader who may
-// not read the product, an unknown product or build and a malformed id give ok:false with the real reason for the admin log
-// (callers show the neutral SOURCE_UNAVAILABLE, D05 R[3]); a root without entries of the asked kind is a valid answer with a
+// as the original of the read (equal content, equal bytes); the revision is built from the root digests. A malformed id is a
+// caller mistake with the way to write it; an unknown product or build, or a build without a root, is SOURCE_ABSENT; a reader
+// who may not read the product gets SOURCE_NOT_PERMITTED (D05 R[3], decision 112); a root without entries of the asked kind is a valid answer with a
 // note, and so is a root whose listed sources were not all used: what they would give is unknown, never absent.
 import { DeclarationStatusSchema, ENTRY_KIND, EntryKindSchema, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
 import { parseExternal } from '../connectors/api.ts';
@@ -82,6 +82,13 @@ export type ViewRequest =
 
 /** A failure may name the required query parameters the id lacks (`missing`), for a caller that wants to say how to write it. */
 type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string; missing?: readonly string[] };
+/** How to write a view id, for a caller whose id is malformed. */
+const VIEW_WRITING = '照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；改好后重读';
+/** A build the Hub does not have, or one without a knowledge root yet, with who can change that. */
+interface ViewAbsence { absent: string; fix: string }
+const absentRead = (id: string, why: ViewAbsence): ExternalRead => ({ ok: false, id, reason: why.absent, inputError: { code: 'SOURCE_ABSENT', message: why.absent, fix: why.fix } });
+const productAbsent = (product: string) => ({ code: 'SOURCE_ABSENT' as const, message: `Hub 里没有产品 ${cutText(product, 80)}`, fix: '核对产品名（产品 id 或任一名字）后重读' });
+const productForbidden = (product: string) => ({ code: 'SOURCE_NOT_PERMITTED' as const, message: `产品 ${product} 的知识存在，你没有读取权限`, fix: '请管理员给你分配一个绑定这条产品线的任务包后重读' });
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {
@@ -1358,6 +1365,13 @@ export class KnowledgeViews {
     return view;
   }
 
+  /** Whether the reader is an enabled Hub account; a refusal to anyone else stays neutral (the identity class). */
+  async #activeReader(principal: { id: string } | null | undefined): Promise<boolean> {
+    if (typeof principal?.id !== 'string') return false;
+    const account = await this.#context.records.principals.get(principal.id);
+    return account !== null && !account.disabled;
+  }
+
   /** ExternalReaderPort.read for a knowledge view id: never throws, ok:false with the real reason for the admin log. */
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     const startedAt = this.#context.now().toISOString();
@@ -1374,7 +1388,8 @@ export class KnowledgeViews {
 
   async #readLinks(bare:string,request:Extract<ViewRequest,{type:'links'}>,context:ExternalReadContext,startedAt:string):Promise<ExternalRead>{
     const handle=await this.#packs.productById(request.product)??await this.#packs.productByName(request.product);
-    if(!handle||!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不存在或不可读'};
+    if(!handle)return {ok:false,id:bare,reason:'产品不存在',inputError:productAbsent(request.product)};
+    if(!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不可读',...(await this.#activeReader(context.principal)?{inputError:productForbidden(handle.product.id)}:{})};
     const scopeLocked=Boolean(context.run)||request.cursor!==null;
     let scopeRoot=await this.#scope(handle.product.id,context);
     let pageCursor=request.cursor, cursorComposition:string|undefined, savedScopeCut:number|undefined;
@@ -1481,28 +1496,30 @@ export class KnowledgeViews {
   async #read(id: string, context: ExternalReadContext, startedAt: string): Promise<ExternalRead> {
     const parsed = parseViewId(id);
     const bare = splitRevision(id).body;
-    if (!parsed.ok) return { ok: false, id: bare, reason: parsed.reason };
+    if (!parsed.ok) return { ok: false, id: bare, reason: parsed.reason, inputError: { message: parsed.reason, fix: VIEW_WRITING } };
     const request = parsed.value;
     if(request.type==='links')return this.#readLinks(bare,request,context,startedAt);
     const handle = (await this.#packs.productById(request.product)) ?? (await this.#packs.productByName(request.product));
-    if (handle === null) return { ok: false, id: bare, reason: `没有产品 ${cutText(request.product, 80)}` };
+    if (handle === null) return { ok: false, id: bare, reason: `没有产品 ${cutText(request.product, 80)}`, inputError: productAbsent(request.product) };
     const product = handle.product.id;
     const principal = context.principal;
-    if (!(await this.#reading.mayReadProducts(principal, [product]))) return { ok: false, id: bare, reason: `账号 ${principal?.id ?? '（无）'} 不能读产品 ${product} 的知识` };
+    // A disabled or unknown account is the identity class: the caller keeps the neutral answer (D05 R[3]).
+    if (!(await this.#reading.mayReadProducts(principal, [product]))) return { ok: false, id: bare, reason: `账号 ${principal?.id ?? '（无）'} 不能读产品 ${product} 的知识`, ...(await this.#activeReader(principal) ? { inputError: productForbidden(product) } : {}) };
     const pins=new Map<string,CompositionView>();
     let reserve=VIEW_MARGIN;
     const additional=context.run?undefined:await this.#context.additionalScopeRoots?.(product);
     const scopeRoot = await this.#scope(product,context,additional);
-    const resolve = async (name: string): Promise<At | string> => {
+    // A build the Hub does not have, or one without a root yet, is absent (D05 R[3]); the fix says who can change that.
+    const resolve = async (name: string): Promise<At | ViewAbsence> => {
       const named = await this.#builds.named(product, name);
       if (named === null) {
         const candidates = await this.#builds.candidates(product,name);
         if(candidates.length>1)throw new BuildNameRefusal(`构建名字的大小写有歧义，候选：${candidates.map(build=>build.name).join('、')}；请使用候选的完整原样构建名重读`);
-        return `产品 ${product} 没有构建 ${cutText(name,80)}`;
+        return { absent: `Hub 里没有产品 ${product} 的构建 ${cutText(name,80)}`, fix: '核对构建名（名字或别名不分大小写逐字相等才算）；构建清单里没有它时，由管理员同步这条产品线的构建（circle-hub knowledge sync）后重读' };
       }
       const chosen = this.#readRoot ? await this.#readRoot(product, { build: name }) : null;
       const root = chosen?.info ?? (this.#readRoot ? null : await this.#builds.rootOfBuild(product, name));
-      if (root === null) return `构建 ${named.name} 还没有知识树的根`;
+      if (root === null) return { absent: `Hub 里还没有构建 ${named.name} 的知识树根`, fix: '由管理员为这个构建育苗或同步知识（circle-hub knowledge sync）后重读；也可以换一个已有知识根的构建' };
       const seedlingNote = readRootNote(chosen);
       const locked=context.composition && context.build===named.name ? await this.#context.store.composition(context.composition) : null;
       const useLocked = Boolean(locked && locked.product===product);
@@ -1530,16 +1547,16 @@ export class KnowledgeViews {
     let title: string;
     if (request.type === 'impact') {
       const from = await resolveOnce(request.from);
-      if (typeof from === 'string') return { ok: false, id: bare, reason: from };
+      if ('absent' in from) return absentRead(bare, from);
       const to = await resolveOnce(request.to);
-      if (typeof to === 'string') return { ok: false, id: bare, reason: to };
+      if ('absent' in to) return absentRead(bare, to);
       roots = [from.root, to.root];
       key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog, after:request.after??null });
       compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolveOnce(request.build);
-      if (typeof at === 'string') return { ok: false, id: bare, reason: at };
+      if ('absent' in at) return absentRead(bare, at);
       roots = [at.root];
       if (request.type === 'facets') {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by, after:request.after??null });
@@ -1556,7 +1573,7 @@ export class KnowledgeViews {
       if (reader === undefined) return null;
       const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
       if (handle === null) return null;
-      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
+      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if('absent' in at||!await seedlingOfRoot(this.#context,product,at.root))return null;}
       const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
       if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
       const cut=await reader.cut(handle.product.id, offset,context.principal);

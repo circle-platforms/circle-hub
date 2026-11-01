@@ -21,13 +21,28 @@ export function protocolError(code: ProtocolCode, message: string, extra: Omit<P
   return { code, message, fix: PROTOCOL_CODES[code].fix, ...extra };
 }
 
-/** The neutral answer for absent and forbidden alike. */
+/** The neutral answer, for the credential and login classes only (D05 R[3]): the real reason goes to the admin log. */
 export function unavailableError(path?: string): ProtocolError {
   return protocolError('SOURCE_UNAVAILABLE', UNAVAILABLE_MESSAGE, path === undefined ? {} : { path });
 }
 
 export function unavailable(path: string | undefined, adminNote: string): Refusal {
   return new Refusal([unavailableError(path)], adminNote);
+}
+
+/**
+ * Not found or no permission (D05 R[3], decision 112): the Hub has no such object (SOURCE_ABSENT), or it has it and this
+ * caller may not read it (SOURCE_NOT_PERMITTED). `what` names the object as the caller wrote it, e.g. "运行 run_…".
+ */
+export function missingError(exists: boolean, path: string | undefined, what: string, fix?: string): ProtocolError {
+  const at = { ...(path === undefined ? {} : { path }), ...(fix === undefined ? {} : { fix }) };
+  // A name that ends in an identifier takes a space before the Chinese that follows it.
+  const gap = /[\x21-\x7e]$/.test(what) ? ' ' : '';
+  return exists ? protocolError('SOURCE_NOT_PERMITTED', `${what}${gap}存在，你没有读取权限`, at) : protocolError('SOURCE_ABSENT', `Hub 里没有${what}`, at);
+}
+
+export function missing(exists: boolean, path: string | undefined, what: string, adminNote: string, fix?: string): Refusal {
+  return new Refusal([missingError(exists, path, what, fix)], adminNote);
 }
 
 /** The registered fix of a core violation or protocol code; pack codes have none here. */

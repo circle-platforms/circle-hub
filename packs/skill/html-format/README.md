@@ -4,13 +4,13 @@
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/html-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install html-format@1.0.1` 安装；`pack uninstall html-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/html-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install html-format@1.0.2` 安装；`pack uninstall html-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"html-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
 
 ## 旧运行兼容
 
-`src:<摘要>/html@1/b/<块>` 与 `a/<链接>` 地址不变。有 skills 锁的运行按该摘要复核。迁移前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy html@1 html-format@1.0.1` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill html-format@1.0.1 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重绑。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。
+`src:<摘要>/html@1/b/<块>` 与 `a/<链接>` 地址不变。有 skills 锁的运行按该摘要复核。迁移前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy html@1 html-format@1.0.2` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill html-format@1.0.2 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重绑。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。
 
 ## 迁移等价与验证
 

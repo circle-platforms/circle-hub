@@ -18,7 +18,7 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext, type Unresolved } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { mapLimited, receivedDigest } from './util.ts';
 import { getInterpreter } from '../../rules/api.ts';
@@ -395,12 +395,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       pending = (async () => {
         try {
           const parsed = parseReference(reference);
+          // Absent and not permitted are determinate answers (D05 R[3]): kept as they are and not retried.
+          const reasonOf = (r: { reason?: Unresolved['reason']; code: Unresolved['code'] }) => r.reason ?? (r.code === 'REFERENCE_UNRESOLVED' || r.code === 'SOURCE_ABSENT' || r.code === 'SOURCE_NOT_PERMITTED' ? r.code : 'SOURCE_UNAVAILABLE');
           const result = await retryRead(() => readReference(reference,parsed), result => result.resolved ? null
-            : { reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE'), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
+            : { reason: reasonOf(result), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
               if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
             });
           if (!result.resolved) {
-            return { resolved: false, text: null, reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE') };
+            return { resolved: false, text: null, reason: reasonOf(result) };
           }
           if (result.text === null) {
             return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? 'credential_unreadable' as const : 'missing_input' as const };

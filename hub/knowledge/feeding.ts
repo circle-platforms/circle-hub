@@ -139,8 +139,8 @@ export class FeedingLayer {
  private readonly projecting=new Map<string,Promise<Projected>>();
  private readonly normalized=new Map<string,Promise<Map<string,string|null>>>();
  constructor(context:KnowledgeContext,reading:TreeReading){this.context=context;this.reading=reading;}
- async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
- private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
+ async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_READ_FAILED'});return n;}
+ private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_READ_FAILED'});return n;}
  private async all(key:string,value:string,tx?:Transaction){return this.context.store.all<ClaimBody>({key,value,kind:'claim'},tx);}
  private body(record:StoredRecord<ClaimBody>):Record<string,any>|null{const claim=Claim.safeParse(record.body);if(!claim.success||!object(claim.data.statement.data))return null;return KnowledgeStructureSchema.safeParse(claim.data.statement.data.feeding??claim.data.statement.data).data as Record<string,any>??null;}
  private async manifestOrigin(principal:Principal,artifact:SourceArtifact,digest:string){
@@ -165,16 +165,18 @@ export class FeedingLayer {
  }
  /** Recheck the exact capture and read tier at use time without reparsing it. */
  private async sourceAccess(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null){
-  if(record){const captured=await this.context.records.store.get<any>(record);if(captured?.kind!=='source_artifact'||captured.body.sha256!==sha)throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：采集记录与摘要不匹配；原件 ${sha}，记录 ${record}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
+  if(record){const captured=await this.context.records.store.get<any>(record);if(captured?.kind!=='source_artifact'||captured.body.sha256!==sha)throw new KnowledgeError(`喂入来源读取未完成（${stage}）：采集记录与摘要不匹配；原件 ${sha}，记录 ${record}；按本次读取重新绑定`,{code:'SOURCE_READ_FAILED'});}
   let found=await this.context.records.artifacts.source(principal,sha,{consumer:'function',...(record?{record}:{})});
   if(!found&&record&&run){const stored=await runById(this.context.records.store,run);if(stored&&await canViewRun(principal,stored.body,this.context.records.store)&&stored.body.sources.some(binding=>binding.artifact===record&&(!manifest||binding.read_manifest===manifest)&&(()=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha;})())){const scoped=await this.context.records.artifacts.sourceForRun(principal,sha,run,{consumer:'function',record});if(scoped?.artifact.digest===record)found=scoped;}}
-  if(!found?.bytes||found.readTier!=='model_readable')throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：来源不存在、保留中或当前不可读；原件 ${sha}，记录 ${record??'未指定'}，当前档位 ${found?.readTier??'未获读取授权或缺记录'}；核对这条采集记录和读取身份后重读`,{code:'SOURCE_UNAVAILABLE'});
+  // Not found or no permission (D05 R[3], decision 112); bytes held in a lower read tier stay the neutral credential answer.
+  if(!found){const exists=(await this.context.records.artifacts.records(sha)).length>0;throw new KnowledgeError(exists?`喂入来源读取未完成（${stage}）：原件 ${sha}（记录 ${record??'未指定'}）存在，你没有读取权限；请上传者或管理员分享后重读`:`喂入来源读取未完成（${stage}）：Hub 里没有原件 ${sha}（记录 ${record??'未指定'}）；核对这条采集记录后重读`,{code:exists?'SOURCE_NOT_PERMITTED':'SOURCE_ABSENT'});}
+  if(!found.bytes||found.readTier!=='model_readable')throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：来源保留中或当前不可读；原件 ${sha}，记录 ${record??'未指定'}，当前档位 ${found.readTier}；等管理员核看这份来源后重读`,{code:'SOURCE_UNAVAILABLE'});
   return {...found,bytes:found.bytes};
  }
  private async source(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null):Promise<Source>{
   const found=await this.sourceAccess(principal,sha,record,manifest,stage,run);
   const parsed=await recognizeAsync(this.context.parsers,found.bytes,found.mediaType);if(!parsed)fail('来源格式不能按已声明解析器读取');
-  let external:ReturnType<typeof parseExternal>;try{external=await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined);}catch(error){if(!(error instanceof KnowledgeError))throw error;throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：读取清单与采集记录未核对；原件 ${sha}，记录 ${record??found.artifact.digest}，清单 ${manifest??'未指定'}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
+  let external:ReturnType<typeof parseExternal>;try{external=await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined);}catch(error){if(!(error instanceof KnowledgeError))throw error;throw new KnowledgeError(`喂入来源读取未完成（${stage}）：读取清单与采集记录未核对；原件 ${sha}，记录 ${record??found.artifact.digest}，清单 ${manifest??'未指定'}；按本次读取重新绑定`,{code:'SOURCE_READ_FAILED'});}
   return {artifact:found.artifact,bytes:found.bytes,parser:parserKey(parsed.parser),model:parsed.document.model,external};
  }
  private async metadataSource(principal:Principal,sha:string,record?:string,manifest?:string):Promise<Source>{const source=await this.source(principal,sha,record,manifest,'metadata');const parser=this.context.parsers.get('json@1');if(!parser)fail('缺 JSON 元数据解析器；管理员恢复后重读');return {...source,parser:'json@1',model:(await parseDocument(parser,source.bytes)).model};}
@@ -525,7 +527,7 @@ export class FeedingLayer {
  /** Keep the matched index value: one record can be indexed under more than one object. */
  private async indexed<B>(key:string,values:readonly string[],kind:RecordKind,through:number):Promise<Map<string,IndexedRecord<B>[]>>{
   const scan=this.context.records.store.findIndexed;
-  if(!scan)throw new KnowledgeError('缺批量记录索引能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});
+  if(!scan)throw new KnowledgeError('缺批量记录索引能力；管理员恢复记录库后重试',{code:'SOURCE_READ_FAILED'});
   const groups=new Map<string,IndexedRecord<B>[]>(),wanted=[...new Set(values)];
   for(let start=0;start<wanted.length;start+=128){
    let cursor:import('../records/api.ts').IndexedCursor|null=null;

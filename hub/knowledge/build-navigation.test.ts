@@ -17,7 +17,8 @@ test('ambiguous case-only build names return candidates without guessing or hidi
  assert.match(answer.reason,/候选/);for(const name of names)assert.ok(answer.reason.includes(name));
  assert.match(answer.inputError?.fix??'',/原样|完整/);
  const outsider=await reader.read(id,{principal:w.outsider,run:null,purpose:'合成无权核对'});
- assert.equal(outsider.ok,false);if(!outsider.ok)assert.equal(outsider.inputError,undefined);
+ // A reader without the product is told it may not read it (D05 R[3], decision 112), never the build candidates.
+ assert.equal(outsider.ok,false);if(!outsider.ok){assert.equal(outsider.inputError?.code,'SOURCE_NOT_PERMITTED');for(const name of names)assert.ok(!JSON.stringify(outsider.inputError).includes(name));}
 });
 test('an empty declared-complete catalog remains a complete closed world',async t=>{
  const w=await makeWorld(postgres,{pack:{declaration:{producers:[{id:'commands',title:'合成目录',function:{module:'functions/commands.ts'},inputs:{tree:{source:'tree'}}},{id:'note',title:'合成备注',function:{module:'functions/note.ts'},inputs:{tree:{source:'tree'}}}]},functions:{'commands.ts':'export default () => ({entries:[],warnings:[]});','note.ts':`export default () => ({entries:[{kind:'behaviour',path:'/metadata/note',statement:'合成空目录备注',data:{},fragments:[{parser:'xml@1',selector:'x/catalog'}],applicability:null}],warnings:[]});`}}});t.after(()=>w.close());

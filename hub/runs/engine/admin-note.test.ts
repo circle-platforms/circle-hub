@@ -34,22 +34,23 @@ function noted(trace = traceId()): { context: CallContext; notes: string[] } {
 const ABSENT_RUN = 'run_7zzzzzzzzzzzzzzzzzzzzzzzzz';
 
 describe('the admin note of a call', () => {
-  test('the reason behind a neutral answer is the call\'s note and an adminLog entry; the caller never sees it', async () => {
+  test('the reason behind a refusal is also the call\'s note and an adminLog entry; the caller gets its own words', async () => {
     const start = noted();
     const answer = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: {} }, start.context);
-    assert.deepEqual(answer.errors.map((e) => [e.code, e.message]), [['SOURCE_UNAVAILABLE', '对你不可用']]);
-    assert.deepEqual(start.notes, [`start_run: pack toy-review is unknown, not assigned to ${h.bob.id}, withdrawn or not a workflow pack`]);
+    // Not assigned: the caller is told so in its words (D05 R[3], decision 112); the admin note keeps the account.
+    assert.deepEqual(answer.errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', '任务包 toy-review 存在，没有分配给你']]);
+    assert.deepEqual(start.notes, [`start_run: pack toy-review is unassigned for ${h.bob.id}`]);
     assert.ok(h.logs.some((entry) => entry.traceId === start.context.traceId && entry.what === 'start_run'), 'the adminLog has it too, with the trace');
-    assert.ok(!JSON.stringify(answer).includes('not assigned'));
+    assert.ok(!JSON.stringify(answer).includes(h.bob.id), 'the account id stays in the admin note');
 
     const submit = noted();
     const submitted = await h.service.submitResult(h.alice, { run: ABSENT_RUN, model: 'm', items: [] }, submit.context);
-    assert.equal(submitted.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(submitted.errors[0]?.code, 'SOURCE_ABSENT');
     assert.deepEqual(submit.notes, [`submit_result: run ${ABSENT_RUN} is unknown or not visible to ${h.alice.id}`]);
 
     const resolve = noted();
     const resolved = await h.service.resolveReference(h.alice, { run: ABSENT_RUN, text: 'zone set' }, resolve.context);
-    assert.equal(resolved.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(resolved.errors[0]?.code, 'SOURCE_ABSENT');
     assert.deepEqual(resolve.notes, [`resolve_reference: run ${ABSENT_RUN} is unknown or not visible to ${h.alice.id}`]);
   });
 
@@ -62,7 +63,7 @@ describe('the admin note of a call', () => {
       h.service.submitResult(h.bob, { run: ABSENT_RUN, model: 'm', items: [] }, second.context),
     ]);
     assert.equal(first.notes.length, 1);
-    assert.match(first.notes[0], /^start_run: pack toy-verify is unknown/);
+    assert.match(first.notes[0], /^start_run: pack toy-verify is unassigned/);
     assert.equal(second.notes.length, 1);
     assert.match(second.notes[0], /^submit_result: run run_7z+ is unknown/);
   });
