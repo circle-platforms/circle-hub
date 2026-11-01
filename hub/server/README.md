@@ -312,9 +312,13 @@ Circle tokens stay bound to their member account. Existing members without a pas
 before console login. First-use restrictions also guard API reads/writes, live streams and authorization confirmations.
 
 
-Decision 83's personal/team knowledge research is a proposal only: `docs/design/personal-team-knowledge.md`. It inventories
-current requirements and compares primary project documentation. No generic knowledge space or personal server-side
-index is implemented by this task.
+Decision 84 supersedes decision 83's personal/team knowledge draft (`docs/design/personal-team-knowledge.md`, retained
+as a research record). Personal knowledge will live in both Circle and Hub with two-way sync and multiple clients; the
+individual chooses the mode, sets personal-space permissions and may share with administrators or others. Shared
+submissions require no review. The complete scheme stays in the owner's scheme document until finalized. No knowledge
+model or code is changed by this round. The owner subsequently chose “工作流” for the page: “通用技能” has no acceptance,
+while “工作流” contains the existing packs with acceptance. Renaming is a separate task. Product-pack and system-pack
+placement remains open; “产品知识来源” under Knowledge and “业务系统接入” under Connections are suggestions only.
 
 Decision 83 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
 last use and disconnect action. Team, Connections and member Settings omit token identifiers from their tables; exact

@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Knowledge decision 84** — records the owner’s personal/team knowledge and workflow naming decisions; the earlier local-only proposal is retained as superseded research, with implementation and renaming deferred. The future 工作流 page distinguishes 通用技能 (no acceptance) and 工作流 (existing packs with acceptance); product/system placement remains open.
+
 - **Resumable administrator initialization** — the installer checks database accounts after deployment migrations, retries an incomplete first-admin setup and gives explicit host recovery commands without a terminal.
 
 - **Password recovery command** — `user password-reset` recovers initial passwords, terminates console sessions and powers Team resets through the command bridge; backup-token failures are isolated by source.
@@ -28,7 +30,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 - **Username and password login** — decision 83 adds administrator/member password accounts, first-use changes, Team password resets, bounded browser sessions and stdin-only installer initialization. MCP authorization remains account-bound.
 
-- **Knowledge integration proposal** — decision 83 inventories requirements and compares personal/team designs; implementation remains outside this task.
+- **Knowledge integration research** — decision 83 inventories requirements and compares personal/team designs; decision 84 supersedes its proposed boundaries, with implementation outside this task.
 
 - **Circle device lists** — decision 83 shows device names and disconnect actions without token identifiers in tables.
 

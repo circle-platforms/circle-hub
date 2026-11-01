@@ -79,7 +79,7 @@
 
 - 第 12 项：安装交互要求管理员用户名，可选密码经标准输入交给初始化命令，随机密码只显示一次且须首次修改。迁移 8 保存带盐 scrypt 摘要与首次修改标记，追加密码变更历史；控制台会话独立于 Circle 令牌并有期限。成员也用密码，添加成员时显示初始密码；团队页提供本人修改、管理员重置。强制修改覆盖页面、接口、流式更新和管理操作；失败限制同时覆盖未知账号。保留管理员备用令牌和管理员一次性链接，成员链接转到密码登录；旧成员未设密码的由管理员在团队页重置。MCP 标准授权、邀请码和令牌的账户绑定保留。
 
-- 知识库调研及整合方案已写入 [`personal-team-knowledge.md`](../design/personal-team-knowledge.md)：核对当前模型与知识库实现，覆盖采集、出处、搜索、计数、版本、共享、权限及维护，参考 Outline 与 Joplin 官方资料，提出个人本地与团队 Hub 共用格式、分开授权的方案。本次没有实现知识库通用化。
+- 知识库调研及整合方案已写入 [`personal-team-knowledge.md`](../design/personal-team-knowledge.md)：核对当前模型与知识库实现，覆盖采集、出处、搜索、计数、版本、共享、权限及维护，参考 Outline 与 Joplin 官方资料，当时提出个人本地与团队 Hub 共用格式、分开授权的方案。第二轮决定 84 已取代该草稿，正文仅保留作调研记录；本次没有实现知识库通用化。
 
 - 第 11 项：团队、连接及成员设置按设备名显示 Circle，优先取标准授权客户端名称，其次取访问令牌标签；表格不显示令牌编号，断开命令仍保留精确目标。
 
@@ -152,14 +152,16 @@
    - 这也补上恢复路径：唯一的管理员在首次修改前丢了初始密码时，可以在 Hub 主机上用这条命令重置。
    - 管理员备用令牌登录的失败计数改为按来源地址分开，不再所有人共用一个 `account:backup` 计数，避免别人试错 5 次就让全体管理员 15 分钟内无法用备用登录。用户名登录按账户计数的锁定保留。
 5. **安装中途失败后重跑（审查意见）**：现在全新安装若在 `init-admin` 失败，再次运行安装脚本时因为设置已存在而不再询问管理员，也不再提示设置码。改为：重跑时若数据库里还没有管理员，再次询问管理员用户名与可选密码并执行 `init-admin`；无法询问时（没有终端、没给 `--admin-user`）给出明确提示，说明用 `circle-hub init-admin` 或 `circle-hub setup-code` 完成。补对应的脚本测试。
-6. **知识库方案草稿已被所有者决定取代**：所有者 2026-11-02 定了三项：个人知识在 Circle 本机和 Hub 两边都放，双向同步，多客户端共用，方式由本人选择；提交共享不审核；个人空间由本人设权限，可共享给管理员或其他人。所有者另定“任务包”改称“技能包”。
-   - 在 `docs/hub-r4-progress.md` 记为决定 84（知识库与技能包：个人与团队），写这几条原话要点，并写明完整方案与其余待定问题在所有者的方案文档中，定稿后再写入 `docs/design/`。
+6. **知识库方案草稿已被所有者决定取代**：所有者 2026-11-02 定了三项：个人知识在 Circle 本机和 Hub 两边都放，双向同步，多客户端共用，方式由本人选择；提交共享不审核；个人空间由本人设权限，可共享给管理员或其他人。所有者原话：“用工作流”“工作流标签里面分为两种，一种是通用的skill 一种是我们的packs”。工作流页面分为通用技能（不验收）与工作流（现有 packs，有验收）。产品包和系统包的展示位置仍待定：建议分别放在知识库的“产品知识来源”和连接的“业务系统接入”，这些只是建议，尚未决定。本轮不实现改名，另立任务。
+   - 在 `docs/hub-r4-progress.md` 记为决定 84（知识库与工作流：个人与团队），写这几条原话要点，并写明完整方案与其余待定问题在所有者的方案文档中，定稿后再写入 `docs/design/`。
    - `docs/design/personal-team-knowledge.md` 文首注明已被决定 84 取代：个人知识不再只留在 Circle 本机。正文保留作调研记录，或删去与决定冲突的建议段落，二选一，写明理由。
-   - 本轮不做“任务包”改名，种类的叫法还要先定。
+   - 本轮不实现“工作流”改名及两种分类，另立任务；产品包、系统包的位置仍待定。
 
 完成后回报：分支、各项提交、运行过的检查及其结果（含跳过），以及没有做的事项和原因。
 
 ## 第二轮做了的
+
+- 第 6 项：记入决定 84 的三项知识库要求及“工作流”称呼决定，补记通用技能（不验收）与工作流（现有 packs，有验收）两类，明确产品包、系统包的位置只是待定建议，注明完整方案与其余问题在所有者的方案文档，定稿后再写入设计。草稿文首标为被取代，并移到设计索引的“已被取代”；正文原样保留，以保留需求核对和资料来源，旧建议不再作为实施方案。
 
 - 第 5 项：安装不再用设置文件是否存在决定管理员初始化；部署迁移后以 `user list --json` 读取公开账户字段，没有管理员才重新询问并初始化。无法询问时列出 `circle-hub init-admin`、`circle-hub setup-code`；读取失败不假定为空。新增脚本测试执行实际设置检查到初始化流程，只有 CLI 与终端输入用合成夹具替代；已有管理员时不重置、不消耗密码标准输入。
 
@@ -178,3 +180,20 @@
 - 第 3 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console.test.ts hub/server/console-api-write.test.ts hub/server/console-places.test.ts hub/server/variables.test.ts` 56 项通过、0 跳过；配置、漂移与密码测试 15 项通过、0 跳过。CLI 按 `initial passwords` 筛选 1 项、数据库按 `pool never falls back` 筛选 1 项、安装脚本按 `valid bash|fresh installation` 筛选 2 项，均通过、0 跳过，筛选外未运行。没有运行全量回归或改动凭据扫描规则。
 - 第 4 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。最终 `node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console-manage.test.ts hub/server/command-bridge.test.ts hub/server/console-places.test.ts` 29 项通过、0 跳过；CLI 按 `password-reset` 筛选的 2 项通过、0 跳过，筛选外未运行。初次检查发现新测试夹具的 TCP/套接字配置错误及管理返回路径断言未含团队页，修正后重跑上述受影响测试；另一次失败夹具的调试进程已中止并清理，不记为通过。全部使用临时 PostgreSQL 和文件密钥，没有全量回归或真实部署操作。
 - 第 5 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-name-pattern='administrator bootstrap|valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 7 项通过、0 跳过；CLI 按 `user list JSON|initial passwords` 筛选 2 项通过、0 跳过，筛选外未运行。脚本覆盖已有设置下初始化失败与重跑、重新询问、无终端恢复提示、显式用户名、读取失败拒绝及已有管理员时保留输入；实际执行隔离的 Bash 控制流程，CLI、终端输入为合成夹具。没有运行整机安装、服务管理、备份恢复或全量回归。
+- 第 6 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。本项仅修改决定、调研记录及相关说明，没有改知识模型或代码，因此未重复运行知识库业务测试。
+
+## 第二轮没有做的
+
+- 知识库通用化、双向同步、个人空间权限及“任务包”改名：按决定 84，本轮只记录要求和草稿取代关系，完整方案与产品包、系统包的展示位置待所有者定稿；“工作流”改名及两种分类另立任务，没有实施代码或模型变更。
+- 定时任务、机器人及其页面：仍在本次范围外，后续各用独立页面。
+- 未运行全量单元、验收、来源校验、备份恢复、整机安装或发布 CI；本轮没有这些改动的验证需要，也未新增 SHA 数据验证。按名称筛选的用例之外均未运行，不记为通过。
+- 设计画布与接口文档仍由 Claude 事后同步。本机提交未推送，未建 PR；未操作现有 Hub 部署、主检出或标志工作树。
+
+第二轮验证中按名称筛选及配置检查的完整命令（均是上述已运行结果，没有另加回归）：
+
+- 第 1 项 CLI：`node --test --test-concurrency=1 --test-name-pattern='disabling the operator' hub/server/assemble/cli-admin.test.ts`；词表：`node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`。
+- 第 3 项配置与密码：`node --test --test-concurrency=2 hub/config/config.test.ts hub/config/drift.test.ts hub/records/password.test.ts`；CLI：`node --test --test-concurrency=1 --test-name-pattern='initial passwords' hub/server/assemble/cli-admin.test.ts`；数据库：`node --test --test-concurrency=1 --test-name-pattern='pool never falls back' hub/records/store.test.ts`；安装：`node --test --test-name-pattern='valid bash|fresh installation' hub/platform/install-script.test.ts`。
+- 第 4 项 CLI：`node --test --test-concurrency=1 --test-name-pattern='password-reset' hub/server/assemble/cli-admin.test.ts`。
+- 第 5 项 CLI：`node --test --test-concurrency=1 --test-name-pattern='user list JSON|initial passwords' hub/server/assemble/cli-admin.test.ts`。
+
+第 6 项追加更正（所有者 2026-11-02，由 Claude 转达）：名称改为“工作流”，决定 84 原样记录两句原话；通用技能不验收，现有 packs 所在的工作流有验收。产品包、系统包的展示位置仍待定，建议不记成决定。只修正文档并折入第 6 项提交，未实现改名；重跑 `npm run test:docs` 283 项通过、0 跳过。
