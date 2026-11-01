@@ -1,7 +1,8 @@
 // The four management operations the console runs (proposal decision 6 of 2026-10-31), as step-by-step pages in the design
 // canvas's Operations board: adding a member, connecting a business system, publishing a task pack and importing knowledge.
 // Each form posts to /console/admin/do/<action>, which runs the same `circle-hub` commands as the command line (decision
-// 75). The steps the backend does not have yet (an invitation code, a read-only connection test) are marked as planned.
+// 75). Adding a member issues an invitation code for the standard authorization, or a token for a client without it. The
+// step the backend does not have yet (a read-only connection test) is marked as planned.
 import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { code, html, link, page, type Html } from './html.ts';
 import { actionForm, environmentOptions, jobsSection, roleOptions, type JobStore } from './manage.ts';
@@ -20,12 +21,13 @@ function memberPage(ctx: PageContext): Html {
   const form = actionForm('member-add', ctx.csrf ?? '', html`<div class="fields">
 ${field('姓名', html`<input name="name" required autocomplete="off" maxlength="200">`, { hint: '在控制台、记录与 Circle 中显示' })}
 ${field('角色', html`<select name="role">${roleOptions()}</select>`, { hint: '管理员可执行四种管理操作并查看全部记录' })}
-${field('令牌标签', html`<input name="label" autocomplete="off" maxlength="200" placeholder="MacBook 上的 Circle">`, { hint: '区分同一成员的多个 Circle，可留空' })}
-</div>`, '添加并签发令牌', { primary: true });
-  return html`${steps(['填写成员', '签发令牌', '写入 Circle', '等待连接'], 0)}
+${field('连接方式', html`<select name="connect"><option value="invitation" selected>邀请码（MCP 标准授权）</option><option value="token">访问令牌</option></select>`, { hint: '客户端不支持 MCP 标准授权时选访问令牌' })}
+${field('令牌标签', html`<input name="label" autocomplete="off" maxlength="200" placeholder="MacBook 上的 Circle">`, { hint: '选访问令牌时区分同一成员的多个 Circle，可留空' })}
+</div>`, '添加成员', { primary: true });
+  return html`${steps(['填写成员', '签发邀请码', '成员授权', '等待连接'], 0)}
 <section class="grid g-2-1 section">
-${card({ title: '成员信息' }, html`${form}<p class="note">执行 ${code('circle-hub user create')} 与 ${code('circle-hub token issue')}；令牌只在结果页显示一次。</p>`)}
-${plannedCard('邀请码', 'MCP 标准授权上线后，添加成员生成邀请码（24 小时内有效，仅可使用一次），成员在 Circle 中完成授权即可连接，无需复制令牌。', 'key')}
+${card({ title: '成员信息' }, html`${form}<p class="note">执行 ${code('circle-hub user create')}，再执行 ${code('circle-hub user invite')}（选访问令牌时为 ${code('circle-hub token issue')}）；邀请码与令牌只在结果页显示一次。</p>`)}
+${card({ title: '成员如何连接', meta: 'MCP 标准授权' }, html`<ol class="small"><li>把结果页给出的配置写入该成员的 Circle。</li><li>Circle 首次连接时在浏览器中打开授权页。</li><li>成员输入邀请码并确认授权，Circle 即完成连接。</li></ol><p class="sub">邀请码 24 小时内有效，仅可使用一次；过期后在设置中重新签发。</p>`)}
 </section>`;
 }
 

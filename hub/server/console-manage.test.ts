@@ -182,11 +182,18 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   await post('resource-add', { system_pack: 'synthetic-system', name: '合成', environment: 'shared', origins: 'api=https://192.0.2.20\n', plaintext: '', settings: 'tenant=demo', credentials: 'token=DEMO' });
   assert.deepEqual(calls.at(-1)!.argv, ['resource', 'add', 'synthetic-system', '--name=合成', '--environment=shared', '--origin=api=https://192.0.2.20', '--setting=tenant=demo', '--credential=token=DEMO']);
 
-  // Adding a member creates the account, then issues its token, shown once with the Circle entry of this Hub.
+  // Adding a member creates the account, then issues an invitation code for the standard authorization, shown once with
+  // the Circle entry of this Hub (no token in it); a client without the standard authorization gets a token instead.
   const member = await post('member-add', { name: 'carol', role: 'user', label: 'MacBook' });
   assert.equal(member.status, 200, member.body);
-  assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['token', 'issue', 'carol', '--label=MacBook']]);
-  assert.ok(member.body.includes('T'.repeat(43)) && /只显示这一次/.test(member.body) && /mcp_servers/.test(member.body));
+  assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
+  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /授权页/.test(member.body));
+  assert.ok(!member.body.includes('CIRCLE_HUB_TOKEN'), 'the standard authorization needs no token in the Circle entry');
+  const withToken = await post('member-add', { name: 'dave', role: 'user', label: 'MacBook', connect: 'token' });
+  assert.equal(withToken.status, 200, withToken.body);
+  assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'dave', '--role=user'], ['token', 'issue', 'dave', '--label=MacBook']]);
+  assert.ok(withToken.body.includes('T'.repeat(43)) && /令牌只显示这一次/.test(withToken.body) && /CIRCLE_HUB_TOKEN/.test(withToken.body));
+  assert.equal((await post('member-add', { name: 'erin', role: 'user', connect: 'password' })).status, 400);
 
   // Connecting a business system adds the resource first, then sets its credential; the value never enters argv.
   await post('system-add', { system_pack: 'synthetic-system', name: '合成系统', environment: 'shared', origins: 'api=https://192.0.2.20', plaintext: '', settings: '', credentials: 'token=DEMO', secret_name_1: 'DEMO', value_1: ' synthetic value ' });

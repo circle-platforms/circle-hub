@@ -33,6 +33,10 @@ export const commands = {
     id: dialogId('token-revoke', token.id), title: `断开 ${owner} 的 Circle`,
     text: `吊销令牌 ${token.id}${token.label ? `（${token.label}）` : ''}：使用该令牌的 Circle 与控制台会话立即断开，其他令牌不受影响。`, command: command('token', 'revoke', token.id),
   }),
+  userInvite: (user: { id: string; name: string }): CommandDialog => ({
+    id: dialogId('user-invite', user.id), title: `签发邀请码：${user.name}`,
+    text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的 Circle 打开授权页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
+  }),
   tokenIssue: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('token-issue', user.id), title: `签发备用登录令牌：${user.name}`,
     text: '新令牌仅在签发时显示一次；用于 Circle 不可用时登录控制台，也可写入新的 Circle。', command: command('token', 'issue', user.id, '--label=备用登录'),

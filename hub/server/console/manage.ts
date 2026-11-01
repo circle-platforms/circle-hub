@@ -169,9 +169,12 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
       const role = form.get('role') || 'user';
       if (!(PERMISSION_ROLE as readonly string[]).includes(role)) throw new FormError('角色不对');
       const name = word(form, 'name', '姓名');
+      // An invitation code for the standard authorization, or a token for a client without it.
+      const connect = form.get('connect') || 'invitation';
+      if (connect !== 'invitation' && connect !== 'token') throw new FormError('连接方式不对');
       return [
         { argv: ['user', 'create', name, flag('role', role)] },
-        { argv: ['token', 'issue', name, flag('label', form.get('label') || 'Circle')] },
+        connect === 'token' ? { argv: ['token', 'issue', name, flag('label', form.get('label') || 'Circle')] } : { argv: ['user', 'invite', name] },
       ];
     },
   },
@@ -253,9 +256,18 @@ export function actionForm(name: string, csrf: string, fields: Html | string, su
   return html`<form method="post" action="/console/admin/do/${name}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html` class="inline"` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
 }
 
-function runLines(run: CommandRun, once: boolean): Html {
+const TOKEN_ONCE = '下面的令牌只显示这一次：现在复制，保存到只有使用者能读的地方。离开这页就再也看不到它。';
+const INVITATION_ONCE = '下面的邀请码只显示这一次：现在复制并交给该成员。邀请码 24 小时内有效，仅可使用一次。';
+
+/** The notice of a command whose output holds a value shown once: a token, or an invitation code. */
+function onceNotice(argv: readonly string[]): string | null {
+  if (argv[0] === 'token') return TOKEN_ONCE;
+  return argv[0] === 'user' && argv[1] === 'invite' ? INVITATION_ONCE : null;
+}
+
+function runLines(run: CommandRun, notice: string | null): Html {
   return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${run.code === 0 ? '已完成' : run.code === 2 ? '参数不正确，未执行' : '未完成'}（退出码 ${run.code}）</p>
-${once && run.code === 0 ? html`<p class="notice">下面的令牌只显示这一次：现在复制，保存到只有使用者能读的地方。离开这页就再也看不到它。</p>` : ''}
+${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
 ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
 }
@@ -271,11 +283,15 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
   const last = steps[steps.length - 1].run;
   const several = !('code' in runs);
   const body = steps.map((step, index) => several
-    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true && step.argv[0] === 'token'))
-    : card(null, runLines(step.run, action.once === true)));
-  const after = last.code === 0 && action === ACTIONS['member-add'] && form !== undefined
-    ? card({ title: '写入成员的 Circle', meta: '标准授权上线前使用' }, html`<p class="sub">在该成员的 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，再把以下配置写入 Circle 的 settings.json${ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : ''}：</p><pre class="snippet">${circleEntry(originOf(ctx))}</pre><p class="sub">连接完成后，${link('/console/settings', '设置')}的“已连接的 Circle”显示该令牌的最近使用时间。</p>`)
-    : '';
+    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
+    : card(null, runLines(step.run, action.once === true ? TOKEN_ONCE : null)));
+  const trust = ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : '';
+  const connected = html`<p class="sub">成员完成连接后，${link('/console/settings', '设置')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
+  const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
+    ? ''
+    : form.get('connect') === 'token'
+      ? card({ title: '写入成员的 Circle', meta: '访问令牌' }, html`<p class="sub">在该成员的 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，再把以下配置写入 Circle 的 settings.json${trust}：</p><pre class="snippet">${circleEntry(originOf(ctx))}</pre>${connected}`)
+      : card({ title: '成员的 Circle 如何连接', meta: 'MCP 标准授权' }, html`<p class="sub">把以下配置写入该成员 Circle 的 settings.json${trust}。Circle 首次连接时在浏览器中打开授权页，成员输入上面的邀请码并确认授权即完成连接。</p><pre class="snippet">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
     body: page(actionChrome(ctx, action), html`<div class="stack">${body}${after}</div><p class="mt16">${link(action.back, '返回')}</p>`),
@@ -302,7 +318,7 @@ export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
   if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务（服务重启后，之前的任务不再列出；它们写下的记录照常保留）</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
     ? html`<p class="notice">进行中，刷新本页查看进展</p>`
-    : runLines(job.result, false);
+    : runLines(job.result, null);
   return {
     status: 200,
     body: page(chrome, html`${card({ title: job.title, tail: jobState(job), meta: `发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`),
