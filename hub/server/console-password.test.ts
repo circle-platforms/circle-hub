@@ -1,14 +1,28 @@
 import assert from 'node:assert/strict';
-import { request } from 'node:http';
+import { createServer, request } from 'node:http';
+import { once } from 'node:events';
 import { after, before, test } from 'node:test';
 import { createTestServer, type TestServer } from './testing.ts';
+import { createCommandBridge } from './command-bridge.ts';
+import { handleConsole, type ConsoleOptions } from './console/index.ts';
+import { SessionStore } from './console/session.ts';
+import { JobStore } from './console/manage.ts';
+import { PackStaging } from './console/staging.ts';
+import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 let server: TestServer;
-before(async()=>{server=await createTestServer();});after(async()=>{await server?.close();});
+let postgres:TemporaryPostgres;
+before(async()=>{postgres=await startPostgres({socket:true,passwordless:true});server=await createTestServer({postgres,bridge:records=>createCommandBridge({
+  cwd:records.dataDir,
+  env:{CIRCLE_HUB_DATA_DIR:records.dataDir,CIRCLE_HUB_LOG_DIR:records.dataDir+'/logs',CIRCLE_HUB_HOST:'127.0.0.1',CIRCLE_HUB_PORT:'0',
+    ...(records.database.host.startsWith('/') ? {CIRCLE_HUB_DATABASE_SOCKET_DIR:records.database.host} : {CIRCLE_HUB_DATABASE_HOST:records.database.host}),CIRCLE_HUB_DATABASE_PORT:String(records.database.port),
+    CIRCLE_HUB_DATABASE_NAME:records.database.database,CIRCLE_HUB_DATABASE_USER:records.database.user,CIRCLE_HUB_KEYCHAIN_SERVICE:'circle-hub-test'},
+  overrides:{keyProvider:()=>records.keyProvider},
+})});});after(async()=>{try{await server?.close();}finally{await postgres?.stop();}});
 interface Reply {status:number;body:string;headers:Record<string,string|string[]|undefined>}
 const cookie=(r:Reply,name:string):string=>(r.headers['set-cookie'] as string[] ?? []).find(row=>row.startsWith(name+'='))?.split(';')[0] ?? '';
 const csrf=(body:string):string=>/name="csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
-async function send(path:string,method='GET',data?:Record<string,string>,session='',origin=true):Promise<Reply>{
-  return new Promise((resolve,reject)=>{const req=request(new URL(path,server.url),{method,headers:{...(session?{cookie:session}:{}),...(data?{'content-type':'application/x-www-form-urlencoded'}:{}),...(origin?{origin:server.url}:{})}},res=>{let body='';res.setEncoding('utf8');res.on('data',part=>body+=part);res.on('end',()=>resolve({status:res.statusCode!,body,headers:res.headers}));});req.on('error',reject);req.end(data?new URLSearchParams(data).toString():undefined);});
+async function send(path:string,method='GET',data?:Record<string,string>,session='',origin:boolean|string=true):Promise<Reply>{
+  return new Promise((resolve,reject)=>{const req=request(new URL(path,server.url),{method,headers:{...(session?{cookie:session}:{}),...(data?{'content-type':'application/x-www-form-urlencoded'}:{}),...(origin?{origin:typeof origin==='string'?origin:server.url}:{})}},res=>{let body='';res.setEncoding('utf8');res.on('data',part=>body+=part);res.on('end',()=>resolve({status:res.statusCode!,body,headers:res.headers}));});req.on('error',reject);req.end(data?new URLSearchParams(data).toString():undefined);});
 }
 async function login(fields:Record<string,string>):Promise<Reply>{const page=await send('/console/login');return send('/console/login','POST',{...fields,csrf:csrf(page.body)},cookie(page,'circle_hub_login'));}
 test('initial passwords cannot bypass the first change through pages, APIs, management or a Circle token',async()=>{
@@ -37,11 +51,22 @@ test('only administrators reset a member password and the generated value is ret
   const user=await server.records.principals.createUser(server.admin.principal,'合成待重置成员','user',{password:initial,mustChange:false});
   const logged=await login({username:user.name,password:initial}), memberSession=cookie(logged,'circle_hub_session');
   const mine=await send('/console/password','GET',undefined,memberSession);
-  assert.equal((await send('/console/password/reset','POST',{csrf:csrf(mine.body),user:server.admin.user.id},memberSession)).status,403);
+  assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(mine.body),user:server.admin.user.id},memberSession)).status,404);
   const loggedAdmin=await login({token:server.admin.token}), adminSession=cookie(loggedAdmin,'circle_hub_session');
   const team=await send(`/console/team/${user.id}`,'GET',undefined,adminSession);assert.match(team.body,/重置密码/);
-  const reset=await send('/console/password/reset','POST',{csrf:csrf(team.body),user:user.id},adminSession);assert.equal(reset.status,200);
-  const password=/<pre[^>]*>([^<]+)<\/pre>/.exec(reset.body)?.[1];assert.ok(password);assert.match(reset.body,/仅显示一次/);
+  assert.match(team.body,/action="\/console\/admin\/do\/password-reset"/);
+  const before=await server.records.principals.history(user.id);
+  assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:'wrong',user:user.id},adminSession)).status,403);
+  assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(team.body),user:user.id},adminSession,'http://evil.example')).status,403);
+  assert.equal((await send('/console/password/reset','POST',{csrf:csrf(team.body),user:user.id},adminSession)).status,404,'the page no longer resets passwords directly');
+  assert.equal((await server.records.principals.history(user.id)).length,before.length,'refused forms write no password history');
+  const reset=await send('/console/admin/do/password-reset','POST',{csrf:csrf(team.body),user:user.id},adminSession);assert.equal(reset.status,200,reset.body);
+  const passwords=[...reset.body.matchAll(/(?:>|\n)([A-Za-z0-9_-]{24})(?=<|\n)/g)].map(match=>match[1]);
+  assert.equal(passwords.length,1);const password=passwords[0];assert.match(reset.body,/仅显示一次/);
+  assert.doesNotMatch(reset.body,/下面的令牌/);assert.match(reset.body,/href="\/console\/team"/);
+  const history=await server.records.principals.history(user.id);
+  assert.equal(history.length,before.length+1);assert.equal(history.at(-1)?.changed_by,server.admin.user.id);
+  assert.equal(history.at(-1)?.password_changed,true);assert.ok(!JSON.stringify(history).includes(password));
   assert.equal((await send('/console/team','GET',undefined,memberSession)).status,303);
   assert.ok(!(await send(`/console/team/${user.id}`,'GET',undefined,adminSession)).body.includes(password));
   assert.equal((await login({username:user.name,password:initial})).status,401);
@@ -60,7 +85,7 @@ test('an administrator backup token cannot bypass a mandatory password change or
   const session=cookie(signed,'circle_hub_session');
   assert.equal((await send('/console/api/me','GET',undefined,session)).status,403);
   const form=await send('/console/password','GET',undefined,session);
-  assert.equal((await send('/console/password/reset','POST',{csrf:csrf(form.body),user:server.admin.user.id},session)).status,403);
+  assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(form.body),user:server.admin.user.id},session)).status,303);
 });
 test('login preserves passwords as typed and accepts the same Unicode username length as account creation',async()=>{
   const name='合成'+'😀'.repeat(70), password=' synthetic Unicode password ';
@@ -68,4 +93,34 @@ test('login preserves passwords as typed and accepts the same Unicode username l
   assert.equal((await login({username:name,password:password.trim()})).status,401);
   const signed=await login({username:name,password});
   assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/overview');
+});
+
+test('backup failures are isolated by source while username failures follow the account across sources',async t=>{
+  const sessions=new SessionStore();
+  let origin='';
+  const options:ConsoleOptions={deps:server.deps,sessions,ownOrigins:()=>new Set([origin]),secureRequest:()=>false,
+    jobs:new JobStore(),staging:new PackStaging(),log:line=>server.logs.push(line)};
+  // Only this fixture substitutes socket addresses; production never trusts a header for the peer's identity.
+  const fixture=createServer((req,res)=>{
+    Object.defineProperty(req.socket,'remoteAddress',{configurable:true,value:req.headers['x-synthetic-peer']});
+    handleConsole(req,res,new URL(req.url!,origin),options).catch(error=>{res.statusCode=500;res.end(String(error));});
+  });
+  fixture.listen(0,'127.0.0.1');await once(fixture,'listening');
+  t.after(()=>new Promise<void>((resolve,reject)=>fixture.close(error=>error?reject(error):resolve())));
+  const address=fixture.address();assert.ok(address&&typeof address!=='string');origin=`http://127.0.0.1:${address.port}`;
+  const sendPeer=(peer:string,data?:Record<string,string>,nonce=''):Promise<Reply>=>new Promise((resolve,reject)=>{
+    const req=request(new URL('/console/login',origin),{method:data?'POST':'GET',agent:false,headers:{origin,'x-synthetic-peer':peer,
+      ...(data?{'content-type':'application/x-www-form-urlencoded',cookie:nonce}:{})}},res=>{
+      let body='';res.setEncoding('utf8');res.on('data',part=>body+=part);res.on('end',()=>resolve({status:res.statusCode!,body,headers:res.headers}));
+    });req.on('error',reject);req.end(data?new URLSearchParams(data).toString():undefined);
+  });
+  const loginPeer=async(peer:string,fields:Record<string,string>)=>{
+    const form=await sendPeer(peer);return sendPeer(peer,{...fields,csrf:csrf(form.body)},cookie(form,'circle_hub_login'));
+  };
+  for(let i=0;i<5;i++)assert.equal((await loginPeer('192.0.2.10',{token:'invalid'})).status,401);
+  assert.equal((await loginPeer('192.0.2.10',{token:server.admin.token})).status,429);
+  assert.equal((await loginPeer('192.0.2.11',{token:server.admin.token})).status,303,'another source can still use the administrator backup');
+  for(let i=0;i<5;i++)assert.equal((await loginPeer('192.0.2.12',{username:'合成跨来源失败账户',password:'invalid'})).status,401);
+  assert.equal((await loginPeer('192.0.2.13',{username:'合成跨来源失败账户',password:'invalid'})).status,429,'switching sources does not bypass an account lock');
+  assert.equal((await loginPeer('192.0.2.13',{token:server.admin.token})).status,303,'an account lock does not lock backup login');
 });

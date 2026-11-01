@@ -382,7 +382,7 @@ test('a stage expires after 30 minutes: its 发布 step reads like an unknown st
 });
 
 test('every action is declared with a page to return to', () => {
-  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations)(?:\/|$)/.test(action.back), name);
+  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations|team)(?:\/|$)/.test(action.back), name);
 });
 
 test('closing the app removes every staged directory', async () => {

@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Password recovery command** — `user password-reset` recovers initial passwords, terminates console sessions and powers Team resets through the command bridge; backup-token failures are isolated by source.
+
 - **Password wording** — Chinese console, installer, CLI and credential messages consistently use “密码” under the owner’s second-round correction.
 
 - **Installer workflow login check** — the fresh-runner install uses synthetic credentials on stdin and checks the username/password page, as approved in decision 83's second round.

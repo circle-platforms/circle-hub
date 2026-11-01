@@ -1,5 +1,7 @@
 # records
 
+Decision 83, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.
+
 Decision 83, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.
 
 Persistence layer and identity primitives of the Hub: model elements B01 B02 B04 B05 B08, R01 and R02 (visibility).

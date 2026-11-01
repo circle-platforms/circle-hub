@@ -161,6 +161,8 @@
 
 ## 第二轮做了的
 
+- 第 4 项：新增 `user password-reset <用户>`，使用操作令牌的管理员身份；包括唯一管理员首次修改前的恢复。团队页通过现有命令桥执行，初始密码只在结果中显示一次，复用原密码历史和会话撤销规则；移除旧页面直接重置入口。备用令牌失败按 socket 来源分别计数，用户名登录继续按账户锁定。
+
 - 第 3 项：控制台、安装、CLI 与错误提示统一使用“密码”，同步当前任务说明和决定 83。为覆盖配置错误文字，可改路径补入 `hub/config/index.ts`、`hub/config/names.ts` 及对应包说明。历史决定和凭据扫描器的旧词识别、来源合成数据保持原样；本轮授权原文中说明笔误的引文保留。
 
 - 第 2 项：与当前 `install.sh` 的 `--admin-user`、`--password-stdin` 核对后，发布工作流首次安装传合成用户名、从标准输入传密码，检查 HTTPS 密码登录页的两个输入框。按本节明确授权，可改路径补入 `.github/workflows/release.yml` 与对应静态检查 `.github/checks/workflow.test.ts`；没有运行工作流或实际安装。
@@ -172,3 +174,4 @@
 - 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件一致）。`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/records/principals.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts` 26 项通过、0 跳过；CLI 按 `disabling the operator` 筛选 1 项、词表按 `uses generated axes` 筛选 1 项，均通过、0 跳过，筛选外未运行。`npm run test:docs` 283 项通过、0 跳过。没有运行全量回归。
 - 第 2 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过（含工作流静态检查）。`node --test --test-name-pattern='valid bash|fresh installation|macOS dry run|Linux dry run' hub/platform/install-script.test.ts` 4 项通过、0 跳过，筛选外未运行；从工作流提取的 Linux 作业 3 段块脚本均通过 `bash -n`，未执行其中命令。没有运行安装、服务启动、发布工作流或 CI。
 - 第 3 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。`node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console.test.ts hub/server/console-api-write.test.ts hub/server/console-places.test.ts hub/server/variables.test.ts` 56 项通过、0 跳过；配置、漂移与密码测试 15 项通过、0 跳过。CLI 按 `initial passwords` 筛选 1 项、数据库按 `pool never falls back` 筛选 1 项、安装脚本按 `valid bash|fresh installation` 筛选 2 项，均通过、0 跳过，筛选外未运行。没有运行全量回归或改动凭据扫描规则。
+- 第 4 项：`npm run typecheck` 通过；`npm run test:docs` 283 项通过、0 跳过。最终 `node --test --test-concurrency=2 hub/server/console-password.test.ts hub/server/console-manage.test.ts hub/server/command-bridge.test.ts hub/server/console-places.test.ts` 29 项通过、0 跳过；CLI 按 `password-reset` 筛选的 2 项通过、0 跳过，筛选外未运行。初次检查发现新测试夹具的 TCP/套接字配置错误及管理返回路径断言未含团队页，修正后重跑上述受影响测试；另一次失败夹具的调试进程已中止并清理，不记为通过。全部使用临时 PostgreSQL 和文件密钥，没有全量回归或真实部署操作。

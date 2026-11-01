@@ -29,6 +29,8 @@ export interface TestServerOptions {
   withoutRunsDetail?: boolean;
   /** Intervals and limits of the console's live updates. */
   live?: AppOptions['live'];
+  /** A command bridge over this test's scratch records, created before its HTTP listener starts. */
+  bridge?: (records: TestRecordsKit) => NonNullable<AppOptions['bridge']>;
 }
 
 export interface TestUser {
@@ -144,7 +146,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
-    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }) });
+    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}) });
     const info = await app.listen();
     const boot = await records.principals.bootstrapAdmin('管理员');
     const admin: TestUser = { user: boot.user, principal: principalOf(boot.user), token: boot.token.token };

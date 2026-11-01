@@ -173,8 +173,8 @@ async function login(request: IncomingMessage, response: ServerResponse, options
   }
   const rawName = (form.get('username') ?? '').trim();
   const name = rawName.length <= 200 && [...rawName].length <= 100 ? rawName : '';
-  const accountKey = 'account:' + (name || (form.has('token') ? 'backup' : ''));
   const peerKey = 'peer:' + (request.socket.remoteAddress ?? 'unknown');
+  const accountKey = form.has('username') ? 'account:' + name : peerKey + ':backup';
   if (!options.sessions.takeLoginAttempt(accountKey) || !options.sessions.takeLoginAttempt(peerKey,50)) return loginPage(options,response,429,'登录失败次数过多，请在 15 分钟后重试',secure);
   const principals=options.deps.records.principals;
   let token: string | null = null;
@@ -203,17 +203,15 @@ async function login(request: IncomingMessage, response: ServerResponse, options
 /** Password forms have no data navigation until the forced first change is complete. */
 async function passwordPage(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, principal: Principal | null, secure: boolean, rest: string[]): Promise<void> {
   if (!session || !principal) { request.resume(); return redirect(response,'/console/login'); }
-  const reset = rest.length === 1 && rest[0] === 'reset';
   const mustChange = (await options.deps.records.principals.passwordState(principal.id)).mustChange;
-  if (reset && mustChange) { request.resume(); return forbidden(response,'首次登录必须先修改密码'); }
-  if (rest.length > 0 && !reset) { request.resume(); return sendHtml(response,404,page(anonymous(NEUTRAL),html``)); }
+  if (rest.length > 0) { request.resume(); return sendHtml(response,404,page(anonymous(NEUTRAL),html``)); }
   const show = (status: number, message = '') => sendHtml(response,status,page(anonymous('修改密码'),html`
 <p>${principal.name}</p>${mustChange ? html`<p class="notice">首次登录必须修改密码。</p>` : ''}${message ? html`<p class="error">${message}</p>` : ''}
 <form method="post" action="/console/password"><input type="hidden" name="csrf" value="${session.csrf}"><input type="hidden" name="next" value="${safeNext(url.searchParams.get('next'))}">
 <div class="field"><label>当前密码 <input type="password" name="current" autocomplete="current-password" maxlength="256" required></label></div>
 <div class="field"><label title="12 至 256 个字符，不含控制字符">新密码 <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></label></div>
 <div class="field"><label>再次输入新密码 <input type="password" name="confirm" autocomplete="new-password" maxlength="256" required></label></div><button type="submit" class="btn primary">修改密码</button></form>`));
-  if (request.method === 'GET' && !reset) return show(200);
+  if (request.method === 'GET') return show(200);
   if (request.method !== 'POST') { request.resume(); return sendHtml(response,405,page(anonymous('方法不允许'),html`<p>只接受 POST</p>`),{allow:'POST'}); }
   if (!sameOrigin(request,options.ownOrigins())) { request.resume(); return forbidden(response,'密码表单只能从本控制台提交'); }
   const form=await formOf(request);
@@ -221,15 +219,6 @@ async function passwordPage(request: IncomingMessage, response: ServerResponse, 
   const key='password:'+principal.id;
   if (!options.sessions.takeLoginAttempt(key)) return show(429,'密码操作失败次数过多，请在 15 分钟后重试');
   try {
-    if (reset) {
-      if (principal.role !== 'admin') return forbidden(response,'只有管理员可以重置密码');
-      const user=await options.deps.records.principals.get(form.get('user') ?? '');
-      if (!user) return sendHtml(response,404,page(anonymous(NEUTRAL),html``));
-      const password=await options.deps.records.principals.resetPassword(principal,user.id);
-      options.sessions.clearLoginAttempts('account:'+user.name);
-      options.sessions.clearLoginAttempts(key);
-      return sendHtml(response,200,page(anonymous('初始密码已生成'),html`<p>${user.name}</p><p>初始密码仅显示一次；首次登录必须修改。</p>${pre(password)}<p>${link('/console/team','返回团队')}</p>`));
-    }
     const password=form.get('password') ?? '';
     if (!validPassword(password) || password !== form.get('confirm')) return show(400,'新密码须为 12 至 256 个字符，不含控制字符，且两次输入一致');
     if (!await options.deps.records.principals.changePassword(principal,form.get('current') ?? '',password)) return show(400,'当前密码无效，或新密码与当前密码相同');

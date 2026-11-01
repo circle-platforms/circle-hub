@@ -81,6 +81,7 @@ function usage(extra: readonly CliCommand[]): string {
     `  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先建第一位管理员，并只显示一次它的令牌`,
     '  user list                                    列出用户',
     '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）',
+    '  user password-reset <用户>                   重置初始密码，只显示一次；首次登录须修改，控制台会话立即失效',
     '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它',
     '  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误',
     '  token revoke <令牌编号>                        撤销令牌（立即生效）',
@@ -245,6 +246,18 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     for (const user of users) out(io, [user.id, user.name, roleText(user.role), labelOf('account_status', user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
     return 0;
   }
+  if (sub === 'password-reset') {
+    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
+    noAs(values.as);
+    const by = await operatorOf(ctx, options);
+    const kit = await ctx.records();
+    const user = await requireUser(kit, positionals[0]);
+    const password = await kit.principals.resetPassword(by, user.id);
+    out(io, `已重置 ${user.name}（${user.id}）的密码；该账户的控制台会话已失效`);
+    io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
+    io.stdout(password);
+    return 0;
+  }
   if (sub === 'disable' || sub === 'enable') {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     noAs(values.as);
@@ -269,7 +282,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     io.stdout('成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码');
     return 0;
   }
-  throw new UsageError('user 的子命令是 create、list、disable、enable 或 invite');
+  throw new UsageError('user 的子命令是 create、list、disable、enable、password-reset 或 invite');
 }
 
 async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
