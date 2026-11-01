@@ -82,7 +82,7 @@ ${plannedCard('上传文档导入', '从上传的文档与业务系统按条目�
 }
 
 const TITLES: Readonly<Record<Operation, { title: string; sub: string; active: 'settings' | 'connections' | 'packs' | 'knowledge' }>> = {
-  member: { title: '添加成员', sub: '为成员签发连接 Circle 的令牌；标准授权上线后改为邀请码。', active: 'settings' },
+  member: { title: '添加成员', sub: '为成员签发邀请码（MCP 标准授权）或访问令牌，用于连接 Circle。', active: 'settings' },
   system: { title: '接入业务系统', sub: 'Hub 以只读方式访问业务系统；凭据加密保存，页面与模型只可见名称。', active: 'connections' },
   pack: { title: '发布任务包', sub: '上传任务包，发布校验通过后确认发布，成为新版本。', active: 'packs' },
   knowledge: { title: '导入知识', sub: '从产品包声明的来源导入知识，每条附出处；导入完成后为该版本线的当前版本。', active: 'knowledge' },
