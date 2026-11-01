@@ -598,8 +598,8 @@ error. A source reference without the authorized run continues to use the reader
 
 迁移 7 `standard_authorization` 追加三处可变存储，已应用迁移 1–6 的 SQL 不变（`migrations.snapshot.test.ts` 把 6、7 也固定下来，并更新文件摘要）：
 
-- `oauth_clients`：客户端自己登记的名字（1–100 字，无控制字符）和 1–10 个回调地址；`registerClient` 在 10 分钟窗口内最多接受 100 次登记，超出抛 `LimitError`（按 `CLIENT_LOCK` 串行，并发时也不超）。`client(id)` 查找。
+- `oauth_clients`：客户端自己登记的名字（1–100 字，无控制字符）和 1–10 个回调地址；`registerClient` 在 10 分钟窗口内最多接受 100 次登记，超出抛 `LimitError`（按 `CLIENT_LOCK` 串行，并发时也不超），并顺带删除一天内既没换到令牌、也没用过邀请码的客户端（每次至多 100 个）。`client(id)` 查找。
 - `invitations`：管理员签发的邀请码，`invite(by, userId)` 只返回一次明文，表里只存规范化后（大写，去掉空格和连字符，O、I、L 读作 0、1、1）的 SHA-256；`INVITATION_TTL_MS` 为 24 小时。`checkInvitation(code)` 只查不用，给出账号或原因（不存在、已使用、已过期、账号已停用）；`takeInvitation(id, clientId)` 在一个事务里以条件更新取用一次，并记下用它授权的客户端，账号已停用时整笔回滚、邀请码保持未用。
 - `tokens.client_id`：`issueToken(by, userId, label, client)` 签发的令牌属于哪个已登记的客户端，`TokenInfo.client` 读出；不存在的客户端拒签。`revokeTokenValue(token)` 按令牌值吊销（RFC 7009：持有者可吊销），吊销人记为令牌所属账号。
 
-运行角色对 `oauth_clients` 只有 `SELECT, INSERT`，对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销记在这些可变存储里，与此前的令牌一样不写记录；合约里没有对应的记录类型。测试：`standard-authorization.test.ts`。
+运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销记在这些可变存储里，与此前的令牌一样不写记录；合约里没有对应的记录类型。测试：`standard-authorization.test.ts`。

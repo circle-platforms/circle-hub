@@ -48,8 +48,9 @@ function tamperingStatements(): string[] {
     const column = COLUMN[table];
     assert.ok(column, `a column for ${table}`);
     out.push(
-      // The ownership registry is mutable derived state; every other table keeps its original forbidden-row probes.
-      ...(table === 'lease_registrations' ? [] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
+      // The ownership registry is mutable derived state; registered clients that never led to a token are removed (still
+      // never updated); every other table keeps its original forbidden-row probes.
+      ...(table === 'lease_registrations' ? [] : table === 'oauth_clients' ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,

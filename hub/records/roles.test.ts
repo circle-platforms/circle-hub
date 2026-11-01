@@ -47,7 +47,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   const config = { dataDir, logDir: join(dataDir, 'logs'), database: runtime, limits: { ...DEFAULT_LIMITS } };
   // Before the owner migrated, the runtime role refuses to start instead of trying to create tables.
   await assert.rejects(openRecords(config, { migrate: false }), (error: unknown) => error instanceof MigrationError && /还没有应用/.test((error as Error).message));
-  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2, 3, 4, 5, 6, 7]);
   assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), []);
   // The role that owns the tables could disable the triggers, so it is refused as the runtime role.
   await assert.rejects(migrateRecords({ database: owner }, { runtimeRole: 'hub_owner' }), MigrationError);
@@ -66,6 +66,12 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   await kit.principals.setDisabled(admin, member.id, true);
   const issued = await kit.principals.issueToken(admin, user.id, '第二枚');
   assert.equal(await kit.principals.revokeToken(admin, issued.id), true);
+  // The standard authorization's stores (migration 7): a client, an invitation taken by it, a token for it, revocation by value.
+  const client = await kit.principals.registerClient('Circle', ['http://127.0.0.1:43123/callback']);
+  const invitation = await kit.principals.invite(admin, user.id);
+  assert.equal((await kit.principals.takeInvitation(invitation.id, client.id))?.id, user.id);
+  const bound = await kit.principals.issueToken(admin, user.id, client.name, client.id);
+  assert.equal(await kit.principals.revokeTokenValue(bound.token), true);
   await kit.authorizations.assign(admin, user.id, 'case-review');
   const artifact = await kit.artifacts.ingest({
     bytes: Buffer.from('合成的上传'),
@@ -95,6 +101,9 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
     'DELETE FROM users',
     'DELETE FROM tokens',
     'DELETE FROM pointers',
+    "UPDATE oauth_clients SET name = 'x'",
+    "UPDATE invitations SET user_id = user_id",
+    'DELETE FROM invitations',
     "UPDATE record_keys SET key='changed'",
     'DELETE FROM record_keys',
     'TRUNCATE record_keys',

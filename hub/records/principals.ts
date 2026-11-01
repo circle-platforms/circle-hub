@@ -34,6 +34,8 @@ const CODE = /^[0-9A-HJKMNP-TV-Z]{12}$/;
 /** Registrations are open to anyone who reaches the Hub, so their rate is bounded: at most CLIENT_BURST per window. */
 const CLIENT_BURST = 100;
 const CLIENT_WINDOW_MS = 10 * 60 * 1000;
+/** A client that obtained no token and used no invitation within this time is removed at a later registration. */
+const UNUSED_CLIENT_MS = 24 * 60 * 60 * 1000;
 
 /** Upper case without the dashes and spaces typed between the groups; O, I and L read as the digits they look like. */
 export function normalizeInvitation(text: string): string {
@@ -181,7 +183,8 @@ export class PgPrincipals implements Principals {
   }
 
   async issueToken(by: Principal, userId: string, label = '', client?: string): Promise<IssuedToken> {
-    if (typeof label !== 'string' || label.length > 100 || /\p{Cc}/u.test(label)) throw new TypeError('token labels are at most 100 characters without control characters');
+    // Characters are code points, as PostgreSQL's length() and the name checks count them.
+    if (typeof label !== 'string' || [...label].length > 100 || /\p{Cc}/u.test(label)) throw new TypeError('token labels are at most 100 characters without control characters');
     if (client !== undefined && (typeof client !== 'string' || !CLIENT_ID.test(client))) throw new TypeError('client ids are cli_<ULID>');
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, false);
@@ -289,6 +292,17 @@ export class PgPrincipals implements Principals {
     return this.#db.transaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1)', [CLIENT_LOCK], tx);
       const at = this.#now();
+      // Registrations cost nothing, so the ones that never led anywhere do not stay: a bounded batch per registration.
+      await this.#db.query(
+        `DELETE FROM oauth_clients WHERE id IN (
+           SELECT c.id FROM oauth_clients c
+            WHERE c.created_at < $1
+              AND NOT EXISTS (SELECT 1 FROM tokens t WHERE t.client_id = c.id)
+              AND NOT EXISTS (SELECT 1 FROM invitations i WHERE i.used_by_client = c.id)
+            ORDER BY c.created_at LIMIT 100)`,
+        [new Date(at.getTime() - UNUSED_CLIENT_MS).toISOString()],
+        tx,
+      );
       const recent = (await this.#db.query('SELECT count(*)::int AS n FROM oauth_clients WHERE created_at > $1', [new Date(at.getTime() - CLIENT_WINDOW_MS).toISOString()], tx)).rows[0];
       if (Number(recent.n) >= CLIENT_BURST) throw new LimitError('最近登记的客户端太多，请稍后再登记');
       const row = (

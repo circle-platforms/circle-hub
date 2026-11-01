@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS } from './oauth.ts';
+import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, RegistrationWindow } from './oauth.ts';
 import { LOGIN_LINK_TTL_MS } from './console/session.ts';
 import { createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -50,6 +50,8 @@ const FORM = { 'content-type': 'application/x-www-form-urlencoded' };
 const valueOf = (header: string | undefined): string => (header ?? '').split(';')[0].split('=').slice(1).join('=');
 const cookieOf = (reply: Reply, name: string): string | undefined => ([] as string[]).concat(reply.headers['set-cookie'] ?? []).find((value) => value.startsWith(`${name}=`));
 const csrfOf = (body: string): string => /name="csrf" value="([^"]+)"/.exec(body)![1];
+/** The approval of a confirm page: its CSRF token and the account the page names. */
+const approval = (body: string): Record<string, string> => ({ csrf: csrfOf(body), step: 'decide', decision: 'approve', account: /name="account" value="([^"]+)"/.exec(body)![1] });
 const pathOf = (location: string | string[] | undefined): string => new URL(String(location), origin()).pathname;
 
 async function member(): Promise<TestUser> {
@@ -110,7 +112,7 @@ async function approveWithInvitation(url: string, invitation: string): Promise<U
   assert.equal(verified.status, 303, verified.body);
   const confirm = await send(path, { headers: { cookie } });
   assert.match(confirm.body, /的身份授权/);
-  const approved = await post(path, { csrf: csrfOf(confirm.body), step: 'decide', decision: 'approve' }, cookie);
+  const approved = await post(path, approval(confirm.body), cookie);
   assert.equal(approved.status, 303, approved.body);
   return new URL(String(approved.headers.location));
 }
@@ -118,7 +120,7 @@ async function approveWithInvitation(url: string, invitation: string): Promise<U
 /** A signed-in browser approves a new request of `client`; the code. */
 async function approvedCode(client: string, challenge: string, session: string): Promise<string> {
   const { path, page, cookie } = await openPage(authorizeUrl(client, challenge), session);
-  const approved = await post(path, { csrf: csrfOf(page.body), step: 'decide', decision: 'approve' }, cookie);
+  const approved = await post(path, approval(page.body), cookie);
   assert.equal(approved.status, 303, approved.body);
   return new URL(String(approved.headers.location)).searchParams.get('code')!;
 }
@@ -231,7 +233,7 @@ describe('the MCP standard authorization', () => {
     const remote = await register('https://192.0.2.30/callback', '远程服务');
     const away = await openPage(authorizeUrl(remote, challenge, {}, 'https://192.0.2.30/callback'), session);
     assert.match(away.page.body, /回调地址不在本机。<\/b>授权后，授权码发送到 https:\/\/192\.0\.2\.30/);
-    const approved = await post(path, { csrf: csrfOf(page.body), step: 'decide', decision: 'approve' }, cookie);
+    const approved = await post(path, approval(page.body), cookie);
     const redirect = new URL(String(approved.headers.location));
     const reply = await exchange({ grant_type: 'authorization_code', code: redirect.searchParams.get('code')!, client_id: client, redirect_uri: 'http://127.0.0.1:43123/callback', code_verifier: verifier, resource: `${origin()}/mcp` });
     assert.equal(reply.status, 200, reply.body);
@@ -296,7 +298,7 @@ describe('the MCP standard authorization', () => {
     assert.equal((await send(path, { headers: { cookie: other.cookie } })).status, 410, 'the cookie of another request does not open this one');
     // The browser that opened it identifies itself; only that browser can approve.
     assert.equal((await post(path, { csrf: csrfOf(page.body), step: 'identity', code: invitation.code }, cookie)).status, 303);
-    assert.equal((await post(path, { csrf: csrfOf(page.body), step: 'decide', decision: 'approve' })).status, 410);
+    assert.equal((await post(path, { ...approval((await send(path, { headers: { cookie } })).body) })).status, 410);
     assert.deepEqual(await server.records.principals.checkInvitation(invitation.code).then((c) => c.ok), true, 'the refused approval used nothing');
   });
 
@@ -307,8 +309,18 @@ describe('the MCP standard authorization', () => {
       assert.equal(reply.status, 400, uri);
       assert.equal(JSON.parse(reply.body).error, 'invalid_redirect_uri', uri);
     }
-    assert.equal(JSON.parse((await attempt({ redirect_uris: ['https://192.0.2.10/cb'], token_endpoint_auth_method: 'client_secret_basic' })).body).error, 'invalid_client_metadata');
-    assert.equal(JSON.parse((await attempt({ redirect_uris: ['https://192.0.2.10/cb'], grant_types: ['client_credentials'] })).body).error, 'invalid_client_metadata');
+    // RFC 7591 3.2.1: what the Hub does not support is replaced, not refused: a client asking for a secret is public.
+    const confidential = JSON.parse((await attempt({ redirect_uris: ['https://192.0.2.10/cb'], token_endpoint_auth_method: 'client_secret_post', grant_types: ['authorization_code', 'refresh_token', 'client_credentials'] })).body);
+    assert.equal(confidential.token_endpoint_auth_method, 'none');
+    assert.equal(confidential.client_secret, undefined);
+    assert.deepEqual(confidential.grant_types, ['authorization_code']);
+    assert.equal(JSON.parse((await attempt({ redirect_uris: ['https://192.0.2.10/cb'], grant_types: ['client_credentials'] })).body).error, 'invalid_client_metadata', 'a client that cannot use the authorization code is refused');
+    // Stored, shown and matched as sent, so a redirect URI is what a URL parser writes, and an https host is a plain name.
+    for (const uri of ['https://192.0.2.10/c\u0000b', ' https://192.0.2.10/cb', 'https://192.0.2.10/c\tb', 'https://HUB.example/cb', 'https://a;b.example/cb', 'https://a,b.example/cb']) {
+      const reply = await attempt({ redirect_uris: [uri] });
+      assert.equal(reply.status, 400, JSON.stringify(uri));
+      assert.equal(JSON.parse(reply.body).error, 'invalid_redirect_uri', JSON.stringify(uri));
+    }
     assert.equal(JSON.parse((await attempt('[]')).body).error, 'invalid_client_metadata');
     assert.equal(JSON.parse((await attempt('redirect_uris=x', 'application/x-www-form-urlencoded')).body).error, 'invalid_client_metadata');
     for (const uri of ['ms-msdt:/id', 'search-ms:query=x', 'tel:1', 'intent://x', 'cursor://anysphere/callback']) {
@@ -423,6 +435,90 @@ describe('code replay and request floods', () => {
     for (let i = 0; i < 11; i++) own.push(await openPage(authorizeUrl(victim, challenge)));
     assert.equal((await send(path, { headers: { cookie } })).status, 410, 'the eleventh request of a client ends its oldest');
     assert.equal((await send(own[10].path, { headers: { cookie: own[10].cookie } })).status, 200);
+  });
+});
+
+describe('decisions, names and limits', () => {
+  test('a double submit of the approval gets the same redirect, and the invitation is taken once', async () => {
+    const user = await member();
+    const invitation = await server.records.principals.invite(server.admin.principal, user.user.id);
+    const client = await register();
+    const { verifier, challenge } = pkce();
+    const { path, page, cookie } = await openPage(authorizeUrl(client, challenge));
+    await post(path, { csrf: csrfOf(page.body), step: 'identity', code: invitation.code }, cookie);
+    const fields = approval((await send(path, { headers: { cookie } })).body);
+    const [first, second] = await Promise.all([post(path, fields, cookie), post(path, fields, cookie)]);
+    assert.equal(first.status, 303, first.body);
+    assert.equal(second.status, 303, second.body);
+    assert.equal(first.headers.location, second.headers.location, 'the browser keeps whichever answer it shows: both carry the code');
+    const code = new URL(String(first.headers.location)).searchParams.get('code')!;
+    const exchanged = await exchange({ grant_type: 'authorization_code', code, client_id: client, redirect_uri: 'http://127.0.0.1:43123/callback', code_verifier: verifier });
+    assert.equal(exchanged.status, 200, exchanged.body);
+    const [listed] = await server.records.principals.invitations(user.user.id);
+    assert.equal(listed.used_by_client, client);
+  });
+
+  test('the approval names the account the page showed; another account signed in meanwhile is refused', async () => {
+    const first = await member();
+    const second = await member();
+    const client = await register();
+    const { challenge } = pkce();
+    const opened = await openPage(authorizeUrl(client, challenge), await signIn(first.token));
+    const fields = approval(opened.page.body);
+    assert.equal(fields.account, first.user.id);
+    // The same browser signs in as someone else in another tab; the old page is submitted.
+    const bound = opened.cookie.split('; ').find((part) => part.startsWith('circle_hub_authorize='))!;
+    const switched = `${await signIn(second.token)}; ${bound}`;
+    const refused = await post(opened.path, fields, switched);
+    assert.equal(refused.status, 409);
+    assert.match(refused.body, new RegExp(`以 <b>${second.user.name}</b>`), 'the page now names the account that is signed in');
+    const approved = await post(opened.path, approval(refused.body), switched);
+    assert.equal(approved.status, 303);
+  });
+
+  test('a client name of astral characters still gets its token, and a request without redirect_uri needs none at the token', async () => {
+    const name = '\u{1F600}'.repeat(100);
+    const reply = await send('/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: name, redirect_uris: ['http://127.0.0.1:43123/callback'] }) });
+    const client = JSON.parse(reply.body).client_id as string;
+    const user = await member();
+    const session = await signIn(user.token);
+    const { verifier, challenge } = pkce();
+    // The request leaves out redirect_uri (the client has one), so the token request may leave it out too.
+    const url = `/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: client, code_challenge: challenge, code_challenge_method: 'S256', state: 's' })}`;
+    const { path, page, cookie } = await openPage(url, session);
+    const approved = await post(path, approval(page.body), cookie);
+    const code = new URL(String(approved.headers.location)).searchParams.get('code')!;
+    const exchanged = await exchange({ grant_type: 'authorization_code', code, client_id: client, code_verifier: verifier });
+    assert.equal(exchanged.status, 200, exchanged.body);
+    const [token] = (await server.records.principals.tokens(user.user.id)).filter((t) => t.client === client);
+    assert.equal(token.label, name, 'a hundred characters, counted as code points');
+  });
+
+  test('a private-use redirect is said to go to the app that handles its scheme on this machine', async () => {
+    const client = await register('com.example.circle:/callback');
+    const { challenge } = pkce();
+    const { page } = await openPage(authorizeUrl(client, challenge, {}, 'com.example.circle:/callback'), await signIn((await member()).token));
+    assert.match(page.body, /授权码交给本机上处理 com\.example\.circle: 链接的应用/);
+    assert.doesNotMatch(page.body, /回调地址不在本机/);
+  });
+
+  test('one sender registers at most twenty clients in ten minutes and holds at most a hundred open requests', () => {
+    let now = 0;
+    const window = new RegistrationWindow(() => now);
+    for (let i = 0; i < 20; i++) assert.equal(window.take('192.0.2.1'), true);
+    assert.equal(window.take('192.0.2.1'), false);
+    assert.equal(window.take('192.0.2.2'), true, 'another sender is not affected');
+    now += 10 * 60 * 1000;
+    assert.equal(window.take('192.0.2.1'), true, 'the window moves on');
+
+    const store = new AuthorizationStore(() => 0);
+    const opened = (client: string, peer: string) => store.open({ client: { id: client, name: client }, redirectUri: 'http://127.0.0.1/cb', redirectSent: true, state: null, challenge: 'c'.repeat(43), peer, resource: 'http://127.0.0.1/mcp', issuer: 'http://127.0.0.1', secure: false })!;
+    const victim = opened('cli_victim', '192.0.2.9');
+    const flood = [];
+    for (let i = 0; i < 101; i++) flood.push(opened(`cli_${i}`, '192.0.2.1'));
+    assert.equal(store.get(flood[0].id), null, 'the sender\'s hundred-and-first request ends its oldest');
+    assert.notEqual(store.get(flood[100].id), null);
+    assert.notEqual(store.get(victim.id), null, 'another sender\'s request stays');
   });
 });
 

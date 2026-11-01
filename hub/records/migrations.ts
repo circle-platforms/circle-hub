@@ -225,7 +225,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   call_reasons: 'SELECT, INSERT',
   users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at)',
   tokens: 'SELECT, INSERT, UPDATE (last_used_at, revoked_at, revoked_by)',
-  oauth_clients: 'SELECT, INSERT',
+  oauth_clients: 'SELECT, INSERT, DELETE',
   invitations: 'SELECT, INSERT, UPDATE (used_at, used_by_client)',
   pointers: 'SELECT, INSERT, UPDATE (target, version, moved_at, action_digest)',
   lease_registrations: 'SELECT, INSERT, UPDATE, DELETE',

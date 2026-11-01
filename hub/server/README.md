@@ -104,23 +104,29 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   Hub as its authorization server; the authorization server metadata offers the authorization code with PKCE S256 only,
   public clients only (`none`), no refresh token, and the `iss` response parameter. `<origin>` is the scheme of the
   channel and the Host the request came with (already checked against the allowed hosts).
-- **Registration** (`POST /oauth/register`, RFC 7591): JSON, public clients only; redirect URIs are https, http on a
-  loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme named by a reversed domain name
-  (`com.example.app:`, RFC 8252 7.1, which leaves out the operating system's handlers such as `tel:` or `ms-msdt:`), never
-  a fragment or user information; at most 100 registrations in 10 minutes (then 503 `temporarily_unavailable`). The self-chosen
-  `client_name` loses control and format characters, keeps 100 characters, and labels the client's token.
+- **Registration** (`POST /oauth/register`, RFC 7591): JSON; what the Hub does not support is replaced, not refused
+  (RFC 7591 3.2.1): every client is public (`none`, no secret, whatever method was asked) and gets the authorization code
+  only; a client whose `grant_types` or `response_types` leave the code out is refused. Redirect URIs are sent in the form
+  a URL parser writes them (they are stored, shown and matched as sent), and are https to a plain DNS name or IP
+  address, http on a loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme named by a
+  reversed domain name (`com.example.app:`, RFC 8252 7.1, which leaves out the operating system's handlers such as `tel:`
+  or `ms-msdt:`), never a fragment or user information. At most 20 registrations per sender and 100 in all in 10 minutes
+  (then 503 `temporarily_unavailable`); a client that obtained no token and used no invitation within a day is removed at
+  a later registration. The self-chosen `client_name` loses control and format characters, keeps 100 characters, and
+  labels the client's token.
 - **Authorization** (`GET /oauth/authorize`): every refusal (an unknown client, a redirect URI that is not registered, a
   response type other than `code`, no PKCE S256, a resource that is not this Hub's `/mcp`) is an error page and never a
   redirect: a client registers its redirect URIs itself, so redirecting before anybody looked at the request would make the
   Hub an open redirector (RFC 9700 4.11). An accepted request is kept in memory for `AUTHORIZATION_REQUEST_TTL_MS`
-  (10 minutes; at most ten open per client, the oldest ending first, and 5000 in all, beyond which new ones are refused
-  rather than evicting others) and the browser goes to the console's authorization page `/console/authorize/<request>`
+  (10 minutes; at most ten open per client and a hundred per sender, the oldest of that client or sender ending first, and
+  5000 in all, beyond which new ones are refused rather than evicting others) and the browser goes to the console's authorization page `/console/authorize/<request>`
   (under `/console`, so the console session cookie is sent) with a cookie scoped to that page (`circle_hub_authorize`,
   SameSite=Lax, 10 minutes): the request belongs to that browser, and to every other one it does not exist, so nobody can
   finish, or watch, a request another browser identified itself on.
 - **Token** (`POST /oauth/token`, form encoding, each parameter once): the code is used once, within
-  `AUTHORIZATION_CODE_TTL_MS` (2 minutes), by the client it was issued to, with the same redirect URI and resource and the
-  PKCE verifier of its challenge; a code presented again, by any client, is refused and the token it gave is revoked
+  `AUTHORIZATION_CODE_TTL_MS` (2 minutes), by the client it was issued to, with the same resource, the PKCE verifier of
+  its challenge, and the same redirect URI when the authorization request named one (RFC 6749 4.1.3); an account that
+  went away meanwhile is `invalid_grant`, never a 500; a code presented again, by any client, is refused and the token it gave is revoked
   (RFC 6749 4.1.2), also when the first exchange is still under way (it then revokes what it issues) and whatever the
   account's state.
   The answer is an ordinary Hub token (`Bearer`, no `expires_in`, no refresh token) issued by the account to itself,
@@ -324,7 +330,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   of `manage.ts`, through the command bridge as the signed-in administrator; `/commands` (`{operation, object}`) answers
   the command of a dialog for an object that exists and runs nothing. A write needs an administrator's session, this
   console's Origin (required: every browser sends it on a POST), the session's CSRF token in `X-CSRF-Token` (`/me` gives it)
-  and a JSON object of strings and booleans; 400 for a refused parameter or exit code 2, 409 for exit code 1 (with what the
+  and a JSON object of strings and booleans; a member gets the neutral 404 before any body is read, an upload included; 400 for a refused parameter or exit code 2, 409 for exit code 1 (with what the
   command said), 503 without a command bridge, the neutral 404 for members and unknown objects. Adding a member answers the
   invitation code (or the token) once, with the Circle entry.
 - **Live updates** (`console/live.ts`, decision 78; owner-confirmed item 7: no build step, so the script is an inline
@@ -352,8 +358,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   request's cookie (any other gets the 410 page that says the request does not exist). Without a console session the page
   asks for an invitation code (no password, owner-confirmed item 1); a signed-in browser confirms for its own account and
   may still switch to an invitation; the page always names the account, the client (its self-chosen name and id), the
-  redirect URI and the resource, and warns when the redirect URI is not a loopback address of this machine (the code then
-  goes to another host, which can connect as the account). Five wrong codes end the request. Its forms carry the request's own CSRF token and must
+  redirect URI and the resource, and says where the code goes when that is not a loopback address of this machine (a
+  warning for an https host, which can then connect as the account; for a private-use scheme, the app that handles it
+  here). Five wrong codes end the request. The approval names the account the page showed and is refused when another
+  one is signed in by then; a request is decided once, and a second submit (a double click) gets the same answer, so the
+  browser never drops the redirect that carries the code. Its forms carry the request's own CSRF token and must
   come from this server's origin; the confirm page's CSP allows its form to lead to the redirect URI's origin
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser

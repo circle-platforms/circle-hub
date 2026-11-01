@@ -22,6 +22,17 @@ export function redirectTarget(uri: string): string {
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : url.protocol;
 }
 
+/**
+ * What the page says about where the code goes: nothing for a loopback address of this machine; for an https URI that it
+ * leaves the machine; for a private-use scheme, that the app registered for it on this machine receives it.
+ */
+function redirectNotice(uri: string, account: string): Html | '' {
+  if (redirectIsLocal(uri)) return '';
+  const target = redirectTarget(uri);
+  if (target.startsWith('https://')) return callout('warn', html`<span><b>回调地址不在本机。</b>授权后，授权码发送到 ${target}；该地址的服务可凭它以 ${account} 的身份连接本 Hub。仅在确认该服务可信时授权。</span>`);
+  return callout('info', html`<span>授权码交给本机上处理 ${target} 链接的应用；仅在确认该应用可信时授权。</span>`);
+}
+
 /** The console's policy with form-action widened to the redirect URI, so the approval may lead there. */
 export function authorizeSecurityPolicy(uri: string): string {
   const target = redirectTarget(uri);
@@ -55,10 +66,13 @@ ${card(null, facts(request), 'mt12')}
 <p class="sub mt12">邀请码在添加成员时签发，24 小时内有效，仅可使用一次。也可先${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}，再以登录的账号授权。</p>`);
 }
 
-/** The confirm step for `account`; `via` says whether it comes from an invitation or the console session. */
-export function confirmPage(request: AuthorizationRequest, account: { name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
+/**
+ * The confirm step for `account`; `via` says whether it comes from an invitation or the console session. The form names the
+ * account, and the approval is refused when it is no longer the one the page showed.
+ */
+export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
   const decide = html`<form method="post" action="/console/authorize/${request.id}" class="row mt16">
-<input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="step" value="decide">
+<input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">
 <button type="submit" class="btn primary" name="decision" value="approve">授权</button>
 <button type="submit" class="btn" name="decision" value="deny">拒绝</button>
 </form>`;
@@ -69,7 +83,7 @@ export function confirmPage(request: AuthorizationRequest, account: { name: stri
 ${error === null ? '' : html`<p class="error mt12">${error}</p>`}
 <p class="mt12">以 <b>${account.name}</b>（${account.role}）的身份授权 <b>${request.client.name}</b> 连接本 Hub。</p>
 ${card(null, facts(request), 'mt12')}
-${redirectIsLocal(request.redirectUri) ? '' : callout('warn', html`<span><b>回调地址不在本机。</b>授权后，授权码发送到 ${redirectTarget(request.redirectUri)}；该地址的服务可凭它以 ${account.name} 的身份连接本 Hub。仅在确认该服务可信时授权。</span>`)}
+${redirectNotice(request.redirectUri, account.name)}
 ${callout('info', html`<span>授权后，该客户端以 ${account.name} 的身份调用 Hub 的工具，权限与该账号相同；在设置的“已连接的 Circle”中可随时断开。</span>`)}
 ${decide}${other}`);
 }

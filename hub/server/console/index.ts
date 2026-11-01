@@ -285,10 +285,16 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   }
   const principals = options.deps.records.principals;
   const signedIn = session === null ? null : await principals.authenticate(`Bearer ${session.token}`);
+  // The account the page names: the invitation's, else the session's. The approval must name the same one.
+  const named = open.invitation !== null ? { id: open.invitation.user, name: open.invitation.name, role: open.invitation.role, via: 'invitation' as const } : signedIn !== null ? { ...signedIn, via: 'session' as const } : null;
   const show = (status: number, error: string | null): void => {
-    if (open.invitation !== null) return sendHtml(response, status, confirmPage(open, { name: open.invitation.name, role: uiLabelOf('permission_role', open.invitation.role) }, 'invitation', open.csrf, error), { 'content-security-policy': authorizeSecurityPolicy(open.redirectUri) });
-    if (signedIn !== null) return sendHtml(response, status, confirmPage(open, { name: signedIn.name, role: uiLabelOf('permission_role', signedIn.role) }, 'session', open.csrf, error), { 'content-security-policy': authorizeSecurityPolicy(open.redirectUri) });
-    sendHtml(response, status, identityPage(open, error));
+    if (named === null) return sendHtml(response, status, identityPage(open, error));
+    sendHtml(response, status, confirmPage(open, { id: named.id, name: named.name, role: uiLabelOf('permission_role', named.role) }, named.via, open.csrf, error), { 'content-security-policy': authorizeSecurityPolicy(open.redirectUri) });
+  };
+  const go = (location: string): void => {
+    setCommonHeaders(response);
+    response.writeHead(303, { location, 'content-length': '0', 'cache-control': 'no-store' });
+    response.end();
   };
   if (request.method === 'GET') {
     if (open.ended !== null) return sendHtml(response, 200, endedPage(open));
@@ -305,8 +311,13 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   const form = await formOf(request);
   if (form === 'aborted') return void response.destroy();
   if (typeof form === 'string' || form.get('csrf') !== open.csrf) return forbidden(response, '表单已过期或不是本控制台发出的，请在 Circle 中重新连接 Hub');
-  if (open.ended !== null) return sendHtml(response, 200, endedPage(open));
   const step = form.get('step');
+  // A request is decided once: a second submit (a double click) waits for the first and gets the same answer.
+  if (step === 'decide' && open.decision !== null) {
+    const decided = await open.decision;
+    return 'location' in decided ? go(decided.location) : show(decided.status, decided.error);
+  }
+  if (open.ended !== null) return sendHtml(response, 200, endedPage(open));
   if (step === 'identity') {
     const check = await principals.checkInvitation(form.get('code') ?? '');
     if (!check.ok) {
@@ -321,33 +332,33 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
     return redirect(response, `/console/authorize/${open.id}`);
   }
   if (step !== 'decide') return show(400, '请求不正确，请重新选择');
-  const back = (params: Record<string, string>): void => {
-    setCommonHeaders(response);
-    response.writeHead(303, { location: responseUri(open.redirectUri, { ...params, state: open.state, iss: open.issuer }), 'content-length': '0', 'cache-control': 'no-store' });
-    response.end();
-  };
-  if (form.get('decision') === 'deny') {
-    open.ended = 'denied';
-    options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）的授权请求被拒绝`);
-    return back({ error: 'access_denied', error_description: 'the request was refused' });
-  }
-  if (form.get('decision') !== 'approve') return show(400, '请求不正确，请重新选择');
-  let account: string;
-  if (open.invitation !== null) {
-    const user = await principals.takeInvitation(open.invitation.id, open.client.id);
-    if (user === null) {
-      open.invitation = null;
-      return show(409, '邀请码已失效（已使用、已过期，或账号已停用）：请管理员重新签发');
+  const decision = form.get('decision');
+  if (decision !== 'approve' && decision !== 'deny') return show(400, '请求不正确，请重新选择');
+  const to = (params: Record<string, string>): { location: string } => ({ location: responseUri(open.redirectUri, { ...params, state: open.state, iss: open.issuer }) });
+  const decide = async (): Promise<{ location: string } | { status: number; error: string }> => {
+    if (decision === 'deny') {
+      open.ended = 'denied';
+      options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）的授权请求被拒绝`);
+      return to({ error: 'access_denied', error_description: 'the request was refused' });
     }
-    account = user.id;
-  } else if (signedIn !== null) {
-    account = signedIn.id;
-  } else {
-    return show(401, '请先输入邀请码');
-  }
-  const code = store!.grant(open, account);
-  options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获授权，账号 ${account}`);
-  back({ code });
+    if (named === null) return { status: 401, error: '请先输入邀请码' };
+    // The account must still be the one the page named: signing in as someone else in another tab changes nothing here.
+    if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新授权' };
+    if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
+      open.invitation = null;
+      return { status: 409, error: '邀请码已失效（已使用、已过期，或账号已停用）：请管理员重新签发' };
+    }
+    const code = store!.grant(open, named.id);
+    if (code === null) return { status: 409, error: '该授权请求已处理' };
+    options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获授权，账号 ${named.id}`);
+    return to({ code });
+  };
+  open.decision = decide();
+  const decided = await open.decision;
+  // A refusal of the page (not of the request) lets the person try again.
+  if (!('location' in decided)) open.decision = null;
+  if ('location' in decided) return go(decided.location);
+  return decided.status === 409 && open.invitation === null && named?.via === 'invitation' ? sendHtml(response, 409, identityPage(open, decided.error)) : show(decided.status, decided.error);
 }
 
 async function logout(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null): Promise<void> {
@@ -637,6 +648,11 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
   if (request.headers['x-csrf-token'] !== session!.csrf) {
     request.resume();
     return sendJson(response, 403, { code: null, message: 'CSRF 令牌不正确', fix: '在请求头 X-CSRF-Token 中带上 GET /console/api/me 返回的 csrf' }, headers);
+  }
+  // Before any body is read: a member's write, an upload included, is the neutral answer and holds no memory.
+  if (principal.role !== 'admin') {
+    request.resume();
+    return sendJson(response, 404, { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix }, headers);
   }
   // The pack check takes the zip as multipart/form-data (field archive); every other write a JSON object.
   let upload: Buffer | undefined;

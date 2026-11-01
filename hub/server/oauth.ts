@@ -15,7 +15,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import { LimitError, type OAuthClient, type Principals } from '../records/api.ts';
+import { LimitError, RecordsError, type IssuedToken, type OAuthClient, type Principals } from '../records/api.ts';
 import { cookie } from './console/session.ts';
 import { mediaTypeOf, readBody, sendJson, setCommonHeaders } from './http.ts';
 
@@ -25,8 +25,12 @@ export const AUTHORIZATION_CODE_TTL_MS = 2 * 60 * 1000;
 export const AUTHORIZE_PAGE = '/console/authorize';
 /** Open requests in all; beyond it new ones are refused, so a flood never evicts a request somebody is finishing. */
 const MAX_REQUESTS = 5000;
-/** Open requests of one client: a new one beyond this ends that client's oldest. */
+/** Open requests of one client, and of one sender: a new one beyond this ends that client's (that sender's) oldest. */
 const REQUESTS_PER_CLIENT = 10;
+const REQUESTS_PER_PEER = 100;
+/** Registrations one sender may make in REGISTRATION_WINDOW_MS (the records bound all senders together as well). */
+const REGISTRATIONS_PER_PEER = 20;
+const REGISTRATION_WINDOW_MS = 10 * 60 * 1000;
 const MAX_CODES = 1000;
 /** The cookie that ties a request to the browser that opened it (scoped to the request's page). */
 export const AUTHORIZE_COOKIE = 'circle_hub_authorize';
@@ -74,9 +78,11 @@ export function redirectUriProblem(uri: string): string | null {
   } catch {
     return 'not an absolute URI';
   }
+  // Stored, shown and matched as sent: so it must be what a URL parser writes (no spaces, tabs or NUL, lower-case host).
+  if (url.href !== uri) return 'a redirect URI is sent in its normalized form, as a URL parser writes it';
   if (uri.includes('#')) return 'a redirect URI has no fragment';
   if (url.username !== '' || url.password !== '') return 'a redirect URI has no user information';
-  if (url.protocol === 'https:') return null;
+  if (url.protocol === 'https:') return /^(?:[a-z0-9-]+\.)*[a-z0-9-]+$/.test(url.hostname) || /^\[[0-9a-f:.]+\]$/.test(url.hostname) ? null : 'an https redirect URI names a DNS name or an IP address';
   if (url.protocol === 'http:') return LOOPBACK_HOSTS.has(url.hostname) ? null : 'http is accepted for loopback addresses only';
   if (REFUSED_SCHEMES.has(url.protocol) || !/^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+:$/.test(url.protocol)) return 'a private-use scheme is a reversed domain name, such as com.example.app';
   return null;
@@ -101,7 +107,7 @@ export function redirectMatches(registered: readonly string[], sent: string): bo
   } catch {
     return false;
   }
-  if (url.protocol !== 'http:' || !LOOPBACK_HOSTS.has(url.hostname) || url.username !== '' || url.password !== '' || sent.includes('#')) return false;
+  if (url.href !== sent || url.protocol !== 'http:' || !LOOPBACK_HOSTS.has(url.hostname) || url.username !== '' || url.password !== '' || sent.includes('#')) return false;
   return registered.some((uri) => {
     try {
       const known = new URL(uri);
@@ -129,8 +135,12 @@ export interface AuthorizationRequest {
   /** Only what the page shows and the code needs, not the client's whole registration. */
   client: Pick<OAuthClient, 'id' | 'name'>;
   redirectUri: string;
+  /** Whether the request named its redirect URI (the token request must then name the same, RFC 6749 4.1.3). */
+  redirectSent: boolean;
   state: string | null;
   challenge: string;
+  /** The sender's address, for the bound on open requests per sender. */
+  peer: string;
   /** The resource the token is for (RFC 8707): this Hub's /mcp on the origin of the request. */
   resource: string;
   issuer: string;
@@ -146,11 +156,17 @@ export interface AuthorizationRequest {
   /** Wrong invitation codes typed for this request. */
   failures: number;
   ended: 'approved' | 'denied' | null;
+  /**
+   * The decision under way or taken: where the browser goes next, or why not. A request is decided once; a second submit
+   * (a double click) gets the same answer, so the browser never drops the redirect that carries the code.
+   */
+  decision: Promise<{ location: string } | { status: number; error: string }> | null;
 }
 
 export interface CodeGrant {
   client: string;
   redirectUri: string;
+  redirectSent: boolean;
   challenge: string;
   resource: string;
   user: string;
@@ -172,12 +188,14 @@ export class AuthorizationStore {
   }
 
   /** A new request, or null when too many are open (a flood is refused instead of evicting others' requests). */
-  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'state' | 'challenge' | 'resource' | 'issuer' | 'secure'>): AuthorizationRequest | null {
+  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'redirectSent' | 'state' | 'challenge' | 'peer' | 'resource' | 'issuer' | 'secure'>): AuthorizationRequest | null {
     this.#prune();
     const own = [...this.#requests.values()].filter((request) => request.client.id === fields.client.id);
     if (own.length >= REQUESTS_PER_CLIENT) this.#requests.delete(own[0].id);
+    const sender = [...this.#requests.values()].filter((request) => request.peer === fields.peer);
+    if (sender.length >= REQUESTS_PER_PEER) this.#requests.delete(sender[0].id);
     if (this.#requests.size >= MAX_REQUESTS) return null;
-    const request: AuthorizationRequest = { ...fields, id: secret(), created: this.#now(), csrf: secret(), browser: secret(), invitation: null, failures: 0, ended: null };
+    const request: AuthorizationRequest = { ...fields, id: secret(), created: this.#now(), csrf: secret(), browser: secret(), invitation: null, failures: 0, ended: null, decision: null };
     this.#requests.set(request.id, request);
     return request;
   }
@@ -197,12 +215,13 @@ export class AuthorizationStore {
     this.#requests.delete(id);
   }
 
-  /** Approves an open request for `user`: the one-time code for the redirect. */
-  grant(request: AuthorizationRequest, user: string): string {
+  /** Approves an open request for `user`: the one-time code for the redirect; null for a request already decided. */
+  grant(request: AuthorizationRequest, user: string): string | null {
+    if (request.ended !== null) return null;
     this.#prune();
     const code = secret();
     request.ended = 'approved';
-    this.#codes.set(digest(code), { client: request.client.id, redirectUri: request.redirectUri, challenge: request.challenge, resource: request.resource, user, expires: this.#now() + AUTHORIZATION_CODE_TTL_MS, used: false, token: null, compromised: false });
+    this.#codes.set(digest(code), { client: request.client.id, redirectUri: request.redirectUri, redirectSent: request.redirectSent, challenge: request.challenge, resource: request.resource, user, expires: this.#now() + AUTHORIZATION_CODE_TTL_MS, used: false, token: null, compromised: false });
     while (this.#codes.size > MAX_CODES) this.#codes.delete(this.#codes.keys().next().value!);
     return code;
   }
@@ -233,12 +252,48 @@ export class AuthorizationStore {
 export interface OAuthOptions {
   principals: Principals;
   store: AuthorizationStore;
+  /** Registrations per sender, in this process. */
+  registrations?: RegistrationWindow;
   /** True for a request over the built-in TLS listener or the configured HTTPS proxy. */
   secureRequest: (request: IncomingMessage) => boolean;
   log: (line: string) => void;
 }
 
 const NO_STORE = { 'cache-control': 'no-store', pragma: 'no-cache' };
+
+/** The sender of a request: its peer address (behind the configured TLS proxy, the proxy, so all senders share it). */
+export function peerOf(request: IncomingMessage): string {
+  return (request.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+}
+
+/** Registrations of each sender in the last REGISTRATION_WINDOW_MS, in memory. */
+export class RegistrationWindow {
+  readonly #times = new Map<string, number[]>();
+  readonly #now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.#now = now;
+  }
+
+  /** Counts a registration of `peer`; false when it already made REGISTRATIONS_PER_PEER in the window. */
+  take(peer: string): boolean {
+    const now = this.#now();
+    for (const [key, times] of this.#times) {
+      const kept = times.filter((at) => now - at < REGISTRATION_WINDOW_MS);
+      if (kept.length === 0) this.#times.delete(key);
+      else this.#times.set(key, kept);
+    }
+    const times = this.#times.get(peer) ?? [];
+    if (times.length >= REGISTRATIONS_PER_PEER) return false;
+    times.push(now);
+    this.#times.set(peer, times);
+    return true;
+  }
+
+  clear(): void {
+    this.#times.clear();
+  }
+}
 
 function oauthError(response: ServerResponse, status: number, error: string, description: string, headers: Record<string, string> = {}): void {
   sendJson(response, status, { error, error_description: description }, { ...NO_STORE, ...headers });
@@ -313,7 +368,7 @@ export async function handleOAuth(request: IncomingMessage, response: ServerResp
   if (path === '/oauth/authorize') {
     if (request.method !== 'GET') return methodNotAllowed(request, response, 'GET');
     request.resume();
-    return authorize(response, url, options, issuer, secure, refuse);
+    return authorize(request, response, url, options, issuer, secure, refuse);
   }
   if (request.method !== 'POST') return methodNotAllowed(request, response, 'POST');
   if (path === '/oauth/register') return register(request, response, options);
@@ -347,14 +402,14 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
     const problem = redirectUriProblem(uri);
     if (problem !== null) return oauthError(response, 400, 'invalid_redirect_uri', problem);
   }
-  const method = metadata.token_endpoint_auth_method;
-  if (method !== undefined && method !== 'none') return oauthError(response, 400, 'invalid_client_metadata', 'only public clients (token_endpoint_auth_method none) are accepted');
+  // RFC 7591 3.2.1: the server may replace metadata it does not support. Every client here is public (no secret is issued,
+  // whatever token_endpoint_auth_method was asked) and gets the authorization code only; a client that cannot use the
+  // authorization code at all is refused.
   const grants = metadata.grant_types;
-  if (grants !== undefined && (!Array.isArray(grants) || !grants.includes('authorization_code') || grants.some((grant) => grant !== 'authorization_code' && grant !== 'refresh_token'))) {
-    return oauthError(response, 400, 'invalid_client_metadata', 'grant_types must include authorization_code and nothing but refresh_token besides');
-  }
+  if (grants !== undefined && (!Array.isArray(grants) || !grants.includes('authorization_code'))) return oauthError(response, 400, 'invalid_client_metadata', 'grant_types must include authorization_code');
   const types = metadata.response_types;
-  if (types !== undefined && (!Array.isArray(types) || types.length !== 1 || types[0] !== 'code')) return oauthError(response, 400, 'invalid_client_metadata', 'response_types must be [code]');
+  if (types !== undefined && (!Array.isArray(types) || !types.includes('code'))) return oauthError(response, 400, 'invalid_client_metadata', 'response_types must include code');
+  if (options.registrations !== undefined && !options.registrations.take(peerOf(request))) return oauthError(response, 503, 'temporarily_unavailable', 'too many registrations from this sender; retry later', { 'retry-after': '600' });
   // At most 100 characters (code points, so no surrogate pair is cut), without control or format characters: a
   // self-chosen name is shown on the authorization page, where a bidirectional override could reorder the text around it.
   const given = typeof metadata.client_name === 'string' ? [...metadata.client_name.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() : '';
@@ -377,7 +432,7 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
   }, NO_STORE);
 }
 
-async function authorize(response: ServerResponse, url: URL, options: OAuthOptions, issuer: string, secure: boolean, refuse: AuthorizeRefusal): Promise<void> {
+async function authorize(request: IncomingMessage, response: ServerResponse, url: URL, options: OAuthOptions, issuer: string, secure: boolean, refuse: AuthorizeRefusal): Promise<void> {
   const query = url.searchParams;
   for (const name of new Set(query.keys())) if (query.getAll(name).length > 1) return refuse(response, 400, '授权请求无效：参数重复。请在 Circle 中重新连接 Hub。');
   const client = await options.principals.client(query.get('client_id') ?? '');
@@ -394,7 +449,7 @@ async function authorize(response: ServerResponse, url: URL, options: OAuthOptio
   const resource = `${issuer}/mcp`;
   const asked = query.get('resource');
   if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在 Circle 中重新连接 Hub。');
-  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, state, challenge, resource, issuer, secure });
+  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, redirectSent: sent !== null, state, challenge, peer: peerOf(request), resource, issuer, secure });
   if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在 Circle 中重新连接 Hub。');
   const page = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);
@@ -433,13 +488,22 @@ async function token(request: IncomingMessage, response: ServerResponse, options
     return oauthError(response, 400, 'invalid_grant', 'the authorization code was already used');
   }
   if (grant.client !== client.id) return oauthError(response, 400, 'invalid_grant', 'the authorization code is invalid or expired');
-  if ((form.get('redirect_uri') ?? '') !== grant.redirectUri) return oauthError(response, 400, 'invalid_grant', 'redirect_uri differs from the authorization request');
+  // RFC 6749 4.1.3: required, and identical, when the authorization request named it.
+  const sentUri = form.get('redirect_uri');
+  if (grant.redirectSent ? sentUri !== grant.redirectUri : sentUri !== null && sentUri !== grant.redirectUri) return oauthError(response, 400, 'invalid_grant', 'redirect_uri differs from the authorization request');
   if (!pkceMatches(form.get('code_verifier') ?? '', grant.challenge)) return oauthError(response, 400, 'invalid_grant', 'code_verifier does not match the code_challenge');
   const resource = form.get('resource');
   if (resource !== null && resource !== grant.resource) return oauthError(response, 400, 'invalid_target', 'the resource differs from the authorization request');
   const user = await options.principals.get(grant.user);
   if (user === null || user.disabled) return oauthError(response, 400, 'invalid_grant', 'the account is not available');
-  const issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id);
+  let issued: IssuedToken;
+  try {
+    issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id);
+  } catch (error) {
+    // The account was disabled meanwhile, or the client went away: not this request's fault, and no 500.
+    if (error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') return oauthError(response, 400, 'invalid_grant', 'the account is not available');
+    throw error;
+  }
   if (grant.compromised) {
     await options.principals.revokeTokenValue(issued.token);
     return oauthError(response, 400, 'invalid_grant', 'the authorization code was used twice');

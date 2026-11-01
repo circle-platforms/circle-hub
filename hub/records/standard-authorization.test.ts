@@ -124,6 +124,34 @@ test('clients register with a bounded rate, and a token names the client it was 
   await assert.rejects(kit.principals.issueToken(admin, member.id, 'x', `cli_${'0'.repeat(26)}`), ConflictError);
 });
 
+test('a client that led to no token within a day is removed at a later registration; a used one stays', async (t) => {
+  let clock = Date.parse('2026-11-01T08:00:00.000Z');
+  const kit = await openTestRecords({ postgres, now: () => new Date(clock) });
+  t.after(() => kit.close());
+  const admin = asPrincipal((await kit.principals.bootstrapAdmin('管理员')).user);
+  const member = await kit.principals.createUser(admin, '成员');
+  const unused = await kit.principals.registerClient('unused', LOOPBACK);
+  const tokened = await kit.principals.registerClient('tokened', LOOPBACK);
+  const invited = await kit.principals.registerClient('invited', LOOPBACK);
+  await kit.principals.issueToken(asPrincipal(member), member.id, 'x', tokened.id);
+  const invitation = await kit.principals.invite(admin, member.id);
+  await kit.principals.takeInvitation(invitation.id, invited.id);
+  clock += 24 * 60 * 60 * 1000 + 1;
+  await kit.principals.registerClient('later', LOOPBACK);
+  assert.equal(await kit.principals.client(unused.id), null);
+  assert.notEqual(await kit.principals.client(tokened.id), null);
+  assert.notEqual(await kit.principals.client(invited.id), null);
+});
+
+test('a token label is a hundred characters counted as code points', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const admin = asPrincipal((await kit.principals.bootstrapAdmin('管理员')).user);
+  const label = '\u{1F600}'.repeat(100);
+  assert.equal((await kit.principals.issueToken(admin, admin.id, label)).label, label);
+  await assert.rejects(kit.principals.issueToken(admin, admin.id, `${label}x`), TypeError);
+});
+
 test('whoever holds a token may revoke it by its value; it then stops authenticating', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());

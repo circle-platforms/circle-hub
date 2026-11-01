@@ -123,6 +123,10 @@ test('a write needs this console\'s Origin, the session\'s CSRF token in its hea
   assert.equal(refused.status, 404);
   assert.equal(JSON.parse(refused.body).code, 'SOURCE_UNAVAILABLE');
   assert.equal((await post('me', {})).status, 405, 'a read interface takes no POST');
+  // A member's upload is answered before it is read, with the same neutral answer.
+  const upload = await send('POST', '/console/api/packs/stage', { cookie: member.cookie, csrf: member.csrf, body: Buffer.alloc(256 * 1024, 1), type: 'multipart/form-data; boundary=x' });
+  assert.equal(upload.status, 404);
+  assert.equal(JSON.parse(upload.body).code, 'SOURCE_UNAVAILABLE');
   assert.deepEqual(calls, [], 'nothing ran');
 });
 

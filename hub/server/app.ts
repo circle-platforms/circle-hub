@@ -22,7 +22,7 @@ import { PackStaging } from './console/staging.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import { handleMcp } from './mcp.ts';
-import { AuthorizationStore, handleOAuth, oauthTarget, resourceMetadataUrl } from './oauth.ts';
+import { AuthorizationStore, RegistrationWindow, handleOAuth, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
 
@@ -85,6 +85,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const clock = deps.now ?? (() => new Date());
   const sessions = new SessionStore(() => clock().getTime());
   const authorizations = new AuthorizationStore(() => clock().getTime());
+  const registrations = new RegistrationWindow(() => clock().getTime());
   const loginLinks = new LoginLinkStore(() => clock().getTime());
   const staging = new PackStaging(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
@@ -105,7 +106,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
   const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
-  const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, secureRequest, log };
+  const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
   const live = new LiveEvents({ records: deps.records, sessions, log }, options.live);
   jobs.watch((job) => live.publish({ name: 'import.progress', data: { job: job.id } }));
@@ -262,6 +263,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       }
       sessions.clear();
       authorizations.clear();
+      registrations.clear();
       loginLinks.clear();
       await staging.clear();
     })());
