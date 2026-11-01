@@ -126,4 +126,3 @@ export function readsJson(stats: ReadStatistics | null | undefined): Record<stri
 export function trialJson(report: SystemTrialReport): Record<string, unknown> {
   return { ...report, environment_label: uiLabelOf('environment', report.environment) };
 }
-
