@@ -222,6 +222,15 @@ export type PublishOutcome =
   | { ok: true; created: boolean; version: PackVersionInfo; report: PublishReport }
   | { ok: false; problems: PackProblem[]; report: PublishReport | null };
 
+/**
+ * A check of a publication (pack publish --dry-run): every refusal of publish ran and nothing was stored. `existing` is the
+ * version already published with the same content (publishing would add nothing), `current` the pack's version in use, the
+ * highest one not withdrawn (null for a pack id nobody published yet).
+ */
+export type PublishCheck =
+  | { ok: true; manifest: PackManifest; digest: string; existing: PackVersionInfo | null; current: PackVersionInfo | null; report: PublishReport }
+  | { ok: false; problems: PackProblem[]; report: PublishReport | null };
+
 export interface AssignmentInfo {
   user: string;
   pack: string;

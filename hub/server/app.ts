@@ -17,6 +17,7 @@ import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { authorizeRefusal, handleConsole } from './console/index.ts';
 import { JobStore } from './console/manage.ts';
 import { LoginLinkStore, SessionStore } from './console/session.ts';
+import { PackStaging } from './console/staging.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import { handleMcp } from './mcp.ts';
@@ -84,6 +85,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const sessions = new SessionStore(() => clock().getTime());
   const authorizations = new AuthorizationStore(() => clock().getTime());
   const loginLinks = new LoginLinkStore(() => clock().getTime());
+  const staging = new PackStaging(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
   let hosts = allowedHosts(host, deps.config.port, declared);
   let secureHosts = https ? allowedHosts(https.host, https.port, declared, 443) : new Set<string>();
@@ -106,6 +108,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
     jobs: new JobStore(clock),
+    staging,
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.bridge ? { bridge: options.bridge } : {}),
     authorizations, loginLinks, secureRequest,
@@ -255,6 +258,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       sessions.clear();
       authorizations.clear();
       loginLinks.clear();
+      await staging.clear();
     })());
 
   return { handler, listen, close, release };

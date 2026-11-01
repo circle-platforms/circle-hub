@@ -48,6 +48,7 @@ import type {
   PackVersionBody,
   PackVersionInfo,
   ProductDeclarations,
+  PublishCheck,
   PublishOutcome,
   PublishReport,
 } from './types.ts';
@@ -97,6 +98,8 @@ export interface PackRegistry {
   readonly extractDir: string;
   /** Publishes the pack in `directory` for its owner (T02); every refusal comes back as problems, never half a publication. */
   publish(owner: Principal, directory: string, options?:{answerRequests?:readonly string[]}): Promise<PublishOutcome>;
+  /** Runs every check and refusal of publish for the pack in `directory` and stores nothing (pack publish --dry-run). */
+  check(owner: Principal, directory: string, options?:{answerRequests?:readonly string[]}): Promise<PublishCheck>;
   /**
    * Admin: withdraws a published version (R01 R[1], T02 R[4]); existing runs keep it, new runs cannot use it (T02 R[6]). For
    * anyone else absent and forbidden are the same AccessError. Refused (ConflictError with the fix) when the version is the
@@ -704,6 +707,22 @@ class Registry implements PackRegistry {
   // ---------------------------------------------------------------- publication
 
   async publish(owner: Principal, directory: string, options:{answerRequests?:readonly string[]}={}): Promise<PublishOutcome> {
+    const outcome = await this.#publication(owner, directory, options, false);
+    if (!outcome.ok || 'created' in outcome) return outcome;
+    throw new Error('a publication ended as a check');
+  }
+
+  async check(owner: Principal, directory: string, options:{answerRequests?:readonly string[]}={}): Promise<PublishCheck> {
+    const outcome = await this.#publication(owner, directory, options, true);
+    if (!outcome.ok || !('created' in outcome)) return outcome;
+    throw new Error('a check ended as a publication');
+  }
+
+  /**
+   * Publication and its check share every step up to the first write: a check (`dryRun`) runs every refusal, the product
+   * variable names under their locks included, and stops before the bytes, the pack_version record and the decision.
+   */
+  async #publication(owner: Principal, directory: string, options:{answerRequests?:readonly string[]}, dryRun: boolean): Promise<PublishOutcome | PublishCheck> {
     const refuse = (problems: PackProblem[], report: PublishReport | null = null): PublishOutcome => ({ ok: false, problems, report });
     const account = await this.account(owner);
     if (account === null) return refuse([problem('publish.account', '.', '发布人不是有效的 Hub 账号（不存在或已停用）', '用有效的账号发布')]);
@@ -713,7 +732,8 @@ class Registry implements PackRegistry {
     const { manifest, digest } = read.pack;
     const answers=[...new Set(options.answerRequests??[])];
     const requests=createRequestService(this.#records,this.#now);
-    const outcome=await this.#exclusive(manifest.id, async ():Promise<PublishOutcome> => {
+    const checked = async (report: PublishReport, existing: PackVersionInfo | null): Promise<PublishCheck> => ({ ok: true, manifest, digest, existing, current: await this.latestVersion(manifest.id), report });
+    const outcome=await this.#exclusive(manifest.id, async ():Promise<PublishOutcome | PublishCheck> => {
       const authorizations = this.#records.authorizations;
       const currentOwner = await authorizations.ownerOf(manifest.id);
       if (currentOwner !== null && currentOwner !== account.id) {
@@ -727,7 +747,7 @@ class Registry implements PackRegistry {
       }
 
       if (earlier !== null) {
-        if (earlier.digest === digest && !earlier.withdrawn) return { ok: true, created: false, version: earlier, report: earlier.report };
+        if (earlier.digest === digest && !earlier.withdrawn) return dryRun ? checked(earlier.report, earlier) : { ok: true, created: false, version: earlier, report: earlier.report };
         if (earlier.withdrawn) return refuse([problem('publish.version_withdrawn', 'pack.json', `${packVersionKey(manifest.id, manifest.version)} 已经下架；下架的版本号不再使用`, '改大版本号后发布新版本', { field: '/version' })]);
         return refuse([problem('publish.version_reused', 'pack.json', `${packVersionKey(manifest.id, manifest.version)} 已经以另一份内容发布过；发布过的版本不再改变`, '改大版本号后发布', { field: '/version' })]);
       }
@@ -754,7 +774,7 @@ class Registry implements PackRegistry {
         const refusals = refusalsOf(report, pack);
         if (refusals.length > 0) return refuse(refusals, report);
 
-        const store = async (): Promise<PublishOutcome> => {
+        const store = async (): Promise<PublishOutcome | PublishCheck> => {
           // Immutable bytes may precede the decision. Name ownership and publication become visible together.
           const product = pack.declarations.kind==='product' ? pack.declarations.product : null;
           const committed = await this.#records.store.withTransaction(async tx => {
@@ -769,6 +789,8 @@ class Registry implements PackRegistry {
               if(claims.some(c=>c.product.variables?.some(v=>v.name===variable.name && canonicalize(v.schema)!==canonicalize(variable.schema)))) return refuse([problem('variables.schema_changed','product.json',`变量 ${variable.name} 的模式和已发布版本不同`,'模式要改请换一个变量名字')],report);
             }
           }
+          // A check ends here: every refusal above ran under the publication's locks, and nothing below is written.
+          if (dryRun) return null;
           for (const file of read.pack.files) await this.#records.objects.put(file.bytes, mediaTypeOf(file.path));
           await this.#records.objects.put(read.pack.manifestBytes, 'application/json');
           const body: PackVersionBody = {
@@ -806,6 +828,7 @@ class Registry implements PackRegistry {
           return null;
           });
           if(committed!==null)return committed;
+          if(dryRun)return checked(report,null);
           if(staged!==null){await staged.promote();staged=null;}
           const version=await this.getVersion(manifest.id,manifest.version);
           if(version===null)throw new IntegrityError('发布之后读不到这个版本');
@@ -824,7 +847,7 @@ class Registry implements PackRegistry {
           const before = await colliding();
           if (before.length > 0) return refuse(before, report);
           const outcome = await store();
-          if (!outcome.ok || !outcome.created) return outcome;
+          if (dryRun || !outcome.ok || !('created' in outcome) || !outcome.created) return outcome;
           // As for activation: another Hub process may have activated a colliding pack (or this one) meanwhile. The owner's
           // publication is then withdrawn again, and its version number stays used.
           const after = await colliding();
@@ -840,7 +863,7 @@ class Registry implements PackRegistry {
         if (staged !== null) await (staged as StagedTree).discard();
       }
     });
-    if(outcome.ok)try{for(const id of answers)await requests.answer(id,outcome.version.record);}
+    if(!dryRun&&outcome.ok&&'created' in outcome)try{for(const id of answers)await requests.answer(id,outcome.version.record);}
     catch(error){this.#report(error,'request answer after publication');throw new RecordsError('包版本已发布，但请求作答尚未全部保存',{cause:error,fix:error instanceof RecordsError&&error.fix?error.fix:'对同一目录和版本原样重试 pack publish，并保留全部 --answer-request 参数；不会重新发布版本'});}
     return outcome;
   }

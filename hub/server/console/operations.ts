@@ -1,13 +1,15 @@
 // The four management operations the console runs (proposal decision 6 of 2026-10-31), as step-by-step pages in the design
 // canvas's Operations board: adding a member, connecting a business system, publishing a task pack and importing knowledge.
 // Each form posts to /console/admin/do/<action>, which runs the same `circle-hub` commands as the command line (decision
-// 75). Adding a member issues an invitation code for the standard authorization, or a token for a client without it. The
-// step the backend does not have yet (a read-only connection test) is marked as planned.
+// 75). Adding a member issues an invitation code for the standard authorization, or a token for a client without it;
+// publishing a task pack is a check of the upload and then its 发布 step (manage.ts). The step the backend does not have
+// yet (a read-only connection test) is marked as planned.
 import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { code, html, link, page, type Html } from './html.ts';
-import { actionForm, environmentOptions, jobsSection, roleOptions, type JobStore } from './manage.ts';
+import { actionForm, environmentOptions, jobsSection, roleOptions, stageForms, type JobStore } from './manage.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
-import { card, plannedCard, stepper as steps } from './ui.ts';
+import type { PackStaging } from './staging.ts';
+import { card, chip, plannedCard, stepper as steps, when } from './ui.ts';
 
 const OPERATIONS = ['member', 'system', 'pack', 'knowledge'] as const;
 type Operation = (typeof OPERATIONS)[number];
@@ -51,13 +53,15 @@ ${plannedCard('测试连接', '保存前以只读方式试读系统包声明的�
 </section>`;
 }
 
-function packPage(ctx: PageContext): Html {
-  const form = actionForm('pack-publish', ctx.csrf ?? '', html`<div class="fields">${field('任务包 zip 文件', html`<input type="file" name="archive" accept=".zip,application/zip" required>`, { hint: '任务包目录压缩成的 zip，目录中要有 pack.json', full: true })}</div>`, '上传并发布', { multipart: true, primary: true });
+function packPage(ctx: PageContext, staging: PackStaging): Html {
+  const form = actionForm('pack-stage', ctx.csrf ?? '', html`<div class="fields">${field('任务包 zip 文件', html`<input type="file" name="archive" accept=".zip,application/zip" required>`, { hint: '任务包目录压缩成的 zip，目录中要有 pack.json', full: true })}</div>`, '上传并校验', { multipart: true, primary: true });
+  const staged = staging.list(ctx.principal.id);
+  const waiting = staged.length === 0 ? '' : html`<div class="mt16">${card({ title: '暂存的任务包', tail: chip('等待发布中', 'judgment'), meta: '仅暂存人可见，30 分钟内有效' }, html`<div class="stack">${staged.map((stage) => html`<div><p>${code(`${stage.pack}@${stage.version}`)} <span class="sub">摘要 ${stage.digest.slice(0, 12)}… · 暂存至 ${when(new Date(stage.expires).toISOString())}</span></p>${stageForms(stage, ctx.csrf ?? '')}</div>`)}</div>`)}</div>`;
   return html`${steps(['上传', '发布校验', '发布', '完成'], 0)}
 <section class="grid g-2-1 section">
-${card({ title: '上传任务包', meta: '上传人需为维护人' }, html`${form}<p class="note">执行 ${code('circle-hub pack publish <目录> --stage')}：检查结构、在沙箱中运行检查脚本与样例、核对引用，通过后发布；相同内容不会重复发布。</p>`)}
-${card({ title: '在 Circle 中发布' }, html`<p class="sub">维护人也可在 Hub 所在主机上的 Circle 中执行 ${code('circle-hub pack publish <目录>')}，检查与记录相同。发布后的版本见${link('/console/packs', '任务包')}。</p>`)}
-</section>`;
+${card({ title: '上传任务包', meta: '上传人需为维护人' }, html`${form}<p class="note">先执行 ${code('circle-hub pack publish <目录> --stage --dry-run')}：检查结构、在沙箱中运行检查脚本与样例、核对引用，并与当前版本逐个文件比较，不写入任何内容。通过后暂存 30 分钟，确认发布时执行 ${code('circle-hub pack publish <目录> --stage')}；相同内容不会重复发布。</p>`)}
+${card({ title: '在 Circle 中发布' }, html`<p class="sub">维护人也可在 Hub 所在主机上的 Circle 中执行 ${code('circle-hub pack publish <目录> --dry-run')} 校验，再执行 ${code('circle-hub pack publish <目录>')} 发布，检查与记录相同。发布后的版本见${link('/console/packs', '任务包')}。</p>`)}
+</section>${waiting}`;
 }
 
 async function knowledgePage(ctx: PageContext, jobs: JobStore): Promise<Html> {
@@ -80,19 +84,19 @@ ${plannedCard('上传文档导入', '从上传的文档与业务系统按条目�
 const TITLES: Readonly<Record<Operation, { title: string; sub: string; active: 'settings' | 'connections' | 'packs' | 'knowledge' }>> = {
   member: { title: '添加成员', sub: '为成员签发连接 Circle 的令牌；标准授权上线后改为邀请码。', active: 'settings' },
   system: { title: '接入业务系统', sub: 'Hub 以只读方式访问业务系统；凭据加密保存，页面与模型只可见名称。', active: 'connections' },
-  pack: { title: '发布任务包', sub: '上传任务包，经发布校验后成为新版本。', active: 'packs' },
+  pack: { title: '发布任务包', sub: '上传任务包，发布校验通过后确认发布，成为新版本。', active: 'packs' },
   knowledge: { title: '导入知识', sub: '从产品包声明的来源导入知识，每条附出处；导入完成后为该版本线的当前版本。', active: 'knowledge' },
 };
 
 /** One operation's page, or the four of them; administrators only, like the actions they post to. */
-export async function operationsPage(ctx: PageContext, operation: string | undefined, jobs: JobStore): Promise<PageResult> {
+export async function operationsPage(ctx: PageContext, operation: string | undefined, jobs: JobStore, staging: PackStaging): Promise<PageResult> {
   if (!ctx.admin) return neutralPage(ctx);
   if (operation === undefined) {
     const cards = OPERATIONS.map((name) => card({ title: link(`/console/operations/${name}`, TITLES[name].title) }, html`<p class="sub">${TITLES[name].sub}</p>`));
     return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', sub: '控制台只执行这四种管理操作；其余操作在相关页面生成命令，在管理员的 Circle 中执行。' }), html`<section class="grid g2 section">${cards}</section>`) };
   }
   if (!isOperation(operation)) return neutralPage(ctx);
-  const body = operation === 'member' ? memberPage(ctx) : operation === 'system' ? await systemPage(ctx) : operation === 'pack' ? packPage(ctx) : await knowledgePage(ctx, jobs);
+  const body = operation === 'member' ? memberPage(ctx) : operation === 'system' ? await systemPage(ctx) : operation === 'pack' ? packPage(ctx, staging) : await knowledgePage(ctx, jobs);
   const meta = TITLES[operation];
   return { status: 200, body: page(ctx.chrome(meta.title, { active: meta.active, sub: meta.sub }), body) };
 }

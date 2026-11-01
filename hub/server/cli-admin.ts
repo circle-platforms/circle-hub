@@ -26,7 +26,7 @@ import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatSe
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
 import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
-import { unruledShapes, parsePackRef, type PackProblem } from '../runs/api.ts';
+import { packChanges, unruledShapes, parsePackRef, type PackProblem, type PublishCheck, type PublishReport } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
 import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
@@ -51,7 +51,7 @@ export interface AdminCommandOptions {
 
 export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <技能包 id@版本>';
 export const PACK_USAGE =
-  'pack install <技能包@版本> | uninstall <技能包> | bind-skills <旧运行> --skill <技能包@版本>… --reason <理由> | publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
+  'pack install <技能包@版本> | uninstall <技能包> | bind-skills <旧运行> --skill <技能包@版本>… --reason <理由> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
 export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
@@ -294,6 +294,23 @@ function problemLine(problem: PackProblem): string {
   return `- [${problem.rule}] ${where}：${problem.message}（处理：${problem.fix}）`;
 }
 
+/** At most this many changed files are named one by one in a check's comparison with the version in use. */
+const MAX_CHANGE_LINES = 50;
+
+/** A passed check's comparison with the version in use: the versions, then each file added, modified or removed. */
+function changeLines(checked: PublishCheck & { ok: true }): string[] {
+  const current = checked.current;
+  if (current === null) return [`包 ${checked.manifest.id} 还没有已发布的版本，没有可比较的当前版本`];
+  const from = `${current.id}@${current.version}`;
+  if (current.digest === checked.digest) return [`与当前版本 ${from} 内容相同`];
+  const changes = packChanges(current.manifest, checked.manifest);
+  const count = (change: string): number => changes.filter((c) => c.change === change).length;
+  const lines = [`当前版本 ${from}，本次 ${checked.manifest.id}@${checked.manifest.version}：${labelOf('change_kind', 'added')} ${count('added')} 个文件，${labelOf('change_kind', 'modified')} ${count('modified')} 个，${labelOf('change_kind', 'removed')} ${count('removed')} 个`];
+  for (const change of changes.slice(0, MAX_CHANGE_LINES)) lines.push(`  ${labelOf('change_kind', change.change)} ${change.path}`);
+  if (changes.length > MAX_CHANGE_LINES) lines.push(`  另有 ${changes.length - MAX_CHANGE_LINES} 个文件有变化`);
+  return lines;
+}
+
 /**
  * A temporary directory holding pack.json and the files it lists, copied from `source` (which may hold more: tests, a README).
  * A listed path must be a plain file inside `source`; the publish check still verifies every digest and refuses anything
@@ -374,24 +391,47 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       return 0;
     }
     case 'publish': {
-      const { positionals, values } = parse(rest, { stage: { type: 'boolean' }, 'answer-request':{type:'string',multiple:true} }, 1);
+      const { positionals, values } = parse(rest, { stage: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, 'answer-request':{type:'string',multiple:true} }, 1);
       const source = isAbsolute(positionals[0]) ? positionals[0] : resolve(session.ctx.io.cwd, positionals[0]);
       const admin = await session.admin();
       const hub = await session.hub();
-      // --stage publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README.
-      const staged = values.stage === true ? await stagePackDirectory(source) : null;
-      let outcome;
-      try {
-        outcome = await decided(() => hub.registry.publish(admin, staged ?? source,{answerRequests:values['answer-request']??[]}));
-      } finally {
-        if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
-      }
-      if (!outcome.ok) {
+      const refused = (outcome: { problems: PackProblem[]; report: PublishReport | null }, what: string): never => {
         for (const problem of outcome.problems) session.err(problemLine(problem));
         for (const problem of outcome.report?.warnings ?? []) session.err(`注意：${problemLine(problem).slice(2)}`);
         const fix = outcome.problems.some((p) => p.rule === 'publish.no_right') ? `管理员先授予发布权：circle-hub pack grant-publish ${admin.name}` : '按上面每条问题的处理改好后重新发布';
-        throw new CliError(`任务包没有发布：${outcome.problems.length} 个问题`, fix);
+        throw new CliError(`${what}：${outcome.problems.length} 个问题`, fix);
+      };
+      // --stage publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README.
+      const staged = values.stage === true ? await stagePackDirectory(source) : null;
+      const options = { answerRequests: values['answer-request'] ?? [] };
+      if (values['dry-run'] === true) {
+        // Every check and refusal of publish, nothing stored: what the console's 发布任务包 shows before its 发布 step.
+        let checked;
+        try {
+          checked = await decided(() => hub.registry.check(admin, staged ?? source, options));
+        } finally {
+          if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
+        }
+        if (!checked.ok) return refused(checked, '任务包未通过发布校验');
+        const ref = `${checked.manifest.id}@${checked.manifest.version}`;
+        const samples = checked.report.samples;
+        session.out(
+          checked.existing === null
+            ? `发布校验通过：${ref}（${labelOf('pack_kind', checked.manifest.kind)}，摘要 ${checked.digest}）：样例 ${samples.passed}/${samples.total} 通过`
+            : `${ref} 已经以同样的内容发布过（摘要 ${checked.digest}），发布不会产生新的记录`,
+        );
+        for (const line of changeLines(checked)) session.out(line);
+        for (const warning of checked.report.warnings) session.err(`注意：${problemLine(warning).slice(2)}`);
+        session.out(checked.existing === null ? '试运行：没有发布，也没有写入任何内容；去掉 --dry-run 即发布这个版本' : '试运行：没有写入任何内容');
+        return 0;
       }
+      let outcome;
+      try {
+        outcome = await decided(() => hub.registry.publish(admin, staged ?? source, options));
+      } finally {
+        if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
+      }
+      if (!outcome.ok) return refused(outcome, '任务包没有发布');
       const version = outcome.version;
       const ref = `${version.id}@${version.version}`;
       const samples = outcome.report.samples;
