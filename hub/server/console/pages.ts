@@ -504,13 +504,15 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
       ),
     );
   }
-  const flow = card({ title: '知识入库流程', hint: '共享知识须经 Hub 出处校验' }, html`<div class="stages">
-<div class="stage planned-stage"><span class="host"><span class="dot idle"></span>仅本人可见</span><b>原文归档</b><span class="sub">Circle 读取的网页、文件、系统数据连同出处归档</span>${planned()}</div>
-<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>模型归纳</b><span class="sub">模型生成的归纳保留在本机，不上传 Hub</span></div>
-<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>提交共享</b><span class="sub">确认为事实后，连同出处提交</span></div>
-<div class="stage on-hub"><span class="host"><span class="dot info"></span>Hub</span><b>出处校验</b><span class="sub">可追溯至原文且引文一致方可入库</span></div>
-<div class="stage"><span class="host"><span class="dot ok"></span>所有人可见</span><b>共享知识</b><span class="sub">按产品线与版本组织，所有 Circle 可读取、可引用</span></div>
-</div><p class="note">从业务系统与文档导入的知识同样经 Hub 校验；个人账号读取的内容不会自动成为共享知识。</p>`);
+  const flow = card({ title: '知识入库流程', hint: '个人知识保存在 Circle，不自动共享；团队知识由 Hub 校验出处，实际可读范围仍由任务包分配决定。' }, html`<div class="knowledge-flow">
+<section class="knowledge-column" aria-label="个人知识"><h3>个人（仅本人可见）</h3>
+<div class="stage planned-stage" title="Circle 读取的网页、文件、系统数据连同出处归档"><b>原文归档</b>${planned()}</div>
+<div class="stage circle" title="模型在 Circle 中归纳，结果保留在本机，不上传 Hub"><b>模型归纳</b></div></section>
+<div class="knowledge-bridge" title="确认为事实后连同出处提交；Hub 校验可追溯性和引文一致性">提交共享 → Hub 出处校验</div>
+<section class="knowledge-column" aria-label="团队知识"><h3>团队（所有人可见，Hub）</h3>
+<div class="stage on-hub" title="可追溯至原文且引文一致方可入库；Hub 不调用模型"><b>出处校验</b></div>
+<div class="stage" title="按产品线与版本组织；业务系统与文档导入同样经 Hub 校验，可读范围按任务包分配"><b>共享知识</b></div></section>
+</div>`);
   const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品包声明的来源导入到团队知识库（所有人可见）；仅管理员可用' }) : undefined;
   return {
     status: 200,

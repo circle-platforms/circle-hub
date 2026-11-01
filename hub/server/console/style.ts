@@ -363,6 +363,12 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .avatars .avatar:nth-child(2){background:var(--think-bg);color:var(--t-unknown)}
 .avatars .avatar:nth-child(3){background:var(--write-bg);color:var(--t-pass)}
 .stages{display:flex;flex-wrap:wrap;gap:12px 26px}
+.knowledge-flow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px;align-items:center}
+.knowledge-column{display:grid;gap:12px;min-width:0}
+.knowledge-column h3{font-size:var(--ui);margin:0}
+.knowledge-bridge{font-size:var(--ui-small);color:var(--secondary);text-align:center;max-width:180px}
+.knowledge-flow .stage::after,.knowledge-flow .stage::before{display:none}
+@media(max-width:900px){.knowledge-flow{grid-template-columns:1fr}.knowledge-bridge{max-width:none}}
 .stage{flex:1 1 140px;position:relative;border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--bg);font-size:var(--ui-small);animation:rise .45s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0) * 90ms + 150ms)}
 .stage::after{content:'';position:absolute;top:50%;right:-21px;width:16px;height:2px;background:var(--border)}
 .stage::before{content:'';position:absolute;top:calc(50% - 4px);right:-23px;border:5px solid transparent;border-left-color:var(--muted);border-right:0}

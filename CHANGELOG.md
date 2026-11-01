@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Knowledge flow** — decision 83 groups the diagram into personal and team columns with a shared submission boundary.
+
 - **Knowledge browsing** — decision 83 gives role-specific empty states and per-product version selectors for comparison.
 
 - **Knowledge intake pending items** — decision 83 moves the pending queue to knowledge and hides it when empty.

@@ -287,6 +287,9 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83 groups knowledge intake by personal and team visibility, with the share/verification boundary between two
+columns. Runtime explanations are hover hints. This diagram grants no new read rights; source archiving stays planned.
+
 Decision 83 hides product browsing and version comparison until a readable product line exists. Comparison selects
 produced versions of that product instead of asking for digests; import keeps its name and explains its scope on hover.
 
