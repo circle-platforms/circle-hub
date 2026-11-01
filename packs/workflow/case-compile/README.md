@@ -1,4 +1,4 @@
-# case-compile 3.9.11
+# case-compile 3.9.12
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -563,3 +563,13 @@ second device's peer, covered by the runner's own cleanup, was skipped, its expl
 - A left-over cleanup step that is the declared inverse of a live configuration of the same device is named as out of reverse
   order, with the configuration it undoes; "清理段含没有对应执行命令的额外配置操作" stays for a step that undoes nothing live there.
 - Within one device the uncovered configurations still take their inverses in reverse order, unchanged.
+
+### 3.9.12: failure attribution starts from the device echo, as CES (decision 118)
+
+- SKILL step 9 (task page attribution-from-echo): the same reproduction spent one device run on a timing guess although the
+  device had named the missing configuration ("not listed in the synconfig peer configuration"). As CES rule 5 (a failed
+  run's output is the actual side, used to understand the failure) and the model's hypothesis set (V08: each hypothesis with
+  its prediction, the next distinguishing observation run as a read): a command or configuration the echo names is read in
+  the locked command tree and the manual before the plan changes; an inference the echo does not explain is a judgment with a
+  written prediction, a read-only observation before the command under test tells it apart next time, and a miss changes the
+  hypothesis instead of repeating the change. The cleanup bullet says reverse order binds within one device.
