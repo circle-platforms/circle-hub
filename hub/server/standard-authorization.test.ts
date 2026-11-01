@@ -275,6 +275,8 @@ describe('the MCP standard authorization', () => {
     assert.equal(JSON.parse((await attempt('[]')).body).error, 'invalid_client_metadata');
     assert.equal(JSON.parse((await attempt('redirect_uris=x', 'application/x-www-form-urlencoded')).body).error, 'invalid_client_metadata');
     for (const uri of ['https://192.0.2.10/cb', 'http://[::1]:8080/cb', 'http://localhost/cb', 'com.example.circle:/callback']) assert.equal((await attempt({ redirect_uris: [uri] })).status, 201, uri);
+    const spoofed = JSON.parse((await attempt({ redirect_uris: ['http://127.0.0.1/cb'], client_name: 'Circle\u202e\u0007 上的设备' })).body);
+    assert.equal(spoofed.client_name, 'Circle 上的设备', 'control and format characters are dropped from a self-chosen name');
     const unnamed = JSON.parse((await attempt({ redirect_uris: ['http://127.0.0.1/cb'] })).body);
     assert.equal(unnamed.client_name, '未命名的客户端');
     assert.deepEqual(unnamed.grant_types, ['authorization_code']);
