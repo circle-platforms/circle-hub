@@ -326,7 +326,8 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
   }
   const types = metadata.response_types;
   if (types !== undefined && (!Array.isArray(types) || types.length !== 1 || types[0] !== 'code')) return oauthError(response, 400, 'invalid_client_metadata', 'response_types must be [code]');
-  const given = typeof metadata.client_name === 'string' ? metadata.client_name.trim().replace(/\p{Cc}/gu, '').slice(0, 100).trim() : '';
+  // At most 100 characters (code points, so no surrogate pair is cut), without control characters.
+  const given = typeof metadata.client_name === 'string' ? [...metadata.client_name.replace(/\p{Cc}/gu, '').trim()].slice(0, 100).join('').trim() : '';
   let client: OAuthClient;
   try {
     client = await options.principals.registerClient(given === '' ? UNNAMED_CLIENT : given, uris as string[]);
