@@ -80,6 +80,7 @@ function usage(extra: readonly CliCommand[]): string {
     `  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先建第一位管理员，并只显示一次它的令牌`,
     '  user list                                    列出用户',
     '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）',
+    '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它',
     '  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误',
     '  token revoke <令牌编号>                        撤销令牌（立即生效）',
     '  token list [<用户>]                           列出令牌（不显示令牌值）',
@@ -249,7 +250,19 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     if (changed.disabled) await sayIfLost(io, act);
     return 0;
   }
-  throw new UsageError('user 的子命令是 create、list、disable 或 enable');
+  if (sub === 'invite') {
+    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
+    noAs(values.as);
+    const by = await operatorOf(ctx, options);
+    const kit = await ctx.records();
+    const user = await requireUser(kit, positionals[0]);
+    const invitation = await kit.principals.invite(by, user.id);
+    io.stdout(terminalSafe(`已为 ${user.name} 签发邀请码，${invitation.expires_at} 前有效，仅可使用一次。邀请码只显示这一次：`));
+    io.stdout(invitation.code);
+    io.stdout('成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码');
+    return 0;
+  }
+  throw new UsageError('user 的子命令是 create、list、disable、enable 或 invite');
 }
 
 async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {

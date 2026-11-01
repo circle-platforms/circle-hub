@@ -268,6 +268,15 @@ describe('users, tokens and logs', () => {
       const decided = await kit.principals.tokens((await kit.principals.findByName('甲'))!.id);
       const rootId = (await kit.principals.findByName('根管理员'))!.id;
       assert.ok(decided.every((t) => t.created_by === rootId), 'every token was issued by the operator token\'s admin');
+      // An invitation for the standard authorization: its code is printed once and kept only as its SHA-256.
+      const invited = await run(['user', 'invite', '甲'], env, operator);
+      assert.equal(invited.code, 0, invited.text);
+      const invitation = invited.out.find((line) => /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/.test(line));
+      assert.ok(invitation, 'the invitation code is printed on a line of its own');
+      const checked = await kit.principals.checkInvitation(invitation);
+      assert.ok(checked.ok && checked.user.name === '甲');
+      assert.equal((await run(['user', 'invite', '甲', '--as', '丙'], env, operator)).code, 2);
+      assert.equal((await run(['user', 'invite', '没有这个人'], env, operator)).code, 1);
       const named = await run(['token', 'issue', '甲', '--as', '丙'], env, operator);
       assert.equal(named.code, 2, '--as is a usage error for a state-changing command');
       assert.match(named.text, /改变状态的命令不用 --as：它以操作令牌的管理员身份执行/);
