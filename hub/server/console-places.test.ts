@@ -11,6 +11,7 @@ import type { RunDetail } from '../ports.ts';
 import { shellWord } from './console/commands.ts';
 import { escapeHtml } from './console/html.ts';
 import { CSS } from './console/style.ts';
+import { LIVE_SCRIPT } from './console/script.ts';
 import { NEUTRAL } from './console/pages.ts';
 import { taskResultOf } from './console/status.ts';
 import { createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -87,11 +88,11 @@ async function runWithResult(user: TestUser): Promise<string> {
   return summary.run;
 }
 
-/** Every page a signed-in account opens: one console, no style attribute (the CSP refuses it) and no script. */
+/** Every page a signed-in account opens: one console, no style attribute (the CSP refuses it) and no script but the live module. */
 function assertPage(reply: Reply, path: string): void {
   assert.equal(reply.status, 200, `${path}: ${reply.body.slice(0, 300)}`);
   assert.match(String(reply.headers['content-security-policy']), /default-src 'none'/, path);
-  assert.doesNotMatch(reply.body, /<script/i, path);
+  assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="side" aria-label="主导航">/, path);
   for (const place of ['总览', '任务', '知识库', '任务包', '连接', '记录', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
@@ -217,7 +218,7 @@ describe('sign-in states', () => {
     for (const token of await server.records.principals.tokens(user.user.id)) await server.records.principals.revokeToken(server.admin.principal, token.id);
     const ended = await get('/console/runs', session);
     assert.equal(ended.status, 303);
-    assert.equal(ended.headers.location, '/console/login');
+    assert.equal(ended.headers.location, '/console/login?next=%2Fconsole%2Fruns', 'signing in again leads back to the page');
     const flag = cookieOf(ended, 'circle_hub_ended');
     assert.match(flag ?? '', /^circle_hub_ended=1; Path=\/console\/login; HttpOnly; SameSite=Strict; Max-Age=120$/);
     const login = await send('/console/login', { headers: { cookie: `circle_hub_ended=1` } });

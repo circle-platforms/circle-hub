@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import {parse,type DefaultTreeAdapterMap} from 'parse5';
 
 export interface PageMetrics {
+  /** Script elements other than an inline one the page's CSP allows by its SHA-256 (the console's live module). */
   scripts: number;
   externalAddresses: number;
   tableRows: number[];
@@ -104,13 +105,24 @@ function externalAddresses(body:string,scriptingEnabled:boolean):number {
   return count;
 }
 
+/** Inline scripts whose SHA-256 the script-src directive of `csp` names. */
+function allowedScripts(body: string, csp: string): number {
+  const directive = csp.split(';').map((part) => part.trim()).find((part) => /^script-src\s/i.test(part)) ?? '';
+  const hashes = new Set([...directive.matchAll(/'sha256-([A-Za-z0-9+/=]+)'/g)].map((match) => match[1]));
+  let count = 0;
+  for (const match of body.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (!/\bsrc\s*=/i.test(match[1]) && hashes.has(createHash('sha256').update(match[2], 'utf8').digest('base64'))) count++;
+  }
+  return count;
+}
+
 /** Counts markup only, without interpreting stored case names as executable HTML. */
-export function summarizePage(body: string): PageMetrics {
+export function summarizePage(body: string, csp = ''): PageMetrics {
   // Session nonces are not page content; leave every other byte in the evidence digest unchanged.
   const stableBody=body.replace(/<input\b[^>]*>/gi,tag=>/(?:\s)name\s*=\s*["']csrf["']/i.test(tag)
     ? tag.replace(/(\bvalue\s*=\s*)(["'])(.*?)\2/i,(_all,prefix:string,quote:string)=>`${prefix}${quote}[csrf]${quote}`) : tag);
   return {
-    scripts: (body.match(/<script\b/gi) ?? []).length,
+    scripts: (body.match(/<script\b/gi) ?? []).length - allowedScripts(body, csp),
     externalAddresses: Math.max(externalAddresses(body,true),externalAddresses(body,false)),
     tableRows: [...body.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)].map((match) => {
       const content = match[1].replace(/<thead\b[^>]*>[\s\S]*?<\/thead>/gi, '');
@@ -164,7 +176,7 @@ export async function probeConsole(options: { url: string; path: string; token: 
     const reply = await fetchPage(`${target.pathname}${target.search}`);
     const body = await reply.text();
     csrf = csrfOf(body);
-    metrics = { status: reply.status, csp: reply.headers.has('content-security-policy'), loginStatus: logged.status, ...summarizePage(body) };
+    metrics = { status: reply.status, csp: reply.headers.has('content-security-policy'), loginStatus: logged.status, ...summarizePage(body, reply.headers.get('content-security-policy') ?? '') };
   } finally {
     if (csrf === undefined) {
       const home = await fetchPage('/console/runs');

@@ -1,5 +1,6 @@
 // The real-system probe is exercised only against a synthetic loopback HTTP server.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -52,6 +53,17 @@ test('the CLI prints only metrics and signs out without exposing synthetic page 
       assert.equal(calls.at(-1), 'POST /console/logout');
     });
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('an inline script counts unless the page CSP allows exactly its hash (the console live module)', () => {
+  const script = "const x = 1;";
+  const hash = createHash('sha256').update(script, 'utf8').digest('base64');
+  const body = `<script type="module">${script}</script>`;
+  assert.equal(summarizePage(body, `default-src 'none'; script-src 'sha256-${hash}'`).scripts, 0);
+  assert.equal(summarizePage(body, "default-src 'none'").scripts, 1);
+  assert.equal(summarizePage(body, `default-src 'none'; style-src 'sha256-${hash}'`).scripts, 1, 'only the script-src directive counts');
+  assert.equal(summarizePage(`<script src="/x.js">${script}</script>`, `script-src 'sha256-${hash}'`).scripts, 1, 'an external script never counts as the allowed one');
+  assert.equal(summarizePage(`${body}<script>alert(1)</script>`, `script-src 'sha256-${hash}'`).scripts, 1);
 });
 
 test('metrics detect unsafe markup, external addresses and each table independently', () => {

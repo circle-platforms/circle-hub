@@ -112,7 +112,7 @@ export function commandModal(dialog: CommandDialog): Html {
 <h3>${dialog.title}</h3>
 <p>${dialog.text}</p>
 <pre class="snippet">${dialog.command}</pre>
-<p>在管理员的 Circle 中执行以上命令（Circle 需在 Hub 所在的主机上）；与命令行执行相同，写入相同的记录。点击命令可全选。</p>
+<p>在管理员的 Circle 中执行以上命令（Circle 需在 Hub 所在的主机上）；管理员的 Circle 不可用时，在 Hub 所在的主机上执行同一命令。与命令行执行相同，写入相同的记录。点击命令可全选。</p>
 <div class="actions"><a class="btn" href="#_">关闭</a></div>
 </div></div>`;
 }

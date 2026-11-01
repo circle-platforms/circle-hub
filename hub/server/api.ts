@@ -91,6 +91,8 @@ export interface AppOptions {
   closeGraceMs?: number;
   /** Request body bytes held at once over all /mcp requests; over it a request gets 503. Default four times the request cap. */
   maxInflightBodyBytes?: number;
+  /** Intervals and limits of the console's live updates (console/live.ts DEFAULT_LIVE_OPTIONS). */
+  live?: Partial<import('./console/live.ts').LiveOptions>;
 }
 
 export interface ListenInfo {

@@ -1,8 +1,11 @@
 // Server-rendered HTML for the console: a tagged template that escapes every interpolated value, a fixed
-// stylesheet (style.ts) allowed by its hash in a strict Content-Security-Policy, and no script at all. Dynamic values only
-// ever go into element text or double-quoted attributes; links are built from fixed paths and encoded query parameters.
-// Every page of a signed-in account has the side navigation of the design canvas; the login and setup pages are a card.
+// stylesheet (style.ts) and one fixed module script (script.ts, the live updates) allowed by their hashes in a strict
+// Content-Security-Policy. Dynamic values only ever go into element text or double-quoted attributes; links are built
+// from fixed paths and encoded query parameters. Every page of a signed-in account has the side navigation of the design
+// canvas, and the script when the page has a live module; the login and setup pages are a card without it.
 import { createHash } from 'node:crypto';
+import type { LiveEventName } from './live.ts';
+import { LIVE_SCRIPT } from './script.ts';
 import { CSS } from './style.ts';
 
 /** Markup that is already safe: produced by `html` or a constant of this module. */
@@ -63,6 +66,14 @@ export function section(title: string, body: unknown): Html {
   return html`<section><h2>${title}</h2>${body}</section>`;
 }
 
+/**
+ * A module the live updates refresh (script.ts): a stable id, the events of console/live.ts that change it, and the run or
+ * the job it shows when it shows one. It adds no box of its own.
+ */
+export function liveModule(id: string, events: readonly LiveEventName[], body: unknown, of: { run?: string; job?: string } = {}): Html {
+  return html`<div class="live-module" id="live-${id}" data-live="${events.join(' ')}"${of.run === undefined ? '' : html` data-live-run="${of.run}"`}${of.job === undefined ? '' : html` data-live-job="${of.job}"`}>${body}</div>`;
+}
+
 /** Monospace text, for digests, references and JSON. */
 export function code(value: unknown): Html {
   return html`<code>${value}</code>`;
@@ -73,11 +84,17 @@ export function pre(value: unknown): Html {
 }
 
 const CSS_HASH = createHash('sha256').update(CSS, 'utf8').digest('base64');
+export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
 
-/** No script, no external asset, no framing; only the stylesheet of style.ts by its hash, and forms to this console. */
+/**
+ * No external asset and no framing; only the stylesheet of style.ts and the module of script.ts by their hashes, its event
+ * stream and page fetches to this server, and forms to this console.
+ */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   `style-src 'sha256-${CSS_HASH}'`,
+  `script-src 'sha256-${SCRIPT_HASH}'`,
+  "connect-src 'self'",
   "img-src 'none'",
   "form-action 'self'",
   "frame-ancestors 'none'",
@@ -141,18 +158,22 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['settings', '设置', '/console/settings', 'gear'],
 ];
 
-function htmlDocument(title: string, body: Html): Html {
+function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} · circle-hub</title><style>${new Html(CSS)}</style></head>
-<body class="hub">${body}</body></html>`;
+<body class="hub">${body}${script ? html`<script type="module">${new Html(LIVE_SCRIPT)}</script>` : ''}</body></html>`;
 }
 
 /** A page of the console: the side navigation and the signed-in account, then the title and the body. */
 export function page(chrome: PageChrome, body: unknown): Html {
   const user = chrome.user;
-  const top = html`<header class="top"><div><h1>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub">${chrome.sub}</p>`}</div>${chrome.actions === undefined ? '' : html`<div class="actions">${chrome.actions}</div>`}</header>`;
-  if (user === null) return htmlDocument(chrome.title, html`<div class="login"><div class="login-card${chrome.wide ? ' setup-card' : ''}">${brand()}${top}${body}</div></div>`);
+  const content = html`${body}`;
+  // Escaped text can never hold this attribute: only liveModule() writes it.
+  const updates = user !== null && content.text.includes(' data-live="');
+  const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
+  const top = html`<header class="top"><div><h1>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub" id="page-sub">${chrome.sub}</p>`}${state}</div>${chrome.actions === undefined ? '' : html`<div class="actions">${chrome.actions}</div>`}</header>`;
+  if (user === null) return htmlDocument(chrome.title, html`<div class="login"><div class="login-card${chrome.wide ? ' setup-card' : ''}">${brand()}${top}${content}</div></div>`);
   const nav = NAV.map(([key, label, path, name]) => html`<a class="nav-item${key === chrome.active ? ' on' : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}>${icon(name, 'nav-ico')}<span>${label}</span></a>`);
   return htmlDocument(chrome.title, html`<div class="shell">
 <div class="side-wrap"><nav class="side" aria-label="主导航">
@@ -161,8 +182,8 @@ ${nav}
 <div class="me"><span class="avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="me-t"><div>${user.name}</div><div class="me-r">${user.role}</div></div>
 <form class="logout" method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>
 </nav></div>
-<main class="content">${top}${body}</main>
-</div>`);
+<main class="content">${top}${content}</main>
+</div>`, updates);
 }
 
 function brand(): Html {

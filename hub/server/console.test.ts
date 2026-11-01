@@ -126,7 +126,8 @@ describe('sign-in', () => {
     assert.match(csp, /style-src 'sha256-[A-Za-z0-9+/=]+'/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.match(csp, /form-action 'self'/);
-    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|script-src/);
+    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'the live module of the signed-in pages, by its hash only');
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
     assert.doesNotMatch(page.body, /<script/i);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     const login = cookieHeader(page, 'circle_hub_login') ?? '';
@@ -202,7 +203,7 @@ describe('sign-in', () => {
     assert.notEqual(csrfOf(reply.body), nonce);
     const anonymous = await send('/console/runs');
     assert.equal(anonymous.status, 303);
-    assert.equal(anonymous.headers.location, '/console/login');
+    assert.equal(anonymous.headers.location, '/console/login?next=%2Fconsole%2Fruns');
   });
 
   test('revoking the token ends the console session at the next page; signing out needs the session CSRF token', async () => {
@@ -223,7 +224,7 @@ describe('sign-in', () => {
     await server.records.principals.revokeToken(server.admin.principal, token.id);
     const after = await get('/console/runs', again);
     assert.equal(after.status, 303);
-    assert.equal(after.headers.location, '/console/login');
+    assert.equal(after.headers.location, '/console/login?next=%2Fconsole%2Fruns');
   });
 });
 

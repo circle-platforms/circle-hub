@@ -119,10 +119,10 @@ test('security gates and immediate revocation apply to result pages', async () =
   assert.equal((await send(path, cookie, 'POST')).status, 405);
   assert.equal((await send(path, cookie, 'GET', '', { host: '192.0.2.1' })).status, 403);
   assert.equal((await send(path, cookie, 'GET', '', { origin: 'http://192.0.2.1' })).status, 403);
-  assert.equal((await send(path)).headers.location, '/console/login');
+  assert.equal((await send(path)).headers.location, `/console/login?next=${encodeURIComponent(path)}`);
   const tokens = await server.records.principals.tokens(user.user.id);
   for (const token of tokens) await server.records.principals.revokeToken(server.admin.principal, token.id);
-  assert.equal((await send(path, cookie)).headers.location, '/console/login');
+  assert.equal((await send(path, cookie)).headers.location, `/console/login?next=${encodeURIComponent(path)}`);
 });
 
 test('1200 items have three pages, stable whole-result counts, summaries, claims and terminal filters', async () => {

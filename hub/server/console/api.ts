@@ -2,12 +2,12 @@
 // 模块与接口”, owner's choice of 2026-11-01 to build the read part first). Same session and same visibility as the pages,
 // built from the same helpers, so a page and its interface never disagree: GET only; absent and forbidden alike answer 404
 // with SOURCE_UNAVAILABLE (D05 R[3]); every value is its code plus its interface term (display rule 20); token values and
-// credential contents never appear. There is no write interface: the console's operations stay forms (decisions 75, 77).
+// credential contents never appear. The write interfaces, which run the same commands as the forms, are console/api-write.ts.
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { TASK_RESULT, isEnvironment, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
-import type { CallLogLine } from '../../records/api.ts';
+import type { CallLogLine, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { circlesOf } from './connections.ts';
 import type { JobStore } from './manage.ts';
@@ -31,6 +31,7 @@ export interface ApiOptions {
 const DAY = 86_400_000;
 const SHA256 = /^[0-9a-f]{64}$/;
 const RUN_ID = /^run_[0-9a-z]{26}$/;
+const USER_ID = /^usr_[0-9a-z]{26}$/;
 
 export const neutral = (): ApiResult => ({ status: 404, body: { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix } });
 const bad = (message: string, fix: string): ApiResult => ({ status: 400, body: { code: null, message, fix } });
@@ -348,19 +349,37 @@ async function records(ctx: PageContext): Promise<ApiResult> {
   return ok({ records: items, next: page.next });
 }
 
+async function memberOf(ctx: PageContext, user: User): Promise<Record<string, unknown>> {
+  const tokens = await ctx.deps.records.principals.tokens(user.id);
+  const used = tokens.map((t) => t.last_used_at).filter((at): at is string => at !== null).sort();
+  return {
+    id: user.id, name: user.name, role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
+    circles: tokens.filter((t) => t.revoked_at === null).length, last_active_at: used.at(-1) ?? null,
+    tokens: tokens.map((t) => ({ id: t.id, label: t.label, client: t.client, created_at: t.created_at, last_used_at: t.last_used_at, revoked_at: t.revoked_at })),
+  };
+}
+
 async function members(ctx: PageContext): Promise<ApiResult> {
   if (!ctx.admin) return neutral();
   const out = [];
-  for (const user of await ctx.deps.records.principals.list()) {
-    const tokens = await ctx.deps.records.principals.tokens(user.id);
-    const used = tokens.map((t) => t.last_used_at).filter((at): at is string => at !== null).sort();
-    out.push({
-      id: user.id, name: user.name, role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
-      circles: tokens.filter((t) => t.revoked_at === null).length, last_active_at: used.at(-1) ?? null,
-      tokens: tokens.map((t) => ({ id: t.id, label: t.label, created_at: t.created_at, last_used_at: t.last_used_at, revoked_at: t.revoked_at })),
-    });
-  }
+  for (const user of await ctx.deps.records.principals.list()) out.push(await memberOf(ctx, user));
   return ok({ members: out });
+}
+
+/**
+ * One member with the invitations issued for them (never a code) and whether each was used and by which client, so the
+ * page that added a member can wait for the connection to complete.
+ */
+async function member(ctx: PageContext, id: string): Promise<ApiResult> {
+  if (!ctx.admin || !USER_ID.test(id)) return neutral();
+  const user = await ctx.deps.records.principals.get(id);
+  if (user === null) return neutral();
+  const now = nowOf(ctx);
+  const invitations = (await ctx.deps.records.principals.invitations(user.id)).map((i) => ({
+    id: i.id, created_at: i.created_at, created_by: i.created_by, expires_at: i.expires_at, used_at: i.used_at, used_by_client: i.used_by_client,
+    open: i.used_at === null && Date.parse(i.expires_at) > now,
+  }));
+  return ok({ ...(await memberOf(ctx, user)), invitations });
 }
 
 async function secrets(ctx: PageContext, options: ApiOptions): Promise<ApiResult> {
@@ -404,6 +423,7 @@ export async function handleApi(ctx: PageContext, rest: readonly string[], optio
   }
   if (rest.length === 2 && head === 'tasks') return task(ctx, second);
   if (rest.length === 2 && head === 'packs') return pack(ctx, second);
+  if (rest.length === 2 && head === 'members') return member(ctx, second);
   if (head === 'knowledge') {
     if (rest.length === 2 && second === 'lines') return lines(ctx);
     if (rest.length === 2 && second === 'nodes') return nodes(ctx);

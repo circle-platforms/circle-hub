@@ -171,6 +171,33 @@ CREATE TABLE call_reasons (
 ${APPEND_ONLY('call_reasons')}
 `;
 
+const V7_STANDARD_AUTHORIZATION = `
+-- MCP standard authorization (decision 78): the clients that registered themselves (RFC 7591), the invitation codes that
+-- tell the authorization page which account is connecting (only their SHA-256 is kept), and the client a token went to.
+CREATE TABLE oauth_clients (
+  id text PRIMARY KEY CHECK (id ~ '^cli_[0-9a-z]{26}$'),
+  name text NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+  redirect_uris text[] NOT NULL CHECK (cardinality(redirect_uris) BETWEEN 1 AND 10),
+  created_at timestamptz NOT NULL
+);
+CREATE INDEX oauth_clients_created ON oauth_clients (created_at);
+
+CREATE TABLE invitations (
+  id text PRIMARY KEY CHECK (id ~ '^inv_[0-9a-z]{26}$'),
+  user_id text NOT NULL REFERENCES users (id),
+  sha256 text NOT NULL UNIQUE CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL,
+  created_by text NOT NULL REFERENCES users (id),
+  expires_at timestamptz NOT NULL CHECK (expires_at > created_at),
+  used_at timestamptz,
+  used_by_client text REFERENCES oauth_clients (id),
+  CHECK ((used_at IS NULL) = (used_by_client IS NULL))
+);
+CREATE INDEX invitations_user ON invitations (user_id);
+
+ALTER TABLE tokens ADD COLUMN client_id text REFERENCES oauth_clients (id);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'records', sql: V1_RECORDS },
   { version: 2, name: 'leases', sql: V2_LEASES },
@@ -182,6 +209,7 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     registered_at timestamptz NOT NULL
   );` },
   { version: 6, name: 'call_reasons', sql: V6_CALL_REASONS },
+  { version: 7, name: 'standard_authorization', sql: V7_STANDARD_AUTHORIZATION },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -197,6 +225,8 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   call_reasons: 'SELECT, INSERT',
   users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at)',
   tokens: 'SELECT, INSERT, UPDATE (last_used_at, revoked_at, revoked_by)',
+  oauth_clients: 'SELECT, INSERT, DELETE',
+  invitations: 'SELECT, INSERT, UPDATE (used_at, used_by_client)',
   pointers: 'SELECT, INSERT, UPDATE (target, version, moved_at, action_digest)',
   lease_registrations: 'SELECT, INSERT, UPDATE, DELETE',
   leases: 'SELECT, INSERT, UPDATE (lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)',

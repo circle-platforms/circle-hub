@@ -203,10 +203,13 @@ describe('/mcp transport', () => {
       await send('/mcp', { method: 'POST', headers: mcpHeaders(disabled.token), body: initialize }),
       await send('/mcp', { method: 'POST', headers: { ...mcpHeaders(), authorization: `Basic ${Buffer.from('a:b').toString('base64')}` }, body: initialize }),
     ];
-    for (const reply of replies) {
+    // The challenge names the resource metadata of the standard authorization (RFC 9728 5.1); a token that was sent and
+    // does not work, whichever the reason, is invalid_token (RFC 6750 3.1), and the body stays the same for all.
+    const metadata = `resource_metadata="http://127.0.0.1:${server.port}/.well-known/oauth-protected-resource/mcp"`;
+    for (const [index, reply] of replies.entries()) {
       assert.equal(reply.status, 401);
       assert.equal(reply.body, replies[0].body);
-      assert.equal(reply.headers['www-authenticate'], 'Bearer realm="circle-hub"');
+      assert.equal(reply.headers['www-authenticate'], index === 0 ? `Bearer realm="circle-hub", ${metadata}` : `Bearer realm="circle-hub", ${metadata}, error="invalid_token"`);
     }
     assert.equal(JSON.parse(replies[0].body).error.code, -32001);
     const ok = await send('/mcp', { method: 'POST', headers: mcpHeaders(user.token), body: initialize });

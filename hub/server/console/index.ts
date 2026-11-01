@@ -7,24 +7,30 @@
 // session's token, so revoking it or disabling the account ends the session. Everything that is not one of those forms is
 // GET only.
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { RecordsError, type Principal } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '../http.ts';
+import { AUTHORIZE_COOKIE, SECURE_AUTHORIZE_COOKIE, issuerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
+import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage } from './authorize.ts';
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
+import { handleApiWrite } from './api-write.ts';
 import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
-import { ACTIONS, completeSetup, jobPage, runAction, type Form, type JobStore } from './manage.ts';
+import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
+import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
-import { diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
+import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
 import { resultPage, resultsPage } from './results.ts';
 import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings.ts';
-import { planned, stepper } from './ui.ts';
-import { LOGIN_COOKIE, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, type ConsoleSession, type SessionStore } from './session.ts';
+import { stepper } from './ui.ts';
+import { LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
+import type { PackStaging } from './staging.ts';
 import { UploadError, boundaryOf, parseMultipart } from './upload.ts';
 
 export interface ConsoleOptions {
@@ -39,8 +45,16 @@ export interface ConsoleOptions {
   bridge?: CommandBridge;
   /** Background management runs (knowledge sync) of this process. */
   jobs: JobStore;
+  /** Task packs that passed the check of 发布任务包 and wait for its 发布 step, in this process. */
+  staging: PackStaging;
+  /** The event stream of the live updates (/console/api/stream); without it the stream is the neutral answer. */
+  live?: LiveEvents;
   /** The process serving the console, for the Hub's state on the settings and overview pages. */
   hub?: HubFacts;
+  /** Open requests of the MCP standard authorization (hub/server/oauth.ts); without it /console/authorize is absent. */
+  authorizations?: AuthorizationStore;
+  /** One-time login links; without it POST /console/api/login-links and /console/login/<code> are absent. */
+  loginLinks?: LoginLinkStore;
 }
 
 const LOGIN_FORM_LIMIT = 8 * 1024;
@@ -84,20 +98,20 @@ async function hasAdmin(deps: ServerDeps): Promise<boolean> {
   }
 }
 
-async function loginPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, ended = false): Promise<void> {
+async function loginPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, ended = false, next: string | null = null): Promise<void> {
   const nonce = options.sessions.issueNonce(secure);
   const setup = await hasAdmin(options.deps) ? '' : html`<p class="notice mt12">这个 Hub 还没有管理员：${link('/console/setup', '用初始化码创建首位管理员')}</p>`;
   const body = page(
     anonymous('登录'),
     html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
-<div class="callout info mt16"><span class="logo" aria-hidden="true"></span><span><b>从 Circle 打开</b> ${planned()}<br>在 Circle 中执行“打开 Hub 控制台”，浏览器自动打开并完成登录，无需输入。</span></div>
-<div class="divider">访问令牌登录 · 标准授权上线后仅作管理员备用</div>
+<div class="callout info mt16"><span class="logo" aria-hidden="true"></span><span><b>从 Circle 打开</b><br>已连接的 Circle 可获取一次性登录链接（${LOGIN_LINK_TTL_MS / 60_000} 分钟内有效，仅可使用一次），浏览器打开链接并确认后即登录，无需输入。</span></div>
+<div class="divider">访问令牌登录 · 供 Circle 不可用时使用</div>
 <form method="post" action="/console/login">
 <div class="field"><label for="hub-token">访问令牌</label><input id="hub-token" class="input" type="password" name="token" autocomplete="off" size="50" required placeholder="粘贴管理员签发的令牌"></div>
-<input type="hidden" name="csrf" value="${nonce}">
+<input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
 <button type="submit" class="btn primary">登录</button>
 </form>
-<p class="sub mt12">令牌在添加成员时签发，或由管理员在 Circle 中执行 ${code('circle-hub token issue')} 签发，仅显示一次；遗失后重新签发。</p>`,
+<p class="sub mt12">访问令牌由管理员在 Circle 中执行 ${code('circle-hub token issue')} 签发，仅显示一次；遗失后重新签发。</p>`,
   );
   const cookies = [cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure)];
   if (ended) cookies.push(cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '', '/console/login', 0, secure));
@@ -161,7 +175,190 @@ async function login(request: IncomingMessage, response: ServerResponse, options
     return;
   }
   const session = options.sessions.open(match[1], secure);
-  redirect(response, HOME, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+  redirect(response, safeNext(form.get('next')), [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+}
+
+// ---------------------------------------------------------------- one-time login links
+
+const LINK_INVALID = '登录链接已失效：该链接已使用或已过期。请在 Circle 中重新获取。';
+
+/** GET shows whose session the link opens and asks to confirm (so a prefetch or a planted link signs nobody in); POST opens it. */
+async function loginLink(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, secure: boolean, code: string): Promise<void> {
+  const links = options.loginLinks;
+  if (links === undefined) {
+    request.resume();
+    return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
+  }
+  if (request.method === 'GET') {
+    const found = links.peek(code);
+    const principal = found === null ? null : await options.deps.records.principals.authenticate(`Bearer ${found.token}`);
+    if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p><p class="mt12">${link('/console/login', '前往登录页')}</p>`));
+    const nonce = options.sessions.issueNonce(secure);
+    return sendHtml(
+      response,
+      200,
+      page(anonymous('从 Circle 登录'), html`<p class="mt12">以 <b>${principal.name}</b>（${uiLabelOf('permission_role', principal.role)}）的身份登录控制台。</p>
+<form method="post" action="/console/login/${code}" class="mt16"><input type="hidden" name="csrf" value="${nonce}"><button type="submit" class="btn primary">登录</button></form>
+<p class="sub mt12">链接仅可使用一次；不是本人请求的链接时，关闭本页即可。</p>`),
+      { 'set-cookie': cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure) },
+    );
+  }
+  if (request.method !== 'POST') {
+    request.resume();
+    return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET 和 POST</p>`), { allow: 'GET, POST' });
+  }
+  if (!sameOrigin(request, options.ownOrigins())) {
+    request.resume();
+    return forbidden(response, '登录表单只能从本控制台的页面提交');
+  }
+  const form = await formOf(request);
+  if (form === 'aborted') return void response.destroy();
+  const nonce = typeof form === 'string' ? '' : (form.get('csrf') ?? '');
+  if (nonce.length === 0 || cookiesOf(request).get(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE) !== nonce || !options.sessions.takeNonce(nonce, secure)) {
+    return forbidden(response, '表单已过期或不是本控制台发出的，请重新打开登录链接');
+  }
+  const taken = links.take(code);
+  const principal = taken === null ? null : await options.deps.records.principals.authenticate(`Bearer ${taken.token}`);
+  if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p>`));
+  const session = options.sessions.open(taken.token, secure);
+  redirect(response, taken.next, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+}
+
+/**
+ * POST /console/api/login-links: a client asks with its Bearer token for a one-time link that opens a console session on
+ * that token, optionally at `next` (a console path). No session cookie is involved.
+ */
+async function loginLinks(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, secure: boolean): Promise<void> {
+  const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'", 'cache-control': 'no-store' };
+  if (options.loginLinks === undefined) {
+    request.resume();
+    return sendJson(response, 404, { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix }, headers);
+  }
+  if (request.method !== 'POST') {
+    request.resume();
+    return sendJson(response, 405, { code: null, message: '登录链接只接受 POST', fix: '以 Bearer 令牌 POST 本地址' }, { ...headers, allow: 'POST' });
+  }
+  const authorization = request.headers.authorization;
+  const principal = await options.deps.records.principals.authenticate(typeof authorization === 'string' ? authorization : null);
+  const match = typeof authorization === 'string' ? /^Bearer[ \t]+([A-Za-z0-9_-]{43})[ \t]*$/i.exec(authorization) : null;
+  if (principal === null || match === null) {
+    request.resume();
+    return sendJson(response, 401, { code: null, message: '需要有效的 Bearer 令牌', fix: '以已连接的 Circle 的令牌请求登录链接' }, { ...headers, 'www-authenticate': 'Bearer realm="circle-hub"' });
+  }
+  let next: string | null = null;
+  if (mediaTypeOf(request) === 'application/json') {
+    const body = await readBody(request, LOGIN_FORM_LIMIT);
+    if (!body.ok) return body.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '请求正文太大', fix: '正文只写 {"next": "/console/…"}' }, headers);
+    try {
+      const parsed: unknown = body.bytes.length === 0 ? {} : JSON.parse(body.bytes.toString('utf8'));
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('not an object');
+      const value = (parsed as Record<string, unknown>).next;
+      if (value !== undefined && typeof value !== 'string') throw new TypeError('next is a string');
+      next = value ?? null;
+    } catch {
+      return sendJson(response, 400, { code: null, message: '请求正文不正确', fix: '正文写成 {"next": "/console/…"}，或不带正文' }, headers);
+    }
+  } else {
+    request.resume();
+  }
+  const issued = options.loginLinks.issue(match[1], next ?? HOME);
+  options.log(`${principal.name} 获取了一次性登录链接`);
+  sendJson(response, 201, { url: `${issuerOf(request, secure)}/console/login/${issued.code}`, expires_at: new Date(issued.expires).toISOString() }, headers);
+}
+
+// ---------------------------------------------------------------- the authorization page
+
+/** The error page of an authorization request the endpoint cannot redirect (hub/server/oauth.ts). */
+export function authorizeRefusal(response: ServerResponse, status: number, message: string): void {
+  sendHtml(response, status, refusedPage(message));
+}
+
+async function authorizePage(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
+  const store = options.authorizations;
+  const open = rest.length === 1 && store !== undefined ? store.get(rest[0]) : null;
+  // Only the browser that opened the request (it holds the cookie the authorization endpoint set) sees or answers it; to any
+  // other the request does not exist.
+  const bound = open !== null && cookiesOf(request).get(secure ? SECURE_AUTHORIZE_COOKIE : AUTHORIZE_COOKIE) === open.browser;
+  if (open === null || open.secure !== secure || !bound) {
+    request.resume();
+    return sendHtml(response, 410, expiredPage());
+  }
+  const principals = options.deps.records.principals;
+  const signedIn = session === null ? null : await principals.authenticate(`Bearer ${session.token}`);
+  // The account the page names: the invitation's, else the session's. The approval must name the same one.
+  const named = open.invitation !== null ? { id: open.invitation.user, name: open.invitation.name, role: open.invitation.role, via: 'invitation' as const } : signedIn !== null ? { ...signedIn, via: 'session' as const } : null;
+  const show = (status: number, error: string | null): void => {
+    if (named === null) return sendHtml(response, status, identityPage(open, error));
+    sendHtml(response, status, confirmPage(open, { id: named.id, name: named.name, role: uiLabelOf('permission_role', named.role) }, named.via, open.csrf, error), { 'content-security-policy': authorizeSecurityPolicy(open.redirectUri) });
+  };
+  const go = (location: string): void => {
+    setCommonHeaders(response);
+    response.writeHead(303, { location, 'content-length': '0', 'cache-control': 'no-store' });
+    response.end();
+  };
+  if (request.method === 'GET') {
+    if (open.ended !== null) return sendHtml(response, 200, endedPage(open));
+    return show(200, null);
+  }
+  if (request.method !== 'POST') {
+    request.resume();
+    return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET 和 POST</p>`), { allow: 'GET, POST' });
+  }
+  if (!sameOrigin(request, options.ownOrigins())) {
+    request.resume();
+    return forbidden(response, '授权表单只能从本控制台的页面提交');
+  }
+  const form = await formOf(request);
+  if (form === 'aborted') return void response.destroy();
+  if (typeof form === 'string' || form.get('csrf') !== open.csrf) return forbidden(response, '表单已过期或不是本控制台发出的，请在 Circle 中重新连接 Hub');
+  const step = form.get('step');
+  // A request is decided once: a second submit (a double click) waits for the first and gets the same answer.
+  if (step === 'decide' && open.decision !== null) {
+    const decided = await open.decision;
+    return 'location' in decided ? go(decided.location) : show(decided.status, decided.error);
+  }
+  if (open.ended !== null) return sendHtml(response, 200, endedPage(open));
+  if (step === 'identity') {
+    const check = await principals.checkInvitation(form.get('code') ?? '');
+    if (!check.ok) {
+      open.failures += 1;
+      if (open.failures >= MAX_INVITATION_FAILURES) {
+        store!.end(open.id);
+        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次未通过验证，该授权请求已结束。`));
+      }
+      return show(400, invitationProblem(check.reason));
+    }
+    open.invitation = { id: check.invitation, user: check.user.id, name: check.user.name, role: check.user.role };
+    return redirect(response, `/console/authorize/${open.id}`);
+  }
+  if (step !== 'decide') return show(400, '请求不正确，请重新选择');
+  const decision = form.get('decision');
+  if (decision !== 'approve' && decision !== 'deny') return show(400, '请求不正确，请重新选择');
+  const to = (params: Record<string, string>): { location: string } => ({ location: responseUri(open.redirectUri, { ...params, state: open.state, iss: open.issuer }) });
+  const decide = async (): Promise<{ location: string } | { status: number; error: string }> => {
+    if (decision === 'deny') {
+      open.ended = 'denied';
+      options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）的授权请求被拒绝`);
+      return to({ error: 'access_denied', error_description: 'the request was refused' });
+    }
+    if (named === null) return { status: 401, error: '请先输入邀请码' };
+    // The account must still be the one the page named: signing in as someone else in another tab changes nothing here.
+    if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新授权' };
+    if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
+      open.invitation = null;
+      return { status: 409, error: '邀请码已失效（已使用、已过期，或账号已停用）：请管理员重新签发' };
+    }
+    const code = store!.grant(open, named.id);
+    if (code === null) return { status: 409, error: '该授权请求已处理' };
+    options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获授权，账号 ${named.id}`);
+    return to({ code });
+  };
+  open.decision = decide();
+  const decided = await open.decision;
+  // A refusal of the page (not of the request) lets the person try again.
+  if (!('location' in decided)) open.decision = null;
+  if ('location' in decided) return go(decided.location);
+  return decided.status === 409 && open.invitation === null && named?.via === 'invitation' ? sendHtml(response, 409, identityPage(open, decided.error)) : show(decided.status, decided.error);
 }
 
 async function logout(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null): Promise<void> {
@@ -252,7 +449,9 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
 <p class="notice">下面是这位管理员的备用登录令牌，只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
 <h2 class="mt16">在 Circle 中连接这个 Hub</h2>
-<p class="sub">在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，再把下面这段写入 Circle 的 settings.json：</p>
+<p class="sub">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；本浏览器已登录，确认授权即完成连接。</p>
+<pre class="snippet">${circleEntry(mcpOrigin(request, secure), false)}</pre>
+<p class="sub">客户端不支持 MCP 标准授权时改用访问令牌：在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，配置写成：</p>
 <pre class="snippet">${circleEntry(mcpOrigin(request, secure))}</pre>
 ${secure ? html`<p class="sub">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
 <h2 class="mt16">接下来</h2>
@@ -275,7 +474,7 @@ const ADMIN_PAGES: Record<string, Route> = {
   packs: (ctx) => packsPage(ctx),
   resources: (ctx) => connectionsPage(ctx),
   secrets: (ctx, _rest, options, session) => settingsPage(ctx, bridgeRun(options, session)),
-  knowledge: (ctx, _rest, options) => operationsPage(ctx, 'knowledge', options.jobs),
+  knowledge: (ctx, _rest, options) => operationsPage(ctx, 'knowledge', options.jobs, options.staging),
 };
 
 const ROUTES: Record<string, Route> = {
@@ -292,7 +491,7 @@ const ROUTES: Record<string, Route> = {
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
-  operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs) : Promise.resolve(neutralPage(ctx))),
+  operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   admin: (ctx, rest, options, session) => {
     if (!ctx.admin) return Promise.resolve(neutralPage(ctx));
     if (rest.length === 0) return settingsPage(ctx, bridgeRun(options, session));
@@ -313,13 +512,14 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     request.resume();
     return neutralPage(ctx);
   }
-  if (name !== 'pack-publish' && !Object.hasOwn(ACTIONS, name)) {
+  if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name)) {
     request.resume();
     return neutralPage(ctx);
   }
   let form: Form;
   let upload: Buffer | undefined;
-  if (name === 'pack-publish') {
+  // The check of 发布任务包 takes the uploaded zip; every other action, the 发布 of a stage included, is a plain form.
+  if (name === 'pack-stage') {
     const boundary = boundaryOf(request.headers['content-type']);
     if (boundary === null) {
       request.resume();
@@ -358,7 +558,7 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     forbidden(response, '表单已过期或不是本控制台发出的，请刷新页面后重试');
     return null;
   }
-  return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, log: options.log }, name, form, session.token, upload);
+  return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
 }
 
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
@@ -387,11 +587,13 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
 }
 
 /**
- * The read-only JSON interface (console/api.ts): GET or HEAD only, the session of the pages; without one a 401 answer, not
- * the redirect a page gets, so a client can tell the sign-in ended.
+ * The read-only JSON interface (console/api.ts) and the event stream of the live updates (console/live.ts): GET or HEAD
+ * only, the session of the pages; without one a 401 answer, not the redirect a page gets, so a client can tell the sign-in
+ * ended.
  */
 async function api(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" };
+  if (request.method === 'POST' && writePath(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     request.resume();
     return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Circle 中执行' }, { ...headers, allow: 'GET, HEAD' });
@@ -400,6 +602,13 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   if (principal === null) {
     if (session !== null) options.sessions.close(session.id);
     return sendJson(response, 401, { code: null, message: '登录已过期或已退出', fix: '重新登录控制台后再读取' }, headers);
+  }
+  if (rest.length === 1 && rest[0] === 'stream' && options.live !== undefined) {
+    const wants = wantedEvents(url.searchParams.get('events'));
+    if (wants === null) return sendJson(response, 400, { code: null, message: '请求参数不正确', fix: `events 取以逗号分隔的事件名：${LIVE_EVENTS.join('、')}` }, headers);
+    const refused = options.live.refusal(session!.id);
+    if (refused !== null) return sendJson(response, refused.status, { code: null, message: refused.message, fix: refused.fix }, headers);
+    return options.live.serve(request, response, { session: session!, secure, principal, wants, context: (current) => pageContext(options, request, url, current, session!, secure) });
   }
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: ApiResult;
@@ -417,14 +626,89 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   sendJson(response, result.status, result.body, headers);
 }
 
+/** The write interfaces of console/api-write.ts. */
+const WRITE_PATHS = new Set(['members', 'systems', 'knowledge/imports', 'commands', 'packs/stage']);
+const writePath = (path: string): boolean => WRITE_PATHS.has(path) || /^packs\/stage\/[A-Za-z0-9_-]{1,64}\/(?:publish|discard)$/.test(path);
+
+/**
+ * A write interface: an administrator's session, this console's Origin (required, as every browser sends it on a POST),
+ * the session's CSRF token in X-CSRF-Token and a JSON object body; then the operation of console/api-write.ts.
+ */
+async function apiWrite(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[], headers: Record<string, string>): Promise<void> {
+  if (typeof request.headers.origin !== 'string' || !sameOrigin(request, options.ownOrigins())) {
+    request.resume();
+    return sendJson(response, 403, { code: null, message: '写接口只接受本控制台页面发出的请求', fix: '从控制台的页面发起请求' }, headers);
+  }
+  const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
+  if (principal === null) {
+    request.resume();
+    if (session !== null) options.sessions.close(session.id);
+    return sendJson(response, 401, { code: null, message: '登录已过期或已退出', fix: '重新登录控制台后再操作' }, headers);
+  }
+  if (request.headers['x-csrf-token'] !== session!.csrf) {
+    request.resume();
+    return sendJson(response, 403, { code: null, message: 'CSRF 令牌不正确', fix: '在请求头 X-CSRF-Token 中带上 GET /console/api/me 返回的 csrf' }, headers);
+  }
+  // Before any body is read: a member's write, an upload included, is the neutral answer and holds no memory.
+  if (principal.role !== 'admin') {
+    request.resume();
+    return sendJson(response, 404, { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix }, headers);
+  }
+  // The pack check takes the zip as multipart/form-data (field archive); every other write a JSON object.
+  let upload: Buffer | undefined;
+  if (rest.join('/') === 'packs/stage') {
+    const boundary = boundaryOf(request.headers['content-type']);
+    if (boundary === null) {
+      request.resume();
+      return sendJson(response, 400, { code: null, message: '上传请求的格式不对', fix: '以 multipart/form-data 上传，任务包 zip 放在字段 archive' }, headers);
+    }
+    const sent = await readBody(request, options.deps.config.limits.maxUploadBytes + ACTION_FORM_LIMIT);
+    if (!sent.ok) return sent.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '上传的文件太大', fix: `zip 不超过 ${options.deps.config.limits.maxUploadBytes} 字节` }, headers);
+    try {
+      upload = parseMultipart(sent.bytes, boundary).files.find((file) => file.field === 'archive')?.bytes;
+    } catch (error) {
+      if (!(error instanceof UploadError)) throw error;
+      return sendJson(response, 400, { code: null, message: error.message, fix: '以 multipart/form-data 上传，任务包 zip 放在字段 archive' }, headers);
+    }
+  }
+  if (upload === undefined && rest.join('/') !== 'packs/stage' && mediaTypeOf(request) !== 'application/json') {
+    request.resume();
+    return sendJson(response, 400, { code: null, message: '请求正文须为 JSON', fix: 'Content-Type 写 application/json，正文为一个对象' }, headers);
+  }
+  const body = rest.join('/') === 'packs/stage' ? { ok: true as const, bytes: Buffer.from('{}') } : await readBody(request, ACTION_FORM_LIMIT);
+  if (!body.ok) return body.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '请求正文太大', fix: `正文不超过 ${ACTION_FORM_LIMIT} 字节` }, headers);
+  let fields: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(body.bytes.toString('utf8'));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('not an object');
+    fields = parsed as Record<string, unknown>;
+  } catch {
+    return sendJson(response, 400, { code: null, message: '请求正文不是 JSON 对象', fix: '正文写成一个 JSON 对象' }, headers);
+  }
+  const ctx = pageContext(options, request, url, principal, session!, secure);
+  let result: ApiResult;
+  try {
+    result = await handleApiWrite(ctx, rest, fields, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log, token: session!.token, ...(upload === undefined ? {} : { upload }) });
+  } catch (error) {
+    options.log(`控制台写接口出错（${url.pathname}）：${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+    result = { status: 500, body: { code: null, message: 'Hub 内部错误，原因已记入服务日志', fix: '稍后重试；仍出错时由管理员查看服务日志' } };
+  }
+  sendJson(response, result.status, result.body, headers);
+}
+
 /** Handles every path under /console. */
 export async function handleConsole(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions): Promise<void> {
   const segments = url.pathname.split('/').slice(2).filter((s) => s.length > 0);
   const secure = options.secureRequest(request);
-  const session = options.sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
+  const cookieValue = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE);
+  // The live updates' own requests (the stream and the page fetches of script.ts) are not activity: an unattended page
+  // still reaches the idle limit of its session.
+  const automatic = request.headers['circle-hub-refresh'] === 'live' || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'stream');
+  const session = automatic ? options.sessions.peek(cookieValue, secure) : options.sessions.get(cookieValue, secure);
   if (segments[0] === 'login') {
+    if (segments.length === 2) return loginLink(request, response, options, secure, segments[1]);
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
-    if (request.method === 'GET') return loginPage(options, response, 200, null, secure, cookiesOf(request).get(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE) === '1');
+    if (request.method === 'GET') return loginPage(options, response, 200, null, secure, cookiesOf(request).get(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE) === '1', url.searchParams.get('next'));
     if (request.method === 'POST') return login(request, response, options);
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET 和 POST</p>`), { allow: 'GET, POST' });
@@ -441,6 +725,8 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>退出只接受 POST</p>`), { allow: 'POST' });
   }
+  if (segments[0] === 'authorize') return authorizePage(request, response, options, session, secure, segments.slice(1));
+  if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);
   if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';
   if (isAction ? request.method !== 'POST' : request.method !== 'GET') {
@@ -456,7 +742,9 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     // A session cookie the store no longer knows, or one whose token stopped working: the login page says the sign-in ended.
     const sent = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE) !== undefined;
     const cookies = sent ? [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure), cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '1', '/console/login', 120, secure)] : [];
-    return redirect(response, '/console/login', cookies);
+    // After signing in, a page leads back to itself (an action to its page, not to the form's target).
+    const back = isAction || segments.length === 0 ? null : safeNext(`${url.pathname}${url.search}`);
+    return redirect(response, back === null || back === HOME ? '/console/login' : `/console/login?next=${encodeURIComponent(back)}`, cookies);
   }
   if (segments.length === 0) return redirect(response, HOME);
   const ctx = pageContext(options, request, url, principal, session!, secure);

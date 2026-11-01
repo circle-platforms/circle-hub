@@ -920,6 +920,49 @@ describe('pack publish --stage', () => {
   });
 });
 
+describe('pack publish --dry-run', () => {
+  test('runs every check of publish and writes nothing: exit 0 when publish would succeed, 1 when it would refuse', async () => {
+    const admin = await setup();
+    const unpublished = async (): Promise<void> => withKit(admin, async (kit) => {
+      assert.equal((await kit.store.list({ kind: 'pack_version' })).items.length, 0, 'a check publishes nothing');
+      assert.equal(await kit.authorizations.ownerOf(REVIEW_PACK), null, 'a check makes nobody the owner');
+    });
+    const refused = await admin.run(['pack', 'publish', packs.review, '--dry-run']);
+    assert.equal(refused.code, 1, refused.text);
+    assert.match(refused.text, /\[publish\.no_right\]/);
+    assert.match(refused.text, /任务包未通过发布校验：1 个问题/);
+    assert.match(refused.text, /pack grant-publish 根管理员/);
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    const checked = await expectOk(admin, ['pack', 'publish', packs.review, '--dry-run']);
+    assert.match(checked.text, /发布校验通过：demo-check@1\.0\.0（工作流包，摘要 [0-9a-f]{64}）：样例 4\/4 通过/);
+    assert.match(checked.text, /包 demo-check 还没有已发布的版本，没有可比较的当前版本/);
+    assert.match(checked.text, /试运行：没有发布，也没有写入任何内容/);
+    await unpublished();
+    const broken = (await writePack(join(packRoot, 'dry-run-broken'), withFiles(reviewPack('1.0.0'), { 'samples/negative/codes-bad.json': null }))).dir;
+    const failing = await admin.run(['pack', 'publish', broken, '--dry-run']);
+    assert.equal(failing.code, 1, 'a check that publish would refuse exits 1');
+    assert.match(failing.text, /\[publish\.unsampled\]/);
+    await unpublished();
+
+    const published = await expectOk(admin, ['pack', 'publish', packs.review]);
+    assert.match(published.text, /已发布 demo-check@1\.0\.0/, 'the check before it did not take the version');
+    const again = await expectOk(admin, ['pack', 'publish', packs.review, '--dry-run']);
+    assert.match(again.text, /demo-check@1\.0\.0 已经以同样的内容发布过/);
+    assert.match(again.text, /与当前版本 demo-check@1\.0\.0 内容相同/);
+    // A new version is compared with the version in use, file by file; the staged copy is checked like --stage publishes.
+    const next = (await writePack(join(packRoot, 'dry-run-next'), withFiles(reviewPack('1.1.0'), { 'SKILL.md': '# 合成用例检查\n\n改过的说明。\n' }))).dir;
+    await writeFile(join(next, 'README.md'), '# notes\n');
+    const compared = await expectOk(admin, ['pack', 'publish', next, '--stage', '--dry-run']);
+    assert.match(compared.text, /发布校验通过：demo-check@1\.1\.0/);
+    assert.match(compared.text, /当前版本 demo-check@1\.0\.0，本次 demo-check@1\.1\.0：新增 0 个文件，修改 1 个，删除 0 个/);
+    assert.ok(compared.out.includes('  修改 SKILL.md'), compared.text);
+    await withKit(admin, async (kit) => assert.equal((await kit.store.list({ kind: 'pack_version' })).items.length, 1, 'still only the version published above'));
+    const reused = await admin.run(['pack', 'publish', (await writePack(join(packRoot, 'dry-run-reused'), { ...reviewPack('1.0.0'), title: '改过的标题' })).dir, '--dry-run']);
+    assert.equal(reused.code, 1);
+    assert.match(reused.text, /\[publish\.version_reused\]/);
+  });
+});
+
 describe('pack', () => {
   test('publish needs the publish right; then publish, list, assign, activate, unassign and retire', async () => {
     const admin = await setup();
