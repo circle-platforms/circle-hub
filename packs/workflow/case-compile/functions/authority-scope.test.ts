@@ -59,11 +59,13 @@ test('a fixed-size scope contract accepts newly declared paths in a ten-thousand
  for(const index of [0,2500,4999]){const selected=definitions.slice(index*2,index*2+2);const value=fixture(['demo pool op'+index+' one 10',cleanup('no demo pool op'+index+' one')]);value.input.subject.command_catalog={...structuredClone(catalog),entries:selected};const before=JSON.stringify(value.contract);assert.ok(checkCommandsKnown(value.input).every(row=>row.verdict==='support'),JSON.stringify(checkCommandsKnown(value.input)));assert.equal(JSON.stringify(value.contract),before);assert.equal(value.contract.effects.effect_0.commands,undefined);}
 });
 
-test('inverse signature arity is structural and an ambiguous arity needs an explicit product declaration',()=>{
+test('inverse signature arity is structural, and with several valid arities the plan\'s own cleanup stands when it is one of them (decision 115)',()=>{
  const valid=fixture(['demo pool add "one two" 10',cleanup('no demo pool add "one two"')]);delete (valid.input.subject.command_catalog as any).policy.inverse_rules[0].leading_parameters;
  assert.ok(checkCommandsKnown(valid.input).every(row=>row.verdict==='support'));
  const ambiguous=fixture(['demo pool add one 10',cleanup('no demo pool add one')]);const raw=ambiguous.input.subject.command_catalog as any;delete raw.policy.inverse_rules[0].leading_parameters;raw.entries[1].signatures.push({...raw.entries[1].signatures[0],reference:`src:${ROOT}/xml@1/x/commands/item[20]/arguments`,params:[]});
- assert.ok(checkCommandsKnown(ambiguous.input).some(row=>row.verdict==='unknown'&&row.missing?.includes('唯一前导')));
+ assert.ok(checkCommandsKnown(ambiguous.input).every(row=>row.verdict==='support'),JSON.stringify(checkCommandsKnown(ambiguous.input)));
+ const other=fixture(['demo pool add one 10',cleanup('no demo pool add two')]);const raw2=other.input.subject.command_catalog as any;delete raw2.policy.inverse_rules[0].leading_parameters;raw2.entries[1].signatures.push({...raw2.entries[1].signatures[0],reference:`src:${ROOT}/xml@1/x/commands/item[20]/arguments`,params:[]});
+ assert.ok(checkCommandsKnown(other.input).some(row=>row.verdict==='refute'&&row.statement.includes('在逆序位置的清理应是下面之一')),JSON.stringify(checkCommandsKnown(other.input)));
 });
 
 test('author commands cannot be moved into cleanup to erase their execution obligations',()=>{
