@@ -1,3 +1,4 @@
+export {PersonalKnowledgeSync} from './personal-sync/service.ts';
 // Public surface of hub/knowledge: the content-addressed knowledge tree (K01-K05). createKnowledge returns an object that
 // implements KnowledgePort (hub/ports.ts) exactly, plus the production, sync, current-root, calibration, placement,
 // provenance, layer and view operations of this package. createKnowledgeReader serves the knowledge views as external

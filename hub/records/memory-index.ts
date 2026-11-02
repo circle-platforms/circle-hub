@@ -11,13 +11,15 @@ export interface MemoryIndex {
  heads(space?:string,tx?:Transaction):Promise<MemoryHead[]>;
  usage(space:string,tx?:Transaction):Promise<{active:number;history:number;activeDocuments:number}>;
  apply(head:MemoryHead,historyBytes:number,tx:Transaction):Promise<void>;
+ replacePersonal?(space:string,epoch:string,heads:readonly MemoryHead[],tx:Transaction):Promise<void>;
  rebuild(space:string,heads:readonly MemoryHead[],history:number,tx:Transaction):Promise<void>;
 }
 export class PgMemoryIndex implements MemoryIndex{
  #db:Database;readonly limits:MemoryLimits;
  constructor(db:Database,limits:{documentBytes:number;spaceBytes:number;spaceDocuments?:number}={documentBytes:24000,spaceBytes:48000}){this.#db=db;this.limits={...limits,spaceDocuments:limits.spaceDocuments??20};}
  async heads(space?:string,tx?:Transaction):Promise<MemoryHead[]>{const rows=await this.#db.query<StoredHead>(`SELECT document,space,version,path,state,bytes::text,context_bytes::text FROM memory_heads${space===undefined?'':' WHERE space=$1'} ORDER BY document`,space===undefined?[]:[space],tx);return rows.rows.map(headOf);}
- async usage(space:string,tx?:Transaction){const row=(await this.#db.query<{active:string;history:string;documents:string}>('SELECT active_bytes::text AS active,history_bytes::text AS history,active_documents::text AS documents FROM memory_space_usage WHERE space=$1',[space],tx)).rows[0];return {active:Number(row?.active??0),history:Number(row?.history??0),activeDocuments:Number(row?.documents??0)};}
+ async replacePersonal(space:string,epoch:string,heads:readonly MemoryHead[],tx:Transaction){await this.#db.query('SELECT hub_replace_personal_memory($1,$2,$3::jsonb)',[space,epoch,JSON.stringify(heads)],tx);}
+ async usage(space:string,tx?:Transaction){const row=(await this.#db.query<{active:string;history:string;documents:string}>('SELECT active_bytes::text AS active,history_bytes::text AS history,active_documents::text AS documents FROM memory_space_usage WHERE space=$1',[space],tx)).rows[0];const reserved=(await this.#db.query(`SELECT r.bytes,r.documents FROM personal_sync_memory_reservations r JOIN personal_spaces s ON (s.owner,s.epoch)=(r.owner,r.epoch) WHERE r.owner=$1 AND s.mode='hub'`,[space],tx)).rows[0];return {active:Number(row?.active??0)+Number(reserved?.bytes??0),history:Number(row?.history??0),activeDocuments:Number(row?.documents??0)+Number(reserved?.documents??0)};}
  async apply(head:MemoryHead,historyBytes:number,tx:Transaction){
   const stored=(await this.#db.query<StoredHead>('SELECT document,space,version,path,state,bytes::text,context_bytes::text FROM memory_heads WHERE document=$1',[head.document],tx)).rows[0],old=stored?headOf(stored):undefined;if(old?.version===head.version)return;
   if(old&&old.space!==head.space)throw new TypeError('memory identity cannot change spaces');

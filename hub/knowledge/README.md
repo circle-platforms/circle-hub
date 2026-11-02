@@ -1300,3 +1300,18 @@ revision mapping, verified CAS and conflict projection are implemented in step 4
 Cleared team src grounds use the existing source-hash index and metadata-only purge checks; no full team-source body scan or cross-request negative cache is used. A 400-source regression covers bounded matching loads and immediate invalidation.
 
 After a completed personal purge, local-mode personal paths and visible spaces are empty. New runs still freeze the team root but freeze personal as null; source binding explicitly handles that absence. Returning to Hub storage uses a new epoch and never restores old grants or roots. This is the step-2 review empty-view boundary, not the step-4 native sync adapter.
+
+### Atomic personal revisions (decision 89, step 4)
+
+`personalSync` now exports stable native identities and applies a complete snapshot in one owner/epoch transaction.
+It checks object ancestry, explicit deletion and all competing parents; directory collisions suppress their dependent
+subtree. Conflicts have no current default content. Memory reserves the largest candidate and one document slot,
+loads no conflicting candidate, and retains explicitly readable owner history.
+
+Grounds are re-resolved using the actual reader and available parser closure; missing and forbidden are indistinguishable.
+Observations are appended separately. Unverified or restricted candidates remain owner-only even under directory grants,
+and search excludes them before pagination. Same-batch predecessor links become actual historical native roots.
+Original bytes, quotes, capture author, read tier and media type are preserved; editable text follows canonical encoding
+without trimming trailing whitespace. Native writes freeze and recheck their admitted epoch. Manifests are metadata
+only. Same-content entries at the same native path with distinct stable identities remain structural conflicts because
+the existing native address cannot distinguish them; no candidate is silently discarded or renamed.

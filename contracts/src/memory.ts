@@ -19,8 +19,8 @@ export type MemoryWriteInput=z.infer<typeof MemoryWriteInput>;
 export const MemoryQuery=z.strictObject({scope:KnowledgeSearchScopeSchema.default('all'),document:Sha256.optional(),version:Sha256.optional(),for_session:z.boolean().default(false),cursor:z.string().max(4000).optional()})
  .refine(q=>q.version===undefined||q.document!==undefined,'a version belongs to a document')
  .refine(q=>!q.for_session||(q.document?q.version!==undefined:q.scope==='team'||q.scope==='personal'),'session reads pin a version; session lists select team or personal');
-export const MemoryDocumentBody=z.strictObject({space:SpaceId,by:UserId,at:IsoTime,intent:Sha256});
-export const MemoryVersionBody=z.strictObject({document:Sha256,space:SpaceId,parent:Sha256.nullable(),title:Text.min(1).max(300),path:TreePath,state:MemoryStatusSchema.extract(['enabled','disabled']),bytes:z.number().int().nonnegative(),markdown:Text.nullable(),content_version:Sha256.nullable(),by:UserId,at:IsoTime,intent:Sha256,payload:Sha256})
+export const MemoryDocumentBody=z.strictObject({personal_epoch:z.uuid().optional(),space:SpaceId,by:UserId,at:IsoTime,intent:Sha256});
+export const MemoryVersionBody=z.strictObject({personal_epoch:z.uuid().optional(),document:Sha256,space:SpaceId,parent:Sha256.nullable(),title:Text.min(1).max(300),path:TreePath,state:MemoryStatusSchema.extract(['enabled','disabled']),bytes:z.number().int().nonnegative(),markdown:Text.nullable(),content_version:Sha256.nullable(),by:UserId,at:IsoTime,intent:Sha256,payload:Sha256})
  .refine(v=>(v.markdown===null)===(v.content_version!==null),'inline text or one content version');
 export type MemoryVersionBody=z.infer<typeof MemoryVersionBody>;
 export const MemoryGrantBody=SpaceGrantBody.safeExtend({intent:Sha256});
@@ -30,8 +30,8 @@ export type MemoryShareBody=z.infer<typeof MemoryShareBody>;
 export const MemoryCheckResult=z.strictObject({ok:z.boolean(),checks:z.array(z.strictObject({check:ShareCheckSchema,state:StaticTerminalSchema,code:z.string().nullable(),message:z.string(),fix:z.string()})),effect:MemoryShareEffectSchema.nullable(),replaces:Sha256.nullable(),title:z.string(),target_path:MemoryPath.optional(),share:MemoryShareBody.optional(),record:Sha256.optional()});
 export const MemoryMetadata=z.strictObject({document:Sha256,version:Sha256,space:SpaceId,title:Text,path:TreePath,state:MemoryStatusSchema,bytes:z.number().int().nonnegative(),updated_at:IsoTime,updated_by:UserId,auto_load_allowed:z.boolean()});
 export type MemoryMetadata=z.infer<typeof MemoryMetadata>;
-export const MemoryPage=z.strictObject({scope:KnowledgeSearchScopeSchema,snapshot:Sha256,items:z.array(MemoryMetadata).max(50),next:z.string().nullable()});
-export const MemoryDocumentView=MemoryMetadata.extend({current_version:Sha256,markdown:Text,offset:z.number().int().nonnegative(),next:z.string().nullable()});
+export const MemoryPage=z.strictObject({scope:KnowledgeSearchScopeSchema,snapshot:Sha256,conflict_count:z.number().int().nonnegative().optional(),conflicts:z.array(z.strictObject({item_id:z.uuid(),heads:z.array(Sha256).max(500)})).max(50).optional(),items:z.array(MemoryMetadata).max(50),next:z.string().nullable()});
+export const MemoryDocumentView=MemoryMetadata.extend({current_version:Sha256.nullable(),markdown:Text,offset:z.number().int().nonnegative(),next:z.string().nullable()});
 export const MemoryWriteReceipt=z.strictObject({document:Sha256,version:Sha256,previous_version:Sha256.nullable(),space:SpaceId,state:MemoryStatusSchema,bytes:z.number().int().nonnegative(),updated_at:IsoTime,unchanged:z.boolean()});
 export type MemoryWriteReceipt=z.infer<typeof MemoryWriteReceipt>;
 export const MEMORY_SCHEMAS={'memory-document@1':MemoryDocumentBody,'memory-version@1':MemoryVersionBody,'memory-grant@1':MemoryGrantBody,'memory-share@1':MemoryShareBody};

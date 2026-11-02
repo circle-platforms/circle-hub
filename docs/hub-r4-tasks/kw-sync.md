@@ -588,3 +588,44 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
  hub/server/console.test.ts hub/server/console-knowledge.test.ts hub/server/console-sync-local.test.ts tests/acceptance/46-knowledge-spaces.test.ts
 npm run test:docs
 ```
+
+### 第 4 步：原子提交、确定性冲突与重新核验
+
+来源：Claude 收到 958ead07 与八项审查修正后要求继续第 4 步；复核新发现按随后指令在本步提交之后、第 5 步之前处理。
+
+做了的：
+
+- 追加迁移 16，保存私有提交／核验观察、原生映射、容量抵扣与记忆冲突预留；原生知识、记忆、同步头、回执、审计在同一本人锁及事务中推进。运行角色不获 personal_spaces UPDATE，使用固定搜索路径的所有者函数取得范围锁并替换本人记忆投影。
+- 状态包含知识、记忆和个人包清单变化。控制台与 MCP 写入后旧状态不能提交；两个真实同步会话竞争只有一次成功。失配保留暂存，返回本人新状态，不自动覆盖；重复操作返回冻结回执，不重复计费或核验。
+- 从既有内容导出稳定 ID、原生映射和只读外部依据；共享向量补充空原文、未知文件名和同批前件。便携祖先合并不使用时钟／到达顺序；同项分叉、删除对修改、同名目录、目录删除后新增子项均保留冲突。解决必须接续全部竞争头；不从缺项猜删除。
+- 本人可显式读取历史；未解决候选不进入默认知识投影或记忆加载，答复列出冲突。记忆以最大候选预留标题＋路径＋正文及一篇额度，所有候选计历史容量。投影锚点和后续原生记录支持重建，删除／冲突不会复活。
+- 重新检查目录、当前读权、解析器和逐字引文，核验观察与原对象分开，带规则、扫描器、解析器锁及有界位置。不可读与不存在同形；同内容重交可产生新观察。未核验／受限内容仅本人可读，授权目录也不能扩大资格，搜索在分页前排除。
+- 同批知识前件生成真实历史原生根；原文和引文字节保真，保留采集作者、读取级别、媒体类型和未知文件名，不把个人凭据来源变成团队资料。可编辑文字不额外裁剪尾随空白。相同原生路径下不同稳定身份的同内容条目无法用既有地址区分，保留为结构冲突而非静默合并。
+- 原生历史、暂存对象、私有回执与客户端元数据共同计量；导出／投影抵扣避免重复收费。个人包发布也取得本人空间锁；清单同步只报告已有安装，不安装、不发布、不执行。异步原生写入重查代次；新控制台表单带隐藏代次，清除并返回 Hub 后旧表单拒收。
+- 生成 Schema；无新增词表、配置、协议镜像或技能补丁版本，模型保持 26，MCP 仍六工具。HTTP 和完整方式切换仍属第 5 步，未提前开放。
+
+
+
+核验记录：先前核心组 17 项、扩大定向组 683 项通过，均无跳过；随后补充旧表单回归，并改为逐份加载原件、立即暂存导出字节块，避免保留整空间原文副本。最终组另行记录，不重复累加中间计数。首次夹具错误包括 search 回执字段、memory_write 回执字段、不完整包文件清单、原地排序改动目录顺序和类型别名误用；均修正夹具而非放宽断言。运行角色恢复曾因直接 FOR SHARE 需要 UPDATE 权限失败，改为所有者范围锁，不授予 UPDATE。最终迁移源对比先用正则遗漏常量初始化，改用 TypeScript AST 后确认 1～15 原有 SQL 源均相同。
+
+工作流／引擎扩大组在尚未结束时主动中断：因为紧随本步的复核修正还要改变运行原件读取，完整组留到修正后统一执行，避免重复运行；中断组不计通过。未改现有知识视图固定预期。来源工具／批准导入未改，不运行来源检查；全量 unit／acceptance 与 Linux CI 未运行。没有推送、PR 或部署。
+
+第 4 步最终验证：扩大定向组 745 项通过、0 失败、0 跳过，含所有 records（迁移源快照、密码、锁命名、运行角色、升级与备份）、合约、知识／记忆、控制台、环境变量与缺省知识端口、PG 18 ownership、验收 46～49。知识视图 49,000 条目用例通过且未更改固定输出预期。收尾补充竞争失败快照可读性、结构冲突随原生更新保留，以及逐份加载／暂存后，核心与真实 Hub 验收 49 复查 18 项通过、0 跳过。类型检查、175 文件合约核对、差异检查通过；共享编码／合并组 8 项通过。文档检查首轮及填入结果后的收尾复查均为 291 项通过、0 跳过。完整工作流／引擎组保留到紧随本步的安全修正后执行；当前中断组没有按通过报告。
+
+```sh
+npm run typecheck
+npm run gen:contracts
+npm run verify:contracts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'contracts/src/*.test.ts' 'hub/records/**/*.test.ts' \
+ hub/knowledge/spaces.test.ts hub/knowledge/spaces-review.test.ts hub/knowledge/memory.test.ts \
+ 'hub/knowledge/personal-sync/*.test.ts' 'hub/knowledge/personal-*.test.ts' hub/knowledge/view-perf.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+ hub/server/console.test.ts hub/server/console-knowledge.test.ts hub/server/console-memory.test.ts \
+ hub/server/console-sharing.test.ts hub/server/console-search.test.ts hub/server/console-sync-local.test.ts \
+ hub/server/console-sync-privacy.test.ts tests/acceptance/46-knowledge-spaces.test.ts \
+ tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+ hub/knowledge/personal-sync/commit.test.ts tests/acceptance/49-personal-sync.test.ts
+npm run test:docs
+```

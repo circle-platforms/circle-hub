@@ -445,3 +445,12 @@ Decision 89 step-2 review item 5 (Claude 2026-11-03) sets model 26. The explicit
 rule. Only vocabulary.ts and protocol.ts change on generation; the four skill protocol mirrors and manifests remain current.
 
 Decision 89 step-2 review item 9 permits SpaceLocks.personal to be null when a run starts while personal content is stored only locally. The team root stays required, existing digests are unchanged, and explicit old personal references remain unreadable. Generation updates only the run, run-summary and tool schemas; no vocabulary/model or skill mirror changes are needed for this shape extension.
+
+### Personal sync commit objects (decision 89, step 4)
+
+The portable ancestry merge in `src/sync-merge.ts` consumes the shared vectors without a Hub dependency. Own predecessor
+entries use revision links; external grounds remain read-only addresses. Sources retain nullable original names; quotes
+and original chunks are byte objects. Verification observations include bounded ground positions and parser locks,
+separately from immutable revisions. Structural directory conflicts may have one head. Commit projections map accepted
+objects to native addresses or memory versions; a pack manifest only reports existing installation, never installs it.
+No vocabulary or protocol mirror changed in this step; model 26 and the six MCP tools remain unchanged.

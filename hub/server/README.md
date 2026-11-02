@@ -1038,3 +1038,11 @@ request, and both members and administrators retain the normal raw-record refusa
 synthetic console passwords through testConsoleCredentials and verifies team content remains available after purge.
 
 Decision 89 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms and explicit private references never restore purged content. No sync HTTP route or extra MCP tool is exposed here.
+
+### Personal sync commit integration (decision 89, step 4)
+
+Console and MCP personal knowledge/memory writes participate in the same state and capacity boundary as internal sync
+commits. A rendered personal write form carries its epoch and refuses stale content after purge and resume; the service
+also rechecks the epoch after asynchronous admission. Existing MCP inputs remain unchanged, and only six tools are
+exposed. Memory answers report the generated conflict status and count instead of silently selecting a candidate.
+The dedicated HTTP commit route and full mode-switch UI remain the next implementation step.

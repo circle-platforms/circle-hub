@@ -1,6 +1,7 @@
 // Personal HTTP sync contracts. These schemas are deliberately absent from MCP tool inputs.
 import {z} from 'zod';
 import {Sha256,IsoTime,Versioned,PackVersion} from './common.ts';
+import {Ground} from './reference.ts';
 import {SpaceEntryContent} from './spaces.ts';
 import {PackManifest} from './pack.ts';
 import {SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,MemoryStatusSchema,KnowledgeEntryStatusSchema,PackKindSchema} from '../generated/vocabulary.ts';
@@ -15,8 +16,8 @@ const Hashes=z.array(Sha256).max(500).refine(sortedUnique,'sorted unique hashes'
 const Revision={item_id:Id,parents:Hashes,directory_id:Id};
 const object=<K extends z.infer<typeof SyncObjectKindSchema>,S extends z.ZodType>(kind:K,body:S)=>z.strictObject({schema:z.literal('personal-sync-object@1'),kind:z.literal(SyncObjectKindSchema.enum[kind]),body});
 const Bytes=object('bytes',z.strictObject({bytes_base64:PersonalSyncBase64.refine(s=>Buffer.from(s,'base64').length<=PERSONAL_SYNC_LIMITS.chunkBytes,'bounded byte chunk')}));
-const Source=object('source_revision',z.strictObject({...Revision,name:Text.min(1).max(300),media_type:z.string().min(1).max(200),raw_sha256:Sha256,size:z.number().int().nonnegative(),chunks:z.array(Sha256).max(4096)}));
-const Entry=object('entry_revision',z.strictObject({...Revision,content:SpaceEntryContent.extend({data:z.record(z.string(),z.unknown()),applicability:z.record(z.string(),z.unknown()).nullable()}),grounds:z.array(z.strictObject({source:Sha256,parser:Versioned,selector:Text.min(1).max(4000),quotation:Sha256})).max(100)}));
+const Source=object('source_revision',z.strictObject({...Revision,name:Text.min(1).max(300).nullable(),media_type:z.string().min(1).max(200),raw_sha256:Sha256,size:z.number().int().nonnegative(),chunks:z.array(Sha256).max(4096)}));
+const Entry=object('entry_revision',z.strictObject({...Revision,content:SpaceEntryContent.extend({data:z.record(z.string(),z.unknown()),applicability:z.record(z.string(),z.unknown()).nullable()}),grounds:z.array(z.union([z.strictObject({source:Sha256,parser:Versioned,selector:Text.min(1).max(4000),quotation:Sha256}),z.strictObject({reference:Ground,quotation:Sha256}),z.strictObject({entry:Sha256,quotation:Sha256})])).max(100)}));
 const Directory=object('directory_revision',z.strictObject({item_id:Id,parents:Hashes,parent_directory:Id.nullable(),name:Text.max(300)}));
 const Memory=object('memory_revision',z.strictObject({...Revision,title:Text.min(1).max(300),markdown:Text,state:MemoryStatusSchema.extract(['enabled','disabled'])}));
 const Pack=object('pack_manifest',z.strictObject({item_id:Id,parents:Hashes,manifest:PackManifest.safeExtend({kind:PackKindSchema.extract(['workflow','skill'])})}));
@@ -43,9 +44,10 @@ export const PersonalSyncInventory=z.strictObject({snapshot:Sha256,objects:z.arr
 export const PersonalSyncTransfer=z.strictObject({objects:z.array(z.strictObject({id:Sha256,bytes_base64:PersonalSyncBase64})).max(64),missing:Batch});
 const Counts=z.strictObject({accepted:z.number().int().nonnegative(),existing:z.number().int().nonnegative(),downloaded:z.number().int().nonnegative(),bytes:z.number().int().nonnegative()});
 export const PersonalSyncReceipt=z.strictObject({operation_id:Key,epoch:Id,request:Sha256,previous_state:Sha256.nullable(),state_version:Sha256,counts:Counts,at:IsoTime});
-export const PersonalSyncVerification=z.strictObject({object:Sha256,status:KnowledgeEntryStatusSchema.extract(['verified','unverified']),rule_version:PackVersion,scanner:Versioned,parser_lock:Sha256.nullable(),codes:z.array(z.string().refine(s=>Object.hasOwn(PROTOCOL_CODES,s))).max(100),checked_at:IsoTime});
-export const PersonalSyncConflict=z.strictObject({item_id:Id,heads:Hashes.refine(a=>a.length>1,'multiple conflicting heads')});
-export const PersonalSyncResult=z.strictObject({state:PersonalSyncState,receipt:PersonalSyncReceipt,verification:z.array(PersonalSyncVerification).max(500),conflicts:z.array(PersonalSyncConflict).max(500),next:Text.max(4000).nullable()});
+export const PersonalSyncVerification=z.strictObject({object:Sha256,status:KnowledgeEntryStatusSchema.extract(['verified','unverified']),rule_version:PackVersion,scanner:Versioned,parser_lock:Sha256.nullable(),positions:z.array(z.strictObject({ground:z.number().int().nonnegative().max(99),code:z.string().refine(s=>Object.hasOwn(PROTOCOL_CODES,s))})).max(500).optional(),parser_locks:z.array(z.strictObject({parser:Versioned,digest:Sha256.nullable()})).max(100).optional(),codes:z.array(z.string().refine(s=>Object.hasOwn(PROTOCOL_CODES,s))).max(100),checked_at:IsoTime});
+export const PersonalSyncConflict=z.strictObject({item_id:Id,heads:Hashes.refine(a=>a.length>0),structural:z.boolean().optional()}).refine(v=>v.heads.length>1||v.structural===true,'multiple heads or an observed structural conflict');
+export const PersonalSyncProjection=z.strictObject({kind:PersonalSyncItem.shape.kind,item_id:Id,object:Sha256,reference:Ground.optional(),document:Sha256.optional(),version:Sha256.optional(),installed:z.boolean().optional()});
+export const PersonalSyncResult=z.strictObject({state:PersonalSyncState,receipt:PersonalSyncReceipt,projections:z.array(PersonalSyncProjection).max(500).optional(),verification:z.array(PersonalSyncVerification).max(500),conflicts:z.array(PersonalSyncConflict).max(500),next:Text.max(4000).nullable()});
 export const PersonalSyncError=z.strictObject({code:z.string().refine(s=>Object.hasOwn(PROTOCOL_CODES,s)),state:PersonalSyncState.optional(),retry_after_seconds:z.number().int().positive().optional()});
 // Route identifiers are protocol addresses, never MCP tools. Dynamic path components are separately authenticated.
 export const PERSONAL_SYNC_HTTP_ROUTES={state:{method:'GET',path:'/api/sync/v1/state'},client:{method:'POST',path:'/api/sync/v1/clients'},session:{method:'POST',path:'/api/sync/v1/sessions'},inventory:{method:'GET',path:'/api/sync/v1/sessions/{id}/inventory'},missing:{method:'POST',path:'/api/sync/v1/sessions/{id}/missing'},upload:{method:'POST',path:'/api/sync/v1/sessions/{id}/upload'},download:{method:'POST',path:'/api/sync/v1/sessions/{id}/download'},commit:{method:'POST',path:'/api/sync/v1/sessions/{id}/commit'},operation:{method:'GET',path:'/api/sync/v1/operations/{id}'},abort:{method:'POST',path:'/api/sync/v1/sessions/{id}/abort'},modeCheck:{method:'POST',path:'/api/sync/v1/mode/check'},mode:{method:'POST',path:'/api/sync/v1/mode'}} as const;

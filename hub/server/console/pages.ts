@@ -38,6 +38,8 @@ export interface PageContext {
   chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'hint' | 'actions' | 'crumbs'>) => PageChrome;
   /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
   csrf?: string;
+  /** The personal epoch read when rendering a write form. */
+  personalEpoch?: string;
   /** The request came over HTTPS (the built-in listener or the configured proxy). */
   secure?: boolean;
   /** The origin the browser reached (scheme and the Host the app accepted), for the Circle entry of this Hub. */

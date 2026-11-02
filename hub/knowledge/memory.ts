@@ -1,7 +1,9 @@
+import {INITIAL_PERSONAL_EPOCH} from '../records/api.ts';
+import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 // Memory is a versioned client preference, with its own grants and no evidence reference.
 import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,MemoryWriteReceipt,type MemoryMetadata} from '../../contracts/src/memory.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
-import {ActionKindSchema,ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
+import {SyncObjectKindSchema,SyncModeSchema,ActionKindSchema,ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
 import {canonicalize,sha256Hex,scanForCredentials,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
 import {pathOf,pathSegments} from '../refs/api.ts';
 import {KnowledgeError} from './errors.ts';
@@ -66,7 +68,9 @@ export class MemoryDocuments{
  }
  async read(by:Principal,document:string,version?:string,forSession=false){
   by=await this.#user(by);const doc=await this.#ctx.records.store.get(document);if(doc?.kind!=='memory_document')return fail('SOURCE_UNAVAILABLE');const identity=MemoryDocumentBody.parse(doc.body);
-  const heads=await this.#index().heads(identity.space),head=heads.find(h=>h.document===document);if(!head||!await this.#mayRead(by,head.space,head.path))return fail('SOURCE_UNAVAILABLE');
+  const heads=await this.#index().heads(identity.space),head=heads.find(h=>h.document===document);
+  if(!head&&version&&identity.space===by.id&&!forSession){const record=await this.#ctx.records.store.get(version);if(record?.kind!=='memory_version')return fail('SOURCE_UNAVAILABLE');const body=MemoryVersionBody.parse(record.body);if(body.document!==document||body.space!==by.id)return fail('SOURCE_UNAVAILABLE');return {document,version,space:by.id,title:body.title,path:body.path,state:'superseded' as const,bytes:body.bytes,updated_at:body.at,updated_by:body.by,auto_load_allowed:false,current_version:null,markdown:await this.#text(body)};}
+  if(!head||!await this.#mayRead(by,head.space,head.path))return fail('SOURCE_UNAVAILABLE');
   const current=await this.#version(head);if(head.space!==by.id&&!(head.space==='team'&&by.role==='admin')&&current.body.state!=='enabled')return fail('SOURCE_UNAVAILABLE');
   const own=head.space===by.id,adminTeam=head.space==='team'&&by.role==='admin';
   if(version&&version!==head.version&&!own&&!adminTeam)return fail('SOURCE_UNAVAILABLE');
@@ -83,7 +87,8 @@ export class MemoryDocuments{
    return {memory_document:{...doc,markdown:bytes.subarray(offset,end).toString('utf8'),offset,next:end<bytes.length?nextCursor({snapshot,mode,offset:end}):null}};
   }
   const items=await this.items(by,q.scope,q.for_session),snapshot=digest({mode,items}),offset=cursor(q.cursor,snapshot,mode);if(offset>items.length)return fail('MEMORY_CURSOR_STALE');
-  const page=(end:number)=>({scope:q.scope,snapshot,items:items.slice(offset,end),next:end<items.length?nextCursor({snapshot,mode,offset:end}):null});
+  let conflicts:Array<{item_id:string;heads:string[]}>=[];const sync=this.#ctx.records.personalSync;if(sync&&(q.scope==='all'||q.scope==='personal')){const state=await sync.state(by);if(state.mode===SyncModeSchema.enum.hub&&state.snapshot)await sync.transact(by,state.epoch,async(scope,tx)=>{const list=await sync.note(by,state.epoch,'conflicts',state.snapshot!,tx) as Array<{item_id:string;heads:string[]}>|null;for(const conflict of list??[]){const object=await sync.object(by,state.epoch,conflict.heads[0],tx);if(object?.kind===SyncObjectKindSchema.enum.memory_revision||object?.kind===SyncObjectKindSchema.enum.deletion&&object.body.target_kind===SyncObjectKindSchema.enum.memory_revision)conflicts.push({item_id:conflict.item_id,heads:conflict.heads});}});}
+  const page=(end:number)=>({scope:q.scope,snapshot,...(conflicts.length?{conflict_count:conflicts.length,conflicts:conflicts.slice(0,50)}:{}),items:items.slice(offset,end),next:end<items.length?nextCursor({snapshot,mode,offset:end}):null});
   let end=offset;
   while(end<items.length&&end-offset<50&&Buffer.byteLength(JSON.stringify(page(end+1)))<=16000)end++;
   if(end===offset&&end<items.length)return fail('MEMORY_DOCUMENT_LIMIT');
@@ -123,26 +128,28 @@ export class MemoryDocuments{
    await this.#ctx.records.store.put({kind:'action',schema:'memory-unchanged@1',provenance:'observed',unique_key:intent,body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now(),intent,payload,receipt}},tx);
    return receipt;
   }
+  const epoch=space==='team'?undefined:await personalEpoch(this.#ctx,space,tx);
   const index=this.#index(),bytes=Buffer.byteLength(input.markdown),contextBytes=bytes+Buffer.byteLength(input.title+input.path),usage=await index.usage(space,tx);
   const active=usage.active-(input.head?.state==='enabled'?input.head.contextBytes:0)+(input.state==='enabled'?contextBytes:0),documents=usage.activeDocuments-Number(input.head?.state==='enabled')+Number(input.state==='enabled');
   if(bytes>index.limits.documentBytes&&!(input.state==='disabled'&&sameText))return fail('MEMORY_DOCUMENT_LIMIT');if(input.state==='enabled'&&(active>index.limits.spaceBytes||documents>index.limits.spaceDocuments))return fail('MEMORY_SPACE_LIMIT');
   if(input.state==='enabled'||!sameText||input.title!==input.previous?.title||input.path!==input.previous?.path)this.#scan(input.title,input.path,input.markdown);
   let document=input.head?.document,docBytes=0;
-  if(!document){const body=MemoryDocumentBody.parse({space,by:by.id,at:this.#now(),intent});const doc=await this.#ctx.records.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body,index:[{key:'memory.document.space',value:space}]},tx);document=doc.digest;docBytes=Buffer.byteLength(canonicalize(body));}
-  const body=MemoryVersionBody.parse({document,space,parent:input.head?.version??null,title:input.title,path:input.path,state:input.state,bytes,markdown:sameText?null:input.markdown,content_version:sameText?(input.previous!.content_version??input.head!.version):null,by:by.id,at:this.#now(),intent,payload});
+  if(!document){const body=MemoryDocumentBody.parse({personal_epoch:epoch,space,by:by.id,at:this.#now(),intent});const doc=await this.#ctx.records.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body,index:[{key:'memory.document.space',value:space}]},tx);document=doc.digest;docBytes=Buffer.byteLength(canonicalize(body));}
+  const body=MemoryVersionBody.parse({personal_epoch:epoch,document,space,parent:input.head?.version??null,title:input.title,path:input.path,state:input.state,bytes,markdown:sameText?null:input.markdown,content_version:sameText?(input.previous!.content_version??input.head!.version):null,by:by.id,at:this.#now(),intent,payload});
   const history=docBytes+Buffer.byteLength(canonicalize(body));
   if(space!=='team'){
    const knowledge=(await this.#spaces.current(space,tx))?.body.used_bytes??0;
    if(knowledge+usage.history+history>await this.#spaces.capacity(space,tx))return fail('SPACE_CAPACITY_EXCEEDED');
   }
   const stored=await this.#ctx.records.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body,unique_key:intent,index:[{key:'memory.version.document',value:document},{key:'memory.version.space',value:space}]},tx);
-  await index.apply({document,space,version:stored.digest,path:body.path,state:body.state,bytes,contextBytes},history,tx);return this.#receipt(body,stored.digest);
+  await index.apply({document,space,version:stored.digest,path:body.path,state:body.state,bytes,contextBytes},history,tx);if(epoch&&this.#ctx.records.personalSync)await this.#ctx.records.personalSync.assertCapacity(by,epoch,tx);return this.#receipt(body,stored.digest);
  }
  async write(by:Principal,raw:unknown):Promise<MemoryWriteReceipt>{
   by=await this.#user(by);const input=MemoryWriteInput.parse(raw),space=input.space==='team'?'team':by.id;if(space==='team'&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');
-  const intent=digest([by.id,space,'memory.write',input.client_key]),payload=digest(input);
+  const epoch=space===by.id?await personalEpoch(this.#ctx,by.id):undefined;
+  const intent=digest([by.id,space,'memory.write',input.client_key,...(epoch&&epoch!==INITIAL_PERSONAL_EPOCH?[epoch]:[])]),payload=digest(input);
   try{return await this.#queue(space,()=>this.#ctx.records.store.withTransaction(async tx=>{
-   await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await this.#user(by);if(space==='team'&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');
+   await this.#ctx.records.store.lock('knowledge-space:'+space,tx);await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await this.#user(by);if(space==='team'&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');
    const cached=await this.#ctx.records.store.getByKey('memory_version',intent,tx);if(cached){const body=MemoryVersionBody.parse(cached.body);if(body.payload!==payload)return fail('IDEMPOTENCY_MISMATCH');return this.#receipt(body,cached.digest,true);}
    const action=await this.#ctx.records.store.getByKey<{payload:string;code?:ProtocolCode;message?:string;positions?:unknown[];receipt?:unknown}>('action',intent,tx);
    if(action){
@@ -156,9 +163,31 @@ export class MemoryDocuments{
    return this.#save(by,space,intent,payload,{title:input.title??previous!.title,path:pathCheck(input.path??previous?.path??'/'),markdown:input.markdown??await this.#text(previous!,tx),state:input.enabled===undefined?previous?.state??'enabled':input.enabled?'enabled':'disabled',head,previous},tx);
   }));}catch(error){if(error instanceof KnowledgeError&&error.code&&error.code!=='SOURCE_UNAVAILABLE'&&error.code!=='IDEMPOTENCY_MISMATCH')await this.#audit(by,intent,payload,error);throw error;}
  }
+ /** Internal aggregate replacement; no intermediate memory head becomes visible outside this transaction. */
+ async syncProjection(by:Principal,epoch:string,rows:Array<{item_id:string;object:string;document?:string;version?:string;title:string;path:string;markdown:string;state:MemoryVersionBody['state']}>,reserved:{bytes:number;documents:number},tx:Transaction){
+  await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await this.#user(by);const index=this.#index(),heads:MemoryHead[]=[],bindings:Array<{kind:import('../../contracts/generated/vocabulary.ts').SyncObjectKind;item_id:string;object_id:string;native:string;locator:string}>=[];
+  let active=reserved.bytes,documents=reserved.documents;if(active>index.limits.spaceBytes||documents>index.limits.spaceDocuments)return fail('MEMORY_SPACE_LIMIT');
+  const old=await index.heads(by.id,tx);
+  for(const row of rows){
+   MemoryWriteInput.parse({space:'personal',expected_version:null,title:row.title,path:row.path,markdown:row.markdown,client_key:row.object});this.#scan(row.title,row.path,row.markdown);const bytes=Buffer.byteLength(row.markdown),contextBytes=Buffer.byteLength(row.title+row.path+row.markdown);
+   if(bytes>index.limits.documentBytes)return fail('MEMORY_DOCUMENT_LIMIT');if(row.state==='enabled'){active+=contextBytes;documents++;}
+   if(active>index.limits.spaceBytes||documents>index.limits.spaceDocuments)return fail('MEMORY_SPACE_LIMIT');
+   let document=row.document;
+   if(!document){const body=MemoryDocumentBody.parse({personal_epoch:epoch,space:by.id,by:by.id,at:this.#now(),intent:digest([epoch,row.item_id,'sync-document'])});document=(await this.#ctx.records.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body,index:[{key:'memory.document.space',value:by.id}]},tx)).digest;}
+   const identity=await this.#ctx.records.store.get(document,tx);if(identity?.kind!=='memory_document'||MemoryDocumentBody.parse(identity.body).space!==by.id)return fail('SOURCE_UNAVAILABLE');
+   const existing=row.version?await this.#ctx.records.store.get(row.version,tx):null;let version=row.version;
+   if(!existing||existing.kind!=='memory_version'){
+    const body=MemoryVersionBody.parse({personal_epoch:epoch,document,space:by.id,parent:old.find(h=>h.document===document)?.version??null,title:row.title,path:row.path,state:row.state,bytes,markdown:row.markdown,content_version:null,by:by.id,at:this.#now(),intent:digest([epoch,row.object,'sync-version']),payload:digest(row.object)});
+    version=(await this.#ctx.records.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body,index:[{key:'memory.version.document',value:document},{key:'memory.version.space',value:by.id}]},tx)).digest;
+   }else{const body=MemoryVersionBody.parse(existing.body);if(body.document!==document||body.space!==by.id||body.title!==row.title||body.path!==row.path||body.state!==row.state||await this.#text(body,tx)!==row.markdown)return fail('SYNC_OBJECT_INVALID');}
+   heads.push({document,space:by.id,version:version!,path:row.path,state:row.state,bytes,contextBytes});bindings.push({kind:'memory_revision',item_id:row.item_id,object_id:row.object,native:version!,locator:document});
+  }
+  if(!index.replacePersonal)return fail('SOURCE_UNAVAILABLE');await index.replacePersonal(by.id,epoch,heads,tx);return bindings;
+ }
+
  async grant(by:Principal,input:{path:string;audience:KnowledgeGrantee;member?:string|null;revoke?:boolean}){
-  by=await this.#user(by);const body=MemoryGrantBody.parse({space:by.id,path:pathCheck(input.path),audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now(),intent:digest(newId('evt'))});
-  return this.#queue(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);by=await this.#user(by);if(body.member){const user=await this.#ctx.records.principals.get(body.member);if(!user||!input.revoke&&user.disabled)return fail('SOURCE_UNAVAILABLE');}
+  by=await this.#user(by);const epoch=await personalEpoch(this.#ctx,by.id);const body=MemoryGrantBody.parse({personal_epoch:epoch,space:by.id,path:pathCheck(input.path),audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now(),intent:digest(newId('evt'))});
+  return this.#queue(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await this.#user(by);if(body.member){const user=await this.#ctx.records.principals.get(body.member);if(!user||!input.revoke&&user.disabled)return fail('SOURCE_UNAVAILABLE');}
    if(!input.revoke)for(const head of await this.#index().heads(by.id,tx))if(withinSpacePath(head.path,body.path)){const {body:version}=await this.#version(head,head.version,tx);this.#scan(version.title,version.path,await this.#text(version,tx));}
    return this.#ctx.records.store.put({kind:'memory_grant',schema:'memory-grant@1',provenance:'declared',body,index:[{key:'memory.grant.owner',value:by.id},{key:'memory.grant.grantee',value:body.member??'administrators'}]},tx);
   }));
@@ -167,7 +196,9 @@ export class MemoryDocuments{
  async rebuild(by:Principal,space=by.id){
   by=await this.#user(by);if(space!==by.id&&(space!=='team'||by.role!=='admin'))return fail('SOURCE_UNAVAILABLE');
   return this.#queue(space,()=>this.#ctx.records.store.withTransaction(async tx=>{
-   await this.#ctx.records.store.lock('knowledge-space:'+space,tx);const heads:MemoryHead[]=[];let history=0;
+   await this.#ctx.records.store.lock('knowledge-space:'+space,tx);
+   if(space===by.id&&this.#ctx.records.personalSync){const epoch=await personalEpoch(this.#ctx,by.id,tx);if(epoch){const projection=await this.#ctx.records.personalSync.memoryProjection(by,epoch,tx);if(projection){const selected=new Map(projection.heads.map(h=>[h.document,h]));for(const row of projection.versions){const body=MemoryVersionBody.parse(row.body);selected.set(body.document,{document:body.document,space,version:row.digest,path:body.path,state:body.state,bytes:body.bytes,contextBytes:Buffer.byteLength(body.title+body.path)+body.bytes});}if(!this.#index().replacePersonal)return fail('SOURCE_UNAVAILABLE');await this.#index().replacePersonal!(space,epoch,[...selected.values()],tx);await this.#ctx.records.personalSync.reserve(by,epoch,projection.reserved.bytes,projection.reserved.documents,tx);return;}}}
+   const heads:MemoryHead[]=[];let history=0;
    for(const doc of await this.#all('memory_document','memory.document.space',space,tx)){
     const identity=MemoryDocumentBody.parse(doc.body);if(identity.space!==space)continue;history+=Buffer.byteLength(canonicalize(identity));
     const versions=await this.#all('memory_version','memory.version.document',doc.digest,tx);let latest:MemoryHead|undefined;

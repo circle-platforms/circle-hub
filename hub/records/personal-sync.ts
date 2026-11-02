@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {ActionKindSchema,SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
-import {PERSONAL_SYNC_LIMITS,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncClient,PersonalSyncSession,PersonalSyncUpload,PersonalSyncMissing,PersonalSyncAbort,PersonalSyncReceipt,PersonalSyncState,PersonalSyncDescriptor,PersonalSyncItem,type PersonalSyncObject} from '../../contracts/src/sync.ts';
+import {PERSONAL_SYNC_LIMITS,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncCommit,PersonalSyncResult,PersonalSyncClient,PersonalSyncSession,PersonalSyncUpload,PersonalSyncMissing,PersonalSyncAbort,PersonalSyncReceipt,PersonalSyncState,PersonalSyncDescriptor,PersonalSyncItem,type PersonalSyncObject} from '../../contracts/src/sync.ts';
 import {decodePersonalSyncObject,encodePersonalSyncObject,normalizePersonalSyncText} from '../../contracts/src/sync-canonical.ts';
 import {SpaceQuotaBody} from '../../contracts/src/spaces.ts';
 import type {Limits} from '../config/index.ts';
@@ -19,7 +19,8 @@ import {INITIAL_PERSONAL_EPOCH,type PersonalScope,type PgPersonalPayloads} from 
 type State=z.infer<typeof PersonalSyncState>;
 type Receipt=z.infer<typeof PersonalSyncReceipt>;
 type Descriptor=z.infer<typeof PersonalSyncDescriptor>;
-interface Scope extends PersonalScope {mode:z.infer<typeof SyncModeSchema>}
+export interface PersonalSyncBinding {kind:SyncObjectKind;item_id:string;object_id:string;native:string;locator:string}
+export interface Scope extends PersonalScope {mode:z.infer<typeof SyncModeSchema>}
 interface SessionRow extends Row {id:string;snapshot:string;state_version:string;expires_at:Date;aborted:boolean}
 const fail=(code:ProtocolCode):never=>{throw new RecordsError(PROTOCOL_CODES[code].when,{code});};
 const hash=(value:unknown)=>sha256Hex(canonicalize(value));
@@ -33,9 +34,10 @@ const emptySnapshotId=sha256Hex(emptySnapshot);
 export class PgPersonalSync {
  readonly #db:Database;readonly #store:RecordStore;readonly #payloads:PgPersonalPayloads;
  readonly #now:()=>Date;readonly #limits:Limits;
+ readonly sourceBytes:number;
  readonly limits:State['limits'];
  constructor(db:Database,store:RecordStore,payloads:PgPersonalPayloads,limits:Limits,now:()=>Date){
-  this.#db=db;this.#store=store;this.#payloads=payloads;this.#limits=limits;this.#now=now;
+  this.#db=db;this.#store=store;this.#payloads=payloads;this.#limits=limits;this.#now=now;this.sourceBytes=limits.maxUploadBytes;
   let batchObjects:number=PERSONAL_SYNC_LIMITS.batchObjects;
   while(batchObjects>1&&limits.maxRequestBytes-512-batchObjects*128<1024)batchObjects=Math.floor(batchObjects/2);
   const batchBytes=Math.min(limits.maxSyncBatchBytes,Math.floor((limits.maxRequestBytes-512-batchObjects*128)*3/4));
@@ -48,7 +50,7 @@ export class PgPersonalSync {
    const user=(await this.#db.query('SELECT disabled FROM users WHERE id=$1 FOR SHARE',[by.id],tx)).rows[0];
    if(!user||user.disabled)return fail('SOURCE_UNAVAILABLE');
    await this.#db.query('INSERT INTO personal_spaces(owner,epoch) VALUES($1,$2) ON CONFLICT DO NOTHING',[by.id,INITIAL_PERSONAL_EPOCH],tx);
-   const row=(await this.#db.query('SELECT epoch,mode FROM personal_spaces WHERE owner=$1',[by.id],tx)).rows[0];
+   const row=(await this.#db.query('SELECT epoch,mode FROM hub_lock_personal_scope($1)',[by.id],tx)).rows[0];
    const scope={owner:by.id,epoch:String(row.epoch),mode:SyncModeSchema.parse(row.mode)};
    if(epoch!==undefined&&epoch!==scope.epoch)return fail('SYNC_EPOCH_CHANGED');
    if(scope.mode!==SyncModeSchema.enum.hub&&!allowLocal)return fail('SYNC_MODE_LOCAL');
@@ -61,26 +63,29 @@ export class PgPersonalSync {
   const knowledge=native?JSON.parse(String(native.body)).used_bytes??0:0;
   const memory=(await this.#db.query('SELECT history_bytes FROM memory_space_usage WHERE space=$1',[scope.owner],tx)).rows[0];
   const extra=(await this.#db.query(`SELECT COALESCE(sum(charge),0)::text AS bytes,bool_or(charge IS NULL) AS missing FROM (
-    SELECT id,charge_bytes AS charge FROM personal_sync_objects WHERE owner=$1 AND epoch=$2 UNION
+    SELECT id,charge_bytes AS charge FROM personal_sync_objects WHERE owner=$1 AND epoch=$2 AND NOT EXISTS(SELECT 1 FROM personal_sync_exports e WHERE e.owner=$1 AND e.epoch=$2 AND e.object_id=id) UNION
     SELECT c.name_payload,octet_length(p.data) FROM personal_sync_clients c LEFT JOIN personal_payloads p
     ON (p.owner,p.epoch,p.sha256)=(c.owner,c.epoch,c.name_payload) WHERE c.owner=$1 AND c.epoch=$2
+   UNION SELECT 'note:'||kind||':'||id,bytes FROM personal_sync_notes WHERE owner=$1 AND epoch=$2
    ) x`,[scope.owner,scope.epoch],tx)).rows[0];
   if(extra.missing&&scope.mode===SyncModeSchema.enum.hub)throw new IntegrityError('同步元数据载荷不完整');
+  const ledger=(await this.#db.query('SELECT COALESCE((SELECT sum(bytes) FROM personal_sync_native_credits WHERE owner=$1 AND epoch=$2),0)::text AS credits,COALESCE((SELECT sum(x.charge_bytes) FROM personal_sync_exports e JOIN personal_sync_objects x ON (x.owner,x.epoch,x.id)=(e.owner,e.epoch,e.object_id) WHERE e.owner=$1 AND e.epoch=$2),0)::text AS exported',[scope.owner,scope.epoch],tx)).rows[0];
+  const nativeBytes=Number(knowledge)+Number(memory?.history_bytes??0),baseline=scope.mode===SyncModeSchema.enum.local?0:nativeBytes-Number(ledger.credits);if(baseline<0)throw new IntegrityError('个人同步容量登记不完整');
   const quota=(await this.#store.find({key:'knowledge.space.quota',value:scope.owner,kind:'knowledge_space_quota',newestFirst:true,limit:1},tx)).items[0];
   const capacity=quota?SpaceQuotaBody.parse(quota.body).bytes:1024**3;
-  const used=scope.mode===SyncModeSchema.enum.local?0:Number(knowledge)+Number(memory?.history_bytes??0)+Number(extra.bytes);
+  const used=scope.mode===SyncModeSchema.enum.local?0:Math.max(baseline,Number(ledger.exported))+Number(extra.bytes);
   if(!Number.isSafeInteger(used)||used<0)throw new IntegrityError('个人容量计量不完整');
-  return {used,capacity,knowledge:native?.digest??null};
+  return {native:nativeBytes,used,capacity,knowledge:native?.digest??null};
  }
  async #capacity(scope:Scope,tx:Transaction){const usage=await this.#usage(scope,tx);if(usage.used>usage.capacity)fail('SPACE_CAPACITY_EXCEEDED');}
  async #state(scope:Scope,tx:Transaction):Promise<State>{
-  const head=(await this.#db.query('SELECT snapshot,last_synced_at FROM personal_sync_heads WHERE owner=$1 AND epoch=$2',[scope.owner,scope.epoch],tx)).rows[0];
+  const head=(await this.#db.query('SELECT snapshot,last_synced_at,conflicts FROM personal_sync_heads WHERE owner=$1 AND epoch=$2',[scope.owner,scope.epoch],tx)).rows[0];
   const usage=await this.#usage(scope,tx);
   const memory=(await this.#db.query('SELECT document,version FROM memory_heads WHERE space=$1 ORDER BY document',[scope.owner],tx)).rows;
   const active=(await this.#db.query('SELECT 1 FROM personal_sync_sessions s WHERE owner=$1 AND epoch=$2 AND expires_at>$3 AND NOT EXISTS(SELECT 1 FROM personal_sync_aborts a WHERE a.session_id=s.id) LIMIT 1',[scope.owner,scope.epoch,this.#now().toISOString()],tx)).rowCount;
   const local=scope.mode===SyncModeSchema.enum.local,snapshot=local?null:head.snapshot===null?null:String(head.snapshot);
-  return PersonalSyncState.parse({epoch:scope.epoch,mode:scope.mode,status:active&&!local?SyncStatusSchema.enum.syncing:head.last_synced_at&&!local?SyncStatusSchema.enum.complete:SyncStatusSchema.enum.idle,
-   state_version:hash({epoch:scope.epoch,mode:scope.mode,snapshot,knowledge:usage.knowledge,memory}),snapshot,last_synced_at:local||!head.last_synced_at?null:iso(head.last_synced_at),used_bytes:usage.used,capacity_bytes:usage.capacity,limits:this.limits});
+  return PersonalSyncState.parse({epoch:scope.epoch,mode:scope.mode,status:Number(head.conflicts)>0&&!local?SyncStatusSchema.enum.conflicted:active&&!local?SyncStatusSchema.enum.syncing:head.last_synced_at&&!local?SyncStatusSchema.enum.complete:SyncStatusSchema.enum.idle,
+   state_version:hash({epoch:scope.epoch,mode:scope.mode,snapshot,knowledge:usage.knowledge,memory,native:await this.fingerprint({id:scope.owner} as Principal,scope.epoch,tx)}),snapshot,last_synced_at:local||!head.last_synced_at?null:iso(head.last_synced_at),used_bytes:usage.used,capacity_bytes:usage.capacity,limits:this.limits});
  }
  state(by:Principal,outer?:Transaction):Promise<State>{return this.#scope(by,undefined,async(scope,tx)=>{if(scope.mode===SyncModeSchema.enum.hub)await this.#collect(scope,tx);return this.#state(scope,tx);},outer,true);}
  /** Console-only return from a completed purge; full bidirectional mode changes remain in step 5. */
@@ -119,7 +124,7 @@ export class PgPersonalSync {
  }
  async #collect(scope:Scope,tx:Transaction){await this.#db.query('SELECT hub_collect_personal_sync($1,$2,$3)',[scope.owner,scope.epoch,this.#now().toISOString()],tx);}
  async collect(by:Principal,epoch:string):Promise<void>{await this.#scope(by,epoch,(scope,tx)=>this.#collect(scope,tx));}
- async openSession(by:Principal,input:unknown){
+ async openSession(by:Principal,input:unknown,outer?:Transaction){
   return this.#scope(by,undefined,async(scope,tx)=>{
    const parsed=PersonalSyncSession.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');const request=parsed.data;
    if(request.epoch!==scope.epoch)return fail('SYNC_EPOCH_CHANGED');
@@ -134,7 +139,7 @@ export class PgPersonalSync {
     INSERT INTO personal_sync_session_objects(session_id,object_id,frozen) SELECT $1,x.id,true FROM reachable r JOIN personal_sync_objects x ON x.id=r.id AND x.owner=$2 AND x.epoch=$3`,[id,scope.owner,scope.epoch,snapshot],tx);
    await this.#capacity(scope,tx);
    return {session_id:id,expires_at:expires,state:await this.#state(scope,tx),inventory_cursor:this.#cursor(scope,id,snapshot,null)};
-  });
+  },outer);
  }
  async #session(scope:Scope,id:string,tx:Transaction,allowAborted=false):Promise<SessionRow>{
   if(!uuid.safeParse(id).success)return fail('SOURCE_UNAVAILABLE');
@@ -172,7 +177,7 @@ export class PgPersonalSync {
  #edges(object:PersonalSyncObject):string[]{
   const body=object.body;const edges:string[]='parents'in body?[...body.parents]:[];
   if(object.kind===objectKinds.source_revision)edges.push(...object.body.chunks);
-  if(object.kind===objectKinds.entry_revision)for(const g of object.body.grounds)edges.push(g.source,g.quotation);
+  if(object.kind===objectKinds.entry_revision)for(const g of object.body.grounds)edges.push(...('source'in g?[g.source]:'entry'in g?[g.entry]:[]),g.quotation);
   if(object.kind===objectKinds.inventory_page)for(const item of object.body.items)edges.push(...item.heads);
   if(object.kind===objectKinds.snapshot)edges.push(...object.body.pages);
   return [...new Set(edges)];
@@ -248,6 +253,81 @@ export class PgPersonalSync {
    return this.#receipt(scope,request.operation_id,identity,{accepted:0,existing:0,downloaded:0,bytes:0},before,tx);
   });
  }
+ /** Internal transaction boundary used by the native adapter, never exposed as a model tool. */
+ transact<T>(by:Principal,epoch:string|undefined,work:(scope:Scope,tx:Transaction)=>Promise<T>,outer?:Transaction):Promise<T>{return this.#scope(by,epoch,work,outer);}
+ async fingerprint(by:Principal,epoch:string,tx:Transaction):Promise<string>{return this.#scope(by,epoch,async(scope,t)=>{
+  const knowledge=(await this.#db.query("SELECT r.digest FROM hub_read_records() r JOIN personal_record_bindings b ON b.record=r.digest WHERE b.owner=$1 AND b.epoch=$2 AND r.kind='knowledge_space_version' ORDER BY r.seq DESC LIMIT 1",[scope.owner,scope.epoch],t)).rows[0]?.digest??null;
+  const memory=(await this.#db.query('SELECT document,version FROM memory_heads WHERE space=$1 ORDER BY document',[by.id],t)).rows;
+  const packs=(await this.#store.findMany({kind:'personal_pack_version',key:'personal.pack.owner',values:[by.id]},t)).map(r=>r.digest);
+  const records=await this.#store.findMany<{pack:string;version:string}>({kind:'personal_pack_version',key:'personal.pack.owner',values:[by.id]},t);const retired=await this.#store.findMany({kind:'personal_pack_retirement',key:'personal.pack.retired',values:records.map(r=>by.id+'/'+r.body.pack+'@'+r.body.version)},t);return hash({knowledge,memory,packs,retired:retired.map(r=>r.digest)});
+ },tx,true);}
+ async head(by:Principal,epoch:string,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>(await this.#db.query('SELECT snapshot,native_state,memory_projection,conflicts FROM personal_sync_heads WHERE owner=$1 AND epoch=$2',[scope.owner,scope.epoch],t)).rows[0],tx);}
+ async stage(by:Principal,epoch:string,objects:readonly PersonalSyncObject[],tx:Transaction,native=false){return this.#scope(by,epoch,async(scope,t)=>{
+  const ids:string[]=[];for(const object of objects){const bytes=encodePersonalSyncObject(object),id=sha256Hex(bytes);if(bytes.length>this.limits.object_bytes)return fail('SYNC_BATCH_LIMIT');if(object.kind===objectKinds.bytes)this.#scan(Buffer.from(object.body.bytes_base64,'base64'),'SPACE_CREDENTIALS_DETECTED');else this.#scanText(object,object.kind===objectKinds.memory_revision?'MEMORY_CREDENTIALS_DETECTED':'SPACE_CREDENTIALS_DETECTED');await this.#saveObject(scope,id,bytes,object.kind,t);ids.push(id);
+   if(native)await this.#db.query('INSERT INTO personal_sync_exports VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[by.id,epoch,id],t);
+  }return ids;
+ },tx);}
+ async bindings(by:Principal,epoch:string,tx:Transaction,input?:PersonalSyncBinding){return this.#scope(by,epoch,async(scope,t)=>{
+  if(input)await this.#db.query('INSERT INTO personal_sync_bindings VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',[by.id,epoch,input.kind,input.item_id,input.object_id,input.native,input.locator],t);
+  return (await this.#db.query('SELECT kind,item_id::text,object_id,native,locator FROM personal_sync_bindings WHERE owner=$1 AND epoch=$2',[by.id,epoch],t)).rows as unknown as PersonalSyncBinding[];
+ },tx);}
+ async note(by:Principal,epoch:string,kind:string,id:string,tx:Transaction,value?:unknown):Promise<unknown|null>{return this.#scope(by,epoch,async(scope,t)=>{
+  if(value!==undefined){const bytes=Buffer.from(canonicalize(value)),payload=await this.#payloads.put(scope,bytes,t);await this.#db.query('INSERT INTO personal_sync_notes(owner,epoch,kind,id,payload,bytes) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING',[by.id,epoch,kind,id,payload,bytes.length],t);}
+  const row=(await this.#db.query('SELECT payload FROM personal_sync_notes WHERE owner=$1 AND epoch=$2 AND kind=$3 AND id=$4',[by.id,epoch,kind,id],t)).rows[0];
+  if(!row)return null;const bytes=await this.#payloads.get(scope,String(row.payload),t);if(!bytes)throw new IntegrityError('同步核对载荷不完整');return JSON.parse(Buffer.from(bytes).toString());
+ },tx);}
+ async nativeBytes(by:Principal,epoch:string,tx:Transaction):Promise<number>{return this.#scope(by,epoch,async(scope,t)=>{const u=await this.#usage(scope,t);return u.native;},tx);}
+ async credit(by:Principal,epoch:string,event:string,bytes:number,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>{await this.#db.query('INSERT INTO personal_sync_native_credits VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[by.id,epoch,event,bytes],t);},tx);}
+ async reserve(by:Principal,epoch:string,bytes:number,documents:number,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>{await this.#db.query('INSERT INTO personal_sync_memory_reservations VALUES($1,$2,$3,$4) ON CONFLICT(owner,epoch) DO UPDATE SET bytes=$3,documents=$4',[by.id,epoch,bytes,documents],t);},tx);}
+ async checkpoint(by:Principal,epoch:string,snapshot:string,conflicts:number,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>{
+  const native=await this.fingerprint(by,epoch,t);
+  const heads=(await this.#db.query('SELECT document,space,version,path,state,bytes::int,context_bytes::int AS "contextBytes" FROM memory_heads WHERE space=$1 ORDER BY document',[by.id],t)).rows;
+  const seq=String((await this.#db.query('SELECT COALESCE(max(seq),0)::text AS seq FROM records',[],t)).rows[0].seq),reserved=(await this.#db.query('SELECT bytes::int,documents FROM personal_sync_memory_reservations WHERE owner=$1 AND epoch=$2',[by.id,epoch],t)).rows[0]??{bytes:0,documents:0};
+  const projection={heads,seq,reserved},projectionId=hash(projection);await this.note(by,epoch,'memory-projection',projectionId,t,projection);
+  await this.#db.query('UPDATE personal_sync_heads SET snapshot=$3,native_state=$4,conflicts=$5,memory_projection=$6 WHERE owner=$1 AND epoch=$2',[by.id,epoch,snapshot,native,conflicts,projectionId],t);
+  await this.#db.query('INSERT INTO personal_sync_retained VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[by.id,epoch,snapshot],t);
+  await this.#capacity(scope,t);
+ },tx);}
+ async memoryProjection(by:Principal,epoch:string,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>{
+  const head=await this.head(by,epoch,t);if(!head.memory_projection)return null;
+  const base=await this.note(by,epoch,'memory-projection',String(head.memory_projection),t) as {heads:import('./memory-index.ts').MemoryHead[];seq:string;reserved:{bytes:number;documents:number}}|null;
+  if(!base)throw new IntegrityError('记忆同步投影记录不完整');
+  const rows=(await this.#db.query("SELECT r.* FROM hub_read_records() r JOIN personal_record_bindings b ON b.record=r.digest WHERE b.owner=$1 AND b.epoch=$2 AND r.kind='memory_version' AND r.seq>$3::bigint ORDER BY r.seq",[by.id,epoch,base.seq],t)).rows;
+  return {...base,versions:rows.map(row=>({digest:String(row.digest),body:JSON.parse(String(row.body))}))};
+ },tx);}
+ async retained(by:Principal,epoch:string,id:string,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>(await this.#db.query('SELECT 1 FROM personal_sync_retained WHERE owner=$1 AND epoch=$2 AND object_id=$3',[by.id,epoch,id],t)).rowCount===1,tx);}
+ async assertCapacity(by:Principal,epoch:string,tx:Transaction){return this.#scope(by,epoch,(scope,t)=>this.#capacity(scope,t),tx);}
+ async commit(by:Principal,session:string,input:unknown,apply:(scope:Scope,tx:Transaction)=>Promise<{verification:z.infer<typeof PersonalSyncResult>['verification'];conflicts:z.infer<typeof PersonalSyncResult>['conflicts'];projections?:z.infer<typeof PersonalSyncResult>['projections']}>,outer?:Transaction){
+  return this.#scope(by,undefined,async(scope,tx)=>{
+   const parsed=PersonalSyncCommit.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');const request=parsed.data;
+   if(request.epoch!==scope.epoch)return fail('SYNC_EPOCH_CHANGED');await this.#session(scope,session,tx);
+   const identity=hash({path:PERSONAL_SYNC_HTTP_ROUTES.commit.path,session,request}),replay=await this.#replay(scope,request.operation_id,identity,tx);
+   if(replay){const stored=await this.note(by,scope.epoch,'commit-result',hash(request.operation_id),tx);if(!stored)throw new IntegrityError('同步提交回执不完整');return this.#resultPage(stored as z.infer<typeof PersonalSyncResult>,0,request.operation_id);}
+   const before=await this.#state(scope,tx);
+   if(before.state_version!==request.expected_state)throw new RecordsError(PROTOCOL_CODES.SYNC_VERSION_CONFLICT.when,{code:'SYNC_VERSION_CONFLICT',detail:{state:before}});
+   if(request.base_snapshot!==null&&!await this.retained(by,scope.epoch,request.base_snapshot,tx))return fail('SOURCE_UNAVAILABLE');
+   const result=await apply(scope,tx);
+   if(!result.conflicts.length)await this.#db.query('UPDATE personal_sync_heads SET last_synced_at=$3 WHERE owner=$1 AND epoch=$2',[by.id,scope.epoch,this.#now().toISOString()],tx);
+   const receipt=await this.#receipt(scope,request.operation_id,identity,{accepted:0,existing:0,downloaded:0,bytes:0},before.state_version,tx),state=await this.#state(scope,tx);
+   const stored={state,receipt,...result,next:null},originalUsed=state.used_bytes;let size=0;
+   for(let n=0;n<8;n++){stored.state.used_bytes=originalUsed+size;const next=Buffer.byteLength(canonicalize(stored));if(next===size)break;size=next;}
+   await this.note(by,scope.epoch,'commit-result',hash(request.operation_id),tx,stored);await this.#capacity(scope,tx);
+   await this.#store.put({kind:'action',schema:'personal-sync-commit@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,epoch:scope.epoch,at:receipt.at,snapshot:request.snapshot,operation:hash(request.operation_id),verified:result.verification.filter(v=>v.status==='verified').length,conflicts:result.conflicts.length}},tx);
+   return this.#resultPage(stored,0,request.operation_id);
+  },outer);
+ }
+ #resultPage(stored:z.infer<typeof PersonalSyncResult>,offset:number,operation:string){
+  const count=Math.max(stored.verification.length,stored.conflicts.length,stored.projections?.length??0);
+  const page=(end:number)=>({...stored,...(stored.projections?{projections:stored.projections.slice(offset,end)}:{}),verification:stored.verification.slice(offset,end),conflicts:stored.conflicts.slice(offset,end),next:end<count?Buffer.from(canonicalize({epoch:stored.state.epoch,operation,offset:end})).toString('base64url'):null});
+  let end=offset;while(end<count&&end-offset<this.limits.page_items){if(Buffer.byteLength(canonicalize(page(end+1)))>this.#limits.maxRequestBytes-512){if(end===offset)return fail('SYNC_BATCH_LIMIT');break;}end++;}
+  return PersonalSyncResult.parse(page(end));
+ }
+ async result(by:Principal,epoch:string,operation:string,cursor?:string|null){return this.#scope(by,epoch,async(scope,tx)=>{
+  const stored=await this.note(by,epoch,'commit-result',hash(operation),tx) as z.infer<typeof PersonalSyncResult>|null;if(!stored)return null;let offset=0;
+  if(cursor){try{const p=JSON.parse(Buffer.from(cursor,'base64url').toString());if(p.epoch!==epoch||p.operation!==operation||!Number.isSafeInteger(p.offset)||p.offset<0)throw new Error();offset=p.offset;}catch{return fail('SOURCE_UNAVAILABLE');}}
+  return this.#resultPage(stored,offset,operation);
+ });}
+
  async object(by:Principal,epoch:string,id:string,outer?:Transaction):Promise<PersonalSyncObject|null>{
   return this.#scope(by,epoch,async(scope,tx)=>{
    const row=await this.#db.query('SELECT 1 FROM personal_sync_objects WHERE owner=$1 AND epoch=$2 AND id=$3',[scope.owner,scope.epoch,id],tx);if(!row.rowCount)return null;

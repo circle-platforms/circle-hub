@@ -333,6 +333,7 @@ export interface ReadRoot {
 }
 
 export interface KnowledgePort {
+  personalSync?:import('./knowledge/api.ts').PersonalKnowledgeSync;
   memory?:import('./knowledge/api.ts').MemoryDocuments;
   spaces?: import('./knowledge/api.ts').KnowledgeSpaces;
   feeding?:import('./knowledge/feeding.ts').FeedingLayer;

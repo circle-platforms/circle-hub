@@ -1,4 +1,4 @@
-import {personalLocal,personalSyncNotice} from './personal-sync.ts';
+import {personalLocal,personalSyncNotice,checkPersonalFormEpoch} from './personal-sync.ts';
 // Memory uses the existing password session and form boundary, independently of knowledge grants.
 import {uiLabelOf,KnowledgeGranteeSchema,isKnowledgeGrantAction,type MemoryAction,type KnowledgeSpaceKind} from '../../../contracts/generated/vocabulary.ts';
 import {MemoryShareBody} from '../../../contracts/src/memory.ts';
@@ -15,12 +15,13 @@ import {containsDirectory,directoryName} from './audience.ts';
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 
 const location=(parameters:Record<string,string|undefined>={})=>'/console/knowledge?'+new URLSearchParams({view:'memory',...Object.fromEntries(Object.entries(parameters).filter((pair):pair is [string,string]=>pair[1]!==undefined))});
-const form=(ctx:PageContext,action:string,fields:Html,label:string,disabled=false,danger=false)=>html`<form method="post" action="/console/knowledge/do/memory-${action}"><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<button class="ch-btn ${danger||action==='revoke'?'ch-btn--danger':'ch-btn--primary'}" type="submit"${disabled?html` disabled`:''}>${label}</button></form>`;
+const form=(ctx:PageContext,action:string,fields:Html,label:string,disabled=false,danger=false)=>html`<form method="post" action="/console/knowledge/do/memory-${action}"><input type="hidden" name="csrf" value="${ctx.csrf??''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}${fields}<button class="ch-btn ${danger||action==='revoke'?'ch-btn--danger':'ch-btn--primary'}" type="submit"${disabled?html` disabled`:''}>${label}</button></form>`;
 const field=inputField;
 const memoryLabel=()=>uiLabelOf('knowledge_view','memory');
 const actionLabel=(action:MemoryAction)=>uiLabelOf('memory_action',action);
 
 export async function memoryPage(ctx:PageContext):Promise<PageResult>{
+ ctx.personalEpoch=(await ctx.deps.records.personalSync?.state(ctx.principal))?.epoch;
  const memory=ctx.deps.knowledge.memory;if(!memory)return neutralPage(ctx);
  const local=await personalLocal(ctx);
  const scope=selectedScope(ctx),document=ctx.url.searchParams.get('document'),version=ctx.url.searchParams.get('version');
@@ -41,7 +42,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   const audience=await currentAudience(ctx,doc.space,doc.path,false,undefined,true);
   const toggleForm=form(ctx,'write',html`<input type="hidden" name="space" value="${doc.space==='team'?'team':'personal'}"><input type="hidden" name="document" value="${document}"><input type="hidden" name="expected_version" value="${doc.current_version}"><input type="hidden" name="enabled" value="${doc.state==='enabled'?'false':'true'}"><input type="hidden" name="client_key" value="${newId('evt')}">`,actionLabel(doc.state==='enabled'?'disable_memory':'enable_memory'),false,doc.state==='enabled');
   const manage=html`<footer class="ch-inspector-actions">${own||doc.space==='team'&&ctx.admin?actionLink('#memory-versions','版本记录','ghost'):''}${editable?actionLink('#memory-toggle',doc.state==='enabled'?'停用…':'启用…',doc.state==='enabled'?'danger':'secondary'):''}${own?actionLink(location({scope,document,share:'1'}),'分享到团队…'):''}${editable?actionLink(location({scope,document,edit:'1'}),'编辑','primary'):''}</footer>${editable?dialog('memory-toggle',doc.state==='enabled'?'停用记忆':'启用记忆',html`<p>${doc.state==='enabled'?'停用后不再用于新会话；已有版本保留。':'启用后可用于符合读取权限的会话。'}</p>`,toggleForm):''}`;
-  const history=own||doc.space==='team'&&ctx.admin?await memory.history(ctx.principal,document,ctx.url.searchParams.get('history_cursor')??undefined):null;
+  const history=doc.current_version!==null&&(own||doc.space==='team'&&ctx.admin)?await memory.history(ctx.principal,document,ctx.url.searchParams.get('history_cursor')??undefined):null;
   const versions=history?card({title:actionLabel('history'),hint:'仅本人或团队管理员可浏览版本记录；切换版本不修改正文'},html`${table(['版本','标题','状态','大小','更新时间','记录人'],await Promise.all(history.items.map(async (row,index)=>[link(location({scope,document,version:row.version}),versionLabel(row.at,undefined,history.next?undefined:history.items.length-index)),row.title,memoryState(row.state as typeof doc.state),html`${number(row.bytes)} 字节`,timestamp(row.at),await ctx.userName(row.by)])))}${history.next?link(location({scope,document,history_cursor:history.next}),'更早的版本'):''}`):html``;
   let sharing=html``;
   if(own&&ctx.url.searchParams.get('share')==='1'){
@@ -78,6 +79,7 @@ function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:st
 export async function performMemoryAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined}):Promise<string>{
  const memory=ctx.deps.knowledge.memory;if(!memory)throw new AccessError('对象不存在或无权读取');
  const get=(key:string)=>values.get(key)??'';
+ if(get('space')!=='team')await checkPersonalFormEpoch(ctx,get('personal_epoch'));
  if(action==='write'){
   const document=get('document'),enabled=get('enabled');
   const saved=await memory.write(ctx.principal,{space:get('space')||'personal',...(document?{document}:{}),expected_version:get('expected_version')||null,...Object.fromEntries(['title','path','markdown'].filter(key=>values.get(key)!==null&&values.get(key)!==undefined).map(key=>[key,get(key)])),...(enabled?{enabled:enabled==='true'}:{}),client_key:get('client_key')});

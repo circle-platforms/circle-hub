@@ -805,3 +805,16 @@ Security review bounds legacy tree traversal by account/epoch and caches at most
 Legacy file retirement fsyncs the containing directory before recording completion. Failure keeps the pending journal and prevents purge; restart retries the directory sync even if unlink already succeeded. The durability regression injects that exact crash boundary.
 
 Review item 9 exposes a metadata-only personal mode read and a console-only resume operation. The runtime still cannot UPDATE personal_spaces. The owner-defined resume function requires a completed local purge and a fresh UUID; the authenticated application checks the account, epoch and expected state while holding its existing space lock. New head, mode and a content-free action audit commit together. Direct runtime regression covers privileges, invalid reuse, rollback, disabled accounts and concurrent resume. General bidirectional HTTP mode switching remains in step 5.
+
+### Atomic personal sync commits (decision 89, step 4)
+
+Migration 16 adds scoped bindings, private notes, native-byte credits, export accounting and memory reservations. The
+account lock serializes native writes, sync CAS and epoch changes. An owner-defined scope lock avoids granting UPDATE
+on personal_spaces. Memory replacement checks stored records and replaces only the active owner's projection; runtime
+can call the fixed-path function but cannot directly delete heads. The memory anchor plus later native records rebuilds
+deletions and conflicts without resurrecting candidates.
+
+Commit receipts bind the operation to its session and request, including failed-response replay. State conflicts retain
+staged objects and return the caller's latest state. Observations and receipts are private removable payloads; action
+audits contain metadata only. Native logical history and staged objects share quota accounting, with projection credits
+preventing double billing. Frozen receipt size is included in usage. Result pages respect item and wire-byte budgets.

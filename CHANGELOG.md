@@ -4,6 +4,9 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Apply personal sync snapshots atomically with state comparison, deterministic conflicts and fresh evidence checks.
+  Console and MCP writes share the epoch and capacity boundary; manifest sync does not install workflows.
+
 - Keep local personal views empty and allow their owner to return to Hub storage through a fresh epoch.
 
 - Synchronize legacy object directories before completing retirement.

@@ -686,11 +686,58 @@ CREATE TRIGGER personal_sync_operations_no_truncate BEFORE TRUNCATE ON personal_
 CREATE TRIGGER personal_sync_aborts_append_only BEFORE UPDATE OR DELETE ON personal_sync_aborts FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_sync_aborts_no_truncate BEFORE TRUNCATE ON personal_sync_aborts FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 `},
+ {version:16,name:'personal_sync_commit',sql:`ALTER TABLE personal_sync_heads ADD COLUMN native_state text, ADD COLUMN memory_projection text, ADD COLUMN conflicts integer NOT NULL DEFAULT 0;
+CREATE FUNCTION hub_lock_personal_scope(o pg_catalog.text) RETURNS TABLE(epoch pg_catalog.text,mode pg_catalog.text) LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$ SELECT p.epoch,p.mode FROM public.personal_spaces p WHERE p.owner=o FOR SHARE $fn$;
+REVOKE ALL ON FUNCTION hub_lock_personal_scope(pg_catalog.text) FROM PUBLIC;
+CREATE FUNCTION hub_replace_personal_memory(o text,e text,h jsonb) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE x pg_catalog.jsonb;b pg_catalog.jsonb;d pg_catalog.text;v pg_catalog.text;history pg_catalog.int8;
+BEGIN
+ PERFORM 1 FROM public.personal_spaces WHERE owner=o AND epoch=e AND mode='hub' FOR SHARE;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=o AND epoch=e) THEN RAISE EXCEPTION 'inactive personal scope';END IF;
+ IF jsonb_typeof(h)<>'array' OR jsonb_array_length(h)>10000 THEN RAISE EXCEPTION 'invalid memory projection';END IF;
+ FOR x IN SELECT jsonb_array_elements(h) LOOP
+ d:=x->>'document';v:=x->>'version';
+ SELECT replace(r.body,chr(92)||'u0000',chr(92)||'u0001')::jsonb INTO b FROM public.hub_read_records() r JOIN public.personal_record_bindings p ON p.record=r.digest WHERE p.owner=o AND p.epoch=e AND r.digest=v AND r.kind='memory_version';
+ IF b IS NULL OR b->>'space'<>o OR b->>'document'<>d OR NOT EXISTS(SELECT 1 FROM public.personal_record_bindings p JOIN public.records r ON r.digest=p.record WHERE p.owner=o AND p.epoch=e AND p.record=d AND r.kind='memory_document') THEN RAISE EXCEPTION 'invalid memory projection';END IF;
+ END LOOP;
+ DELETE FROM public.memory_heads WHERE space=o;
+ FOR x IN SELECT jsonb_array_elements(h) LOOP
+ SELECT replace(r.body,chr(92)||'u0000',chr(92)||'u0001')::jsonb INTO b FROM public.hub_read_records() r WHERE digest=x->>'version';
+ INSERT INTO public.memory_heads(document,space,version,path,state,bytes,context_bytes) VALUES(x->>'document',o,x->>'version',b->>'path',b->>'state',(b->>'bytes')::bigint,octet_length(b->>'title')+octet_length(b->>'path')+(b->>'bytes')::bigint);
+ END LOOP;
+ SELECT COALESCE(sum(r.size),0) INTO history FROM public.records r JOIN public.personal_record_bindings b ON b.record=r.digest WHERE b.owner=o AND b.epoch=e AND r.kind IN ('memory_document','memory_version');
+ INSERT INTO public.memory_space_usage(space,active_bytes,history_bytes,active_documents)
+ SELECT o,COALESCE(sum(context_bytes) FILTER(WHERE state='enabled'),0),history,count(*) FILTER(WHERE state='enabled') FROM public.memory_heads WHERE space=o
+ ON CONFLICT(space) DO UPDATE SET active_bytes=EXCLUDED.active_bytes,history_bytes=EXCLUDED.history_bytes,active_documents=EXCLUDED.active_documents;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_replace_personal_memory(text,text,jsonb) FROM PUBLIC;
+
+CREATE TABLE personal_sync_bindings(owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,kind text NOT NULL,item_id uuid NOT NULL,object_id text NOT NULL,native text NOT NULL,locator text NOT NULL,PRIMARY KEY(owner,epoch,kind,object_id,native,locator));
+CREATE INDEX personal_sync_bindings_native ON personal_sync_bindings(owner,epoch,kind,native,locator);
+CREATE TABLE personal_sync_notes(owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,kind text NOT NULL,id text NOT NULL,payload text NOT NULL,bytes integer NOT NULL CHECK(bytes>=0),PRIMARY KEY(owner,epoch,kind,id));
+CREATE TABLE personal_sync_native_credits(owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,event text NOT NULL,bytes bigint NOT NULL CHECK(bytes>=0),PRIMARY KEY(owner,epoch,event));
+CREATE TABLE personal_sync_exports(owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,object_id text NOT NULL,PRIMARY KEY(owner,epoch,object_id));
+CREATE TABLE personal_sync_memory_reservations(owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,bytes bigint NOT NULL CHECK(bytes>=0),documents integer NOT NULL CHECK(documents>=0),PRIMARY KEY(owner,epoch));
+CREATE TRIGGER personal_sync_bindings_append_only BEFORE UPDATE OR DELETE ON personal_sync_bindings FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_bindings_no_truncate BEFORE TRUNCATE ON personal_sync_bindings FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_notes_append_only BEFORE UPDATE OR DELETE ON personal_sync_notes FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_notes_no_truncate BEFORE TRUNCATE ON personal_sync_notes FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_native_credits_append_only BEFORE UPDATE OR DELETE ON personal_sync_native_credits FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_native_credits_no_truncate BEFORE TRUNCATE ON personal_sync_native_credits FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_exports_append_only BEFORE UPDATE OR DELETE ON personal_sync_exports FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_exports_no_truncate BEFORE TRUNCATE ON personal_sync_exports FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
-  personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at)',
+  personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at,native_state,memory_projection,conflicts)',
+  personal_sync_bindings:'SELECT, INSERT',
+  personal_sync_notes:'SELECT, INSERT',
+  personal_sync_native_credits:'SELECT, INSERT',
+  personal_sync_exports:'SELECT, INSERT',
+  personal_sync_memory_reservations:'SELECT, INSERT, UPDATE (bytes,documents)',
   personal_sync_identities:'SELECT, INSERT',
   personal_sync_clients:'SELECT, INSERT',
   personal_sync_sessions:'SELECT, INSERT',
@@ -759,7 +806,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     if (owner === undefined) throw new MigrationError('还没有应用迁移，不能授权运行角色');
     if (owner.owns) throw new MigrationError(`运行角色 ${role} 拥有这些表，能关掉只追加的触发器；请让另一个角色执行迁移`);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text),hub_resume_personal(text,text,text) TO "${role}"`, [], t);
-    await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz) TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz),hub_replace_personal_memory(text,text,jsonb),hub_lock_personal_scope(text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);

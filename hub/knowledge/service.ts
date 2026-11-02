@@ -1,3 +1,4 @@
+import {PersonalKnowledgeSync} from './personal-sync/service.ts';
 import {MemoryDocuments} from './memory.ts';
 import {FeedingLayer} from './feeding.ts';
 import { KnowledgeSpaces } from './spaces.ts';
@@ -80,6 +81,7 @@ export interface KnowledgePlacement {
 }
 
 export interface Knowledge extends KnowledgePort {
+  personalSync?:PersonalKnowledgeSync;
   memory:MemoryDocuments;
   /** The context this service was created with (the seedling production and tests of this package reach for it). */
   readonly __context: KnowledgeContext;
@@ -284,8 +286,10 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return run;
   };
 
+  const memory=new MemoryDocuments(context,spaces);
+  const personalSync=context.records.personalSync?new PersonalKnowledgeSync(context,spaces,memory,context.records.personalSync):undefined;
   return {
-    memory:new MemoryDocuments(context,spaces),
+    personalSync,memory,
     spaces,
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */
