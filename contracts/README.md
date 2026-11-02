@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 74 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 87 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -50,6 +50,13 @@ Owner decision 83 (2026-11-02) adds B07's derived `request_status` display axis 
 labels are generated; the axis changes neither the stored request schema nor its answer rules.
 The owner's second-round approval adds R01's derived `account_status` in the same unmerged model 15: enabled and disabled
 describe accounts; in-use remains a runtime-environment state. No permission or stored-account schema changes.
+
+Owner decision 84 and workflow-rename item 1 set model 16’s `pack_kind` UI names to 工作流, 通用技能, 产品知识来源 and 业务系统接入. Codes and technical kind labels stay unchanged. Other user-facing text updated in this change: `list_task_packs` label 查询工作流, permission label 工作流分配, `SOURCE_UNAVAILABLE.fix`, `PACK_POLICY_DENIED.when`, and the closed-set core violation’s message. Protocol and record names are unchanged. The generator also refreshes four skill-function protocol mirrors; those contain the same model revision and messages, without handwritten pack-code changes.
+
+Claude, coordinating under the owner's standing authorization for decision 84 (2026-11-02), approved the display-only
+`pack_status` axis in model 16: published, retired, enabled and inactive reuse the catalog's existing state labels.
+It changes neither records nor permissions. The same authorization covers updating the four generated skill protocol
+mirrors and their release manifests: html-format/mindmap-format 1.0.3, xml-format/workbook-format 1.0.4.
 
 ## Editing `contracts/codes.json`
 

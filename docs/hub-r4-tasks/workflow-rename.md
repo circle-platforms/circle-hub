@@ -12,6 +12,8 @@
   - 种类名与状态词只取自 `contracts/generated`。
   - 说明性文字一律放在标题的悬停提示里；事实性文字照常显示。
 - 可改路径：`contracts/**`（只限本任务的界面用语与版本断言）、`hub/server/**`、`docs/design/**`、`docs/hub-r4-progress.md`、本页、各受影响包 README 与 `CHANGELOG.md`。不改知识库与运行引擎的业务代码，不改协议名、记录类型、`packs/` 目录名或依赖。
+  - 范围补充（Claude 2026-11-02 作为协调者，依据所有者对决定 84 的持续授权）：允许增加模型 16 的纯显示轴 `pack_status`，沿用 published／retired／enabled／inactive 四种既有发布状态，不改变记录或权限规则。
+  - 同次允许同步 `packs/skill/{html-format,mindmap-format,xml-format,workbook-format}/functions/generated/protocol.ts` 与各自 `pack.json`；这八个文件加入允许路径，技能业务代码不变。html-format、mindmap-format 升为 1.0.3，xml-format、workbook-format 升为 1.0.4，并刷新发布清单。
 - 验证（所有者要求）：不随意加 SHA 校验和全量回归。
   - 每项跑 `npm run typecheck` 和受影响包的测试。
   - 改了合约再跑 `npm run verify:contracts` 和词表相关测试。
@@ -51,12 +53,15 @@
 
 ## 发现
 
-（无。）
+- 第 1 项：生成器同步四份技能合约镜像后，原文档检查因版本未递增而失败；已按上述协调授权升补丁版并刷新发布清单，没有增加来源数据的 SHA 检查。
+- 第 2、3 项：原 `stateOf` 硬编码四种既有发布状态；已按上述协调授权增加 `pack_status` 显示轴，页面按原字段推导后取生成标签。
+- 现有目录接口对成员只返回可用工作流，移位不扩大读权；成员的原有知识读取仍保留。产品声明接口只提供当前启用版本，未启用或退役来源缺少产品线元数据时显示破折号，不从名称猜测。
 
 ## 做了的
 
-（未开始。）
+- 第 1 项：模型 16 与四种界面用语已生成；同步查询工作流、工作流分配、`SOURCE_UNAVAILABLE.fix`、`PACK_POLICY_DENIED.when` 及闭集校验提示。增加仅供显示的 `pack_status`，同步版本断言与四个技能的生成镜像及发布清单，技术名称、既有代码和协议未变。授权来源见“做法”的范围补充。
 
 ## 验证
 
-（未开始。）
+- 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=2 contracts/src/vocabulary.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/tools.test.ts tools/gen-contracts.pack-vocabulary.test.ts` 118 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。
+- 技能镜像的版本检查最初失败（同版内容改变），按协调授权升版并刷新清单后，上述文档检查重跑通过；首次失败不记为通过。未运行全量回归或来源相关检查。
