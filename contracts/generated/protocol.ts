@@ -30,7 +30,7 @@ export const PROTOCOL_CODES = {
   PACK_POLICY_DENIED: { when: 'P11 R[3] 第 7 款：工作流政策表重跑未通过', fix: '按政策表结论修正输入，重跑核验' },
   EFFECT_CONTENT_UNVERIFIED: { when: 'P11 R[3] 第 8 款：外发字节不是核验后的产物或未过凭据核对', fix: '重新核验要外发的确切字节，按凭据规则受理后再派发' },
   AUDIENCE_VISIBILITY_EXCEEDED: { when: 'P11 R[3] 第 9 款：内容可见范围不覆盖受众或身份未映射', fix: '收窄受众，或由管理员补身份映射与覆盖确切内容的分享许可' },
-  SPACE_CAPACITY_EXCEEDED: { when: '个人空间容量不足', fix: '请管理员调整容量后重试' },
+  SPACE_CAPACITY_EXCEEDED: { when: '本次写入计入版本记录后超过个人空间容量上限', fix: '请管理员调整容量后重试；撤回或停用内容不会释放版本记录占用' },
   SPACE_ENTRY_INVALID: { when: '条目、依据或目录不符合知识空间约束', fix: '核对路径、引用与逐字引文后重试' },
   SPACE_CREDENTIALS_DETECTED: { when: '个人条目或授权内容命中凭据扫描', fix: '移除凭据后重试；原文不向其他账户开放' },
   SPACE_SEARCH_IN_RUN: { when: '任务读取不允许全文搜索', fix: '去掉 run 后检索线索；任务中按锁定地址读取' },
@@ -115,4 +115,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 29;
+export const MODEL_VERSION = 30;

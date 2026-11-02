@@ -32,6 +32,10 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 - Bound repeated legacy personal-tree traversal and keep retirement holder lookups indexed.
 
+- 升级后，私人空间用量从不可变记录确定性重算，修正旧计数少计或多计；成员看到的已用容量可能增加。
+  已有内容及版本保持不变，真实用量达到上限时拒收后续写入。管理员可用 MB/GB 精确调整额度；
+  成员页、我的空间和超限提示统一显示一位小数的 KB/MB/GB，Tooltip 或纯文本保留精确字节。
+
 - 成员停用与恢复使用事务内账号检查，冻结私人写入和分享，保留原件与团队副本；已归档原文隐藏重复保存入口。
 
 The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](docs/hub-r4-brief.md). Nothing below has been released.

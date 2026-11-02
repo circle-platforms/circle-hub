@@ -1099,3 +1099,17 @@ Token-scope decision (Claude, fourth review of 5509e847): v1 access tokens have 
 member's MCP access Bearer can also call that member's sync API and, after a fresh pre-check and explicit confirmation,
 purge their Hub copy through `/mode`. This is accepted for v1: local copies are unaffected and can be synchronized again.
 The API remains outside the six model tools; per-route token scopes are deferred, not implemented or implied here.
+
+## Exact capacity controls (decision 91, phase 5 block 4)
+
+`capacity.ts` is the shared one-decimal KB/MB/GB formatter for member metadata, my space, memory limits and quota errors.
+Exact byte evidence remains in focusable design-system Tooltips, or alongside formatted values in MCP/CLI plain text.
+Only owner/current-admin metadata is exposed; no new ProtocolError fields or tool modes are introduced. Over-limit
+messages use the committing transaction's used/limit/remaining/requested facts rather than a later read of the quota.
+
+Team's administrator inspector opens an adjustment Dialog with separate decimal amount and generated MB/GB unit fields.
+The server uses BigInt rational conversion: no negative, exponent, unknown unit, fractional byte or unsafe integer is
+accepted. Exact finite decimal backfill preserves old non-MB quotas without rounding to the one-decimal display. An
+extra client `bytes` field has no authority. Existing session, current-admin, CSRF and Origin checks apply. Lowering the
+limit preserves content and shares; the Dialog explains that later writes stop until capacity is available. This is the
+logical retained knowledge/original/version and memory charge, not filesystem free space or active context quota.

@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 108 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 109 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -495,3 +495,11 @@ Model 27 implements only R01's decision-91 member freeze/restore rules approved 
 paused private grants, reversible restoration, independent team copies and an ordered committing account boundary.
 B03's frozen-run evaluation authority stays unchanged. Existing account statuses and all shapes/codes/vocabulary remain
 unchanged. Generation changes only the root protocol's model version; protocol mirrors and manifests do not advance.
+
+### Phase 5 capacity (decision 91)
+
+Claude approved contract list `591c4f47`. Model 28 adds R01's record-derived logical history accounting, exact capacity
+adjustment and owner/admin rejection facts, plus the UI-only `capacity_unit` axis (KB/MB/GB). Only the when/fix text of
+`SPACE_CAPACITY_EXCEEDED` changes; record shapes, fields, codes, protocol modes and migrations do not. Static copy stays
+in the console. Regeneration also updates the four skill protocol mirrors, with manifest-only patch bumps to html/mindmap
+1.0.13 and xml/workbook 1.0.14. No skill behavior or source provenance changes.

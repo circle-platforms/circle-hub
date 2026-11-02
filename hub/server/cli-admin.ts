@@ -1,3 +1,4 @@
+import {knowledgeMessage} from './capacity.ts';
 // The administrator commands the assembly registers with the server CLI: pack, resource, secret, knowledge, init-admin and
 // operator-token. Every command that changes state acts as the admin of the operator token: CIRCLE_HUB_TOKEN, or when it is
 // not set the keychain item of the deployment (account operator-token beside the vault master key, hub/platform
@@ -113,7 +114,8 @@ async function decided<T>(fn: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof RecordsError) throw new CliError(error.message, error.fix ?? null);
     if (error instanceof DocsError) throw new CliError(error.message, error.hint);
-    if (error instanceof ConnectorError || error instanceof KnowledgeError || error instanceof SecretInputError) throw new CliError(error.message);
+    if(error instanceof KnowledgeError)throw new CliError(knowledgeMessage(error),error.fix);
+    if (error instanceof ConnectorError || error instanceof SecretInputError) throw new CliError(error.message);
     throw error;
   }
 }

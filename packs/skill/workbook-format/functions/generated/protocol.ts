@@ -117,8 +117,8 @@ export const PROTOCOL_CODES = {
     "fix": "收窄受众，或由管理员补身份映射与覆盖确切内容的分享许可"
   },
   "SPACE_CAPACITY_EXCEEDED": {
-    "when": "个人空间容量不足",
-    "fix": "请管理员调整容量后重试"
+    "when": "本次写入计入版本记录后超过个人空间容量上限",
+    "fix": "请管理员调整容量后重试；撤回或停用内容不会释放版本记录占用"
   },
   "SPACE_ENTRY_INVALID": {
     "when": "条目、依据或目录不符合知识空间约束",

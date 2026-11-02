@@ -2,6 +2,7 @@ import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 // Personal/team knowledge uses immutable versions and shared content-addressed objects. Every read rechecks current grants.
 import { z } from 'zod';
 import {lockActive} from './active-account.ts';
+import {historyUsage,capacityUsage,requireCapacity,chargedBytes,safeBytes,type CapacityUsage} from './capacity.ts';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, SourceAttributionBody, type SpaceRow, } from '../../contracts/src/spaces.ts';
@@ -128,17 +129,17 @@ export class KnowledgeSpaces {
     };
     return build('/');
   }
-  #draft(space:string,previous:SpaceVersion|null,entries:SpaceRow[],directories:string[],by:Principal|null,reason:string,bytes:number,sources=previous?.body.sources??[],products=previous?.body.products??[]):SpaceVersionBody{
+  #draft(space:string,previous:SpaceVersion|null,entries:SpaceRow[],directories:string[],by:Principal|null,reason:string,bytes:number,sources=previous?.body.sources??[],products=previous?.body.products??[],base=previous?.body.used_bytes??0,epoch?:string):SpaceVersionBody{
     directories=[...directories,...products.map(p=>p.path)];
     directories=[...new Set(['/',...directories,...entries.map(r=>r.path)].flatMap(p=>{const parts=pathSegments(p);return Array.from({length:parts.length+1},(_,n)=>pathOf(parts.slice(0,n)));}))].sort();
-    const body=SpaceVersionBody.parse({space,sources,products,parent:previous?.root??null,entries,directories,tree:'0'.repeat(64),by:by?.id??null,at:this.#ctx.now().toISOString(),reason,used_bytes:previous?.body.used_bytes??0});
-    const delta=previous===null&&entries.length===0&&directories.length===1&&sources.length===0&&products.length===0&&bytes===0?0:Buffer.byteLength(canonicalize(body))+bytes;
-    body.used_bytes+=delta;return body;
+    const body=SpaceVersionBody.parse({...(epoch?{personal_epoch:epoch}:{}),space,sources,products,parent:previous?.root??null,entries,directories,tree:'0'.repeat(64),by:by?.id??null,at:this.#ctx.now().toISOString(),reason,used_bytes:base});
+    const free=previous===null&&entries.length===0&&directories.length===1&&sources.length===0&&products.length===0&&bytes===0;
+    if(!free){for(let n=0;n<8;n++){const next=safeBytes(BigInt(base)+BigInt(bytes)+BigInt(chargedBytes(body)));if(next===body.used_bytes)break;body.used_bytes=next;}}return body;
   }
   async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? [],sync=false): Promise<SpaceVersion> {
-    const body=this.#draft(space,previous,entries,directories,by,reason,bytes,sources,products);
-    if(space!=='team'){body.personal_epoch=await personalEpoch(this.#ctx,space,tx);if(body.personal_epoch&&(previous!==null||entries.length>0||directories.length>1||sources.length>0))body.used_bytes+=Buffer.byteLength(canonicalize({personal_epoch:body.personal_epoch}))-1;}
-    if(!sync&&space!=='team'&&body.used_bytes+((await this.#ctx.records.memoryIndex?.usage(space,tx))?.history??0)>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
+    const epoch=space==='team'?undefined:await personalEpoch(this.#ctx,space,tx);
+    const facts=space==='team'?null:await this.capacityFacts(space,tx),body=this.#draft(space,previous,entries,directories,by,reason,bytes,sources,products,facts?.knowledge??previous?.body.used_bytes??0,epoch);
+    if(facts&&!sync)requireCapacity(facts,body.used_bytes-facts.knowledge);
     body.tree=await this.#tree(body.directories,entries,products,tx,space==='team'?undefined:space);
     const record=await this.#ctx.records.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body,index:[{key:VERSION_KEY,value:space}]},tx);
     const version={root:record.digest,body};await this.#index(version,tx);
@@ -167,6 +168,12 @@ export class KnowledgeSpaces {
   async capacity(space: string, tx?: Transaction): Promise<number> {
     const row = (await this.#ctx.records.store.find({ key: QUOTA_KEY, value: space, kind: 'knowledge_space_quota', newestFirst: true, limit: 1 }, tx)).items[0];
     return row ? SpaceQuotaBody.parse(row.body).bytes : DEFAULT_PERSONAL_CAPACITY;
+  }
+  /** Internal accounting port for committing writers; callers hold the space transaction lock. */
+  async capacityFacts(space:string,tx?:Transaction):Promise<CapacityUsage>{return capacityUsage(await historyUsage(this.#ctx.records.store,space,tx),await this.capacity(space,tx));}
+  async usage(by:Principal,space=by.id):Promise<CapacityUsage>{
+    by=await this.#user(by);if(space==='team'||space!==by.id&&by.role!=='admin'||!await this.#ctx.records.principals.get(space))fail('SOURCE_UNAVAILABLE');
+    return this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await lockActive(this.#ctx,by,tx);if(space!==by.id&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');return this.capacityFacts(space,tx);});
   }
   async setCapacity(by: Principal, space: string, bytes: number): Promise<void> {
     by = await this.#user(by);
@@ -1143,8 +1150,8 @@ export class KnowledgeSpaces {
         if('read'in source.artifact.body.origin&&!source.artifact.body.visibility.admins)fail('SPACE_ENTRY_INVALID','私人连接读取的原文不能放入已分享的文件夹');
         this.#inspectSource(source.bytes);
       }
-      const planned=this.#draft(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',source.size,[...previous?.body.sources??[],'0'.repeat(64)]);
-      if(space!=='team'&&planned.used_bytes>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
+      const facts=space==='team'?null:await this.capacityFacts(space,tx),planned=this.#draft(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',source.size,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts?.knowledge??previous?.body.used_bytes??0);
+      if(facts)requireCapacity(facts,planned.used_bytes-facts.knowledge);
       let artifact=input.artifact;
       if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
       const body=SpaceSourceBody.parse({space,path,sha256:source.sha256,artifact,size:source.size,by:by.id,at:this.#ctx.now().toISOString()});
@@ -1166,9 +1173,8 @@ export class KnowledgeSpaces {
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       by=await lockActive(this.#ctx,by,tx);
       const previous = await this.current(by.id, tx);
-      const planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)]);
-      if (planned.used_bytes > await this.capacity(by.id, tx))
-        fail('SPACE_CAPACITY_EXCEEDED');
+      const facts=await this.capacityFacts(by.id,tx),planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts.knowledge);
+      requireCapacity(facts,planned.used_bytes-facts.knowledge);
       if(previous)await this.#index(previous,tx);
       const grants=this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY,by.id,'knowledge_space_grant',tx));
       if(grants.some(grant=>withinSpacePath(path,grant.path)))this.#inspectSource(bytes);

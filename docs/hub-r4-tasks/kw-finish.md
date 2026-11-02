@@ -396,9 +396,9 @@ Claude 已批准第二块及修正 `94babcda`，并要求第三块一并修正�
 
 以上是本机合成证据。未执行全套集成、Linux CI、真实模型或真实业务核验；未修改 foundation/references 或来源归档工具，未做无关的批准导入复核。同步 HTTP 与成员删除仍等待同步合入及 Claude 安排变基，第五块的个人工作流归属未提前决定。等待 Claude 审查本块。
 
-### 第四块合约清单与实施边界（待 Claude 审查）
+### 第四块合约清单与实施边界（Claude 已批准 `591c4f47`）
 
-Claude 已批准第三块 `d2b57f63`，并要求统一容量显示及改为数值加单位的管理员输入。本节先列合约差异；**批准前只提交本任务页，不改模型、生成物、代码或迁移。** 本块不接入同步分支或成员清除。
+Claude 已批准第三块 `d2b57f63`，并要求统一容量显示及改为数值加单位的管理员输入。本节记录审查前合约差异；Claude 已批准 `591c4f47`，并要求记录重算关闭旧少计及写入拒收回归、CHANGELOG 说明升级显示差异。批准前仅提交本任务页；以下按批准内容实施。本块不接入同步分支或成员清除。
 
 #### A. R01 容量规则及既有超限码
 
@@ -430,3 +430,51 @@ Claude 已批准第三块 `d2b57f63`，并要求统一容量显示及改为数�
 另构造与旧错误结构一致的合成记录：90,000 字节原文、其私人来源登记及首次根空间版本，`used_bytes=0`；额度设为 16,384 字节后，当前代码仍成功追加新的知识，并继续保留小于额度的少计值。脚本断言通过，退出 0，证明第二块的新写入修复并不能自动修正旧用量。该夹具完全合成，不代表已读取或测得真实部署历史。
 
 本步执行 `node --test ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；`git diff --check` 通过。只提交本任务页，模型和实现均未修改，未运行新功能的类型、生成或截图验收，等待上述合约审查。
+
+### 第四块完成情况（实现提交待 Claude 审查）
+
+Claude 已批准合约清单 `591c4f47`。本块按该清单完成模型 28、R01 三条容量规则、UI 单位轴和既有超限码的 when/fix；没有增加记录种类、存储字段、错误码、MCP 模式或迁移。生成检查覆盖 156 个文件；四份技能协议镜像随生成变化，清单补丁版为 html/mindmap `1.0.13`、xml/workbook `1.0.14`，只更新生成文件摘要/大小和版本，不改技能业务代码或来源基线。
+
+#### 计量与拒收
+
+- 新增内部容量账本，从已受理的空间版本与其父版本差量、来源登记/精确采集元数据、知识条目及记忆文档/版本重算逻辑占用。旧 `used_bytes` 和记忆索引的累计历史都不作为总量；累计字段只作为实际序列化元数据的一部分。每个版本只对新增的条目/原文载荷计费，后续快照沿用同一引用不重复计载荷；空间快照和记忆版本元数据按实际 canonical 字节计入，只有真正空的首次根版本免费。
+- 修正旧首次根原文少计，同时不把人为偏大的旧累计值当作实用量。完整记录缺失时停止核对；不改旧记录、原文、摘要或迁移，GET 不追加任何记录。未来成功版本投影正确的知识累计；新快照计费以最终累计数字的实际序列化长度稳定求值。CHANGELOG 明确升级后显示用量可能增加，旧内容保留，后续写入以真实占用拒收。
+- 知识、原文保存/导入和记忆写入均在既有空间事务锁内核对记录用量与最新上限，包含记忆的版本记录占用。提前估算与最终提交使用同一公式；额度调整与写入使用同一锁，跨实例两种顺序有确定性回归。0 或低于已用的上限合法，原件、版本、仍有效分享不删除；剩余归零，新增整次拒收。
+- 拒收错误的内部 detail 保存提交事务中的已用、上限、剩余、超出和本次新增数字，控制台/MCP/CLI 复用，不另读一轮数字冒充拒收时事实。容量元数据只给本人/当前管理员；管理员不因此取得正文或标题。
+- 修复记忆同一 client key 的容量拒收永久缓存：调高后重新核对并可接受，成功后仍返回原版本，不重复写入；其他拒收的幂等语义不变。拒收审计记录保持原形状。
+
+#### 页面与输入
+
+- 一个服务端格式化器统一成员 Inspector、我的空间、记忆额度及超限消息：1024 换算、KB 起、一位小数、千位分隔；精确字节使用可聚焦的设计 Tooltip，纯文本/MCP/CLI 同时给格式化值和精确字节。
+- 团队成员 Inspector 的“调整容量…”打开 Dialog，数值与 MB/GB 单位分开，用生成轴标签。服务端按 BigInt 有理数精确换算，拒绝负数、指数、未知单位、无法表示的非整数字节和安全整数溢出；旧非整 MB/GB 额度按有限小数精确回填，额外 `bytes` 字段没有权威性。现有管理员、当前账号、Origin、CSRF 边界保持有效。
+- Dialog 说明调低的后果；计费范围说明明确逻辑容量、保留版本及排除项。私人包文件、同步暂存、索引和磁盘空闲量没有混入本块计费；同步准入和成员清除仍等合入后接入。
+
+#### 回归与实际命令
+
+以下使用 Node 24、已有依赖、临时 loopback PostgreSQL/Hub、合成账号和脚本模型；没有安装依赖或使用真实资料。
+
+- `node node_modules/typescript/bin/tsc --noEmit`：退出 0；`node tools/gen-contracts.ts --check`：156 文件匹配，退出 0。
+- `node --test "contracts/src/*.test.ts"`：372 通过，0 失败、0 跳过，退出 0。
+- `node --test --test-concurrency=2 hub/knowledge/capacity.test.ts hub/knowledge/spaces.test.ts hub/knowledge/memory.test.ts hub/knowledge/source-archive.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/51-source-archive.test.ts tests/acceptance/52-member-freeze.test.ts tests/acceptance/53-capacity.test.ts hub/server/console/member-space-metadata.test.ts`：57 通过，0 失败、0 跳过，退出 0。
+- 上组包含：90,000 字节根原文但旧累计为 0，GET 校正后追加写入在真实上限拒收；旧累计过大、记忆索引 history 被重建为 0 时记录用量不变；知识/原文/记忆在精确所需额度少 1 字节拒收、提高到精确额度后同请求成功；调额与写入的两种跨实例提交顺序；实际 HTTP 表单、越权/失效账号/CSRF、旧额度精确回填、不可表示小数、溢出、调低保留原文及分享；MCP 拒收中的提交时事实与同 key 调高重试。原有首次根保存容量回归也通过。
+- `node --test "hub/server/console*.test.ts" "hub/server/console/*.test.ts" hub/server/capacity.test.ts hub/server/units.test.ts`：195 通过，0 失败、0 跳过，退出 0。`node --test tests/acceptance/12-console-security.test.ts tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/50-upload-attribution.test.ts`：19 通过，0 失败、0 跳过，退出 0。
+- `node --test "packs/skill/*/functions/*.test.ts"`：119 通过，0 失败、0 跳过，退出 0。
+- 扩展运行 `node --test "hub/knowledge/*.test.ts"`：527 项，526 通过、1 失败、0 跳过，退出 1；唯一失败为既有 feeding 的 5 秒性能时限。首次并行运行验收 46/48/51/52/53 共 24 项，23 通过、1 失败、0 跳过，退出 1；唯一失败为 46 中无关空间读路径的既有 5 秒时限。没有把这两组记为全绿。结束并行负载后，`node --test --test-concurrency=1 hub/knowledge/feeding-bounds.test.ts tests/acceptance/46-knowledge-spaces.test.ts`：13 通过，0 失败、0 跳过，退出 0；feeding 实际 start 为 1,389 ms，原断言/时限不改，没有删除或跳过测试。
+- 最后首页调整后，`node --test --test-concurrency=2 hub/server/console-knowledge.test.ts hub/server/console-wording.test.ts tests/acceptance/53-capacity.test.ts`：11 通过，0 失败、0 跳过，退出 0；类型检查再次退出 0。
+- `CIRCLE_HUB_LIBPQ_BIN=<PostgreSQL 18 客户端目录> node --test --test-concurrency=2 hub/server/assemble/cli-admin.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts tools/gen-contracts.pack-vocabulary.test.ts`：71 通过，0 失败、0 跳过，退出 0；仅运行平台边界检查，未改该包测试。
+- 对比度：以实际 tokens 调用 `auditContrast`，546 项、0 失败，退出 0；没有新增颜色或修改共享设计目录。
+- `node --test --test-concurrency=2 ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；最终暂存区与差异检查通过。
+
+首次验收命令中 12/47/50 的文件名误写，未计入 24 项组，已以上面单独 19 项的正确文件名实跑补齐。
+
+最后全路径扫描又发现“我的”知识库首页仍拼接旧知识计数与记忆计数；已接入同一 `usage`/格式化器，旧少计 HTTP 回归覆盖首页和文件夹页、追加记忆后的两处一致性，并增加 6 张首页截图。单测的旧容量 mock 同步改为用量端口。
+
+开发中曾发现：新并发测试若共用服务实例，会在进程队列而非数据库锁处等待；已改为同数据库的两个独立实例，并用 PostgreSQL 实际阻塞状态确认先后。账本查询改为同事务客户端顺序执行，消除并发 query 警告。HTTP 夹具和断言按实际 `entry` 路由及新容量标签修正，未降低权限或容量断言。
+
+#### 截图与边界
+
+`node hub/server/console/testing-source-archive-browser.ts`：退出 0，27 状态 × 深浅主题 × 1440/1024/390px，共 162 张矩阵与 2 张诊断图。容量新增 7 状态共 42 张：成员容量、调整 Dialog、我的空间文件夹、我的知识库首页、0 上限/已超出、真实原生 POST 拒收、调高后新条目。全部容量图按深浅主题、三种尺寸逐图检查，另生成 7 张联系图便于审查；`block4.html` 为临时目录内的容量专用图库，`index.html` 为完整矩阵，`result.json` 保存断言结果。
+
+普通页面必须 200 且没有中性拒绝/内部错误/参数错误；仅具名的容量拒收状态要求真实 HTTP 400 且含已用、剩余、本次新增和容量不足提示，故意错的原文链接仍使截图失败且不计完成。手机成功态会切入条目详情，因此 guard 校验确实选中新写入的条目，不误要求已隐藏的主页面容量摘要；没有放宽正常页面的 HTTP 或错误 guard。全部矩阵无页面横向溢出、行内操作按钮、用词问题或脚本异常。原生管理员表单实际把 `0.5 MB` 存为 524,288 字节。
+
+本机合成检查不代表 Linux CI、真实业务结果或同步入口验收；未跑整套集成/引用归档检查，未改 foundation/references、来源工具或批准导入。第四块待 Claude 审查；第五块的清除与个人工作流归属仍等待同步合入及 Claude 安排变基，不提前实现。

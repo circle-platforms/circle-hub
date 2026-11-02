@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { createTestHub } from '../testing-real.ts';
 import { openConsole } from '../../../tests/acceptance/support/console.ts';
 import { wordingProblems } from './testing-wording.ts';
+import {legacyRootSource} from '../../knowledge/testing-capacity.ts';
+import {exactBytes,formatCapacity} from '../capacity.ts';
 const dir = await mkdtemp(join(tmpdir(), 'circle-hub-finish-block2-browser-')), profile = join(dir, 'profile');
 const hub = await createTestHub({ repositoryPacks: false, stubs: false, mindmapSkill: false, workbookSkill: false, xmlSkill: false, htmlSkill: false });
 let chrome: ReturnType<typeof spawn> | undefined, ws: WebSocket | undefined;
@@ -63,16 +65,20 @@ try {
         lastStatus = statuses.get(navigation.loaderId);
     } await wait("document.readyState==='complete'&&location.href===" + JSON.stringify(new URL(url).href)); };
     const shot = async (name: string) => { const size = await evaluate('({width:innerWidth,height:innerHeight})'), r = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, ...size, scale: 1 } }); await writeFile(join(dir, name + '.png'), Buffer.from(r.data, 'base64')); };
-    const capture = async (name: string, url: string) => { for (const width of [1440, 1024, 390])
+    const capture = async (name: string, url: string, prepare?:()=>Promise<void>) => { for (const width of [1440, 1024, 390])
         for (const theme of ['dark', 'light']) {
             await cdp('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile: false });
             await open(url);
-            assert.equal(lastStatus, name === 'source-denied' ? 404 : 200, name + ' HTTP status ' + width + ' ' + theme);
+            if(prepare)await prepare();
+            assert.equal(lastStatus, name === 'source-denied' ? 404 : name==='capacity-refusal'?400:200, name + ' HTTP status ' + width + ' ' + theme);
             const body = await evaluate('document.body.innerText');
             if (name === 'source-denied')
                 assert.match(body, /该内容不存在或无权查看/);
             else
                 assert.doesNotMatch(body, /该内容不存在或无权查看|Hub 内部错误|请求参数不对/, name + ' must not capture an error page');
+            if(name==='capacity-refusal'){assert.match(body,/私人空间容量不足/);assert.match(body,/本次新增/);assert.match(body,/剩余 0.0 KB/);}
+            if(name==='capacity-raised')assert.match(body,/合成容量重试条目/);
+            else if(name.startsWith('capacity-'))assert.match(body,/已用/);
             if (name === 'archive-selected') {
                 assert.equal(await evaluate("document.querySelector('[data-inspector-content] h2')?.textContent"), 'synthetic-upload.txt');
                 assert.equal(await evaluate("document.querySelector('.ch-original-preview')?.textContent"), '合成浏览器导入原文：保留两份。');
@@ -226,6 +232,34 @@ try {
     await cdp('Network.setCookie',{name:'circle_hub_session',value:manager.sessionCookie,url:hub.url});
     await capture('member-restored',memberUrl);
     checks.push('member deactivation and restore dialogs, paused private shares and restored current grants use guarded HTTP 200 captures');
+    const capacityUser=await hub.createUser('合成容量成员'),capacityOwner=await openConsole(hub,capacityUser.token),legacy=await legacyRootSource(hub.records,capacityUser.principal),capacityMember=hub.url+'/console/team/'+capacityUser.user.id,capacityOwn=hub.url+'/console/knowledge/space?'+new URLSearchParams({space:capacityUser.user.id,path:'/'});
+    await capture('capacity-member',capacityMember);
+    assert.ok((await evaluate('document.body.innerText')).includes(formatCapacity(legacy.expected)));
+    assert.equal(await evaluate("document.querySelector('.ch-capacity-value').title"),exactBytes(legacy.expected));
+    await capture('capacity-adjust-dialog',capacityMember+'#adjust-member-capacity');
+    await evaluate("document.querySelector('#adjust-member-capacity [name=amount]').value='0.5';document.querySelector('#adjust-member-capacity [name=unit]').value='mb';document.querySelector('#adjust-member-capacity form,form#adjust-member-capacity')?.submit()");
+    await wait("location.pathname==='/console/team/"+capacityUser.user.id+"'&&location.hash===''");
+    assert.equal((await spaces.usage(capacityUser.principal)).limit,524288);
+    checks.push('native administrator form converts 0.5 MB to exactly 524,288 bytes');
+    await cdp('Network.setCookie',{name:'circle_hub_session',value:capacityOwner.sessionCookie,url:hub.url});
+    await capture('capacity-my-space',capacityOwn);
+    await capture('capacity-home',hub.url+'/console/knowledge?scope=personal');
+    await spaces.setCapacity(hub.admin.principal,capacityUser.user.id,0);
+    await cdp('Network.setCookie',{name:'circle_hub_session',value:manager.sessionCookie,url:hub.url});
+    await capture('capacity-zero',capacityMember);
+    assert.match(await evaluate('document.body.innerText'),/已超出/);
+    await cdp('Network.setCookie',{name:'circle_hub_session',value:capacityOwner.sessionCookie,url:hub.url});
+    await capture('capacity-refusal',capacityOwn,async()=>{
+      await evaluate("(()=>{const f=document.createElement('form');f.method='post';f.action='/console/knowledge/do/entry';for(const [name,value] of Object.entries({csrf:document.querySelector('[name=csrf]').value,path:'/',kind:'observation',statement:'合成容量重试条目'})){const i=document.createElement('input');i.name=name;i.value=value;f.append(i)}document.body.append(f);f.submit()})()");
+      await wait("location.pathname==='/console/knowledge/do/entry'&&document.readyState==='complete'&&document.body.innerText.includes('私人空间容量不足')");
+      const frame=(await cdp('Page.getFrameTree')).frameTree.frame;
+      for(let n=0;!loads.has(frame.loaderId)&&n<200;n++)await new Promise(r=>setTimeout(r,50));
+      assert.ok(loads.has(frame.loaderId));lastStatus=statuses.get(frame.loaderId);
+    });
+    await spaces.setCapacity(hub.admin.principal,capacityUser.user.id,1048576);
+    const saved=await spaces.write(capacityUser.principal,{kind:'observation',statement:'合成容量重试条目'});
+    await capture('capacity-raised',capacityOwn+'&'+new URLSearchParams({root:saved.root,entry:saved.entry}));
+    checks.push('legacy zero counter is corrected without record rewriting; zero quota keeps existing content, native POST refusal has exact facts, and raising admits the retry');
     assert.equal(errors.length, 0, JSON.stringify(errors));
     await writeFile(join(dir, 'capture-script.ts'), await readFile(new URL(import.meta.url)));
     await writeFile(join(dir, 'index.html'), '<!doctype html><meta charset="utf-8"><title>合成原文截图</title><style>body{font-family:sans-serif}img{max-width:100%;border:1px solid gray}section{margin:30px 0}</style>' + matrix.map(item => { const file = item.name + '-' + item.theme + '-' + item.width + '.png'; return '<section><h2>' + file + '</h2><a href="' + file + '"><img loading="lazy" src="' + file + '"></a></section>'; }).join(''));

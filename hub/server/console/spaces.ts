@@ -1,6 +1,8 @@
 import {randomUUID} from 'node:crypto';
 import {personalLocal,personalSyncNotice,checkPersonalFormEpoch} from './personal-sync.ts';
 import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
+import {capacitySummary,capacityError} from './capacity.ts';
+import {parseCapacity} from '../capacity.ts';
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 import {spaceLayout,currentAudience,knowledgeTabs} from './space-layout.ts';
@@ -35,7 +37,7 @@ export async function spaceOverview(ctx: PageContext): Promise<Html> {
   const shared = visible.filter(s => s.space !== 'team' && s.space !== ctx.principal.id);
   const sharedRows = await Promise.all(shared.map(async (s) => [await ctx.userName(s.space), html `${s.paths.map(path => html `<div>${link('/console/knowledge/space', path, spaceLink(s.space, undefined, path))}</div>`)}`]));
   return html `<div class="knowledge-spaces ch-section" data-columns="3">
-${card({ title: uiLabelOf('knowledge_search_scope', 'personal'), hint: '默认仅本人可读；可按空间或文件夹分享。内容保存在 Hub 的服务器数据库中，并包含在服务器备份中。' }, html `${kv([['知识版本', technical(code(own.version.root),'查看')], ['已用容量（含版本记录）', bytes(own.version.body.used_bytes)], ['容量上限', bytes(await spaces.capacity(ctx.principal.id))]])}<div class="ch-actions">${button('/console/knowledge/space', '浏览文件夹', { params: spaceLink(own.space) })}${button('/console/knowledge/submissions', '分享到团队记录')}${button('/console/knowledge/space', '新建', { params: { space: own.space, edit: '1' } })}${button('/console/knowledge/space', '导入我的知识', { params: { space: own.space, import: '1' }, hint: '上传本人文件到私人空间，原文仅本人及获分享权限者可读；条目由 Circle 起草，Hub 不生成内容' })}</div>`)}
+${card({ title: uiLabelOf('knowledge_search_scope', 'personal'), hint: '默认仅本人可读；可按空间或文件夹分享。内容保存在 Hub 的服务器数据库中，并包含在服务器备份中。' }, html `${kv([['知识版本', technical(code(own.version.root),'查看')], ['私人空间容量', capacitySummary(await spaces.usage(ctx.principal))]])}<div class="ch-actions">${button('/console/knowledge/space', '浏览文件夹', { params: spaceLink(own.space) })}${button('/console/knowledge/submissions', '分享到团队记录')}${button('/console/knowledge/space', '新建', { params: { space: own.space, edit: '1' } })}${button('/console/knowledge/space', '导入我的知识', { params: { space: own.space, import: '1' }, hint: '上传本人文件到私人空间，原文仅本人及获分享权限者可读；条目由 Circle 起草，Hub 不生成内容' })}</div>`)}
 ${card({ title: uiLabelOf('knowledge_search_scope', 'team'), hint: '团队条目全体成员可读；产品文件夹沿用产品线读取权限。由管理员导入或产品知识来源同步写入。' }, html `${kv([['知识版本', technical(code(team.version.root),'查看')]])}<div class="ch-actions">${button('/console/knowledge/space', '浏览文件夹', { params: spaceLink('team') })}${ctx.admin ? button('/console/operations/knowledge', '导入团队知识', { hint: '从产品知识来源导入团队知识；也可在团队文件夹导入有团队读取原文的条目' }) : ''}</div>`)}
 ${card({ title: uiLabelOf('knowledge_search_scope', 'shared'), hint: '只列出当前分享给本账户或全体管理员的私人文件夹。收回分享后不能继续读取；已读或已引用的内容无法追回。' }, shared.length ? table(['来自', '可读文件夹'], sharedRows) : html `<p class="empty">没有获分享权限的私人文件夹</p>`)}
 </div>`;
@@ -146,10 +148,10 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后不能再�
     authorization=await grantDialog(ctx,{id:'grant-knowledge',trigger:false,content:directoryName(path)+'（含全部子文件夹）· 只读',current:audience.text,checks:await spaces.precheckGrant(ctx.principal,path),grants:grants.filter(grant=>grant.path===path),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,false,disabled)});
   }
   const sources = await spaces.sources(ctx.principal, space);
-  const personalHistory=own?(await ctx.deps.knowledge.memory?.usage(ctx.principal))?.history??0:0;
+  const capacity=own?await spaces.usage(ctx.principal):null;
   const folderEntries=await spaces.entries(ctx.principal,version.root,version.body.entries.filter(row=>row.path===path));
   const originals = card({ title: '原文', hint: space === 'team' ? '供团队知识引用的原文，全体成员可读；上传原文须由上传人署名' : '上传的原文保存在所属私人空间，不自动生成条目；可在 Circle 中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 条条目引用',link('/console/knowledge/source','查看',{sha256:s.sha256,artifact:s.artifact})];})), '没有可读的原文')}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
-  const content=html`${knowledgeTabs(ctx)}<div class="ch-section">${audienceLine}${own?html`<p>私人空间已用 ${size(version.body.used_bytes+personalHistory)} / ${size(await spaces.capacity(space))} · 本文件夹条目 ${number(version.body.entries.filter(r=>r.path===path).length)} · 已验证 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 已分享 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`;
+  const content=html`${knowledgeTabs(ctx)}<div class="ch-section">${audienceLine}${own?html`<p>私人空间 ${capacitySummary(capacity!)} · 本文件夹条目 ${number(version.body.entries.filter(r=>r.path===path).length)} · 已验证 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 已分享 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`;
   const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${parts.at(-1)??'知识库'}</h2><p class="ch-meta">${audience.text}</p></section><div class="ch-stats">${stat('本页知识',nodes.nodes.reduce((sum,node)=>sum+node.entries.length,0))}</div>${history.items.length?card({title:'最近变化'},html`<ul class="ch-feed">${history.items.slice(0,3).map(item=>html`<li>${link('/console/knowledge/space',item.body.reason||'更新知识',spaceLink(space,item.root,path))}${timestamp(item.body.at)}</li>`)}</ul>`):''}`;
   return {status:200,body:page(chrome,await spaceLayout(ctx,pageLayout(content,{inspector:overview,actions:controls})))};
 }
@@ -239,9 +241,8 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   else if (action === 'quota') {
     if (!ctx.admin)
       throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
-    if (!/^[0-9]+$/.test(get('bytes')))
-      throw new KnowledgeError('容量须为非负整数', { code: 'SPACE_ENTRY_INVALID' });
-    await spaces.setCapacity(ctx.principal, get('space'), Number(get('bytes')));
+    let bytes:number;try{bytes=parseCapacity(get('amount'),get('unit'));}catch(error){throw new KnowledgeError(error instanceof Error?error.message:'容量格式不正确',{code:'SPACE_ENTRY_INVALID'});}
+    await spaces.setCapacity(ctx.principal, get('space'), bytes);
     return '/console/team/' + encodeURIComponent(get('space'));
   }
   else
@@ -254,7 +255,7 @@ export function spaceActionFailure(ctx: PageContext, error: unknown): PageResult
   const message = error instanceof KnowledgeError || error instanceof RecordsError&&(error.code==='SYNC_MODE_LOCAL'||error.code==='SYNC_EPOCH_CHANGED'||error.code==='SYNC_VERSION_CONFLICT') ? error.message : error instanceof z.ZodError || error instanceof SyntaxError ? '条目或表单格式不正确' : null;
   if (message === null)
     throw error;
-  return { status: 400, body: page(ctx.chrome('知识操作未完成', { active: 'knowledge' }), html `<p class="error">${message}</p><p>${link('/console/knowledge', '返回知识库')}</p>`) };
+  return { status: 400, body: page(ctx.chrome('知识操作未完成', { active: 'knowledge' }), html `${capacityError(error)??html`<p class="error">${message}</p>`}<p>${link('/console/knowledge', '返回知识库')}</p>`) };
 }
 
 export async function shareHistoryPage(ctx:PageContext):Promise<PageResult>{

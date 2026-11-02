@@ -239,7 +239,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.equal(adminPage.status, 200);
   assert.ok(adminPage.body.includes('私人空间容量'));
   assert.equal((await otherConsole.post('/console/knowledge/do/quota', { csrf: outsiderCsrf, space: owner.user.id, bytes: '1024' })).status, 404);
-  assert.equal((await adminConsole.post('/console/knowledge/do/quota', { csrf: csrf(adminPage.body), space: owner.user.id, bytes: '0' })).status, 303);
+  assert.equal((await adminConsole.post('/console/knowledge/do/quota', { csrf: csrf(adminPage.body), space: owner.user.id, amount: '0', unit: 'gb' })).status, 303);
   assert.equal((await ownConsole.post('/console/knowledge/do/directory', { csrf: nonce, path: '/capacity-test' })).status, 400);
   await spaces.setCapacity(hub.admin.principal, owner.user.id, 1024 ** 3);
 });

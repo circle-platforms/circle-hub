@@ -42,7 +42,7 @@ content hashes. Missing projection rows are rebuilt from immutable records. Sear
 Team histories and diffs include product mounts; personal histories/diffs are owner-only, including whole-space grantees. Directory pages and search have byte/node caps.
 
 Personal capacity defaults to 1 GiB and is adjustable only by administrators. The accounting includes admitted entry/source
-bytes and successive snapshot metadata, including history; withdrawals do not free history. This is logical space usage,
+bytes, successive snapshot metadata and memory document/revision bodies; withdrawals do not free history. This is logical space usage,
 not a report of filesystem blocks. Grants and capacity changes are append-only records. Writes serialize before opening
 the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
 Local synchronization and account-deletion lifecycle remain later phases on this branch. Upload signing is implemented
@@ -93,7 +93,7 @@ register eligible observed team reads for the team. Private-credential reads can
 Grant pre-check/confirmation now pins every registered capture, so an equal-byte team original cannot lend eligibility.
 Quota and snapshot writes are atomic, and duplicate saves consume no further capacity. The empty-space initialization
 exemption now requires no originals, mounts or incoming bytes: the first file at the root must also be charged. Existing
-immutable historical counters are not rewritten; the capacity block must review old usage/rebuild behavior separately.
+immutable historical counters are not rewritten; the capacity ledger below corrects their interpretation on every read/write.
 
 `spaces.original` loads the quotation from the authorized entry/ground index, not from URL text or client-reported offsets.
 It pins the exact capture, resolves the declared parser/fragment and rechecks the entry/source after asynchronous parsing.
@@ -1439,3 +1439,26 @@ equal bytes in another capture do not establish ownership. Explicit save retries
 orders, observes the database lock wait and checks no admitted records on refusal and unchanged versions after restore.
 The integration test additionally checks stale sessions/principals, private grants, byte preservation and team copies.
 Sync HTTP and personal purge remain deferred to the coordinator's later rebase and block five.
+
+## Record-derived capacity (decision 91, phase 5 block 4)
+
+`capacity.ts` recomputes logical usage from immutable admitted space versions and memory documents/revisions, not the
+stored `used_bytes` or mutable memory history counters. Each personal version contributes its actual canonical body
+size; entry/source payload additions relative to its parent contribute canonical entry bodies or registered original
+bytes. Carried references do not charge again. Only an initial completely empty root is free. Explicit duplicate archive
+saves append nothing and charge nothing. Memory includes document metadata and every revision, including disabled or
+superseded bodies, but not grants/refusal receipts. Missing required accounting records fail closed. Counts use checked
+integers; snapshot metadata includes its final counter's own serialized length.
+
+The ledger deterministically corrects both low and inflated old counters without changing any old record, source, hash,
+quota or schema, and without appending on GET. A future accepted snapshot projects the corrected knowledge total. Hence
+usage displayed after upgrade may increase (see CHANGELOG), and a formerly admitted space can now be over quota.
+Reducing a quota to zero or below usage retains existing originals, versions and valid shares; remaining is zero and new
+writes fail atomically. The space business lock serializes the quota record and knowledge/source/memory admission,
+including cross-instance writers. Refusals carry used/limit/remaining/requested numbers from that same transaction in
+internal error detail. `usage` exposes only totals to the owner or current administrator, never private bodies/titles.
+
+Capacity refusals are re-evaluated on a memory retry with the same client key, so a raised quota can admit it; accepted
+writes still replay their immutable receipt. Other cached refusals retain their previous idempotency semantics. Active
+memory/context limits remain separate. Personal workflow/skill bytes, sync staging, indexes and physical storage blocks
+are outside this ledger's approved scope. Synchronization admission and purge wait for the sync rebase/block 5.

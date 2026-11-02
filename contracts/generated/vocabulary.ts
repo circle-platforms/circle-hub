@@ -111,6 +111,7 @@ export const AXES = {
   sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
   source_attribution_status: { label: '团队来源署名', owner: 'B02', values: [{ code: 'unsigned', label: '未署名' }, { code: 'attributed', label: '已署名为团队来源' }] },
   source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
+  capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1195,6 +1196,16 @@ export function isSourceLocationStatus(value: unknown): value is SourceLocationS
   return (SOURCE_LOCATION_STATUS as readonly unknown[]).includes(value);
 }
 
+/** 容量单位 (R01) */
+export const CAPACITY_UNIT = ['kb', 'mb', 'gb'] as const;
+export type CapacityUnit = (typeof CAPACITY_UNIT)[number];
+export const CAPACITY_UNIT_LABEL = { 'kb': 'KB', 'mb': 'MB', 'gb': 'GB' } as const satisfies { readonly [K in CapacityUnit]: string };
+export const CAPACITY_UNIT_UI = { 'kb': 'KB', 'mb': 'MB', 'gb': 'GB' } as const satisfies { readonly [K in CapacityUnit]: string };
+export const CapacityUnitSchema = z.enum(CAPACITY_UNIT);
+export function isCapacityUnit(value: unknown): value is CapacityUnit {
+  return (CAPACITY_UNIT as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1304,6 +1315,7 @@ export interface AxisValues {
   sync_field: SyncField;
   source_attribution_status: SourceAttributionStatus;
   source_location_status: SourceLocationStatus;
+  capacity_unit: CapacityUnit;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1415,6 +1427,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   sync_field: SYNC_FIELD_LABEL,
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
   source_location_status: SOURCE_LOCATION_STATUS_LABEL,
+  capacity_unit: CAPACITY_UNIT_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1526,6 +1539,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   sync_field: SYNC_FIELD_UI,
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
   source_location_status: SOURCE_LOCATION_STATUS_UI,
+  capacity_unit: CAPACITY_UNIT_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

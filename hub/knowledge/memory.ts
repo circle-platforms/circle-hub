@@ -2,6 +2,7 @@ import {INITIAL_PERSONAL_EPOCH} from '../records/api.ts';
 import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 // Memory is a versioned client preference, with its own grants and no evidence reference.
 import {lockActive} from './active-account.ts';
+import {historyUsage,requireCapacity} from './capacity.ts';
 import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,MemoryWriteReceipt,type MemoryMetadata} from '../../contracts/src/memory.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {SyncObjectKindSchema,SyncModeSchema,ActionKindSchema,ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
@@ -153,14 +154,12 @@ export class MemoryDocuments{
   const active=usage.active-(input.head?.state==='enabled'?input.head.contextBytes:0)+(input.state==='enabled'?contextBytes:0),documents=usage.activeDocuments-Number(input.head?.state==='enabled')+Number(input.state==='enabled');
   if(bytes>index.limits.documentBytes&&!(input.state==='disabled'&&sameText))return fail('MEMORY_DOCUMENT_LIMIT');if(input.state==='enabled'&&(active>index.limits.spaceBytes||documents>index.limits.spaceDocuments))return fail('MEMORY_SPACE_LIMIT');
   if(input.state==='enabled'||!sameText||input.title!==input.previous?.title||input.path!==input.previous?.path)this.#scan(input.title,input.path,input.markdown);
+  const capacity=space==='team'?null:await this.#spaces.capacityFacts(space,tx);
   let document=input.head?.document,docBytes=0;
   if(!document){const body=MemoryDocumentBody.parse({personal_epoch:epoch,space,by:by.id,at:this.#now(),intent});const doc=await this.#ctx.records.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body,index:[{key:'memory.document.space',value:space}]},tx);document=doc.digest;docBytes=Buffer.byteLength(canonicalize(body));}
   const body=MemoryVersionBody.parse({personal_epoch:epoch,document,space,parent:input.head?.version??null,title:input.title,path:input.path,state:input.state,bytes,markdown:sameText?null:input.markdown,content_version:sameText?(input.previous!.content_version??input.head!.version):null,by:by.id,at:this.#now(),intent,payload});
   const history=docBytes+Buffer.byteLength(canonicalize(body));
-  if(space!=='team'){
-   const knowledge=(await this.#spaces.current(space,tx))?.body.used_bytes??0;
-   if(knowledge+usage.history+history>await this.#spaces.capacity(space,tx))return fail('SPACE_CAPACITY_EXCEEDED');
-  }
+  if(capacity)requireCapacity(capacity,history);
   const stored=await this.#ctx.records.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body,unique_key:intent,index:[{key:'memory.version.document',value:document},{key:'memory.version.space',value:space}]},tx);
   await index.apply({document,space,version:stored.digest,path:body.path,state:body.state,bytes,contextBytes},history,tx);if(epoch&&this.#ctx.records.personalSync)await this.#ctx.records.personalSync.assertCapacity(by,epoch,tx);return this.#receipt(body,stored.digest);
  }
@@ -176,7 +175,7 @@ export class MemoryDocuments{
     if(action.body.payload!==payload)return fail('IDEMPOTENCY_MISMATCH');
     if(action.schema==='memory-unchanged@1')return MemoryWriteReceipt.parse(action.body.receipt);
     const code=action.body.code;if(action.schema!=='memory-refusal@1'||!code||!Object.hasOwn(PROTOCOL_CODES,code))return fail('SOURCE_UNAVAILABLE');
-    throw new KnowledgeError(action.body.message??PROTOCOL_CODES[code].when,{code,detail:{positions:action.body.positions??[]}});
+    if(code!=='SPACE_CAPACITY_EXCEEDED')throw new KnowledgeError(action.body.message??PROTOCOL_CODES[code].when,{code,detail:{positions:action.body.positions??[]}});
    }
    const head=input.document?(await this.#index().heads(space,tx)).find(h=>h.document===input.document):undefined;if(input.document&&!head)return fail('SOURCE_UNAVAILABLE');if(head&&head.version!==input.expected_version)return fail('MEMORY_VERSION_CONFLICT');
    const previous=head?(await this.#version(head,head.version,tx)).body:undefined;
@@ -212,7 +211,7 @@ export class MemoryDocuments{
    return this.#ctx.records.store.put({kind:'memory_grant',schema:'memory-grant@1',provenance:'declared',body,index:[{key:'memory.grant.owner',value:by.id},{key:'memory.grant.grantee',value:body.member??'administrators'}]},tx);
   }));
  }
- async usage(by:Principal,space=by.id){by=await this.#user(by);if(space!==by.id&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');return {...await this.#index().usage(space),limits:this.#index().limits};}
+ async usage(by:Principal,space=by.id){by=await this.#user(by);if(space!==by.id&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');const facts=space==='team'?await historyUsage(this.#ctx.records.store,space):await this.#spaces.usage(by,space);return {...await this.#index().usage(space),history:facts.memory,limits:this.#index().limits};}
  async rebuild(by:Principal,space=by.id){
   by=await this.#user(by);if(space!==by.id&&(space!=='team'||by.role!=='admin'))return fail('SOURCE_UNAVAILABLE');
   return this.#queue(space,()=>this.#ctx.records.store.withTransaction(async tx=>{

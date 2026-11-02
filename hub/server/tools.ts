@@ -1,3 +1,4 @@
+import {knowledgeMessage} from './capacity.ts';
 import {join} from 'node:path';
 import { KnowledgeError } from '../knowledge/api.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
@@ -282,7 +283,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       const prior=result.share?.code?Object.entries(PROTOCOL_CODES).find(([code])=>code===result.share!.code):undefined;
       if(!errors.length&&prior)errors.push({code:prior[0] as ProtocolCode,message:result.share!.message,fix:prior[1].fix});
       return result.ok?{call_result:'ok',errors:[],acceptance:'accepted',memory_share:result}:{...errorAnswer('upload_file',errors.length?errors:[unavailable()]),memory_share:result};
-    }catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);throw error;}
+    }catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}]);throw error;}
   }
   if(parsed.data.share_entry||parsed.data.withdraw_entry){
     const spaces=deps.knowledge.spaces;if(!spaces)return errorAnswer('upload_file',[unavailable()]);
@@ -291,12 +292,12 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       const input=parsed.data.withdraw_entry!,version=await spaces.version(input.root);if(!version||!(await spaces.mayRead(call.principal,version.body.space,input.path)))return errorAnswer('upload_file',[unavailable()]);
       await spaces.withdraw(call.principal,input.entry,version.body.space);
       return {call_result:'ok',errors:[],acceptance:'accepted',withdrawn_reference:`tree:${input.root}${input.path}@${input.entry}`};
-    }catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);throw error;}
+    }catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}]);throw error;}
   }
   if(parsed.data.personal_entry){
     if(!deps.knowledge.spaces)return errorAnswer('upload_file',[unavailable()]);
     try{return {call_result:'ok',errors:[],acceptance:'accepted',personal_entry:await deps.knowledge.spaces.write(call.principal,parsed.data.personal_entry,call.context.sessionId)}}
-    catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);throw error;}
+    catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}]);throw error;}
   }
   const { file_path: text, media_type: given, name } = parsed.data;
   if(parsed.data.space==='personal'&&!deps.knowledge.spaces)return errorAnswer('upload_file',[unavailable()]);
@@ -353,7 +354,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       name: name ?? null,
     });
   } catch (error) {
-    if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);
+    if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}]);
     if (error instanceof RecordsError && error.code === 'CREDENTIAL_IN_UPLOAD') {
       const detail = error.detail as { sha256?: unknown };
       return errorAnswer('upload_file', [{ code: 'CREDENTIAL_IN_UPLOAD', message: error.message, fix: error.fix ?? PROTOCOL_CODES.CREDENTIAL_IN_UPLOAD.fix }], {
@@ -457,7 +458,7 @@ const getNodes: Handler = async (deps, call, args) => {
   if(input.memory){
     if(!deps.knowledge.memory)return {answer:errorAnswer('get_nodes',[unavailable()])};
     try{return {answer:{call_result:'ok',errors:[],...await deps.knowledge.memory.query(call.principal,input.memory)}};}
-    catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:error.message,fix:error.fix!}])};throw error;}
+    catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}])};throw error;}
   }
   const note = call.context.adminNote;
   if(input.pack!==undefined){
@@ -481,7 +482,7 @@ const getNodes: Handler = async (deps, call, args) => {
     if(input.reference!==undefined||input.root!==undefined||input.paths!==undefined||input.depth!==undefined||input.space!==undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/search','搜索只接受 search、scope 与 cursor')])};
     if(!deps.knowledge.spaces)return {answer:errorAnswer('get_nodes',[unavailable()])};
     try{return {answer:{call_result:'ok',errors:[],...await deps.knowledge.spaces.search(call.principal,input.search,input.scope??'all',input.cursor??null)}}}
-    catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:error.message,fix:error.fix!}])};throw error;}
+    catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}])};throw error;}
   }
   // An empty cursor is no cursor (a model may fill an optional string with ''), for a reference as for a subtree.
   const cursor = input.cursor === undefined || input.cursor === '' ? null : input.cursor;
@@ -542,7 +543,7 @@ const getNodes: Handler = async (deps, call, args) => {
         return {answer:errorAnswer('get_nodes',[{code:'SOURCE_INTEGRITY_UNPROVEN',message:'缺少经摘要核验的知识原件；请管理员从备份恢复后重读',fix:PROTOCOL_CODES.SOURCE_INTEGRITY_UNPROVEN.fix}])};
       }
       if(error instanceof KnowledgeError && error.code!==null) {
-        return {answer:errorAnswer('get_nodes',[{code:error.code,message:error.message,fix:error.fix!,...(typeof error.detail.path==='string'?{path:error.detail.path}:cursor?{path:'/cursor'}:{})}])};
+        return {answer:errorAnswer('get_nodes',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!,...(typeof error.detail.path==='string'?{path:error.detail.path}:cursor?{path:'/cursor'}:{})}])};
       }
       note(`knowledge reader attempt ${attempt+1} failed: ${describeError(error)}`);
       if(attempt===2) {
