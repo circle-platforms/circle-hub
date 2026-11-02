@@ -397,7 +397,7 @@ BEGIN
 END $fn$;
 REVOKE ALL ON FUNCTION hub_track_object_holds() FROM PUBLIC;
 INSERT INTO object_holds SELECT DISTINCT r.digest,x.* FROM records r CROSS JOIN LATERAL hub_object_refs(r.kind,r.body) x
- WHERE r.kind<>'claim' OR EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='knowledge.feeding.object');
+ WHERE r.kind NOT IN ('source_artifact','knowledge_space_version') AND (r.kind<>'claim' OR EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='knowledge.feeding.object'));
 CREATE TRIGGER records_object_holds AFTER INSERT ON records FOR EACH ROW EXECUTE FUNCTION hub_track_object_holds();
 CREATE TRIGGER record_index_object_holds AFTER INSERT ON record_index FOR EACH ROW EXECUTE FUNCTION hub_track_object_holds();
 
@@ -441,6 +441,8 @@ BEGIN
 END $fn$;
 REVOKE ALL ON FUNCTION hub_personal_migrate_inline() FROM PUBLIC;
 SELECT hub_personal_migrate_inline();
+INSERT INTO object_holds SELECT DISTINCT r.digest,x.* FROM records r CROSS JOIN LATERAL hub_object_refs(r.kind,r.body) x
+ WHERE r.kind IN ('source_artifact','knowledge_space_version') AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest);
 CREATE TABLE personal_legacy_candidates(record text PRIMARY KEY REFERENCES records(digest));
 INSERT INTO personal_legacy_candidates SELECT record FROM personal_record_bindings;
 CREATE TRIGGER personal_legacy_candidates_append_only BEFORE UPDATE OR DELETE ON personal_legacy_candidates FOR EACH ROW EXECUTE FUNCTION hub_append_only();
@@ -543,8 +545,8 @@ BEGIN
  hashes:=ARRAY[b->>'sha256'];
  ELSIF x.kind='knowledge_space_version' AND b->>'tree' IS NOT NULL THEN
  WITH RECURSIVE wanted(h,n) AS (SELECT b->>'tree',0 UNION
- SELECT child,w.n+1 FROM wanted w CROSS JOIN LATERAL public.hub_personal_tree_children(x.owner,x.epoch,w.h) child WHERE w.n<65)
- SELECT array_agg(DISTINCT w.h),bool_or(p.sha256 IS NULL OR o.sha256 IS NULL OR w.n>64) INTO hashes,missing FROM wanted w LEFT JOIN public.personal_payloads p ON p.owner=x.owner AND p.epoch=x.epoch AND p.sha256=w.h
+ SELECT child,w.n+1 FROM wanted w CROSS JOIN LATERAL public.hub_personal_tree_children(x.owner,x.epoch,w.h) child WHERE w.n<65),bounded AS(SELECT * FROM wanted LIMIT 10001)
+ SELECT array_agg(DISTINCT w.h),bool_or(p.sha256 IS NULL OR o.sha256 IS NULL OR w.n>64) OR count(*)>10000 INTO hashes,missing FROM bounded w LEFT JOIN public.personal_payloads p ON p.owner=x.owner AND p.epoch=x.epoch AND p.sha256=w.h
  LEFT JOIN public.personal_objects o ON o.owner=x.owner AND o.epoch=x.epoch AND o.sha256=w.h;
  IF missing THEN RAISE EXCEPTION 'personal tree transfer incomplete';END IF;
  END IF;

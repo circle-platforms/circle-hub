@@ -533,3 +533,9 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 ```
 
 最终复查：node --test --test-concurrency=1 --test-reporter=tap contracts/src/vocab-axes.test.ts hub/server/console-sync-privacy.test.ts。
+
+### 第 2 步安全审查修正 6：启动遍历与索引边界
+
+做了的：按账户、代次和对象摘要记住已复制／遍历节点，两组集合各限 50,000 项且不缓存正文；跨账户仍各自复制。已转换的私人原件／目录不进入独立持有者索引。所有者完成函数限制目录核对为 10,000 个节点、64 层，超过即拒绝完成，不截断成功。迁移 14 未部署，复核后同步迁移源快照，1～13 与 15 的 SQL 不变。
+
+验证：新增 1,200 个历史版本、两个账户、四个共享 DAG 节点和 8,000 个无关持有者的升级测试，验证精确查询使用 object_holds_target。修复前读取 6,005 次、转移约 3.98 秒；修复后读取 8 次、转移约 0.44 秒（本机合成测量，不是生产时间保证）。类型检查与差异检查通过；personal-retirement-bounds、personal-retirement-holds、personal-mention-retirement、personal-upgrade、personal-runtime-guards、migrations.snapshot、environment、diagnostics、PG 18 ownership、lock-namespaces 定向组共 38 项通过、0 失败、0 跳过。未跑全量回归、Linux CI、来源检查；文档检查留本轮收尾。

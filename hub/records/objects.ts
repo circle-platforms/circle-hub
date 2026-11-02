@@ -88,20 +88,28 @@ export class FileObjectStore implements ObjectStore {
   async materializePersonalObjects():Promise<void>{
     const personal=this.#options.personalPayloads;if(!personal)return;
 
-    const copy=async(owner:string,hash:string,tree:boolean,depth=0):Promise<void>=>{
+    // Bound traversal metadata; no source bytes are retained in the cache.
+    const copied=new Set<string>(),walked=new Set<string>(),cacheLimit=50_000;
+    const remember=(cache:Set<string>,key:string)=>{if(cache.size>=cacheLimit)cache.delete(cache.values().next().value!);cache.add(key);};
+    const copy=async(owner:string,epoch:string,hash:string,tree:boolean,depth=0):Promise<void>=>{
       if(depth>64||!isSha256(hash))throw new IntegrityError('个人目录原件结构不完整');
+      const key=owner+'\0'+epoch+'\0'+hash;
+      if(walked.has(key)||copied.has(key)&&!tree)return;
       const bytes=await this.get(hash);if(!bytes)throw new IntegrityError('缺少待迁移的个人原件');
-      await this.#db.transaction(tx=>personal.object(owner,bytes,tx));
-      if(tree){const value=JSON.parse(Buffer.from(bytes).toString());for(const child of value.children??[])await copy(owner,child.digest,true,depth+1);}
+      if(!copied.has(key)){
+        await this.#db.transaction(async tx=>{const scope=await personal.scope(owner,tx);if(scope.epoch!==epoch)throw new IntegrityError('个人内容转移的代次已变化');await personal.object(owner,bytes,tx);});
+        remember(copied,key);
+      }
+      if(tree){const value=JSON.parse(Buffer.from(bytes).toString());for(const child of value.children??[])await copy(owner,epoch,child.digest,true,depth+1);remember(walked,key);}
     };
     for(;;){
-      const rows=await this.#db.query('SELECT r.digest,r.kind,b.owner FROM records r JOIN personal_record_bindings b ON b.record=r.digest WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_ready d WHERE d.record=r.digest) AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=b.owner AND x.epoch=b.epoch) ORDER BY r.seq LIMIT 100');
+      const rows=await this.#db.query('SELECT r.digest,r.kind,b.owner,b.epoch FROM records r JOIN personal_record_bindings b ON b.record=r.digest WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_ready d WHERE d.record=r.digest) AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=b.owner AND x.epoch=b.epoch) ORDER BY r.seq LIMIT 100');
       if(!rows.rows.length)break;
       for(const row of rows.rows){
         const record=(await this.#db.query('SELECT * FROM hub_read_records() WHERE digest=$1',[row.digest])).rows[0];
         if(!record)continue;const body=verifiedRecord<Record<string,unknown>>(record).body;
-        if(row.kind==='knowledge_space_version'&&body.tree)await copy(String(row.owner),String(body.tree),true);
-        if(row.kind==='source_artifact')await copy(String(row.owner),String(body.sha256),false);
+        if(row.kind==='knowledge_space_version'&&body.tree)await copy(String(row.owner),String(row.epoch),String(body.tree),true);
+        if(row.kind==='source_artifact')await copy(String(row.owner),String(row.epoch),String(body.sha256),false);
         await this.#db.query('SELECT hub_finish_personal_record($1)',[row.digest]);
       }
     }

@@ -799,3 +799,5 @@ entry, just like other Hub writes. No member-level SQL isolation is claimed. Rac
 
 Review item 5 adds a metadata-only cleared(record) predicate for authorized views. It joins immutable binding and purge
 metadata and never loads the active private body. Capsule inspection still performs the full integrity checks when needed.
+
+Security review bounds legacy tree traversal by account/epoch and caches at most 50,000 node keys per set. Completion validates at most 10,000 nodes and 64 levels; excess refuses completion. The 1,200-version synthetic fixture asserts distinct-account copies and indexed holder queries.
