@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import { PARTITION, STATIC_TERMINAL, uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { INTERFACE_LABELS } from './claims.ts';
 import { NEUTRAL } from './console/pages.ts';
+import { THEME_SCRIPT } from './console/theme.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
 import { probeConsole } from '../../scripts/real/console-page.ts';
@@ -115,7 +116,7 @@ test('security gates and immediate revocation apply to result pages', async () =
   const user = await server.createUser('安全'); const id = await start(user); const cookie = await login(user);
   const path = `/console/results/${id}`; const page = await send(path, cookie);
   assert.equal(page.status, 200); assert.match(String(page.headers['content-security-policy']), /default-src 'none'/);
-  assert.match(page.body, /&lt;script&gt;合成名称&lt;\/script&gt;/); assert.doesNotMatch(page.body, /<script\b|(?:src|href)="https?:/i);
+  assert.match(page.body, /&lt;script&gt;合成名称&lt;\/script&gt;/); assert.doesNotMatch(page.body.replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script\b|(?:src|href)="https?:/i);
   assert.equal((await send(path, cookie, 'POST')).status, 405);
   assert.equal((await send(path, cookie, 'GET', '', { host: '192.0.2.1' })).status, 403);
   assert.equal((await send(path, cookie, 'GET', '', { origin: 'http://192.0.2.1' })).status, 403);

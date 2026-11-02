@@ -8,6 +8,7 @@ import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { NEUTRAL } from './console/pages.ts';
+import { THEME_SCRIPT } from './console/theme.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -120,11 +121,11 @@ async function runWithResult(user: TestUser, findings: string[] = ['期望结果
 describe('the mark of circle-hub', () => {
   test('every page carries the mark inline and names the icon, served to anyone as an image of this origin only', async () => {
     const login = await send('/console/login');
-    assert.match(login.body, /<svg class="logo lg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">/);
+    assert.match(login.body, /<svg class="ch-hubmark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">/);
     assert.match(login.body, /<link rel="icon" type="image\/svg\+xml" href="\/console\/favicon\.svg">/);
     assert.match(String(login.headers['content-security-policy']), /img-src 'self'(?:;|$)/);
     const overview = await send('/console/overview', { headers: { cookie: await signIn((await person()).token) } });
-    assert.match(overview.body, /<div class="brand"><svg class="logo" viewBox="0 0 64 64"/);
+    assert.match(overview.body, /<div class="brand"><svg class="ch-hubmark" viewBox="0 0 64 64"/);
     assert.doesNotMatch(overview.body, /<span class="logo/, 'the ring of Circle is gone');
 
     const icon = await send('/console/favicon.svg');
@@ -139,7 +140,7 @@ describe('the mark of circle-hub', () => {
 });
 
 describe('sign-in', () => {
-  test('the login page has a strict CSP without script, frames denied, and a one-time nonce cookie scoped to the login path', async () => {
+  test('the login page allows only fixed scripts by hash, denies frames and scopes its one-time nonce cookie to the login path', async () => {
     const page = await send('/console/login');
     assert.equal(page.status, 200);
     const csp = String(page.headers['content-security-policy']);
@@ -147,9 +148,10 @@ describe('sign-in', () => {
     assert.match(csp, /style-src 'sha256-[A-Za-z0-9+/=]+'/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.match(csp, /form-action 'self'/);
-    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'the live module of the signed-in pages, by its hash only');
+    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'only the fixed live and theme scripts by hash');
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
-    assert.doesNotMatch(page.body, /<script/i);
+    assert.ok(page.body.includes(`<script data-console-theme>${THEME_SCRIPT}</script>`));
+    assert.doesNotMatch(page.body.replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     const login = cookieHeader(page, 'circle_hub_login') ?? '';
     assert.match(login, /; Path=\/console\/login; HttpOnly; SameSite=Strict; Max-Age=900$/);

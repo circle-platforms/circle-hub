@@ -12,6 +12,7 @@ import { shellWord } from './console/commands.ts';
 import { escapeHtml } from './console/html.ts';
 import { CSS } from './console/style.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
+import { THEME_SCRIPT } from './console/theme.ts';
 import { NEUTRAL } from './console/pages.ts';
 import { taskResultOf } from './console/status.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -88,11 +89,11 @@ async function runWithResult(user: TestUser): Promise<string> {
   return summary.run;
 }
 
-/** Every page a signed-in account opens: one console, no style attribute (the CSP refuses it) and no script but the live module. */
+/** One console, no style attribute, and only the fixed theme script and optional live module. */
 function assertPage(reply: Reply, path: string): void {
   assert.equal(reply.status, 200, `${path}: ${reply.body.slice(0, 300)}`);
   assert.match(String(reply.headers['content-security-policy']), /default-src 'none'/, path);
-  assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, ''), /<script/i, path);
+  assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, '').replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="side" aria-label="主导航">/, path);
   for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);

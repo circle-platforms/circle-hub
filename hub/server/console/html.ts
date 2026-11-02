@@ -1,13 +1,14 @@
 // Server-rendered HTML for the console: a tagged template that escapes every interpolated value, a fixed
-// stylesheet (style.ts) and one fixed module script (script.ts, the live updates) allowed by their hashes in a strict
+// stylesheet, a fixed pre-paint theme script and an optional live module allowed by their hashes in a strict
 // Content-Security-Policy. Dynamic values only ever go into element text or double-quoted attributes; links are built
 // from fixed paths and encoded query parameters. Every page of a signed-in account has the side navigation of the design
-// canvas, and the script when the page has a live module; the login and setup pages are a card without it.
+// canvas; all pages have the theme script, and only pages with live modules have the live script.
 import { createHash } from 'node:crypto';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { LiveEventName } from './live.ts';
 import { LIVE_SCRIPT } from './script.ts';
 import { CSS } from './style.ts';
+import { THEME_SCRIPT } from './theme.ts';
 
 /** Markup that is already safe: produced by `html` or a constant of this module. */
 export class Html {
@@ -86,15 +87,16 @@ export function pre(value: unknown): Html {
 
 const CSS_HASH = createHash('sha256').update(CSS, 'utf8').digest('base64');
 export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
+export const THEME_SCRIPT_HASH = createHash('sha256').update(THEME_SCRIPT, 'utf8').digest('base64');
 
 /**
- * No external asset and no framing; only the stylesheet of style.ts and the module of script.ts by their hashes, its event
+ * No external asset and no framing; only the fixed stylesheet, theme script and live module by their hashes, its event
  * stream and page fetches to this server, the console's own icon (favicon.svg) and forms to this console.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   `style-src 'sha256-${CSS_HASH}'`,
-  `script-src 'sha256-${SCRIPT_HASH}'`,
+  `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${THEME_SCRIPT_HASH}'`,
   "connect-src 'self'",
   "img-src 'self'",
   "form-action 'self'",
@@ -150,10 +152,10 @@ export const ICONS = {
 
 /**
  * The mark of circle-hub (owner decision 82): the Hub at the centre, the Circles it serves on an orbit around it, in
- * Circle's four colours. The centre and the orbit take the text colour; the colours are the --logo-* tokens of style.ts.
+ * Circle's four colours. The centre and the orbit take the text colour; satellites use the shared brand tokens.
  */
-export function logo(large = false): Html {
-  return html`<svg class="logo${large ? ' lg' : ''}" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.35"></circle><circle cx="32" cy="32" r="8" fill="currentColor"></circle><circle class="s1" cx="32" cy="12" r="6.5"></circle><circle class="s2" cx="52" cy="32" r="6.5"></circle><circle class="s3" cx="32" cy="52" r="6.5"></circle><circle class="s4" cx="12" cy="32" r="6.5"></circle></svg>`;
+export function logo(): Html {
+  return html`<svg class="ch-hubmark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.35"></circle><circle cx="32" cy="32" r="8" fill="currentColor"></circle><circle class="s1" cx="32" cy="12" r="6.5"></circle><circle class="s2" cx="52" cy="32" r="6.5"></circle><circle class="s3" cx="32" cy="52" r="6.5"></circle><circle class="s4" cx="12" cy="32" r="6.5"></circle></svg>`;
 }
 
 /** The same mark as the browser's icon of the console (/console/favicon.svg): its own colours, darker ink on a dark tab bar. */
@@ -178,7 +180,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
 function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg"><style>${new Html(CSS)}</style></head>
+<title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg"><script data-console-theme>${new Html(THEME_SCRIPT)}</script><style>${new Html(CSS)}</style></head>
 <body class="hub">${body}${script ? html`<script type="module">${new Html(LIVE_SCRIPT)}</script>` : ''}</body></html>`;
 }
 
@@ -189,7 +191,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   // Escaped text can never hold this attribute: only liveModule() writes it.
   const updates = user !== null && content.text.includes(' data-live="');
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
-  const top = html`<header class="top"><div><h1${chrome.hint === undefined ? '' : html` title="${chrome.hint}"`}>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub" id="page-sub">${chrome.sub}</p>`}${state}</div>${chrome.actions === undefined ? '' : html`<div class="actions">${chrome.actions}</div>`}</header>`;
+  const top = html`<header class="top"><div><h1${chrome.hint === undefined ? '' : html` title="${chrome.hint}"`}>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub" id="page-sub">${chrome.sub}</p>`}${state}</div><div class="actions">${themeSwitch()}${chrome.actions ?? ''}</div></header>`;
   if (user === null) return htmlDocument(chrome.title, html`<div class="login"><div class="login-card${chrome.wide ? ' setup-card' : ''}">${brand()}${top}${content}</div></div>`);
   const nav = NAV.map(([key, label, path, name]) => html`<a class="nav-item${key === chrome.active ? ' on' : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}>${icon(name, 'nav-ico')}<span>${label}</span></a>`);
   return htmlDocument(chrome.title, html`<div class="shell">
@@ -205,5 +207,9 @@ ${nav}
 }
 
 function brand(): Html {
-  return html`<div class="row">${logo(true)}<div><div class="brand-name">circle-hub</div><div class="sub">Circle 结果校验与共享知识服务</div></div></div>`;
+  return html`<div class="row">${logo()}<div><div class="brand-name">circle-hub</div><div class="sub">Circle 结果校验与共享知识服务</div></div></div>`;
+}
+
+function themeSwitch(): Html {
+  return html`<div class="ch-actions" data-theme-switch hidden role="group" aria-label="主题"><button class="ch-chip" type="button" data-theme-choice="system" aria-pressed="true">跟随系统</button><button class="ch-chip" type="button" data-theme-choice="light" aria-pressed="false">浅色</button><button class="ch-chip" type="button" data-theme-choice="dark" aria-pressed="false">深色</button></div><noscript><span class="ch-meta">主题跟随系统</span></noscript>`;
 }

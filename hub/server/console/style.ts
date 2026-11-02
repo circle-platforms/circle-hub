@@ -1,52 +1,38 @@
-// The console's stylesheet: the hub.css of the design canvas (version 25, in the palette of Circle's workbench) with the
-// dark theme and reduced motion following the reader's system settings, then the console's own blocks. The Content-Security-
-// Policy allows it by its hash; the markup uses classes only (a style attribute would be refused) and draws its charts with
-// SVG attributes.
-export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initial-value:100%}
+// Shared generated tokens and component styles, plus temporary layout rules for pages not yet migrated.
+// Chunks 2–5 remove these legacy rules as their markup moves to the shared component classes.
+import { DESIGN_CSS } from './style.generated.ts';
 
-/* ---------------------------------------------------------------- tokens: Circle's light theme */
+const LEGACY_CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initial-value:100%}
+
+/* Temporary aliases, never a second palette. Both themes come only from the shared tokens. */
 .hub{
-  --bg:#ffffff;--fg:#3c4148;--sidebar:#ffffff;--surface:#f6f6f7;--hover:#eeefef;--active:#e8e8e9;--border:#e2e3e4;
-  --secondary:#676b70;--muted:#888b8f;--subtle:#fafafa;
-  --read-bg:#e7ebff;--write-bg:#e2f1e6;--think-bg:#f3e7f3;--agent-bg:#d9f8f8;--removed-bg:#ffdee4;
-  --accent:#0894ff;--violet:#c959dd;--negative:#ff2e54;--attention:#d97a03;--positive:#2d7844;--call:#c026d3;
-  --accent-strong:#0a6fd1;--on-accent:#ffffff;
-  --logo-1:#0894ff;--logo-2:#c959dd;--logo-3:#ff2e54;--logo-4:#d97a03;
-  /* the model's states: fills for marks, text on their tints */
-  --s-pass:var(--positive);--s-fail:var(--negative);--s-judgment:var(--accent);--s-unchecked:#b8bbbf;--s-incomplete:var(--attention);--s-unknown:var(--violet);
-  --t-pass:#2d7844;--t-fail:#c8102e;--t-judgment:#0a66b8;--t-incomplete:#955300;--t-unknown:#9b2fb0;--t-unchecked:#5b5f64;
-  --b-pass:var(--write-bg);--b-fail:var(--removed-bg);--b-judgment:var(--read-bg);--b-incomplete:#fdf0dc;--b-unknown:var(--think-bg);--b-unchecked:var(--hover);
-  --shadow:0 1px 3px color-mix(in srgb,var(--fg) 6%,transparent);
-  --shadow-pop:0 12px 32px color-mix(in srgb,var(--fg) 14%,transparent);
-  --ui:14px;--ui-small:12px;--ui-tiny:11px;--ui-large:19px;--radius:7px;
-  --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI Variable','Segoe UI Variable Text','Segoe UI','Circle CJK','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
-  font-size:var(--ui);line-height:1.5;color:var(--fg);background:var(--bg);font-synthesis:none;-webkit-font-smoothing:antialiased;
+  --bg:var(--surface-1);--fg:var(--text-primary);--sidebar:var(--surface-0);--surface:var(--surface-2);--hover:var(--surface-hover);--active:var(--surface-pressed);--border:var(--line-hairline);
+  --secondary:var(--text-secondary);--muted:var(--text-tertiary);--subtle:var(--surface-2);
+  --read-bg:var(--status-info-bg);--write-bg:var(--status-pass-bg);--think-bg:var(--surface-2);--agent-bg:var(--surface-2);--removed-bg:var(--status-fail-bg);
+  --accent:var(--area);--violet:var(--area-workflow);--negative:var(--status-fail);--attention:var(--status-warn);--positive:var(--status-pass);--call:var(--area-workflow);
+  --accent-strong:var(--inverse-surface);--on-accent:var(--text-inverse);
+  --s-pass:var(--status-pass);--s-fail:var(--status-fail);--s-judgment:var(--status-info);--s-unchecked:var(--status-muted);--s-incomplete:var(--status-warn);--s-unknown:var(--status-muted);
+  --t-pass:var(--status-pass-text);--t-fail:var(--status-fail-text);--t-judgment:var(--status-info-text);--t-incomplete:var(--status-warn-text);--t-unknown:var(--text-secondary);--t-unchecked:var(--text-secondary);
+  --b-pass:var(--status-pass-bg);--b-fail:var(--status-fail-bg);--b-judgment:var(--status-info-bg);--b-incomplete:var(--status-warn-bg);--b-unknown:var(--surface-hover);--b-unchecked:var(--surface-hover);
+  --shadow:none;--shadow-pop:var(--shadow-popover);
+  --ui:var(--type-body-size);--ui-small:var(--type-caption-size);--ui-tiny:var(--type-mono-small-size);--ui-large:var(--type-panel-title-size);--radius:var(--radius-md);
+  --mono:var(--font-mono);
+  font-family:var(--font-sans);
+  font-size:var(--ui);line-height:var(--type-body-line-height);color:var(--fg);background:var(--bg);font-synthesis:none;-webkit-font-smoothing:antialiased;
   min-height:100vh;
 }
-/* Circle's dark theme, following the system setting: the sidebar a shade off the ground */
-@media (prefers-color-scheme:dark){.hub{
-  --bg:#10151a;--fg:#d6dee6;--sidebar:#171c21;--surface:#191e23;--hover:#21262b;--active:#282d32;--border:#2e3339;
-  --secondary:#aab2b9;--muted:#899096;--subtle:#151a1f;
-  --read-bg:#1b243c;--write-bg:#172a24;--think-bg:#282030;--agent-bg:#0e3135;--removed-bg:#361923;
-  --attention:#ff9004;--positive:#46a562;--accent-strong:#0894ff;--on-accent:#10151a;
-  --logo-4:#ff9004;
-  --s-unchecked:#4f565d;
-  --t-pass:#5cc27a;--t-fail:#ff6b85;--t-judgment:#5cb6ff;--t-incomplete:#ffa53d;--t-unknown:#dc8cec;--t-unchecked:#aab2b9;
-  --b-incomplete:#33240f;
-  --shadow:0 1px 3px rgb(0 0 0 / 35%);--shadow-pop:0 14px 36px rgb(0 0 0 / 50%);
-}}
 
 /* ---------------------------------------------------------------- base */
 .hub *,.hub *::before,.hub *::after{box-sizing:border-box}
 .hub a{color:inherit;text-decoration:none}
-.hub button,.hub input,.hub select,.hub textarea{font:inherit;color:inherit}
+.hub button:not(.ch-chip),.hub input,.hub select,.hub textarea{font:inherit;color:inherit}
 .hub h1,.hub h2,.hub h3,.hub h4,.hub p{margin:0}
-.hub :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
-.num{font-variant-numeric:tabular-nums}
+.hub b,.hub strong{font-weight:600}
+.hub :focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;border-radius:4px}
+.num,.hub time{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .mono,.hub code{font-family:var(--mono);font-size:calc(var(--ui) - 1.5px)}
 .sub{color:var(--secondary);font-size:var(--ui-small)}
-.link{color:var(--t-judgment);font-size:var(--ui-small);font-weight:550;white-space:nowrap}
+.link{color:var(--t-judgment);font-size:var(--ui-small);font-weight:500;white-space:nowrap}
 .link:hover{text-decoration:underline}
 .note{color:var(--secondary);font-size:var(--ui-small);margin-top:10px}
 .ico{width:16px;height:16px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -60,12 +46,8 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 /* ---------------------------------------------------------------- sidebar */
 .side{display:flex;flex-direction:column;gap:1px;padding:0 10px 14px}
 .brand{display:flex;align-items:center;gap:9px;height:60px;padding:0 8px}
-.brand strong{font-size:calc(var(--ui) + 5px);letter-spacing:-.6px;font-weight:650}
+.brand strong{font-size:calc(var(--ui) + 5px);letter-spacing:-.6px;font-weight:600}
 .env{margin-left:auto;font-size:var(--ui-tiny);letter-spacing:1px;color:var(--secondary);border:1px solid var(--border);border-radius:999px;padding:0 8px;line-height:18px}
-.logo{display:inline-block;width:22px;height:22px;flex-shrink:0}
-.logo.lg{width:64px;height:64px}
-.logo .s1{fill:var(--logo-1)}.logo .s2{fill:var(--logo-2)}.logo .s3{fill:var(--logo-3)}.logo .s4{fill:var(--logo-4)}
-.logo.spin{animation:spin 10s linear infinite}
 .search{display:flex;align-items:center;gap:8px;height:34px;margin:2px 0 6px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--secondary)}
 .search input{flex:1;min-width:0;border:0;background:none;outline:none;font-size:var(--ui-small);color:var(--fg)}
 .search input::placeholder{color:var(--secondary)}
@@ -75,20 +57,20 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .nav-label{padding:14px 10px 4px;font-size:var(--ui-tiny);color:var(--secondary);letter-spacing:.5px}
 .nav-item{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;border-radius:var(--radius);color:var(--secondary);transition:background .1s,color .1s}
 .nav-item:hover{background:var(--hover);color:var(--fg)}
-.nav-item.on{background:var(--active);color:var(--fg);font-weight:550}
+.nav-item.on{background:var(--active);color:var(--fg);font-weight:500}
 .nav-item svg{width:17px;height:17px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .nav-item .planned,.nav-item .count{margin-left:auto}
 .nav-item.is-planned > span:nth-of-type(1){opacity:.85}
-.count{font-size:var(--ui-tiny);font-weight:650;padding:0 7px;line-height:18px;border-radius:999px;background:var(--b-unknown);color:var(--t-unknown)}
+.count{font-size:var(--ui-tiny);font-weight:600;padding:0 7px;line-height:18px;border-radius:999px;background:var(--b-unknown);color:var(--t-unknown)}
 .me{display:flex;align-items:center;gap:10px;margin-top:16px;padding:12px 8px 0;border-top:1px solid var(--border)}
 .me-t{flex:1;min-width:0;line-height:1.3}
-.me-t div:first-child{font-weight:550}
+.me-t div:first-child{font-weight:500}
 .me-r{font-size:var(--ui-tiny);color:var(--secondary)}
-.avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--read-bg);color:var(--t-judgment);font-weight:650;font-size:var(--ui-small);flex:none}
+.avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--read-bg);color:var(--t-judgment);font-weight:600;font-size:var(--ui-small);flex:none}
 
 /* ---------------------------------------------------------------- page top, buttons, controls */
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:22px 0 6px}
-.top h1{font-size:22px;font-weight:650;letter-spacing:-.3px}
+.top h1{font-size:22px;font-weight:600;letter-spacing:-.3px}
 .top .sub{margin-top:2px}
 .actions{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:var(--ui-small);font-weight:500;white-space:nowrap;cursor:pointer;transition:background .1s,border-color .1s}
@@ -102,10 +84,10 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .icon-btn:hover{background:var(--hover);color:var(--fg)}
 .seg{display:inline-flex;align-items:center;gap:2px;padding:3px;background:var(--hover);border-radius:7px}
 .seg button,.seg a{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:5px 11px;border-radius:5px;color:var(--secondary);font-size:var(--ui-small);cursor:pointer;white-space:nowrap}
-.seg button.on,.seg a.on{background:var(--bg);color:var(--fg);box-shadow:var(--shadow);font-weight:550}
+.seg button.on,.seg a.on{background:var(--bg);color:var(--fg);box-shadow:var(--shadow);font-weight:500}
 .tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);margin-top:14px}
 .tabs a,.tabs button{display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:10px 12px;margin-bottom:-1px;border-bottom:2px solid transparent;color:var(--secondary);cursor:pointer;font-size:var(--ui)}
-.tabs .on{color:var(--fg);border-bottom-color:var(--accent);font-weight:550}
+.tabs .on{color:var(--fg);border-bottom-color:var(--accent);font-weight:500}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 11px;border:1px solid var(--border);border-radius:999px;background:var(--bg);font-size:var(--ui-small);color:var(--secondary);cursor:pointer}
 .pill b{color:var(--fg);font-weight:600}
@@ -117,7 +99,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 /* ---------------------------------------------------------------- cards and grids */
 .section{margin-top:18px}
 .section-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:30px 0 12px}
-.section-h h2{font-size:16px;font-weight:650}
+.section-h h2{font-size:16px;font-weight:600}
 .section-h p{color:var(--secondary);font-size:var(--ui-small)}
 .grid{display:grid;gap:14px}
 .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -142,18 +124,18 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .onboard-t h3{font-size:15px;font-weight:600}
 .ring{--p:0;width:54px;height:54px;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--p) * 1%),var(--surface) 0);display:grid;place-items:center;flex:none;position:relative}
 .ring::after{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--bg)}
-.ring span{position:relative;z-index:1;font-weight:650;font-size:var(--ui-small)}
+.ring span{position:relative;z-index:1;font-weight:600;font-size:var(--ui-small)}
 .todo{display:flex;flex-wrap:wrap;gap:8px}
 .todo a{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 13px 0 7px;border:1px solid var(--border);border-radius:999px;font-size:var(--ui-small);transition:background .1s}
 .todo a:hover{background:var(--hover)}
 .todo a.done{color:var(--secondary);background:var(--subtle)}
-.todo .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;background:var(--hover);font-weight:650}
+.todo .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;background:var(--hover);font-weight:600}
 .todo .n svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .todo a.done .n{background:var(--b-pass);color:var(--t-pass)}
 
 /* ---------------------------------------------------------------- figures */
 .kpi .label{display:flex;align-items:center;gap:7px;color:var(--secondary);font-size:var(--ui-small)}
-.kpi .value{font-size:30px;font-weight:650;letter-spacing:-.6px;margin-top:6px;line-height:1.15}
+.kpi .value{font-family:var(--font-sans);font-size:var(--type-stat-value-size);font-weight:600;margin-top:6px;line-height:var(--type-stat-value-line-height)}
 .kpi .value small{font-size:15px;font-weight:500;color:var(--secondary);margin-left:3px;letter-spacing:0}
 .kpi-f{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;margin-top:4px}
 .delta{font-size:var(--ui-small);font-weight:600}
@@ -178,10 +160,10 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 
 .donut-box{display:flex;flex-wrap:wrap;align-items:center;gap:18px 22px}
 .donut-wrap{position:relative;width:164px;height:164px;flex:none}
-.donut{position:absolute;inset:0;border-radius:50%;-webkit-mask:conic-gradient(#000 var(--sweep),transparent 0);mask:conic-gradient(#000 var(--sweep),transparent 0);animation:sweep 1.2s cubic-bezier(.2,.7,.2,1) both .25s}
+.donut{position:absolute;inset:0;border-radius:50%;-webkit-mask:conic-gradient(var(--text-primary) var(--sweep),transparent 0);mask:conic-gradient(var(--text-primary) var(--sweep),transparent 0);animation:sweep 1.2s cubic-bezier(.2,.7,.2,1) both .25s}
 .donut::after{content:'';position:absolute;inset:22px;border-radius:50%;background:var(--bg)}
 .donut-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2}
-.donut-c b{font-size:24px;font-weight:650;letter-spacing:-.4px}
+.donut-c b{font-size:24px;font-weight:600;letter-spacing:-.4px}
 .donut-c span{font-size:var(--ui-small);color:var(--secondary)}
 .dlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;flex:1 1 150px;min-width:0}
 .dlist li{display:grid;grid-template-columns:10px minmax(0,1fr) auto 46px;align-items:center;gap:8px;font-size:var(--ui-small)}
@@ -205,13 +187,13 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .chart{display:block;width:100%;height:auto;overflow:visible}
 .chart .gl{stroke:var(--border);stroke-width:1}
 .chart text{font-size:11px;fill:var(--secondary)}
-.chart .lbl{font-size:12px;fill:var(--fg);font-weight:550}
+.chart .lbl{font-size:12px;fill:var(--fg);font-weight:500}
 .chart .ln{fill:none;stroke:var(--k);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:0;animation:trace 1.6s cubic-bezier(.2,.7,.2,1) both .2s}
 .chart .ar{fill:var(--k);opacity:.1}
 .chart .pt{fill:var(--k);stroke:var(--bg);stroke-width:2;animation:pop .4s cubic-bezier(.2,.7,.2,1) both 1.5s;transform-box:fill-box;transform-origin:center}
 .k1{--k:var(--accent)}.k2{--k:var(--violet)}.k3{--k:var(--attention)}.k4{--k:var(--positive)}
 .kstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px}
-.kstats b{display:block;font-size:20px;font-weight:650;letter-spacing:-.3px;line-height:1.3}
+.kstats b{display:block;font-size:20px;font-weight:600;letter-spacing:-.3px;line-height:1.3}
 @media (max-width:680px){.kstats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* ---------------------------------------------------------------- status: dots, chips, planned */
@@ -225,7 +207,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .c-pass{background:var(--b-pass);color:var(--t-pass)}.c-fail{background:var(--b-fail);color:var(--t-fail)}
 .c-judgment{background:var(--b-judgment);color:var(--t-judgment)}.c-unchecked{background:var(--b-unchecked);color:var(--t-unchecked)}
 .c-incomplete{background:var(--b-incomplete);color:var(--t-incomplete)}.c-unknown{background:var(--b-unknown);color:var(--t-unknown)}
-.planned{display:inline-flex;align-items:center;gap:4px;font-size:var(--ui-tiny);font-weight:550;line-height:18px;padding:0 8px;border:1px dashed var(--muted);border-radius:999px;color:var(--secondary);white-space:nowrap;background:var(--bg)}
+.planned{display:inline-flex;align-items:center;gap:4px;font-size:var(--ui-tiny);font-weight:500;line-height:18px;padding:0 8px;border:1px dashed var(--muted);border-radius:999px;color:var(--secondary);white-space:nowrap;background:var(--bg)}
 .card.plan{border-style:dashed;border-color:color-mix(in srgb,var(--muted) 70%,var(--border));background:var(--subtle)}
 .card.plan .card-h .ico{color:var(--secondary)}
 .plan-t{color:var(--secondary);font-size:var(--ui-small);line-height:1.6}
@@ -252,14 +234,14 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .callout.unknown{background:var(--b-unknown);color:var(--t-unknown)}
 .callout.info{background:var(--b-judgment);color:var(--t-judgment)}
 .callout.warn{background:var(--b-incomplete);color:var(--t-incomplete)}
-.callout b{font-weight:650}
+.callout b{font-weight:600}
 
 /* ---------------------------------------------------------------- lists, feeds, tables */
 .syslist{display:flex;flex-direction:column;gap:2px}
 .sysrow{display:grid;grid-template-columns:10px minmax(0,1fr) 84px;align-items:center;gap:10px;padding:7px 6px;border-radius:8px;transition:background .1s}
 .sysrow:hover{background:var(--hover)}
 .sys-t{min-width:0;line-height:1.35}
-.sys-t b{display:block;font-weight:550}
+.sys-t b{display:block;font-weight:500}
 .mini{display:flex;align-items:flex-end;gap:2px;height:24px}
 .mini i{flex:1;min-width:0;background:color-mix(in srgb,var(--accent) 55%,transparent);border-radius:2px 2px 0 0;transform-origin:bottom;animation:grow .6s cubic-bezier(.2,.7,.2,1) both .35s}
 .feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
@@ -272,7 +254,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .feed-t b{font-weight:600}
 .tbl{font-size:var(--ui-small);min-width:0}
 .tr{display:grid;grid-template-columns:var(--cols);align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);transition:background .1s}
-.tr.th{color:var(--secondary);font-weight:550;padding-top:2px;padding-bottom:8px}
+.tr.th{color:var(--secondary);font-weight:500;padding-top:2px;padding-bottom:8px}
 .tr:last-child{border-bottom:0}
 .tr.row:hover{background:var(--subtle)}
 .tr.sel{background:color-mix(in srgb,var(--read-bg) 55%,var(--bg))}
@@ -299,17 +281,17 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .ritem .r-2{display:flex;align-items:center;gap:8px;color:var(--secondary);font-size:var(--ui-tiny)}
 .ritem .r-2 .lay{margin-left:auto;display:inline-flex;gap:3px}
 .dhead{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 16px}
-.dhead h2{font-size:18px;font-weight:650;letter-spacing:-.2px}
+.dhead h2{font-size:18px;font-weight:600;letter-spacing:-.2px}
 .dhead .actions{margin-left:auto}
 .matrix{display:grid;grid-template-columns:minmax(0,1fr) 92px 92px;gap:6px 10px;align-items:center;font-size:var(--ui-small)}
-.matrix .mh{color:var(--secondary);font-weight:550}
+.matrix .mh{color:var(--secondary);font-weight:500}
 .matrix .req{min-width:0}
-.matrix .req b{font-weight:550}
+.matrix .req b{font-weight:500}
 .matrix .chip{justify-self:start;animation:pop .35s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0) * 60ms + 150ms)}
 .claims{display:flex;flex-direction:column;gap:10px}
 .claim{border:1px solid var(--border);border-radius:10px;padding:12px 14px;animation:rise .45s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0) * 70ms + 200ms)}
 .claim-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
-.claim-h p{flex:1 1 260px;font-weight:550}
+.claim-h p{flex:1 1 260px;font-weight:500}
 .ref{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:9px;font-size:var(--ui-small);color:var(--secondary)}
 .ref code{color:var(--fg);background:var(--surface);padding:1px 6px;border-radius:4px;overflow-wrap:anywhere}
 .quote{margin-top:9px;font-size:var(--ui-small);line-height:1.75;padding:9px 12px;border-radius:8px;background:var(--surface);border-left:0}
@@ -337,7 +319,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .lv1{padding-left:28px}.lv2{padding-left:48px}.lv3{padding-left:68px}
 .progress{height:8px;border-radius:4px;background:var(--surface);overflow:hidden}
 .progress i{display:block;height:100%;border-radius:4px;background:var(--accent);transform-origin:left;animation:growx 1s cubic-bezier(.2,.7,.2,1) both .2s}
-.progress.run i{background-image:linear-gradient(45deg,rgb(255 255 255 / 25%) 25%,transparent 25% 50%,rgb(255 255 255 / 25%) 50% 75%,transparent 75%);background-size:14px 14px;animation:growx 1s cubic-bezier(.2,.7,.2,1) both .2s,stripes .8s linear infinite}
+.progress.run i{background-image:linear-gradient(45deg,color-mix(in srgb,var(--text-primary) 25%,transparent) 25%,transparent 25% 50%,color-mix(in srgb,var(--text-primary) 25%,transparent) 50% 75%,transparent 75%);background-size:14px 14px;animation:growx 1s cubic-bezier(.2,.7,.2,1) both .2s,stripes .8s linear infinite}
 .progress.done i{background:var(--s-pass)}
 .jobs{display:flex;flex-direction:column;gap:12px}
 .job{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;font-size:var(--ui-small)}
@@ -408,7 +390,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 /* ---------------------------------------------------------------- dialog */
 .scrim{position:absolute;inset:0;background:color-mix(in srgb,var(--fg) 28%,transparent);display:grid;place-items:center;padding:16px;animation:fade .15s ease both;z-index:5}
 .dialog{width:100%;max-width:420px;border:1px solid var(--border);border-radius:14px;background:var(--bg);box-shadow:var(--shadow-pop);padding:20px 22px;animation:pop .2s cubic-bezier(.2,.7,.2,1) both}
-.dialog h3{font-size:16px;font-weight:650}
+.dialog h3{font-size:16px;font-weight:600}
 .dialog p{color:var(--secondary);font-size:var(--ui-small);margin-top:8px;line-height:1.6}
 .dialog .actions{margin-top:18px;justify-content:flex-end}
 .snippet{position:relative;margin:10px 0 0;padding:12px 14px;border-radius:10px;background:var(--surface);font-family:var(--mono);font-size:var(--ui-tiny);line-height:1.7;white-space:pre;overflow-x:auto}
@@ -416,9 +398,9 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 /* ---------------------------------------------------------------- login */
 .login{min-height:100vh;display:grid;place-items:center;padding:48px 16px;background:radial-gradient(circle at 50% 0%,color-mix(in srgb,var(--read-bg) 55%,transparent),transparent 55%) var(--bg)}
 .login-card{width:100%;max-width:440px;border:1px solid var(--border);border-radius:18px;background:var(--bg);box-shadow:var(--shadow-pop);padding:30px 30px 26px;animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
-.login-card h1{font-size:22px;font-weight:650;letter-spacing:-.3px;margin-top:16px}
+.login-card h1{font-size:22px;font-weight:600;letter-spacing:-.3px;margin-top:16px}
 .field{display:flex;flex-direction:column;gap:6px;margin-top:16px}
-.field label{font-size:var(--ui-small);color:var(--secondary);font-weight:550}
+.field label{font-size:var(--ui-small);color:var(--secondary);font-weight:500}
 .sso{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
 .sso .btn{justify-content:flex-start;min-height:40px}
 .sso .btn .planned{margin-left:auto}
@@ -429,7 +411,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .wf{--name:300px;--dur:78px}
 .wf-sum{display:flex;flex-wrap:wrap;gap:8px 26px;padding:0 0 14px;border-bottom:1px solid var(--border)}
 .wf-sum > div{display:flex;flex-direction:column;gap:2px}
-.wf-sum b{font-size:18px;font-weight:650;letter-spacing:-.3px;line-height:1.2}
+.wf-sum b{font-size:18px;font-weight:600;letter-spacing:-.3px;line-height:1.2}
 .wf-sum span{font-size:var(--ui-tiny);color:var(--secondary)}
 .wf-sum .bad b{color:var(--t-fail)}.wf-sum .unk b{color:var(--t-unknown)}
 .wf-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 0 8px}
@@ -474,10 +456,10 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .slow{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
 .slow li{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 72px;align-items:center;gap:10px;font-size:var(--ui-small)}
 .insp-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
-.insp-h h3{font-size:16px;font-weight:650}
+.insp-h h3{font-size:16px;font-weight:600}
 .gloss{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr);gap:0 14px;font-size:var(--ui-small)}
 .gloss > span{padding:9px 0;border-bottom:1px solid var(--border);min-width:0}
-.gloss .gh{color:var(--secondary);font-weight:550;padding-top:0}
+.gloss .gh{color:var(--secondary);font-weight:500;padding-top:0}
 .gloss .old{color:var(--secondary);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--muted) 60%,transparent)}
 .gloss .new{font-weight:600;color:var(--fg)}
 @keyframes breathe{50%{opacity:.62}}
@@ -507,7 +489,7 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .hcell:hover{background:var(--subtle)}
 .hcell b{display:block;font-weight:600;font-size:var(--ui)}
 @media (max-width:1180px){.health{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:680px){.health{grid-template-columns:repeat(2,minmax(0,1fr))}.top h1{font-size:20px}.kpi .value{font-size:26px}}
+@media (max-width:680px){.health{grid-template-columns:repeat(2,minmax(0,1fr))}.top h1{font-size:20px}}
 
 /* ---------------------------------------------------------------- console: frame */
 body.hub{margin:0}
@@ -524,21 +506,21 @@ body.hub{margin:0}
 
 /* ---------------------------------------------------------------- console: blocks of the detailed pages */
 .hub section{margin-top:22px}
-.hub section > h2{font-size:15px;font-weight:650;margin:0 0 10px}
+.hub section > h2{font-size:15px;font-weight:600;margin:0 0 10px}
 .hub section section > h2{font-size:14px}
 .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;margin:8px 0;background:var(--bg)}
 .hub table{border-collapse:collapse;width:100%;font-size:var(--ui-small)}
 .hub th,.hub td{padding:8px 10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
-.hub th{color:var(--secondary);font-weight:550;background:var(--subtle);white-space:nowrap}
+.hub th{color:var(--secondary);font-weight:500;background:var(--subtle);white-space:nowrap}
 .hub tbody tr:last-child td{border-bottom:0}
 .hub tbody tr:hover{background:var(--subtle)}
 .hub td.end,.hub th.end{text-align:right}
 .hub dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 16px;margin:0;font-size:var(--ui-small)}
-.hub dt{color:var(--secondary);font-weight:550}
+.hub dt{color:var(--secondary);font-weight:500}
 .hub dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .hub pre{font-family:var(--mono);font-size:var(--ui-tiny);line-height:1.7;white-space:pre-wrap;word-break:break-all;background:var(--surface);border-radius:8px;padding:10px 12px;max-height:40em;overflow:auto;margin:8px 0}
 .hub details{margin:6px 0}
-.hub details > summary{cursor:pointer;color:var(--t-judgment);font-size:var(--ui-small);font-weight:550}
+.hub details > summary{cursor:pointer;color:var(--t-judgment);font-size:var(--ui-small);font-weight:500}
 .hub .claim{margin:6px 0;padding:10px 12px}
 .hub .claim dl{gap:4px 14px}
 .empty{color:var(--secondary);font-size:var(--ui-small)}
@@ -552,7 +534,7 @@ pre.error{color:var(--t-fail);background:var(--b-fail)}
 .subnav{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0 12px;font-size:var(--ui-small)}
 .subnav a{color:var(--t-judgment)}
 .record{margin-top:28px;padding-top:4px;border-top:1px solid var(--border)}
-.record > h2{font-size:16px;font-weight:650;margin-top:18px}
+.record > h2{font-size:16px;font-weight:600;margin-top:18px}
 
 /* ---------------------------------------------------------------- console: forms */
 .hub form{margin:8px 0}
@@ -569,7 +551,7 @@ pre.error{color:var(--t-fail);background:var(--b-fail)}
 .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin-top:14px}
 @media (max-width:680px){.fields{grid-template-columns:minmax(0,1fr)}}
 .fields .full{grid-column:1 / -1}
-.fields label{display:flex;flex-direction:column;gap:6px;font-weight:550}
+.fields label{display:flex;flex-direction:column;gap:6px;font-weight:500}
 .fields input,.fields select,.fields textarea{width:100%}
 .fields .hint{font-weight:400;color:var(--muted);font-size:var(--ui-tiny)}
 .check{display:inline-flex !important;flex-direction:row !important;align-items:center;gap:8px}
@@ -629,7 +611,7 @@ a.wf-row{color:inherit}
 .wf-name.d1{padding-left:22px}
 .wf-ticks.flex{display:flex;justify-content:space-between;align-items:center}
 .wf-ticks.flex span{position:static}
-.brand-name{font-size:22px;font-weight:650;letter-spacing:-.6px}
+.brand-name{font-size:22px;font-weight:600;letter-spacing:-.6px}
 .task-list .wf-name{flex-direction:column;align-items:flex-start;gap:0;line-height:1.35}
 .kstats.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .fill-t1{fill:var(--accent)}.fill-t2{fill:var(--violet)}.fill-t3{fill:var(--attention)}.fill-t4{fill:var(--positive)}.fill-t5{fill:color-mix(in srgb,var(--accent) 45%,var(--bg))}.fill-t6{fill:var(--negative)}
@@ -650,3 +632,6 @@ table.calls td:nth-child(n+9){white-space:normal}
 .space-main .tablewrap,.modal .tablewrap{max-width:100%;min-width:0}.space-main td:has(>time),.modal td:has(>time),.space-main td:has(>.chip),.space-main td:has(>.nowrap){white-space:nowrap}.fields>.grant-controls,.fields>.tablewrap{grid-column:1/-1}
 @media(max-width:820px){.space-panel{flex-wrap:nowrap;overflow-x:auto;gap:8px}.space-panel section{flex:0 0 auto;min-width:max-content}.space-panel section>a{white-space:nowrap}.space-panel .sub{white-space:nowrap}.space-main .tablewrap table,.modal .tablewrap table{min-width:640px}.space-main .tablewrap td:first-child{min-width:160px}.knowledge-selection .tablewrap td:first-child{min-width:42px}.space-main .tablewrap td:nth-child(2){min-width:140px}.grant-controls{display:grid;grid-template-columns:minmax(0,1fr)}.grant-controls input{width:100%}.modal .dialog{min-width:0}.knowledge-directory>.card-h .actions{margin-left:0}}
 `;
+
+// Generated CSS is last so shared component classes win over temporary element defaults where specificity is equal.
+export const CSS = `${LEGACY_CSS}\n${DESIGN_CSS}\n[data-theme-switch][hidden]{display:none}\n`;

@@ -115,7 +115,7 @@ ${kpi('业务系统写操作', '未开放', { note: '消息通知与数据回写
   const topology = card({ title: '连接拓扑', hint: '左侧为已连接的 Circle，右侧为业务系统；Hub 只执行只读访问' }, html`<div class="topo">
 <div class="topo-col">${leftNodes.length === 0 ? html`<div class="tnode ghost">尚无已连接的 Circle</div>` : leftNodes}</div>
 ${wires(leftNodes.length, true)}
-<div class="tnode hubn">${logo(true)}<b>circle-hub</b><span class="sub">MCP 服务</span></div>
+<div class="tnode hubn">${logo()}<b>circle-hub</b><span class="sub">MCP 服务</span></div>
 ${wires(rightNodes.length, false)}
 <div class="topo-col">${rightNodes.length === 0 ? html`<div class="tnode ghost">${ctx.admin ? '尚无业务系统' : '业务系统仅管理员可见'}</div>` : rightNodes}</div>
 </div>${circles.length > 5 || resources.length > 5 ? html`<p class="note">各列最多显示 5 个；完整列表见下文。</p>` : ''}`);
