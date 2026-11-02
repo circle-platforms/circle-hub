@@ -963,3 +963,11 @@ getRun / getResult check the exact frozen pack version through the existing work
 ### Citations of knowledge (decision 79, 2026-11-01)
 
 `putSubmission` indexes the knowledge an accepted (parsed) submission cites, in the existing `record_index`, with no migration: each `tree:` reference among the body's strings as `runs.submission.cites.node` (SHA-256 of the root and the canonical path) and, when pinned to an entry, `runs.submission.cites.entry` (the entry digest), at most 100 nodes and 95 entries so a record stays within its 200 index entries, plus the marker `runs.submission.cites.indexed=1` on every accepted submission. Submissions accepted before this are indexed by `backfillCitations` (decision 80), which the engine's maintenance runs in the background: a pass at `startMaintenance` and at every tick until one reaches its end, aborted by `stopMaintenance` and resumed by the next. A pass walks the submissions oldest first up to the oldest one marked `indexed=1` (every later one was indexed as it was stored) and adds to each accepted one, through `RecordStore.addIndex`, the entries `putSubmission` gives it now, marked `runs.submission.cites.indexed=backfilled`; records and digests do not change and entries already held are kept. At its end it marks `runs.submission.cites.complete=1` on that boundary (before any, on the newest submission): `citationsComplete` is then true, later passes do nothing and the console's counts are exact for any window. Until then the console counts from the oldest submission indexed as it was stored on and says so. Tests: `citations.test.ts`, `maintenance-citations.test.ts`.
+
+## Temporary phase-2 personal-ground guard
+
+Before result admission (including an automatic fact-only result), `personalGroundProblem` refuses personal-space `tree:`
+and `src:` grounds with `SPACE_RESULT_GROUNDS_PRIVATE`. It also checks frozen input captures, before an idempotent receipt
+can be reused, and does not charge a model repair round. Source classification respects an independently authorized capture;
+a private duplicate cannot change it. Raw submissions still follow W07; refusal does not publish an accepted result.
+This guard is explicitly temporary: decision 84 phase 3 replaces it with complete checks against all actual result readers.

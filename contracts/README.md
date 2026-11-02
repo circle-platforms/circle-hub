@@ -67,6 +67,13 @@ The six tools stay unchanged: `upload_file` accepts a personal entry or a privat
 and standalone full-text search. Four protocol mirrors and release manifests advance to html-format/mindmap-format 1.0.4
 and xml-format/workbook-format 1.0.5, with no business-code changes. Tests read versions through `repositorySkillVersion`.
 
+The phase-2 security review (Claude, requested by the owner on 2026-11-02) sets model 18. It registers
+`SPACE_RESULT_GROUNDS_PRIVATE` as the temporary admission guard until phase 3 checks all actual readers,
+`SPACE_CONTENT_UNINSPECTABLE` for originals that cannot be completely scanned, and `SPACE_INDEX_LIMIT` for bounded search
+projections. A team space version may have `by: null` for Hub directory registration; a personal version must still name
+its owner. The four generated skill protocol mirrors advance with their manifests to html-format/mindmap-format 1.0.5
+and xml-format/workbook-format 1.0.6; business code is unchanged.
+
 ## Editing `contracts/codes.json`
 
 One entry per core interpreter result: `{ "code": "core.<interpreter>.<name>", "interpreter": "<interpreter>", "when": "…", "fix": "…" }`.

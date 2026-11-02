@@ -231,11 +231,24 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   CREATE TABLE knowledge_space_search_ready (
     version text NOT NULL REFERENCES records(digest), path text NOT NULL, row_count integer NOT NULL, PRIMARY KEY(version,path)
   );` },
+  { version: 10, name: 'knowledge_search_documents', sql: `CREATE TABLE knowledge_space_search_documents (
+    record text PRIMARY KEY REFERENCES records(digest), tokens text[] NOT NULL,
+    token_bytes bigint NOT NULL CHECK(token_bytes>=0)
+  );
+  INSERT INTO knowledge_space_search_documents(record,tokens,token_bytes)
+    SELECT DISTINCT ON (record) record,tokens,64+COALESCE((SELECT sum(octet_length(token)+4) FROM unnest(tokens) token),0)
+    FROM knowledge_space_search ORDER BY record;
+  CREATE INDEX knowledge_space_search_documents_tokens ON knowledge_space_search_documents USING GIN(tokens);
+  ALTER TABLE knowledge_space_search DROP COLUMN tokens;
+  ALTER TABLE knowledge_space_search ADD CONSTRAINT knowledge_space_search_document
+    FOREIGN KEY(record) REFERENCES knowledge_space_search_documents(record);
+  CREATE INDEX knowledge_space_search_document_space ON knowledge_space_search(space,record);` },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   knowledge_space_search: 'SELECT, INSERT',
+  knowledge_space_search_documents: 'SELECT, INSERT',
   knowledge_space_search_ready: 'SELECT, INSERT',
   schema_migrations: 'SELECT',
   records: 'SELECT, INSERT',

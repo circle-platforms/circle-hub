@@ -124,8 +124,16 @@
       }
     },
     "by": {
-      "type": "string",
-      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "null only for Hub-maintained team directory snapshots"
     },
     "at": {
       "type": "string",

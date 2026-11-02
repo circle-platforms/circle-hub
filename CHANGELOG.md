@@ -14,6 +14,9 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Knowledge-space security review: preserve independent source captures, restrict run quotation lookup to declared inputs, hide personal audit history and citation counts from grantees, inspect shared-path imports, and register team directories as Hub actions. A temporary registered refusal prevents personal grounds from entering shared results until decision 84 phase 3.
+- Search migration 10 stores one bounded token document per immutable entry record and lightweight version references. Reads bypass write queues, and imports check the complete next snapshot before saving original bytes. Model 18 and four protocol-only skill patch releases accompany these changes.
+
 - **Console knowledge spaces** — personal/team/shared columns, owner entry and private-file forms, directory grants, current verification state, history-selected diffs and four-scope search. Team administrators import team knowledge and adjust personal quotas; password sessions, CSRF and current path authorization guard every operation.
 - **Hub knowledge spaces** — decision 86 implements decision 84 phase 2 with model 17: personal/team CAS trees, immutable history, verified or unverified entries, directory grants/revocations, private originals and administrator-adjustable 1 GiB personal capacity. Existing product trees mount into team knowledge without data migration or hash changes.
 - **Scoped knowledge reads** — the existing six tools add caller-authored personal entries, private imports and GIN bigram search outside runs. Runs freeze the initiator/team snapshots; old references recheck current grants and personal citation counts remain separate from team counts. Skill protocol mirrors/manifests advance html-format/mindmap-format to 1.0.4 and xml-format/workbook-format to 1.0.5 without parser changes.

@@ -1186,3 +1186,15 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 ## Space source authority after the security review
 
 `spaces.source` preserves independently authorized captures before adding a space grant. Private upload captures remain subject to their frozen space unless explicitly bound as run inputs; importing equal bytes does not revoke or enlarge an earlier capture. `spaceSource` checks only space authority and is used for exact-reference scope exceptions. Runtime text matching enumerates declared run inputs, never every original in a frozen space.
+
+## Phase-2 security review
+
+Space history is owner-only (team history remains readable); grants cover content, not audit timing or reasons. Team product
+snapshots use `by: null` for Hub registration and the console uses the generated Hub host label. Ordinary manual imports
+retain the actual administrator. Shared-directory imports run the same full byte scan as grants; uninspectable ZIP/PDF/image
+originals return `SPACE_CONTENT_UNINSPECTABLE` and stay private if imported outside shared paths.
+
+Search tokens are stored once per immutable entry record, with bounded per-document and per-space history totals (records
+README). `ensure` returns current versions directly; initialization and mount refresh use the space lock without joining
+production or space write queues. Space mutations have their own write queue. Import calculates the full prospective version
+before saving bytes; file registration and the version share a transaction. See the eight review cases in `kw-spaces.md`.

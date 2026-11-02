@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writePack } from '../../hub/runs/api.ts';
-import { reviewPack, REVIEW_PACK } from '../../hub/server/assemble/test-packs.ts';
+import { reviewPack, REVIEW_PACK, locatePack, LOCATE_PACK } from '../../hub/server/assemble/test-packs.ts';
 import { openConsole } from './support/console.ts';
 import { createTestHub, type TestHub } from '../../hub/server/testing-real.ts';
 import { connect, type McpClient, type Answer, type Outputs } from './support/mcp.ts';
@@ -16,7 +16,8 @@ let client: McpClient, outsider: McpClient, admin: McpClient;
 before(async () => {
   packDirectory = await mkdtemp(join(tmpdir(), 'knowledge-spaces-packs-'));
   const pack = await writePack(join(packDirectory, 'review'), reviewPack());
-  hub = await createTestHub({ repositoryPacks: false, packs: [pack.dir], limits: { maxUploadBytes: 256 * 1024 }, stubs: false, mindmapSkill: true, workbookSkill: false, xmlSkill: false, htmlSkill: false });
+  const locate=await writePack(join(packDirectory,'locate'),locatePack());
+  hub = await createTestHub({ repositoryPacks: false, packs: [pack.dir,locate.dir], limits: { maxUploadBytes: 256 * 1024 }, stubs: false, mindmapSkill: true, workbookSkill: false, xmlSkill: false, htmlSkill: false });
   owner = await hub.createUser('合成空间成员');
   other = await hub.createUser('合成空间读者');
   client = await connect(hub, owner.token);
@@ -97,7 +98,17 @@ test('run space locks survive later writes and administrator reads remain limite
   const beforeCopy=await client.call('get_nodes',{run:run.run,reference:independent});
   assert.equal(beforeCopy.isError,false,beforeCopy.text);
   const scopedBefore=await client.call('resolve_reference',{run:run.run,text:independent});
+  const functionBytes=Buffer.from('{"synthetic":"function-only-source"}');
+  const functionSource=await hub.records.artifacts.ingest({bytes:functionBytes,mediaType:'application/json',origin:{read:{object:'synthetic:document:function-only'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:false},readTier:'function_bytes_only'});
+  const functionReference='src:'+functionSource.body.sha256+'/json@1/p/synthetic';
+  const functionBefore=await client.call('get_nodes',{reference:functionReference,run:run.run});
+  assert.equal(functionBefore.isError,false,functionBefore.text);
+  assert.equal(functionBefore.out.content?.readable,false);
+  assert.ok(functionBefore.out.content?.structure,'the function-only structure summary remains available');
   await spaces.importFile(other.principal,Buffer.from(independentText),'text/plain','unrelated-private-copy.txt');
+  await spaces.importFile(other.principal,functionBytes,'application/json','function-copy.json');
+  const functionAfter=await client.call('get_nodes',{reference:functionReference,run:run.run});
+  assert.deepEqual(functionAfter.out.content,functionBefore.out.content);
   const afterCopy=await client.call('get_nodes',{run:run.run,reference:independent});
   assert.equal(afterCopy.isError,false,afterCopy.text);
   assert.equal(afterCopy.out.content?.text,beforeCopy.out.content?.text,'another personal copy cannot change the source read');
@@ -121,6 +132,12 @@ test('run space locks survive later writes and administrator reads remain limite
   assert.equal((await client.call('resolve_reference', { run: run.run, text: later.reference })).out.resolution, 'unresolved');
   const frozenSource = (await spaces.sources(owner.principal))[0];
   assert.ok(frozenSource);
+  for(const ground of [locked.reference,'src:'+frozenSource.sha256]){
+    const refused=await client.call('submit_result',{run:run.run,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',statement:'合成个人依据不得进入共享结果',grounds:[ground]}]});
+    assert.equal(refused.out.errors[0]?.code,'SPACE_RESULT_GROUNDS_PRIVATE',refused.text);
+    assert.equal(refused.out.acceptance,'not_accepted');
+  }
+  assert.equal((await hub.hub.runs.getRun(hub.admin.principal,run.run))?.latest,null);
   assert.equal((await client.call('resolve_reference', { run: run.run, text: 'src:' + frozenSource.sha256 })).out.resolution, 'resolved');
   const laterSource = await spaces.importFile(owner.principal, Buffer.from('合成任务启动之后的来源'), 'text/plain', 'later.txt');
   assert.equal((await client.call('get_nodes', { run: run.run, reference: 'src:' + laterSource.body.sha256 })).isError, true);
@@ -250,4 +267,35 @@ test('console original imports remain private and version comparison selects his
   assert.equal((await adminConsole.get('/console/knowledge/space-diff?' + new URLSearchParams({ from: previous.root, to: current.root }))).status, 404);
   const tooLarge = await ownConsole.post('/console/knowledge/do/entry', { csrf: nonce, kind: 'observation', statement: 'x'.repeat(1024 * 1024 + 1) });
   assert.equal(tooLarge.status, 413);
+});
+
+test('space ensure, search and starting another run do not wait behind an unrelated space index write',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,index=hub.records.spaceIndex!;
+  await spaces.ensure(other.principal);await spaces.ensure(other.principal,'team');await hub.assignPack(other.principal,REVIEW_PACK);
+  let release!:()=>void,entered!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),waiting=new Promise<void>(resolve=>{entered=resolve;});
+  const original=index.add.bind(index);let blocked=false;
+  index.add=async(version,rows,tx)=>{if(!blocked&&rows.some(row=>row.space===owner.user.id)){blocked=true;entered();await gate;}return original(version,rows,tx);};
+  const write=spaces.write(owner.principal,{kind:'observation',statement:'合成索引等待',path:'/review-queue'});
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try{
+    await waiting;
+    const reads=(async()=>{
+      assert.ok(await spaces.ensure(other.principal));
+      await spaces.search(other.principal,'合成','personal');
+      const map={root:{data:{id:'r1',text:'合成输入'},children:[{data:{id:'c1',text:'合成用例',resource:['合成功能']},children:[]}]},template:'default',theme:'fresh-blue',version:'1.4.43'};
+      const upload=await outsider.upload(Buffer.from(JSON.stringify(map)),'synthetic-map.json','application/json');
+      const started=await outsider.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:upload}}});assert.equal(started.isError,false,started.text);
+    })();
+    await Promise.race([reads,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('read paths queued behind an unrelated write')),5000);})]);
+  }finally{if(timer)clearTimeout(timer);release();await write;index.add=original;}
+});
+
+test('fact-only runs cannot publish automatic results derived from a personal-space original during phase 2',async()=>{
+  await hub.assignPack(owner.principal,LOCATE_PACK);
+  const map={root:{data:{id:'r1',text:'合成个人输入'},children:[{data:{id:'c1',text:'合成个人用例',resource:['合成功能']},children:[]}]},template:'default',theme:'fresh-blue',version:'1.4.43'};
+  const source=await hub.hub.knowledge.spaces!.importFile(owner.principal,Buffer.from(JSON.stringify(map)),'application/json','personal-map.json');
+  const refused=await client.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'src:'+source.body.sha256}}});
+  assert.equal(refused.out.errors[0]?.code,'SPACE_RESULT_GROUNDS_PRIVATE',refused.text);
+  assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
 });

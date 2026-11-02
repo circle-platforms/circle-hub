@@ -112,6 +112,7 @@ test('team product mounts preserve legacy hashes and read permissions while shar
   await w.knowledge.moveRoot(w.product.product.id, '1.2', null, produced.root, produced.action, { by: w.admin });
   const spaces = w.knowledge.spaces!;
   const team = await spaces.ensure(w.user, 'team');
+  assert.equal(team.body.by,null,'the Hub registers product mounts without attributing a member read as a write');
   const mount = team.body.products.find(p => p.root === produced.root);
   assert.ok(mount);
   assert.equal(mount.path, pathOf(['产品', w.product.product.id, '1.2']));

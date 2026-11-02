@@ -33,9 +33,9 @@ export const SpaceVersionBody = z.strictObject({
   sources: z.array(Sha256).max(10000).default([]),
   products: z.array(z.strictObject({ product: z.string(), line: z.string().nullable(), path: TreePath, root: Sha256 })).max(10000).default([]),
   directories: z.array(TreePath).max(10000), entries: z.array(SpaceRow).max(10000),
-  by: UserId, at: IsoTime, reason: z.string().min(1).max(1000),
+  by: UserId.nullable().describe("null only for Hub-maintained team directory snapshots"), at: IsoTime, reason: z.string().min(1).max(1000),
   used_bytes: z.number().int().nonnegative(),
-});
+}).refine(row=>row.space==='team'||row.by!==null,'personal versions name their owner');
 export type SpaceVersionBody = z.infer<typeof SpaceVersionBody>;
 export const SpaceGrantBody = z.strictObject({
   space: UserId, path: TreePath, audience: KnowledgeGranteeSchema, member: UserId.nullable(),

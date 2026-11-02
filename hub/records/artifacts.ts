@@ -39,6 +39,7 @@ import type {
   SourceArtifact,
   SourceArtifactBody,
   Visibility,
+  Transaction,
 } from './api.ts';
 import { validNote } from './authorizations.ts';
 import { RECORD_SCHEMAS, WHOLE_HUB, artifactShareKey, scanAcceptanceKey } from './constants.ts';
@@ -224,14 +225,15 @@ export class RecordArtifacts implements Artifacts {
     this.#options = options;
   }
 
-  ingest(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, false); }
+  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> { return this.#ingest(input, false,tx); }
 
   ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, true); }
 
-  async #ingest(input: IngestInput, consume: boolean): Promise<SourceArtifact> {
+  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
+    if(outer&&!('upload' in origin))throw new TypeError('transactional ingestion requires an upload');
     const author = validAuthor(input.author);
     if (!isProvenanceType(input.provenanceType)) throw new TypeError('unknown provenance type');
     const requestedTier = input.readTier ?? MODEL_READABLE;
@@ -258,7 +260,7 @@ export class RecordArtifacts implements Artifacts {
     let assessment = prepared?.assess(bytes);
     let scan = assessment?.scan ?? this.#scan(bytes);
     const hit = scan.findings.length > 0;
-    if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan});
+    if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan},outer);
     if (hit && coverage === undefined && input.derivedSources !== undefined && fromHub(origin,author)) {
       coverage = await this.prepareDerived({origin,author,derivedSources:input.derivedSources});
       prepared = this.#coverage.get(coverage)!;
@@ -317,7 +319,7 @@ export class RecordArtifacts implements Artifacts {
       ...('read' in origin ? [{ key: 'artifact.object', value: origin.read.object }] : []),
       ...(author.user === null ? [] : [{ key: 'artifact.author', value: author.user }]),
     ]);
-    await this.#objects.put(bytes, input.mediaType);
+    await this.#objects.put(bytes, input.mediaType,outer);
     return this.#store.withTransaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [INGEST_LOCK_SPACE, dedupe], tx);
       const existing = await this.#store.find<SourceArtifactBody>({ key: 'artifact.dedupe', value: dedupe, kind: 'source_artifact', limit: 1 }, tx);
@@ -326,7 +328,7 @@ export class RecordArtifacts implements Artifacts {
         { kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
         tx,
       );
-    });
+    },outer);
   }
 
   async records(sha256: string): Promise<SourceArtifact[]> {
@@ -646,7 +648,7 @@ export class RecordArtifacts implements Artifacts {
     author: ArtifactAuthor;
     run: string | null;
     scan: CredentialScan;
-  }): Promise<never> {
+  },tx?:Transaction): Promise<never> {
     const at = this.#options.now().toISOString();
     const upload = 'upload' in refused.origin ? refused.origin.upload : null;
     const body: ActionBody = {
@@ -681,7 +683,7 @@ export class RecordArtifacts implements Artifacts {
         ...(refused.author.user === null ? [] : [{ key: 'action.user', value: refused.author.user }]),
         ...(refused.run === null ? [] : [{ key: 'action.run', value: refused.run }]),
       ],
-    });
+    },tx);
     const places = refused.scan.findings
       .slice(0, 5)
       .map((finding) => `第 ${finding.line} 行第 ${finding.column} 列（${finding.detector}）`)

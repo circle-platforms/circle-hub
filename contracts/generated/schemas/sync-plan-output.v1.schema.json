@@ -153,7 +153,10 @@
               "SPACE_ENTRY_INVALID",
               "SPACE_CREDENTIALS_DETECTED",
               "SPACE_SEARCH_IN_RUN",
-              "SPACE_VERSION_CONFLICT"
+              "SPACE_VERSION_CONFLICT",
+              "SPACE_RESULT_GROUNDS_PRIVATE",
+              "SPACE_CONTENT_UNINSPECTABLE",
+              "SPACE_INDEX_LIMIT"
             ]
           },
           "fix": {

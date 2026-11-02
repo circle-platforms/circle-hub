@@ -71,6 +71,8 @@
 5. **控制台**：知识库新增个人、团队、共享给我的三栏，空间目录与详情、手动添加、原文导入、版本历史与差异、本人授权管理；全站搜索增加四种知识范围。管理员原导入改称导入团队知识；个人导入不生成条目，显示原文引用供 Circle 起草。界面种类、状态与范围使用生成标签，说明放标题悬停；显示备份中存在个人内容的事实。现有产品浏览和来源管理继续保留在团队区域。
 6. **提交与验证**：按相互依赖的合约／迁移／知识服务／MCP 与运行核心、控制台与跨包验收、文档收尾分步签署本机提交。各步跑类型检查与受影响测试；迁移检查包含冻结升级回放，权限及 MCP 变动跑新增跨包空间验收以及现有读取权限、控制台安全、知识同步、旧引用、重启／并发相关受影响场景。一次只运行一个重套件；如环境缺少隔离能力如实列出跳过，不追加全量回归、任意来源 SHA 检查或阶段 3 行为。
 
+7. **安全审查修复**：按所有者 2026-11-02 的优先级调整，在变基后的 `8155532` 上修复本页八项审查意见。模型 18 登记阶段性个人依据拒收、原文无法检查与索引超限代码；团队目录以空账户署名表示 Hub 登记。迁移 10 只整理可重建的索引，保留既有记录、根及迁移 SQL。第三阶段改动先 stash，第二阶段修复报告后再变基继续；第三阶段必须用全部实际读者检查替代临时防护。
+
 ## 发现
 
 - 已按协调者补充变基到 `workflow-rename-local` 的 `36d691d`（含动态技能版本读取和生成 `PackKind` 修正）。测试中的仓库技能版本用 `repositorySkillVersion`，不固定发布版本。
@@ -80,9 +82,15 @@
 
 ## 做了的
 
+- 安全审查第 2 项：在复用旧回执之前检查个人 `tree:` 与 `src:` 依据，包含运行冻结的原件采集；使用注册的 `SPACE_RESULT_GROUNDS_PRIVATE` 拒收，不增加模型修复轮数。仅事实工作流的自动结果也在存运行和共享结果前检查；第三阶段将替换此临时规则。
+- 安全审查第 4 项：追加迁移 10，词项按不可变条目记录保存一次，版本只留引用关系，未变条目不重新读取或分词。单条索引上限 1 MiB、每个空间历史索引上限 64 MiB，按词项逻辑字节计量，不冒充 PostgreSQL 磁盘占用。`ensure` 与搜索／启动运行的读取不排在生产或空间写队列后。导入按完整下一版本预查容量，再用同一连接登记文件、来源和版本；容量不足时不落原文。
+- 安全审查第 7 项：向已授权目录导入原文时做与授权相同的完整字节检查；凭据命中拒收，无法检查的 ZIP、PDF、图片使用 `SPACE_CONTENT_UNINSPECTABLE`。这类文件仍可导入未授权的个人目录，随后授权也会被拒收。
+- 安全审查第 8 项：团队空间的初始化和产品目录登记由 Hub 署名（`by: null`，页面取生成的 Hub 用语），不署为触发读取的成员；普通管理员导入仍记录实际管理员。合约禁止个人版本使用空账户署名。
+- 本轮模型升为 18，四个技能只同步生成协议与清单，html-format／mindmap-format 1.0.5、xml-format／workbook-format 1.0.6，业务代码不变。下方较早的实现提交号是变基前记录，本轮基线为 `8155532`。
+
 - 安全审查第 5、6 项：个人版本历史仅本人可列出，目录或整个空间的只读授权都不包含审计历史；页面据实说明。个人节点统计在 HTML 和 JSON 共用入口核对所有者，只有本人得到节点及条目的引用计数，且计数使用所属个人空间的索引。
 
-- 安全审查第 1、3 项：来源读取先保留独立采集的原有权限，空间来源仅补充；空间范围核对与普通来源读取分开，私有副本不改变既有来源或运行范围。运行内文本解析只在声明的输入中查找，不把整个冻结空间的原文列为候选。
+- 安全审查第 1、3 项：来源读取先保留独立采集的原有权限，空间来源仅补充；空间范围核对与普通来源读取分开，私有副本不改变既有来源、原有读取档位的结构摘要或运行范围。运行内文本解析只在声明的输入中查找，不把整个冻结空间的原文列为候选。
 
 - 已完成模型 17 与五个显示／授权轴、五种空间记录、共用条目和目录对象格式、六工具参数扩展；同步四个技能生成镜像和补丁发布清单，业务代码未改。
 - 已追加迁移 9 与可重建的 GIN 双字索引，实现个人／团队目录、来源与引文核验、状态、替代／撤回、历史差异、按目录授权与收回、容量、现有产品指针挂载。
@@ -92,6 +100,16 @@
 - 表单写入统一沿用密码会话、首次改密、同源与 CSRF 检查；管理员无法读取未授权的个人原文或条目，成员不能伪造他人空间写入或额度调整。
 
 ## 验证
+
+安全审查收尾（2026-11-02；按分组记录，不累加重复执行的测试）：
+
+- `npm run typecheck`、`npm run verify:contracts` 通过；`npm run test:docs` 287 项通过，0 跳过；系统署名新增合约检查连同 `contracts/src/spaces.test.ts` 共 3 项通过。
+- 存储与空间组：`hub/records/{space-index,migrations.snapshot,roles}.test.ts`、`hub/knowledge/{spaces,spaces-review,operation-records-upgrade}.test.ts`、`tests/acceptance/46-knowledge-spaces.test.ts`，27 项通过，0 跳过。覆盖迁移 8→10 与 9→10、冻结旧运行／回执回放、索引去重和两级超限、五次空目录写入不重读词项、容量预拒收不留原文、HTML／JSON 历史与计数边界、私有副本反事实、运行内文本范围、无关索引写入等待时读取／检索／新运行仍完成、自动事实结果的阶段性防护。
+- 相关包组：合约 `{model-w04-w10-v07,vocab-axes,spaces,tools,tool-shapes,run-history}`；存储 `{objects,artifacts,space-index,migrations.snapshot,roles}`；知识 `{spaces,spaces-review,operation-records-upgrade}`；运行 `{start,submit,exact-retry,scope-retry,citations}`；控制台／MCP `{mcp,text,readers-sharing,console-api,console-knowledge,console-password}`（各文件均为 `.test.ts`），`node --test --test-concurrency=1`，278 项通过，0 跳过。
+- 受影响跨包验收：`node --test --test-concurrency=1 tests/acceptance/{06-user-without-pack,12-console-security,13-idempotence,14-knowledge-sync,15-aliasing-end-to-end,17-hub-restart,19-concurrency,30-shared-results,33-r5-t1t3-knowledge-qa,39-r5-t9-2-skill-packs,46-knowledge-spaces}.test.ts`，32 项通过，0 跳过；覆盖仅函数读取来源的结构摘要在导入私有副本前后保持一致，以及旧技能锁与普通结果分享。
+- 最后复查：类型、生成物及 287 项文档再次通过；`contracts/src/spaces.test.ts`、`hub/server/readers-sharing.test.ts`、`hub/runs/engine/exact-retry.test.ts` 共 9 项通过，0 跳过。
+- 审查修复仅运行定向测试；没有运行全量单元／验收、Linux 隔离作业、备份／恢复／部署、`verify:references`／`test:references`，这些没有计为通过。没有新增 SHA 数据校验；只随新增迁移更新既有迁移源文件冻结断言。
+
 
 历史与计数权限：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/runs/engine/citations.test.ts hub/server/console-api.test.ts tests/acceptance/46-knowledge-spaces.test.ts` 17 项通过，0 跳过。覆盖目录／整空间授权不显示历史、本人引用计数为 1、被授权者的 HTML 不含计数且 JSON 不返回数值。
 

@@ -135,6 +135,18 @@ export const PROTOCOL_CODES = {
   "SPACE_VERSION_CONFLICT": {
     "when": "知识版本已改变",
     "fix": "刷新当前知识版本后重新提交"
+  },
+  "SPACE_RESULT_GROUNDS_PRIVATE": {
+    "when": "当前阶段不受理以个人空间条目或原文为依据的运行结果",
+    "fix": "先使用对全部结果读者可读的团队依据；个人依据的完整读者核对在第三阶段开放"
+  },
+  "SPACE_CONTENT_UNINSPECTABLE": {
+    "when": "来源不是可完整检查的文本，当前不能开放给其他账户",
+    "fix": "改用可完整检查的文本原文；ZIP、PDF、图片等文件仍可仅保存在个人空间"
+  },
+  "SPACE_INDEX_LIMIT": {
+    "when": "知识搜索索引达到单条内容或空间的大小上限",
+    "fix": "缩小条目的陈述与结构化数据；空间历史索引达到上限时联系管理员"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

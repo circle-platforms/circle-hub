@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
 import { KnowledgeEntryStatusSchema, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { canonicalize, sha256Hex, scanForCredentials, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page } from '../records/api.ts';
+import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
-import type { KnowledgeContext } from './context.ts';
+import { WriteQueue, type KnowledgeContext } from './context.ts';
 import type { SpaceSearchRow } from '../records/api.ts';
 import { normaliseStatement } from './digest.ts';
 import { levelOfHeight, KnowledgeEntryBody } from '../../contracts/src/knowledge.ts';
@@ -57,6 +57,7 @@ type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise
 } | null>;
 export class KnowledgeSpaces {
   #ctx: KnowledgeContext;
+  #writes=new WriteQueue();
   #legacy: TreeReader;
   #mounts: () => Promise<SpaceVersionBody['products']>;
   #legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null>;
@@ -94,7 +95,7 @@ export class KnowledgeSpaces {
     const record = await this.#ctx.records.store.get(root);
     return record?.kind === 'knowledge_space_version' ? { root, body: SpaceVersionBody.parse(record.body) } : null;
   }
-  async #tree(directories: string[], entries: SpaceRow[], products: SpaceVersionBody['products']): Promise<string> {
+  async #tree(directories: string[], entries: SpaceRow[], products: SpaceVersionBody['products'],tx?:Transaction): Promise<string> {
     const build = async (path: string): Promise<string> => {
       const mount = products.find(p => p.path === path);
       if (mount)
@@ -105,39 +106,41 @@ export class KnowledgeSpaces {
       for (const name of names)
         children.push({ name, digest: await build(pathOf([...segments, name])) });
       const node = { name: segments.at(-1) ?? '', children, entries: entries.filter(r => r.path === path && active(r)).map(r => r.entry).sort() };
-      return (await this.#ctx.records.objects.put(Buffer.from(canonicalize(node)), 'application/json')).sha256;
+      return (await this.#ctx.records.objects.put(Buffer.from(canonicalize(node)), 'application/json',tx)).sha256;
     };
     return build('/');
   }
-  async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? []): Promise<SpaceVersion> {
-    directories = [...directories, ...products.map(p => p.path)];
-    directories = [...new Set(['/', ...directories, ...entries.map(r => r.path)].flatMap(p => { const parts = pathSegments(p); return Array.from({ length: parts.length + 1 }, (_, n) => pathOf(parts.slice(0, n))); }))].sort();
-    const body = SpaceVersionBody.parse({ space, sources, products, parent: previous?.root ?? null, entries, directories, tree: await this.#tree(directories, entries, products), by: by.id, at: this.#ctx.now().toISOString(), reason, used_bytes: previous?.body.used_bytes ?? 0 });
-    const delta = previous === null && entries.length === 0 && directories.length === 1 ? 0 : Buffer.byteLength(canonicalize(body)) + bytes;
-    body.used_bytes += delta;
-    if (space !== 'team' && body.used_bytes > await this.capacity(space, tx))
-      fail('SPACE_CAPACITY_EXCEEDED');
-    const record = await this.#ctx.records.store.put({ kind: 'knowledge_space_version', schema: 'knowledge-space-version@1', provenance: 'projected', body, index: [{ key: VERSION_KEY, value: space }] }, tx);
-    const version = { root: record.digest, body };
-    await this.#index(version, tx);
-    return version;
+  #draft(space:string,previous:SpaceVersion|null,entries:SpaceRow[],directories:string[],by:Principal|null,reason:string,bytes:number,sources=previous?.body.sources??[],products=previous?.body.products??[]):SpaceVersionBody{
+    directories=[...directories,...products.map(p=>p.path)];
+    directories=[...new Set(['/',...directories,...entries.map(r=>r.path)].flatMap(p=>{const parts=pathSegments(p);return Array.from({length:parts.length+1},(_,n)=>pathOf(parts.slice(0,n)));}))].sort();
+    const body=SpaceVersionBody.parse({space,sources,products,parent:previous?.root??null,entries,directories,tree:'0'.repeat(64),by:by?.id??null,at:this.#ctx.now().toISOString(),reason,used_bytes:previous?.body.used_bytes??0});
+    const delta=previous===null&&entries.length===0&&directories.length===1?0:Buffer.byteLength(canonicalize(body))+bytes;
+    body.used_bytes+=delta;return body;
+  }
+  async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? []): Promise<SpaceVersion> {
+    const body=this.#draft(space,previous,entries,directories,by,reason,bytes,sources,products);
+    if(space!=='team'&&body.used_bytes>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
+    body.tree=await this.#tree(body.directories,entries,products,tx);
+    const record=await this.#ctx.records.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body,index:[{key:VERSION_KEY,value:space}]},tx);
+    const version={root:record.digest,body};await this.#index(version,tx);return version;
   }
   async ensure(by: Principal, space: string = by.id): Promise<SpaceVersion> {
     by = await this.#user(by);
     SpaceId.parse(space);
     if (space !== 'team' && space !== by.id)
       fail('SOURCE_UNAVAILABLE');
-    return this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    const current=await this.current(space);const products=space==='team'?await this.#mounts():[];
+    if(current&&(space!=='team'||canonicalize(products)===canonicalize(current.body.products)))return current;
+    return this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       if (space === 'team') {
-        const products = await this.#mounts();
         if (previous && canonicalize(products) === canonicalize(previous.body.products))
           return previous;
-        return this.#save(space, previous, previous?.body.entries ?? [], previous?.body.directories.filter(p => !withinSpacePath(p, PRODUCTS_PATH)) ?? ['/'], by, previous ? '登记当前产品目录' : '建立团队知识空间', 0, tx, previous?.body.sources ?? [], products);
+        return this.#save(space, previous, previous?.body.entries ?? [], previous?.body.directories.filter(p => !withinSpacePath(p, PRODUCTS_PATH)) ?? ['/'], null, previous ? '登记当前产品目录' : '建立团队知识空间', 0, tx, previous?.body.sources ?? [], products);
       }
       return previous ?? this.#save(space, null, [], ['/'], by, '建立个人知识空间', 0, tx);
-    }));
+    });
   }
   async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: (await this.ensure(by)).root }; }
   async capacity(space: string, tx?: Transaction): Promise<number> {
@@ -149,7 +152,7 @@ export class KnowledgeSpaces {
     if (by.role !== 'admin' || !(await this.#ctx.records.principals.get(space)))
       fail('SOURCE_UNAVAILABLE');
     const body = SpaceQuotaBody.parse({ space, bytes, by: by.id, at: this.#ctx.now().toISOString() });
-    await this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
+    await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
   }
   async grants(by: Principal): Promise<SpaceGrantBody[]> {
     by = await this.#user(by);
@@ -211,7 +214,7 @@ export class KnowledgeSpaces {
     const body = SpaceGrantBody.parse({ space: by.id, path, audience: input.audience, member: input.member ?? null, action: input.revoke ? 'revoke' : 'grant', by: by.id, at: this.#ctx.now().toISOString() });
     if (body.member && !(await this.#ctx.records.principals.get(body.member)))
       fail('SOURCE_UNAVAILABLE');
-    await this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       const version = await this.current(by.id, tx);
       if (!input.revoke) {
@@ -253,6 +256,7 @@ export class KnowledgeSpaces {
     };
     visit(value);
   }
+  #inspectSource(bytes:Uint8Array){const scan=scanForCredentials(bytes);if(scan.findings.length)fail('SPACE_CREDENTIALS_DETECTED');if(!scan.inspected||scan.truncated)fail('SPACE_CONTENT_UNINSPECTABLE');}
   async #grantableGround(by: Principal, reference: string, seen = new Set<string>()): Promise<void> {
     if (seen.has(reference))
       fail('SPACE_ENTRY_INVALID');
@@ -260,12 +264,13 @@ export class KnowledgeSpaces {
     const ref = parseReference(reference);
     if (ref.scheme === 'src') {
       const artifact = await this.#ctx.records.artifacts.readable(by, ref.sha256);
+      if(artifact&&!artifact.body.scan.inspected)fail('SPACE_CONTENT_UNINSPECTABLE');
       if (!artifact || artifact.body.read_tier !== 'model_readable' || ('read' in artifact.body.origin && !artifact.body.visibility.admins))
         fail('SPACE_ENTRY_INVALID', '个人凭据读取的来源不可授权');
       const source = await this.#ctx.records.artifacts.source(by, ref.sha256);
       if (!source?.bytes)
         fail('SPACE_ENTRY_INVALID');
-      this.#scan(new TextDecoder().decode(source.bytes));
+      this.#inspectSource(source.bytes);
     }
     else if (ref.scheme === 'tree') {
       const version = await this.version(ref.root);
@@ -322,7 +327,7 @@ export class KnowledgeSpaces {
       if (verifyQuote(result, ground.quotation) !== true)
         fail('SPACE_ENTRY_INVALID', '依据不可读或引文与来源不一致');
     }
-    return this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       const grants = space === 'team' ? [] : this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY, by.id, 'knowledge_space_grant', tx));
@@ -362,7 +367,7 @@ export class KnowledgeSpaces {
       fail('SPACE_ENTRY_INVALID', '产品目录由产品知识来源维护');
     if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
       fail('SOURCE_UNAVAILABLE');
-    return this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       if (previous?.body.directories.includes(path))
@@ -374,7 +379,7 @@ export class KnowledgeSpaces {
     by = await this.#user(by);
     if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
       fail('SOURCE_UNAVAILABLE');
-    await this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       if (!previous)
@@ -466,18 +471,15 @@ export class KnowledgeSpaces {
     return { from, to, added: [...right.keys()].filter(p => !left.has(p)), removed: [...left.keys()].filter(p => !right.has(p)), modified: [...right.keys()].filter(p => left.has(p) && left.get(p) !== right.get(p)) };
   }
   async #index(version: SpaceVersion, tx?: Transaction) {
-    if (!this.#ctx.records.spaceIndex)
-      return;
-    if (await this.#ctx.records.spaceIndex.ready(version.root, '/', tx))
-      return;
-    const rows = [];
-    for (const row of version.body.entries.filter(active)) {
-      const body = await this.#entry(row, tx);
-      if (body)
-        rows.push({ space: version.body.space, path: row.path, entry: row.entry, record: row.record, text: canonicalize([body.content.statement, body.content.data, body.grounds.map(g => g.quotation)]) });
+    const index=this.#ctx.records.spaceIndex;if(!index||await index.ready(version.root,'/',tx))return;
+    const entries=version.body.entries.filter(active),missing=await index.missing(entries.map(row=>row.record),tx);
+    const rows=[];
+    for(const row of entries){const metadata={space:version.body.space,path:row.path,entry:row.entry,record:row.record};
+      if(!missing.has(row.record)){rows.push(metadata);continue;}
+      const body=await this.#entry(row,tx);if(body)rows.push({...metadata,text:canonicalize([body.content.statement,body.content.data,body.grounds.map(g=>g.quotation)])});
     }
-    await this.#ctx.records.spaceIndex.add(version.root, rows, tx);
-    await this.#ctx.records.spaceIndex.complete(version.root, '/', tx);
+    try{await index.add(version.root,rows,tx);await index.complete(version.root,'/',tx);}
+    catch(error){if(error instanceof RecordsError&&error.code==='SPACE_INDEX_LIMIT')fail('SPACE_INDEX_LIMIT');throw error;}
   }
   async search(by: Principal, text: string, scope: KnowledgeSearchScope = 'all', cursor: string | null = null, limit = 30) {
     if (!text.trim() || text.length > 200 || !Number.isInteger(limit) || limit < 1 || limit > 100)
@@ -704,15 +706,20 @@ export class KnowledgeSpaces {
     return records.map(r => SpaceSourceBody.parse(r.body)).filter(s => paths.some(p => withinSpacePath(s.path, p)));
   }
   async importFile(by: Principal, bytes: Uint8Array, mediaType: string, name: string | null, path = '/', session: string | null = null) {
+    bytes=Uint8Array.from(bytes);
     by = await this.#user(by);
     path = pathCheck(path);
     this.#scan({path,name});
-    return this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       const previous = await this.current(by.id, tx);
-      if ((previous?.body.used_bytes ?? 0) + bytes.byteLength + 8192 > await this.capacity(by.id, tx))
+      const planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)]);
+      if (planned.used_bytes > await this.capacity(by.id, tx))
         fail('SPACE_CAPACITY_EXCEEDED');
-      const artifact = await this.#ctx.records.artifacts.ingest({ bytes, mediaType, name, origin: { upload: { session, message: null } }, author: { user: by.id, declared: null }, provenanceType: 'declared', visibility: { readers: [by.id], admins: false, packs: [], shareable: false }, readTier: 'model_readable' });
+      if(previous)await this.#index(previous,tx);
+      const grants=this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY,by.id,'knowledge_space_grant',tx));
+      if(grants.some(grant=>withinSpacePath(path,grant.path)))this.#inspectSource(bytes);
+      const artifact = await this.#ctx.records.artifacts.ingest({ bytes, mediaType, name, origin: { upload: { session, message: null } }, author: { user: by.id, declared: null }, provenanceType: 'declared', visibility: { readers: [by.id], admins: false, packs: [], shareable: false }, readTier: 'model_readable' },tx);
       const body = SpaceSourceBody.parse({ space: by.id, path, sha256: artifact.body.sha256, artifact: artifact.digest, size: artifact.body.size, by: by.id, at: this.#ctx.now().toISOString() });
       const source = await this.#ctx.records.store.put({ kind: 'knowledge_space_source', schema: 'knowledge-space-source@1', provenance: 'declared', body, index: [{ key: SOURCE_KEY, value: by.id }, { key: 'knowledge.space.source_hash', value: body.sha256 }] }, tx);
       await this.#save(by.id, previous, previous?.body.entries ?? [], [...previous?.body.directories ?? [], path], by, '导入个人知识原文', body.size, tx, [...previous?.body.sources ?? [], source.digest]);
@@ -759,6 +766,14 @@ export class KnowledgeSpaces {
       return this.#ctx.records.artifacts.source(owner, sha256, { record: body.artifact, consumer });
     }
     return null;
+  }
+  async personalGround(by:Principal,reference:string,artifact?:string):Promise<boolean>{
+    let ref;try{ref=parseReference(reference);}catch{return false;}
+    if(ref.scheme==='tree'){const version=await this.version(ref.root);return !!version&&version.body.space!=='team'&&await this.mayRead(by,version.body.space,ref.path);}
+    if(ref.scheme!=='src')return false;
+    const source=artifact?null:await this.source(by,ref.sha256);if(!artifact&&!source)return false;
+    const records=await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({key:'knowledge.space.source_hash',values:[ref.sha256],kind:'knowledge_space_source'});
+    return records.some(record=>record.body.space!=='team'&&record.body.artifact===(artifact??source?.artifact.digest));
   }
   async hasSource(sha256: string): Promise<boolean> { return (await this.#ctx.records.store.find({ key: 'knowledge.space.source_hash', value: sha256, kind: 'knowledge_space_source', limit: 1 })).items.length > 0; }
   treeReader(): TreeReader {

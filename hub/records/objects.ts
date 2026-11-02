@@ -3,7 +3,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { link, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ObjectInfo, ObjectStore } from './api.ts';
+import type { ObjectInfo, ObjectStore, Transaction } from './api.ts';
 import { iso } from './db.ts';
 import type { Database } from './db.ts';
 import { isSha256, sha256Hex } from './digest.ts';
@@ -36,7 +36,7 @@ export class FileObjectStore implements ObjectStore {
     return join(this.root, sha256.slice(0, 2), sha256);
   }
 
-  async put(bytes: Uint8Array, mediaType: string): Promise<ObjectInfo & { created: boolean }> {
+  async put(bytes: Uint8Array, mediaType: string,tx?:Transaction): Promise<ObjectInfo & { created: boolean }> {
     if (!(bytes instanceof Uint8Array)) throw new TypeError('object bytes must be a Uint8Array');
     if (!isMediaType(mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(mediaType)}`);
     if (bytes.byteLength > this.#options.maxBytes) {
@@ -49,9 +49,9 @@ export class FileObjectStore implements ObjectStore {
     const result = await this.#db.query(
       `INSERT INTO objects (sha256, size, media_type, created_at) VALUES ($1, $2, $3, $4)
        ON CONFLICT (sha256) DO NOTHING`,
-      [sha256, bytes.byteLength, mediaType, this.#options.now().toISOString()],
+      [sha256, bytes.byteLength, mediaType, this.#options.now().toISOString()],tx,
     );
-    const info = await this.stat(sha256);
+    const info = await this.stat(sha256,tx);
     if (info === null) throw new IntegrityError('对象登记丢失', { detail: { sha256 } });
     if (info.size !== bytes.byteLength) throw new IntegrityError('对象登记的大小与字节不符', { detail: { sha256 } });
     return { ...info, created: created || result.rowCount === 1 };
@@ -74,9 +74,9 @@ export class FileObjectStore implements ObjectStore {
     return bytes;
   }
 
-  async stat(sha256: string): Promise<ObjectInfo | null> {
+  async stat(sha256: string,tx?:Transaction): Promise<ObjectInfo | null> {
     if (!isSha256(sha256)) return null;
-    const row = (await this.#db.query('SELECT sha256, size, media_type, created_at FROM objects WHERE sha256 = $1', [sha256])).rows[0];
+    const row = (await this.#db.query('SELECT sha256, size, media_type, created_at FROM objects WHERE sha256 = $1', [sha256],tx)).rows[0];
     if (row === undefined) return null;
     return { sha256: String(row.sha256), size: Number(row.size), media_type: String(row.media_type), created_at: iso(row.created_at) };
   }

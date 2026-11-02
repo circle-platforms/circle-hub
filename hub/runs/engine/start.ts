@@ -1,3 +1,4 @@
+import {personalGroundProblem} from './personal-grounds.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -672,6 +673,7 @@ async function startFresh(
   const runDigest = runRecordDigest(record, startedAt);
   const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user) : null;
   if (production !== null) {
+    const privateGround=await personalGroundProblem(ctx,user,production.evaluation.result,record.sources);if(privateGround)throw new Refusal([privateGround]);
     const resultTooLarge = tooLarge(ctx, production.evaluation.result, `这个被判对象的校验结果（${items.length} 个条目）`, subjectPath);
     if (resultTooLarge !== null) throw resultTooLarge;
   }

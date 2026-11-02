@@ -2,14 +2,22 @@
 
 ## Space search projection (decision 86)
 
-Migration 9 appends `knowledge_space_search` and its completion markers. The GIN array index stores normalized Unicode
-bigrams of text; each immutable version/path/entry row points to the authoritative entry record. The public `spaceIndex`
-API inserts derived rows, detects a missing projection by its recorded row count and searches only caller-supplied
-version/path scopes before pagination. `knowledge` supplies those scopes after authorization; this API grants no access.
-Runtime roles receive only SELECT and INSERT. The tables can be rebuilt from append-only records; history is never edited.
-Migrations 1–8 keep their SQL bytes. The pre-existing migration-source freeze assertion is refreshed for the append;
-no additional data SHA verification is introduced. A version-8 upgrade, GIN query, runtime-role permissions and frozen
-record replay are covered by targeted checks.
+Migration 9 adds the projection; migration 10 consolidates its token copies into `knowledge_space_search_documents`,
+keyed by the immutable entry record. `knowledge_space_search` retains only version/path/entry references. Unchanged versions
+reuse token documents without rereading or tokenizing entry bodies. Existing projection rows migrate without altering any
+record, root or reference. GIN lives on document tokens; scopes filter reference rows before paging. Completion counts detect
+missing references. Runtime grants remain SELECT and INSERT, including the new document table.
+
+New token documents have a 1 MiB limit; each space's distinct documents across history have a 64 MiB limit. These count
+UTF-8 token bytes plus 4 bytes per token and 64 per document, not measured PostgreSQL disk usage. Legacy token documents
+remain readable; an over-limit space refuses new projection writes with `SPACE_INDEX_LIMIT`. Metadata references are small
+and the corresponding version snapshots already count toward the knowledge history quota. Index admission is transactional.
+Search and `ensure` do not wait on the production or space write queues. Existing migrations retain their SQL bytes; only
+the pre-existing whole-source freeze assertion is refreshed. No new data SHA check is added.
+
+`objects.put/stat` accept the caller transaction; upload-only `artifacts.ingest` does too. Space import registers the object,
+artifact and version through the same connection after a complete snapshot capacity preflight, avoiding a nested pool wait.
+Objects remain immutable; no existing source bytes are deleted or rewritten.
 
 
 Decision 83, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.

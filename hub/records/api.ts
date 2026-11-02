@@ -276,13 +276,13 @@ export interface ObjectInfo {
 
 /** Content-addressed bytes under <data>/objects/ab/<sha256>: written atomically, verified on every read, never overwritten or deleted. */
 export interface ObjectStore {
-  put(bytes: Uint8Array, mediaType: string): Promise<ObjectInfo & { created: boolean }>;
+  put(bytes: Uint8Array, mediaType: string, tx?:Transaction): Promise<ObjectInfo & { created: boolean }>;
   /**
    * Null when absent. Throws IntegrityError when the stored bytes no longer hash to their name or when a registered object's
    * file is missing. No read-tier check: for trusted callers; readers go through Artifacts.source().
    */
   get(sha256: string): Promise<Uint8Array | null>;
-  stat(sha256: string): Promise<ObjectInfo | null>;
+  stat(sha256: string,tx?:Transaction): Promise<ObjectInfo | null>;
   has(sha256: string): Promise<boolean>;
 }
 
@@ -472,9 +472,9 @@ export interface Artifacts {
    * names direct acceptance (`scan.accepted`) or source/decision-only derived coverage (`scan.derived`).
    * Bytes the scanner cannot read as text are stored with `scan.inspected: false`. Repeating the same ingest (same bytes,
    * origin, author, visibility, tier, name, acceptance) returns the existing record. Every check runs before any byte is
-   * written.
+   * written. An optional transaction is supported for uploads, including object registration.
    */
-  ingest(input: IngestInput): Promise<SourceArtifact>;
+  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact>;
   /** Consumes whole transferable buffers by detaching every caller alias; other buffers are snapshotted. Do not reuse the input. */
   ingestTransferred(input: IngestInput): Promise<SourceArtifact>;
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */

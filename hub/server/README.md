@@ -953,3 +953,5 @@ Linux unavailable-memory path. Synthetic Mac/Linux test results remain separate 
 establish target-server, real-user or production-network behavior.
 
 个人知识的目录或整个空间授权不包含版本审计历史；本人可以列出历史，被授权者页面明确说明历史仅本人可见。个人引用统计同样只给本人，HTML 与 `/console/api/knowledge/node` 共用所有者检查和个人索引；授权读取内容不授予读取统计的权限。
+
+第二阶段安全修正：个人条目和原文可按当前授权读取，当前不受理将它们作为运行结果依据的提交；仅事实工作流的自动结果同样检查。拒收码为 `SPACE_RESULT_GROUNDS_PRIVATE`，第三阶段会用覆盖全部实际读者的规则替代。共享目录拒收无法完整检查的原文，使用 `SPACE_CONTENT_UNINSPECTABLE`，不误报为命中凭据。团队产品目录由 Hub 登记，版本记录不再署为随机读取成员。
