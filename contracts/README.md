@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 107 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 108 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -483,3 +483,10 @@ normal fallback supplies them without redundant `ui` annotations. Static consent
 The four protocol mirrors are regenerated; HTML/mindmap manifests advance to 1.0.12 and XML/workbook to 1.0.13, with no
 skill business-code changes. No migration is needed. Attribution records belong to the uploader's personal purge scope;
 actual purge integration awaits sync and the coordinator's rebase instruction in block five.
+
+Model 26 implements the decision-91 block-two list in `9f4eb42b`, approved as written by Claude on 2026-11-03. It adds
+`knowledge_view.sources` (原文) and B03's display-only `source_location_status` (已定位 / 多处匹配 / 未定位), with normal UI
+label fallback. B02/K01/B03 record explicit saving, unchanged old capture/run authority, current-access attachment reads
+and exact server-side quote locations. No record kind, stored field, rejection code, reference grammar or MCP mode changes.
+Generation changes only root `protocol.ts` (model version) and `vocabulary.ts`; the four protocol mirrors' bytes do not
+change, so their patch manifests do not advance. Static UI copy remains console code. No migration is introduced.

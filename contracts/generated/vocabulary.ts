@@ -98,7 +98,7 @@ export const AXES = {
   knowledge_share_status: { label: '提交共享状态', ui: '分享到团队状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
   audience_scope: { label: '可见范围', ui: '分享范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人', ui: '仅自己可见' }, { code: 'members', label: '本人及 {n} 名成员', ui: '已分享给 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）', ui: '已分享给全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）', ui: '已分享给 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）', ui: '全员可见' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
   share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析', ui: '来源可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目', ui: '引用私人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读', ui: '依赖的私人条目或技能可读' }] },
-  knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
+  knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }, { code: 'sources', label: '原文' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
   memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
   memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史', ui: '版本记录' }, { code: 'share', label: '提交共享', ui: '分享到团队' }, { code: 'share_preview', label: '记忆共享预检', ui: '分享到团队预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
@@ -110,6 +110,7 @@ export const AXES = {
   sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
   sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
   source_attribution_status: { label: '团队来源署名', owner: 'B02', values: [{ code: 'unsigned', label: '未署名' }, { code: 'attributed', label: '已署名为团队来源' }] },
+  source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1065,10 +1066,10 @@ export function isShareCheck(value: unknown): value is ShareCheck {
 }
 
 /** 知识库内容 (K01) */
-export const KNOWLEDGE_VIEW = ['knowledge', 'memory'] as const;
+export const KNOWLEDGE_VIEW = ['knowledge', 'memory', 'sources'] as const;
 export type KnowledgeView = (typeof KNOWLEDGE_VIEW)[number];
-export const KNOWLEDGE_VIEW_LABEL = { 'knowledge': '知识', 'memory': '记忆' } as const satisfies { readonly [K in KnowledgeView]: string };
-export const KNOWLEDGE_VIEW_UI = { 'knowledge': '知识', 'memory': '记忆' } as const satisfies { readonly [K in KnowledgeView]: string };
+export const KNOWLEDGE_VIEW_LABEL = { 'knowledge': '知识', 'memory': '记忆', 'sources': '原文' } as const satisfies { readonly [K in KnowledgeView]: string };
+export const KNOWLEDGE_VIEW_UI = { 'knowledge': '知识', 'memory': '记忆', 'sources': '原文' } as const satisfies { readonly [K in KnowledgeView]: string };
 export const KnowledgeViewSchema = z.enum(KNOWLEDGE_VIEW);
 export function isKnowledgeView(value: unknown): value is KnowledgeView {
   return (KNOWLEDGE_VIEW as readonly unknown[]).includes(value);
@@ -1184,6 +1185,16 @@ export function isSourceAttributionStatus(value: unknown): value is SourceAttrib
   return (SOURCE_ATTRIBUTION_STATUS as readonly unknown[]).includes(value);
 }
 
+/** 原文定位状态 (B03) */
+export const SOURCE_LOCATION_STATUS = ['resolved', 'ambiguous', 'unresolved'] as const;
+export type SourceLocationStatus = (typeof SOURCE_LOCATION_STATUS)[number];
+export const SOURCE_LOCATION_STATUS_LABEL = { 'resolved': '已定位', 'ambiguous': '多处匹配', 'unresolved': '未定位' } as const satisfies { readonly [K in SourceLocationStatus]: string };
+export const SOURCE_LOCATION_STATUS_UI = { 'resolved': '已定位', 'ambiguous': '多处匹配', 'unresolved': '未定位' } as const satisfies { readonly [K in SourceLocationStatus]: string };
+export const SourceLocationStatusSchema = z.enum(SOURCE_LOCATION_STATUS);
+export function isSourceLocationStatus(value: unknown): value is SourceLocationStatus {
+  return (SOURCE_LOCATION_STATUS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1292,6 +1303,7 @@ export interface AxisValues {
   sync_object_kind: SyncObjectKind;
   sync_field: SyncField;
   source_attribution_status: SourceAttributionStatus;
+  source_location_status: SourceLocationStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1402,6 +1414,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   sync_object_kind: SYNC_OBJECT_KIND_LABEL,
   sync_field: SYNC_FIELD_LABEL,
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
+  source_location_status: SOURCE_LOCATION_STATUS_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1512,6 +1525,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   sync_object_kind: SYNC_OBJECT_KIND_UI,
   sync_field: SYNC_FIELD_UI,
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
+  source_location_status: SOURCE_LOCATION_STATUS_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

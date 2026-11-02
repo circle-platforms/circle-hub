@@ -102,6 +102,7 @@
 - 写前预查与事务提交使用同一口径：保留现有条目、原文、空间版本和记忆历史的计费约束，单次上传上限、索引上限和记忆启用额度各自保留。超限整次拒收，不截断、不留下可读半份原件；提高上限后可按原规则重试。
 - 降到已用以下或设为 0 不删除既有数据，显示已超额度/剩余 0，拒收新增占用；旧数据仍按权限可读。提示给出实际已用、上限、剩余和本次所需，不能错误建议“撤回就释放历史容量”。可操作的下一步是联系管理员调整上限；需清除 Hub 副本的入口等同步落地后才接入。
 - 与同步合入后的统一空间计量对接，复核暂存、冲突头、知识/记忆/包清单和重复批次的计量与回滚，不另外维护一个同步计数器。本块不擅自重定义个人工作流可执行文件与同步清单的容量口径；若现有合约未覆盖，先列出差异交 Claude 确认，再改模型/计费，不静默排除或重复计量。
+- 第二块的回归已发现并修复首次在根目录保存原文被误当作空空间初始化的问题；本块另查旧版本 `used_bytes` 可能因此少计的历史状态与重建办法，不改写旧记录。
 
 验证：默认额度、管理员调整、非管理员拒绝、负数/溢出、0 和低于已用、刚好达到/超过、并发写入与调整、失败回滚、重复提交及提示不泄露他人数据；同步到位后补同步写入同口径和失败不残留。
 
@@ -242,9 +243,9 @@
 
 本次未新增功能、迁移或截图；42 张截图仍为第一块变基前的合成证据。本分支只作本地变基和提交，未推送，也未开始第二块或修改同步分支。
 
-### 第二块合约变更清单（待 Claude 批准，2026-11-03）
+### 第二块合约变更清单（Claude 已批准，2026-11-03）
 
-依据 Claude 的第二块任务指示，先列最小差异，批准前不改模型、合约或运行代码。现有 `source_artifact`、`knowledge_space_source`、空间版本与 `src:` 引用足以保存原件及精确采集；缺少的是原文浏览入口及定位状态的界面词表，不另建归档存储或来源分类登记表。
+本节为 `9f4eb42b` 的审查提案原文，Claude 在 2026-11-03 的任务消息中原样批准后才实施。现有 `source_artifact`、`knowledge_space_source`、空间版本与 `src:` 引用足以保存原件及精确采集；缺少的是原文浏览入口及定位状态的界面词表，不另建归档存储或来源分类登记表。
 
 #### A. 显示词表
 
@@ -282,3 +283,30 @@
 #### E. 审查前的合成复现
 
 在临时 loopback Hub/PostgreSQL 上，用现有私人导入和带逐字引文的条目复现：`/console/knowledge/sources` 返回 404；条目 SourceBlock 的打开链接只带字节摘要与精确采集，未携带条目/引文定位上下文。2 项断言通过，退出 0。未使用新枚举或未批准记录，未读取真实数据。执行 `node --test ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；`git diff --check` 通过。本步只改任务页，未运行类型或新的功能回归，尚未实现或验证第二块功能。
+
+### 第二块实现与验证（2026-11-03）
+
+依照 `9f4eb42b` 的批准范围实现，待 Claude 审查。本块未开始成员停用/删除或同步工作。
+
+- 模型 26 增加“原文”分段选项和原文定位显示轴，补充归档/读取规则。生成仅改变根 `protocol.ts` 的版本与 `vocabulary.ts`；四份技能协议镜像字节未变，因此补丁清单也不变。没有新增记录种类、字段、Schema、拒收码、引用格式、MCP 模式或 SQL 迁移。
+- `spaces.archive` 只投影已授权版本的精确原文登记，按范围/文件夹分页，选择能定位到所在页。列表、计数、元数据与游标核对当前授权；读取期间撤权则整页拒绝，不返回先前计算的私人计数。GET 不初始化空间、不保存原文，也不枚举全库摘要。
+- `archiveSource` 在空间锁/事务内显式保存：本人普通声明上传形成独立私人采集，当前原件和已冻结运行记录/声明保持不变；业务读取按现有私人/团队资格登记。请求在既有 `origin.upload.message` 中声明 `archive:<所选采集>` 的消息身份，用于区分同字节采集与幂等重试；服务端核对所选采集、本人、完整字节、元数据及目标登记，不把消息身份当权限或观察到的聊天会话。复制失败回滚，重复提交不增计量。新采集没有继承旧团队署名。
+- 私人凭据来源不能进入已分享文件夹或取得文件夹分享；来源登记的分享预检/确认改为固定各自采集，防止同字节团队副本借出资格。新回归还发现原 `#draft` 把“首次在根目录保存原文”误当空空间初始化，0 额度仍能写入；免费初始化现只适用于无条目、原文、产品挂载与新增字节的空根。旧记录不改写，历史少计/重建已列入第四块。
+- SourceBlock 从有权条目的原引文构造打开链接，只传精确采集、条目/依据索引，不把引文正文放进网址。服务器重核完整性、当前读权、读取档位及解析方式；异步等待后再查。全部逐字匹配按 32 项一组列出，多处不自动选择；单处及所选位置显示附近上下文，并可查看按 UTF-8 边界切分的完整页面。位置属于所展示的解码片段，不冒充原文件字节坐标；原字节、空白和引文本身不改。
+- 新“原文”页、选中 Inspector、原文导入、私人/团队保存 Dialog 使用共享组件；字段在 Dialog 正文，文件夹使用已有位置的选择框，显示可读名称而非根路径斜线；团队保存拒绝产品保留文件夹。按钮在底部，主操作最右。固定哈希脚本只聚焦/滚动服务器标出的引文；关闭脚本时原生锚点及 POST/303 仍可定位和保存。HTML 只显示转义文本。
+- 附件 GET 经现有会话与 Host/Origin 边界，重查精确采集、完整性、当前读取权与档位；使用 attachment、octet-stream、no-store、nosniff 和 sandbox CSP。无权与不存在返回同一中性页面；限制档位、损坏原件和撤权均不返回下载字节。
+
+实际检查均用现有 Node 24、临时 PostgreSQL/loopback Hub、合成账号/原文及隔离 Chrome，无安装依赖、真实业务读取或模型调用：
+
+- `node node_modules/typescript/bin/tsc --noEmit`：退出 0，无诊断；`node tools/gen-contracts.ts --check`：退出 0，156 个文件与模型一致。
+- `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts"`：381 通过，0 失败、0 跳过。
+- `node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`：1 通过，0 失败、0 跳过。
+- `node --test --test-concurrency=2 "hub/server/console/**/*.test.ts" "hub/server/console*.test.ts" hub/server/units.test.ts hub/server/readers-sharing.test.ts hub/server/contribution-readers.test.ts hub/knowledge/source-archive.test.ts hub/knowledge/source-attribution.test.ts hub/knowledge/sharing.test.ts hub/knowledge/spaces.test.ts "hub/refs/**/*.test.ts" tests/acceptance/12-console-security.test.ts tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/50-upload-attribution.test.ts tests/acceptance/51-source-archive.test.ts`：776 通过，0 失败、0 跳过，退出 0。随后新增渲染器最后一次元数据等待后的撤权检查、附件边界独立 SHA 检查及团队保留文件夹限制，定向执行 `node --test hub/server/console/source-archive.test.ts hub/knowledge/source-archive.test.ts tests/acceptance/51-source-archive.test.ts`：12 通过，0 失败、0 跳过，退出 0；其中条目/引文撤权即使不影响独立原文读权也仍拒读。
+- `CIRCLE_HUB_LIBPQ_BIN=<PostgreSQL 18 客户端目录> node --test --test-concurrency=2 hub/records/artifacts.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts tests/acceptance/27-check-reads-bound-sources.test.ts tests/acceptance/45-r5-capture-boundary.test.ts`：24 通过，0 失败、0 跳过；两个服务器读取测试已包含在上项，不重复计入此组。
+- `node --test ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；`git diff --check` 与暂存区检查均通过。
+
+新增回归为 8 项 knowledge 测试、1 项逐字匹配分页测试、1 项渲染器撤权测试及 3 项真实 Hub 验收，覆盖明确保存、旧冻结声明保持、同字节隔离、私人读取不能借团队资格、授权/版本/游标、异步撤权不漏计数、UTF-8 分页、全部匹配、长文、附件档位及真实对象损坏。开发中首次容量测试揭示上述空根计量缺口，已修复并保留 0 额度首次导入/保存断言；另一轮失败是夹具把 `put()` 的 `created` 返回标记当作存储字段比较，已改为比较写入前后实际读取的完整记录，未弱化不变性检查。
+
+最终浏览器矩阵为 13 状态 × 深浅主题 × 1440/1024/390px，共 78 张，另有 390px 表格滚动及关闭脚本的原生定位各 1 张诊断截图。状态为：空归档、导入 Dialog、归档列表、选中详情、保存 Dialog、多处匹配、所选位置、唯一位置、未定位、转义 HTML、二进制原文、与我共享、撤权拒读。“未定位”使用明确的合成解析器不可用故障注入，不把它记成真实插件下架验证。脚本实际导入文件、保存、键盘选择、验证引文可见、下载逐字节核对、分享后浏览与撤权；页面无横向溢出，表格在自身容器内滚动，无行内按钮、用词问题或脚本异常。人工抽查桌面/手机 Dialog、原文详情、位置与窄屏滚动；发现并修正字段挤在 Dialog 底部及手机目标引文未进入视口的问题后重跑矩阵。关闭页面脚本另验原生锚点可见与 POST/303 保存。
+
+对比度审计沿用共享设定并为引文突出显示增加 12 个实际底色样本，共 546 项，0 失败。未新增颜色或改共享设计目录。上述为本机合成证据；未执行全量集成、Linux CI、真实模型或真实业务核验。未改 foundation、references 或其批准导入/来源归档工具，未进行来源归档复核；最终视觉审查与决定 91 进度仍交 Claude。

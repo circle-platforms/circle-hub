@@ -10,6 +10,7 @@ import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canon
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
+import {archiveSources,readOriginal,type ArchiveQuery,type OriginalQuery} from './source-archive.ts';
 import type { SpaceSearchRow } from '../records/api.ts';
 import { normaliseStatement } from './digest.ts';
 import { levelOfHeight, KnowledgeEntryBody } from '../../contracts/src/knowledge.ts';
@@ -130,7 +131,7 @@ export class KnowledgeSpaces {
     directories=[...directories,...products.map(p=>p.path)];
     directories=[...new Set(['/',...directories,...entries.map(r=>r.path)].flatMap(p=>{const parts=pathSegments(p);return Array.from({length:parts.length+1},(_,n)=>pathOf(parts.slice(0,n)));}))].sort();
     const body=SpaceVersionBody.parse({space,sources,products,parent:previous?.root??null,entries,directories,tree:'0'.repeat(64),by:by?.id??null,at:this.#ctx.now().toISOString(),reason,used_bytes:previous?.body.used_bytes??0});
-    const delta=previous===null&&entries.length===0&&directories.length===1?0:Buffer.byteLength(canonicalize(body))+bytes;
+    const delta=previous===null&&entries.length===0&&directories.length===1&&sources.length===0&&products.length===0&&bytes===0?0:Buffer.byteLength(canonicalize(body))+bytes;
     body.used_bytes+=delta;return body;
   }
   async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? [],sync=false): Promise<SpaceVersion> {
@@ -234,11 +235,10 @@ export class KnowledgeSpaces {
       const entries:SpaceEntryBody[]=[];
       for(const result of bodies){if(result.status==='rejected')throw result.reason;const entry=result.value;if(!entry||entry.sync_private)fail('SPACE_ENTRY_INVALID');this.#scan(entry);entries.push(entry);}
       const sources=(await this.sources(by)).filter(source=>withinSpacePath(source.path,path));
-      const originals=await Promise.allSettled(sources.map(source=>this.source(by,source.sha256)));
+      const originals=await Promise.allSettled(sources.map(source=>this.source(by,source.sha256,undefined,'model',source.artifact)));
       for(const result of originals){if(result.status==='rejected')throw result.reason;const original=result.value;if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
       checks[phase++].state='pass';
-      const references=[...entries.flatMap(entry=>entry.grounds.map(ground=>ground.reference)),...sources.map(source=>'src:'+source.sha256)];
-      const grantable=await Promise.allSettled(references.map(reference=>this.#grantableGround(by,reference)));
+      const grantable=await Promise.allSettled([...entries.flatMap(entry=>entry.grounds.map(ground=>this.#grantableGround(by,ground.reference))),...sources.map(source=>this.#grantableGround(by,'src:'+source.sha256,new Set(),source.artifact))]);
       for(const result of grantable)if(result.status==='rejected')throw result.reason;
       checks[phase++].state='pass';checks[phase].state='pass';
     }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:error instanceof KnowledgeError&&code!=='SPACE_CONTENT_UNINSPECTABLE'&&code!=='SHARE_GROUND_UNRESOLVED'?'violation':'incomplete',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
@@ -272,7 +272,7 @@ export class KnowledgeSpaces {
         }
         for (const source of await this.sources(by))
           if (withinSpacePath(source.path, path))
-            await this.#grantableGround(by, 'src:' + source.sha256);
+            await this.#grantableGround(by, 'src:' + source.sha256,new Set(),source.artifact);
       }
       await this.#ctx.records.store.put({ kind: 'knowledge_space_grant', schema: 'knowledge-space-grant@1', provenance: 'declared', body, index: [{ key: GRANT_KEY, value: by.id }, { key: 'knowledge.space.grantee', value: body.member ?? 'administrators' }] }, tx);
     }));
@@ -299,17 +299,18 @@ export class KnowledgeSpaces {
     visit(value);
   }
   #inspectSource(bytes:Uint8Array){const scan=scanForCredentials(bytes);if(scan.findings.length)fail('SPACE_CREDENTIALS_DETECTED');if(!scan.inspected||scan.truncated)fail('SPACE_CONTENT_UNINSPECTABLE');}
-  async #grantableGround(by: Principal, reference: string, seen = new Set<string>()): Promise<void> {
+  async #grantableGround(by: Principal, reference: string, seen = new Set<string>(),capture?:string): Promise<void> {
     if (seen.has(reference))
       fail('SPACE_ENTRY_INVALID');
     seen.add(reference);
     const ref = parseReference(reference);
     if (ref.scheme === 'src') {
-      const artifact = await this.#ctx.records.artifacts.readable(by, ref.sha256);
+      const pinned=capture?await this.source(by,ref.sha256,undefined,'model',capture):null;
+      const artifact = capture?pinned?.artifact:await this.#ctx.records.artifacts.readable(by, ref.sha256);
       if(artifact&&!artifact.body.scan.inspected)fail('SPACE_CONTENT_UNINSPECTABLE');
       if (!artifact || artifact.body.read_tier !== 'model_readable' || ('read' in artifact.body.origin && !artifact.body.visibility.admins))
         fail('SPACE_ENTRY_INVALID', '个人凭据读取的来源不可授权');
-      const source = await this.#ctx.records.artifacts.source(by, ref.sha256);
+      const source = capture?pinned:await this.#ctx.records.artifacts.source(by, ref.sha256);
       if (!source?.bytes)
         fail('SPACE_ENTRY_INVALID');
       this.#inspectSource(source.bytes);
@@ -1089,6 +1090,54 @@ export class KnowledgeSpaces {
       return [];
     const records = await this.#records<z.infer<typeof SpaceSourceBody>>(SOURCE_KEY, space, 'knowledge_space_source');
     return records.map(r => SpaceSourceBody.parse(r.body)).filter(s => (!s.sync_private||by.id===s.space)&&paths.some(p => withinSpacePath(s.path, p)));
+  }
+  archive(by:Principal,query:ArchiveQuery={}){return archiveSources(this,this.#ctx,by,query);}
+  original(by:Principal,query:OriginalQuery){return readOriginal(this,this.#ctx,by,query);}
+  async archiveEligibility(by:Principal,artifact:string){
+    by=await this.#user(by);const original=await this.#ctx.records.store.get<import('../records/api.ts').SourceArtifactBody>(artifact);
+    if(original?.kind!=='source_artifact'||!await this.source(by,original.body.sha256,undefined,'model',artifact))return {personal:false,team:false};
+    const body=original.body,upload='upload'in body.origin&&body.author.user===by.id&&body.provenance_type==='declared'&&original.provenance==='declared';
+    const read='read'in body.origin&&body.provenance_type==='observed'&&original.provenance==='observed';
+    return {personal:upload||read&&body.visibility.readers.includes(by.id),team:by.role==='admin'&&read&&body.visibility.admins};
+  }
+  /** Explicit save only. A private copy of a run upload never changes that old capture's declaration eligibility. */
+  async archiveSource(by:Principal,input:{artifact:string;space:string;path:string;message:string}){
+    by=await this.#user(by);const space=SpaceId.parse(input.space),path=pathCheck(input.path);
+    if(!isSha256(input.artifact)||input.message!=='archive:'+input.artifact||space!==by.id&&space!=='team')fail('SOURCE_UNAVAILABLE');
+    return this.#write(space,()=>this.#ctx.records.store.withTransaction(async tx=>{
+      await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await this.#user(by);
+      const eligible=await this.archiveEligibility(by,input.artifact);if(space==='team'?!eligible.team:!eligible.personal)fail('SOURCE_UNAVAILABLE');
+      if(space==='team'&&withinSpacePath(path,PRODUCTS_PATH))fail('SPACE_ENTRY_INVALID','此文件夹用于产品知识，请选择其他文件夹');
+      const record=await this.#ctx.records.store.get<import('../records/api.ts').SourceArtifactBody>(input.artifact,tx);if(record?.kind!=='source_artifact')fail('SOURCE_UNAVAILABLE');
+      const source=await this.source(by,record.body.sha256,undefined,'model',input.artifact);if(!source?.bytes)fail('SOURCE_UNAVAILABLE');
+      const previous=await this.current(space,tx),registrations=await this.#ctx.records.store.getMany<z.infer<typeof SpaceSourceBody>>(previous?.body.sources??[],tx);
+      const ownUpload='upload'in source.artifact.body.origin;
+      // The request carries a declared message identity derived from the selected capture. It keeps copy retries and
+      // equal-byte captures distinct without inventing another stored field or changing the old upload's origin.
+      const existing=[...registrations.values()].find(row=>row.kind==='knowledge_space_source'&&row.body.space===space&&row.body.path===path&&row.body.artifact===input.artifact);
+      if(existing)return {record:existing.digest,root:previous!.root,...existing.body};
+      if(ownUpload){
+        const copies=await this.#ctx.records.store.findMany<import('../records/api.ts').SourceArtifactBody>({key:'artifact.sha256',values:[source.sha256],kind:'source_artifact'},tx);
+        for(const copy of copies){if(copy.provenance!=='declared'||copy.body.author.user!==by.id||!('upload'in copy.body.origin)||copy.body.origin.upload.message!==input.message||copy.body.visibility.admins||copy.body.visibility.shareable||copy.body.visibility.packs.length||canonicalize(copy.body.visibility.readers)!==canonicalize([by.id]))continue;
+          const registration=[...registrations.values()].find(row=>row.kind==='knowledge_space_source'&&row.body.space===space&&row.body.path===path&&row.body.artifact===copy.digest);
+          if(registration&&copy.body.sha256===source.sha256&&copy.body.media_type===source.mediaType&&copy.body.name===source.artifact.body.name)return {record:registration.digest,root:previous!.root,...registration.body};
+        }
+      }
+      this.#scan({path,name:source.artifact.body.name});
+      const grants=space==='team'?[]:this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY,space,'knowledge_space_grant',tx));
+      if(space==='team'||grants.some(grant=>withinSpacePath(path,grant.path))){
+        if('read'in source.artifact.body.origin&&!source.artifact.body.visibility.admins)fail('SPACE_ENTRY_INVALID','私人连接读取的原文不能放入已分享的文件夹');
+        this.#inspectSource(source.bytes);
+      }
+      const planned=this.#draft(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',source.size,[...previous?.body.sources??[],'0'.repeat(64)]);
+      if(space!=='team'&&planned.used_bytes>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
+      let artifact=input.artifact;
+      if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
+      const body=SpaceSourceBody.parse({space,path,sha256:source.sha256,artifact,size:source.size,by:by.id,at:this.#ctx.now().toISOString()});
+      const saved=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body,index:[{key:SOURCE_KEY,value:space},{key:'knowledge.space.source_hash',value:body.sha256}]},tx);
+      const version=await this.#save(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',body.size,tx,[...previous?.body.sources??[],saved.digest]);
+      return {record:saved.digest,root:version.root,...body};
+    }));
   }
   async importFile(by: Principal, bytes: Uint8Array, mediaType: string, name: string | null, path = '/', session: string | null = null) {
     bytes=Uint8Array.from(bytes);

@@ -42,6 +42,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- The knowledge console has a source archive with space-scoped browsing, explicit saving, exact-capture links and
+  server-verified quote locations. Every match is available through bounded pages; HTML remains escaped and downloads
+  are current-access attachments. Saving an ordinary upload preserves its original capture, ACL and frozen run declaration.
+
 - Uploaders can explicitly attribute an exact private upload as a declared team knowledge source. Unsigned sharing is
   refused with a next step; successful sharing records the signer and a separately authorized team copy while preserving
   the original private capture and ACL. Console confirmation explains the consequence; attribution alone publishes nothing.

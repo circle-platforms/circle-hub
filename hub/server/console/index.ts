@@ -14,7 +14,7 @@ import { LimitError, validPassword } from '../../records/api.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { RecordsError, type Principal } from '../../records/api.ts';
+import { RecordsError, IntegrityError, sha256Hex, type Principal } from '../../records/api.ts';
 import { KnowledgeError } from '../../knowledge/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
@@ -33,6 +33,8 @@ import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
 import {withReadScope,memoReadPort} from '../../records/api.ts';
+import {sourceArchivePage} from './source-archive.ts';
+import {Sha256} from '../../../contracts/src/common.ts';
 import {performMemoryAction} from './memory.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -538,7 +540,7 @@ const ROUTES: Record<string, Route> = {
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);
     if (rest.length > 1) return Promise.resolve(neutralPage(ctx));
-    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage,'share-batch':batchSharePage };
+    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage,sources:sourceArchivePage,'share-batch':batchSharePage };
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/')==='-/publish'?personalPublishPage(ctx,options.staging):rest.length===1?packPage(ctx,rest[0]):Promise.resolve(neutralPage(ctx))),
@@ -840,6 +842,13 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: PageResult | null;
   try {
+    if(segments.join('/')==='knowledge/download'){
+      const sha=url.searchParams.get('sha256')??'',artifact=url.searchParams.get('artifact')??'';
+      const source=Sha256.safeParse(sha).success&&Sha256.safeParse(artifact).success?await options.deps.knowledge.spaces?.source(principal,sha,undefined,'model',artifact):null;
+      if(!source?.bytes||!(await options.deps.records.artifacts.canRead(principal,source.artifact)||await options.deps.knowledge.spaces!.mayReadSource(principal,sha,undefined,'model',artifact)))return sendHtml(response,404,neutralPage(ctx).body);
+      if(source.bytes.length!==source.size||sha256Hex(source.bytes)!==sha)throw new IntegrityError('原文完整性暂不可核对');
+      setCommonHeaders(response);response.writeHead(200,{'content-type':'application/octet-stream','content-disposition':"attachment; filename=\"original\"; filename*=UTF-8''"+encodeURIComponent(source.artifact.body.name||'原文').replace(/['()*]/g,ch=>'%'+ch.charCodeAt(0).toString(16).toUpperCase()),'content-length':String(source.bytes.length),'content-security-policy':"default-src 'none'; sandbox; frame-ancestors 'none'",'cache-control':'no-store','x-content-type-options':'nosniff'});response.end(source.bytes);return;
+    }
     if(isKnowledgeAction){
       if(!sameOrigin(request,options.ownOrigins())){request.resume();return forbidden(response,'表单只能从本控制台提交');}
       let values:URLSearchParams|Map<string,string>;

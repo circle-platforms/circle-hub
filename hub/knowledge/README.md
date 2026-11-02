@@ -70,7 +70,39 @@ The source Inspector and SourceBlocks pin exact captures rather than silently su
 
 The attribution record is part of its uploader's personal space. Per Claude's 2026-11-03 instruction, block five must
 include it in sync's personal purge scope after the coordinator arranges the rebase. No parallel purge implementation,
-new SQL table or migration is introduced here. Source archive browsing/location remains block two.
+new SQL table or migration is introduced here. Source archive browsing/location is implemented below.
+
+## Source archive (decision 91, block two)
+
+Claude approved the contract list in `9f4eb42b` before model 26 was changed. `spaces.archive` projects only current authorized
+space snapshots and their exact source registrations, with optional folder/history selection. It never initializes a space,
+enumerates the global original pool or saves on GET. Pagination binds account, scope, folder, snapshot and grant paths;
+metadata and counts are rechecked before returning. Permission changes during the read refuse the page, rather than
+returning stale private counts. Selection can locate its authorized page without exposing other accounts' registrations.
+
+`archiveSource` is an explicit, transaction-bound save under the existing space lock. Own ordinary declared uploads become
+separate private captures; their original records/ACLs and frozen run declarations remain unchanged. The submitted archive
+request declares its message identity as `archive:<selected capture>` in the existing upload-origin field. This distinguishes
+equal-byte captures and makes retries find the same private copy without a new stored field. The server checks that identity
+against the selected capture, current uploader, bytes, metadata and target registration; it is not an authorization token or
+an observed chat-session identifier. New copies have no inherited team attribution. Historical copies and client-captured
+or generated content do not acquire ordinary-upload eligibility by being displayed.
+
+Connector captures can be registered by their actual named reader in that reader's private space; only administrators can
+register eligible observed team reads for the team. Private-credential reads cannot enter a shared folder or gain a grant.
+Grant pre-check/confirmation now pins every registered capture, so an equal-byte team original cannot lend eligibility.
+Quota and snapshot writes are atomic, and duplicate saves consume no further capacity. The empty-space initialization
+exemption now requires no originals, mounts or incoming bytes: the first file at the root must also be charged. Existing
+immutable historical counters are not rewritten; the capacity block must review old usage/rebuild behavior separately.
+
+`spaces.original` loads the quotation from the authorized entry/ground index, not from URL text or client-reported offsets.
+It pins the exact capture, resolves the declared parser/fragment and rechecks the entry/source after asynchronous parsing.
+All exact occurrences are counted and paged; a single match is selected automatically, multiple matches require selection.
+The view uses bounded decoded-text pages or a small context around a selected quote. Presentation offsets describe that
+decoded fragment, never asserted raw-file coordinates. Source bytes, quote whitespace and immutable records are unchanged.
+Missing parsers, byte-integrity failures and unreadable tiers never create a guessed match. Downloads use the same current
+capture/access/tier boundary and attachment-only HTTP responses; no new MCP mode or fetcher is added. Sync/purge integration
+and member lifecycle remain later blocks.
 
 
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed
