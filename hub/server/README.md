@@ -1061,7 +1061,7 @@ one global budget. Session ownership is checked before body parsing; current acc
 before sending a private result. Unknown and foreign sessions/operations return the same refusal. Logs use the fixed
 sync route prefix and never print exceptions, tokens or client content.
 
-Each authenticated request has append-only started/finished action metadata: actor, server token ID/OAuth client,
+Each authenticated, admitted request to a valid route/method has append-only started/finished action metadata: actor, server token ID/OAuth client,
 separately declared device UUID, route template, times, counts, state identities and actual HTTP outcome. Titles,
 paths, device names, original/quote bytes and body arguments are excluded. A failed start audit prevents work. A failed
 finish audit returns a retryable response; upload/commit/mode receipts let the caller recover a committed operation.
@@ -1086,3 +1086,13 @@ Existing cases cover transport retries, foreign/absent equivalence, stale consol
 run-original retention without widening reader rights. Authentication/admission/audit failures and transaction rollback
 remain covered by server and records regressions. These are synthetic Hub checks, not evidence of a deployed Circle
 sync client; the client and release/deployment remain outside this task.
+
+The fourth review moves account admission ahead of every audit append. Unknown sync paths and wrong methods consume
+the same in-memory account request count but create no audit rows; requests refused as over quota also append nothing.
+Valid admitted operations retain their started/finished metadata and rollback/recovery behavior. Admission failures
+cannot grow the append-only record store without bound by changing paths, methods, tokens or declared devices.
+
+Token-scope decision (Claude, fourth review of 5509e847): v1 access tokens have no per-route scopes. A client holding a
+member's MCP access Bearer can also call that member's sync API and, after a fresh pre-check and explicit confirmation,
+purge their Hub copy through `/mode`. This is accepted for v1: local copies are unaffected and can be synchronized again.
+The API remains outside the six model tools; per-route token scopes are deferred, not implemented or implied here.

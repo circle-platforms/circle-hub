@@ -57,3 +57,7 @@ Object/page counts and the 24-hour continuation lifetime use the approved protoc
 Both listeners share the limiter across access tokens and declared device IDs, with at most two in-flight writes per
 account. Refusals return SYNC_RATE_LIMITED and Retry-After; global request/response bytes also use the existing HTTP
 budget. Both approved variables are registered for platform forwarding.
+
+The account request count includes unknown sync paths and wrong methods. Those refusals and over-quota requests stay
+in the bounded in-memory admission counter; they do not append persistent sync audits. Valid admitted requests keep
+their normal operation audits. No extra denial-log or token-scope configuration variable is introduced.

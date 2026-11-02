@@ -972,3 +972,32 @@ git diff --check
 ```
 
 提交前收尾：npm run typecheck、176 文件合约核对和差异检查通过；最终文档检查 291 项通过、0 失败、0 跳过。四处 CLI 夹具与新权限拒收回归均已在上述定向运行中核对，原全量失败与全部跳过保持原始记录。
+
+### 第四轮复核修正：先准入，再写同步审计
+
+来源：Claude 在 kw-sync-review.md 新增的“第四轮复核（5509e847）”。先完成第 6 步并提交 b9bca19f，再独立处理本项；不重新运行两套全量检查。
+
+做了的：
+
+- 认证后立即按账户准入，之后才处理路径／方法和写任何同步审计。未知同步路径、错误方法同样计入账户频率，换路径不能绕过；只有已准入且路径／方法正确的请求能写开始／结束记录。未知路径 404、方法 405 和超额 429 不再追加记录，只使用原有的有界内存计数，不新增配置、持久化拒收日志或公开指标接口。
+- 有效请求原有的审计开始失败则不操作、结束失败则回执恢复、body／response 全局预算、重认证与代次检查、清除事务和幂等处理保持有效。已准入的实际业务拒收仍可审计，受同一频率上限约束；不是删除所有失败审计。
+- 回归使用每分钟 2 次的两个合成账户：一组先发未知路径与错误方法再发 40 次，要求审计 0 条；另一组先准入 2 次正常状态读取，再发 40 次混合请求，要求审计始终 4 条。所有超额请求均为 429，证明错误路径／方法占用频率且不能膨胀只追加记录。
+- 按附录的低项协调决定，文档明确 v1 访问令牌不分路由作用范围：持有 MCP 访问 Bearer 的客户端同样能经预检／确认清除本人 Hub 内容，本机副本不受影响，可重新同步；v1 接受，作用范围留以后。没有新增 scope、MCP 工具、模型字段或数据库迁移。来源是 Claude 的协调决定，不冒充所有者原话。
+- 更新 server／config README、CHANGELOG 与决定 89 的补充，第四轮审查附录原文收入本次独立提交。
+
+验证：修正前真实回归失败 1 项，两个未准入请求写入 4 条，期待 0 条；失败不算通过。修正后定向结果另记。没有修改迁移 14／15 或重复全量 unit／acceptance。
+
+本项最终验证：类型检查通过；修正后以下定向组 **59 项通过、0 失败、0 跳过**，包括所有同步 HTTP、安全拒收／审计故障、控制台本机方式与隐私、HTTP 关闭边界、方式事务／权限、迁移固定值和锁、environment、diagnostics、PG 18 ownership 与真实 Hub 场景 49。macOS 沙箱与 PG 18 备份／恢复实际执行。只审计已准入有效请求的上界回归通过，没有删除有效失败审计或放宽任何认证／读取规则。最终文档／合约／差异检查另在提交前执行，完整 unit 与 acceptance 未再次运行；此前首跑结果保持原始记录，不当作本次 HTTP 改动后的第二次全量验证。
+
+```sh
+npm run typecheck
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ hub/server/personal-sync.test.ts hub/server/console-sync-local.test.ts hub/server/console-sync-privacy.test.ts hub/server/http.test.ts \
+ hub/records/personal-sync-mode.test.ts hub/records/personal-runtime-temp.test.ts hub/records/migrations.snapshot.test.ts hub/records/lock-namespaces.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts tests/acceptance/49-personal-sync.test.ts
+npm run verify:contracts
+npm run test:docs
+git diff --check
+```
+
+提交前收尾：176 文件合约核对通过，文档检查 291 项通过、0 失败、0 跳过，git diff --check 通过。第四轮附录的原文已包含在本项提交；低项仅按 v1 协调决定作说明，没有偷偷增加令牌作用范围实现。

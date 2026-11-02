@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Admit sync requests before appending audit records so unknown routes and rate refusals cannot grow the log.
+
 - Freeze portable v1 personal-sync exchange examples and verify two-client conflicts and knowledge grounds over HTTP.
 
 - Expose personal knowledge and memory sync over a scoped Bearer-only HTTP API with bounded batches and audit receipts.

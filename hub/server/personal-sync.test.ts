@@ -134,3 +134,17 @@ test('revocation during a download prevents delivery after the read completes',a
  const original=api.download.bind(api);t.mock.method(api,'download',async(...args:Parameters<typeof api.download>)=>{const result=await original(...args);await hub.records.principals.revokeTokenValue(owner.token);return result;});
  const reply=await http(hub,owner.token,'/sessions/'+session.session_id+'/download',{epoch:state.epoch,objects:[]});assert.equal(reply.status,401,reply.body);assert.equal(reply.json.objects,undefined);
 });
+
+test('unknown routes, wrong methods and excess requests consume account admission without growing the audit log',async t=>{
+ const hub=await createTestHub({...options,limits:{syncRequestsPerMinute:2}});t.after(()=>hub.close());const owner=await hub.createUser('合成拒收限流'),admitted=await hub.createUser('合成准入审计');
+ const audits=(id:string)=>hub.records.store.findMany({kind:'action',key:'personal.sync.http.by',values:[id]});
+ assert.equal((await http(hub,owner.token,'/unknown')).status,404);
+ assert.equal((await http(hub,owner.token,'/state',{})).status,405);
+ assert.equal((await audits(owner.user.id)).length,0,'route/method refusals cannot append immutable audits');
+ for(let n=0;n<40;n++)assert.equal((await http(hub,owner.token,n%2?'/state':'/another-unknown')).status,429);
+ assert.equal((await audits(owner.user.id)).length,0);
+ for(let n=0;n<2;n++)assert.equal((await http(hub,admitted.token,'/state')).status,200);
+ const accepted=await audits(admitted.user.id);assert.equal(accepted.length,4,'each admitted valid request still has its started/finished metadata');
+ for(let n=0;n<40;n++)assert.equal((await http(hub,admitted.token,n%2?'/state':'/unknown',n%3?undefined:{})).status,429);
+ assert.equal((await audits(admitted.user.id)).length,4,'denials after admission is exhausted cannot append audits');
+});

@@ -54,13 +54,14 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
   const authenticate=deps.records.principals.authenticateAccessToken;
   identity=authenticate?await authenticate.call(deps.records.principals,request.headers.authorization):null;
   if(!identity){request.resume();await send(401,{code:'SOURCE_UNAVAILABLE'},{'www-authenticate':'Bearer'});return;}principal=identity.principal;
-  await audit('started',null,null);begun=true;
+  // Count every authenticated attempt before any append, including unknown routes and wrong methods.
+  const write=!!selected&&request.method===routes[selected.route].method&&request.method==='POST'&&selected.route!=='download'&&selected.route!=='missing'&&selected.route!=='modeCheck';
+  const entered=options.admission.enter(principal.id,write,now().getTime(),deps.config.limits.syncRequestsPerMinute);if(!entered){request.resume();await error(429,'SYNC_RATE_LIMITED',{'retry-after':'60'});return;}release=entered;
   if(!selected){request.resume();await error(404,'SOURCE_UNAVAILABLE');return;}
   const {route,id}=selected,definition=routes[route],sync=deps.knowledge.personalSync,api=deps.records.personalSync;
-  if(!sync||!api){request.resume();await error(503,'SOURCE_RETRYABLE');return;}
   if(request.method!==definition.method){request.resume();await error(405,'SYNC_OBJECT_INVALID',{allow:definition.method});return;}
-  const write=request.method==='POST'&&route!=='download'&&route!=='missing'&&route!=='modeCheck';
-  const entered=options.admission.enter(principal.id,write,now().getTime(),deps.config.limits.syncRequestsPerMinute);if(!entered){request.resume();await error(429,'SYNC_RATE_LIMITED',{'retry-after':'60'});return;}release=entered;
+  await audit('started',null,null);begun=true;
+  if(!sync||!api){request.resume();await error(503,'SOURCE_RETRYABLE');return;}
   const current=await api.state(principal);before=current.state_version;
   // Session ownership is checked before touching a potentially large request body.
   if(id&&definition.path.includes('/sessions/'))device=await api.sessionClient(principal,id,current.epoch);
