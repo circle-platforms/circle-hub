@@ -167,6 +167,16 @@ test('optional parameter guidance names unsupplied and redacted roles have their
   assert.throws(() => checkProfile({ ...profile, allowed }, manifest, base), /脱敏参数不能定角色.*删去.*--check/);
   assert.throws(() => draftProfile({ ready: true, device_count: 2 }, manifest, base, { ...profile, allowed }), /脱敏参数不能定角色.*删去/);
 });
+// Decision 119: runner options are typed roles the dispatch table does not list, so a typed entry's roles come from the contract.
+test('a typed opening takes exactly the role the contract declares, an original-format one the dispatch table', () => {
+  const contract = promptContract() as any; const parsed = parseRuntimeContract(contract); assert.ok(parsed.ok);
+  const profile = { ...profileDocument(contract), unopened: [{ object: 'widget-seat', method: 'credential', parameters: [{ name: 'password', missing: '脱敏凭据', reason: '不能传入', next: '核对认证接入' }] }] } as any;
+  profile.allowed[0].parameters.prompt = 'runner_option';
+  checkCoverage(profile, parsed.contract, contract);
+  assert.throws(() => checkCoverage(profile, parsed.contract), /角色不在该派发方式的包格式表中/);
+  profile.allowed[0].parameters.prompt = 'device_cli';
+  assert.throws(() => checkCoverage(profile, parsed.contract, contract), /\/allowed\/0\/parameters\/prompt 的角色不等于合约类型权限声明的角色/);
+});
 // Decision 119: opened case by case, a profile kept a typed runner option from the other objects of the same runner method.
 test('the review list names typed options never supplied, one runner method opened unevenly and openings without types', () => {
   const untyped = reviewNotes(profileDocument(), runtimeDocument());
