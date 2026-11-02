@@ -483,3 +483,15 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node -
 ```
 
 本项未运行全量 unit／acceptance、Linux CI 或来源检查；全部工作流／引擎及本轮文档检查将在涉及依据读取的修复完成后统一记录，未运行不算通过。
+
+### 第 2 步安全审查修正 3：提及不等于持有
+
+第 3 项与第 2 项共用精确持有字段的实现；本提交单独固化其否定回归。将审查的 h5-mention 探针改写进仓库，增加文件名和节点说明两种变体：清除后旧个人原件的全局文件实际不存在，对象入口返回不存在；被提及的摘要不会变成存储所有权。另一份真实独立原件及其记录保留。
+
+验证：npm run typecheck、git diff --check 通过；以下组 29 项通过、0 失败、0 跳过，包含真正独立持有者的正向回归及 PG 18 ownership。没有从审查临时目录导入代码。本项不改迁移、运行或依据规则；未跑全量回归／Linux CI／来源检查，文档检查留本轮收尾。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  hub/records/personal-mention-retirement.test.ts hub/records/personal-retirement-holds.test.ts \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts
+```

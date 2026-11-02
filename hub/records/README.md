@@ -785,3 +785,6 @@ Generator inputs, arbitrary strings and ordinary grounds are not storage ownersh
 that artifact outside the personal conversion. Executor-map members also keep their global bytes. Personal captures
 include their trusted account/epoch in both body and deduplication identity, so a fixed-clock knowledge import cannot
 reuse an independent personal-pack capture. This edit is to undeployed migration 14 under Claude's explicit permission.
+
+Review item 3 has separate negative regressions: generated-input mentions, file names and node prose never retain a
+purged private original. They assert physical file absence and normal object absence, while an actual other original survives.

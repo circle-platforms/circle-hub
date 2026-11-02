@@ -177,7 +177,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Fixed
 
-- Personal-content upgrades preserve independently owned definitions, pack files and workflow objects; private imports have distinct capture identities.
+- Personal-content upgrades preserve independently owned definitions, pack files and workflow objects; private imports have distinct capture identities. Mere mentions no longer retain cleared originals.
 
 - Personal-content upgrades now resume correctly when historical team trees mount product knowledge.
 
