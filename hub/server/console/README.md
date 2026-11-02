@@ -80,3 +80,14 @@ fixed hash. No script-src self/unsafe-inline/eval is added. Styles, login/error 
 intact. Template comparisons omit only nonce entropy, while policy regressions verify exact header/tag matching,
 rotation, SRI, and rejection of absent/stale nonces. The page probe accepts only fixed asset paths with matching SRI
 and an allowed hash or response nonce, retaining unknown script/nonce bytes in evidence.
+## 上传来源署名（决定 91，第一块）
+
+原文详情使用选中 ListRow 与响应式 Inspector，精确采集随“打开原文”链接保留。词表状态从模型 25 生成；
+“署名为团队来源…”动作与后果说明为静态文案。只有上传人可以确认；查看详情或打开 Dialog 均只读。
+确认沿用既有 Origin、CSRF、会话及 POST/303 路径，调用 knowledge 的本人署名端口，不接受客户端署名人或时间。
+Dialog 明示署名不创建团队知识、不表示内容已验证，以及团队已取得的副本不会因收回文件夹分享而收回。
+
+团队知识 Inspector 通过已授权端口显示“来源署名 · 数量”、声明类型、署名人和时间，并打开团队实际持有的精确
+采集。无权的私人原件与不存在的原件显示相同页面；管理员不能代签，也不能从通用记录入口读取私人署名正文。
+原始用户名、原文与引用保持 evidence 标记及转义；不改共享组件、颜色设定或 CSP。原文的完整归档浏览及引文定位
+仍待第二块，此处只补署名与已分享来源的详情。

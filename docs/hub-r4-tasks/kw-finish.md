@@ -109,6 +109,7 @@
 
 - 等 Claude 确认同步合入并安排本分支变基，先复查其最终公开端口、合约、迁移和安全回归，重新生成合约；不手工拼接生成物或复制未完成的清除实现。
 - 通过同一可清除存储及 purge 流程清理该成员在 Hub 的私人知识、文件夹、引文、原件、记忆与相关派生索引/暂存；范围与同步的“仅保存在本机”清除一致。个人包的正文/安装产物若不在同步 purge 范围内，先交 Claude 明确归属和接口，不能漏清或另写清除器。
+- Claude 批准第一块合约时明确：`knowledge_source_attribution` 属于上传者个人空间；变基到同步后，把它纳入同一个个人空间 purge 范围。第一块只追加声明，不提前实现清除；团队持有副本的保留及缺失私人来源的状态在本块统一核对。
 - 删除保留身份墓碑及必要的摘要审计，旧主体、令牌、会话和客户端不能复活旧代次；已删除账户不能恢复为普通停用账户。新成员即使同名也不能继承旧空间。禁止删除最后一名有效管理员，防止自删在途操作绕过权限检查。
 - 团队知识、团队记忆和团队独立持有的原件保留；显示“已删除的成员”。仍依赖被清除私人来源的部分，复用同步的来源失效投影显示待验证及管理员可读的缺口，不改原始团队回执、默默通过或冒充验证失败。同字节的其他合法持有者不受损坏。
 - 先只读预检影响范围，再由管理员在成员详情的确认 Dialog 核对，以决定 75 的管理员命令及追加记录执行；确认时重查权限、范围和代次。清除失败/中断须返回真实进度，可安全重试/恢复，不能先报删除完成。并发上传、同步、分享及署名须受同一账户/代次边界约束。
@@ -145,9 +146,9 @@
 2. **署名的用语**：原文详情里的动作写“署名为团队来源…”，确认对话框写明后果。例如“署名后，团队成员可以把这份原文作为知识的来源；原文仍保存在我的空间”。
 3. **个人工作流在删除时的归属**：留到第五块，与同步的清除范围一起确定；前四块不预设。
 
-### 第一块合约变更清单（待 Claude 批准，2026-11-03）
+### 第一块合约变更清单（Claude 已批准，2026-11-03）
 
-本节是审查提案，尚未修改模型、合约或运行代码。依据上述“Claude 审查结论”第 1 条，批准后才实施以下差异；其余四块不在本次合约请求中。
+本节为 `9ba31246` 的审查提案原文，Claude 于 2026-11-03 在任务消息中原样批准后才实施。批准范围包括严格声明记录、团队可选字段、既有拒收码文案、显示轴及静态文案留控制台；其余四块不在本次合约请求中。
 
 #### A. 记录与最小形状
 
@@ -198,12 +199,31 @@
 
 ## 发现
 
-（无。）
+同字节不等于同采集。既有来源选择策略可能优先选择较早的已授权采集；保持该策略不变，并按实际选中的采集重查署名。团队来源通过明确的独立采集持有，不能让私人原件的全局 ACL 因署名而扩大。
 
 ## 做了的
 
-方案已由 18f41349 审查通过。第一块已列出上述合约变更清单并复现无署名拒收；等待清单批准，未改模型、合约或运行代码。
+方案已由 `18f41349` 审查通过，第一块合约清单 `9ba31246` 已获 Claude 明确批准。第一块实现如下，待本次审查：
+
+- 模型递增至 25，生成严格 `knowledge-source-attribution@1`、团队来源/条目可选字段及显示轴；不增加拒收码、不改六工具或公开分享/条目入参。生成器禁止冗余同文 `ui`，因此两个新状态通过标准标签回退得到批准用语。四份协议镜像按流程生成，HTML/思维导图补丁版本为 1.0.12，XML/工作簿为 1.0.13；无技能业务改动或迁移。
+- 本人确认在个人空间锁与事务中追加声明，核对精确登记/采集、观察到的上传人、当前读权、完整字节及扫描；重复确认幂等。他人、管理员、同字节的新采集和运行内上传声明不能代替确认。
+- 署名与公开分开：预检不写团队内容；确认分享重新核对声明和全部来源规则，在同一事务中创建团队独立持有的声明采集、明确关联、条目的实际署名集合及回执。团队复制失败全部回滚；私人原件及 ACL 不改。团队读者可复用已公开的明确来源，管理员修订保留署名。
+- 原文 Inspector 的“署名为团队来源…”使用既有 Dialog、CSRF、Origin、POST/303；后果正文可见，原文转义且不改写。词表状态来自生成合约；团队 Inspector 显示声明类型及署名人。原文链接固定精确采集；私人声明不开放 `rec:` 旁路，原件无权与不存在返回一致。
+- 署名归属与第五块的个人 purge 待办已补入本页和包 README；未改同步分支、未实现成员删除。原文归档其余能力仍待第二块。
 
 ## 验证
 
-方案阶段只改本任务页。实际执行 `node --test ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；`git diff --check` 通过。未运行类型、包测试或功能验收，没有实现或验证功能的声明。
+方案阶段只改本任务页，docs 检查 313 通过。第一块使用现有 Node 24 直接执行下列命令，未安装依赖；最终结果见下。
+
+- `node node_modules/typescript/bin/tsc --noEmit`：退出 0，无诊断；`node tools/gen-contracts.ts --check`：退出 0，156 个生成文件与模型一致。
+- `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts"`：380 通过，0 失败、0 跳过。
+- `node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`：1 通过，0 失败、0 跳过。
+- `node --test "hub/server/console/**/*.test.ts" "hub/server/console*.test.ts" hub/server/readers-sharing.test.ts hub/server/contribution-readers.test.ts hub/knowledge/sharing.test.ts hub/knowledge/source-attribution.test.ts hub/knowledge/spaces.test.ts tests/acceptance/12-console-security.test.ts tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/50-upload-attribution.test.ts`：共 234 项，226 通过，验收 46 的 Hub 连接 `ECONNRESET` 导致该文件 8 项失败，0 跳过；随后原样执行 `node --test tests/acceptance/46-knowledge-spaces.test.ts`，8 通过，0 失败、0 跳过，退出 0。未修改或弱化夹具；连接重置的原因未证实，不能把合跑记为全通过。覆盖不可代签、精确采集隔离、并发幂等、失读后确认拒收、事务失败回滚、团队复用/管理员修订、真实 Hub 的 CSRF/Origin/MCP/私人记录隔离及渲染用词。
+- `CIRCLE_HUB_LIBPQ_BIN=<PostgreSQL 18 客户端目录> node --test hub/records/artifacts.test.ts hub/server/readers-sharing.test.ts hub/server/contribution-readers.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts tests/acceptance/27-check-reads-bound-sources.test.ts tests/acceptance/45-r5-capture-boundary.test.ts`：29 通过，0 失败、0 跳过，含运行内声明、精确冻结采集和现有角色/锁检查。
+- `node --test ".github/checks/*.test.ts"`：暂存新增文件后再查，313 通过，0 失败、0 跳过，退出 0；`git diff --check` 与 `git diff --cached --check` 通过。
+
+本轮新增测试为 2 项合约测试、4 项知识服务测试及 1 项真实临时 Hub 的验收。开发中首次定向运行暴露：完整字节扫描绕过空间委托导致团队来源复用失败，以及夹具未选中目标采集、伪二进制可被当作文本。已改为经授权的精确空间读取、明确选中第二采集及真实 ZIP 头，未弱化扫描/断言；修复后定向检查通过。最终补测又发现只取第一条索引候选会让无效旧声明遮住后续有效声明，已改为逐条验证候选，并保留伪造声明拒收及署名后失读拒收的断言。预检浏览器夹具原先误以为只读预检会初始化团队，改为核对无团队或空团队均无写入。
+
+隔离 Chromium、临时 loopback Hub/PostgreSQL 与合成账号/原文完成 7 状态 × 深浅主题 × 1440/1024/390px，共 42 张截图：未署名原文、署名 Dialog、已署名原文、分享预检、团队署名详情、团队原文、私人原件拒读。浏览器实际确认署名及分享，核对只写一次声明、只读打开、Dialog 焦点/Escape/背景隔离、证据原文保留、表格行无按钮、页面无横向溢出；控制台无脚本异常。人工抽查桌面 Dialog/团队详情及手机原文。未新增颜色；既有共享组件对比度检查包含 534 个样本。本轮新动作的原生 POST/303 在验收中通过；未另做关闭脚本的完整浏览器流程。
+
+上述均为本机合成验证。未执行全量集成、Linux CI、真实模型/真实业务验证；不据此宣称第五阶段全部完成。未改来源归档工具或 foundation 批准导入，无需扩大为来源归档复核。Claude 负责最终视觉审查、合并和决定 91 的汇总。

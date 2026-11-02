@@ -42,6 +42,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Uploaders can explicitly attribute an exact private upload as a declared team knowledge source. Unsigned sharing is
+  refused with a next step; successful sharing records the signer and a separately authorized team copy while preserving
+  the original private capture and ACL. Console confirmation explains the consequence; attribution alone publishes nothing.
+
 - Console vocabulary values use the model's interface labels, while static copy follows the shared Chinese wording and
   spacing rules. Explanations appear in keyboard-accessible tooltips; rendered-page checks preserve original evidence.
   Selected and hovered row helpers, control borders and chart loading states meet the shared contrast requirements.

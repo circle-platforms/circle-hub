@@ -165,6 +165,14 @@
         "entry"
       ],
       "additionalProperties": false
+    },
+    "source_attributions": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
     }
   },
   "required": [

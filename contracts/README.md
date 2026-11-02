@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 106 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 107 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -471,3 +471,15 @@ The model remains 26, generated schemas 176 and MCP tools six. Circle client imp
 Decision 89 visual integration regenerates the model-26 contracts over decision 92's UI labels. Only the existing
 cleared-personal-folder value gains a UI label for the current console wording; its code, protocol label, HTTP shapes,
 shared v1 fixtures and pack protocol mirrors stay unchanged. No model version or migration is renumbered.
+
+Model 25 implements the decision-91 block-one contract list in `9ba31246`, explicitly approved by Claude on 2026-11-03.
+`knowledge_source_attribution` has a strict declared body joining the uploader's personal source registration, exact capture
+and immutable bytes. Only team associations/entries may carry the optional `attribution`/`source_attributions` fields;
+the latter is unique and bounded to 100. The caller-facing entry/share inputs and six tools are unchanged. Generic record
+readers deny the private declaration; team views expose only verified, already-published attribution metadata.
+`SHARE_UPLOAD_UNSIGNED` retains its code with approved next-step text; no rejection code is added. The new B02 display axis
+`source_attribution_status` generates 未署名 and 已署名为团队来源. Their UI labels equal the model labels, so the generator's
+normal fallback supplies them without redundant `ui` annotations. Static consent copy stays in the console.
+The four protocol mirrors are regenerated; HTML/mindmap manifests advance to 1.0.12 and XML/workbook to 1.0.13, with no
+skill business-code changes. No migration is needed. Attribution records belong to the uploader's personal purge scope;
+actual purge integration awaits sync and the coordinator's rebase instruction in block five.

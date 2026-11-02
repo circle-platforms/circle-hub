@@ -54,7 +54,7 @@ export function commandModal(dialog:CommandDialog):Html{
 }
 
 /** Resolve only through the existing read boundary; missing and forbidden names remain indistinguishable. */
-export async function sourceBlock(ctx: PageContext, reference: string, quotation?: string): Promise<Html> {
+export async function sourceBlock(ctx: PageContext, reference: string, quotation?: string, capture?:string): Promise<Html> {
   let title = '来源', action: Html | undefined;
   try {
     const ref = parseReference(reference);
@@ -62,8 +62,8 @@ export async function sourceBlock(ctx: PageContext, reference: string, quotation
       return html`<div class="ch-source"><div class="ch-source-head"><span>${clearedPersonalFolder()}</span></div>${quotation ? html`<p class="ch-quote" data-evidence>${quotation}</p>` : ''}</div>`;
     }
     if (ref.scheme === 'src') {
-      const source = await ctx.deps.knowledge.spaces?.source(ctx.principal, ref.sha256);
-      if (source) { title = source.artifact.body.name || '原文'; action = link('/console/knowledge/source', '打开原文', { sha256: ref.sha256 }); }
+      const source = await ctx.deps.knowledge.spaces?.source(ctx.principal, ref.sha256,undefined,'model',capture);
+      if (source) { title = source.artifact.body.name || '原文'; action = link('/console/knowledge/source', '打开原文', { sha256: ref.sha256,artifact:source.artifact.digest }); }
     } else if (ref.scheme === 'tree' && ref.entry) {
       const entry = await ctx.deps.knowledge.spaces?.entry(ctx.principal, ref.root, ref.path, ref.entry);
       if (entry) { title = entry.body.content.statement; action = link('/console/knowledge/space', '查看', { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }

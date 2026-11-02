@@ -45,7 +45,32 @@ Personal capacity defaults to 1 GiB and is adjustable only by administrators. Th
 bytes and successive snapshot metadata, including history; withdrawals do not free history. This is logical space usage,
 not a report of filesystem blocks. Grants and capacity changes are append-only records. Writes serialize before opening
 the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
-Local synchronization, upload signing and account-deletion lifecycle remain later phases.
+Local synchronization and account-deletion lifecycle remain later phases on this branch. Upload signing is implemented
+below; it does not implement purge or change the synchronization branch.
+
+## Uploader attribution (decision 91, block one)
+
+Claude approved the contract list in `9ba31246` before model 25 was changed. `spaces.attributeSource` requires the enabled
+authenticated uploader, their current personal source registration and exact upload capture. Full readability and credential
+inspection remain mandatory. A declared `knowledge_source_attribution` record is appended under the personal space lock;
+concurrent repeated confirmations return the existing declaration. Equal bytes, another capture, a caller-supplied author
+or administrator privileges cannot substitute for that uploader's confirmation. The declaration itself publishes nothing.
+
+Sharing rechecks the exact declaration, current read rights, quotations, parser eligibility and complete source bytes.
+Success appends a separately held declared team capture, its explicit source association, the team's actual attribution
+set, snapshot and receipt in the same transaction. A team-copy failure rolls the transaction back. Private capture bytes,
+metadata and ACL remain immutable. Current team readers can reuse the explicitly published copy; administrator revisions
+retain its attribution. `sourceAttribution` and `entryAttributions` return authorized metadata only; raw `rec:` readers deny
+all private declaration records, including to administrators. Indexes locate candidates but never establish authority.
+
+`SourceBinding.upload_declaration` remains run-scoped, and an administrator's ordinary-upload import retains its existing
+separate declaration rule. A team signature does not change either rule or waive private-credential/source restrictions.
+Existing SHA references still select captures under the original read policy; the signature must match that actual capture.
+The source Inspector and SourceBlocks pin exact captures rather than silently substituting equal-byte metadata.
+
+The attribution record is part of its uploader's personal space. Per Claude's 2026-11-03 instruction, block five must
+include it in sync's personal purge scope after the coordinator arranges the rebase. No parallel purge implementation,
+new SQL table or migration is introduced here. Source archive browsing/location remains block two.
 
 
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed

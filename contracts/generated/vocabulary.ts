@@ -109,6 +109,7 @@ export const AXES = {
   sync_status: { label: '同步状态', owner: 'K01', values: [{ code: 'idle', label: '尚未同步' }, { code: 'syncing', label: '等待同步中' }, { code: 'conflicted', label: '有冲突' }, { code: 'purging', label: '等待清除中' }, { code: 'complete', label: '同步完成' }] },
   sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
   sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
+  source_attribution_status: { label: '团队来源署名', owner: 'B02', values: [{ code: 'unsigned', label: '未署名' }, { code: 'attributed', label: '已署名为团队来源' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1173,6 +1174,16 @@ export function isSyncField(value: unknown): value is SyncField {
   return (SYNC_FIELD as readonly unknown[]).includes(value);
 }
 
+/** 团队来源署名 (B02) */
+export const SOURCE_ATTRIBUTION_STATUS = ['unsigned', 'attributed'] as const;
+export type SourceAttributionStatus = (typeof SOURCE_ATTRIBUTION_STATUS)[number];
+export const SOURCE_ATTRIBUTION_STATUS_LABEL = { 'unsigned': '未署名', 'attributed': '已署名为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
+export const SOURCE_ATTRIBUTION_STATUS_UI = { 'unsigned': '未署名', 'attributed': '已署名为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
+export const SourceAttributionStatusSchema = z.enum(SOURCE_ATTRIBUTION_STATUS);
+export function isSourceAttributionStatus(value: unknown): value is SourceAttributionStatus {
+  return (SOURCE_ATTRIBUTION_STATUS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1280,6 +1291,7 @@ export interface AxisValues {
   sync_status: SyncStatus;
   sync_object_kind: SyncObjectKind;
   sync_field: SyncField;
+  source_attribution_status: SourceAttributionStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1389,6 +1401,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   sync_status: SYNC_STATUS_LABEL,
   sync_object_kind: SYNC_OBJECT_KIND_LABEL,
   sync_field: SYNC_FIELD_LABEL,
+  source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1498,6 +1511,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   sync_status: SYNC_STATUS_UI,
   sync_object_kind: SYNC_OBJECT_KIND_UI,
   sync_field: SYNC_FIELD_UI,
+  source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

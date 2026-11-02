@@ -110,10 +110,12 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
       const destination=preview?preview.target_path??'':target;
       share=preview?card({title:'分享到团队预检',hint:'我的原条目与分享保留；团队条目由提交人署名，本人和管理员可撤回，撤回不能追回已读内容。确认时重新执行全部检查。'},html`<p>我的：保留不变 · ${audience.text}</p><p>团队：新写入一条 · ${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/space"><input type="hidden" name="space" value="${space}"><input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="share" value="1"><label>团队文件夹<input name="team_path" value="${destination}"></label><button class="ch-btn ch-btn--secondary" type="submit">重新预检</button></form>${checkTable(preview.checks)}${preview.duplicate?existingTeamLink(preview.duplicate):''}${form(ctx,'share',html`<input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="team_path" value="${destination}">`,'确认分享到团队',false,!preview.ok)}`):html``;
     }
-    const sources:Html[]=[];for(const ground of entry.body.grounds)sources.push(await sourceBlock(ctx,ground.reference,ground.quotation));
+    const attributions=await spaces.entryAttributions(ctx.principal,entry.root,path,digest);
+    const sources:Html[]=[];for(const ground of entry.body.grounds){const pinned=attributions.find(row=>ground.reference==='src:'+row.sha256);sources.push(await sourceBlock(ctx,ground.reference,ground.quotation,pinned?.artifact));}
+    const signatures=attributions.length?card({title:'来源署名',meta:attributions.length},html`<ul class="ch-feed">${await Promise.all(attributions.map(async row=>html`<li><span>${uiLabelOf('provenance_type','declared')} · 署名人 ${evidence(await ctx.userName(row.by))}</span>${timestamp(row.at)}</li>`))}</ul>`):'';
     const details=html`<div class="ch-section" data-area-content data-inspector-content><div class="ch-actions"><span class="ch-tag">${uiLabelOf('entry_kind',entry.body.content.kind)}</span>${knowledgeState(entry.row.status)}</div><h2 class="ch-panel-title">${evidence(entry.body.content.statement)}</h2><p class="ch-meta">${directoryName(path)} · ${timestamp(entry.body.at)}</p>${withdrawNotice}
 ${card({title:'来源',meta:entry.body.grounds.length},sources.length?html`${sources}`:html`<p class="ch-meta">未提供来源</p>`)}
-${card({title:'分享'},html`${audienceLine}${provenance}`)}
+${signatures}${card({title:'分享'},html`${audienceLine}${provenance}`)}
 ${showCitations?stat('被引用次数',entry.cited_count??'—'):''}
 ${technical(html`${kv([['引用',code(entry.reference)],['作者',await ctx.userName(entry.body.by)]])}${pre(JSON.stringify(entry.body.content.data,null,2))}${pre(JSON.stringify(entry.body.content.applicability??null,null,2))}`)}
 ${share}${canEdit&&ctx.url.searchParams.get('edit')==='1'?editor(ctx,space,path,entry):''}
@@ -146,7 +148,7 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后不能再�
   const sources = await spaces.sources(ctx.principal, space);
   const personalHistory=own?(await ctx.deps.knowledge.memory?.usage(ctx.principal))?.history??0:0;
   const folderEntries=await spaces.entries(ctx.principal,version.root,version.body.entries.filter(row=>row.path===path));
-  const originals = card({ title: '原文', hint: space === 'team' ? '经管理员导入、供团队条目引用的业务系统原文，全体成员可读' : '上传的原文保存在所属私人空间，不自动生成条目；可在 Circle 中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 条条目引用',link('/console/knowledge/source','查看',{sha256:s.sha256})];})), '没有可读的原文')}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
+  const originals = card({ title: '原文', hint: space === 'team' ? '供团队知识引用的原文，全体成员可读；上传原文须由上传人署名' : '上传的原文保存在所属私人空间，不自动生成条目；可在 Circle 中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 条条目引用',link('/console/knowledge/source','查看',{sha256:s.sha256,artifact:s.artifact})];})), '没有可读的原文')}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
   const content=html`${knowledgeTabs(ctx)}<div class="ch-section">${audienceLine}${own?html`<p>私人空间已用 ${size(version.body.used_bytes+personalHistory)} / ${size(await spaces.capacity(space))} · 本文件夹条目 ${number(version.body.entries.filter(r=>r.path===path).length)} · 已验证 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 已分享 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`;
   const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${parts.at(-1)??'知识库'}</h2><p class="ch-meta">${audience.text}</p></section><div class="ch-stats">${stat('本页知识',nodes.nodes.reduce((sum,node)=>sum+node.entries.length,0))}</div>${history.items.length?card({title:'最近变化'},html`<ul class="ch-feed">${history.items.slice(0,3).map(item=>html`<li>${link('/console/knowledge/space',item.body.reason||'更新知识',spaceLink(space,item.root,path))}${timestamp(item.body.at)}</li>`)}</ul>`):''}`;
   return {status:200,body:page(chrome,await spaceLayout(ctx,pageLayout(content,{inspector:overview,actions:controls})))};
@@ -165,20 +167,18 @@ export async function spaceDiffPage(ctx: PageContext): Promise<PageResult> {
   return { status: 200, body: page(ctx.chrome('知识版本差异', { active: 'knowledge' }), spaceContent(html`${technical(html`从 ${code(from)} 到 ${code(to)}`)}${card({title:'条目与路径变化'},table(['变化','路径'],rows,'没有条目变化'))}`)) };
 }
 export async function spaceSourcePage(ctx: PageContext): Promise<PageResult> {
-  const sha = ctx.url.searchParams.get('sha256') ?? '';
-  if (!Sha256.safeParse(sha).success)
-    return neutralPage(ctx);
-  const source = await ctx.deps.knowledge.spaces?.source(ctx.principal, sha);
-  if (!source)
-    return neutralPage(ctx);
-  let text: string | null = null;
-  if (source.bytes) {
-    try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(source.bytes.subarray(0, 1024 * 1024), { stream: source.bytes.length > 1024 * 1024 });
-    }
-    catch { }
-  }
-  return { status: 200, body: page(ctx.chrome('知识原文', { active: 'knowledge' }), spaceContent(card({ title: source.artifact.body.name || '原文', meta: bytes(source.size) }, html `${text === null ? html `<p>原文暂不可读</p>` : pre(text)}${source.size > 1024 * 1024 ? html `<p>仅显示前 1 MiB；完整原文可在 Circle 中按引用分页读取。</p>` : ''}`))) };
+  const sha=ctx.url.searchParams.get('sha256')??'',capture=ctx.url.searchParams.get('artifact')??undefined,spaces=ctx.deps.knowledge.spaces;
+  if(!spaces||!Sha256.safeParse(sha).success||capture&&!Sha256.safeParse(capture).success)return neutralPage(ctx);
+  const source=await spaces.source(ctx.principal,sha,undefined,'model',capture);if(!source)return neutralPage(ctx);
+  const original=source.artifact,captureId=original.digest,metadata=original.body,title=metadata.name||'原文';
+  const attribution=await spaces.sourceAttribution(ctx.principal,sha,captureId);
+  let text:string|null=null;
+  if(source.bytes)try{text=new TextDecoder('utf-8',{fatal:true}).decode(source.bytes.subarray(0,1024*1024),{stream:source.bytes.length>1024*1024});}catch{/* Binary originals retain their existing read policy. */}
+  const returnUrl='/console/knowledge/source?'+new URLSearchParams({sha256:sha,artifact:captureId});
+  const confirmation=attribution.canAttribute?dialog('attribute-source','署名为团队来源',html`<p>署名后，引用这份原文的知识分享到团队时，团队成员可读取所需原文。原文仍保存在我的空间。署名本身不创建团队知识，也不表示内容已经验证。</p><p>团队已经取得的副本不会因收回文件夹分享而收回。</p>`,form(ctx,'attribute-source',html`<input type="hidden" name="source" value="${attribution.source}"><input type="hidden" name="artifact" value="${captureId}">`,'确认署名为团队来源')):'';
+  const inspector=html`<div class="ch-section" data-inspector-content><h2 class="ch-panel-title">${evidence(title)}</h2>${kv([['来源类型',uiLabelOf('provenance_type',metadata.provenance_type)],['upload' in metadata.origin?'上传人':'来源账号',evidence(await ctx.userName(metadata.author.user))],['采集时间',timestamp(metadata.captured_at)],['大小',bytes(source.size)],...(attribution.status?[['团队来源',chip(uiLabelOf('source_attribution_status',attribution.status),attribution.status==='attributed'?'pass':'plain')] as const]:[]),...(attribution.by?[['署名人',evidence(await ctx.userName(attribution.by))] as const,['署名时间',timestamp(attribution.at!)] as const]:[])])}${text===null?html`<p>原文暂不可读</p>`:pre(text)}${source.size>1024*1024?html`<p>仅显示前 1 MiB；完整原文可在 Circle 中按引用分页读取。</p>`:''}${technical(kv([['引用',code('src:'+sha)],['采集',code(captureId)]]),'查看来源信息')}<footer class="ch-inspector-actions">${attribution.canAttribute?actionLink('#attribute-source','署名为团队来源…','primary'):attribution.status==='unsigned'?html`<button class="ch-btn ch-btn--primary" disabled title="此原文暂不能署名。请确认原文可完整读取，并使用可检查的文本原文。">署名为团队来源…</button>`:''}</footer>${confirmation}</div>`;
+  const listing=html`<ul class="ch-list"><li class="ch-row is-selected" aria-current="true" data-row-href="${returnUrl}"><span class="ch-row-mark" aria-hidden="true"></span><div class="ch-row-body"><a class="ch-row-title" href="${returnUrl}">${evidence(title)}</a><div class="ch-row-meta">${bytes(source.size)} · ${uiLabelOf('provenance_type',metadata.provenance_type)}</div></div></li></ul>`;
+  return {status:200,body:page(ctx.chrome('知识原文',{active:'knowledge'}),pageLayout(listing,{inspector,detail:true,back:link('/console/knowledge','返回知识库')}))};
 }
 export async function spaceSearch(ctx: PageContext): Promise<Html> {
   const spaces = ctx.deps.knowledge.spaces;
@@ -231,6 +231,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
       addGround(get('ground'), get('quotation'));
     await spaces.write(ctx.principal, { path, kind: get('kind'), statement: get('statement'), data: get('data') ? JSON.parse(get('data')) : {}, applicability: get('applicability') ? JSON.parse(get('applicability')) : null, grounds, ...(get('expected_version') ? { expected_version: get('expected_version') } : {}), ...(get('replaces') ? { replaces: get('replaces') } : {}), reason: get('reason') || '我的条目写入' }, null, space);
   }
+  else if(action==='attribute-source'){const result=await spaces.attributeSource(ctx.principal,get('source'),get('artifact'));return '/console/knowledge/source?'+new URLSearchParams({sha256:result.sha256,artifact:result.artifact});}
   else if(action==='share'){await spaces.share(ctx.principal,{root:get('root'),path,entry:get('entry'),...(get('team_path')?{team_path:get('team_path')}:{})},null);return '/console/knowledge/submissions';}
   else if (action === 'directory')
     await spaces.directory(ctx.principal, path, space);

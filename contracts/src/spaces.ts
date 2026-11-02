@@ -26,7 +26,8 @@ export const SpaceEntryBody = z.strictObject({
   status: KnowledgeEntryStatusSchema.extract(['verified', 'unverified']),
   by: UserId, at: IsoTime, session: z.string().nullable(), replaces: Sha256.nullable(),
   shared_from: SpaceEntryOrigin.optional(),
-});
+  source_attributions: z.array(Sha256).max(100).refine(values=>new Set(values).size===values.length,"attributions must be unique").optional(),
+}).refine(row=>row.source_attributions===undefined||row.space==='team',"only team entries carry attributions");
 export type SpaceEntryBody = z.infer<typeof SpaceEntryBody>;
 export const SpaceRow = z.strictObject({ private_only:z.boolean().optional(),path: TreePath, entry: Sha256, record: Sha256, status: KnowledgeEntryStatusSchema });
 export const SpaceTreeNode = z.strictObject({ name: z.string(), children: z.array(z.strictObject({ name: z.string().min(1), digest: Sha256 })).max(10000), entries: z.array(Sha256).max(10000) });
@@ -45,7 +46,9 @@ export const SpaceGrantBody = z.strictObject({
   action: KnowledgeGrantActionSchema, by: UserId, at: IsoTime,
 }).refine(v => (v.audience === 'member') === (v.member !== null), 'a member grant names exactly one member');
 export type SpaceGrantBody = z.infer<typeof SpaceGrantBody>;
-export const SpaceSourceBody = z.strictObject({ sync_private:z.boolean().optional(),name:z.string().max(300).nullable().optional(),personal_epoch:z.uuid().optional(), space: SpaceId, path: TreePath, sha256: Sha256, artifact: Sha256, size: z.number().int().nonnegative(), by: UserId, at: IsoTime });
+export const SpaceSourceBody = z.strictObject({ sync_private:z.boolean().optional(),name:z.string().max(300).nullable().optional(),personal_epoch:z.uuid().optional(), space: SpaceId, path: TreePath, sha256: Sha256, artifact: Sha256, size: z.number().int().nonnegative(), by: UserId, at: IsoTime, attribution: Sha256.optional() }).refine(row=>row.attribution===undefined||row.space==='team',"only team source associations carry attributions");
+export const SourceAttributionBody = z.strictObject({space:UserId,source:Sha256,artifact:Sha256,sha256:Sha256,by:UserId,at:IsoTime,audience:z.literal('team')}).refine(row=>row.space===row.by,"only the uploader attributes a personal source");
+export type SourceAttributionBody = z.infer<typeof SourceAttributionBody>;
 export const SpaceQuotaBody = z.strictObject({ space: UserId, bytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), by: UserId, at: IsoTime });
 export const SpaceLocks = z.strictObject({ team: Sha256, personal: Sha256.nullable().describe('No personal root while personal content is stored only locally'), owner: UserId });
 export const SpaceEntryReceipt = z.strictObject({ space: SpaceId, root: Sha256, entry: Sha256, reference: z.string(), status: KnowledgeEntryStatusSchema });
@@ -56,5 +59,6 @@ export const schemas = {
   'knowledge-space-version@1': SpaceVersionBody,
   'knowledge-space-grant@1': SpaceGrantBody,
   'knowledge-space-source@1': SpaceSourceBody,
+  'knowledge-source-attribution@1': SourceAttributionBody,
   'knowledge-space-quota@1': SpaceQuotaBody,
 };

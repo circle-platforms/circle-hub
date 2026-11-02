@@ -69,7 +69,7 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
     const account = await records.principals.get(principal.id);
     if (account === null || account.disabled) return false;
     // Space manifests may contain directories outside a partial grant; use the path-filtered space API instead.
-    if (isMemoryRecord(record)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_')) return false;
+    if (record.kind==='knowledge_source_attribution'||isMemoryRecord(record)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_')) return false;
     if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) return (await contributions?.read(record.digest, account)) != null;
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
     const run = runOfRecord(record.kind, record.body, record.schema);

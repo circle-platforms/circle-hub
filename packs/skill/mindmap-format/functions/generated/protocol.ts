@@ -165,8 +165,8 @@ export const PROTOCOL_CODES = {
     "fix": "先通过团队连接重新读取并核对引文"
   },
   "SHARE_UPLOAD_UNSIGNED": {
-    "when": "上传文件尚无团队依据所需的署名",
-    "fix": "等待上传署名能力，或改用团队连接读取的原文"
+    "when": "上传原文需上传人署名",
+    "fix": "请上传人在原文详情中选择“署名为团队来源…”，确认后重新预检"
   },
   "SHARE_GROUND_UNREADABLE": {
     "when": "依据条目尚不能被团队全部读者读取",
