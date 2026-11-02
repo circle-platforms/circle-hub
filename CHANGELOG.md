@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Synchronize legacy object directories before completing retirement.
+
 - Check cleared team grounds through the existing exact source index.
 
 - Bound repeated legacy personal-tree traversal and keep retirement holder lookups indexed.

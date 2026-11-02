@@ -137,9 +137,17 @@ export class FileObjectStore implements ObjectStore {
     for(const row of retired.rows){const hash=String(row.sha256);
       // Keep separately held team/product/run originals; audit mentions alone do not own content.
       const independent=await this.#db.query("SELECT 1 FROM object_holds h WHERE h.sha256=$1 AND NOT h.artifact AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=h.record) LIMIT 1",[hash]);
-      if(!protectedNodes.has(hash)&&!independent.rows.length)await unlink(this.path(hash)).catch((error:NodeJS.ErrnoException)=>{if(error.code!=='ENOENT')throw error;});
+      if(!protectedNodes.has(hash)&&!independent.rows.length){
+        await unlink(this.path(hash)).catch((error:NodeJS.ErrnoException)=>{if(error.code!=='ENOENT')throw error;});
+        await this.syncRetirementDirectory(join(this.root,hash.slice(0,2)));
+      }
       await this.#db.query('SELECT hub_finish_personal_retirement($1)',[hash]);
     }
+  }
+
+  /** Retirement completion must not outrun durable directory removal; failures keep the journal resumable. */
+  protected async syncRetirementDirectory(directory:string):Promise<void>{
+    const handle=await open(directory,'r');try{await handle.sync();}finally{await handle.close();}
   }
 
   async stat(sha256: string,tx?:Transaction): Promise<ObjectInfo | null> {

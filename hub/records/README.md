@@ -801,3 +801,5 @@ Review item 5 adds a metadata-only cleared(record) predicate for authorized view
 metadata and never loads the active private body. Capsule inspection still performs the full integrity checks when needed.
 
 Security review bounds legacy tree traversal by account/epoch and caches at most 50,000 node keys per set. Completion validates at most 10,000 nodes and 64 levels; excess refuses completion. The 1,200-version synthetic fixture asserts distinct-account copies and indexed holder queries.
+
+Legacy file retirement fsyncs the containing directory before recording completion. Failure keeps the pending journal and prevents purge; restart retries the directory sync even if unlink already succeeded. The durability regression injects that exact crash boundary.

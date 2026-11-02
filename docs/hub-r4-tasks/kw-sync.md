@@ -545,3 +545,9 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 做了的：团队 src 依据改用既有 knowledge.space.source_hash 精确索引，只加载匹配来源并核对其是否属于该版本；不再逐条读取全部团队来源。清除判定只读绑定／清除元数据，树依据也不加载私人正文。不设跨请求的否定缓存，清除立即生效。未改迁移或历史内容。
 
 验证：400 个真实来源的回归核对匹配加载数、零逐来源 get、后续清除立即变为待验证且团队正文不变。首轮夹具误给条目加 path 字段，修正后又发现把 put 的 created 返回标记当成存储内容比较；改为比较实际正文，两项夹具修正均未放宽产品断言。类型检查通过（泛型计数包装同步保留原端口类型）。personal-ground-index、personal-purge、environment、diagnostics、PG 18 ownership、lock-namespaces、验收 47／49 共 34 项通过、0 失败、0 跳过。全部工作流／引擎在本轮依据相关修复完成后统一运行；全量回归、Linux CI、来源检查未运行，文档检查留收尾。
+
+### 第 2 步安全审查修正 8：退役目录先同步落盘
+
+做了的：无独立持有者的旧文件删除后，严格打开并 fsync 所在目录，成功后才调用所有者退役完成函数。同步或关闭失败直接中止启动，保留待处理日志；重启遇到已删除文件时仍重新同步目录后再完成。不改普通对象写入的既有行为。
+
+验证：故障注入在 unlink 之后使目录同步失败，断言文件已不在、完成日志未写、清除被阻止；新实例恢复时执行真实目录 fsync，完成前再次核对日志不存在，随后清除成功。类型与差异检查通过；personal-retirement-durability、personal-upgrade、personal-mount-upgrade、personal-retirement-holds、environment、diagnostics、PG 18 ownership、lock-namespaces 共 31 项通过、0 失败、0 跳过。未跑全量回归、Linux CI、来源检查，文档检查留收尾。
