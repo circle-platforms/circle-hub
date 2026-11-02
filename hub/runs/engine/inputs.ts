@@ -18,6 +18,7 @@ import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
 import { identityOf, runOfRecord } from './readers.ts';
+import {isPersonalSpace,personalExternalAllowed,personalCapabilityError} from '../packs/personal-capabilities.ts';
 import {guardedRecords} from './grounds.ts';
 import { essence, isObject } from './util.ts';
 
@@ -114,6 +115,9 @@ export async function bindInputs(
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;
       }
+      if(isPersonalSpace(workflow.pack.space)&&'read' in source.artifact.body.origin&&!await ctx.deps.knowledge?.spaces?.mayReadSource(user,ref.sha256,undefined,'function',source.artifact.digest)){
+        errors.push(personalCapabilityError(path));return null;
+      }
       if (!mediaAccepted(slot, source.mediaType)) {
         schemaError(path, `输入槽 ${slot.slot} 不接受媒体类型 ${source.mediaType}（接受：${slot.accepts.join('、')}）`);
         return null;
@@ -187,6 +191,7 @@ export async function bindInputs(
   };
 
   const readExternal = async (slot: WorkflowInput, path: string, id: string): Promise<Read | null> => {
+    if(isPersonalSpace(workflow.pack.space)&&!personalExternalAllowed(id)){errors.push(personalCapabilityError(path));return null;}
     if (!slot.accepts.includes(externalType(id))) {
       schemaError(path, `输入槽 ${slot.slot} 不接受 ${externalType(id)} 类型的外部对象（接受：${slot.accepts.join('、')}）`);
       return null;

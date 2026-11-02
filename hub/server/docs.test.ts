@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import type { LoadedWorkflow, WorkflowStore } from '../ports.ts';
-import { sha256Hex, type ActionBody, type Principal, type SourceArtifactBody } from '../records/api.ts';
+import { sha256Hex,newId, type ActionBody, type Principal, type SourceArtifactBody } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import { writePack } from '../runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
@@ -30,6 +30,16 @@ after(async () => {
 });
 
 const enc = new TextEncoder();
+
+test('an old personal run never unlocks an administrator named document, even with a matching input declaration',async t=>{
+  const {kit,docs,admin,user}=await world();t.after(()=>kit.close());await docs.put(admin,'synthetic-restricted',enc.encode('合成管理员命名文档'));
+  for(const principal of [user,admin]){
+    const run=newId('run');
+    await kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:{run,runner:principal.id,pack_space:principal.id,pack_digest:'a'.repeat(64)},index:[{key:'runs.id',value:run}]});
+    const result=await docs.reader.read('doc:doc:synthetic-restricted',{principal,run,purpose:'合成回归'});
+    assert.equal(result.ok,false);if(!result.ok)assert.match(result.reason,/个人工作流/);
+  }
+});
 
 function docJson(items: Array<{ title: string; expected: string[] }>): Uint8Array {
   return enc.encode(JSON.stringify({ items }));

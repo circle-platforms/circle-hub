@@ -50,6 +50,7 @@ export const PROTOCOL_CODES = {
   GROUNDS_WITHDRAWN: { when: '结果或条目的依据已撤回', fix: '补充仍有效的依据后重新提交；历史记录保留原样' },
   PACK_SPACE_DENIED: { when: '包空间或使用权限不可用', fix: '选择本人或当前获授权的工作流或通用技能' },
   PACK_PERSONAL_PUBLICATION_DENIED: { when: '个人包发布未通过校验或空间规则', fix: '核对结构、引用、样例与凭据；个人空间只接受工作流和通用技能' },
+  PACK_PERSONAL_CAPABILITY_DENIED: { when: '个人工作流或通用技能不能使用命名文档、业务系统、租约、设备派发或其他外部效果', fix: '个人空间只使用上传、个人或团队知识及 Hub 生成的文件；需要其他能力时先发布到团队并由管理员分配' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;
@@ -97,4 +98,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 21;
+export const MODEL_VERSION = 22;

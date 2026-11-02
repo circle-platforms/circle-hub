@@ -168,7 +168,8 @@
               "RESULT_GROUNDS_UNREADABLE",
               "GROUNDS_WITHDRAWN",
               "PACK_SPACE_DENIED",
-              "PACK_PERSONAL_PUBLICATION_DENIED"
+              "PACK_PERSONAL_PUBLICATION_DENIED",
+              "PACK_PERSONAL_CAPABILITY_DENIED"
             ]
           },
           "fix": {

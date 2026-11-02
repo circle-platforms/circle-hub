@@ -24,6 +24,10 @@ originals and personal-credential sources keep their independent restrictions. P
 and text/structured replies expose live withdrawal qualifiers. Username/password remains the only console sign-in for
 all roles; bearer tokens only authenticate MCP/Circle connections. No Circle repository or synchronization code changes.
 
+Personal workflow runs cannot unlock named documents, including retained runs with an old input declaration. Their
+publication/start gates exclude business-system inputs, leases and external effects; administrators use the same
+personal capability boundary. Team workflows retain assignment-based access.
+
 ## Console spaces (decision 86)
 
 Knowledge shows personal, team and shared-with-me columns. `/console/knowledge/space` browses a selected immutable root,

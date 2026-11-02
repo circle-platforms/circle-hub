@@ -49,3 +49,22 @@ test('two registry instances serialize the same personal version without nesting
   assert.equal(outcomes.filter(row=>row.ok&&row.created).length,1);
   assert.equal((await bed.registry.personal!.versions(bed.carol.id,written.manifest.id)).length,1);
 });
+
+for(const [id,type] of [['named-document','doc:doc'],['business-system','synthetic:case']] as const)test(`personal workflows and skill methods refuse ${id} declarations before publication`,async t=>{
+  const bed=await openPackTestbed({postgres});t.after(()=>bed.close());
+  for(const method of [false,true]){
+    const pack=workflowPack({id:`unsafe-${id}-${method?'skill':'workflow'}`});
+    (pack.files['workflow.json'] as any).inputs[0].accepts=[type];
+    if(method){pack.kind='skill';pack.files['skill.json']={schema:'skill@1',parsers:[]};}
+    const outcome=await bed.registry.personal!.publish(bed.carol,(await bed.write(pack)).dir);
+    assert.equal(outcome.ok,false,JSON.stringify(outcome));assert.ok(!outcome.ok&&outcome.problems.some(problem=>problem.rule==='PACK_PERSONAL_CAPABILITY_DENIED'));
+    assert.equal((await bed.registry.personal!.versions(bed.carol.id,pack.id)).length,0);
+  }
+});
+
+test('personal publication refuses a shared lease namespace without acquiring or registering it',async t=>{
+  const bed=await openPackTestbed({postgres});t.after(()=>bed.close());const pack=workflowPack({id:'unsafe-personal-lease'});
+  Object.assign(pack.files['workflow.json'] as object,{context:['leases'],leases:{prefix:'bed/'}});
+  const outcome=await bed.registry.personal!.publish(bed.carol,(await bed.write(pack)).dir);
+  assert.equal(outcome.ok,false,JSON.stringify(outcome));assert.ok(!outcome.ok&&outcome.problems.some(problem=>problem.rule==='PACK_PERSONAL_CAPABILITY_DENIED'));
+});

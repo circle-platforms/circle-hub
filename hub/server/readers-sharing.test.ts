@@ -54,7 +54,10 @@ test('team production refuses a private connector original and sharing cannot wi
   const refused=await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:'src:'+artifact.body.sha256}}},h.call());
   assert.equal(refused.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE');assert.equal(refused.run,undefined);
   h.locate.pack.space=h.alice.id;
-  const started=await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:'src:'+artifact.body.sha256}}},h.call());assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
+  for(const slot of h.locate.workflow.inputs)slot.accepts=slot.accepts.filter(type=>!type.includes(':'));
+  const direct=await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:'src:'+artifact.body.sha256,artifact:artifact.digest}}},h.call());assert.equal(direct.errors[0]?.code,'PACK_PERSONAL_CAPABILITY_DENIED');
+  const upload=await h.kit.artifacts.ingest({bytes:toyMap(standardDocument()),mediaType:'application/json',origin:{upload:{session:null,message:null}},author:{user:h.alice.id},provenanceType:'declared',visibility:{readers:[h.alice.id],admins:false,packs:[],shareable:false}});
+  const started=await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:'src:'+upload.body.sha256,artifact:upload.digest}}},h.call());assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
   const run=started.run!;
   await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
   assert.equal(await h.service.getRun(h.bob,run.run),null);

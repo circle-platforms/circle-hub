@@ -397,3 +397,8 @@ Model 21 clarifies the coordinator's upload declaration rule (2026-11-02): exact
 declared to that run's readers, and an administrator's own team import is a declaration. `upload_declaration` is optional
 on frozen source bindings. `unavailable_references` on validation results records Hub-observed absent diagnostics only;
 clients cannot set it as a permission exception. Old records and applied migrations are unchanged.
+
+Model 22 registers the phase-three security restrictions and `PACK_PERSONAL_CAPABILITY_DENIED`. Personal workflow and
+skill methods cannot declare team resource inputs, leases or external effects; both publication and start enforce it.
+The four generic skill protocol mirrors are regenerated, with only patch manifests advancing HTML/mindmap to 1.0.8 and
+XML/workbook to 1.0.9. Their parsing business code is unchanged.

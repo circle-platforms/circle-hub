@@ -13,6 +13,7 @@ import { Extractor, type StagedTree } from './extract.ts';
 import { parseDeclarations, packJsonReader } from './load.ts';
 import { compareVersions, parsePackRef } from './versions.ts';
 import { problem } from './problems.ts';
+import {personalPackProblems} from './personal-capabilities.ts';
 
 export class PersonalPacks {
   #options:PackRegistryOptions; #team:PackRegistry; #extractor:Extractor; #writes:Promise<unknown>=Promise.resolve();
@@ -65,7 +66,7 @@ export class PersonalPacks {
     by=await this.#own(by);const refuse=(problems:PackProblem[],report:PublishReport|null=null):PublishOutcome=>({ok:false,problems,report});
     const read=await readPackDirectory(directory,{limits:this.#options.limits});if(!read.ok)return refuse(read.problems);
     const {manifest,digest}=read.pack;if(manifest.kind!=='workflow'&&manifest.kind!=='skill')return refuse([problem('personal.kind','pack.json','个人空间只接受工作流与通用技能','选择团队空间并按团队权限发布')]);
-    const validation=await validatePack(read.pack,{policy:this.#options.policy});if(!validation.ok)return refuse(validation.problems);const versionErrors=versionProblems(manifest);if(versionErrors.length)return refuse(versionErrors);
+    const validation=await validatePack(read.pack,{policy:this.#options.policy});if(!validation.ok)return refuse(validation.problems);const capabilities=personalPackProblems(validation.pack.declarations);if(capabilities.length)return refuse(capabilities);const versionErrors=versionProblems(manifest);if(versionErrors.length)return refuse(versionErrors);
     let staged:StagedTree|null=null;
     try{
       if(needsSandbox(validation.pack))staged=await this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));

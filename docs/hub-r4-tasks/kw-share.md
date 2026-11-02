@@ -245,3 +245,11 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 CI 修复阶段复查：23 文件 170 项中 167 通过、3 失败；三项分别是旧 section id、重组交接和异步版本读取漏 await，均已修正。后续含两个场景 28 的 5 文件 38 项，37 通过、1 项重组仍失败，重组最终独立通过如上；其中 console-places、template-gap 以及场景 28 的 8 项均实际通过，0 跳过。`typecheck`、`verify:contracts`（151 文件）通过，模型版本定向测试 13 项通过，文档测试 289 项通过、0 跳过。分组有重叠，不累加为一次全绿；安全修复之后再完整运行要求的工作流／引擎组和验收集。
 
 CI 修复提交前的定向收尾：`node --test --test-concurrency=1 --test-reporter=tap hub/records/artifacts.test.ts hub/knowledge/spaces.test.ts hub/runs/engine/grounds.test.ts hub/runs/engine/bound-retry.test.ts hub/runs/engine/quote-fragments.test.ts hub/server/readers-sharing.test.ts hub/refs/diagnostics.test.ts`，61 项通过、0 失败、0 跳过；包括另一成员私有来源与不存在 sha 的同形回归、精确采集隔离和缺省知识端口。类型检查再次通过。下一步处理安全附页，完整验证随后执行。
+
+### 第三阶段安全附页：能力边界（高 1、高 2、中 2）
+
+按附页的共同修正方向处理三项相同入口的问题，各项有独立回归。模型 22 先登记 `PACK_PERSONAL_CAPABILITY_DENIED`；个人发布及旧版本的启动均检查输入声明、租约上下文和效果行，个人通用技能内的方法同样检查。动态期望来源在路由前完整检查，投影不得索取租约；可直接读取的业务系统采集须先成为当前可读的空间知识，不能绕过声明限制。旧个人运行也不能直接解锁命名文档，管理员的个人运行同样拒收。团队发布、分配与租约能力不改。
+
+协议镜像变化只同步四个通用技能的 `functions/generated/protocol.ts` 与 `pack.json`：HTML／思维导图 1.0.8，XML／工作簿 1.0.9，没有业务代码变化。授权来源是 Claude 转达的本次安全修正要求与既有协议镜像授权。
+
+验证：类型及 151 文件合约核对通过；`node --test --test-concurrency=1 --test-reporter=tap hub/runs/packs/personal.test.ts hub/runs/engine/personal-capabilities.test.ts hub/server/docs.test.ts` 22 项通过、0 跳过。首轮三项及第二轮两项夹具错误（缺产品选择、无效运行号、缺期望来源 reason）均已修正，原攻击断言保留。版本断言与读取共享专项 16 项通过、0 跳过。`readers-sharing` 原来允许个人工作流直接绑定私有连接采集，按本次新规则改为明确拒收；其原有个人运行不向被分享者开放的断言，用普通本人上传继续验证。完整工作流／引擎及验收集留到附页其余修正之后。

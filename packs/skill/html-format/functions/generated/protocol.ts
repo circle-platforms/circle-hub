@@ -195,6 +195,10 @@ export const PROTOCOL_CODES = {
   "PACK_PERSONAL_PUBLICATION_DENIED": {
     "when": "个人包发布未通过校验或空间规则",
     "fix": "核对结构、引用、样例与凭据；个人空间只接受工作流和通用技能"
+  },
+  "PACK_PERSONAL_CAPABILITY_DENIED": {
+    "when": "个人工作流或通用技能不能使用命名文档、业务系统、租约、设备派发或其他外部效果",
+    "fix": "个人空间只使用上传、个人或团队知识及 Hub 生成的文件；需要其他能力时先发布到团队并由管理员分配"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

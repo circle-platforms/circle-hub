@@ -19,6 +19,11 @@ validator. An unavailable reference stays indistinguishable from a forbidden ref
 those identities as `unavailable_references` diagnostic metadata on its validation result; raw client data cannot set a
 permission exception. Current readable grounds remain subject to every actual reader's current grants.
 
+Personal workflow/skill methods are limited to uploads, currently authorized knowledge-space originals/views and
+Hub-generated files. Publication and start admission reject named documents, other external types, lease declarations
+and effect rows. Dynamic expected sources are inspected before routing any read; projections cannot request leases.
+Retained personal publications therefore cannot bypass team assignment by changing an input or function output.
+
 
 Starting runs, boundary validation, terminal states and partitions: model elements W01 W02 W03 W05 W06 W07 W08, V01 V03 V04
 V05 V06 V07, T03 T04, A01-A04, B01 B05 and C08 R[4]. The server and the console import only `api.ts`.

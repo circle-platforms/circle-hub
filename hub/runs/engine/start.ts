@@ -1,4 +1,5 @@
 import {groundsAudience,guardedRecords} from './grounds.ts';
+import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -419,6 +420,7 @@ async function authorizedStart(
 ): Promise<StartRunDetail> {
   const workflow = await ctx.deps.workflows.forUser(user, input.pack,input.pack_space);
   if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
+  if(isPersonalSpace(workflow.pack.space)&&personalWorkflowProblems(workflow.workflow,workflow.effects).length)throw new Refusal([personalCapabilityError()]);
   const declaration=PublishableRequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
   if(!declaration.success){
     const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest,workflow.pack.space);
@@ -572,6 +574,7 @@ async function startFresh(
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
+  if(isPersonalSpace(workflow.pack.space)&&projection.leaseRequests.length)throw new Refusal([personalCapabilityError()]);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
