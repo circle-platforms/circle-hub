@@ -258,7 +258,7 @@
 
 ## 做了的
 
-- 独立安全复核正在逐项修正，原审查意见保留；每项的做法、先前复现与定向结果见末尾“安全审查修正记录”。
+- 独立安全复核的 8 项及 3 条设计说明均已修正，整理为 8 个本机签署提交；原审查意见保留。每项做法、复现、检查结果及未运行项见末尾“安全审查修正记录”和“安全复核收口”。
 
 - #132 CI 的迁移快照修正：复核迁移源相对 main 的 12 行追加，迁移 12 仅建立记忆头／累计量投影与索引，并授予限定字段更新权；迁移 1～11 的源文本不变。只更新经复核的整文件固定摘要，原有逐条 SQL 快照不变；没有修改迁移源或数据库。检查要求见上文，修正提交为 `1aab2f63`。
 
@@ -294,6 +294,8 @@
 - 第三阶段 `301337ea` 报告后新开本工作树与分支，补齐实施顺序和待审的记忆协议。只修改本页，保留第 36 项审查前置；没有修改模型、生成物、迁移、运行代码或 Circle 仓库。
 
 ## 验证
+
+- 安全复核最终定向组 219 项通过，独立采集／扫描组 135 项通过，均 0 失败、0 跳过；两组有重叠，不相加。类型、155 文件合约核对、289 项文档及生成内容核对通过。完整工作流／引擎组曾为 2759 通过、3 失败，三项均已修正并在受影响文件复查通过；没有把该完整组称作整组通过，也没有重跑未受后续修改影响的文件。详见末尾命令和记录。
 
 - 页面核对首轮 13 项中 12 通过、1 个新用户名断言写错；改为读取合成账户名称后修正。类型检查另发现引用次数可能未知，保留未知的“—”而不传入数量格式化。扩大检查运行全部 24 个控制台测试文件、验收 46／47／48、环境变量、缺省知识端口、PG 18 ownership、锁命名空间及包词表检查：205 项中 202 通过、3 失败、0 跳过。两项失败要求管理员保留分配姓名，一项要求独立共享页保留“团队目录”表头；恢复这些行为后，两个受影响文件加新增范围回归共 31 项通过、0 跳过。没有放宽原有权限或来源路径断言，分组重叠不相加；首轮 205 项不计整组一次通过。
 - 页面核对提交前：范围／空间栏／记忆表单、场景 48、四个必跑文件及包词表检查 52 项通过、0 失败、0 跳过。类型、155 文件合约核对及文档 289 项通过；PG 18 ownership 的 3 项实际运行，不算跳过。按原要求只做受影响检查，未运行完整 unit／acceptance、Linux 作业、来源归档或完整工作流／引擎组；本轮未改运行或依据代码。
@@ -522,3 +524,44 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 - **L3**：使用 M2 已登记的 `MEMORY_TEAM_DISABLED` 与团队记忆状态检查。预检先查同一篇个人文档的已共享团队文档，任一仍被管理员停用即固定拒收，后续大小、凭据检查标为未检查；正式提交持锁重查，不写新文档、不复活旧文档。管理员主动启用后恢复原有“保留管理员修改”的规则；其他个人文档可独立共享。新增用例先复现停用后仍可共享，再覆盖预检后停用、个人修订、旧共享沿革、重新启用与独立文档。记忆、控制台记忆、验收 48 和四个必跑文件共 39 项通过、0 跳过，类型通过。
 - **L5**：扫描器升至 credential-scan@3；只在扫描视图里做 NFKC、去不可见字符、HTML 实体解码、路径段连读及相邻键值检查、长 base64／base64url 文本解码，沿用有界递归和原有检测器。原字节、保存文本、出处身份不改。新增扫描与知识／记忆服务回归先复现两项失败，修正后保留全角、零宽、软连字符、实体、编码、目录拆分及组合形式；普通目录、模板、无凭据编码文本和干净 Unicode 原文仍按原样处理。
   - 原有 KEY=value、AWS、Bearer、PEM、中文密码、正反例、位置、32 MiB 时间／内存断言均保留。扩大检查 116 项中 115 通过、1 失败、0 跳过：旧用例将“下一版扫描器”固定为 3，现与当前版本相同；改为由实际扫描器版本递增后，扫描、接受规则及派生覆盖 47 项复查全部通过、0 跳过，类型通过。其余已实际通过的检查包含记忆、空间、共享、凭据政策、凭据分页、原件、验收 48、环境、缺省知识端口、PG 18 ownership 和锁；各组重叠不相加。首次命令中的派生测试文件名写错未执行，已用实际 `hub/records/derived.test.ts` 纳入 47 项补查，不把未运行当通过。完整工作流／引擎组在下一项一起执行。
+- **L4 与管理员作为授权一方**：统一记忆记录边界，`memory-refusal@1` 及 M3 的 `memory-unchanged@1` 在服务器和引擎的通用读取中均返回缺失，包括管理员，不能借作输入或依据。记录页向普通账户本人仅显示已登记码、生成的字段标签与行；不显示自由说明、载荷或内部摘要。管理员仅以现有索引计数，按创建时间／账户筛选，超过有界统计量则明确显示，既有审计无需改写或全库扫描。知识、工作流和记忆三类授权均补回管理员本人发出／收到的记录；不显示无关成员授权，并继续核对记录正文而非信任索引。
+  - 三个新增回归先实际失败：管理员通用读取可见、管理员本人授权遗漏、本人无安全拒收摘要。实现后首轮 35 项中 33 通过、2 失败，原因是统计调用量写成超出现有端口允许值；改回端口的 100,000 上限，并修正新测试对不存在输出字段的类型断言。随后原控制台、记忆 HTTP／MCP、审计视图、验收 48 和四个必跑文件共 46 项通过、0 跳过，类型通过。合约核对 155 文件和文档 289 项通过、0 跳过；全工作流／引擎组的完整结果见收口记录。
+  - 再补依据特例回归，先复现“待写动作”例外可把私有动作当作可读依据；在这些例外和已冻结输入之前统一拒绝记忆记录。补齐合成输入的生成角色后，依据文件 6 项通过、0 跳过。验收 48 增加普通成员与已分配管理员均不能绑定拒收审计／无变化回执的检查。第一次完整工作流／引擎执行在此修正前主动中断，没有当作通过；按修正后的读取／依据代码重新执行。
+
+#### 最后补查的边界
+
+- M2 的合成旧库再加入标题／正文中的合法 NUL 和字面的反斜线 u0000，先复现 JSONB 解码报错。只修订本轮尚未交付的新增迁移 13：在计量视图里以同为一个 UTF-8 字节的控制字符替换 NUL 转义，计量仍准确，原记录及其正文不改。迁移 1～12 不变。迁移源复核固定摘要为 `ee4b209cb49b7d9f52f17fc42893b3b15c901a6939c3dfae961ff1b659a1410f`；升级、快照、运行角色、密码、PG 18 ownership 和四个必跑文件共 24 项通过、0 跳过。该修正归入 M2 提交。
+- L5 补齐合法省略分号的 HTML 实体及标准换行 base64，包括凭据跨编码行边界；新增编码定向检查通过，干净模板与普通路径断言保留。扩展用例曾误把原来不支持的带前缀空格写法当作基线，改用原有检测器支持的 password 空格写法核对实体，未修改检测器原正反例。该修正归入 L5 提交，最终扫描组结果在下方记录。
+
+### 安全复核收口
+
+- 本机为 Node 24.22.1、macOS，实际确认操作系统沙箱可用。以下数据库检查用临时 PostgreSQL／密钥库，ownership 使用已获准的 PG 18 客户端，3 项实际运行。没有读取运行环境配置或个人凭据，没有部署、推送或创建 PR。
+- 按既有要求执行全部工作流／引擎文件：349 文件、2762 项，2759 通过、3 失败、0 跳过；此前有一次为补上依据例外拒绝而主动中断，未计通过。三项失败分别是独立采集技能的两项扫描镜像漂移，以及一次并发恢复锁后只上传一份。没有删改原期待：统一扫描镜像和版本，补确定性竞态用例复现复制后删除误删新所有者，再改为原子移动隔离。
+- L5 因共用扫描而同步独立采集技能，knowledge-contribution 升至 1.3.15。生成工具将 Hub 扫描器及 HTML 字符引用解码／数据一起镜像；字符数据由既有 parse5 依赖生成并保留许可证，逐条和原解析器比对，不新增运行时依赖。旧事件保留原扫描器标识，待传字节按当前规则复查。镜像同步中间组曾为 135 项中 132 通过、3 失败：示例注释被扫描、竞态夹具未释放空锁目录，以及修改过程中清单未重签；分别去掉注释中的凭据形状、完整释放夹具、重生清单。类型检查也发现恢复工具仍需 copyFile，保留其导入。最终下列组 **135 项通过、0 跳过**，包含原三个失败用例及新增确定性锁／旧事件回归。分发测试增加源镜像比对后另重跑 **3 项通过、0 跳过**；后续只改相关独立技能和行为等价的实体解码，没有重跑整套 349 文件。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  'packs/workflow/knowledge-contribution/**/*.test.ts' \
+  hub/records/html-entity.test.ts hub/records/scan.test.ts \
+  hub/platform/environment.test.ts hub/platform/ownership.test.ts \
+  hub/refs/diagnostics.test.ts hub/records/lock-namespaces.test.ts
+```
+
+- 最终受影响服务／控制台与验收组 **219 项通过、0 失败、0 跳过**，覆盖管理员输入绑定拒绝、成员范围、个人依赖、当前记忆额度和历史回放。命令如下；与其他组重叠，不累计为总数。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  contracts/src/memory.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/vocab-axes.test.ts \
+  hub/config/config.test.ts \
+  hub/knowledge/memory.test.ts hub/knowledge/spaces.test.ts hub/knowledge/sharing.test.ts hub/knowledge/credential-policy.test.ts \
+  hub/records/artifacts.test.ts hub/records/findings.test.ts hub/records/credential-pages.test.ts hub/records/derived.test.ts \
+  hub/records/memory-index.test.ts hub/records/migrations.snapshot.test.ts hub/records/password.test.ts hub/records/roles.test.ts \
+  hub/runs/packs/personal.test.ts hub/runs/engine/grounds.test.ts \
+  hub/server/console-memory.test.ts hub/server/console/space-records.test.ts hub/server/console/packs.test.ts hub/server/console.test.ts \
+  hub/platform/environment.test.ts hub/platform/ownership.test.ts hub/refs/diagnostics.test.ts hub/records/lock-namespaces.test.ts \
+  tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts
+```
+
+- `node --test packs/workflow/case-review/packs.test.ts`：22 项通过、0 跳过。`npm run typecheck`、`npm run verify:contracts`（155 文件）、`npm run test:docs`（289 项，0 跳过）、`node tools/gen-credential-scanner.ts --check` 与 `git diff --check` 均通过。整理同项补查到对应提交后，确认源文件与整理前完全一致。
+- 原并发恢复锁用例在修正后又顺序重跑 10 轮，每轮 1 项通过、0 失败、0 跳过；原两次上传、互斥和事件链断言保留，没有用重试掩盖一次失败。
+- 本轮最终实际运行的各组没有遗留跳过；中断、先前失败和未运行均未算通过。没有运行完整 test:unit、完整 test:acceptance、Linux CI 或来源归档检查；来源清单／归档工具未改。没有新增业务正文 SHA 校验，只有明确要求的迁移源快照复核和既有包清单生成。界面布局已由上一轮核对，本轮没有另做布局截图，也没有启动客户端自动加载／同步阶段。

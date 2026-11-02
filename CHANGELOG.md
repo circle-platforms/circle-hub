@@ -14,6 +14,9 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Memory refusal audits and unchanged-write receipts cannot be read as generic records or evidence. Owners see safe
+  refusal summaries and administrators see counts; administrators retain visibility of grants in which they participate.
+
 - Credential scanning checks Unicode compatibility forms, invisible characters, HTML entities, encoded text and split
   path segments without rewriting stored content. Memory revocation remains effective for disabled accounts, unchanged
   writes preserve versions, and administrator-disabled team memories cannot be bypassed through another share.

@@ -1,4 +1,4 @@
-import {isMemoryRecordKind} from '../../../contracts/src/memory.ts';
+import {isMemoryRecord} from '../../../contracts/src/memory.ts';
 import type { ContributionLayer } from '../../knowledge/api.ts';
 import { isKnowledgeContributionSchema } from '../../../contracts/src/contributions.ts';
 // Visibility (R02) and the readers hub/refs resolves references with. Owners see their runs; admins see team runs;
@@ -67,7 +67,7 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
-      if(isMemoryRecordKind(record.kind)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_'))return null;
+      if(isMemoryRecord(record)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_'))return null;
       if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) {
         if ((await contributions?.read(digest, principalOf(reader))) == null) return null;
       } else if (reader.role !== 'admin'||runOfRecord(record)!==null) {

@@ -141,3 +141,13 @@ test('memory limits and credential refusals are real; re-sharing preserves admin
  assert.equal((await hub.hub.knowledge.memory.read(owner.principal,team.team_document!)).version,adminEdit.version);assert.equal((await hub.hub.knowledge.memory.read(owner.principal,team.team_document!)).markdown,'合成管理员保留的正文');
  const teamSession=await other.call('get_nodes',{memory:{scope:'team',for_session:true}});assert.equal(teamSession.out.memory_page!.items.length,2);
 });
+
+test('memory refusal audits and unchanged receipts cannot bind as inputs even for assigned administrators', {skip},async()=>{
+ const unchanged=await client.call('upload_file',{memory:{document:memoryDocument,expected_version:memoryVersion,client_key:'accept-unchanged'}});assert.equal(unchanged.out.memory_write?.unchanged,true,unchanged.text);
+ const records=(await hub.records.store.list({kind:'action',limit:100})).items.filter(record=>record.schema==='memory-refusal@1'||record.schema==='memory-unchanged@1');assert.ok(records.some(record=>record.schema==='memory-refusal@1'));assert.ok(records.some(record=>record.schema==='memory-unchanged@1'));
+ await hub.assignPack(hub.admin.principal,pack);
+ for(const who of [client,admin])for(const record of records){
+  const read=await who.call('get_nodes',{reference:'rec:'+record.digest});assert.equal(read.isError,true);assert.ok(!read.text.includes('"positions"'));
+  const started=await who.call('start_run',{pack,inputs:{target:{reference:'rec:'+record.digest}}});assert.equal(started.out.errors[0]?.code,'SOURCE_UNAVAILABLE',started.text);assert.equal(started.out.run,undefined);
+ }
+});

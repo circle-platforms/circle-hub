@@ -5,6 +5,8 @@ import {createTestHub} from './testing-real.ts';
 import {startPostgres,type TemporaryPostgres} from '../testing/postgres.ts';
 import {openConsole} from '../../tests/acceptance/support/console.ts';
 import {connect} from '../../tests/acceptance/support/mcp.ts';
+import {recordReaderFor} from './readers.ts';
+import {recordReader} from '../runs/engine/readers.ts';
 
 let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
@@ -58,4 +60,18 @@ test('memory sharing previews write nothing and confirmation rechecks capacity i
  const receipt=await own.get(String(refused.headers.location));assert.match(receipt.body,/MEMORY_SPACE_LIMIT/);assert.match(receipt.body,/已拒收/);assert.equal((await w.memory.items(w.owner.principal,'team')).length,0);
  const retry=await w.client.call('upload_file',{memory_share:{document:saved.document,version:saved.version,client_key:'share-confirm'}});assert.equal(retry.out.errors[0]?.code,'MEMORY_SPACE_LIMIT',retry.text);
  assert.equal((await w.hub.records.store.find({kind:'memory_share',key:'memory.share.by',value:w.owner.user.id})).items.length,1,'a cached refusal retains its cause and appends no second share receipt');
+});
+
+test('memory refusal audits and unchanged receipts are absent through every generic record reader',async t=>{
+ const w=await world();t.after(w.close);const store=w.hub.records.store;
+ const refused=await w.client.call('upload_file',{memory:{title:'合成拒收',markdown:'合成说明\nDB_PASSWORD='+['Synth3tic','!2498'].join(''),expected_version:null,client_key:'private-audit'}});assert.equal(refused.out.errors[0]?.code,'MEMORY_CREDENTIALS_DETECTED');
+ const saved=await w.memory.write(w.owner.principal,{title:'合成回执',markdown:'合成说明',expected_version:null,client_key:'private-receipt'});
+ const unchanged=await w.memory.write(w.owner.principal,{document:saved.document,expected_version:saved.version,markdown:'合成说明',client_key:'unchanged-receipt'});assert.equal(unchanged.unchanged,true);
+ const audits=(await store.list({kind:'action',limit:100})).items.filter(record=>record.schema==='memory-refusal@1'||record.schema==='memory-unchanged@1');assert.equal(audits.length,2);
+ for(const principal of [w.owner.principal,w.hub.admin.principal])for(const audit of audits){
+  const identity={user:principal.id,role:principal.role};
+  assert.equal(await recordReader(store).read(audit.digest,identity),null);
+  assert.equal(await recordReaderFor(w.hub.records,w.hub.hub.runs,principal).read(audit.digest,identity),null);
+ }
+ for(const client of [w.client,w.admin])for(const audit of audits){const hidden=await client.call('get_nodes',{reference:'rec:'+audit.digest}),missing=await client.call('get_nodes',{reference:'rec:'+'f'.repeat(64)});assert.equal(hidden.isError,true);assert.deepEqual(hidden.out.errors?.map(e=>e.code),missing.out.errors?.map(e=>e.code));assert.ok(!JSON.stringify(hidden.out).includes('positions'));}
 });

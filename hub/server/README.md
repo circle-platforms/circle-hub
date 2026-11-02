@@ -1006,6 +1006,11 @@ editor and history never execute Markdown; sharing previews write nothing and co
 administrator changes. MCP memory modes stay within get_nodes and upload_file and return no evidence reference.
 Personal workflows offer no named-document, business-system, lease or dispatch actions; team management is separate.
 Memory audit views disclose only participant/all-administrator grants and safe share receipts, never private text.
+Administrators also retain participant visibility for their own sent/received member grants, without seeing unrelated
+member grants. Memory refusal actions and unchanged-write receipts are unavailable through generic rec: reads for every
+role. The records page alone shows an ordinary owner's refusal code and generated field/line labels, never free-form
+messages or payload/intent digests. Administrators see only bounded counts, filtered by record creation time and actor;
+the count queries read index metadata rather than refusal bodies. Older refusal rows use the same existing actor index.
 Client automatic loading and synchronization remain outside this Hub-side task.
 
 Owners select only verified personal entries for batch sharing. Each entry has a read-only ordered preview and is checked

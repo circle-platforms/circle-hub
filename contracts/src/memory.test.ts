@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {MemoryQuery,MemoryWriteInput,isMemoryRecordKind} from './memory.ts';
+import {MemoryQuery,MemoryWriteInput,isMemoryRecordKind,isMemoryRecord} from './memory.ts';
 import {GetNodesInput,UploadFileInput,TOOLS} from './tools.ts';
 const H='a'.repeat(64);
 test('memory creates and optimistic edits are distinct and session reads pin eligible versions',()=>{
@@ -12,6 +12,10 @@ test('memory creates and optimistic edits are distinct and session reads pin eli
  assert.ok(!MemoryQuery.safeParse({document:H,for_session:true}).success);
  assert.ok(MemoryQuery.safeParse({document:H,version:H,for_session:true}).success);
  for(const kind of ['memory_document','memory_version','memory_grant','memory_share'])assert.ok(isMemoryRecordKind(kind));assert.ok(!isMemoryRecordKind('claim'));
+});
+test('memory control actions stay private while ordinary actions remain available to their reader rules',()=>{
+ for(const schema of ['memory-refusal@1','memory-unchanged@1'])assert.ok(isMemoryRecord({kind:'action',schema}));
+ assert.ok(!isMemoryRecord({kind:'action',schema:'read-manifest@1'}));assert.ok(!isMemoryRecord({kind:'claim',schema:'claim@1'}));
 });
 test('memory modes keep the six tools and reject run, evidence and ordinary-upload payload mixtures',()=>{
  assert.equal(TOOLS.length,6);

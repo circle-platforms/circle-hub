@@ -3,10 +3,20 @@ import {test} from 'node:test';
 import {accepted,runRecord,partitions,claim as fixtureClaim} from '../../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../../contracts/src/run.ts';
 import {ValidationResult} from '../../../contracts/src/validation.ts';
+import {SourceRoleSchema} from '../../../contracts/generated/vocabulary.ts';
 import type {EngineContext} from './deps.ts';
-import {groundsOf,groundsAudience,guardedRecords,hasWithdrawnGrounds} from './grounds.ts';
+import {groundsOf,groundsAudience,groundsReadableBy,guardedRecords,hasWithdrawnGrounds} from './grounds.ts';
 
 const ref=(digit:string)=>'rec:'+digit.repeat(64);
+test('memory control actions cannot become grounds through a retained binding or a pending action exception',async()=>{
+ const by={id:runRecord.runner,name:'合成管理员',role:'admin' as const},reference=ref('c');
+ for(const frozen of [false,true])for(const schema of ['memory-refusal@1','memory-unchanged@1']){
+  const run=RunRecord.parse({...runRecord,sources:frozen?[{reference,role:SourceRoleSchema.enum.subject}]:[]});
+  const record={kind:'action',schema,body:{run:run.run,inputs:[]}};
+  const ctx={deps:{records:{store:{get:async()=>record},artifacts:{}}}} as unknown as EngineContext;
+  assert.equal(await groundsReadableBy(ctx,run,[reference],by,{pending:!frozen}),false,schema+(frozen?' frozen':' pending'));
+ }
+});
 test('Hub criterion-review and own-submission metadata do not grant reads of those linked record bodies',()=>{
   const result=ValidationResult.parse(accepted),item=result.partitions.delivered[0];
   item.replaced_criteria=[{criterion:'src:'+'a'.repeat(64),old:'合成旧判据',new:'合成新判据',declaration:ref('b'),review:ref('c'),reviewer:'usr_00000000000000000000000000'}];

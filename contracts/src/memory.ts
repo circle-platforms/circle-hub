@@ -8,6 +8,8 @@ import {PROTOCOL_CODES} from '../generated/protocol.ts';
 import {RecordKindSchema} from './records.ts';
 export const MEMORY_RECORD_KINDS=RecordKindSchema.extract(['memory_document','memory_version','memory_grant','memory_share']).options;
 export const isMemoryRecordKind=(kind:string)=>new Set<string>(MEMORY_RECORD_KINDS).has(kind);
+/** Private memory control records use their dedicated views, never generic record/evidence reads. */
+export const isMemoryRecord=(record:{kind:string;schema:string})=>isMemoryRecordKind(record.kind)||record.kind===RecordKindSchema.enum.action&&['memory-refusal@1','memory-unchanged@1'].includes(record.schema);
 const Text=z.string().refine(text=>text.isWellFormed(),'well-formed Unicode text');
 const MemoryPath=TreePath.max(2000);
 const Key=Text.min(1).max(200).refine(value=>!value.includes('\0'),'no NUL in client key');

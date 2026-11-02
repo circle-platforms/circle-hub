@@ -1279,3 +1279,6 @@ Other personal documents remain independently shareable. Confirmation repeats th
 Knowledge and memory use the same scan-only Unicode/entity/base64/path views. A refused encoded credential cannot be
 stored in an entry, memory body/title or directory; clean compatibility characters and invisible characters remain
 byte-for-byte unchanged when saved. Scan diagnostics retain safe original positions without suspected values.
+Private refusal audits and no-op receipts are excluded from both generic readers, including for administrators and
+evidence resolution. The console exposes only owner-safe code/field/line summaries or administrator counts; no raw
+message, intent or payload digest is disclosed by the audit view.
