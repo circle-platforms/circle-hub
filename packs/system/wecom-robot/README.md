@@ -39,6 +39,31 @@ absence, never a failure and never a success. No database and no stub server are
 Signing: `node packs/system/wecom-robot/api.ts sign | check` (the shared pack tooling); re-sign after editing
 `system.json` or `functions/`, and only after the real-route check above.
 
+## What the owner's deployed robot actually uses (read-only code review, 2026-11-02)
+
+The existing robot (the owner's InfoTest engine project, reviewed without executing it; its env file was not opened)
+reshapes this pack. Three channels, not one:
+
+1. **Smart-bot WebSocket channel** (official `wecom-aibot-sdk`): Bot ID + Secret + gateway URL; the SDK owns auth,
+   heartbeat and reconnect. Inbound: `message.text`, `message.mixed` (text items plus file/image/voice/video),
+   standalone `file/image/voice/video` frames whose media carries `url + aeskey` and is AES-decrypted client-side
+   (512 KB chunks, 5 B to 100 MB validated). Outbound: in-session `reply` (markdown), `reply_stream` (appends under a
+   `stream_id`; a stream expires after 10 minutes, error 846608, and the host retries with a **new stream id** — that
+   is a disclosed resend of a notification-class effect), `reply_media` after `upload_media` -> `media_id`, and
+   `reply_welcome` on `event.enter_chat`.
+2. **Classic app HTTP channel** for identity only: `GET /cgi-bin/gettoken` (corpid + corpsecret as query) and
+   `GET /cgi-bin/user/get` (`access_token` **in the query**, not a header) to resolve external encrypted userids
+   (`wm|wo|wp` prefixes) to display names. This is Need 1, verbatim; a transitional deployment keeps a vault token the
+   host refreshes.
+3. **WeCom docs as a streamable-HTTP MCP endpoint** (administrator-granted "可使用权限" URL): create/update/list/
+   search/read document tools, deduplicated by content hash, with a SQLite document registry. List/search/read are
+   reads; **create/update are outbound sync writes** and belong to a second system profile (`wecom-docs`), passing the
+   effect gate like any write.
+
+Two facts the current profile must own honestly: `POST /cgi-bin/appchat/get` (declared here) is **not used** by the
+deployed robot — it stays declared-unverified in case group delivery is chosen later (decision D2). And the robot has
+**no active-push path**: everything replies inside a session frame, so a Hub-initiated B07 delivery needs a channel the
+robot does not have today (app push or group webhook) — the central item of decision D2 on the task page.
 ## Needs from other packages
 
 1. **connectors (transport).** A login the real service actually has: `GET /cgi-bin/gettoken` with corpid and

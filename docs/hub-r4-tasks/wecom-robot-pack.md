@@ -3,7 +3,7 @@
 infotest 的企微智能机器人用来做测试用例评审：机器人进程与企业微信长连接收文件和消息，本地模型按包里的规程起草，评审结论经身份映射交给具名的人复核。按 r4：带模型的宿主是 R03（Circle 侧，里程碑 1 的 server 包不交付）；企微协议面是一个新系统类型（D01 R[0]：一个系统档案加无 I/O 投影函数，不改核心）；对外发送不是读路由，是部署时登记的通知类效果（D07）。本任务只落系统包的只读骨架和三条 Needs，核心与宿主都不碰。
 
 - 分支：`codex/wecom-robot-pack`（本地开自 main，未推送；本页随包一起交，integrator 审阅后可按 decision 14 的惯例改页）
-- 可以改的路径：`packs/system/wecom-robot/**`、`tests/fixtures/wecom/**`、`packs/workflow/case-review/packaging.ts`（只加一行注册）、本页。别的路径不动。
+- 可以改的路径：`packs/system/wecom-robot/**`、`tests/fixtures/wecom/**`、`packs/workflow/case-review/packaging.ts`（只加一行注册）、本页、`docs/hub-r4-tasks/wecom-bot-owner-decisions.md`。别的路径不动。
 - 要做的事：
   1. `system.json`（system@1）：`wecom:user:<userid>` 与 `wecom:chat:<chatid>` 两条只读读取，信封 `{errcode, errmsg}`、errcode 0 为成功；路由逐条列出（GET 成员、POST 群详情），发送路径与 gettoken 一条都不在清单里，由传输层拒绝。
   2. `functions/wecom.ts`：`memberProject`、`chatProject`（纯函数，沙箱里跑）；应答没有的字段留 null 不猜；不认识的人或群是确定的缺档（`wecom.absent`），不是失败也不报成功。
@@ -14,3 +14,6 @@ infotest 的企微智能机器人用来做测试用例评审：机器人进程�
 - 验证（已跑）：`npx tsc --noEmit` 退出 0；`node --test "packs/system/wecom-robot/wecom.test.ts"` 8 通过、0 失败、0 跳过、0 todo；`node packs/system/wecom-robot/api.ts check` 显示 pack.json 与文件一致。
 - 提交只暂存明确的路径，`git commit -s`，一句首字母大写的英文祈使句，不加前缀和句号；不推送、不建 PR；不碰持久部署、密钥和企业微信真实系统。
 - 完成回报：提交号、测试数量、上面"待核对"没有做（需要 owner 授权后由监督者跑）。
+## 后续（2026-11-02 补充）
+
+对 owner 既有机器人的只读源码清点完成：功能全量清单与 D1–D6 决策草案见 `docs/hub-r4-tasks/wecom-bot-owner-decisions.md`；通道事实记入包 README（三通道；智能机器人长连接不存在主动推送，这是当前最大功能缺口）。本包的 appchat 读声明保留并标注当前机器人未使用，供送达通道选定后复用。
