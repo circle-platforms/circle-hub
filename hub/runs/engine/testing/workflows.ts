@@ -9,6 +9,7 @@ import type { PackSummary } from '../../../../contracts/src/run.ts';
 import { digestOf, type Principal } from '../../../records/api.ts';
 import type { LoadedWorkflow, WorkflowAbsence, WorkflowStore } from '../../../ports.ts';
 import { requirementSummary } from '../start.ts';
+import { localToolsOf } from '../../packs/ports.ts';
 
 export class FakeWorkflowStore implements WorkflowStore {
   owner: string | null;
@@ -92,6 +93,7 @@ export class FakeWorkflowStore implements WorkflowStore {
     for (const [id, versions] of this.#versions) {
       const latest = await this.forUser(user, id);
       if (latest === null || versions.length === 0) continue;
+      const tools = localToolsOf({ id: latest.pack.id, version: latest.pack.version, digest: latest.pack.digest, manifest: latest.manifest });
       out.push({
         pack: `${latest.pack.id}@${latest.pack.version}`,
         id: latest.pack.id,
@@ -99,10 +101,12 @@ export class FakeWorkflowStore implements WorkflowStore {
         kind: latest.pack.kind,
         title: latest.manifest.title,
         description: latest.manifest.description,
+        digest: latest.pack.digest,
         products: [],
         inputs: latest.workflow.inputs,
         parameters: latest.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
         requirements: latest.requirements.map(t=>requirementSummary(t,latest.ledger,latest.checks,`${latest.pack.id}@${latest.pack.version}`)),
+        ...(tools !== null ? { local_tools: tools } : {}),
       });
     }
     return out;

@@ -93,6 +93,7 @@ export function fakeWorkflowPack(id: string, title: string, accepts: string[], o
       kind: 'workflow',
       title,
       description: `${title}（合成）`,
+      digest: sha(`pack:${id}@${version}`),
       products: [...PRODUCT.names],
       inputs: [{ slot: 'subject', role: 'subject', description: '被评审的文档', accepts, required: true, many: false }],
       parameters: [{ name: 'strict', description: '严格模式', required: false }],

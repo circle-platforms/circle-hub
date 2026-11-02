@@ -7,7 +7,7 @@ import type { Principal } from '../records/api.ts';
 import { acceptedBy } from './tools.ts';
 
 const pack = (id: string, inputs: Array<{ slot: string; role: PackSummary['inputs'][number]['role']; accepts: string[] }>): PackSummary => ({
-  pack: `${id}@1.0.0`, id, version: '1.0.0', kind: 'workflow', title: id, description: '合成', products: [], parameters: [], requirements: [],
+  pack: `${id}@1.0.0`, id, version: '1.0.0', kind: 'workflow', title: id, description: '合成', digest: 'a'.repeat(64), products: [], parameters: [], requirements: [],
   inputs: inputs.map((input) => ({ ...input, description: '合成', required: false, many: false })),
 });
 const packs = [

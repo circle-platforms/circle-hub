@@ -1,7 +1,7 @@
 // The ports runs-packs provides (hub/ports.ts) over the registry: PacksPort (packs and the active product lines),
 // WorkflowStore (what a run needs of a workflow pack) and PackCatalogPort (the console listing). Absent, unassigned,
 // withdrawn and unknown give the same null or empty answer; the account is re-read on every call.
-import type { PackSummary } from '../../../contracts/src/run.ts';
+import type { LocalToolsSummary, PackSummary } from '../../../contracts/src/run.ts';
 import type { LoadedWorkflow, PackCatalogPort, PackHandle, PackListing, PacksPort, ProductHandle, WorkflowAbsence, WorkflowStore } from '../../ports.ts';
 import type { Principal } from '../../records/api.ts';
 import type { ActiveProduct, PackRegistry } from './registry.ts';
@@ -27,10 +27,26 @@ export function boundProducts(declarations: WorkflowDeclarations, active: readon
   });
 }
 
+/**
+ * The client-installable tools of one pack version, or null when it ships none (script-distribution, step 2): every tools/
+ * file of the manifest plus the install command pinned to this id@version and digest. The command carries no token; the
+ * client supplies its own credentials when it downloads from /local-tools.
+ */
+export function localToolsOf(info: Pick<PackVersionInfo, 'id' | 'version' | 'digest' | 'manifest'>): LocalToolsSummary | null {
+  const files = info.manifest.files.filter((file) => file.path.startsWith('tools/')).map((file) => ({ path: file.path, sha256: file.sha256, size: file.size }));
+  if (files.length === 0) return null;
+  return {
+    count: files.length,
+    files,
+    install: `circle-hub local-tools install ${info.id}@${info.version} --digest ${info.digest} --into <目录>`,
+  };
+}
+
 /** The list_task_packs entry of a workflow version. */
-export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclarations, bound: readonly ActiveProduct[]): PackSummary {
+export function packSummary(info: Pick<PackVersionInfo, 'id' | 'version' | 'kind' | 'title' | 'description' | 'digest' | 'manifest'>, declarations: WorkflowDeclarations, bound: readonly ActiveProduct[]): PackSummary {
   const names: string[] = [];
   for (const b of bound) for (const name of b.product.names) if (!names.includes(name)) names.push(name);
+  const tools = localToolsOf(info);
   return {
     pack: `${info.id}@${info.version}`,
     id: info.id,
@@ -38,6 +54,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
     kind: info.kind,
     title: info.title,
     description: info.description,
+    digest: info.digest,
     products: names,
     inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many, ...(i.default_from_predecessor?{default_from_predecessor:{...i.default_from_predecessor}}:{}), ...(i.from_runs?{from_runs:{...i.from_runs}}:{}), ...(i.index_default?{index_default:structuredClone(i.index_default)}:{}) })),
     parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
@@ -64,6 +81,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
       repair_rounds: Math.max(0, ...r.error_handling.map((row) => row.max_rounds ?? 0)),
     })),
     ...((declarations.workflow.context ?? []).length > 0 ? { run_context: { parts: [...declarations.workflow.context!], ...(declarations.workflow.leases ? { lease_prefix: declarations.workflow.leases.prefix } : {}) } } : {}),
+    ...(tools !== null ? { local_tools: tools } : {}),
   };
 }
 

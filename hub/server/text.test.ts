@@ -1098,6 +1098,7 @@ function packOf(i: number): PackSummary {
     kind: 'workflow',
     title: `合成任务包 ${i}`,
     description: '评审合成的思维导图（合成）',
+    digest: `d${i}${'0'.repeat(63)}`,
     products: ['Meadow', 'Lawn'],
     inputs: [
       { slot: 'map', role: 'subject', description: '被评审的思维导图', accepts: ['application/json', 'toy:mindmap'], required: true, many: false },
