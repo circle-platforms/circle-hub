@@ -1248,3 +1248,5 @@ upload and an original registered in a personal space cannot be declared through
 by exact capture; `mayReadSource` checks that authority without reading or parsing the original bytes.
 
 提交共享、团队导入及其间接依据的引文核对只使用团队可用的解析器；个人解析器即使授权给全体管理员，也不能为团队核验背书。团队解析器安装后重查真实原文，不沿用个人解析器给出的片段。
+
+共享目标目录与目录写入使用相同的凭据扫描。含凭据的目标路径不进入任何回执；即使更早因重复内容等原因拒收，也省略该目标字段，历史只留安全拒收原因。

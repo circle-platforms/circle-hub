@@ -126,3 +126,15 @@ test('a new shared revision records a withdrawn predecessor without undoing its 
   assert.equal((await spaces.entry(w.outsider,shared.team_root,'/notes',first.entry))?.row.status,'withdrawn');
   assert.deepEqual(await spaces.withdrawnGrounds([shared.reference]),[shared.reference]);
 });
+
+test('team destination paths are scanned and credential-bearing targets never enter refusal receipts',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entry=await verified(w);
+  await spaces.ensure(w.user,'team');
+  const before=(await spaces.current('team'))!.root,secret='hunter22x',team_path='/DB_PASSWORD='+secret;
+  const input={root:entry.root,path:'/notes',entry:entry.entry,team_path};
+  const refused=await spaces.share(w.user,input);assert.equal(refused.code,'SHARE_CREDENTIALS');assert.equal(refused.status,'rejected');assert.equal(refused.target_path,undefined);assert.ok(!JSON.stringify(refused).includes(secret));
+  assert.equal((await spaces.current('team'))!.root,before);assert.equal((await spaces.current('team'))!.body.entries.length,0);
+  assert.equal((await share(w,entry)).status,'merged');
+  const duplicate=await spaces.share(w.user,input);assert.equal(duplicate.code,'SHARE_DUPLICATE');assert.equal(duplicate.target_path,undefined,'an earlier refusal must not persist the unchecked destination either');
+  const history=await spaces.shareHistory(w.user);assert.ok(!JSON.stringify(history).includes(secret));
+});
