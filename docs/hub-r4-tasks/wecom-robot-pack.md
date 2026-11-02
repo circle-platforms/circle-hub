@@ -17,3 +17,5 @@ infotest 的企微智能机器人用来做测试用例评审：机器人进程�
 ## 后续（2026-11-02 补充）
 
 对 owner 既有机器人的只读源码清点完成：功能全量清单与 D1–D6 决策草案见 `docs/hub-r4-tasks/wecom-bot-owner-decisions.md`；通道事实记入包 README（三通道；智能机器人长连接不存在主动推送，这是当前最大功能缺口）。本包的 appchat 读声明保留并标注当前机器人未使用，供送达通道选定后复用。
+
+"D5 取样清单（脚本规格与验收标准）已附在 `docs/hub-r4-tasks/wecom-bot-owner-decisions.md` 第三节；脚本落码归 owner/integrator（`scripts/real/` 无工作包归属）。
