@@ -886,6 +886,10 @@ B5 的迁移等价测试只用小文档，没有覆盖到真实尺寸。处理�
 - 本机交接文档（含真实构建名和编号，不进 Git）：集成者持久工作目录下的 `HANDOFF.md`（目录名见集成者的记忆文件）；里面有五分钟自检、续写版 goal、接下来的任务、操作手册、红线和踩过的坑。
 - 集成树代码头 `34bf33ec`（线上是 `1a3b031294df`）：多出的 PLM 构建列表信封修复、运行/视图共用的树苗优先根解析器和文档缓存重量修复还没部署，部署前要做独立全量检查。
 
+### 任务包回答披露包号与本地工具（2026-11-02，script-distribution 第二步）
+
+所有者 11-01/11-02 在 Circle 与 DeepSeek Harness 两侧复现 PLM 缺陷都停在 `workbook_verified` 缺工作簿：客户端模型不知道装哪个包号、本地工具清单在哪（DSH 会话 run_01m6dkfqfpq7561nvvphgr6kr0）。按 `docs/hub-r4-tasks/script-distribution.md` 第二步补齐披露：`PackSummary` 加必填 `digest` 与可选 `local_tools`（count、tools/ 文件 path/sha256/size、钉到 id@version 和包号且不带令牌的安装命令）；`StartRunOutput` 加 answer 级 `local_tools`（运行记录不改，历史运行没有该字段合法）；`list_task_packs` 详情与 `start_run` 回答各加一行安装命令，无 `tools/` 的包不加。验收：合成带 `tools/` 的包发布/分配 → list/start 回答含包号与安装行 → `/local-tools` 下载与 `local-tools install/verify` 全通（`tests/acceptance/48-local-tools-disclosure.test.ts`）。任务页 `docs/hub-r4-tasks/local-tools-disclosure.md`，分支 `local-tools-disclosure`。
+
 ### 已知限制与待决
 
 1. 千问额度要到 2026-11-08 恢复，真实层的 Circle 会话全部用 GLM；独立复核通过的正向分支暂时只能在合成层验。GLM 的 5 小时额度 10-27 傍晚用尽（限额 21:08 JST 重置，窗口滚动，重度使用约两小时又会撞上）；pi 自 18:28 起由所有者改用 DeepSeek，Circle 的会话仍用 GLM。
