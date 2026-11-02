@@ -29,6 +29,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 - **Password recovery command** — `user password-reset` recovers initial passwords, terminates console sessions and powers Team resets through the command bridge.
 
+- **Password change keeps the session** — after a successful password change the console continues in a fresh session bound to the new password revision instead of asking for a second sign-in; other console sessions of the account still end. The change form names the account in a hidden `autocomplete="username"` field so browsers file the new password under it.
 - **Password-only console sign-in** — every account, administrators included, signs in to the console with username and password; tokens only connect Circle, the administrator backup token sign-in is removed, one-time links from Circle lead to the password form and the setup page no longer opens a session.
 
 - **Password wording** — Chinese console, installer, CLI and credential messages consistently use “密码” under the owner’s second-round correction.
