@@ -68,3 +68,14 @@ test('personal publication refuses a shared lease namespace without acquiring or
   const outcome=await bed.registry.personal!.publish(bed.carol,(await bed.write(pack)).dir);
   assert.equal(outcome.ok,false,JSON.stringify(outcome));assert.ok(!outcome.ok&&outcome.problems.some(problem=>problem.rule==='PACK_PERSONAL_CAPABILITY_DENIED'));
 });
+
+test('promotion previews stop at permission, store nothing, and confirmation checks permission again',async t=>{
+ const bed=await openPackTestbed({postgres});t.after(()=>bed.close());const personal=bed.registry.personal!,pack=skill('synthetic-preview');
+ assert.equal((await personal.publish(bed.carol,(await bed.write(pack)).dir)).ok,true);
+ const before=await bed.kit.store.watermark!();const denied=await personal.precheckPromotion(bed.carol,pack.id);
+ assert.deepEqual(denied.checks.map(c=>c.state),['violation','unchecked','unchecked','unchecked','unchecked']);assert.equal(await bed.kit.store.watermark!(),before);
+ await bed.kit.authorizations.grantPublishRight(bed.admin,bed.carol.id);
+ const ready=await personal.precheckPromotion(bed.carol,pack.id);assert.equal(ready.ok,true,JSON.stringify(ready));assert.equal(await bed.registry.resolve(pack.id),null);
+ await bed.kit.authorizations.revokePublishRight(bed.admin,bed.carol.id);
+ assert.equal((await personal.promote(bed.carol,pack.id)).ok,false);assert.equal(await bed.registry.resolve(pack.id),null);
+});

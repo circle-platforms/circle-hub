@@ -37,6 +37,8 @@ import type {
 import { isCanonicalVersion, MAX_PACK_REF_LENGTH, packVersionKey, parsePackRef } from './versions.ts';
 
 export interface ValidateOptions {
+  /** Used only by ordered dry-run checks; real publication always scans credentials. */
+  deferCredentials?: boolean;
   /** Import policy of the static scan; default the sandbox's (SANDBOX_IMPORT_POLICY). */
   policy?: ImportPolicy;
 }
@@ -87,7 +89,7 @@ export function versionProblems(manifest: { id: string; version: string }): Pack
  * content reaches every assigned user (SKILL.md the model), and secrets enter the Hub only through the vault. A problem names
  * the file and the line, never the text that was found.
  */
-function credentialProblems(directory: PackDirectory): PackProblem[] {
+export function credentialProblems(directory: PackDirectory): PackProblem[] {
   const out: PackProblem[] = [];
   const fix = '删掉这一处；读取需要的凭据由管理员存进保管库，资源配置引用它';
   for (const [field, text] of [['/title', directory.manifest.title], ['/description', directory.manifest.description]] as const) {
@@ -612,7 +614,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
   const { manifest } = directory;
   for (const p of await scanTools(c.files)) c.add(p);
   for (const p of versionProblems(manifest)) c.add(p);
-  for (const p of credentialProblems(directory)) c.add(p);
+  if(!options.deferCredentials)for (const p of credentialProblems(directory)) c.add(p);
   for (const file of directory.files) {
     if (manifest.kind === 'product' && file.path === 'product.json') continue;
     const text = utf8(file.bytes);

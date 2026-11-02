@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
-import { KnowledgeEntryStatusSchema, labelOf, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
+import { KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
@@ -59,6 +59,8 @@ type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise
     text: string;
   }>;
 } | null>;
+export interface SharingCheck {check:ShareCheck;state:StaticTerminal;code:ProtocolCode|null;message:string;fix:string}
+const SHARING_CHECKS=ShareCheckSchema.extract(['grounds','quotations','sources','duplicates','credentials']).options;
 export class KnowledgeSpaces {
   #ctx: KnowledgeContext;
   #writes=new Map<string,WriteQueue>();
@@ -212,6 +214,20 @@ export class KnowledgeSpaces {
       }catch(error){if(!onUnavailable)throw error;onUnavailable(space,error);}
     }
     return out;
+  }
+  async precheckGrant(by:Principal,path:string){
+    by=await this.#user(by);path=pathCheck(path);const version=await this.current(by.id);
+    const checks:SharingCheck[]=ShareCheckSchema.extract(['credentials','personal_sources','local_only']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
+    try{
+      if(!version||!version.body.directories.includes(path))fail('SOURCE_UNAVAILABLE');
+      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry)fail('SPACE_ENTRY_INVALID');this.#scan(entry);}
+      for(const source of await this.sources(by))if(withinSpacePath(source.path,path)){const original=await this.source(by,source.sha256);if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
+      checks[phase++].state='pass';
+      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry)fail('SPACE_ENTRY_INVALID');for(const ground of entry.grounds)await this.#grantableGround(by,ground.reference);}
+      for(const source of await this.sources(by))if(withinSpacePath(source.path,path))await this.#grantableGround(by,'src:'+source.sha256);
+      checks[phase++].state='pass';checks[phase].state='pass';
+    }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:error instanceof KnowledgeError&&code!=='SPACE_CONTENT_UNINSPECTABLE'&&code!=='SHARE_GROUND_UNRESOLVED'?'violation':'incomplete',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
+    return checks;
   }
   async grant(by: Principal, input: {
     path: string;
@@ -474,6 +490,78 @@ export class KnowledgeSpaces {
     if(version){const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);const body=row?await this.#entry(row):null;if(!body||!body.grounds.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of body.grounds)await this.#shareSource(by,ground.reference,sources,seen,depth+1,ground.quotation);}
     else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(!read?.grounds?.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of read.grounds)await this.#shareSource(by,ground,sources,seen,depth+1);}
   }
+  async #inspectSharing(by:Principal,input:z.infer<typeof KnowledgeShareInput>,view:SpaceEntryView,personal:SpaceVersion|null,previous:SpaceVersion|null,teamPath:string,tx?:Transaction){
+      const row=personal?.body.entries.find(row=>row.entry===input.entry&&row.path===input.path);
+      const checks:SharingCheck[]=SHARING_CHECKS.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
+      const sources=new Map<string,{sha256:string;artifact:string;size:number}>(),grounds:SpaceEntryBody['grounds']=[];
+      let replacement:SpaceRow|undefined;
+      try{
+        if(!row||row.status!=='verified'||!view.body.grounds.length)fail('SHARE_UNVERIFIED');
+        if(await this.hasWithdrawnGrounds(view.body.grounds.map(g=>g.reference)))fail('GROUNDS_WITHDRAWN');
+        const resolved=[];
+        for(const ground of view.body.grounds){
+          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+          if(!result.resolved&&result.code==='TEAM_PARSER_REQUIRED')fail(result.code);
+          if(!result.resolved||!result.readable)fail('SHARE_GROUND_UNRESOLVED');resolved.push(result);
+        }
+        checks[phase++].state='pass';
+        for(const [index,ground] of view.body.grounds.entries())if(verifyQuote(resolved[index],ground.quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
+        checks[phase++].state='pass';
+        for(const ground of view.body.grounds){
+          await this.#shareSource(by,ground.reference,sources);
+          let reference=ground.reference;const ref=parseReference(reference);
+          if(ref.scheme==='tree'){
+            const version=await this.version(ref.root);
+            if(version&&version.body.space!=='team'){
+              const team=(previous?.body.entries??[]).find(row=>row.entry===ref.entry&&active(row));
+              if(!team)fail('SHARE_GROUND_UNREADABLE');reference=refOf(previous!.root,team.path,team.entry);
+            }else{
+              for(const reader of (await this.#ctx.records.principals.list?.()??fail('SHARE_GROUND_UNREADABLE')).filter(user=>!user.disabled)){
+                const read=await this.treeReader().read(ref.root,ref.path,ref.entry??null,{user:reader.id,role:reader.role});if(!read||read.readTier!=='model_readable')fail('SHARE_GROUND_UNREADABLE');
+              }
+            }
+          }
+          grounds.push({...ground,reference});
+        }
+        if(withinSpacePath(teamPath,PRODUCTS_PATH))fail('SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录');
+        checks[phase++].state='pass';
+        // Follow only the submitter's personal revision chain; another submitter's team content is never replaced.
+        const personalEntries=new Map(personal?.body.entries.map(row=>[row.entry,row]));
+        const ancestors=new Set<string>();let predecessor=view.body.replaces;
+        while(predecessor){
+          if(ancestors.has(predecessor)||ancestors.size>=64)fail('SHARE_UNVERIFIED');
+          ancestors.add(predecessor);
+          const earlier=personalEntries.get(predecessor),body=earlier?await this.#entry(earlier,tx):null;
+          if(!body||body.space!==by.id||body.by!==by.id)fail('SHARE_UNVERIFIED');
+          predecessor=body.replaces;
+        }
+        const teamEntries=new Map((previous?.body.entries??[]).map(row=>[row.entry,row]));
+        for(const ancestor of ancestors){
+          const candidate=teamEntries.get(ancestor),body=candidate?await this.#entry(candidate,tx):null;
+          if(body?.by===by.id&&body.shared_from?.space===by.id&&body.shared_from.entry===ancestor){replacement=candidate;break;}
+        }
+        if((previous?.body.entries??[]).some(row=>row.entry===input.entry&&row.record!==replacement?.record))fail('SHARE_DUPLICATE');
+        const readable=await this.#ctx.packs.readableProducts(by);
+        for(const mount of (previous?.body.products??[]).filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
+        checks[phase++].state='pass';
+        try{this.#scan(teamPath);this.#scan(view.body);for(const source of sources.values()){const bytes=await this.#ctx.records.artifacts.source(by,source.sha256,{record:source.artifact,consumer:'model'});if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
+        checks[phase].state='pass';
+      }catch(error){
+        const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';
+        checks[phase]={...checks[phase],state:error instanceof KnowledgeError&&code!=='SPACE_CONTENT_UNINSPECTABLE'&&code!=='SHARE_GROUND_UNRESOLVED'?'violation':'incomplete',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,fix:PROTOCOL_CODES[code].fix};
+        return {sources,grounds,replacement,checks,error};
+      }
+      return {sources,grounds,replacement,checks,error:null};
+  }
+  async precheckShare(by:Principal,raw:unknown){
+    by=await this.#user(by);const input=KnowledgeShareInput.parse(raw),teamPath=pathCheck(input.team_path??input.path);
+    const origin=await this.version(input.root);if(!origin||origin.body.space!==by.id)fail('SOURCE_UNAVAILABLE');
+    const view=await this.entry(by,input.root,input.path,input.entry);if(!view)fail('SOURCE_UNAVAILABLE');
+    const previous=await this.current('team');
+    const prepared=await this.#inspectSharing(by,input,view,await this.current(by.id),previous,teamPath);
+    const duplicate=prepared.checks.find(c=>c.code==='SHARE_DUPLICATE')&&previous?.body.entries.find(row=>row.entry===input.entry);
+    return {ok:prepared.error===null,checks:prepared.checks,duplicate:duplicate&&previous?refOf(previous.root,duplicate.path,duplicate.entry):null};
+  }
   async share(by:Principal,raw:unknown,session:string|null=null):Promise<KnowledgeShareReceipt>{
     by=await this.#user(by);const input=KnowledgeShareInput.parse(raw),teamPath=pathCheck(input.team_path??input.path);
     let safeTargetPath=true;
@@ -491,54 +579,8 @@ export class KnowledgeSpaces {
         const record=await this.#ctx.records.store.put({kind:'knowledge_share',schema:'knowledge-share@1',provenance:'declared',body,index:[{key:'knowledge.share.by',value:by.id},{key:'knowledge.share.entry',value:by.id+'/'+input.entry}]},tx);
         return {record:record.digest,...body};
       };
-      const sources=new Map<string,{sha256:string;artifact:string;size:number}>(),grounds:SpaceEntryBody['grounds']=[];
-      let replacement:SpaceRow|undefined;
-      try{
-        if(!row||row.status!=='verified'||!view.body.grounds.length)fail('SHARE_UNVERIFIED');
-        if(await this.hasWithdrawnGrounds(view.body.grounds.map(g=>g.reference)))fail('GROUNDS_WITHDRAWN');
-        const resolved=[];
-        for(const ground of view.body.grounds){
-          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
-          if(!result.resolved&&result.code==='TEAM_PARSER_REQUIRED')fail(result.code);
-          if(!result.resolved||!result.readable)fail('SHARE_GROUND_UNRESOLVED');resolved.push(result);
-        }
-        for(const [index,ground] of view.body.grounds.entries())if(verifyQuote(resolved[index],ground.quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
-        for(const ground of view.body.grounds){
-          await this.#shareSource(by,ground.reference,sources);
-          let reference=ground.reference;const ref=parseReference(reference);
-          if(ref.scheme==='tree'){
-            const version=await this.version(ref.root);
-            if(version&&version.body.space!=='team'){
-              const team=previous.body.entries.find(row=>row.entry===ref.entry&&active(row));
-              if(!team)fail('SHARE_GROUND_UNREADABLE');reference=refOf(previous.root,team.path,team.entry);
-            }else{
-              for(const reader of (await this.#ctx.records.principals.list?.()??fail('SHARE_GROUND_UNREADABLE')).filter(user=>!user.disabled)){
-                const read=await this.treeReader().read(ref.root,ref.path,ref.entry??null,{user:reader.id,role:reader.role});if(!read||read.readTier!=='model_readable')fail('SHARE_GROUND_UNREADABLE');
-              }
-            }
-          }
-          grounds.push({...ground,reference});
-        }
-        // Follow only the submitter's personal revision chain; another submitter's team content is never replaced.
-        const personalEntries=new Map(personal?.body.entries.map(row=>[row.entry,row]));
-        const ancestors=new Set<string>();let predecessor=view.body.replaces;
-        while(predecessor){
-          if(ancestors.has(predecessor)||ancestors.size>=64)fail('SHARE_UNVERIFIED');
-          ancestors.add(predecessor);
-          const earlier=personalEntries.get(predecessor),body=earlier?await this.#entry(earlier,tx):null;
-          if(!body||body.space!==by.id||body.by!==by.id)fail('SHARE_UNVERIFIED');
-          predecessor=body.replaces;
-        }
-        const teamEntries=new Map(previous.body.entries.map(row=>[row.entry,row]));
-        for(const ancestor of ancestors){
-          const candidate=teamEntries.get(ancestor),body=candidate?await this.#entry(candidate,tx):null;
-          if(body?.by===by.id&&body.shared_from?.space===by.id&&body.shared_from.entry===ancestor){replacement=candidate;break;}
-        }
-        if(previous.body.entries.some(row=>row.entry===input.entry&&row.record!==replacement?.record))fail('SHARE_DUPLICATE');
-        const readable=await this.#ctx.packs.readableProducts(by);
-        for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
-        try{if(!safeTargetPath)fail('SHARE_CREDENTIALS');this.#scan(view.body);for(const source of sources.values()){const bytes=await this.#ctx.records.artifacts.source(by,source.sha256,{record:source.artifact,consumer:'model'});if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
-      }catch(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
+      const {sources,grounds,replacement,error}=await this.#inspectSharing(by,input,view,personal,previous,teamPath,tx);
+      if(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
       if(withinSpacePath(teamPath,PRODUCTS_PATH))return receipt('rejected','SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录',null);
       const body=SpaceEntryBody.parse({...view.body,space:'team',grounds,by:by.id,at,session,replaces:replacement?.entry??null,shared_from:source});
       const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:body.entry},{key:'knowledge.space.entry_owner',value:'team'}]},tx);

@@ -1252,3 +1252,5 @@ by exact capture; `mayReadSource` checks that authority without reading or parsi
 共享目标目录与目录写入使用相同的凭据扫描。含凭据的目标路径不进入任何回执；即使更早因重复内容等原因拒收，也省略该目标字段，历史只留安全拒收原因。
 
 撤回提示按当前读者过滤上级引用，未获授权的上级只返回 grounds_withdrawn_hidden_count 数量；内部拒收仅调用布尔判断，不取得或返回未授权路径。读取、授权收回与授回不改写历史正文。
+
+Console previews use `spaces.precheckShare` and `spaces.precheckGrant`: checks stop at the first refusal or unavailable read, with later rows unchecked. They create no team root or audit record. Confirmation calls the normal transaction-bound writer again.

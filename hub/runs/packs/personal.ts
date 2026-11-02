@@ -3,11 +3,15 @@ import { join, extname } from 'node:path';
 import { PersonalPackVersionBody, PersonalPackGrantBody, PersonalPackRetirementBody, PersonalPackTransferBody } from '../../../contracts/src/sharing.ts';
 import { PackId, UserId } from '../../../contracts/src/common.ts';
 import { AccessError, IntegrityError, personalPackKey, personalPackGrants, mayUsePersonalPack, type Principal, type RecordKind, type StoredRecord, type Page, type Transaction, type Artifacts } from '../../records/api.ts';
+import { ShareCheckSchema } from '../../../contracts/generated/vocabulary.ts';
+import type {SharingCheck} from '../../knowledge/api.ts';
+import {readFile} from 'node:fs/promises';
+import {scanForCredentials} from '../../records/api.ts';
 import type { KnowledgeGrantee } from '../../../contracts/generated/vocabulary.ts';
 import type { PackRegistry, PackRegistryOptions, OpenedPack } from './registry.ts';
 import type { PackVersionInfo, PublishOutcome, PublishCheck, PublishReport, PackProblem } from './types.ts';
 import { readPackDirectory, manifestDigest } from './directory.ts';
-import { validatePack, versionProblems } from './validate.ts';
+import { validatePack, versionProblems, credentialProblems } from './validate.ts';
 import { runPublishCheck, refusalsOf, needsSandbox } from './samples.ts';
 import { Extractor, type StagedTree } from './extract.ts';
 import { parseDeclarations, packJsonReader } from './load.ts';
@@ -53,7 +57,7 @@ export class PersonalPacks {
     by=await this.#own(by);if(!(await this.versions(by.id,pack)).length)throw new AccessError('对象不存在或无权读取');
     if(input.member&&!(await this.#options.records.principals.get(input.member)))throw new AccessError('对象不存在或无权读取');
     const body=PersonalPackGrantBody.parse({space:by.id,pack,audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now()});
-    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
+    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);if(!input.revoke){const targets=body.member?[await this.#options.records.principals.get(body.member)]:await this.#options.records.principals.list();const checks=await this.precheckGrant(by,pack,targets.filter((u):u is NonNullable<typeof u>=>!!u&&!u.disabled&&(body.member!==null||u.role==='admin')));if(checks.some(check=>check.state!=='pass'))throw new AccessError('授权前检查未通过');}return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
   }
   async retire(by:Principal,pack:string,version:string){
     by=await this.#own(by);const info=(await this.versions(by.id,pack)).find(info=>info.version===version);if(!info)throw new AccessError('对象不存在或无权读取');
@@ -92,6 +96,39 @@ export class PersonalPacks {
         return {ok:true,created:true,version:{space:by.id,id:manifest.id,version:manifest.version,kind:manifest.kind,digest,title:manifest.title,description:manifest.description,owner:by.id,publisher:by.id,published_at:body.at,withdrawn:false,withdrawn_at:null,record:stored.digest,publication:stored.digest,samples:report.samples.sources,report,manifest},report} as PublishOutcome;
       });});this.#writes=writing.catch(()=>{});const outcome=await writing;if(outcome.ok&&staged){await staged.promote();staged=null;}return outcome;
     }finally{if(staged)await staged.discard();}
+  }
+  async precheckPromotion(by:Principal,ref:string){
+    by=await this.#own(by);const checks:SharingCheck[]=ShareCheckSchema.extract(['permission','structure','sandbox','references','credentials']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
+    const reject=(problems:PackProblem[])=>{checks[phase]={...checks[phase],state:'violation',message:problems.map(p=>p.rule+'：'+p.message).join('；'),fix:problems.map(p=>p.fix).join('；')};return {ok:false,checks};};
+    let staged:StagedTree|null=null;
+    try{
+      if(!await this.#options.records.authorizations.canPublish(by.id))return reject([problem('publish.no_right','.','没有发布权','由管理员在团队页授予发布权')]);
+      checks[phase++].state='pass';
+      const info=await this.resolve(by,by.id,ref);if(!info)throw new AccessError('对象不存在或无权读取');const opened=await this.open(by.id,info.digest);if(!opened)throw new IntegrityError('个人包暂不可读');
+      const read=await readPackDirectory(opened.handle.directory,{limits:this.#options.limits});if(!read.ok)return reject(read.problems);
+      const validated=await validatePack(read.pack,{policy:this.#options.policy,deferCredentials:true});if(!validated.ok)return reject(validated.problems);
+      checks[phase++].state='pass';
+      if(needsSandbox(validated.pack))staged=await this.#extractor.stage(info.digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));
+      const report=await runPublishCheck({pack:validated.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});const errors=refusalsOf(report,validated.pack);if(errors.length)return reject(errors);
+      checks[phase++].state='pass';
+      if(info.manifest.dependencies?.some(dep=>dep.space))return reject([problem('personal.dependency','pack.json','团队发布不能依赖个人空间中的技能','先将依赖发布到团队并更新个人版本')]);
+      const team=await this.#team.check(by,opened.handle.directory,{deferCredentials:true});if(!team.ok)return reject(team.problems);
+      checks[phase++].state='pass';const credentials=credentialProblems(read.pack);if(credentials.length)return reject(credentials);
+      checks[phase].state='pass';return {ok:true,checks};
+    }catch(error){if(error instanceof AccessError)throw error;checks[phase]={...checks[phase],state:'incomplete',message:'发布内容或检查暂不可用',fix:'恢复读取条件后重新预检'};return {ok:false,checks};}finally{await staged?.discard();}
+  }
+  async precheckGrant(by:Principal,pack:string,targets?:readonly Principal[]){
+    by=await this.#own(by);const checks:SharingCheck[]=ShareCheckSchema.extract(['credentials','dependencies']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
+    try{
+      const versions=await this.versions(by.id,pack);if(!versions.length)throw new AccessError('对象不存在或无权读取');
+      for(const version of versions){const opened=await this.open(by.id,version.digest);if(!opened)throw new IntegrityError('包文件暂不可读');for(const file of version.manifest.files){const scan=scanForCredentials(await readFile(join(opened.handle.directory,file.path)));if(!scan.inspected||scan.truncated||scan.findings.length){checks[phase]={...checks[phase],state:'violation',message:'包文件可能含有凭据',fix:'移除凭据并发布修订版本'};return checks;}}}
+      checks[phase++].state='pass';
+      if(targets===undefined&&versions.some(v=>v.manifest.dependencies?.some(dep=>dep.space))){checks[phase].message='先填写授权对象并预检';return checks;}
+      for(const version of versions)for(const dep of version.manifest.dependencies??[])if(dep.space)for(const target of targets??[])if(!await this.mayUse(target,dep.space,dep.pack)){
+        checks[phase]={...checks[phase],state:'violation',message:'依赖的个人技能对授权对象不可读',fix:'先对相同对象授权依赖，或使用团队技能'};return checks;
+      }
+      checks[phase].state='pass';return checks;
+    }catch(error){if(error instanceof AccessError)throw error;checks[phase]={...checks[phase],state:'incomplete',message:'包文件暂不可读',fix:'恢复读取后重试'};return checks;}
   }
   async promote(by:Principal,ref:string):Promise<PublishOutcome>{
     by=await this.#own(by);const info=await this.resolve(by,by.id,ref);if(!info)throw new AccessError('对象不存在或无权读取');const opened=await this.open(by.id,info.digest);if(!opened)throw new IntegrityError('个人包文件暂不可读');
