@@ -70,6 +70,19 @@ test('revocation while archive metadata loads refuses the whole page instead of 
  w.kit.store.get=async<B>(digest:string,tx?:import('../records/api.ts').Transaction)=>{const value=await get<B>(digest,tx);if(digest===file.digest&&!revoked){revoked=true;await spaces.grant(w.user,{path:'/公开',audience:'member',member:w.outsider.id,revoke:true});}return value;};
  await assert.rejects(spaces.archive(w.outsider,{scope:'shared'}),{code:'SPACE_VERSION_CONFLICT'});
 });
+test('the first root import and explicit root save charge capacity before creating any private archive',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,raw=await ordinary(w);
+ assert.equal(await spaces.current(w.user.id),null);await spaces.setCapacity(w.admin,w.user.id,0);
+ await assert.rejects(spaces.importFile(w.user,text,'text/plain','合成首个根原文','/'),{code:'SPACE_CAPACITY_EXCEEDED'});
+ assert.equal(await spaces.current(w.user.id),null);
+ await assert.rejects(spaces.archiveSource(w.user,save(raw.digest,w.user.id,'/')),{code:'SPACE_CAPACITY_EXCEEDED'});
+ assert.equal(await spaces.current(w.user.id),null);assert.equal((await w.kit.artifacts.records(raw.body.sha256)).length,1);
+ await spaces.setCapacity(w.admin,w.user.id,text.byteLength);
+ await assert.rejects(spaces.archiveSource(w.user,save(raw.digest,w.user.id,'/')),{code:'SPACE_CAPACITY_EXCEEDED'},'the first save includes version metadata as well as source bytes');
+ assert.equal(await spaces.current(w.user.id),null);await spaces.setCapacity(w.admin,w.user.id,1024**3);
+ const saved=await spaces.archiveSource(w.user,save(raw.digest,w.user.id,'/')),version=(await spaces.current(w.user.id))!;
+ assert.equal(saved.path,'/');assert.ok(version.body.used_bytes>text.byteLength);assert.equal((await spaces.archive(w.user)).total,1);
+});
 test('capacity and transaction failures preserve the ordinary capture and leave no private archive copy',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,raw=await ordinary(w);await spaces.setCapacity(w.admin,w.user.id,0);
  await assert.rejects(spaces.importFile(w.user,text,'text/plain','合成首个私人原文'),{code:'SPACE_CAPACITY_EXCEEDED'});await assert.rejects(spaces.archiveSource(w.user,save(raw.digest,w.user.id)),{code:'SPACE_CAPACITY_EXCEEDED'});assert.equal((await w.kit.artifacts.records(raw.body.sha256)).length,1);
