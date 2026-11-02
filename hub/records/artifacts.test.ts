@@ -11,7 +11,7 @@ import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import type { TestRecordsKit } from '../testing/records.ts';
-import { scanForCredentials, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
+import { CREDENTIAL_SCANNER,scanForCredentials, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
 import { artifactShareKey, RECORD_SCHEMAS } from './constants.ts';
 import { digestOf, sha256Hex } from './digest.ts';
 import { runRecord } from '../../contracts/src/fixtures.ts';
@@ -77,7 +77,7 @@ test('a clean upload stores the bytes and a source_artifact record; repeating it
   assert.equal(body.provenance_type, 'declared');
   assert.deepEqual(body.origin, { upload: { session: 'sess-synthetic-1', message: 'msg-7' } });
   assert.deepEqual(body.author, { user: uploader.id, declared: '合成作者' });
-  assert.deepEqual(body.scan, { scanner: 'credential-scan@2', inspected: true, clean: true, findings: [], truncated: false });
+  assert.deepEqual(body.scan, { scanner: CREDENTIAL_SCANNER, inspected: true, clean: true, findings: [], truncated: false });
   assert.deepEqual(Buffer.from((await kit.artifacts.source(uploader, body.sha256))?.bytes ?? []), bytes);
   assert.deepEqual(Buffer.from((await kit.artifacts.trustedBytes(body.sha256)) ?? []), bytes);
   const again = await kit.artifacts.ingest(upload(uploader, bytes));
@@ -354,7 +354,7 @@ test('bytes the scanner cannot read are accepted and recorded as not inspected',
   const { uploader } = await people(kit);
   const archive = gzipSync(Buffer.from('notes\npassword=Synth3tic9x\n'));
   const artifact = await kit.artifacts.ingest({ ...upload(uploader, archive), mediaType: 'application/gzip' });
-  assert.deepEqual(artifact.body.scan, { scanner: 'credential-scan@2', inspected: false, clean: false, findings: [], truncated: false });
+  assert.deepEqual(artifact.body.scan, { scanner: CREDENTIAL_SCANNER, inspected: false, clean: false, findings: [], truncated: false });
   assert.equal(artifact.body.read_tier, 'model_readable');
 });
 

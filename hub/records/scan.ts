@@ -1,4 +1,4 @@
-// Credential scan (B02 R[4]), credential-scan@2: private keys, bearer or basic credentials, JWTs, password assignments and
+// Credential scan (B02 R[4]), credential-scan@3: private keys, bearer or basic credentials, JWTs, password assignments and
 // cloud keys. Findings carry the detector id and the position only, never the matched text. The bytes are scanned in every
 // form a reader could be served: the decoded text (UTF-8, also lossy as text() serves it; UTF-16 with or without a byte order
 // mark; GB 18030; windows-1252), the same text without NUL, and every quoted string with its escapes undone (also JSON
@@ -7,14 +7,15 @@
 // inspected, never as clean.
 import type { CredentialFinding, CredentialScan } from './api.ts';
 import { digestOf } from './digest.ts';
+import {decodeHtmlEntity} from './html-entity.ts';
 
-export const CREDENTIAL_SCANNER = 'credential-scan@2';
+export const CREDENTIAL_SCANNER = 'credential-scan@3';
 export const CREDENTIAL_DETECTORS = ['private_key', 'bearer_credential', 'basic_credential', 'jwt', 'password_assignment', 'cloud_key'] as const;
 export type CredentialDetector = (typeof CREDENTIAL_DETECTORS)[number];
 
 export const CREDENTIAL_FINDING_LIMIT = 100;
 const MAX_FINDINGS = CREDENTIAL_FINDING_LIMIT;
-/** Quoted strings inside quoted strings are undone this many levels deep. */
+/** Quoted strings and encoded scan views are expanded this many levels deep. */
 const MAX_NESTING = 4;
 /**
  * Share of C0 control bytes (NUL included, white space excluded) above which bytes are binary rather than text. Random or
@@ -83,7 +84,7 @@ function isSecretValue(raw: string): boolean {
   return /[0-9]/.test(value) || /[^A-Za-z0-9_-]/.test(value);
 }
 
-/** For forms without an assignment sign (`password Synth3tic9`): letters and digits, and not a hyphenated English word. */
+/** For forms without an assignment sign: letters and digits, and not a hyphenated English word. */
 function isStrictSecretValue(raw: string): boolean {
   const value = trimValue(raw);
   return isSecretValue(value) && /[A-Za-z]/.test(value) && /[0-9]/.test(value) && !/-[a-z]{3,}/.test(value);
@@ -271,7 +272,7 @@ const ASSIGNMENT = new RegExp(
   String.raw`(${KEYS})(?:\\?["'])?[ \t]*(?:=>|:=|=|:|：|＝|\|)[ \t]*(?:\\?"([^"\\\r\n]{1,200})\\?"|\\?'([^'\\\r\n]{1,200})\\?'|[“‘]([^”’\r\n]{1,200})[”’]|([^\s"'“”‘’<>,;|\\]{1,200}))`,
   'gi',
 );
-// `password Synth3tic9`: a command line (user add ... password X), .netrc (machine h login u password X).
+// A password label followed by an argument in a command line or .netrc record.
 const SPACED = /\b(password|passwd|pwd)[ \t]+([^\s"'<>,;|\\]{6,200})/gi;
 // `<password>X</password>`
 const ELEMENT = /<(password|passwd|pwd|secret|token|apikey|api[_-]?key)>[ \t]*([^<\s]{1,200})[ \t]*<\//gi;
@@ -395,31 +396,79 @@ function escapedLiterals(text: string, visit: (literal: Literal) => boolean): vo
   }
 }
 
+/** A scan-only replacement view. Mapping streams the edits only if findings need original positions. */
+function replaced(view:View,pattern:RegExp,replacement:(value:string)=>string):View{
+ const text=view.text.replace(pattern,replacement);if(text===view.text)return view;
+ return {text,offsets(indices){
+  const mapped:number[]=[];let source=0,target=0,next=0;
+  for(const match of view.text.matchAll(pattern)){
+   const value=replacement(match[0]),start=target+match.index-source;
+   while(next<indices.length&&indices[next]<start)mapped.push(source+indices[next++]-target);
+   while(next<indices.length&&indices[next]<start+value.length){const at=indices[next++]-start;mapped.push(match.index+(value.length===match[0].length?at:0));}
+   source=match.index+match[0].length;target=start+value.length;if(next===indices.length)break;
+  }
+  while(next<indices.length)mapped.push(source+indices[next++]-target);
+  return view.offsets(mapped);
+ }};
+}
+const HTML_ENTITY=/&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]{1,31});?/gi;
+const entityCache=new Map<string,string>();
+function htmlEntity(value:string):string{
+ const cached=entityCache.get(value);if(cached!==undefined)return cached;
+ const decoded=decodeHtmlEntity(value);
+ if(entityCache.size<256)entityCache.set(value,decoded);return decoded;
+}
+function normalizedText(text:string):View{
+ let view:View={text,offsets:indices=>[...indices]};
+ // Include an ASCII base with combining marks; Hangul jamo normalize as one composition unit.
+ const unicode=/(?:[\u1100-\u11ff\u3130-\u318f]+|[\x00-\x7f]\p{M}+|[^\x00-\x7f]+)/gu;
+ const normalize=(value:string)=>value.normalize('NFKC').replace(/\p{Default_Ignorable_Code_Point}/gu,'');
+ view=replaced(view,unicode,normalize);view=replaced(view,HTML_ENTITY,htmlEntity);return replaced(view,unicode,normalize);
+}
+
+/** Paths are scanned as joined segments and as adjacent key/value pairs; stored paths are untouched. */
+function pathLiterals(text:string,visit:(literal:Literal)=>boolean):void{
+ const paths=/(?:^|(?<=[\s"'`]))\/[^\s"'`<>\\]+/g;
+ for(const match of text.matchAll(paths)){
+  const parts=match[0].split('/').filter(Boolean);if(parts.length<2)continue;
+  const views=[parts.join('')];let prefix='';
+  for(let i=0;i<parts.length-1;i++){prefix=(prefix+parts[i]).slice(-60);views.push(prefix+'='+parts[i+1]);}
+  if(!visit({start:match.index,end:match.index+match[0].length,value:views.join('\n')}))return;
+ }
+}
+function base64Literals(text:string,visit:(literal:Literal)=>boolean):void{
+ for(const match of text.matchAll(/[A-Za-z0-9+/_-]{24,}(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9+/_-]{2,})*={0,2}/g)){
+  const value=match[0].replace(/[ \t\r\n]/g,''),bytes=Buffer.from(value,'base64url');
+  if(bytes.toString('base64url')!==value.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''))continue;
+  const sample=bytes.subarray(0,SAMPLE_BYTES);if(isContainer(bytes)||controlShare(sample)>BINARY_CONTROL_SHARE&&!nulPattern(sample).length)continue;
+  for(const view of decode(bytes).views)if(!visit({start:match.index,end:match.index+match[0].length,value:view.text}))return;
+ }
+}
+
 /** Hits in `text`; a hit inside an escaped string is reported at the string's opening quote. */
 function scanText(text: string, depth: number, located: boolean, limit=MAX_FINDINGS): RawHit[] {
   const hits: RawHit[] = [];
   for (const detector of DETECTORS) {
     const report:Report=(index,matched)=>{hits.push(located?{detector:detector.id,index,at:{text,index},matched}:{detector:detector.id,index});};report.limit=limit;detector.run(text,report);
   }
-  if (depth >= MAX_NESTING || !text.includes('\\')) return hits;
+  if (depth >= MAX_NESTING) return hits;
   const direct = [...hits].sort((a, b) => a.index - b.index);
   const coveredBy = (detector: CredentialDetector, start: number, end: number) => {
     let low = 0;
     let high = direct.length;
     while (low < high) {
       const middle = (low + high) >> 1;
-      if (direct[middle].index <= start) low = middle + 1;
+      if (direct[middle].index < start) low = middle + 1;
       else high = middle;
     }
     for (let index = low; index < direct.length && direct[index].index < end; index++) if (direct[index].detector === detector) return direct[index];
     return null;
   };
   let literalsWithHits = 0;
-  escapedLiterals(text, (literal) => {
-    const inner = scanText(literal.value, depth + 1, located,limit);
+  const append=(inner:RawHit[],start:number,end:number)=>{
     let added = false;
     for (const hit of inner) {
-      const covering = coveredBy(hit.detector,literal.start,literal.end);
+      const covering = coveredBy(hit.detector,start,end);
       if (covering !== null) {
         if (located) {
           (covering.additional ??= []).push(...(hit.matched === undefined ? [] : [hit.matched]),...(hit.additional ?? []));
@@ -427,13 +476,21 @@ function scanText(text: string, depth: number, located: boolean, limit=MAX_FINDI
         }
         continue;
       }
-      hits.push(located ? { detector: hit.detector, index: literal.start, at: hit.at, matched: hit.matched, additional:hit.additional, incomplete:hit.incomplete || inner.length > limit } : { detector: hit.detector, index: literal.start });
+      hits.push(located ? { detector: hit.detector, index: start, at: hit.at, matched: hit.matched, additional:hit.additional, incomplete:hit.incomplete || inner.length > limit } : { detector: hit.detector, index: start });
       added = true;
     }
     // A literal hit after MAX_FINDINGS + 1 earlier literal hits can never be among the first MAX_FINDINGS findings.
     if (added) literalsWithHits++;
     return literalsWithHits <= limit;
-  });
+  };
+  const normalized=normalizedText(text);
+  if(normalized.text!==text){
+   const inner=scanText(normalized.text,depth+1,located,limit).sort((a,b)=>a.index-b.index),positions=normalized.offsets(inner.map(hit=>hit.index));
+   inner.forEach((hit,index)=>append([hit],positions[index],positions[index]+1));
+  }
+  const visit=(literal:Literal)=>append(scanText(literal.value,depth+1,located,limit),literal.start,literal.end);
+  if(text.includes('\\'))escapedLiterals(text,visit);
+  pathLiterals(text,visit);base64Literals(text,visit);
   return hits;
 }
 

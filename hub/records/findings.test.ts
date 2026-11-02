@@ -413,7 +413,7 @@ test('a record of a newer scanner version is not covered by an acceptance of an 
     ...accepted.body,
     visibility: { readers: [], admins: true, packs: [], shareable: false },
     read_tier: 'retain_only',
-    scan: { scanner: 'credential-scan@3', inspected: true, clean: false, findings: accepted.body.scan.findings, truncated: false },
+    scan: { scanner: accepted.body.scan.scanner.replace(/@(\d+)$/,(_,version)=>'@'+(Number(version)+1)), inspected: true, clean: false, findings: accepted.body.scan.findings, truncated: false },
   };
   await kit.store.put({ kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: 'observed', body: newer, index: [{ key: 'artifact.sha256', value: sha }] });
   const view = await kit.artifacts.text(packUser, sha);

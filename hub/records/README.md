@@ -697,3 +697,17 @@ projection. It backfills only these derived columns from immutable versions, pre
 not rewrite earlier SQL or records. Runtime column grants cover the new counters but still protect space/document
 identity. Atomic updates and rebuilds use the same accounting; defaults are 48,000 active bytes and 20 documents per
 space. The reviewed source snapshot is updated together with an upgrade regression.
+
+Credential-scan@3 adds scan-only NFKC/invisible-character folding, numeric/named HTML entities, joined path segments
+and adjacent key/value segments, and canonical base64/base64url text views. These share the existing bounded recursive
+expansion and detectors; compressed containers remain uninspected. Findings map to original positions (encoded literals
+anchor at their opening), and internal matched values never enter public scan metadata. Stored bytes and reference
+identity do not change. Source acceptance is still bound to scanner version and findings; tests derive a simulated newer
+scanner from the current version rather than pinning it. Existing encodings, placeholders, negatives and large-input
+time/memory bounds remain covered.
+
+HTML character-reference data is generated through the already declared parse5 dependency, with its decoder data license
+retained. A small portable decoder is checked against that parser for every named reference and numeric boundaries. Run
+`node tools/gen-credential-scanner.ts --check` to check the generated data; the knowledge-contribution pack generator also
+mirrors the scanner, decoder and data into its standalone skill, without a runtime package dependency. This avoids two
+credential policies drifting apart; it adds no per-source hashing or data-verification pass.

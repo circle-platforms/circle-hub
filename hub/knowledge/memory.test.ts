@@ -7,6 +7,23 @@ import {MemoryVersionBody} from '../../contracts/src/memory.ts';
 let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 const create=(markdown='合成偏好',key='create')=>({title:'合成记忆',markdown,path:'/preferences',expected_version:null,client_key:key});
+
+test('memory and knowledge refuse encoded credentials without changing stored clean Unicode content',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,spaces=w.knowledge.spaces!,secret=['Synth3tic','!2498'].join('');
+ const variants=['ＤＢ＿ＰＡＳＳＷＯＲＤ＝'+secret,'DB_PASS\u200bWORD='+secret,'DB_PASS\u00adWORD='+secret,'DB_PASSWORD&#61;'+secret,Buffer.from('DB_PASSWORD='+secret).toString('base64')];
+ for(const [n,text] of variants.entries()){
+  await assert.rejects(memory.write(w.user,create(text,'encoded-'+n)),{code:'MEMORY_CREDENTIALS_DETECTED'});
+  await assert.rejects(memory.write(w.user,{...create('合成正文','encoded-title-'+n),title:text}),{code:'MEMORY_CREDENTIALS_DETECTED'});
+  await assert.rejects(spaces.write(w.user,{kind:'observation',statement:text}),{code:'SPACE_CREDENTIALS_DETECTED'});
+ }
+ for(const [n,path] of ['/DB_PASS/WORD=/'+secret,'/DB_PASSWORD/'+secret].entries()){
+  await assert.rejects(memory.write(w.user,{...create('合成正文','encoded-path-'+n),path}),{code:'MEMORY_CREDENTIALS_DETECTED'});
+  await assert.rejects(spaces.directory(w.user,path),{code:'SPACE_CREDENTIALS_DETECTED'});
+ }
+ const clean='合成　偏好\nＵＴＦ－８　原文\u200b。',saved=await memory.write(w.user,create(clean,'keep-bytes'));
+ assert.equal((await memory.read(w.user,saved.document)).markdown,clean);
+ const note=await spaces.write(w.user,{kind:'observation',statement:clean});assert.equal((await spaces.entry(w.user,note.root,'/',note.entry))?.body.content.statement,clean);
+});
 test('disabled grantees can be revoked and disabled personal memories stay hidden from every recipient',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,saved=await memory.write(w.user,create());
  await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});

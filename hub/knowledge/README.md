@@ -1276,3 +1276,6 @@ Team share pre-checks first inspect administrator maintenance state. A disabled 
 document's successful-share lineage blocks another share with MEMORY_TEAM_DISABLED; no new document is created. An
 administrator can explicitly re-enable the original, after which the normal preserve-administrator-edits rule applies.
 Other personal documents remain independently shareable. Confirmation repeats the check under the team space lock.
+Knowledge and memory use the same scan-only Unicode/entity/base64/path views. A refused encoded credential cannot be
+stored in an entry, memory body/title or directory; clean compatibility characters and invisible characters remain
+byte-for-byte unchanged when saved. Scan diagnostics retain safe original positions without suspected values.
