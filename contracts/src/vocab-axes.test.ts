@@ -27,6 +27,7 @@ import {
   PACK_KIND,
   PACK_STATUS,
   PackStatusSchema,
+  labelOf,
   uiLabelOf,
 } from '../generated/vocabulary.ts';
 import { MODEL_VERSION } from '../generated/protocol.ts';
@@ -207,7 +208,8 @@ test('contracts schemas integrate with the generated schemas seamlessly', () => 
 });
 
 test('the approved cleared-folder text is generated as display metadata without changing sync mode codes',()=>{
- assert.equal(uiLabelOf('sync_field','cleared_personal_folder'),'已清除的个人文件夹');
+ assert.equal(labelOf('sync_field','cleared_personal_folder'),'已清除的个人文件夹');
+ assert.equal(uiLabelOf('sync_field','cleared_personal_folder'),'已清除的私人文件夹');
  assert.equal(uiLabelOf('sync_field','last_synced_at'),'上次同步');
  assert.equal(model.vocabulary.find(axis=>axis.axis==='sync_field')?.owner,'K01');
 });
