@@ -216,7 +216,7 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
       const limits={...row.limits};
       for(const key of Object.keys(row.limits) as (keyof ParseLimits)[]){const requested=parseOptions[key];if(requested!==undefined){if(!Number.isSafeInteger(requested)||requested<=0)throw new ParseError(row.parser,'解析限额必须是正整数');limits[key]=Math.min(row.limits[key]!,requested);}}
       if(bytes.length>limits.maxBytes)throw new ParseLimitError(row.parser,'maxBytes',limits.maxBytes,'原件超过技能包声明的字节限额');
-      const verified=await options.registry.open(opened.info.digest);
+      const verified=await (opened.info.space&&opened.info.space!=='team'?options.registry.personal?.open(opened.info.space,opened.info.digest):options.registry.open(opened.info.digest));
       if(!verified||verified.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
       try{
         const input={bytes:Buffer.from(bytes).toString('base64'),options:{...parseOptions,...limits}};
@@ -224,7 +224,7 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
         if(options.onWireOutput)try{options.onWireOutput(Buffer.byteLength(JSON.stringify(out.output),'utf8'));}catch{/* Instrumentation must not alter parsing. */}
         const locate=row.locate;
         const fetchFragments=locate?async(selectors:string[])=>{
-          const again=await options.registry.open(opened.info.digest);
+          const again=await (opened.info.space&&opened.info.space!=='team'?options.registry.personal?.open(opened.info.space,opened.info.digest):options.registry.open(opened.info.digest));
           if(!again||again.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
           const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},PARSE_SANDBOX_LIMITS,options.sandbox);
           return located.output;
@@ -238,7 +238,7 @@ export function createSkillParserRegistry(options:SkillParserOptions):ParserRegi
   const {registry,records}=options;let current=createDefaultRegistry();
   const load=async(locks:readonly SkillLock[]):Promise<ParserRegistry>=>{
     SkillLocks.parse(locks);const parsed:Parser[]=[];
-    for(const lock of locks){const opened=await registry.open(lock.digest);
+    for(const lock of locks){const opened=await (lock.space?registry.personal?.open(lock.space,lock.digest):registry.open(lock.digest));
       if(!opened||opened.info.id!==lock.pack||opened.info.version!==lock.version||opened.declarations.kind!=='skill')throw missing(`冻结技能包 ${lock.pack}@${lock.version}（摘要 ${lock.digest}）不可读取`);
       for(const row of opened.declarations.skill.parsers)parsed.push(parserOf(opened,row,options));
     }
@@ -248,39 +248,84 @@ export function createSkillParserRegistry(options:SkillParserOptions):ParserRegi
     out.unavailable=key=>`缺少解析器 ${key} 的已安装/冻结通用技能包；下一步：管理员安装所需技能并重开运行，或用 circle-hub skill bind-legacy ${key} <技能包 id@版本> 为历史引用追加迁移声明`;
     return out;
   };
-  const freeze=async(dependencies:readonly SkillDependency[])=>{
+  const freeze=async(dependencies:readonly SkillDependency[],context?:{principal:Principal;space?:string})=>{
     const available=await registry.installedSkills();
-    const skills=available.map(pack=>({pack:pack.info.id,version:pack.info.version,digest:pack.info.digest}));
-    for(const pack of available)for(const dep of pack.info.manifest.dependencies??[])if(!skills.some(lock=>lock.pack===dep.pack&&(dep.version===undefined||dep.version===lock.version)))throw missing(`技能包 ${pack.info.id} 缺少已安装依赖 ${dep.pack}`);
-    for(const dep of dependencies)if(!skills.some(lock=>lock.pack===dep.pack&&(dep.version===undefined||dep.version===lock.version)))throw missing(`缺少已安装技能包 ${dep.pack}${dep.version?'@'+dep.version:''}；新运行没有开始`);
+    const skills:SkillLock[]=available.map(pack=>({pack:pack.info.id,version:pack.info.version,digest:pack.info.digest}));
+    const resolved=new Set<string>();
+    const pending=dependencies.map(dep=>({dep,scope:context?.space&&context.space!=='team'?context.space:undefined}));
+    while(pending.length){
+      const {dep,scope:inherited}=pending.shift()!,scope=dep.space??inherited;
+      let chosen:SkillLock|undefined;
+      if(scope&&context&&registry.personal){
+        const found=await registry.personal.resolve(context.principal,scope,dep.pack+(dep.version?'@'+dep.version:''));
+        if(found?.kind==='skill')chosen={pack:found.id,version:found.version,digest:found.digest,space:scope};
+        else if(dep.space)throw missing('个人通用技能不可读取；由所有者授权后重新开始');
+      }
+      if(!chosen){const team=available.find(pack=>pack.info.id===dep.pack&&(dep.version===undefined||dep.version===pack.info.version));
+        if(team)chosen={pack:team.info.id,version:team.info.version,digest:team.info.digest};
+      }
+      if(!chosen)throw missing(`${scope?'缺少可读取的通用技能':'缺少已安装技能包'} ${dep.pack}${dep.version?'@'+dep.version:''}；新运行没有开始`);
+      const key=(chosen.space??'team')+'/'+chosen.pack,prior=skills.find(lock=>(lock.space??'team')+'/'+lock.pack===key);
+      if(prior&&prior.digest!==chosen.digest)throw missing('同一技能空间存在冲突的依赖版本，不能开始运行');
+      if(chosen.space){const team=skills.findIndex(lock=>lock.pack===chosen!.pack&&!lock.space);if(team>=0)skills.splice(team,1);}
+      if(!prior)skills.push(chosen);
+      if(skills.length>64)throw missing('冻结的通用技能超过 64 个，不能开始运行');
+      if(resolved.has(key))continue;resolved.add(key);
+      const opened=chosen.space?await registry.personal?.open(chosen.space,chosen.digest):await registry.open(chosen.digest);
+      for(const nested of opened?.info.manifest.dependencies??[])pending.push({dep:nested,scope:chosen.space});
+    }
+    for(const lock of skills){
+      const opened=lock.space?await registry.personal?.open(lock.space,lock.digest):await registry.open(lock.digest);
+      for(const dep of opened?.info.manifest.dependencies??[]){
+        const scope=dep.space??lock.space;
+        const match=skills.some(value=>value.pack===dep.pack&&(value.space===scope||!dep.space&&!value.space)&&(dep.version===undefined||dep.version===value.version));
+        if(!match)throw missing(`通用技能 ${lock.pack} 缺少已锁定依赖 ${dep.pack}`);
+      }
+    }
     return {skills,parsers:await load(skills)};
   };
   const facade:ParserRegistry={register:parser=>current.register(parser),get:key=>current.get(key),forMediaType:type=>current.forMediaType(type),list:()=>current.list(),
     refresh:async()=>{current=(await freeze([])).parsers;},freeze,
     unavailable:key=>current.unavailable?.(key),
-    async forReference(parser){
-      await facade.refresh!();
+    async forReference(parser,reader){
+      const scoped=await freeze([]);
+      const selected=scoped.parsers;
       const binding=(await records.store.find<any>({kind:'action',key:'refs.legacy-parser',value:parser,limit:1,newestFirst:false})).items[0];
       if(binding){const lock=SkillLocks.parse([binding.body.detail?.migration?.skill]);const out=await load(lock);out.bindingRecords=[binding.digest];out.bindingDisclosure='迁移时点事后声明；rec:'+binding.digest+'；按所列摘要复核，不证明旧执行当时使用该包';return out;}
-      if(current.get(parser)?.migration_test){const out=await load([]);out.unavailable=key=>'缺少旧解析器 '+key+' 的迁移时点事后声明；下一步：circle-hub skill bind-legacy '+key+' <技能包 id@版本>；也可给出已锁定技能摘要的运行号';return out;}
-      return current;
+      if(selected.get(parser)?.migration_test){const out=await load([]);out.unavailable=key=>'缺少旧解析器 '+key+' 的迁移时点事后声明；下一步：circle-hub skill bind-legacy '+key+' <技能包 id@版本>；也可给出已锁定技能摘要的运行号';return out;}
+      if(selected.get(parser))return selected;
+      if(reader?.user&&registry.personal){
+        const account=await records.principals.get(reader.user);
+        if(account&&!account.disabled){
+          const matches=(await registry.personal.skills(account)).filter(pack=>pack.declarations.kind==='skill'&&pack.declarations.skill.parsers.some(row=>row.parser===parser));
+          if(matches.length>1)throw missing('多份个人技能声明了同一解析器；提供锁定技能空间的运行号后重读');
+          if(matches.length){const info=matches[0].info;return (await freeze([{pack:info.id,version:info.version,space:info.space!}],{principal:account,space:info.space})).parsers;}
+        }
+      }
+      return selected;
     },
-    async forRun(run){
+    async forRun(run,reader){
       const stored=await readRun(records,run);if(!stored)throw missing('运行不存在，无法确定解析器摘要');
+      const authorize=async(locks:readonly SkillLock[])=>{
+        for(const lock of locks)if(lock.space){
+          const ids=new Set([stored.body.runner,...(reader?.user?[reader.user]:[])]);
+          for(const id of ids){const account=id?await records.principals.get(id):null;if(!account||account.disabled||!await registry.personal?.mayUse(account,lock.space,lock.pack))throw missing('冻结通用技能的使用授权已收回或不可读取；由所有者补齐授权后重读');}
+        }
+      };
       const bindings=await records.store.find<any>({kind:'action',key:'runs.skills',value:run,limit:65,newestFirst:false});
       if(bindings.next||bindings.items.length>64)throw missing('运行的技能绑定记录超过有界读取上限');
       const valid=bindings.items.filter(row=>row.body.detail?.run_record===stored.digest);
       if(valid.length){
         const locks:SkillLock[]=SkillLocks.parse(stored.body.skills??[]);
         for(const row of valid)for(const lock of SkillLocks.parse(row.body.detail.skills)){
-          const prior=locks.find(value=>value.pack===lock.pack);
+          const prior=locks.find(value=>value.pack===lock.pack&&value.space===lock.space);
           if(prior&&prior.digest!==lock.digest)throw missing('运行的技能摘要声明冲突，不能选择一条');
           if(!prior)locks.push(lock);
         }
-        const out=await load(locks);out.bindingRecords=valid.map(row=>row.digest);out.bindingRecord=valid[0].digest;
+        await authorize(locks);const out=await load(locks);out.bindingRecords=valid.map(row=>row.digest);out.bindingRecord=valid[0].digest;
         out.bindingDisclosure='迁移时点事后声明（历史解析技能由管理员追加绑定）；按所列包摘要复核，不证明旧执行当时使用；'+valid.map(row=>'rec:'+row.digest).join('；');out.unavailable=key=>`历史运行 ${run} 未锁定技能包摘要（解析器 ${key}）；下一步：管理员执行 circle-hub skill bind-legacy ${key} <技能包 id@版本>；原运行和结果不改`;return out;
       }
-      const out=await load(stored.body.skills??[]);if(stored.body.skills===undefined)delete out.skills;out.unavailable=key=>`历史运行 ${run} 未锁定技能包摘要（解析器 ${key}）；下一步：管理员用 circle-hub skill bind-legacy ${key} <技能包 id@版本> 追加迁移时点事后声明后重读；原运行和结果不改`;
+      await authorize(stored.body.skills??[]);const out=await load(stored.body.skills??[]);if(stored.body.skills===undefined)delete out.skills;out.unavailable=key=>`历史运行 ${run} 未锁定技能包摘要（解析器 ${key}）；下一步：管理员用 circle-hub skill bind-legacy ${key} <技能包 id@版本> 追加迁移时点事后声明后重读；原运行和结果不改`;
       return out;
     }};
   return facade;
@@ -363,7 +408,7 @@ export async function bindLegacyParser(options:SkillParserOptions,by:Principal,p
     if(bindings.next||bindings.items.length>64)throw missing('运行的技能绑定记录超过有界读取上限');
     const locks=SkillLocks.parse(run.body.skills??[]);
     for(const binding of bindings.items.filter(binding=>binding.body.detail?.run_record===run.digest))for(const lock of SkillLocks.parse(binding.body.detail.skills)){
-      const existing=locks.find(value=>value.pack===lock.pack);if(existing&&existing.digest!==lock.digest)throw missing('运行的技能摘要声明冲突，不能选择一条');if(!existing)locks.push(lock);
+      const existing=locks.find(value=>value.pack===lock.pack&&value.space===lock.space);if(existing&&existing.digest!==lock.digest)throw missing('运行的技能摘要声明冲突，不能选择一条');if(!existing)locks.push(lock);
     }
     if(await alreadyLocked({...run.body,skills:locks})){already_bound_runs++;continue;}
 

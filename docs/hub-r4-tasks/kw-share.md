@@ -63,6 +63,10 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 
 - 合约与知识共享：模型 19、五种追加记录及注册拒收码；按顺序复核来源／引文／来源资格、只对团队去重、完整原文凭据扫描、自动合并与本人历史。提交人可撤回自己的团队副本，团队管理员可撤回任意条目；读取派生撤回依据，旧条目不改。四个技能只同步协议镜像和发布清单（HTML／思维导图 1.0.6，XML／工作簿 1.0.7），未改业务代码。
 
+- 个人发布与技能：成员无需团队发布权即可发布个人工作流／通用技能；同号命名空间独立，授权本人管理，管理员无默认使用权。文件、版本与依赖锁按个人空间限定；当前授权收回后不能继续使用冻结技能。发布到团队重新走原发布权与校验，新团队运行按分配共享，旧个人运行不扩大读权。
+
 ## 验证
 
 - 合约／知识步骤：`npm run gen:contracts`（151 个文件一致）、`npm run verify:contracts`、`npm run typecheck` 通过；`node --test --test-concurrency=1 contracts/src/{sharing,model-w04-w10-v07,vocab-axes,spaces,tools,tool-shapes,run-history}.test.ts hub/knowledge/{sharing,spaces,spaces-review}.test.ts`，72 项通过，0 失败、0 跳过。
+
+- 个人包步骤：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/runs/packs/{personal,ports,registry}.test.ts hub/refs/skills-personal.test.ts tests/acceptance/47-knowledge-sharing.test.ts`，45 项通过，0 失败、0 跳过。另一次技能／查询／原始记录读取复查组 32 项通过，0 跳过（与前组有重复，不累加）。

@@ -383,7 +383,7 @@ export class RecordArtifacts implements Artifacts {
     const parsed = RunRecord.safeParse(record.body);
     if (!parsed.success || parsed.data.run !== run) return null;
     const snapshot = parsed.data;
-    const visible = viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now());
+    const visible = (!snapshot.pack_space||snapshot.pack_space==='team')&&viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now(),viewer.role);
     if (!visible || ![...snapshot.sources.map(binding=>binding.reference),...snapshot.items.map(item=>item.location)].some(reference => /^src:([0-9a-f]{64})(?:\/|$)/.exec(reference)?.[1] === sha256)) return null;
     const captures=[...new Set(snapshot.sources.filter(binding=>binding.artifact!==undefined&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256).map(binding=>binding.artifact!))];
     const requested=pinned(options.record);if(requested&&!captures.includes(requested))return null;

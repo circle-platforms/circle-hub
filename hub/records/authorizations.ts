@@ -1,3 +1,4 @@
+import {mayUsePersonalPack} from './personal-packs.ts';
 // Authorization records (B04): publish-right grants, pack assignment and removal, resource configuration, sharing, and the
 // publish records of pack owners. Each decision is an append-only `authorization@1` record; the latest record per
 // (permission, subject, object) wins. Every decision names the record it follows (`supersedes`), so it is a distinct record
@@ -425,9 +426,11 @@ export async function sharedWith(store: RecordStore, user: string, object: strin
 }
 
 /** Sharing is based on frozen requirements, never the currently installed workflow version. */
-export async function runIsSharedWith(store: RecordStore, user: string, run: Pick<RunRecord, 'run'|'pack'|'requirements'>, now = new Date()): Promise<boolean> {
+export async function runIsSharedWith(store: RecordStore, user: string, run: Pick<RunRecord, 'run'|'pack'|'requirements'|'pack_space'|'team_shared'>, now = new Date(), role:PermissionRole='user'): Promise<boolean> {
   const pack = run.pack.slice(0, run.pack.lastIndexOf('@'));
   if (!PackId.safeParse(pack).success) return false;
+  if(run.pack_space&&run.pack_space!=='team')return mayUsePersonalPack(store,{id:user,name:user,role},run.pack_space,pack);
+  if(run.team_shared){const assignment=(await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];return role==='admin'||!!assignment&&activeAt(assignment,now);}
   if (await sharedWith(store, user, run.run, now, pack)) return true;
   if (!PackId.safeParse(pack).success || !run.requirements.length || !run.requirements.every(r => r.accepted_producer === 'fact')) return false;
   const assignment = (await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];

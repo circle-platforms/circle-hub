@@ -1,5 +1,25 @@
 # runs-packs: the pack registry
 
+## Personal publication (decision 87)
+
+`registry.personal` publishes workflows and generic skills in an account namespace. `check` and `publish` reuse the
+team publisher's directory, structural, import, reference, credential and sandbox/sample checks, without requiring a
+team publication right. Product and system packs remain team-only. The immutable manifest, semantic version and digest
+are unchanged; version ownership, grants, retirement and lookup keys additionally name the personal owner. Files have
+private artifact captures and are extracted read-only under the personal extractor. Concurrent publishers lock the
+owner/id; file ingestion does not nest database transactions inside that publication lock.
+
+The owner grants use to a member or all administrators and can revoke it. Administrators have no default personal-pack
+access. Catalogs, summaries, source-file reads and frozen dependency locks preserve the namespace; personal workflow
+publication does not grant product-line read rights. Generic skills without acceptance requirements are listed/readable
+but do not become runnable workflows. Retirement prevents new use while authorized history retains its original digest.
+
+`promote` requires the existing team publish right and repeats team publication checks, then appends a transfer record.
+Team publication cannot depend on a personal skill namespace; publish/install dependencies in the team first. New runs
+from the promoted team version carry the team-sharing flag and follow assignments. Existing personal runs keep their
+personal namespace and are never widened. Synchronization, signing and account-deletion cleanup remain later phases.
+
+
 Publish, validate, assign, activate, withdraw and load task packs. Model elements: T01 (task pack), T02 (publish record and
 publish check), W02 (requirement templates), W03 (workflow and product binding), W05 (slots), C05 (rules with samples), C07
 (catalogs a workflow requires), B04 (authorizations), A03 (source roles of checks). This is the first half of the runs

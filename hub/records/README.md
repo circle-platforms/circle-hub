@@ -1,5 +1,19 @@
 # records
 
+## Personal-pack records and result audiences (decision 87)
+
+Personal publications, grants/revocations, retirements and team transfers are append-only registered records, indexed
+by owner/id rather than global pack id. `personalPackGrants` reduces the newest decision per audience, and
+`mayUsePersonalPack` gives the owner and current member/all-administrator grantees use; no administrator bypass is added.
+`runIsSharedWith` respects frozen personal namespaces before legacy sharing policies. A new promoted team run follows
+current assignments, while an older personal run keeps its original audience.
+
+Raw personal metadata is read through authorized package views, not `rec:` record access. `sourceForRun` preserves
+private-run boundaries and original capture/read-tier rules; a workflow grant does not lend a connector original or
+personal-space capture. Knowledge and engine enforce the complete result-ground rule at admission and read time.
+No migration or change to existing record/object bytes is required for these new registered kinds.
+
+
 ## Space search projection (decision 86)
 
 Migration 9 adds the projection; migration 10 consolidates its token copies into `knowledge_space_search_documents`,

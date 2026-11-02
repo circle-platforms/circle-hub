@@ -357,8 +357,8 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
   }
   if(ref.scheme==='src'&&ref.parser){
     try{
-      if(ctx.reader.run&&ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(ctx.reader.run)};
-      else if(ctx.parsers.forReference)ctx={...ctx,parsers:await ctx.parsers.forReference(ref.parser)};
+      if(ctx.reader.run&&ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(ctx.reader.run,ctx.reader)};
+      else if(ctx.parsers.forReference)ctx={...ctx,parsers:await ctx.parsers.forReference(ref.parser,ctx.reader)};
       else await ctx.parsers.refresh?.();
     }catch(error){
       ctx.onDiagnostic?.({reference:canonical,scheme:ref.scheme,message:'locked parser package could not be loaded'});

@@ -1,7 +1,22 @@
 # hub/refs: references and parsers
 
+## Personal skill namespaces (decision 87)
+
+`freeze(dependencies, {principal, space})` resolves declared personal dependencies and their closure with current grants.
+An implicit dependency first uses that personal namespace, then an installed team skill; an explicit owner never falls
+back to a different namespace. Locks include the owner and exact digest, reject conflicting versions and retain the
+64-skill bound. Team and personal copies of the same id never resolve by an unscoped digest. Private parsers execute
+through the same sandbox, limits, extraction and lazy lookup code as team parsers.
+
+`forRun(run, reader)` reopens frozen versions and rechecks personal-skill grants for both the initiator and reader.
+Revocation prevents subsequent use without editing the historical lock. Team history continues to load its frozen
+published version after uninstall/retirement. Standalone `forReference` prefers the existing team or explicit legacy
+binding; otherwise it uses a currently granted personal parser and its authorized dependency closure. Ambiguous personal
+parser names require a frozen run. This cannot replace another reader's existing public parser through a private copy.
+
+
 Model elements: **B03** (references), **T04** (resolution, the verbatim quote check), and the read tiers of **B02**.
-Other packages import only from `hub/refs/api.ts`. refs imports only `contracts/`.
+Other packages import only from `hub/refs/api.ts`. Core parsing depends on contracts; the skill adapter uses the records, runs and rules public APIs.
 
 ## What is here
 

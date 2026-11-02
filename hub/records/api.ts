@@ -35,6 +35,7 @@ export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
+export { personalPackKey, personalPackGrants, mayUsePersonalPack } from './personal-packs.ts';
 export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 /** The list() and find() cursor that continues after an append position (RecordStore.watermark or position). */
 export { encodeCursor as cursorAfter } from './db.ts';

@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import { before, after, test } from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
+import { openPackTestbed } from '../runs/packs/testing/setup.ts';
+import type { PackDescription } from '../runs/packs/testing/builder.ts';
+import { createSkillParserRegistry } from './skills.ts';
+import { parseDocument } from './api.ts';
+import { repositorySkillVersion } from '../testing/skills.ts';
+
+let postgres:TemporaryPostgres;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+test('personal parser locks retain their namespace and require a current owner grant without an administrator bypass',async t=>{
+  const bed=await openPackTestbed({postgres});t.after(()=>bed.close());
+  const root=fileURLToPath(new URL('../../packs/skill/mindmap-format/',import.meta.url));
+  const manifest=JSON.parse(await readFile(join(root,'pack.json'),'utf8'));
+  const files:PackDescription['files']={};for(const file of manifest.files)files[file.path]=await readFile(join(root,file.path));
+  const source=await bed.write({...manifest,version:await repositorySkillVersion('mindmap-format'),files});
+  const personal=await bed.registry.personal!.publish(bed.carol,source.dir);assert.ok(personal.ok,JSON.stringify(personal));
+  const parsers=createSkillParserRegistry({registry:bed.registry,records:bed.kit,sandbox:{requireOsIsolation:false}});
+  const dependency={pack:manifest.id,space:bed.carol.id};
+  await assert.rejects(parsers.freeze!([dependency],{principal:bed.admin}),/不可读取/);
+  const frozen=await parsers.freeze!([dependency],{principal:bed.carol,space:bed.carol.id});
+  assert.deepEqual(frozen.skills,[{space:bed.carol.id,pack:manifest.id,version:manifest.version,digest:personal.version.digest}]);
+  const parser=frozen.parsers.get('kityminder@1');assert.ok(parser);
+  const document=await parseDocument(parser,Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成个人格式'},children:[]}})));
+  assert.equal((await document.locate('n/root'))?.text,'合成个人格式');
+  await bed.registry.personal!.grant(bed.carol,manifest.id,{audience:'administrators'});
+  assert.ok((await parsers.forReference!('kityminder@1',{user:bed.admin.id,role:'admin'})).get('kityminder@1'));
+  await bed.registry.personal!.grant(bed.carol,manifest.id,{audience:'administrators',revoke:true});
+  assert.equal((await parsers.forReference!('kityminder@1',{user:bed.admin.id,role:'admin'})).get('kityminder@1'),undefined);
+  assert.equal((await parsers.forReference!('kityminder@1',{user:bed.bob.id,role:'user'})).get('kityminder@1'),undefined);
+  const team=await bed.registry.publish(bed.alice,source.dir);assert.ok(team.ok);await bed.registry.install(bed.admin,manifest.id+'@'+manifest.version);
+  const scoped=await parsers.freeze!([dependency],{principal:bed.carol,space:bed.carol.id});
+  assert.equal(scoped.skills.length,1);assert.equal(scoped.skills[0].space,bed.carol.id);
+});
+
+test('personal dependency closures freeze their owner namespace and require grants for each dependency',async t=>{
+  const bed=await openPackTestbed({postgres});t.after(()=>bed.close());
+  const description=(id:string,dependencies:PackDescription['dependencies']=[]):PackDescription=>({id,version:'1.0.0',kind:'skill',title:'合成依赖',description:'合成个人技能依赖',dependencies,files:{'SKILL.md':'# 合成依赖\n按声明步骤执行。','skill.json':{schema:'skill@1',parsers:[]}}});
+  const child=await bed.write(description('synthetic-personal-child'));
+  assert.ok((await bed.registry.personal!.publish(bed.carol,child.dir)).ok);
+  const parent=await bed.write(description('synthetic-personal-parent',[{pack:child.manifest.id}]));
+  assert.ok((await bed.registry.personal!.publish(bed.carol,parent.dir)).ok);
+  const parsers=createSkillParserRegistry({registry:bed.registry,records:bed.kit,sandbox:{requireOsIsolation:false}});
+  const dependencies=[{pack:parent.manifest.id,space:bed.carol.id}];
+  const frozen=await parsers.freeze!(dependencies,{principal:bed.carol,space:bed.carol.id});
+  assert.deepEqual(frozen.skills.map(lock=>[lock.space,lock.pack]),[[bed.carol.id,parent.manifest.id],[bed.carol.id,child.manifest.id]]);
+  await bed.registry.personal!.grant(bed.carol,parent.manifest.id,{audience:'member',member:bed.bob.id});
+  await assert.rejects(parsers.freeze!(dependencies,{principal:bed.bob}),/缺少可读取/);
+  await bed.registry.personal!.grant(bed.carol,child.manifest.id,{audience:'member',member:bed.bob.id});
+  assert.equal((await parsers.freeze!(dependencies,{principal:bed.bob})).skills.length,2);
+  const explicit=await bed.write(description('synthetic-personal-explicit',[{pack:child.manifest.id,space:bed.carol.id}]));
+  const team=await bed.registry.publish(bed.alice,explicit.dir);assert.equal(team.ok,false);assert.ok(!team.ok&&team.problems.some(row=>row.rule==='publish.personal_dependency'));
+});

@@ -95,9 +95,9 @@ export interface ParserRegistry {
   bindingRecords?:readonly string[];
   bindingDisclosure?:string;
   refresh?():Promise<void>;
-  freeze?(dependencies:readonly SkillDependency[]):Promise<{parsers:ParserRegistry;skills:SkillLock[]}>;
-  forRun?(run:string):Promise<ParserRegistry>;
-  forReference?(parser:string):Promise<ParserRegistry>;
+  freeze?(dependencies:readonly SkillDependency[], context?:{principal:import('../records/api.ts').Principal;space?:string}):Promise<{parsers:ParserRegistry;skills:SkillLock[]}>;
+  forRun?(run:string,reader?:import('./resolve.ts').ReaderIdentity):Promise<ParserRegistry>;
+  forReference?(parser:string,reader?:import('./resolve.ts').ReaderIdentity):Promise<ParserRegistry>;
   unavailable?(parser:string):string|undefined;
   register(parser: Parser): void;
   /** Lookup by `id@version`, e.g. `kityminder@1`. */

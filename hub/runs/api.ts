@@ -8,6 +8,7 @@ export * from './engine/api.ts';
 // ---------------------------------------------------------------- pack registry (T01 T02 B04)
 export { createPackRegistry, PACK_VERSION_SCHEMA, productNameKey } from './packs/registry.ts';
 export type { ActiveProduct, OpenedPack, PackRegistry, PackRegistryOptions, RegistryRecords } from './packs/registry.ts';
+export { PersonalPacks } from './packs/personal.ts';
 
 export { createPackCatalog, createPacksPort, createWorkflowStore, boundProducts, packSummary } from './packs/ports.ts';
 /** T02 R[1] for a run: check id -> marks (author_samples_only) of a LoadedWorkflow, as its stored publish report has them. */
