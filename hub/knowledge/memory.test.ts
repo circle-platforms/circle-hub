@@ -50,7 +50,7 @@ test('twenty active team memories are bounded even with empty bodies and replace
  let first:Awaited<ReturnType<typeof memory.share>>|undefined;
  for(let n=0;n<20;n++){const source=sources[n],shared=await memory.share(w.user,{document:source.document,version:source.version,client_key:'team-'+n});assert.equal(shared.ok,true);first??=shared;}
  const last=sources[20],input={document:last.document,version:last.version,client_key:'team-cap'};
- const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...input,check_only:true});assert.equal(plan.ok,false);assert.equal(plan.checks[0].code,'MEMORY_SPACE_LIMIT');assert.equal(await w.kit.store.watermark!(),before);
+ const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...input,check_only:true});assert.equal(plan.ok,false);assert.equal(plan.checks.find(check=>check.check==='size')?.code,'MEMORY_SPACE_LIMIT');assert.equal(await w.kit.store.watermark!(),before);
  assert.equal((await memory.share(w.user,input)).ok,false);assert.equal((await memory.usage(w.admin,'team')).activeDocuments,20);
  const changed=await memory.write(w.user,{document:sources[0].document,expected_version:sources[0].version,title:'合成修订标题',client_key:'replace-at-cap'});
  assert.equal((await memory.share(w.user,{document:changed.document,version:changed.version,client_key:'replace-at-cap'})).share?.team_document,first!.share!.team_document);
@@ -135,6 +135,24 @@ test('re-sharing supersedes the prior team version unless an administrator chang
  assert.equal((await memory.share(w.user,share('new',true))).effect,'create');const third=await memory.share(w.user,share('new'));
  assert.notEqual(third.share?.team_document,team);assert.equal((await memory.read(w.user,team)).version,admin.version);assert.equal((await memory.read(w.user,team)).markdown,'管理员修订');
  await assert.rejects(memory.write(w.user,{space:'team',document:team,expected_version:admin.version,markdown:'无权覆盖',client_key:'denied'}),{code:'SOURCE_UNAVAILABLE'});
+});
+test('administrator-disabled team memory cannot be revived or copied by re-sharing the same personal document',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
+ let source=await memory.write(w.user,create('合成旧约定','disable-latch'));
+ const share=(key:string)=>({document:source.document,version:source.version,client_key:key});
+ const first=await memory.share(w.user,share('latch-first')),team=first.share!.team_document!;
+ const ready=await memory.share(w.user,{...share('latch-next'),check_only:true});assert.equal(ready.ok,true);
+ const disabled=await memory.write(w.admin,{space:'team',document:team,expected_version:first.share!.team_version,enabled:false,client_key:'latch-disable'});
+ const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...share('latch-next'),check_only:true});
+ assert.equal(plan.ok,false);assert.equal(plan.checks[0].code,'MEMORY_TEAM_DISABLED');assert.equal(plan.checks[0].message,'团队记忆已被管理员停用，请联系管理员');assert.deepEqual(plan.checks.map(check=>check.state),['violation','unchecked','unchecked']);assert.equal(await w.kit.store.watermark!(),before);
+ const refused=await memory.share(w.user,share('latch-next'));assert.equal(refused.share?.code,'MEMORY_TEAM_DISABLED');assert.equal(refused.share?.team_document,null);assert.equal((await memory.read(w.admin,team)).version,disabled.version);
+ source=await memory.write(w.user,{document:source.document,expected_version:source.version,title:'修订合成约定',markdown:'合成新约定',client_key:'latch-revised'});
+ assert.equal((await memory.share(w.user,share('latch-revised'))).ok,false);assert.equal((await memory.items(w.admin,'team')).length,1);
+ const unrelated=await memory.write(w.user,create('另一篇合成约定','latch-other'));assert.equal((await memory.share(w.user,{document:unrelated.document,version:unrelated.version,client_key:'latch-other'})).ok,true);
+ await memory.write(w.admin,{space:'team',document:team,expected_version:disabled.version,enabled:true,client_key:'latch-enable'});
+ const next=await memory.share(w.user,share('latch-after-enable'));assert.equal(next.ok,true);assert.notEqual(next.share?.team_document,team,'administrator-maintained text is preserved');
+ const current=await memory.read(w.admin,team);await memory.write(w.admin,{space:'team',document:team,expected_version:current.version,enabled:false,client_key:'latch-old-disable'});
+ assert.equal((await memory.share(w.user,{...share('latch-old-lineage'),check_only:true})).ok,false,'an earlier disabled team copy cannot be bypassed with a later share');
 });
 test('metadata pages are bounded in UTF-8 bytes and version changes invalidate their cursors',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;

@@ -1272,3 +1272,7 @@ team administrators retain management access to disabled team documents.
 Every appended personal memory revision checks historical capacity, including title/path/state-only changes. An exact
 no-op returns the current version with unchanged=true and stores only a private idempotency receipt, without a revision
 or history increment. Refusal retries retain the original safe field/line message and positions.
+Team share pre-checks first inspect administrator maintenance state. A disabled team copy anywhere in the same personal
+document's successful-share lineage blocks another share with MEMORY_TEAM_DISABLED; no new document is created. An
+administrator can explicitly re-enable the original, after which the normal preserve-administrator-edits rule applies.
+Other personal documents remain independently shareable. Confirmation repeats the check under the team space lock.

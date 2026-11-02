@@ -179,19 +179,21 @@ export class MemoryDocuments{
  }
  async #sharePlan(by:Principal,input:ReturnType<typeof MemoryShareInput.parse>,tx?:Transaction){
   const source=await this.read(by,input.document,input.version);if(source.space!==by.id)return fail('SOURCE_UNAVAILABLE');if(source.version!==source.current_version)return fail('MEMORY_VERSION_CONFLICT');
-  const checks:SharingCheck[]=ShareCheckSchema.extract(['size','credentials']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
+  const checks:SharingCheck[]=ShareCheckSchema.extract(['team_memory_status','size','credentials']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
   const history=await this.#all('memory_share','memory.share.source',by.id+':'+input.document,tx);
-  const previous=history.map(row=>MemoryShareBody.parse(row.body)).reverse().find(r=>r.status==='merged'&&r.by===by.id&&r.document===input.document);
-  const old=previous?(await this.#index().heads('team',tx)).find(h=>h.document===previous.team_document):undefined;
+  const merged=history.map(row=>MemoryShareBody.parse(row.body)).filter(r=>r.status==='merged'&&r.by===by.id&&r.document===input.document),previous=merged.at(-1);
+  const heads=new Map((await this.#index().heads('team',tx)).map(head=>[head.document,head])),old=previous?.team_document?heads.get(previous.team_document):undefined;
+  const disabled=merged.some(share=>share.team_document&&heads.get(share.team_document)?.state==='disabled');
   const replacement=old&&old.version===previous?.team_version?old:undefined;
   const target=pathCheck(input.team_path??source.path),effect=replacement?'replace':'create';
   const scan=scanForCredentials(Buffer.from(target)),safeTarget=scan.inspected&&!scan.truncated&&!scan.findings.length;
   try{
+   if(disabled)fail('MEMORY_TEAM_DISABLED');checks[phase++].state='pass';
    const index=this.#index(),usage=await index.usage('team',tx),contextBytes=Buffer.byteLength(source.title+target+source.markdown),documents=usage.activeDocuments-Number(replacement?.state==='enabled')+1;
    if(source.bytes>index.limits.documentBytes)fail('MEMORY_DOCUMENT_LIMIT');if(usage.active-(replacement?.state==='enabled'?replacement.contextBytes:0)+contextBytes>index.limits.spaceBytes||documents>index.limits.spaceDocuments)fail('MEMORY_SPACE_LIMIT');
    checks[phase++].state='pass';this.#scan(source.title,target,source.markdown);checks[phase].state='pass';
   }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
-  return {source,checks,replacement,target,safeTarget,effect:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
+  return {source,checks,replacement,target,safeTarget,effect:disabled?null:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
  }
  async share(by:Principal,raw:unknown):Promise<MemorySharingResult>{
   by=await this.#user(by);const input=MemoryShareInput.parse(raw),intent=digest([by.id,'memory.share',input.client_key]),payload=digest({...input,check_only:false});
