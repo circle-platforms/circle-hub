@@ -11,6 +11,7 @@ nav_order: 4
 
 | 篇 | 回答什么 |
 |---|---|
+| [Circle 设计规范](circle-design-system/README.md) | 决定 92、93：Circle 工作台与控制台共用的视觉规范——石墨主题的深浅两套设定、三栏结构、组件与交互、图表与界面用语（[效果图](https://github.com/circle-platforms/circle/blob/main/docs/design/circle-design-system-screens.md)，在 Circle 仓库） |
 | [控制台导航](console-navigation.md) | 决定 83 的八项导航、团队与设置的职责 |
 | [知识库与工作流：个人与团队](knowledge-workflows.md) | 决定 84 的完整方案：个人与团队空间、同步、授权、提交共享、索引与版本，工作流（原任务包）与通用技能，以及分阶段实施 |
 | **[通用模型](generic-model.md)** | **11 组 73 个元素、三条不变量、词表、七个内核名字，以及第一个里程碑用到哪些** |
