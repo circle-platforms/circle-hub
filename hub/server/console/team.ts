@@ -23,7 +23,7 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
     if (ctx.admin) dialogs.push(toggle, spare, ...(user.disabled ? [] : [invite]));
     members.push([link(`/console/team/${user.id}`, user.name), uiLabelOf('permission_role', user.role), uiLabelOf('account_status', user.disabled ? 'disabled' : 'enabled'),
       user.role === 'admin' ? '全部任务包' : assigned.join('、') || '—',
-      ctx.admin ? html`${commandLink(toggle, user.disabled ? '启用' : '停用')} ${user.disabled ? '' : commandLink(invite, '签发邀请码')} ${commandLink(spare, user.role === 'admin' ? '签发备用登录令牌' : '签发 Circle 访问令牌')}` : '—']);
+      ctx.admin ? html`${commandLink(toggle, user.disabled ? '启用' : '停用')} ${user.disabled ? '' : commandLink(invite, '签发邀请码')} ${commandLink(spare, '签发 Circle 访问令牌')}` : '—']);
     if (member !== undefined) {
       if (ctx.admin) permissions.push(['重置密码', html`<form method="post" action="/console/admin/do/password-reset"><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><input type="hidden" name="user" value="${user.id}"><button type="submit" class="btn" title="生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改">重置密码</button></form>`]);
       const canPublish = await authorizations.canPublish(user.id);

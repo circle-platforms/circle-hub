@@ -577,7 +577,7 @@ export async function completeSetup(
   form: Form,
   now: Date = new Date(),
 ): Promise<SetupOutcome> {
-  if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的令牌登录' };
+  if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的用户名和密码登录' };
   const name = form.get('name');
   if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员姓名' };
   const check = await checkSetupCode(dataDir, form.get('code'), now);

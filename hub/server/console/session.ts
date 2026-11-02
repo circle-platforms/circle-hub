@@ -149,8 +149,8 @@ export function safeNext(value: string | null | undefined): string {
 
 /**
  * One-time login links (decision 78), in memory like the sessions: a client asks for one with its Bearer token
- * (POST /console/api/login-links); the browser opens it within LOGIN_LINK_TTL_MS, confirms, and gets a session on that
- * token, which every page re-authenticates. Only the SHA-256 of a link's code is kept; a code works once.
+ * (POST /console/api/login-links); opened within LOGIN_LINK_TTL_MS, it leads to the password sign-in at its page and
+ * never opens a session (owner, 2026-11-02). Only the SHA-256 of a link's code is kept; a code works once.
  */
 export class LoginLinkStore {
   readonly #links = new Map<string, { token: string; next: string; expires: number }>();
