@@ -177,6 +177,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Fixed
 
+- Sharing audit and team provenance views mask cleared personal folder paths while retaining team copies and safe receipt facts.
+
 - Personal payload guards reject cleared-epoch inserts and unrelated upload bindings; completion journals are owner-managed.
 
 - Personal-content upgrades preserve independently owned definitions, pack files and workflow objects; private imports have distinct capture identities. Mere mentions no longer retain cleared originals.

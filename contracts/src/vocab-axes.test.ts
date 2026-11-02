@@ -40,9 +40,9 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 25 and the generated vocabulary covers every declared axis', () => {
-  assert.equal(model.version, 25);
-  assert.equal(MODEL_VERSION, 25);
+test('model version is 26 and the generated vocabulary covers every declared axis', () => {
+  assert.equal(model.version,26);
+  assert.equal(MODEL_VERSION,26);
   assert.equal(model.vocabulary.length, Object.keys(AXES).length);
 });
 
@@ -204,4 +204,10 @@ test('contracts schemas integrate with the generated schemas seamlessly', () => 
   assert.deepEqual(SHARE_AUDIENCE_LABEL, { user: '用户', pack_users: '能用这个包的用户' });
   assert.ok(!ShareAudienceSchema.safeParse('other').success);
   assert.ok(model.elements.find(e => e.id === 'B04') !== undefined);
+});
+
+test('the approved cleared-folder text is generated as display metadata without changing sync mode codes',()=>{
+ assert.equal(uiLabelOf('sync_field','cleared_personal_folder'),'已清除的个人文件夹');
+ assert.equal(uiLabelOf('sync_field','last_synced_at'),'上次同步');
+ assert.equal(model.vocabulary.find(axis=>axis.axis==='sync_field')?.owner,'K01');
 });

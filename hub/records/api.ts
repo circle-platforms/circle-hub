@@ -837,7 +837,7 @@ export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'>;
 export interface RecordsKit {
   personalSync?:PersonalSyncStore;
-  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'purge'>;
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

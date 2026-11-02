@@ -1030,3 +1030,9 @@ Directory actions sit beside the title. Each grant dialog has one POST form for 
 selected audience and exact username through a same-origin/CSRF-protected redirect; confirmation rechecks authority.
 Revocation uses a secondary or danger control. Narrow tables scroll within their own boxes, while state/time/count and
 scope labels stay on one line. Synthetic layout captures are evidence for presentation only, not permission checks.
+
+Decision 89 review item 5 masks cleared personal source directories in sharing receipts, team-entry provenance and
+source links. Public team destinations, statements and safe receipt facts remain visible; immutable receipt bytes are
+not rewritten. The marker comes from model 26 display metadata. Console contexts cache only the metadata flag for one
+request, and both members and administrators retain the normal raw-record refusals. The real-Hub regression uses
+synthetic console passwords through testConsoleCredentials and verifies team content remains available after purge.

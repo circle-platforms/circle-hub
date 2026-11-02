@@ -513,3 +513,23 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node -
   packs/workflow/case-review/packs.test.ts tests/acceptance/46-knowledge-spaces.test.ts \
   tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
 ```
+
+### 第 2 步安全审查修正 5：清除后的个人路径显示
+
+- 采用审查允许的显示遮盖，不重写历史回执。共享回执、团队条目来源及来源链接在个人来源代次已清除时显示“已清除的个人文件夹”，不再输出原路径、带原路径的引用或不安全的旧自由说明；团队实际目标目录、团队正文及安全回执事实保留。原始回执仍受既有 rec: 拒读保护。
+- 文案直接取自 Claude 审查第 5 项，加入既有 sync_field 显示信息，模型按规则升为 26 并生成；同步方式代码、记录和权限规则不变，固定模型版本测试同步。生成器仅改 vocabulary.ts／protocol.ts，四技能协议镜像未变化，因此不改包版本或业务代码。
+- 新增元数据清除标记端口，界面只查摘要绑定和清除日志，不加载私人正文；PageContext 生命周期内合并同一来源标记读取。独立 PG 回归证明管理员和本人都不再看到原路径，回执原始字节未变；真实 Hub 的用户名／口令控制台回归同时检查团队目录与正文保留、原始回执和旧个人引用仍被 MCP 拒读。
+- 首轮界面组 4 项中 3 通过，拒收夹具误用了未登记的代码而被 Schema 排除；改用合约已有 SHARE_UNVERIFIED，保留原遮盖和回执断言。
+
+验证：类型检查、生成／合约核对（175 文件）、差异检查通过。下列定向组 456 项通过、0 失败、0 跳过；新增词表断言复查 9 项通过，最后含真实控制台回归的组 10 项通过。真实控制台测试的 URLSearchParams 夹具初次类型检查不接受可选 undefined，改为明确的字符串键值表后通过，运行行为不改。PG 18 ownership 与 macOS 沙箱项实际运行。没有改变迁移、运行或依据判定；未跑全量回归／Linux CI／来源检查，文档检查留本轮收尾。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  'contracts/src/*.test.ts' hub/server/console/space-records.test.ts hub/server/console-sync-privacy.test.ts \
+  hub/server/console-knowledge.test.ts hub/server/console-sharing.test.ts \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts \
+  packs/workflow/case-review/packs.test.ts tests/acceptance/46-knowledge-spaces.test.ts \
+  tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+```
+
+最终复查：node --test --test-concurrency=1 --test-reporter=tap contracts/src/vocab-axes.test.ts hub/server/console-sync-privacy.test.ts。

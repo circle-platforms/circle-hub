@@ -439,3 +439,7 @@ Decision 89 step 1 (Claude approval, kw-sync section 13, 2026-11-02) sets model 
 contracts and shared encoding/scenario vectors do not enter MCP tools. Editable text uses LF, leading-BOM removal
 and NFC; original/quotation bytes stay verbatim. Default mode is Hub; purge preserves team copies, and private payloads
 will use physical account/epoch isolation without epoch encryption. No storage or route is implemented by this step.
+
+Decision 89 step-2 review item 5 (Claude 2026-11-03) sets model 26. The explicitly requested display text
+已清除的个人文件夹 is added to the existing sync_field display metadata. It changes no record, sync mode or permission
+rule. Only vocabulary.ts and protocol.ts change on generation; the four skill protocol mirrors and manifests remain current.

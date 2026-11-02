@@ -1,3 +1,4 @@
+import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 import {spaceLayout,currentAudience,knowledgeTabs} from './space-layout.ts';
@@ -96,7 +97,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
     const canEdit = (own || space === 'team' && ctx.admin) && (entry.row.status === 'verified' || entry.row.status === 'unverified');
     const canWithdraw=canEdit||space==='team'&&entry.body.by===ctx.principal.id&&entry.body.shared_from!==undefined;
     const shared=entry.body.shared_from;
-    const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',technical(code('tree:'+shared.root+shared.path+'@'+shared.entry),'查看')]]):html``;
+    const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',await personalOriginCleared(ctx,shared.root)?clearedPersonalFolder():technical(code('tree:'+shared.root+shared.path+'@'+shared.entry),'查看')]]):html``;
     const withdrawNotice=entry.grounds_withdrawn.length||entry.grounds_withdrawn_hidden_count?html`<p class="notice">${uiLabelOf('validity_status','grounds_withdrawn')}${entry.grounds_withdrawn_hidden_count?`；另有 ${entry.grounds_withdrawn_hidden_count} 项来源不可读取`:''}</p>`:html``;
     let share=html``;
     if(own&&entry.row.status==='verified'){

@@ -796,3 +796,6 @@ its old hashes. Runtime has SELECT-only access to candidate and completion journ
 caller-provided byte inventory. The filesystem deletion/durability check remains the application's responsibility.
 The DB application role represents the whole Hub; per-member purge authorization stays at the authenticated application
 entry, just like other Hub writes. No member-level SQL isolation is claimed. Race and direct-role regressions cover this boundary.
+
+Review item 5 adds a metadata-only cleared(record) predicate for authorized views. It joins immutable binding and purge
+metadata and never loads the active private body. Capsule inspection still performs the full integrity checks when needed.

@@ -1,3 +1,4 @@
+import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Shared component compositions for knowledge and workflow pages. No business decisions or writes.
 import { html, link, code, page, pageLayout, Html, type PageChrome } from './html.ts';
 import type { CardHead, CommandDialog, Tone } from './ui.ts';
@@ -57,6 +58,9 @@ export async function sourceBlock(ctx: PageContext, reference: string, quotation
   let title = '来源', action: Html | undefined;
   try {
     const ref = parseReference(reference);
+    if (ref.scheme === 'tree' && await personalOriginCleared(ctx, ref.root)) {
+      return html`<div class="ch-source"><div class="ch-source-head"><span>${clearedPersonalFolder()}</span></div>${quotation ? html`<p class="ch-quote" data-evidence>${quotation}</p>` : ''}</div>`;
+    }
     if (ref.scheme === 'src') {
       const source = await ctx.deps.knowledge.spaces?.source(ctx.principal, ref.sha256);
       if (source) { title = source.artifact.body.name || '原文'; action = link('/console/knowledge/source', '打开原文', { sha256: ref.sha256 }); }

@@ -38,3 +38,18 @@ test('refusal summaries show only owner codes and field lines while administrato
  const filtered=String(await spaceRecords(w.ctx(w.admin),'\/console/records',w.owner.id,at,at));assert.match(filtered,/2 次/);
  const later=String(await spaceRecords(w.ctx(w.admin),'\/console/records',undefined,'2026-11-03T00:00:00.000Z'));assert.match(later,/0 次/);
 });
+
+test('cleared personal folders disappear from administrator and owner receipt views while public destinations and safe facts remain',async t=>{
+ const w=await world();t.after(()=>w.kit.close());const root=await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{space:w.owner.id,used_bytes:0}});
+ const privatePath='/synthetic-private-folder',at=new Date().toISOString(),records=[];
+ for(const status of ['merged','rejected'] as const){
+  const merged=status==='merged';records.push(await w.kit.store.put({kind:'knowledge_share',schema:'knowledge-share@1',provenance:'declared',body:{source:{space:w.owner.id,root:root.digest,path:privatePath,entry:'a'.repeat(64)},by:w.owner.id,at,session:null,status,code:merged?null:'SHARE_UNVERIFIED',message:merged?'':'synthetic-private-folder',...(merged?{target_path:'/synthetic-public'}:{}),team_root:merged?'b'.repeat(64):null,reference:merged?'tree:'+'b'.repeat(64)+'/synthetic-public@'+'a'.repeat(64):null},index:[{key:'knowledge.share.by',value:w.owner.id}]}));
+ }
+ const before=String(await spaceRecords(w.ctx(w.admin),'/console/records'));assert.match(before,/synthetic-private-folder/);
+ const epoch=(await w.kit.personalPayloads!.inspect(root.digest))!.epoch;await w.kit.personalPayloads!.purge(w.owner,epoch);
+ for(const by of [w.admin,w.owner]){
+  const page=String(await spaceRecords(w.ctx(by),'/console/records'));assert.doesNotMatch(page,/synthetic-private-folder/);assert.match(page,/synthetic-public/);assert.match(page,/已清除的个人文件夹/);assert.match(page,/SHARE_UNVERIFIED/);
+ }
+ for(const record of records)assert.deepEqual((await w.kit.store.get(record.digest))?.body,record.body,'immutable receipt bodies stay intact');
+ assert.equal(await w.kit.personalPayloads!.cleared(root.digest),true);assert.equal(await w.kit.personalPayloads!.cleared('f'.repeat(64)),false);
+});

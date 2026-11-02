@@ -61,6 +61,10 @@ export class PgPersonalPayloads {
   const rows=await this.db.query('SELECT o.owner,o.epoch FROM personal_objects o WHERE sha256=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) ORDER BY owner,epoch',[hash]);
   for(const row of rows.rows){const bytes=await this.get({owner:String(row.owner),epoch:String(row.epoch)},hash);if(bytes)return bytes;}return null;
  }
+ /** Metadata-only, monotonic flag for authorized views; no personal plaintext is loaded. */
+ async cleared(digest:string,tx?:Transaction):Promise<boolean>{
+  return (await this.db.query('SELECT 1 FROM personal_record_bindings b JOIN personal_purges p ON (p.owner,p.epoch)=(b.owner,b.epoch) WHERE b.record=$1',[digest],tx)).rowCount===1;
+ }
  async inspect(digest:string,tx?:Transaction){
   const row=(await this.db.query('SELECT r.*,b.owner,b.epoch,b.sha256,b.bytes,b.marker,b.proof,EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=b.owner AND x.epoch=b.epoch) AS cleared FROM records r JOIN personal_record_bindings b ON b.record=r.digest WHERE r.digest=$1',[digest],tx)).rows[0];
   if(!row)return null;

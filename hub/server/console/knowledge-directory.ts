@@ -1,3 +1,4 @@
+import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Directory selection keeps immutable source addresses; every confirmation uses the normal sharing writer again.
 import {z} from 'zod';
 import {Sha256} from '../../../contracts/src/common.ts';
@@ -30,7 +31,7 @@ export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version
    const product=version.body.products.some(mount=>containsDirectory(mount.path,node.path));
    const view=space==='team'?await ctx.deps.knowledge.spaces!.entry(ctx.principal,version.root,node.path,entry.entry):null;
    const shared=view?.body.shared_from;
-   const source=shared?await ctx.deps.knowledge.spaces!.mayRead(ctx.principal,shared.space,shared.path)?link('/console/knowledge/space',uiLabelOf('knowledge_origin','personal_entry'),{space:shared.space,root:shared.root,path:shared.path,entry:shared.entry}):uiLabelOf('knowledge_origin','personal_entry'):view?uiLabelOf('knowledge_origin','team_import'):product?uiLabelOf('knowledge_origin','product_source'):'—';
+   const source=shared?await personalOriginCleared(ctx,shared.root)?clearedPersonalFolder():await ctx.deps.knowledge.spaces!.mayRead(ctx.principal,shared.space,shared.path)?link('/console/knowledge/space',uiLabelOf('knowledge_origin','personal_entry'),{space:shared.space,root:shared.root,path:shared.path,entry:shared.entry}):uiLabelOf('knowledge_origin','personal_entry'):view?uiLabelOf('knowledge_origin','team_import'):product?uiLabelOf('knowledge_origin','product_source'):'—';
    const location={space,path:node.path,root:version.root,entry:entry.entry,scope:ctx.url.searchParams.get('scope'),node_cursor:ctx.url.searchParams.get('node_cursor')};
    rowLinks.push(href('/console/knowledge/space',location));
    rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择条目">`:html`<input type="checkbox" disabled aria-label="无法选择条目" title="只有本人的已验证条目可以分享到团队">`]:[]),link('/console/knowledge/space',evidence(entry.statement),location),uiLabelOf('entry_kind',entry.kind),(await currentAudience(ctx,space,node.path,product)).text,entry.status?knowledgeState(entry.status):'—',...(showCitations?[entry.cited_count==null?'—':number(entry.cited_count)]:[]),...(space==='team'?[view?await ctx.userName(view.body.by):'—',source,view?timestamp(view.body.at):'—']:[])]);
