@@ -7,6 +7,19 @@ import {MemoryVersionBody} from '../../contracts/src/memory.ts';
 let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 const create=(markdown='合成偏好',key='create')=>({title:'合成记忆',markdown,path:'/preferences',expected_version:null,client_key:key});
+test('disabled grantees can be revoked and disabled personal memories stay hidden from every recipient',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,saved=await memory.write(w.user,create());
+ await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});
+ await w.kit.principals.setDisabled(w.admin,w.outsider.id,true);
+ assert.ok((await memory.grants(w.user)).some(grant=>grant.member===w.outsider.id));
+ await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id,revoke:true});
+ await w.kit.principals.setDisabled(w.admin,w.outsider.id,false);
+ await assert.rejects(memory.read(w.outsider,saved.document),{code:'SOURCE_UNAVAILABLE'});
+ await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});await memory.grant(w.user,{path:'/',audience:'administrators'});
+ await memory.write(w.user,{document:saved.document,expected_version:saved.version,enabled:false,client_key:'hide-disabled'});
+ for(const recipient of [w.outsider,w.admin]){assert.equal((await memory.items(recipient,'shared')).length,0);await assert.rejects(memory.read(recipient,saved.document),{code:'SOURCE_UNAVAILABLE'});}
+ assert.equal((await memory.read(w.user,saved.document)).state,'disabled');
+});
 test('memory writes are versioned, optimistic and idempotent; pagination preserves Unicode and invalidates old sessions',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const text='合成偏好。'.repeat(1200),first=await memory.write(w.user,create(text));

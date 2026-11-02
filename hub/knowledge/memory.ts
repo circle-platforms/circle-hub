@@ -49,7 +49,7 @@ export class MemoryDocuments{
   const items:MemoryMetadata[]=[];
   for(const space of ids)for(const head of await this.#index().heads(space)){
    if(!await this.#mayRead(by,space,head.path))continue;
-   const {body}=await this.#version(head);if(space==='team'&&by.role!=='admin'&&body.state!=='enabled')continue;
+   const {body}=await this.#version(head);if(space!==by.id&&!(space==='team'&&by.role==='admin')&&body.state!=='enabled')continue;
    const allowed=(space==='team'||space===by.id)&&body.state==='enabled';if(forSession&&!allowed)continue;
    items.push({...this.#metadata(head,body),auto_load_allowed:allowed});
   }
@@ -58,7 +58,7 @@ export class MemoryDocuments{
  async read(by:Principal,document:string,version?:string,forSession=false){
   by=await this.#user(by);const doc=await this.#ctx.records.store.get(document);if(doc?.kind!=='memory_document')return fail('SOURCE_UNAVAILABLE');const identity=MemoryDocumentBody.parse(doc.body);
   const head=(await this.#index().heads(identity.space)).find(h=>h.document===document);if(!head||!await this.#mayRead(by,head.space,head.path))return fail('SOURCE_UNAVAILABLE');
-  const current=await this.#version(head);if(head.space==='team'&&by.role!=='admin'&&current.body.state!=='enabled')return fail('SOURCE_UNAVAILABLE');
+  const current=await this.#version(head);if(head.space!==by.id&&!(head.space==='team'&&by.role==='admin')&&current.body.state!=='enabled')return fail('SOURCE_UNAVAILABLE');
   const own=head.space===by.id,adminTeam=head.space==='team'&&by.role==='admin';
   if(version&&version!==head.version&&!own&&!adminTeam)return fail('SOURCE_UNAVAILABLE');
   if(forSession&&(!(own||head.space==='team')||current.body.state!=='enabled'))return fail('SOURCE_UNAVAILABLE');
@@ -136,7 +136,7 @@ export class MemoryDocuments{
  }
  async grant(by:Principal,input:{path:string;audience:KnowledgeGrantee;member?:string|null;revoke?:boolean}){
   by=await this.#user(by);const body=MemoryGrantBody.parse({space:by.id,path:pathCheck(input.path),audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now(),intent:digest(newId('evt'))});
-  return this.#queue(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);by=await this.#user(by);if(body.member){const user=await this.#ctx.records.principals.get(body.member);if(!user||user.disabled)return fail('SOURCE_UNAVAILABLE');}
+  return this.#queue(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);by=await this.#user(by);if(body.member){const user=await this.#ctx.records.principals.get(body.member);if(!user||!input.revoke&&user.disabled)return fail('SOURCE_UNAVAILABLE');}
    if(!input.revoke)for(const head of await this.#index().heads(by.id,tx))if(withinSpacePath(head.path,body.path)){const {body:version}=await this.#version(head,head.version,tx);this.#scan(version.title,version.path,await this.#text(version,tx));}
    return this.#ctx.records.store.put({kind:'memory_grant',schema:'memory-grant@1',provenance:'declared',body,index:[{key:'memory.grant.owner',value:by.id},{key:'memory.grant.grantee',value:body.member??'administrators'}]},tx);
   }));

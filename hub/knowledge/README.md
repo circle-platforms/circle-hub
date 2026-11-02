@@ -1265,3 +1265,7 @@ knowledge roots. Credential-bearing share destinations are omitted even when an 
 Knowledge sharing previews likewise return a target directory only after its credential scan, including earlier duplicate
 refusals. Memory credential refusals identify generated field labels and line numbers, never matched text; grant and share
 previews preserve that safe location information. Neither preview creates a document, team root or refusal audit.
+
+Memory revocation accepts an existing disabled recipient, so re-enabling the account cannot revive a revoked grant.
+Disabled personal documents remain visible to their owner, but not to recipients, including all-administrator grantees;
+team administrators retain management access to disabled team documents.
