@@ -685,3 +685,9 @@ captures keep their run-bound access. `canReadForRun` checks only permission met
 Only the trusted engine supplies a prospective snapshot before an automatic result and its run are persisted.
 
 Migration 12 adds rebuildable memory heads and per-space active/history counters. Identity columns are protected from runtime updates. Projection updates and version records commit together under the shared knowledge-space business lock. Decreases update an initialized usage row instead of inserting a negative increment through an upsert constraint. Applied migrations are unchanged.
+
+PR #132 snapshot review compared the source with main: only migration 12's two tables, one index and their runtime
+column grants are appended. Earlier migration source is unchanged. Foreign keys pin heads to append-only records,
+nonnegative counters stay constrained, and runtime updates cannot change document or space identities. The reviewed
+whole-file snapshot is refreshed; existing per-migration SQL snapshots remain fixed. Whenever migrations.ts changes,
+run migrations.snapshot.test.ts in the targeted checks, together with ownership and lock-namespace checks as applicable.
