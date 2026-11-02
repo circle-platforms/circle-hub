@@ -1340,3 +1340,8 @@ inspect settled results in the original order. A later I/O failure cannot overta
 source failure. Every source byte stream is still inspected, every distinct ground checked, and phase/first-error
 semantics are preserved. Synthetic regression: 2 and 12 distinct originals both require 4 SQL statements for the parallel
 read, with exact-capture, owner/grantee/admin isolation, mutable-byte isolation and later revocation checks.
+
+The recent-page `total` is a candidate upper bound (`total_is_upper_bound` for nonempty sets), not a validated count.
+Only the displayed bodies pass entries() and its space/content guards. Rejecting a loaded row does not selectively
+subtract it from an otherwise unvalidated total. The console labels this number 至多 and explains it in a tooltip;
+changing the page limit cannot change its meaning or silently count a foreign/invalid body as readable knowledge.

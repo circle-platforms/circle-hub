@@ -77,3 +77,11 @@ test('with knowledge spaces, as the real assembly always has, the home keeps the
   const body = String((await knowledgePage(personal)).body);
   assert.doesNotMatch(body, /id="product-sources"|知识入库待处理/);
 });
+
+test('the knowledge inspector labels an unvalidated candidate count as an upper bound',async()=>{
+ const spaces={visible:async()=>[],recent:async()=>({items:[],total:7,total_is_upper_bound:true}),shareHistory:async()=>({items:[],next:null}),capacity:async()=>1024**3};
+ const ctx=context({products,knowledge:{spaces}},true);ctx.url=new URL('http://127.0.0.1/console/knowledge?scope=personal');
+ const body=String((await knowledgePage(ctx)).body);
+ assert.match(body,/<span class="ch-stat-value">至多 7<\/span>/);
+ assert.match(body,/候选记录.*上限/);
+});

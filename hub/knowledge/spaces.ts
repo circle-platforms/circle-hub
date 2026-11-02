@@ -497,7 +497,7 @@ export class KnowledgeSpaces {
     });
   }
   /** Page the authorized timestamp candidates before loading entry bodies; equal times keep snapshot iteration order. */
-  async recent(by:Principal,scope:KnowledgeSearchScope='all',limit=100):Promise<{items:SpaceEntryView[];total:number}>{
+  async recent(by:Principal,scope:KnowledgeSearchScope='all',limit=100):Promise<{items:SpaceEntryView[];total:number;total_is_upper_bound:boolean}>{
     if(!Number.isSafeInteger(limit)||limit<1||limit>100)fail('SPACE_ENTRY_INVALID');
     return withReadScope(async()=>{
       const visible=await this.visible(by,scope,undefined,{initialize:false});
@@ -509,18 +509,19 @@ export class KnowledgeSpaces {
         const times=store.entryTimes?await store.entryTimes(digests):new Map([...await store.getMany<SpaceEntryBody>(digests)].filter(([,r])=>r.kind==='knowledge_space_entry').map(([id,r])=>[id,SpaceEntryBody.parse(r.body).at]));
         fallback=candidates.flatMap((c,index)=>times.has(c.row.record)?[{index,at:times.get(c.row.record)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
       }
-      const items:SpaceEntryView[]=[];let total=0,rejected=0,offset=0;
+      const items:SpaceEntryView[]=[];let total=0,offset=0;
       while(items.length<limit){
         const page=store.entryCandidates?await store.entryCandidates({digests,offset,limit:limit-items.length}):{items:fallback!.slice(offset,offset+limit-items.length),total:fallback!.length};
-        total=page.total-rejected;if(!page.items.length)break;offset+=page.items.length;
+        // Off-page bodies have not passed entries(); the candidate count is an upper bound, independent of page size.
+        total=page.total;if(!page.items.length)break;offset+=page.items.length;
         const selected=page.items.map(item=>({candidate:candidates[item.index],at:item.at}));
         const groups=new Map<string,typeof selected>();for(const item of selected){const rows=groups.get(item.candidate.root)??[];rows.push(item);groups.set(item.candidate.root,rows);}
         const loaded=new Map<object,SpaceEntryView|null>();
         await Promise.all([...groups].map(async([root,rows])=>{const views=await this.entries(by,root,rows.map(c=>c.candidate.row));rows.forEach((item,i)=>loaded.set(item,views[i]));}));
-        for(const item of selected){const view=loaded.get(item);if(view){if(view.body.at!==item.at)fail('SPACE_ENTRY_INVALID');items.push(view);}else {rejected++;total--;}}
+        for(const item of selected){const view=loaded.get(item);if(view){if(view.body.at!==item.at)fail('SPACE_ENTRY_INVALID');items.push(view);}}
         if(offset>=page.total)break;
       }
-      return {items,total};
+      return {items,total,total_is_upper_bound:total>0};
     });
   }
   /** Cleared personal dependencies also invalidate indirect team grounds without changing their records. */
