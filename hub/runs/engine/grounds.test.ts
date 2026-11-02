@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {accepted} from '../../../contracts/src/fixtures.ts';
 import {ValidationResult} from '../../../contracts/src/validation.ts';
-import {groundsOf} from './grounds.ts';
+import type {EngineContext} from './deps.ts';
+import {groundsOf,guardedRecords,withdrawnGrounds} from './grounds.ts';
 
 const ref=(digit:string)=>'rec:'+digit.repeat(64);
 test('Hub criterion-review and own-submission metadata do not grant reads of those linked record bodies',()=>{
@@ -17,4 +18,11 @@ test('Hub criterion-review and own-submission metadata do not grant reads of tho
 test('a raw submission cannot hide evidence by claiming a result schema or metadata field names',()=>{
   const raw={schema:'validation@1',record:ref('a'),request:ref('b'),replaced_criteria:[{review:ref('c')}],judgment_source:{record:ref('d')}};
   assert.deepEqual(new Set(groundsOf(raw)),new Set([ref('a'),ref('b'),ref('c'),ref('d')]));
+});
+
+
+test('record refusal and empty withdrawal qualifiers tolerate an absent optional knowledge port',async()=>{
+  const ctx={deps:{records:{store:{get:async()=>null},artifacts:{}}}} as unknown as EngineContext;
+  assert.equal(await guardedRecords(ctx).read('a'.repeat(64),{user:'usr_'+'0'.repeat(26),role:'user'}),null);
+  assert.deepEqual(await withdrawnGrounds(ctx,[]),[]);
 });

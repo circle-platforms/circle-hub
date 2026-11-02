@@ -49,7 +49,7 @@ export async function withdrawnGrounds(ctx:EngineContext,value:unknown):Promise<
     const record=await ctx.deps.records.store.get(ref.record);if(record?.kind!=='validation_result')continue;
     for(const ground of groundsOf(record.body))if(!references.has(ground)){references.add(ground);work.push(ground);}
   }
-  return ctx.deps.knowledge.spaces?.withdrawnGrounds([...references])??[];
+  return ctx.deps.knowledge?.spaces?.withdrawnGrounds([...references])??[];
 }
 
 export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:unknown,options:{pending?:boolean}={}):Promise<ProtocolError|null>{
@@ -67,7 +67,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
   const parsers=new Map<string,Promise<typeof ctx.parsers>>();
   const check=async(reference:string,seen:Set<string>,depth:number,atRun=run,pending=options.pending===true):Promise<boolean>=>{
     if(depth>64||seen.has(reference))return false;seen.add(reference);
-    const spaces=ctx.deps.knowledge.spaces,legacy=sourceReader(ctx.deps.records.artifacts,'function',atRun.sources);
+    const spaces=ctx.deps.knowledge?.spaces,legacy=sourceReader(ctx.deps.records.artifacts,'function',atRun.sources);
     const identity=identityOf(by,pending?undefined:atRun.run);
     const ref=parseReference(reference);
     if(ref.scheme==='rec'){
@@ -77,7 +77,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     let parser=ctx.parsers;
     if(!pending&&ref.scheme==='src'&&ref.parser&&ctx.parsers.forRun){let loading=parsers.get(atRun.run);if(!loading){loading=ctx.parsers.forRun(atRun.run,identity);parsers.set(atRun.run,loading);}try{parser=await loading;}catch{return false;}}
     const attempts:Array<Record<string,unknown>>=[];
-    const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge.treeReader(),records:recordReader(ctx.deps.records.store,ctx.deps.knowledge.layers?.contributions),sources:{read:async(hash,reader)=>{
+    const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge?.treeReader(),records:recordReader(ctx.deps.records.store,ctx.deps.knowledge?.layers?.contributions),sources:{read:async(hash,reader)=>{
       const pins=[...new Set(atRun.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===hash&&binding.artifact;}).map(binding=>binding.artifact!))];
       if(pins.length){
         let selected:Awaited<ReturnType<typeof ctx.deps.records.artifacts.source>>=null;
@@ -148,7 +148,7 @@ export async function requestReadable(ctx:EngineContext,by:Principal,request:Req
 /** Every record-to-input and exact-value path uses the same current views as direct record reads. */
 export function guardedRecords(ctx:EngineContext):RecordReader{
   const {store,artifacts}=ctx.deps.records;
-  const base=recordReader(store,ctx.deps.knowledge.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody));
+  const base=recordReader(store,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody));
   return {read:async(digest,reader)=>{
     const record=await store.get(digest);
     if(record?.kind==='source_artifact'&&!await artifacts.canRead(principalOf(reader),record as import('../../records/api.ts').SourceArtifact))return null;

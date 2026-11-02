@@ -1005,3 +1005,9 @@ Phase-3 capture-identity regression: an authorized equal-byte copy cannot lend a
 other input metadata. Audience checks verify each frozen capture, even if two bindings have the same byte hash and the first
 one is readable. Scoped personal-pack aliases also retain the requested capture. The resolver keeps existing I/O retries and
 unknown-check behavior. Input binding can use a current explicit space grant without mutating the original artifact's ACL.
+
+
+Standalone input-binding and reader components tolerate an absent knowledge/feeding port. Source absence stays a controlled
+unavailable refusal, malformed sources keep their parser-specific refusal, and valid standalone bindings skip optional
+feeding observation. The full audience/read wrappers use optional tree/contribution integrations while the production
+assembly continues to provide its complete knowledge port.

@@ -161,3 +161,12 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 第二轮变基后的相关包检查命令为 `npm run typecheck`、`npm run verify:contracts`，以及 `node --test --test-concurrency=1`：`contracts/src/**/*.test.ts`；`hub/knowledge/{sharing,spaces,spaces-review,operation-records-upgrade}.test.ts`；`hub/runs/engine/{grounds,start,start-result,production-guard,submit,queries,request-readers,requests,predecessor-default,criterion-privacy,criterion-review,exact-retry,scope-retry}.test.ts`；`hub/runs/packs/{personal,registry}.test.ts`；`hub/refs/skills-personal.test.ts`；`hub/server/{docs,mcp,text,readers-sharing,console-sharing}.test.ts`；`hub/platform/{ownership,environment}.test.ts`、`hub/records/{lock-namespaces,password}.test.ts`、`packs/workflow/case-review/packs.test.ts`。
 
 该组首跑 655 个叶测试，654 通过、1 失败：模型升到 20 后 `vocab-axes` 留下一处 `MODEL_VERSION` 仍断言 19。已同步正确版本，单独 `node --test --test-concurrency=1 contracts/src/vocab-axes.test.ts` 8 项通过，0 失败、0 跳过；其余 654 项首轮通过，没有重跑或扩大无关测试。类型及 151 文件生成核对通过。`ownership` 的真实平台整组仍因缺少 PG 18 的 `pg_dump`／`pg_restore` 跳过，不受叶测试 skipped=0 误导，不能算其运行角色备份恢复路径已验证。
+
+
+### 缺省知识端口与验收收尾
+
+受影响验收命令按上列 15 个场景串行执行，最终 55 项通过，0 失败、0 跳过，约 467 秒；包含场景 14、21 的违规分流、33 的原文对照以及场景 46／47 全部新增授权与采集身份回归，没有全量回归。
+
+协调者在第二阶段 `8e513d2e` 修正临时防护不容忍缺少知识端口的问题。第三阶段已删除临时防护，原有 `hub/refs/diagnostics.test.ts` 6 项已通过；新增来源不存在、合法绑定、直接记录拒读／空撤回标记三个边界又复现了缺省端口访问错误。已在输入的补充空间读取、可选喂入与完整读者包装加缺省保护，保留原有解析错误与不可用拒收；不为缺失服务造内容或成功结果。
+
+修正后 `npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 hub/refs/diagnostics.test.ts hub/runs/engine/grounds.test.ts hub/runs/engine/production-guard.test.ts hub/platform/environment.test.ts tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts` 36 项通过，0 失败、0 跳过。既覆盖缺省端口，也再次覆盖完整装配下的空间、共享、拒收参数与采集身份。新增配置变量时须定向跑平台 `environment.test.ts`，输入绑定改动须跑 `diagnostics.test.ts`。

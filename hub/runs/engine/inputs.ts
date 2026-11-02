@@ -109,7 +109,7 @@ export async function bindInputs(
           return null;
         }
       }
-      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) })??await ctx.deps.knowledge.spaces?.spaceSource(user,ref.sha256,undefined,'function',artifact)??null;
+      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) })??await ctx.deps.knowledge?.spaces?.spaceSource(user,ref.sha256,undefined,'function',artifact)??null;
       if (source === null || source.bytes === null) {
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;
@@ -293,7 +293,7 @@ export async function bindInputs(
         errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));
         continue;
       }
-      if(ctx.deps.knowledge.feeding)await ctx.deps.knowledge.feeding.observeSourceBounded(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,metaRecord:read.metaRecord,readManifest:read.readManifest,requested:read.requested});
+      if(ctx.deps.knowledge?.feeding)await ctx.deps.knowledge?.feeding.observeSourceBounded(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,metaRecord:read.metaRecord,readManifest:read.readManifest,requested:read.requested});
       out.push({
         slot: slot.slot,
         role: slot.role,
