@@ -88,9 +88,8 @@ async function member(): Promise<TestUser> {
 
 /** The row of an environment's table on the connections page. */
 const rowOf = (page: string, target: string): string => {
-  const at = page.indexOf(`<b>${target}</b>`);
-  assert.ok(at >= 0, target);
-  return page.slice(at, page.indexOf('</tr>', at));
+  const row=[...page.matchAll(/<tr\b[\s\S]*?<\/tr>/g)].find(match=>match[0].includes('>'+target+'</a>'))?.[0];
+  assert.ok(row,target);return row;
 };
 
 describe('runtime environments', () => {
@@ -112,13 +111,16 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境丙'), /派发结果未确认，等待处置中/);
     assert.equal(rowOf(page, '合成运行环境丙').match(/>未知</g)?.length, 2, 'a version and a latest dispatch not read are unknown, not none');
     assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /未上报|尚无派发/);
-    assert.match(rowOf(page, '合成运行环境丙'), /处置派发结果/);
-    assert.match(page, new RegExp(`circle-hub job status ${job(3)}`), 'the disposition starts from the job status on the command line');
-    assert.match(rowOf(page, '合成运行环境丙'), new RegExp(`href="/console/runs/${RUN}">查看任务`), 'and its task is one link away');
+    assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /<button|ch-btn|<form/);
+    const frozen=(await send('/console/connections?environment='+id(3),{headers:{cookie:await signIn(server.admin.token)}})).body;
+    assert.match(frozen,/处置派发结果/);
+    assert.match(frozen, new RegExp(`circle-hub job status ${job(3)}`), 'the disposition starts from the job status on the command line');
+    assert.match(frozen, new RegExp(`href="/console/runs/${RUN}">查看任务`), 'and its task is one link away');
     assert.match(rowOf(page, '合成运行环境丁'), /已冻结/);
     assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
-    assert.match(rowOf(page, '合成运行环境丁'), /确认已恢复/);
-    assert.match(page, new RegExp(`circle-hub bed hold clear ${id(4)}`), 'the dialog gives the command for the administrator');
+    const held=(await send('/console/connections?environment='+id(4),{headers:{cookie:await signIn(server.admin.token)}})).body;
+    assert.match(held,/确认已恢复/);
+    assert.match(held, new RegExp(`circle-hub bed hold clear ${id(4)}`), 'the dialog gives the command for the administrator');
     assert.match(rowOf(page, '合成运行环境戊'), /已停用/);
     assert.match(rowOf(page, '合成运行环境己'), /未知/);
     assert.match(rowOf(page, '合成运行环境庚'), /未知/);
@@ -162,6 +164,6 @@ describe('runtime environments', () => {
     const page = (await send(`/console/runs/${run}`, { headers: { cookie: await signIn(server.admin.token) } })).body;
     assert.match(page, /运行环境 合成运行环境丙（当前已冻结） · 运行环境已冻结，不可重发/);
     assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待派发结果中，不可重发/);
-    assert.equal(page.match(/运行环境 合成运行环境/g)?.length, 2, 'a job whose reservation names no environment names none');
+    assert.equal(page.split('以表格查看')[1].match(/运行环境 合成运行环境/g)?.length, 2, 'a job whose reservation names no environment names none');
   });
 });

@@ -14,6 +14,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Console rows select contextual actions instead of carrying buttons. Keyboard selection, dialogs, pending submissions,
+  live refresh and success messages share consistent behavior; charts offer matching hover, keyboard and table views,
+  with unified periods and compact numeric/time formatting. Native forms and strict hash-based CSP remain supported.
+
 - The remaining console areas share sections, statistics, badges and dialogs with contextual overviews. System, call and
   member selections open responsive inspectors; task evidence remains accessible on phones. Inspector actions are grouped
   at the foot, destructive actions open confirmations, and overview check results use a thin segmented bar instead of a ring.

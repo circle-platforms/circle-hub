@@ -10,6 +10,8 @@ export interface ConsoleSession {
   secure: boolean;
   /** CSRF token of the session's forms. */
   csrf: string;
+  /** One response-only confirmation, set after a completed form action. Never carried by a URL. */
+  notice?: string;
   created: number;
   seen: number;
 }

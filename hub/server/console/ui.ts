@@ -4,6 +4,7 @@
 import type { DynamicTerminal, Nature, StaticTerminal } from '../../../contracts/generated/vocabulary.ts';
 import { html, href, icon, type Html, type ICONS } from './html.ts';
 
+import {time,fullTime} from './format.ts';
 import {panel, badge, facts, commandLink as sharedCommandLink,commandModal as sharedCommandModal} from './presentation.ts';
 
 /** The colour families of states, named after the terminals they colour (display rule 5: unknown has its own). */
@@ -96,63 +97,6 @@ export interface CommandDialog {
 export const commandLink=sharedCommandLink;
 export const commandModal=sharedCommandModal;
 
-// ---------------------------------------------------------------- charts
-
-const pct = (value: number): string => `${Math.max(0, Math.min(100, value)).toFixed(2)}%`;
-
-/** A horizontal meter: `value` of `max` in a track. */
-export function hbar(value: number, max: number, fill: string, label?: string): Html {
-  const width = max > 0 ? (value / max) * 100 : 0;
-  return html`<svg class="svg-hbar" viewBox="0 0 100 10" preserveAspectRatio="none"${label === undefined ? html` aria-hidden="true"` : html` role="img" aria-label="${label}"`}><rect class="fill-track" x="0" y="0" width="100" height="10" rx="5"></rect>${width > 0 ? html`<rect class="${fill}" x="0" y="0" width="${width.toFixed(2)}" height="10" rx="5"></rect>` : ''}</svg>`;
-}
-
-/** Parts side by side in one bar, each as wide as its share. */
-export function stackBar(parts: readonly { value: number; fill: string }[], label: string): Html {
-  const total = parts.reduce((sum, p) => sum + p.value, 0);
-  let x = 0;
-  const rects: Html[] = [];
-  for (const part of parts) {
-    if (part.value <= 0 || total === 0) continue;
-    const width = (part.value / total) * 100;
-    rects.push(html`<rect class="${part.fill}" x="${x.toFixed(2)}" y="0" width="${width.toFixed(2)}" height="10"></rect>`);
-    x += width;
-  }
-  return html`<svg class="ch-parts" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="${label}"><rect class="fill-track" x="0" y="0" width="100" height="10"></rect>${rects}</svg>`;
-}
-
-/** Columns of stacked counts, one per day, scaled to the largest day. */
-export function dayBars(days: readonly { label: string; parts: readonly { value: number; fill: string }[] }[], label: string): Html {
-  const width = 10;
-  const totals = days.map((d) => d.parts.reduce((sum, p) => sum + p.value, 0));
-  const top = Math.max(1, ...totals);
-  const columns = days.map((day, i) => {
-    let y = 100;
-    const rects: Html[] = [];
-    for (const part of day.parts) {
-      if (part.value <= 0) continue;
-      const h = (part.value / top) * 96;
-      y -= h;
-      rects.push(html`<rect class="${part.fill}" x="${i * width + 1.5}" y="${y.toFixed(2)}" width="${width - 3}" height="${h.toFixed(2)}"><title>${day.label}：${part.value}</title></rect>`);
-    }
-    return html`${rects}`;
-  });
-  const lines = [25, 50, 75].map((y) => html`<line class="gl" x1="0" x2="${days.length * width}" y1="${y}" y2="${y}"></line>`);
-  return html`<svg class="svg-bars" viewBox="0 0 ${days.length * width} 100" preserveAspectRatio="none" role="img" aria-label="${label}">${lines}${columns}</svg>`;
-}
-
-/**
- * One row's track of a waterfall: grid lines every quarter and the step as a bar (or a dot for a point in time), placed in
- * percent of the time axis.
- */
-export function track(from: number, to: number, fill: string, options: { point?: boolean; open?: boolean; now?: number | null; label?: string } = {}): Html {
-  const ticks = [25, 50, 75].map((x) => html`<line class="tick" x1="${x}%" x2="${x}%" y1="0" y2="100%"></line>`);
-  const now = options.now === undefined || options.now === null ? '' : html`<line class="now" x1="${pct(options.now)}" x2="${pct(options.now)}" y1="0" y2="100%"></line>`;
-  const mark = options.point
-    ? html`<circle class="${fill} dot-result" cx="${pct(from)}" cy="50%" r="6"></circle>`
-    : html`<rect class="${fill}" x="${pct(from)}" y="11" width="${pct(Math.max(to - from, 0.4))}" height="14" rx="4"></rect>`;
-  return html`<svg class="svg-track" role="img" aria-label="${options.label ?? ''}">${ticks}${now}${mark}</svg>`;
-}
-
 /** Milliseconds as the design writes durations: 毫秒 below a second, 秒 below a minute, then 分 and 小时. */
 export function duration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '—';
@@ -166,15 +110,9 @@ export function duration(ms: number): string {
   return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`;
 }
 
-/** An ISO time as the console shows it: date and time to the second, in the Hub's local time. */
-export function when(iso: string | null | undefined): string {
-  if (iso === null || iso === undefined) return '—';
-  const time = Date.parse(iso);
-  if (Number.isNaN(time)) return iso;
-  const d = new Date(time);
-  const two = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
-}
+/** A compact display time whose full instant remains available in its tooltip and datetime. */
+export const when=time;
+export {fullTime};
 
 /** The time of day only, for axes and today's lists. */
 export function clock(iso: string | number): string {

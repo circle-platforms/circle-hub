@@ -412,7 +412,7 @@ export function callTable(lines: readonly CallLogLine[], admin: boolean, users: 
     headers,
     lines.map((line) => {
       const row: unknown[] = [
-        selection?link(selection.path,html`<time datetime="${line.at}" title="${line.at}">${when(line.at)}</time>`,{...selection.params,call:line.digest}):html`<time datetime="${line.at}" title="${line.at}">${when(line.at)}</time>`,
+        selection?link(selection.path,when(line.at),{...selection.params,call:line.digest}):when(line.at),
         line.user === null ? '—' : (users.get(line.user) ?? line.user),
         toolCell(line.tool),
         uiLabelOf('call_result', line.call_result),

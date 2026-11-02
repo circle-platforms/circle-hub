@@ -287,7 +287,7 @@ export class JobStore {
 
 /** A POST form to an action of this console, with the session's CSRF token. */
 export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean; primary?: boolean; kind?: PackKind } = {}): Html {
-  const button = options.primary ? html`<div class="ch-actions"><button type="submit" class="ch-btn--primary">${submit}</button></div>` : html`<button class="ch-btn ch-btn--secondary" type="submit">${submit}</button>`;
+  const button = options.primary ? html`<div class="ch-actions"><button type="submit" class="ch-btn ch-btn--primary">${submit}</button></div>` : html`<button class="ch-btn ch-btn--secondary" type="submit">${submit}</button>`;
   return html`<form method="post" action="/console/admin/do/${name}${options.kind&&options.kind!=='workflow'?'?kind='+encodeURIComponent(options.kind):''}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html`` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
 }
 
@@ -329,7 +329,7 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
       : card({ title: '成员的 Circle 如何连接', meta: 'MCP 标准授权' }, html`<p class="ch-meta">把以下配置写入该成员 Circle 的 settings.json${trust}。Circle 首次连接时在浏览器中打开授权页，成员输入上面的邀请码并确认授权即完成连接。</p><pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
-    body: page(actionChrome(ctx, action), html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
+    body: page({...actionChrome(ctx, action),...(last.code===0?{notice:'操作已完成'}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
   };
 }
 
@@ -356,7 +356,7 @@ export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
     : runLines(job.result, null);
   return {
     status: 200,
-    body: page(chrome, html`${liveModule('job', ['import.progress'], card({ title: job.title, tail: jobState(job), meta: `发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`), { job: job.id })}<p>${link('/console/operations/knowledge', '返回')}</p>`),
+    body: page(chrome, html`${liveModule('job', ['import.progress'], card({ title: job.title, tail: jobState(job), meta: html`发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`), { job: job.id })}<p>${link('/console/operations/knowledge', '返回')}</p>`),
   };
 }
 
@@ -500,7 +500,7 @@ export function stageResultPage(ctx: PageContext, result: StageResult): PageResu
   const run = result.run!;
   const stage = result.stage;
   const next = stage !== null
-    ? card({ title: '发布', tail: chip('等待发布中', 'judgment'), meta: `暂存至 ${when(new Date(stage.expires).toISOString())}` }, html`<p>${uiLabelOf('pack_kind',stage.kind??publishingKind(ctx))} ${technicalCode(`${stage.pack}@${stage.version}`)}（摘要 ${shortDigest(stage.digest)}）已暂存。发布执行 ${code('circle-hub pack publish <目录> --stage')}，写入发布记录；暂存 30 分钟内有效，过期后需重新上传。</p>${stageForms(stage, ctx.csrf ?? '')}`)
+    ? card({ title: '发布', tail: chip('等待发布中', 'judgment'), meta: html`暂存至 ${when(new Date(stage.expires).toISOString())}` }, html`<p>${uiLabelOf('pack_kind',stage.kind??publishingKind(ctx))} ${technicalCode(`${stage.pack}@${stage.version}`)}（摘要 ${shortDigest(stage.digest)}）已暂存。发布执行 ${code('circle-hub pack publish <目录> --stage')}，写入发布记录；暂存 30 分钟内有效，过期后需重新上传。</p>${stageForms(stage, ctx.csrf ?? '')}`)
     : result.published !== null
       ? callout('info', html`相同内容已发布为 ${technicalCode(`${result.published.pack}@${result.published.version}`)}，无需再次发布；未暂存。`)
       : run.code === 0

@@ -117,11 +117,11 @@ export function trialCard(report: SystemTrialReport): Html {
   );
 }
 
-/** The reads of the last day of each business system; null when they cannot be read now (unknown stays unknown). */
-export async function systemReads(ctx: PageContext, ids: readonly string[]): Promise<Map<string, ReadStatistics> | null> {
+/** The reads of each business system in the requested window (the last day by default); null when they cannot be read now (unknown stays unknown). */
+export async function systemReads(ctx: PageContext, ids: readonly string[],windowMs=24*60*60*1000): Promise<Map<string, ReadStatistics> | null> {
   if (!ctx.admin || ids.length === 0) return new Map();
   try {
-    const stats = await readStatistics(ctx.deps.records.store, ids, ctx.deps.now?.() ?? new Date());
+    const stats = await readStatistics(ctx.deps.records.store, ids, ctx.deps.now?.() ?? new Date(),windowMs);
     return new Map(stats.map((item) => [item.resource, item]));
   } catch {
     return null;
@@ -129,9 +129,9 @@ export async function systemReads(ctx: PageContext, ids: readonly string[]): Pro
 }
 
 /** One line for a table or the overview: the reads of the window, those not completed by result, the median time. */
-export function readsText(stats: ReadStatistics | null | undefined): string {
+export function readsText(stats: ReadStatistics | null | undefined,period='近 24 小时'): string {
   if (stats === null || stats === undefined) return '暂不可用';
-  if (stats.reads === 0) return '近 24 小时无读取';
+  if (stats.reads === 0) return period+'无读取';
   const others = ACTION_RESULT.filter((result) => result !== 'completed' && stats.results[result] > 0).map((result) => `${uiLabelOf('action_result', result)} ${stats.results[result]} 次`);
   return `${stats.partial ? '至少 ' : ''}${stats.reads} 次${others.length > 0 ? `（${others.join('，')}）` : ''}${stats.median_ms === null ? '' : ` · 中位 ${duration(stats.median_ms)}`}`;
 }

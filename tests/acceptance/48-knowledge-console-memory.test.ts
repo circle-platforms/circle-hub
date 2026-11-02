@@ -50,9 +50,9 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(textOf(parse(own.body)),/知识库 › 个人 › 方法/);assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
  assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已核验<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>未核验<\/span>/);
- assert.match(own.body,/\/ 1 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
+ assert.match(own.body,/\/ 1\.0 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
  assert.match(own.body,/<details class="ch-section" id="knowledge-history"><summary[^>]*>知识版本历史<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本历史/);
- assert.match(own.body,/版本 2 · \d{4}-\d{2}-\d{2} \d{2}:\d{2} ·/);
+ assert.match(own.body,/<span class="nowrap" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}">版本 2 · (?:今天 \d{2}:\d{2}|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2})<\/span> ·/);
  assert.equal((own.body.match(/href="#grant-knowledge"/g)??[]).length,1);
  const checked=await browser.post('/console/knowledge/do/grant',{csrf:csrf(own.body),path:verified.path,audience:'administrators',member:reader.user.name,preview_grant:'1'});
  assert.equal(checked.status,303);const checkedPage=await browser.get(String(checked.headers.location));

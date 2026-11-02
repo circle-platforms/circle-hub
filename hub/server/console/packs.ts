@@ -88,7 +88,9 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   const listings=await ctx.deps.packs.list(ctx.principal);
   const versions = byId(listings).get(space&&space!=='team'?space+'/'+id:id);
   if (versions === undefined) return neutralPage(ctx);
-  const pack = shownVersion(versions);
+  const version=ctx.url.searchParams.get('version');
+  const pack=version?versions.find(pack=>pack.version===version):shownVersion(versions);
+  if(!pack)return neutralPage(ctx);
   const state = stateOf(pack);
   const dialogs: CommandDialog[] = [];
   let loaded: LoadedWorkflow | null = null;
@@ -117,9 +119,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   ));
   const versionRows = versions.map((v) => {
     const s = stateOf(v);
-    const retire = commands.packRetire(`${v.id}@${v.version}`);
-    if (ctx.admin && !pack.space && !v.withdrawn) dialogs.push(retire);
-    return [timestamp(v.published_at), chip(s.text, s.tone), technical(kv([['版本',code(v.version)],['内容哈希',code(v.digest)]]),'查看'), Object.values(v.samples).reduce((sum,n)=>sum+n,0), ctx.admin && !pack.space && !v.withdrawn ? commandLink(retire, '退役') : ''];
+    return [timestamp(v.published_at), chip(s.text, s.tone), technical(kv([['版本',code(v.version)],['内容哈希',code(v.digest)]]),'查看'), Object.values(v.samples).reduce((sum,n)=>sum+n,0), link('/console/packs/'+pack.id,'选择',{space:pack.space,version:v.version,scope:ctx.url.searchParams.get('scope')})];
   });
   const assigned = ctx.admin ? await assignedNames(ctx, pack) : null;
   const permissionActions: Html[] = [];
@@ -128,9 +128,10 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
     if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); permissionActions.push(commandLink(d, pack.active ? '停用产品知识来源' : '启用产品知识来源')); }
     const d = commands.packMaintainer(pack.id); dialogs.push(d); permissionActions.push(commandLink(d, '调整维护人'));
   }
-  const permissions = card({ title: '版本记录' }, html`${table(['发布时间', '状态', '查看', '样例', ctx.admin ? '操作' : ''], versionRows)}
+  const permissions = card({ title: '版本记录' }, html`${table(['发布时间', '状态', '查看', '样例', '版本'], versionRows,'没有版本记录',undefined,{selected:versions.indexOf(pack),hrefs:versions.map(version=>href('/console/packs/'+pack.id,{space:pack.space,version:version.version,scope:ctx.url.searchParams.get('scope')}))})}
 ${kv([['所有者', await ctx.userName(pack.owner)], ...(assigned === null ? [] : [['使用范围', assigned.length === 0 ? uiLabelOf('audience_scope','team_unassigned') : assigned.join('、')] as const])])}
 ${permissionActions.length === 0 ? '' : html`<div class="ch-actions"><div class="ch-actions">${permissionActions}</div></div><p class="ch-meta">调整使用范围、维护人与退役版本生成命令，在管理员的 Circle 中执行。</p>`}`);
+  if(ctx.admin&&!pack.space&&!pack.withdrawn)dialogs.push(commands.packRetire(`${pack.id}@${pack.version}`));
   const body = html`${head}
 <div class="ch-section">${requirements}</div>${personalControls.body}
 ${loadFailed ? html`<p class="notice">该版本的验收要求与检查项暂不可读；版本与权限照常显示。</p>` : ''}

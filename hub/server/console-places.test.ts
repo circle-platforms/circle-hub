@@ -3,6 +3,8 @@
 // and no script; a task's result is derived in one place (display rule 20); the four operations are the only forms; every
 // other operation is a command dialog with the real ids; members see only their own Circles and calls.
 import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+import {parse} from 'parse5';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { TASK_RESULT, uiLabelOf } from '../../contracts/generated/vocabulary.ts';
@@ -97,6 +99,7 @@ function assertPage(reply: Reply, path: string): void {
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="ch-nav" aria-label="主导航">/, path);
   for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
+  const visit=(node:any,inRow=false):void=>{const cls=node.attrs?.find((attr:any)=>attr.name==='class')?.value?.split(' ')??[];const row=inRow||node.nodeName==='tr'||cls.includes('ch-row');if(row)assert.ok(!['button','form'].includes(node.nodeName)&&!cls.includes('ch-btn'),path+': rows carry no actions');for(const child of node.childNodes??[])visit(child,row);};visit(parse(reply.body));
   assert.doesNotMatch(reply.body, /你/, `${path}: interface text states facts without a subject`);
 }
 
@@ -159,7 +162,7 @@ describe('tasks', () => {
     const detail = await get(`/console/runs/${run}`, session);
     for (const text of ['执行过程', '工具调用', 'Hub 校验', '任务结果', '完整记录', '提交结果', '启动任务']) assert.ok(detail.body.includes(text), text);
     assert.ok(detail.body.indexOf('执行过程') < detail.body.indexOf('完整记录'), 'the process comes first');
-    assert.match(detail.body, /<svg class="svg-track" role="img"/, 'bars are SVG attributes');
+    assert.match(detail.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
   });
 
   test('a task result follows display rule 20: held, incomplete and rejected first, unknown never passed', () => {
@@ -275,7 +278,9 @@ describe('operations and commands', () => {
       assert.match(tables,/合成 Linux Circle/);
       const visible=tables.replace(/<[^>]*>/g,'');
       assert.ok(!visible.includes(oauth.id)&&!visible.includes(direct.id));
-      assert.ok(reply.body.includes(`circle-hub token revoke ${oauth.id}`),'disconnect command retains its exact target');
+      assert.doesNotMatch(tables,/<button|ch-btn|<form/);
+      const selected=await get((path.startsWith('/console/team')?'/console/team':'/console/connections')+'?circle='+oauth.id,admin);
+      assert.ok(selected.body.includes(`circle-hub token revoke ${oauth.id}`),'disconnect command retains its exact target after selection');
     }
     const mine=await get('/console/settings',memberSession);
     assert.match(mine.body,/合成 MacBook Circle/);
@@ -291,7 +296,7 @@ describe('operations and commands', () => {
     assert.match(team.body,/添加成员/);
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
-    const detail=await get(`/console/team/${user.user.id}`,admin);
+    const detail=await get(`/console/team/${user.user.id}?workflow=review`,admin);
     assert.match(detail.body,/成员详情|权限|工作流分配|已连接的 Circle/);
     assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
     assert.equal((await get(`/console/team/${other.user.id}`,session)).status,404);
@@ -310,14 +315,16 @@ describe('operations and commands', () => {
   test('settings, connections and packs offer the other operations as commands with the real ids, never as forms', async () => {
     const user = await member();
     const admin = await signIn(server.admin.token);
-    const settings = await get('/console/team', admin);
+    const settings = await get('/console/team/'+user.user.id, admin);
     const [token] = await server.records.principals.tokens(user.user.id);
-    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token revoke ${token.id}`, `circle-hub token issue ${user.user.id} --label=Circle`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
+    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token issue ${user.user.id} --label=Circle`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
     assert.match(settings.body, /<div class="ch-dialog" id="cmd-user-disable-[^"]+" role="dialog"/);
     assert.match(settings.body, /href="#cmd-user-disable-[^"]+"/, 'the button opens its dialog by fragment');
-    assert.doesNotMatch(settings.body, /action="\/console\/admin\/do\/(?!member-add)/, 'no management form on the settings page');
-    const connections = await get('/console/connections', admin);
+    assert.doesNotMatch(settings.body, /action="\/console\/admin\/do\/(?:user-disable|token-revoke|token-issue)/, 'these management actions remain command dialogs');
     const [resource] = await server.deps.resources.list(server.admin.principal);
+    const connections = await get('/console/connections?system='+resource.id, admin);
+    const circle = await get('/console/team?circle='+token.id,admin);
+    assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
     assert.ok(connections.body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
     const pack = await get('/console/packs/review', admin);
@@ -375,4 +382,27 @@ test('the overview uses a Stat and thin parts bar with labelled counts instead o
  for(const area of ['overview','runs','connections','records','team','settings']){
   const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.match(page.body,/aria-label="概况"/);assert.doesNotMatch(page.body,/当前页面|当前账号/);
  }
+});
+
+
+test('member and Circle selection moves exact administrative targets to danger confirmation dialogs without executing them',async()=>{
+ const user=await member(),other=await member(),admin=await signIn(server.admin.token),mine=await signIn(user.token);
+ const [token]=await server.records.principals.tokens(other.user.id);
+ const root=await get('/console/team',admin);assert.doesNotMatch(root.body,/circle-hub user disable|circle-hub token revoke/);
+ const selected=await get('/console/team/'+other.user.id,admin);assert.match(selected.body,/aria-selected="true"/);assert.match(selected.body,/class="ch-btn ch-btn--danger" href="#cmd-user-disable-/);
+ const circle=await get('/console/team?circle='+token.id,admin);assert.match(circle.body,/class="ch-btn ch-btn--danger" href="#cmd-token-revoke-/);assert.ok(circle.body.includes('circle-hub token revoke '+token.id));
+ assert.equal((await server.records.principals.get(other.user.id))?.disabled,false);assert.equal((await server.records.principals.tokens(other.user.id)).find(t=>t.id===token.id)?.revoked_at,null);
+ for(const path of ['/console/team','/console/connections']){const hidden=await get(path+'?circle='+token.id,mine),absent=await get(path+'?circle=synthetic-missing',mine);assert.equal(hidden.status,404);assert.equal(hidden.body,absent.body);}
+});
+
+test('record periods constrain the list and chart together, and an unresolved member never contributes other accounts to statistics',async t=>{
+ const user=await member(),admin=await signIn(server.admin.token),now=Date.now();
+ const put=(at:number,tool:string)=>server.records.callLog.append({at:new Date(at).toISOString(),traceId:randomBytes(16).toString('hex'),spanId:randomBytes(8).toString('hex'),userId:user.user.id,sessionId:null,tool,runId:null,arguments:{},callResult:'ok',durationMs:1});
+ const recent=await put(now-1000,'initialize'),old=await put(now-20*86400000,'list_task_packs');
+ const base='/console/records?user='+encodeURIComponent(user.user.name);
+ const seven=await get(base+'&days=7',admin),thirty=await get(base+'&days=30',admin);assert.equal(seven.status,200);assert.ok(seven.body.includes(recent.digest));assert.ok(!seven.body.includes(old.digest));assert.ok(thirty.body.includes(old.digest));
+ const chart=seven.body.slice(seven.body.indexOf('<figure'),seven.body.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/1 其他/,'protocol calls remain in the Other series instead of disappearing');
+ const store=server.deps.records.store,original=store.countIndexed;let countCalls=0;t.after(()=>{store.countIndexed=original;});store.countIndexed=async()=>{countCalls++;return {count:999,capped:false};};
+ const none=await get('/console/records?user=synthetic-nobody&days=30',admin);assert.equal(none.status,200);assert.equal(countCalls,0,'an unresolved member must not count all private refusal records');assert.match(none.body,/ch-stat-value">0/);assert.doesNotMatch(none.body,new RegExp(recent.digest+'|'+old.digest));
+ assert.equal((await get(base+'&from=2099-01-01',admin)).status,400);assert.equal((await get(base+'&from=2026-11-02&to=2026-11-01',admin)).status,400);
 });

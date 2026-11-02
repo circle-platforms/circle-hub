@@ -17,6 +17,7 @@ const object=(value:unknown):value is Record<string,unknown>=>value!==null&&type
 async function memoryRefusals(ctx:PageContext,path:string,user?:string,from?:string,to?:string):Promise<Html>{
  const title=uiLabelOf('knowledge_view','memory')+'写入拒收记录',store=ctx.deps.records.store;
  if(ctx.admin){
+  if(user==='')return card({title},html`<p>0 次</p>`);
   if(!store.countIndexed)return card({title},'统计暂不可用');
   const users=user?[user]:(await ctx.deps.records.principals.list()).map(account=>account.id);let total=0,capped=false;
   for(let offset=0;offset<users.length;offset+=1000){

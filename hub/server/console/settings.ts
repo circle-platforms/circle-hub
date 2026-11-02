@@ -106,10 +106,9 @@ export async function storageFacts(ctx: PageContext): Promise<{ backups: { count
   return { backups, database_bytes: bytes };
 }
 
-/** Bytes as the page shows them: MB with one decimal from 1 MB on. */
-export function sizeText(bytes: number): string {
-  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
+/** The shared binary size formatter, retained under the settings helper name. */
+export {size as sizeText} from './format.ts';
+import {size as sizeText} from './format.ts';
 
 async function hubState(ctx: PageContext): Promise<Html> {
   const facts = ctx.hub;
@@ -189,21 +188,23 @@ export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => P
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
   const dialogs: CommandDialog[] = [];
   const secrets = await secretsOf(ctx, run);
+  const secretName=ctx.url.searchParams.get('secret'),selectedSecret=secrets.rows?.find(secret=>secret.name===secretName);
+  if(secretName&&!selectedSecret)return neutralPage(ctx);
   let secretBody: Html;
   if (secrets.rows !== null) {
     const rows = secrets.rows.map((secret) => {
       const set = commands.secretSet(secret.name);
       const unset = commands.secretUnset(secret.name);
-      if (!secret.withdrawn) dialogs.push(set, unset);
+      if (!secret.withdrawn&&secret.name===secretName) dialogs.push(set, unset);
       return [
-        html`<b>${secret.name}</b>`,
+        link('/console/settings',secret.name,{secret:secret.name}),
         secret.consumers.length === 0 ? '—' : html`${secret.consumers.map((consumer) => html`<div>${consumer}</div>`)}`,
         secret.by, when(secret.at),
         secret.withdrawn ? chip('已吊销', 'unchecked') : html`<span class="ch-meta">•••••••• 已加密</span>`,
-        secret.withdrawn ? '' : html`${commandLink(set, '更新')} ${commandLink(unset, '吊销')}`,
+
       ];
     });
-    secretBody = table(['名称', '用于', '设置人', '更新时间', '内容', '操作'], rows, '尚无凭据：接入业务系统时设置');
+    secretBody = table(['名称', '用于', '设置人', '更新时间', '内容'], rows, '尚无凭据：接入业务系统时设置',undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
     secretBody = html`<p class="error">凭据列表暂不可用</p>`;
   } else if (secrets.text.code === 0) {
@@ -220,14 +221,14 @@ ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备�
 ${await hubState(ctx)}
 ${sectionHead('需停机或在主机上执行的操作', undefined, undefined, undefined, '控制台不执行这些操作；在 Hub 所在主机上的管理员 Circle 中执行')}
 ${card(null, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div><p class="ch-meta">部署与回滚见 ${code('circle-hub deploy')} 与 ${code('circle-hub rollback')}。</p>`)}
-${liveModule('dialogs', ['member.connected'], dialogs.map(commandModal))}`;
+${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}`;
   return {
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
       hint: '凭据与 Hub 状态；需人工处理的事项在对应的 Circle 中完成',
 
-    }),pageLayout(html`${seg([['secrets','凭据'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:html`<h2 class="ch-panel-title">设置</h2>${stat('凭据项',secrets.rows?.length??'—')}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用'],['已运行',ctx.hub?duration(Date.now()-ctx.hub.startedAt.getTime()):'—']])}`})),
+    }),pageLayout(html`${seg([['secrets','凭据'],['hub','Hub 状态']],'设置分区')}${body}`,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.consumers.join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:html`<h2 class="ch-panel-title">设置</h2>${stat('凭据项',secrets.rows?.length??'—')}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用'],['已运行',ctx.hub?duration(Date.now()-ctx.hub.startedAt.getTime()):'—']])}`})),
   };
 }
 

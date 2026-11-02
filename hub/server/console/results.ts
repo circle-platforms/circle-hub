@@ -1,3 +1,4 @@
+import {time} from './format.ts';
 import {technicalCode,stat} from './presentation.ts';
 import {packTitles,taskTitle} from './tasks.ts';
 // Read-only production results computed at start_run, separate from later model commentary; every value under its
@@ -25,7 +26,7 @@ export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const next = listing.next === null ? '' : html`<p>${link('/console/results', '下一页', { pack, build, cursor: listing.next })}</p>`;
   return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: link('/console/runs', '任务'), hint: 'start_run 时由 Hub 算出的结果' }), html`${filter}${partial || runs.length !== listing.items.length ? html`<p class="notice">${partial?'部分：':''}本页检查了 ${listing.items.length} 个运行，列出 ${runs.length} 个符合筛选的生产运行${listing.next !== null ? '；继续查看下一页' : ''}</p>` : ''}${table(
     ['运行', uiLabelOf('pack_kind', 'workflow'), '产品 / 版本 / 构建', '开始时间', '条目'],
-    runs.map((run) => [html`${link(`/console/results/${run.run}`,taskTitle(run,titles))}${sharedRunNotice(ctx,run)}`, taskTitle(run,titles), [run.product, run.version, run.build].filter(Boolean).join(' / '), run.started_at, run.items.length]),
+    runs.map((run) => [html`${link(`/console/results/${run.run}`,taskTitle(run,titles))}${sharedRunNotice(ctx,run)}`, taskTitle(run,titles), [run.product, run.version, run.build].filter(Boolean).join(' / '), time(run.started_at), run.items.length]),
     empty,
   )}${next}`) };
 }

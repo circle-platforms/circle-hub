@@ -125,6 +125,7 @@ export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections
 
 export interface PageChrome {
   title: string;
+  notice?: string;
   /** Signed-in user: name and role label; null on the login page. */
   user: { name: string; role: string; admin: boolean } | null;
   /** CSRF token of the session for the logout form. */
@@ -215,7 +216,8 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const crumbs = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? link(current[2], current[1]) : undefined);
   const title = chrome.hint === undefined ? chrome.title : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${chrome.title}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
   const actions=layout.actions??chrome.actions;
-  const top = html`${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
+  const notice=chrome.notice?html`<div class="ch-toast" role="status" data-toast-success tabindex="0">${chrome.notice}</div>`:'';
+  const top = html`${layout.detail?'':notice}${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
   const area = areaClass(chrome.active);
   const nav = NAV.map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
@@ -229,7 +231,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
 <main class="ch-pane" id="console-main">${top}<div class="ch-section" data-area-content>${content}</div></main>
-${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? state : ''}${inspector}</aside>` : ''}
+${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
 </div>`, updates);
 }
 

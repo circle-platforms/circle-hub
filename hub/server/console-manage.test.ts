@@ -253,9 +253,11 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const issued = await post('token-issue', { user: 'usr_alice', label: '--raw' });
   assert.deepEqual(calls.at(-1)!.argv, ['token', 'issue', 'usr_alice', '--label=--raw']);
   assert.match(issued.body, /只显示这一次/);
+  assert.match(issued.body,/<div class="ch-toast" role="status" data-toast-success/,'only the confirmation disappears; one-time output remains in the response');
 
   const flagged = await post('user-create', { name: '--role=admin', role: 'user' });
   assert.equal(flagged.status, 400);
+  assert.doesNotMatch(flagged.body,/<div class="ch-toast" role="status" data-toast-success/,'failed actions never show the success confirmation');
   assert.equal(calls.length, 2, 'a positional that looks like a flag never reaches a command');
 
   await post('secret-set', { name: 'DEMO', value: 'synthetic secret value', reason: '轮换' });

@@ -6,7 +6,7 @@ import { rm } from 'node:fs/promises';
 import { KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { AccessError, RecordsError } from '../../records/api.ts';
 import type { PackListing } from '../../ports.ts';
-import { code, html, link, table, type Html } from './html.ts';
+import { code, html, link, table, pageLayout, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import {when} from './ui.ts';
 import {panel as card,areaPage as page,field,technical,dialog,actionLink} from './presentation.ts';
@@ -17,9 +17,13 @@ export function personalPackForm(ctx:PageContext,action:string,fields:Html,label
   return html`<form method="post" action="/console/packs/do/${action}"${multipart?html` enctype="multipart/form-data"`:''}><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<button class="ch-btn ${action==='retire'||action==='revoke'?'ch-btn--danger':action==='discard'?'ch-btn--secondary':'ch-btn--primary'}" type="submit"${disabled?html` disabled`:html``}>${label}</button></form>`;
 }
 export async function personalPublishPage(ctx:PageContext,staging:PackStaging):Promise<PageResult>{
-  if(!ctx.deps.registry?.personal)return neutralPage(ctx);
-  const stages=staging.list(ctx.principal.id).filter(stage=>stage.space===ctx.principal.id);
-  return {status:200,body:page(ctx.chrome('发布个人工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获授权者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),html`<div class="ch-section">${card({title:'上传发布内容',hint:'上传含 pack.json 的 zip；校验通过后暂存 30 分钟，确认时再次校验。'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.when+'；'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.fix},personalPackForm(ctx,'stage',html`${field('发布内容 zip',html`<input type="file" name="archive" accept=".zip,application/zip" required>`)}`,'上传并校验',true))}${card({title:'等待发布中'},table(['包','到期时间','操作'],stages.map(stage=>[technical(code(stage.pack+'@'+stage.version),'查看待发布版本'),when(new Date(stage.expires).toISOString()),html`${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}`]),'没有暂存的发布内容'))}</div>`)};
+ if(!ctx.deps.registry?.personal)return neutralPage(ctx);
+ const stages=staging.list(ctx.principal.id).filter(stage=>stage.space===ctx.principal.id),selected=ctx.url.searchParams.get('stage'),stage=stages.find(stage=>stage.id===selected);
+ if(selected&&!stage)return neutralPage(ctx);
+ const inspector=stage?html`<div data-inspector-content><span class="ch-tag">发布内容</span><h2 class="ch-panel-title">等待发布中</h2><p>到期时间 ${when(new Date(stage.expires).toISOString())}</p>${technical(code(stage.pack+'@'+stage.version),'查看待发布版本')}<footer class="ch-inspector-actions">${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}</footer></div>`:undefined;
+ const upload=card({title:'上传发布内容',hint:'上传含 pack.json 的 zip；校验通过后暂存 30 分钟，确认时再次校验。'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.when+'；'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.fix},personalPackForm(ctx,'stage',field('发布内容 zip',html`<input type="file" name="archive" accept=".zip,application/zip" required>`),'上传并校验',true));
+ const listing=card({title:'等待发布中'},table(['发布内容','到期时间'],stages.map((item,index)=>[link('/console/packs/-/publish','待发布内容 '+(index+1),{stage:item.id}),when(new Date(item.expires).toISOString())]),'没有暂存的发布内容',undefined,{selected:stages.findIndex(item=>item.id===selected),hrefs:stages.map(item=>'/console/packs/-/publish?'+new URLSearchParams({stage:item.id}))}));
+ return {status:200,body:page(ctx.chrome('发布个人工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获授权者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),pageLayout(html`${upload}${listing}`,{inspector,detail:!!stage,back:link('/console/packs/-/publish','返回发布列表')}))};
 }
 export async function personalPackControls(ctx:PageContext,pack:PackListing):Promise<{body:Html;actions:Html}>{
   const personal=ctx.deps.registry?.personal;if(!personal||pack.space!==ctx.principal.id)return {body:html``,actions:html``};

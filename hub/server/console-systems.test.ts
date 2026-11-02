@@ -239,6 +239,6 @@ describe('the reads of the last day', () => {
     assert.match(connections.body, /3 次（报错 1 次） · 中位 200 毫秒/);
     assert.match(connections.body, /统计时段 .+ 至 .+；/);
     const overview = await send('/console/overview', { headers: { cookie: admin.cookie } });
-    assert.match(overview.body, /3 次（报错 1 次）/);
+    assert.match(overview.body, /4 次（报错 1 次）/, 'the selected seven-day period also includes the read 36 hours ago');
   });
 });

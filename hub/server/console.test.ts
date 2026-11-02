@@ -447,7 +447,9 @@ describe('pages', () => {
       assert.equal(admin.status, 200, path);
       assert.ok(admin.body.includes(user.user.name));
       assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
-      assert.ok(admin.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a member is a command for the Circle');
+      for(const row of admin.body.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)??[])assert.doesNotMatch(row,/<button|<form|ch-btn/);
+      const selected=await get('/console/team/'+user.user.id,session);
+      assert.ok(selected.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a selected member is a command for the Circle');
     }
     const connections = await get('/console/connections', session);
     assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
