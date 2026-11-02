@@ -71,12 +71,18 @@ robot does not have today (app push or group webhook) — the central item of de
    is POST with a JSON body and `AuthDeclaration` carries the token in a header, so until this exists a deployment
    keeps a current `access_token` vault entry and the robot host refreshes it (a disclosed host-managed lifecycle,
    not a Hub login exchange). Requested: an auth variant naming the query parameter of the cached token.
-2. **dispatch (notification effects).** The executor services dispatch **jobs** today; the `notification` effect class
-   has no executor path yet. Delivering a B07 request through the robot would be its first user: an `executor@1`
-   source definition whose submit carries a `write-declaration@1` with `effect_class: notification`, a retry-safety
-   class and the dedup premise (D03 R[1]–R[3]: one resend marked 可能重复), satisfied at 已生效 because a sent message
-   cannot be read back (B06), and passing the outbound content check that `hub/dispatch/boundary.ts` already runs.
-   This pack asks for the dispatch branch, not for any route of its own.
+2. **contracts + dispatch (notification effects).** D2=a (group robot webhook, owner 2026-11-02) chose the channel;
+   the block is deeper than a missing dispatch branch — **the contract itself refuses a notification executor**:
+   `ExecutorDefinition` locks `calls.submit.write` to `effect_class: job`, `audience: null`, `writes_hub_records: true`
+   (contracts/src/resources.ts, the `calls` shape and its superRefine "执行器只能声明作业"). `testing/webhook-notify.draft.json`
+   is the intended webhook shape; `webhook-notify.test.ts` pins that `ExecutorSource.safeParse` refuses it with exactly
+   those three fields and nothing else, while the same object parses alone as `write-declaration@1` — so the vocabulary
+   is ready and only the executor slot is closed. Requested: from the **contracts owner**, a notification variant of
+   the executor write slot (effect class `notification`, a non-null audience, the job-only machinery lease/receipt/
+   status/result/proof made optional or a separate resource kind — the draft carries those placeholders precisely to
+   show they do not belong here); from **dispatch**, the notification effect-class branch (intent, 已发出/已生效 via
+   B06, one resend marked 可能重复 per D03 R[3], the boundary content check that `hub/dispatch/boundary.ts` already
+   runs). When the schema opens, `webhook-notify.test.ts` breaks loudly and is updated deliberately.
 3. **owner (two decisions).** Real systems are read-only under the current authorization: enabling a real outbound
    send (webhook or appchat) is a separate decision. The robot host itself — long-lived connection, local model,
    per-session ids that make A04 R[5] independence checkable — is Circle-side work (decision 8 covers the platform;
@@ -112,6 +118,9 @@ A. group robot webhook (simplest active push; a sent message cannot be recalled 
 `retry_safety: duplicate_tolerant` matches the current protocol (the webhook accepts no client dedup key): a lost
 reply is resent once and marked 可能重复 (D03 R[3]); satisfaction is 已生效 because a notification cannot be read
 back (B06). `target_key` binds the Hub request digest so the resend is the same intent.
+
+Registration of this shape is refused by today's contract (see Need 2): `testing/webhook-notify.draft.json` plus
+`webhook-notify.test.ts` pin the exact three-field refusal until the contracts owner opens the notification slot.
 
 B. app message push (reaches private chat; the answer carries a msgid, and recall exists, so a pre-send check and a
 possible compensation become expressible):
