@@ -1,3 +1,4 @@
+import {MemoryDocuments} from './memory.ts';
 import {FeedingLayer} from './feeding.ts';
 import { KnowledgeSpaces } from './spaces.ts';
 import { KnowledgeError } from './errors.ts';
@@ -79,6 +80,7 @@ export interface KnowledgePlacement {
 }
 
 export interface Knowledge extends KnowledgePort {
+  memory:MemoryDocuments;
   /** The context this service was created with (the seedling production and tests of this package reach for it). */
   readonly __context: KnowledgeContext;
   /**
@@ -283,6 +285,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   };
 
   return {
+    memory:new MemoryDocuments(context,spaces),
     spaces,
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */

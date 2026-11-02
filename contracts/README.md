@@ -407,3 +407,23 @@ within the same unmerged model revision; a manifest version cannot name two comm
 The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team verification cannot use personal parser capabilities, including through indirect personal grounds. Protocol mirrors and the four patch manifests are regenerated without parser business changes.
 
 Security model 22 adds optional live withdrawal counts (`grounds_withdrawn_hidden_count` in node views and `withdrawn_grounds_hidden_count` beside result receipts). They disclose no paths or digests and do not change stored records. The existing status label remains generated.
+
+Decision 88 and the approved memory protocol (Claude, 2026-11-02) add generated audience, pre-check, knowledge/memory view and memory-state labels in model 23. Memory is a client-context preference declaration, never run evidence. Its separate grants do not inherit knowledge grants. The default active-text cap is 48,000 bytes per space; re-sharing supersedes the earlier team revision unless an administrator edited it.
+
+Model 23 follows the phase-three security model 22 and retains its upload declarations, absent diagnostics and capability
+refusals. Generic protocol mirrors advance HTML/mindmap to 1.0.10 and XML/workbook to 1.0.11. Memory extends only
+get_nodes and upload_file; payload modes cannot mix with evidence or runs. Metadata pages have a 16,000-byte bound,
+and body reads continue at UTF-8 boundaries. Sensitive sharing destinations are omitted from refused receipts.
+The same unmerged model 23 also generates knowledge-origin and memory-field display labels. They annotate directory
+rows and safe credential locations; they introduce no new record form, authority or evidence status.
+Claude's decision-88 layout/CI review adds a team-unassigned template to the same unmerged model 23 display axis.
+Administrators see assignment names or that label; members see the existing team-scope label. Personal-grant wording
+does not describe team workflows. That display correction alone changes no assignment or administrator permissions.
+
+Model 24 records the console security review: active memory charges include UTF-8 titles, paths and bodies, with a
+configurable default of 20 enabled documents per space. Session lists and body reads enforce the same limits. It also
+registers the team-memory maintenance refusal and pre-check label before their implementation, plus generated usage
+labels. Protocol-only mirrors/manifests advance html-format/mindmap-format to 1.0.11 and xml-format/workbook-format to
+1.0.12; skill business code is unchanged. Authorization is the review and the standing generated-mirror authorization.
+Memory record classification also covers private refusal and unchanged-write actions. This changes generic reader
+eligibility without changing their stored shapes or granting any evidence rights.

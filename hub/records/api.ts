@@ -825,7 +825,9 @@ export interface CallLog {
 
 // ---------------------------------------------------------------- the kit
 
+export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export interface RecordsKit {
+  memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;
   store: RecordStore;

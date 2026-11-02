@@ -7,15 +7,9 @@ function context(deps: unknown, admin = false): PageContext {
   return {deps:{packs:{list:async()=>[]},...deps as object} as unknown as ServerDeps,principal:admin ? {...member,role:'admin'} : member,admin,url:new URL('http://127.0.0.1/console/knowledge'),userName:async()=>member.name,chrome:(title,extra)=>({title,...extra,user:{name:member.name,role:'用户',admin},csrf:null})};
 }
 const products = {products:async()=>[],readableProducts:async()=>new Set<string>()};
-test('knowledge flow groups steps by personal and team visibility with runtime explanations on hover', async () => {
-  const body=String((await knowledgePage(context({products,knowledge:{}}))).body);
-  const flow=/<div class="knowledge-flow">([\s\S]*?)<\/div><\/div>/.exec(body)?.[1] ?? body;
-  assert.match(flow,/个人（仅本人可见）/);
-  assert.match(flow,/团队（所有人可见，Hub）/);
-  assert.match(flow,/提交共享 → Hub 出处校验/);
-  assert.match(flow,/<b>原文归档<\/b><span class="planned">规划中<\/span>/);
-  assert.doesNotMatch(flow,/class="host"/);
-  assert.match(flow,/title="模型在 Circle 中归纳，结果保留在本机，不上传 Hub"/);
+test('knowledge removes the retired intake flow card and keeps explanations on the page heading',async()=>{
+ const body=String((await knowledgePage(context({products,knowledge:{}}))).body);
+ assert.doesNotMatch(body,/知识入库流程|class="knowledge-flow"/);assert.match(body,/title="统一的知识库/);
 });
 test('knowledge intake pending items live only in knowledge and an empty list is hidden', async () => {
   const todo = {source:{system:'synthetic',id:'source-1'},missing:'合成缺失内容',next_action:'补充出处',detail:{message:'合成脚本错误'}};
@@ -68,4 +62,18 @@ test('different versions remain selectable when their knowledge content is ident
   const to=/<select name="to">([\s\S]*?)<\/select>/.exec(body)![1];
   assert.match(from,/selected>2 \/ previous-build<\/option>/);
   assert.match(to,/selected>3 \/ current-build<\/option>/);
+});
+
+test('with knowledge spaces, as the real assembly always has, the home keeps the product sources and the pending intake on the all and team scopes', async () => {
+  const todo = {source:{system:'synthetic',id:'source-2'},missing:'合成待补充',next_action:'补充合成出处'};
+  const spaces = {visible:async()=>[],shareHistory:async()=>({items:[],next:null}),capacity:async()=>1024 ** 3};
+  const deps = {products,knowledge:{spaces,feeding:{todos:async()=>[todo]}}};
+  for (const scope of ['all','team']) {
+    const ctx = context(deps, true); ctx.url = new URL(`http://127.0.0.1/console/knowledge?scope=${scope}`);
+    const body = String((await knowledgePage(ctx)).body);
+    assert.match(body, /id="product-sources"/, scope); assert.match(body, /知识入库待处理/, scope); assert.ok(body.includes(todo.missing), scope);
+  }
+  const personal = context(deps, true); personal.url = new URL('http://127.0.0.1/console/knowledge?scope=personal');
+  const body = String((await knowledgePage(personal)).body);
+  assert.doesNotMatch(body, /id="product-sources"|知识入库待处理/);
 });

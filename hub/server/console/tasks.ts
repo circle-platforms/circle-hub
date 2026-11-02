@@ -206,7 +206,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     });
   }
 
-  if (ctx.admin && ctx.deps.dispatch !== undefined) {
+  if (ctx.admin && (!run.pack_space||run.pack_space==='team') && ctx.deps.dispatch !== undefined) {
     try {
       const jobs = await ctx.deps.dispatch.jobs(ctx.principal, run.run);
       // The environment each job went to, and its state now, when the registry can be read.

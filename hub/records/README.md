@@ -683,3 +683,33 @@ Run input declarations bind an ordinary upload's exact capture and uploader in `
 `sourceForRun` checks the run's current actual readers and never changes global artifact ACLs; generated and team-read
 captures keep their run-bound access. `canReadForRun` checks only permission metadata and does not read source bytes.
 Only the trusted engine supplies a prospective snapshot before an automatic result and its run are persisted.
+
+Migration 12 adds rebuildable memory heads and per-space active/history counters. Identity columns are protected from runtime updates. Projection updates and version records commit together under the shared knowledge-space business lock. Decreases update an initialized usage row instead of inserting a negative increment through an upsert constraint. Applied migrations are unchanged.
+
+PR #132 snapshot review compared the source with main: only migration 12's two tables, one index and their runtime
+column grants are appended. Earlier migration source is unchanged. Foreign keys pin heads to append-only records,
+nonnegative counters stay constrained, and runtime updates cannot change document or space identities. The reviewed
+whole-file snapshot is refreshed; existing per-migration SQL snapshots remain fixed. Whenever migrations.ts changes,
+run migrations.snapshot.test.ts in the targeted checks, together with ownership and lock-namespace checks as applicable.
+
+Security review migration 13 adds UTF-8 title/path/body counters and active-document counts to the existing memory
+projection. It backfills only these derived columns from immutable versions, preserves historical charges and does
+not rewrite earlier SQL or records. Runtime column grants cover the new counters but still protect space/document
+identity. Atomic updates and rebuilds use the same accounting; defaults are 48,000 active bytes and 20 documents per
+space. The reviewed source snapshot is updated together with an upgrade regression.
+
+Credential-scan@3 adds scan-only NFKC/invisible-character folding, numeric/named HTML entities, joined path segments
+and adjacent key/value segments, and canonical base64/base64url text views. These share the existing bounded recursive
+expansion and detectors; compressed containers remain uninspected. Findings map to original positions (encoded literals
+anchor at their opening), and internal matched values never enter public scan metadata. Stored bytes, source-byte
+references and fragment identities do not change. A newly created capture includes the scanner version in its record,
+so its record identity and any composition, scope list or cursor that binds it can change (see the console task's CI
+view-byte review). Source acceptance is still bound to scanner version and findings; tests derive a simulated newer
+scanner from the current version rather than pinning it. Existing encodings, placeholders, negatives and large-input
+time/memory bounds remain covered.
+
+HTML character-reference data is generated through the already declared parse5 dependency, with its decoder data license
+retained. A small portable decoder is checked against that parser for every named reference and numeric boundaries. Run
+`node tools/gen-credential-scanner.ts --check` to check the generated data; the knowledge-contribution pack generator also
+mirrors the scanner, decoder and data into its standalone skill, without a runtime package dependency. This avoids two
+credential policies drifting apart; it adds no per-source hashing or data-verification pass.

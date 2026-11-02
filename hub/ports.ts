@@ -333,6 +333,7 @@ export interface ReadRoot {
 }
 
 export interface KnowledgePort {
+  memory?:import('./knowledge/api.ts').MemoryDocuments;
   spaces?: import('./knowledge/api.ts').KnowledgeSpaces;
   feeding?:import('./knowledge/feeding.ts').FeedingLayer;
   seedlingRoot?(product:string,line:string):Promise<RootInfo|null>;

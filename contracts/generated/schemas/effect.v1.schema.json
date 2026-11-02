@@ -296,7 +296,14 @@
                 "PACK_SPACE_DENIED",
                 "PACK_PERSONAL_PUBLICATION_DENIED",
                 "PACK_PERSONAL_CAPABILITY_DENIED",
-                "TEAM_PARSER_REQUIRED"
+                "TEAM_PARSER_REQUIRED",
+                "MEMORY_DOCUMENT_LIMIT",
+                "MEMORY_SPACE_LIMIT",
+                "MEMORY_CREDENTIALS_DETECTED",
+                "MEMORY_VERSION_CONFLICT",
+                "MEMORY_RUN_FORBIDDEN",
+                "MEMORY_TEAM_DISABLED",
+                "MEMORY_CURSOR_STALE"
               ]
             },
             "row": {

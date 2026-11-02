@@ -132,10 +132,12 @@ test('team destination paths are scanned and credential-bearing targets never en
   await spaces.ensure(w.user,'team');
   const before=(await spaces.current('team'))!.root,secret='hunter22x',team_path='/DB_PASSWORD='+secret;
   const input={root:entry.root,path:'/notes',entry:entry.entry,team_path};
+  const preview=await spaces.precheckShare(w.user,input);assert.equal(preview.target_path,undefined);assert.ok(!JSON.stringify(preview).includes(secret));
   const refused=await spaces.share(w.user,input);assert.equal(refused.code,'SHARE_CREDENTIALS');assert.equal(refused.status,'rejected');assert.equal(refused.target_path,undefined);assert.ok(!JSON.stringify(refused).includes(secret));
   assert.equal((await spaces.current('team'))!.root,before);assert.equal((await spaces.current('team'))!.body.entries.length,0);
   assert.equal((await share(w,entry)).status,'merged');
   const duplicate=await spaces.share(w.user,input);assert.equal(duplicate.code,'SHARE_DUPLICATE');assert.equal(duplicate.target_path,undefined,'an earlier refusal must not persist the unchecked destination either');
+  const duplicatePreview=await spaces.precheckShare(w.user,input);assert.equal(duplicatePreview.target_path,undefined);assert.ok(!JSON.stringify(duplicatePreview).includes(secret));
   const history=await spaces.shareHistory(w.user);assert.ok(!JSON.stringify(history).includes(secret));
 });
 
@@ -157,4 +159,19 @@ test('withdrawal qualifiers hide unreadable ancestor identities and disclose onl
   const granted=await spaces.entry(w.outsider,leaf.root,'/leaf',leaf.entry);assert.deepEqual(granted?.grounds_withdrawn,[ancestorRef]);assert.equal(granted?.grounds_withdrawn_hidden_count,0);
   await spaces.grant(w.user,{path:'/private-ancestor',audience:'member',member:w.outsider.id,revoke:true});
   assert.equal((await spaces.entry(w.outsider,leaf.root,'/leaf',leaf.entry))?.grounds_withdrawn_hidden_count,1);
+});
+
+test('sharing previews are read-only, ordered, and confirmation rechecks current eligibility',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entry=await verified(w);
+ const raw={root:entry.root,path:'/notes',entry:entry.entry};
+ const mark=await w.kit.store.watermark!(),team=await spaces.current('team');
+ const preview=await spaces.precheckShare(w.user,raw);assert.equal(preview.ok,true,JSON.stringify(preview));assert.ok(preview.checks.every(c=>c.state==='pass'));
+ assert.equal(await w.kit.store.watermark!(),mark);assert.deepEqual(await spaces.current('team'),team);
+ await spaces.withdraw(w.user,entry.entry,w.user.id);
+ const refused=await spaces.share(w.user,raw);assert.equal(refused.code,'SHARE_UNVERIFIED');
+ const privateSource=await observed(w,true);const personal=await spaces.write(w.user,{...note('合成个人凭据预检规则'),grounds:[{reference:'src:'+privateSource.body.sha256,quotation:'每次保留两份'}]}),before=await w.kit.store.watermark!();
+ const stopped=await spaces.precheckShare(w.user,{root:personal.root,path:'/notes',entry:personal.entry});
+ assert.deepEqual(stopped.checks.map(c=>c.state),['pass','pass','violation','unchecked','unchecked']);assert.equal(stopped.checks[2].code,'SHARE_PERSONAL_SOURCE');assert.equal(await w.kit.store.watermark!(),before);
+ const original=w.kit.artifacts.source.bind(w.kit.artifacts);w.kit.artifacts.source=async()=>{throw new Error('synthetic storage outage');};
+ try{const incomplete=await spaces.precheckShare(w.user,{root:personal.root,path:'/notes',entry:personal.entry});assert.equal(incomplete.checks[0].state,'incomplete');assert.ok(incomplete.checks.slice(1).every(c=>c.state==='unchecked'));}finally{w.kit.artifacts.source=original;}
 });

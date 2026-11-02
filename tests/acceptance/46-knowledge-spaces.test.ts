@@ -165,8 +165,10 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const ownConsole = await openConsole(hub, owner.token), otherConsole = await openConsole(hub, other.token), adminConsole = await openConsole(hub, hub.admin.token);
   const home = await ownConsole.get('/console/knowledge');
   assert.equal(home.status, 200);
-  for (const text of ['个人', '团队', '共享给我的', '服务器备份', '导入个人知识'])
+  for (const text of ['全部', '个人', '团队', '服务器备份', '最近变化', '我的提交共享'])
     assert.ok(home.body.includes(text), text);
+  assert.ok(!home.body.includes('共享给我的'),'the empty received group is hidden');
+  assert.match((await ownConsole.get('/console/knowledge?scope=personal')).body,/导入个人知识/);
   assert.ok(!home.body.includes('href="/console/operations/knowledge"'));
   const ownPage = await ownConsole.get(spacePath(owner.user.id));
   assert.equal(ownPage.status, 200);

@@ -30,10 +30,13 @@ personal capability boundary. Team workflows retain assignment-based access.
 
 ## Console spaces (decision 86)
 
-Knowledge shows personal, team and shared-with-me columns. `/console/knowledge/space` browses a selected immutable root,
+Decision 88 replaces the former columns with one space panel, shared with workflows: all, personal, shared with me,
+then team. Empty received groups disappear. Directory trees use current read permissions, product titles and hierarchy
+names; narrow screens use a row of scope tabs. Knowledge and memory retain their selected view and scope in links.
+`/console/knowledge/space` browses a selected immutable root,
 its paths, entry grounds/current state and history. Owners add entries, replace or withdraw them, import originals and
-append/revoke read-only directory grants. Team administrators import only from team-observed sources and may withdraw
-team entries. Product browsing remains under virtual product mounts with its original permissions.
+append/revoke read-only directory grants. Team administrators import from team-observed sources or declare their own
+ordinary uploads, and may withdraw team entries. Product browsing remains under virtual product mounts with its original permissions.
 `/console/knowledge/space-diff` selects two history roots, defaulting to previous/current; product versions are labeled
 separately. Search has four generated knowledge scopes, and every result marks its visibility. Private originals at
 `/console/knowledge/source` recheck path authorization; administrators have no implicit access.
@@ -984,7 +987,7 @@ establish target-server, real-user or production-network behavior.
 
 第三阶段以全部实际读者检查替代第二阶段的临时个人依据拒收：个人条目和原文可按当前授权读取，结果的每个依据及底层来源须对全部结果读者可读，否则返回 `RESULT_GROUNDS_UNREADABLE`。仅事实工作流与缓存回执同样检查；撤回使用读取包装中的 `grounds_withdrawn`，旧结果保持原字节。共享目录仍拒收无法完整检查的原文，使用 `SPACE_CONTENT_UNINSPECTABLE`，不误报为命中凭据。团队产品目录由 Hub 登记，版本记录不署为随机读取成员。
 
-个人／团队知识库和工作流的页面目前只保留必要功能，后续另立任务重做展示；本阶段不打磨布局，保留“知识入库流程”卡片。来源：所有者对当前知识库展示的否定意见及 Claude 2026-11-02 的协调补充；后端共享、个人工作流、依据可见范围及验收继续实施。
+决定 88 的页面重做已取代第三阶段临时界面，移除“知识入库流程”卡片。空间栏与知识／记忆切换沿用当前权限，目录以名称层级显示；个人原文与条目分开列出。来源：所有者确认的决定 88 及任务页 `kw-console.md`。
 
 第二阶段第二轮索引修正：`get_nodes` 搜索可返回 `warnings`（注册错误码、未检索范围、说明与处理办法），正文和控制台同时显示；可用匹配继续返回，不宣称全部范围已检索。单条索引及当前版本限额由 Hub 配置，产品与团队条目分别计量。超限或索引未完成不会让 `/console/search` 整页返回 500。团队页容量提示区分个人原文／历史容量、当前版本索引额度与仍保留的历史磁盘占用。
 
@@ -996,3 +999,34 @@ References the submitter could not read remain absent diagnostics. Reader checks
 unreadable-reference observation in a stored result never authorizes reading the referenced body or a raw submission.
 
 知识条目、节点、运行及结果的撤回提示仅列当前可读的引用；其他上级依据只给数量。控制台和 MCP 的文本、结构化返回均保留这项提示，不暴露其他目录或摘要。
+
+The knowledge page switches between knowledge and memory while retaining the eight global navigation places. Memory
+uses password sessions, the existing same-origin/CSRF form boundary and independent directory grants. Its plain-text
+editor and history never execute Markdown; sharing previews write nothing and confirmation rechecks limits and
+administrator changes. MCP memory modes stay within get_nodes and upload_file and return no evidence reference.
+Personal workflows offer no named-document, business-system, lease or dispatch actions; team management is separate.
+Memory audit views disclose only participant/all-administrator grants and safe share receipts, never private text.
+Administrators also retain participant visibility for their own sent/received member grants, without seeing unrelated
+member grants. Memory refusal actions and unchanged-write receipts are unavailable through generic rec: reads for every
+role. The records page alone shows an ordinary owner's refusal code and generated field/line labels, never free-form
+messages or payload/intent digests. Administrators see only bounded counts, filtered by record creation time and actor;
+the count queries read index metadata rather than refusal bodies. Older refusal rows use the same existing actor index.
+Client automatic loading and synchronization remain outside this Hub-side task.
+
+Owners select only verified personal entries for batch sharing. Each entry has a read-only ordered preview and is checked
+again independently at confirmation; a failure stops later checks and duplicate entries link to their actual team address.
+Team rows show submitter, source and merge time. Administrator member metadata contains personal historical bytes and
+current all-administrator grant counts only, without titles, content counts or personal version activity. Workflow cards
+show assigned enabled member names to administrators, or the generated unassigned label when none remain. Members see
+the team scope. Personal grant templates apply only to personal packs; administrator authority is unchanged.
+Credential refusals disclose field names and line numbers without matched values.
+
+Layout review of decision 88: received workflow/skill cards have their own group, and share history resolves readable
+statements with team links or refusal reasons. Personal and team trees omit repeated namespace roots; counts derive
+only from visible space rows or memory documents. Knowledge and memory use generated state chips, readable capacities,
+grouped byte counts and minute-level local times. Version history is collapsed by default and uses descriptive names;
+an ordinal appears only when the available history determines it. Source addresses remain unchanged.
+Directory actions sit beside the title. Each grant dialog has one POST form for preview and confirmation, preserving its
+selected audience and exact username through a same-origin/CSRF-protected redirect; confirmation rechecks authority.
+Revocation uses a secondary or danger control. Narrow tables scroll within their own boxes, while state/time/count and
+scope labels stay on one line. Synthetic layout captures are evidence for presentation only, not permission checks.

@@ -52,7 +52,7 @@ export function link(path: string, text: unknown, params: Record<string, string 
   return html`<a href="${href(path, params)}">${text}</a>`;
 }
 
-export function table(headers: readonly string[], rows: readonly unknown[][], empty = '没有记录', cls?: string): Html {
+export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty = '没有记录', cls?: string): Html {
   if (rows.length === 0) return html`<p class="empty">${empty}</p>`;
   return html`<div class="tablewrap"><table${cls === undefined ? '' : html` class="${cls}"`}><thead><tr>${headers.map((h) => html`<th>${h}</th>`)}</tr></thead><tbody>${rows.map(
     (row) => html`<tr>${row.map((cell) => html`<td>${cell}</td>`)}</tr>`,

@@ -5,6 +5,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import {VERSION} from '../pack-files.ts';
 
 export const SESSION = 'circle-synthetic-operation';
 export const TOKEN = 'FictCaptureToken42';
@@ -111,7 +112,7 @@ export async function fakeHub(t: { after(fn: () => Promise<void>): void }, optio
           value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), acceptance: 'accepted', reference: `src:${digest}`, artifact, sha256: digest, size: bytes.length, media_type: args.media_type ?? 'text/plain' };
         } else if (name === 'start_run') {
           runs.push(args);
-          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), run: { run: 'run_01arz3ndektsv4rrffq69g5fav', pack: 'knowledge-contribution@1.3.14', pack_digest: PACK_DIGEST, product: args.product, root: ROOT } };
+          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), run: { run: 'run_01arz3ndektsv4rrffq69g5fav', pack: 'knowledge-contribution@'+VERSION, pack_digest: PACK_DIGEST, product: args.product, root: ROOT } };
         } else if (name === 'submit_result') {
           submissions.push(args);
           const errors: any[] = [];

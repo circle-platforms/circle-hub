@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "xml-format",
-  "version": "1.0.10",
+  "version": "1.0.12",
   "kind": "skill",
   "title": "XML 格式",
   "description": "按原件结构读取通用有序 XML 元素树与命令树，不承担工作角色判断",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "fe2b2c802afbaa1df03dbb787db2a4a51a9366737fdc37594afed74c8e480c7d",
-      "size": 10089
+      "sha256": "659672a33816bba43ef5875baa524a49adc071754a16d8ca6ce4d19926ee68a6",
+      "size": 11141
     },
     {
       "path": "functions/parse.ts",

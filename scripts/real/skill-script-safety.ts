@@ -24,6 +24,12 @@ export const REVIEWED_SKILL_CALLS: readonly CallReview[] = [{
   snippetSha256: 'dc941d04ec92bda8153e6a625b5e427ee2ca266a07e3cca8fb069d3025bda418',
   reviewer: '集成者', date: '2026-10-24',
   reason: '临时文件由此方法刚用 wx 新建为普通文件，rename 只作文件原子替换；不能创建软链接，目标是目录时替换失败。',
+}, {
+  file: 'packs/workflow/knowledge-contribution/tools/operation-capture/lib/state.ts',
+  operation: 'rename', call: 'rename(join(path, owner.name), quarantine)',
+  snippetSha256: '6ca827ad47560d51bd91ce0a26cf31973accf5220c881b349012caf1b1ad43e3',
+  reviewer: 'Codex', date: '2026-11-02',
+  reason: '仅隔离私有锁目录内已核对的所有者文件，源名限 owner.json 或十六进制隔离名，目标是同一锁目录内的随机名；不移动锁目录或外部目录、不创建链接。移动后逐字核对所有者再删除，变化或缺失即保留并重试，避免复制后删除误删新所有者。',
 }];
 const digest = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const dynamicEntrypoints = new Set(['eval', 'Function', 'globalThis.eval', 'global.eval', 'globalThis.Function', 'global.Function', 'node:process.binding', 'node:process._linkedBinding', 'node:process.dlopen', 'node:process.execve', 'node:module.register', 'node:module.registerHooks']);

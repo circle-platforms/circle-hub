@@ -9,6 +9,7 @@ import type { Principal } from '../../records/api.ts';
 import { createDocumentCache, parseReference, resolveReference, type RecordReader } from '../../refs/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun, identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
+import {isMemoryRecord} from '../../../contracts/src/memory.ts';
 import { resultFor,runById,submissionByDigest } from './store.ts';
 import {HubReadFailure,retryRead} from './retry-read.ts';
 import {attemptEvidence} from './retry-evidence.ts';
@@ -93,6 +94,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     const frozenInput=ref.scheme==='rec'&&atRun.sources.some(binding=>{const input=parseReference(binding.reference);return input.scheme==='rec'&&input.record===ref.record&&(input.pointer===undefined||ref.pointer===input.pointer||ref.pointer?.startsWith(input.pointer+'/'));});
     if(ref.scheme==='rec'){
       const record=await ctx.deps.records.store.get(ref.record);
+      if(record&&isMemoryRecord(record))return false;
       if(record?.kind==='source_artifact'&&!await ctx.deps.records.artifacts.canRead(by,record as import('../../records/api.ts').SourceArtifact))return false;
     }
     // Admission checks authority over the source, not whether a selector passed the earlier static check.

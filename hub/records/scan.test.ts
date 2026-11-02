@@ -29,6 +29,18 @@ function detectors(text: string | Uint8Array): string[] {
   return [...new Set(scan.findings.map((finding) => finding.detector))].sort();
 }
 
+test('encoded credential views cannot bypass scanning and findings expose original locations only',()=>{
+ const secret=['Synth3tic','!2498'].join(''),plain='DB_PASSWORD='+secret;
+ const variants=[plain,'ＤＢ＿ＰＡＳＳＷＯＲＤ＝'+secret,'DB_PASS\u200bWORD='+secret,'DB_PASS\u00adWORD='+secret,'DB_PASS\u2060WORD='+secret,'DB_PASSWORD&#61;'+secret,'DB_PASSWORD&equals;'+secret,'DB_PASSWORD&#x3d;'+secret,Buffer.from(plain).toString('base64'),Buffer.from(JSON.stringify({password:secret})).toString('base64url'),'/DB_PASS/WORD=/'+secret,'/DB_PASSWORD/'+secret];
+ for(const input of variants){const bytes=Buffer.from('第一行\n'+input),before=Buffer.from(bytes),scan=scanForCredentials(bytes);assert.ok(scan.findings.some(f=>f.detector==='password_assignment'),input);assert.equal(scan.findings[0].line,2);assert.ok(scan.findings.every(f=>f.offset>=Buffer.byteLength('第一行\n')));assert.ok(!JSON.stringify(scan).includes(secret));assert.deepEqual(bytes,before);}
+ const nested=Buffer.from('DB_PASS&#87;ORD='+secret).toString('base64');assert.ok(detectors(nested).includes('password_assignment'));
+ for(const input of ['DB_PASSWORD&#61'+secret,'password&nbsp'+secret])assert.ok(detectors(input).includes('password_assignment'),input);
+ for(const padding of [0,17,31]){const encoded=Buffer.from(JSON.stringify({note:'x'.repeat(padding),password:secret})).toString('base64'),wrapped=(encoded.match(/.{1,32}/g)??[]).join('\n');assert.ok(detectors(wrapped).includes('password_assignment'));}
+ const aws='AKIA'+'Q7SYNTHETIC2498X';for(const input of [aws.replace('AKIA','ＡＫＩＡ'),Buffer.from(aws).toString('base64')])assert.ok(detectors(input).includes('cloud_key'));
+ assert.ok(detectors('Authorization: Bearer\u00a0synth3ticTokenValue2498abcdef').includes('bearer_credential'));
+ for(const input of ['/password/policy','/password/requirements/8-minimum','PWD=/home/synthetic/project','<password>${DB_PASSWORD}</password>',Buffer.from('合成说明：没有凭据。').toString('base64')])assert.deepEqual(detectors(input),[],input);
+});
+
 test('positives: each kind of credential is found by its detector', () => {
   const cases: Array<[string, string, string]> = [
     ['private_key', 'PEM RSA key', `${pemHeader('RSA PRIVATE KEY')}\n${base64Lines(128)}\n${pemFooter('RSA PRIVATE KEY')}\n`],

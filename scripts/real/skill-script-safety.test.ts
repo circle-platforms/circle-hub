@@ -47,9 +47,26 @@ test('a review pins file call and whole function bytes and cannot approve anothe
   for (const changed of [source.replace("'a.tmp'","'b.tmp'"),source.replace("rename(temp,'a')","rename(temp,'b')"),source.replace("await rename(temp,'a')","await rename(temp,'a');await rename(temp,'a')"),source.replace('rename(temp,','symlink(temp,')]) assert.ok(audit(changed,[review]).issues.length>0);
   assert.ok(scanSkillScripts(new Map([['other.ts',source]]),[review]).issues.length>0);
 });
-test('the integrator reviewed exactly the Jev atomic file replacement, with a dated reason', () => {
-  assert.equal(REVIEWED_SKILL_CALLS.length,1);const reviewed=REVIEWED_SKILL_CALLS[0];
+test('the original Jev atomic file replacement review retains its dated reason', () => {
+  assert.equal(REVIEWED_SKILL_CALLS.length,2);const reviewed=REVIEWED_SKILL_CALLS[0];
   assert.equal(reviewed.file,'packs/workflow/knowledge-contribution/tools/jev/lib/local.ts');assert.equal(reviewed.operation,'rename');assert.equal(reviewed.call,'rename(temp,file)');assert.equal(reviewed.reviewer,'集成者');assert.match(reviewed.date,/^\d{4}-\d{2}-\d{2}$/);assert.match(reviewed.reason,/普通文件.*目录/);assert.match(reviewed.snippetSha256,/^[a-f0-9]{64}$/);
+});
+test('the stale-owner recovery review pins its actual function without approving changed paths or extra calls', () => {
+  const file='packs/workflow/knowledge-contribution/tools/operation-capture/lib/state.ts';
+  const review=REVIEWED_SKILL_CALLS.find(row=>row.file===file);assert.ok(review);
+  assert.equal(review.operation,'rename');assert.equal(review.call,'rename(join(path, owner.name), quarantine)');
+  assert.equal(review.reviewer,'Codex');assert.equal(review.date,'2026-11-02');assert.match(review.reason,/锁目录.*所有者/);
+  const text=readFileSync(new URL('../../'+file,import.meta.url),'utf8');
+  const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);
+  const declaration=source.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='clearStaleLock');assert.ok(declaration);
+  const snippet=declaration.getText(source);assert.equal(sha(snippet),review.snippetSha256);
+  const check=(body:string)=>scanSkillScripts(new Map([[file,"import {rename} from 'node:fs/promises';\n"+body]]),[review]);
+  assert.deepEqual(check(snippet).issues,[]);
+  for(const changed of [
+    snippet.replace('const quarantine = join(path,',"const quarantine = join('elsewhere',"),
+    snippet.replace(review.call,review.call+'; await '+review.call),
+    snippet.replace('snapshot.owners','otherOwners'),
+  ])assert.ok(check(changed).issues.some(issue=>issue.operation==='rename'));
 });
 function fixture() {
   const dir=mkdtempSync(join(tmpdir(),'skill-script-audit-'));

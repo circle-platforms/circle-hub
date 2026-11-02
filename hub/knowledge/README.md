@@ -25,7 +25,8 @@ under `/产品/<product>/<line>` without copying their trees. Product-line appli
 
 Owners write entries and import originals into their own space, replace/withdraw entries and append directory grants
 or revocations. Administrators may import verified team entries from team business-system captures and withdraw team
-entries; product sync stays unchanged. Uploaded files cannot be team evidence until the later signing phase. Every ground
+entries; product sync stays unchanged. An administrator importing their own ordinary upload records a declaration for
+that team import; personal-space originals and personal-credential sources retain separate restrictions. Every ground
 and quotation is verified at the boundary; no grounds means the generated unverified state. Credential scanning covers
 content, metadata and grantable originals; personal-credential sources cannot be granted. The Hub never drafts entries.
 
@@ -1144,6 +1145,8 @@ They never infer that no entries exist from a source that did not produce.
 
 分块行读取继续核对记录摘要，再按原行合约校验；单次操作的已校验事实由本存储签发的不可伪造句柄持有，不缓存权限或来源受理决定。视图的字节预算、每键上限、跳过与凭据遗漏规则不变；大答复交接缓冲区所有权后放弃内存缓存别名。具体测量、历史预算失败与后续事项见[任务页](../../docs/hub-r4-tasks/hub-view-perf.md)，不把合成验证当成持久部署或真实业务证明。
 
+扫描器版本是来源观察记录的一部分。由新扫描器新建来源观察记录时，原文字节、片段和树内容身份保持，但观察记录、包含它的组成记录、范围清单及绑定组成的续读游标会变化；不能为保持旧视图摘要而伪报旧扫描器或去掉组成绑定。`view-provenance.test.ts` 覆盖这条边界及跨组成游标拒收，49000 条冷读基线的四处引用变化和摘要更新依据见[控制台任务页](../../docs/hub-r4-tasks/kw-console.md)。
+
 长驻观察补充：根、分块、目录、关联图、答复等读取负载缓存只在一次异步读取中复用，finally 主动释放；晚到回调不能重新填充，并发读取独立。节点、目录和树引用入口同样建立读取范围。小型写入内容键 memo 不存根负载。对象释放回归已通过，但不等同于物理 RSS 峰值或持久部署验证。
 
 运行引擎的解析文档缓存同样按 start/submit/preview/maintenance 调用拥有并在 finally 终止释放；维护合成补测读取 3 份冻结的大视图原件，3 份解析文档读后未保留。峰值 RSS 和操作结束后的强引用是分别量测的两件事。
@@ -1252,3 +1255,32 @@ by exact capture; `mayReadSource` checks that authority without reading or parsi
 共享目标目录与目录写入使用相同的凭据扫描。含凭据的目标路径不进入任何回执；即使更早因重复内容等原因拒收，也省略该目标字段，历史只留安全拒收原因。
 
 撤回提示按当前读者过滤上级引用，未获授权的上级只返回 grounds_withdrawn_hidden_count 数量；内部拒收仅调用布尔判断，不取得或返回未授权路径。读取、授权收回与授回不改写历史正文。
+
+Console previews use `spaces.precheckShare` and `spaces.precheckGrant`: checks stop at the first refusal or unavailable read, with later rows unchecked. They create no team root or audit record. Confirmation calls the normal transaction-bound writer again.
+
+MemoryDocuments stores client preference Markdown in independent append-only documents and revisions, with separate directory grants. Current enabled title/path/body content defaults to 48,000 UTF-8 bytes and 20 documents per space, with a separate 24,000-byte body limit per document. Session lists and body reads enforce these same limits. Disabled and historical content remains on disk and historical personal bytes share personal capacity with knowledge. Writes use the same space business lock as knowledge, current counters update incrementally, and rebuild is explicit. A member re-share supersedes their last team revision unless an administrator edited it. Memory is never a run input or ground; ordinary record readers refuse every memory record.
+
+Memory grants permit browsing independently of knowledge grants. Session reads permit only current enabled team or
+caller-owned documents. Owners and team administrators may browse revision history. Metadata pages and body chunks
+are bounded; continuations recheck the current version and permission. Read-only console panels do not initialize
+knowledge roots. Credential-bearing share destinations are omitted even when an earlier size check refuses sharing.
+Knowledge sharing previews likewise return a target directory only after its credential scan, including earlier duplicate
+refusals. Memory credential refusals identify generated field labels and line numbers, never matched text; grant and share
+previews preserve that safe location information. Neither preview creates a document, team root or refusal audit.
+
+Memory revocation accepts an existing disabled recipient, so re-enabling the account cannot revive a revoked grant.
+Disabled personal documents remain visible to their owner, but not to recipients, including all-administrator grantees;
+team administrators retain management access to disabled team documents.
+Every appended personal memory revision checks historical capacity, including title/path/state-only changes. An exact
+no-op returns the current version with unchanged=true and stores only a private idempotency receipt, without a revision
+or history increment. Refusal retries retain the original safe field/line message and positions.
+Team share pre-checks first inspect administrator maintenance state. A disabled team copy anywhere in the same personal
+document's successful-share lineage blocks another share with MEMORY_TEAM_DISABLED; no new document is created. An
+administrator can explicitly re-enable the original, after which the normal preserve-administrator-edits rule applies.
+Other personal documents remain independently shareable. Confirmation repeats the check under the team space lock.
+Knowledge and memory use the same scan-only Unicode/entity/base64/path views. A refused encoded credential cannot be
+stored in an entry, memory body/title or directory; clean compatibility characters and invisible characters remain
+byte-for-byte unchanged when saved. Scan diagnostics retain safe original positions without suspected values.
+Private refusal audits and no-op receipts are excluded from both generic readers, including for administrators and
+evidence resolution. The console exposes only owner-safe code/field/line summaries or administrator counts; no raw
+message, intent or payload digest is disclosed by the audit view.

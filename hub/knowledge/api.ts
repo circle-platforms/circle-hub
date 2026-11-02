@@ -5,7 +5,7 @@
 // import only from this file.
 import type { ExternalReaderPort } from '../ports.ts';
 export { KnowledgeSpaces, DEFAULT_PERSONAL_CAPACITY, withinSpacePath } from './spaces.ts';
-export type { SpaceVersion, VisibleSpace, SpaceEntryView } from './spaces.ts';
+export type { SpaceVersion, VisibleSpace, SpaceEntryView, SharingCheck } from './spaces.ts';
 import type { Principal } from '../records/api.ts';
 import { KnowledgeError } from './errors.ts';
 import type { FeedingLayer } from './feeding.ts';
@@ -159,3 +159,5 @@ export function formatKnowledgeRetract(report: KnowledgeRetractReport): string[]
   lines.push('原记录未改动；读侧将显示根据已撤回');
   return lines;
 }
+
+export {MemoryDocuments} from './memory.ts';

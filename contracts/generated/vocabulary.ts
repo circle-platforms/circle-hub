@@ -96,6 +96,15 @@ export const AXES = {
   knowledge_grantee: { label: '授权对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
   knowledge_grant_action: { label: '授权操作', owner: 'R01', values: [{ code: 'grant', label: '授权' }, { code: 'revoke', label: '收回授权' }] },
   knowledge_share_status: { label: '提交共享状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
+  audience_scope: { label: '可见范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人' }, { code: 'members', label: '本人及 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
+  share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读' }] },
+  knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
+  memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
+  memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
+  memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史' }, { code: 'share', label: '提交共享' }, { code: 'share_preview', label: '记忆共享预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
+  knowledge_directory: { label: '知识目录显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
+  knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
+  memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录' }, { code: 'markdown_text', label: 'Markdown 正文' }, { code: 'active_content', label: '启用内容' }, { code: 'active_documents', label: '启用篇数' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1030,6 +1039,96 @@ export function isKnowledgeShareStatus(value: unknown): value is KnowledgeShareS
   return (KNOWLEDGE_SHARE_STATUS as readonly unknown[]).includes(value);
 }
 
+/** 可见范围 (R01) */
+export const AUDIENCE_SCOPE = ['owner', 'members', 'administrators', 'combined', 'received', 'team', 'team_unassigned', 'product'] as const;
+export type AudienceScope = (typeof AUDIENCE_SCOPE)[number];
+export const AUDIENCE_SCOPE_LABEL = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AUDIENCE_SCOPE_UI = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AudienceScopeSchema = z.enum(AUDIENCE_SCOPE);
+export function isAudienceScope(value: unknown): value is AudienceScope {
+  return (AUDIENCE_SCOPE as readonly unknown[]).includes(value);
+}
+
+/** 自动检查 (K02) */
+export const SHARE_CHECK = ['grounds', 'quotations', 'sources', 'duplicates', 'credentials', 'permission', 'structure', 'sandbox', 'references', 'size', 'team_memory_status', 'personal_sources', 'local_only', 'dependencies'] as const;
+export type ShareCheck = (typeof SHARE_CHECK)[number];
+export const SHARE_CHECK_LABEL = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
+export const SHARE_CHECK_UI = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
+export const ShareCheckSchema = z.enum(SHARE_CHECK);
+export function isShareCheck(value: unknown): value is ShareCheck {
+  return (SHARE_CHECK as readonly unknown[]).includes(value);
+}
+
+/** 知识库内容 (K01) */
+export const KNOWLEDGE_VIEW = ['knowledge', 'memory'] as const;
+export type KnowledgeView = (typeof KNOWLEDGE_VIEW)[number];
+export const KNOWLEDGE_VIEW_LABEL = { 'knowledge': '知识', 'memory': '记忆' } as const satisfies { readonly [K in KnowledgeView]: string };
+export const KNOWLEDGE_VIEW_UI = { 'knowledge': '知识', 'memory': '记忆' } as const satisfies { readonly [K in KnowledgeView]: string };
+export const KnowledgeViewSchema = z.enum(KNOWLEDGE_VIEW);
+export function isKnowledgeView(value: unknown): value is KnowledgeView {
+  return (KNOWLEDGE_VIEW as readonly unknown[]).includes(value);
+}
+
+/** 记忆状态 (K01) */
+export const MEMORY_STATUS = ['enabled', 'disabled', 'superseded'] as const;
+export type MemoryStatus = (typeof MEMORY_STATUS)[number];
+export const MEMORY_STATUS_LABEL = { 'enabled': '已启用', 'disabled': '已停用', 'superseded': '被取代' } as const satisfies { readonly [K in MemoryStatus]: string };
+export const MEMORY_STATUS_UI = { 'enabled': '已启用', 'disabled': '已停用', 'superseded': '被取代' } as const satisfies { readonly [K in MemoryStatus]: string };
+export const MemoryStatusSchema = z.enum(MEMORY_STATUS);
+export function isMemoryStatus(value: unknown): value is MemoryStatus {
+  return (MEMORY_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 团队记忆写入 (K02) */
+export const MEMORY_SHARE_EFFECT = ['create', 'replace'] as const;
+export type MemoryShareEffect = (typeof MEMORY_SHARE_EFFECT)[number];
+export const MEMORY_SHARE_EFFECT_LABEL = { 'create': '新写入一篇', 'replace': '取代 {title}' } as const satisfies { readonly [K in MemoryShareEffect]: string };
+export const MEMORY_SHARE_EFFECT_UI = { 'create': '新写入一篇', 'replace': '取代 {title}' } as const satisfies { readonly [K in MemoryShareEffect]: string };
+export const MemoryShareEffectSchema = z.enum(MEMORY_SHARE_EFFECT);
+export function isMemoryShareEffect(value: unknown): value is MemoryShareEffect {
+  return (MEMORY_SHARE_EFFECT as readonly unknown[]).includes(value);
+}
+
+/** 记忆操作 (K01) */
+export const MEMORY_ACTION = ['create', 'edit', 'save', 'history', 'share', 'share_preview', 'enable_memory', 'disable_memory'] as const;
+export type MemoryAction = (typeof MEMORY_ACTION)[number];
+export const MEMORY_ACTION_LABEL = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本历史', 'share': '提交共享', 'share_preview': '记忆共享预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
+export const MEMORY_ACTION_UI = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本历史', 'share': '提交共享', 'share_preview': '记忆共享预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
+export const MemoryActionSchema = z.enum(MEMORY_ACTION);
+export function isMemoryAction(value: unknown): value is MemoryAction {
+  return (MEMORY_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 知识目录显示 (K01) */
+export const KNOWLEDGE_DIRECTORY = ['products'] as const;
+export type KnowledgeDirectory = (typeof KNOWLEDGE_DIRECTORY)[number];
+export const KNOWLEDGE_DIRECTORY_LABEL = { 'products': '产品' } as const satisfies { readonly [K in KnowledgeDirectory]: string };
+export const KNOWLEDGE_DIRECTORY_UI = { 'products': '产品' } as const satisfies { readonly [K in KnowledgeDirectory]: string };
+export const KnowledgeDirectorySchema = z.enum(KNOWLEDGE_DIRECTORY);
+export function isKnowledgeDirectory(value: unknown): value is KnowledgeDirectory {
+  return (KNOWLEDGE_DIRECTORY as readonly unknown[]).includes(value);
+}
+
+/** 知识来源显示 (K01) */
+export const KNOWLEDGE_ORIGIN = ['personal_entry', 'team_import', 'product_source'] as const;
+export type KnowledgeOrigin = (typeof KNOWLEDGE_ORIGIN)[number];
+export const KNOWLEDGE_ORIGIN_LABEL = { 'personal_entry': '个人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
+export const KNOWLEDGE_ORIGIN_UI = { 'personal_entry': '个人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
+export const KnowledgeOriginSchema = z.enum(KNOWLEDGE_ORIGIN);
+export function isKnowledgeOrigin(value: unknown): value is KnowledgeOrigin {
+  return (KNOWLEDGE_ORIGIN as readonly unknown[]).includes(value);
+}
+
+/** 记忆字段显示 (K01) */
+export const MEMORY_FIELD = ['document_title', 'directory_path', 'markdown_text', 'active_content', 'active_documents'] as const;
+export type MemoryField = (typeof MEMORY_FIELD)[number];
+export const MEMORY_FIELD_LABEL = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
+export const MEMORY_FIELD_UI = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
+export const MemoryFieldSchema = z.enum(MEMORY_FIELD);
+export function isMemoryField(value: unknown): value is MemoryField {
+  return (MEMORY_FIELD as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1124,6 +1223,15 @@ export interface AxisValues {
   knowledge_grantee: KnowledgeGrantee;
   knowledge_grant_action: KnowledgeGrantAction;
   knowledge_share_status: KnowledgeShareStatus;
+  audience_scope: AudienceScope;
+  share_check: ShareCheck;
+  knowledge_view: KnowledgeView;
+  memory_status: MemoryStatus;
+  memory_share_effect: MemoryShareEffect;
+  memory_action: MemoryAction;
+  knowledge_directory: KnowledgeDirectory;
+  knowledge_origin: KnowledgeOrigin;
+  memory_field: MemoryField;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1220,6 +1328,15 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   knowledge_grantee: KNOWLEDGE_GRANTEE_LABEL,
   knowledge_grant_action: KNOWLEDGE_GRANT_ACTION_LABEL,
   knowledge_share_status: KNOWLEDGE_SHARE_STATUS_LABEL,
+  audience_scope: AUDIENCE_SCOPE_LABEL,
+  share_check: SHARE_CHECK_LABEL,
+  knowledge_view: KNOWLEDGE_VIEW_LABEL,
+  memory_status: MEMORY_STATUS_LABEL,
+  memory_share_effect: MEMORY_SHARE_EFFECT_LABEL,
+  memory_action: MEMORY_ACTION_LABEL,
+  knowledge_directory: KNOWLEDGE_DIRECTORY_LABEL,
+  knowledge_origin: KNOWLEDGE_ORIGIN_LABEL,
+  memory_field: MEMORY_FIELD_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1316,6 +1433,15 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   knowledge_grantee: KNOWLEDGE_GRANTEE_UI,
   knowledge_grant_action: KNOWLEDGE_GRANT_ACTION_UI,
   knowledge_share_status: KNOWLEDGE_SHARE_STATUS_UI,
+  audience_scope: AUDIENCE_SCOPE_UI,
+  share_check: SHARE_CHECK_UI,
+  knowledge_view: KNOWLEDGE_VIEW_UI,
+  memory_status: MEMORY_STATUS_UI,
+  memory_share_effect: MEMORY_SHARE_EFFECT_UI,
+  memory_action: MEMORY_ACTION_UI,
+  knowledge_directory: KNOWLEDGE_DIRECTORY_UI,
+  knowledge_origin: KNOWLEDGE_ORIGIN_UI,
+  memory_field: MEMORY_FIELD_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

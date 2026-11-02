@@ -1,4 +1,4 @@
-import { appendFile, copyFile, lstat, mkdir, open, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, lstat, mkdir, open, readFile, readdir, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { constants as FS_CONSTANTS } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
@@ -162,9 +162,9 @@ async function clearStaleLock(path: string): Promise<boolean> {
   for (const owner of snapshot.owners) {
     const quarantine = join(path, `.stale-${randomUUID()}`);
     try {
-      await copyFile(join(path, owner.name), quarantine, FS_CONSTANTS.COPYFILE_EXCL);
+      // Move the exact file atomically; copying then unlinking could remove a newly acquired owner at the old path.
+      await rename(join(path, owner.name), quarantine);
       quarantined.push(quarantine);
-      await unlink(join(path, owner.name));
     } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
   }
   for (const [index, quarantine] of quarantined.entries()) {
@@ -271,7 +271,8 @@ function captureEvent(value: unknown, session: string, sequence: number): Captur
   need(typeof output.sha256 === 'string' && /^[0-9a-f]{64}$/.test(output.sha256), 'invalid_manifest', '原件摘要格式不对');
   need(Number.isSafeInteger(output.size) && (output.size as number) > 0 && (output.size as number) <= EGRESS.max_capture_bytes, 'invalid_manifest', '原件大小不符');
   const redaction = exact(row.redaction, ['scanner', 'status', 'detectors']);
-  need(redaction.scanner === GENERATED.scanner && ['unchanged', 'redacted'].includes(redaction.status as string), 'invalid_manifest', '脱敏记录格式不对');
+  const scanner=typeof redaction.scanner==='string'?/^credential-scan@([1-9][0-9]*)$/.exec(redaction.scanner):null;
+  need(scanner!==null&&Number(scanner[1])<=Number(GENERATED.scanner.split('@')[1]) && ['unchanged', 'redacted'].includes(redaction.status as string), 'invalid_manifest', '脱敏记录格式不对');
   need(Array.isArray(redaction.detectors) && redaction.detectors.every(item => typeof item === 'string' && /^[a-z_]+$/.test(item)), 'invalid_manifest', '脱敏检测器记录格式不对');
   return row as unknown as CaptureEvent;
 }
@@ -509,6 +510,8 @@ export async function outputBytes(session: string, capture: CaptureEvent): Promi
   await regular(path, false);
   const bytes = await readFile(path);
   need(sha256(bytes) === capture.output.sha256 && bytes.byteLength === capture.output.size, 'capture_tampered', '读取时原件字节已改变');
+  const scan=scanWithMatches(bytes);
+  need(scan.complete&&scan.scan.inspected&&scan.scan.clean&&!scan.scan.truncated,'capture_credential','原件未通过当前凭据扫描');
   return bytes;
 }
 

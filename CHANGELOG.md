@@ -14,6 +14,30 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Memory refusal audits and unchanged-write receipts cannot be read as generic records or evidence. Owners see safe
+  refusal summaries and administrators see counts; administrators retain visibility of grants in which they participate.
+
+- Credential scanning checks Unicode compatibility forms, invisible characters, HTML entities, encoded text and split
+  path segments without rewriting stored content. Memory revocation remains effective for disabled accounts, unchanged
+  writes preserve versions, and administrator-disabled team memories cannot be bypassed through another share.
+  The standalone capture skill mirrors the same scanner without runtime dependencies, rechecks pending historical
+  captures, and recovers stale locks atomically so concurrent captures retain their upload/event chain.
+  Already normalized Unicode text avoids whole-file replacement buffers; capture records and view continuations retain
+  their exact scanner-version provenance while tree content remains unchanged.
+  The client-script gate pins the stale-owner quarantine call to its reviewed function, preserving checks on every other
+  filesystem rename.
+
+- Memory space limits count enabled titles, paths and bodies and default to 20 enabled documents per space. Session
+  lists and reads enforce the same limits, and upgrades preserve existing memory versions and historical usage.
+
+- Knowledge and workflows share permission-filtered space navigation and narrow-screen scope tabs. Owners select
+  verified knowledge for checked sharing; team rows show source and submitter. Workflow audiences follow actual
+  assignments, and administrator member metadata exposes capacity and all-administrator grant counts only.
+
+- Versioned memory stays separate from evidence and knowledge grants. The existing six tools support bounded reads,
+  optimistic writes and checked team sharing; the console provides plain-text editing, independent grants and history.
+  Re-sharing preserves administrator edits, and current session eligibility is rechecked on every continuation.
+
 - Personal workflow and skill methods cannot use named documents, business-system reads, leases or external effects;
   retained publications and dynamic outputs pass the same start boundary. Accepted raw submissions recheck current
   ground access. Team knowledge verification uses team parsers, and withdrawal warnings hide unreadable ancestor
@@ -120,6 +144,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - The unit, acceptance and Linux isolation jobs of `Hub checks` list their slowest test files in the job summary and keep Node's junit report for 14 days, so a file that holds up its shard shows, and the measured durations that balance the shards can be checked against a run. The test runners write that report when `JUNIT_REPORT` names a file.
 
 ### Fixed
+
+- Console workflow cards distinguish received grants from personal ownership and show team member assignments.
+  Sharing receipts display statements and team links. Knowledge/memory navigation, state chips, sizes, times,
+  directory actions and grant forms follow decision 88; narrow tables scroll without splitting states or times.
 
 - **A document too large for its skill parser is answered with what to do about it.** When a parse runs out of the sandbox's memory or output limit, the answer now says so and asks for the original to be split, or the parser to need less, as a document over the cache budget already did. It used to ask the administrator to check the skill pack and the sandbox, and a reread failed in the same way.
 - **A skill parse is no longer cut off after 5 s.** Each parse and locate call of a skill parser now has 30 s in the pack sandbox, so a document that parses on one machine is not refused on a slower one; a 2 MB document had taken up to 4.2 s on a busy macOS runner. Memory, not time, is what stops a large document: measured on CI runners and a development Mac, documents of 2 to 8.5 MB, depending on their shape, reach the sandbox's memory limit, so the declared 16 MiB is not reached for those shapes (`hub/refs/README.md`, Skill parser limits).

@@ -272,12 +272,33 @@ test('two waiters recover one dead lock without losing mutual exclusion or the c
     hook(local, 'COMET synthetic status: ready\n', { target: 'bed-two' }),
   ]);
   for (const result of results) assert.equal(result.code, 0, result.err);
-  assert.equal(hub.uploads.size, 2);
   const events = await readEvents(dir, SESSION);
+  assert.equal(hub.uploads.size, 2,JSON.stringify({events:events.map(event=>({kind:event.kind,sequence:event.sequence})),errors:await readFile(join(dir,'errors.jsonl'),'utf8').catch(()=>null)}));
   assert.deepEqual(events.map(event => event.kind), ['capture', 'upload', 'capture', 'upload']);
   assert.deepEqual(events.map(event => event.sequence), [1, 2, 3, 4]);
   for (let index = 1; index < events.length; index++) assert.equal(events[index].previous, events[index - 1].digest);
   assert.equal((await skill(local, ['verify', '--session', SESSION])).code, 0);
+});
+
+test('stale recovery keeps a replacement owner alive until that owner releases',async t=>{
+ const local=await scratch(t),dir=join(local.home,'replaced-owner'),path=join(dir,'.lock'),owner=join(path,'owner.json');
+ await mkdir(path,{recursive:true});await writeFile(owner,DEAD_OWNER);
+ let injected=false,entered=false,signal:()=>void;const replaced=new Promise<void>(resolve=>{signal=resolve;});
+ const live={id:'synthetic-replacement',pid:process.pid,at:new Date().toISOString()},copy=fsPromises.copyFile,move=fsPromises.rename;
+ const replace=async(destination:PathLike)=>{if(!injected&&basename(String(destination)).startsWith('.stale-')){injected=true;await writeFile(owner,JSON.stringify(live)+'\n');signal!();}};
+ t.mock.method(fsPromises,'copyFile',async(...args:Parameters<typeof copy>)=>{await copy(...args);await replace(args[1]);});
+ t.mock.method(fsPromises,'rename',async(...args:Parameters<typeof move>)=>{await move(...args);await replace(args[1]);});syncBuiltinESMExports();
+ const waiting=withLock(dir,async()=>{entered=true;});
+ try{await replaced;await delay(60);assert.equal(entered,false,'recovery must not remove the replacement owner');}
+ finally{const current=await readFile(owner,'utf8').catch(()=>null);if(current&&JSON.parse(current).id===live.id){await fsPromises.unlink(owner);await fsPromises.rmdir(path);}await waiting;t.mock.restoreAll();syncBuiltinESMExports();}
+ assert.ok(injected&&entered);
+});
+
+for(const [name,bytes,allowed] of [['clean',Buffer.from('合成旧版输出'),true],['encoded',Buffer.from('DB_PASSWORD&#61;'+['Synth3tic','!2498'].join('')),false]] as const)test(`scanner upgrades retain old ${name} receipts and recheck pending bytes before upload`,async t=>{
+ const local=await scratch(t),hub=await fakeHub(t);assert.equal((await enable(local,hub.url)).code,0);const dir=sessionDirectory(SESSION,{CIRCLE_HOME:local.home});
+ const saved=await appendCapture(dir,{session:SESSION,captured_at:new Date().toISOString(),tool:{name:'execute',status:'success'},input:{summary:'{}',sha256:'0'.repeat(64),truncated:false},targets:{},redaction:{scanner:'credential-scan@2',status:'unchanged',detectors:[]},bytes});
+ const result=await skill(local,['flush','--session',SESSION]);assert.equal(result.code,allowed?0:1,result.err);assert.equal(hub.uploads.size,allowed?1:0);if(!allowed)assert.match(result.err,/capture_credential/);
+ const rows=await readEvents(dir,SESSION);assert.equal(rows[0].digest,saved.digest);assert.equal(rows[0].kind==='capture'&&rows[0].redaction.scanner,'credential-scan@2');
 });
 
 test('recover preserves incomplete fragments without uploading them and later captures continue', async t => {

@@ -119,7 +119,7 @@ test('console owner stages and publishes a generic skill, controls grants and ca
   assert.equal(staged.status,303,staged.body);const waiting=await ownConsole.get('/console/packs/-/publish'),stage=/name="stage" value="([^"]+)"/.exec(waiting.body)?.[1];assert.ok(stage,waiting.body);
   const outsider=await otherConsole.get('/console/packs/-/publish');assert.equal((await otherConsole.post('/console/packs/do/publish',{csrf:csrf(outsider.body),stage})).status,400);
   assert.equal((await ownConsole.post('/console/packs/do/publish',{csrf:nonce,stage})).status,303);
-  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/使用授权/);assert.match(detail.body,/发布到团队/);
+  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>授权…<\/a>/);assert.match(detail.body,/发布到团队/);
   assert.equal((await otherConsole.get(detailUrl)).status,404);
   assert.equal((await ownConsole.post('/console/packs/do/grant',{csrf:'invalid',pack:spec.id,audience:'member',member:other.user.name})).status,403);
   assert.equal((await ownConsole.send('/console/packs/do/grant',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'member',member:other.user.name}).toString()})).status,403);
@@ -212,7 +212,7 @@ test('shared revisions use the selected team directory through MCP and password-
   assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.target_path,'/revision-team/first');assert.ok(shared.text.includes('/revision-team/first'));
   const changed=(await client.call('upload_file',{personal_entry:{...body,statement:'合成共享修订第二版',replaces:first.entry}})).out.personal_entry!;
   const browser=await openConsole(hub,owner.token);
-  const page=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:changed.root,path:body.path,entry:changed.entry}));
+  const page=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:changed.root,path:body.path,entry:changed.entry,share:'1'}));
   assert.equal(page.status,200,page.body);assert.match(page.body,/name="team_path"/);
   const csrf=/name="csrf" value="([^"]+)"/.exec(page.body)?.[1];assert.ok(csrf);
   const merged=await browser.post('/console/knowledge/do/share',{csrf,root:changed.root,path:body.path,entry:changed.entry,team_path:'/revision-team/second'});
@@ -220,7 +220,7 @@ test('shared revisions use the selected team directory through MCP and password-
   const team=(await spaces.current('team'))!,current=await spaces.entry(other.principal,team.root,'/revision-team/second',changed.entry);
   assert.equal(current?.body.replaces,first.entry);assert.equal(current?.body.shared_from?.path,body.path);
   assert.match((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).text,/被取代/);
-  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队目录/);assert.ok(history.body.includes('/revision-team/second'));
+  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队目录/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
 });
 
 test('rejected raw submissions never disclose copied private quotations through direct records or record inputs',async()=>{

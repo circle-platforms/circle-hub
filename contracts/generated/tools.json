@@ -602,11 +602,102 @@
   {
     "name": "upload_file",
     "title": "Upload a file",
-    "description": "Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference.",
+    "description": "Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "memory": {
+          "description": "Create or optimistically edit client session preferences; expected_version is null for creation. Personal writes belong to the caller; team writes require an administrator. This mode returns no evidence reference.",
+          "type": "object",
+          "properties": {
+            "space": {
+              "default": "personal",
+              "type": "string",
+              "enum": [
+                "personal",
+                "team"
+              ]
+            },
+            "document": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "expected_version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 2000,
+              "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+              "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+            },
+            "markdown": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "client_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "expected_version",
+            "client_key"
+          ],
+          "additionalProperties": false
+        },
+        "memory_share": {
+          "description": "Share the caller's current personal memory with the team. First use check_only=true, then confirm; limits and administrator changes are checked again. No review or model generation occurs.",
+          "type": "object",
+          "properties": {
+            "document": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "team_path": {
+              "type": "string",
+              "maxLength": 2000,
+              "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+              "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+            },
+            "client_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "check_only": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "document",
+            "version",
+            "client_key"
+          ],
+          "additionalProperties": false
+        },
         "file_path": {
           "type": "string",
           "minLength": 1,
@@ -991,6 +1082,300 @@
             ],
             "additionalProperties": false
           }
+        },
+        "memory_write": {
+          "type": "object",
+          "properties": {
+            "document": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "previous_version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "space": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "team"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "enabled",
+                "disabled",
+                "superseded"
+              ]
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "unchanged": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "document",
+            "version",
+            "previous_version",
+            "space",
+            "state",
+            "bytes",
+            "updated_at",
+            "unchanged"
+          ],
+          "additionalProperties": false
+        },
+        "memory_share": {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "check": {
+                    "type": "string",
+                    "enum": [
+                      "grounds",
+                      "quotations",
+                      "sources",
+                      "duplicates",
+                      "credentials",
+                      "permission",
+                      "structure",
+                      "sandbox",
+                      "references",
+                      "size",
+                      "team_memory_status",
+                      "personal_sources",
+                      "local_only",
+                      "dependencies"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "violation",
+                      "judgment",
+                      "unchecked",
+                      "incomplete"
+                    ]
+                  },
+                  "code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "fix": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "check",
+                  "state",
+                  "code",
+                  "message",
+                  "fix"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "effect": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "replace"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "replaces": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "target_path": {
+              "type": "string",
+              "maxLength": 2000,
+              "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+              "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+            },
+            "share": {
+              "type": "object",
+              "properties": {
+                "document": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "by": {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "intent": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "payload": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "merged",
+                    "rejected"
+                  ]
+                },
+                "code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "target_path": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                  "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                },
+                "team_document": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "team_version": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "effect": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "create",
+                        "replace"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "replaces": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "document",
+                "version",
+                "by",
+                "at",
+                "intent",
+                "payload",
+                "status",
+                "code",
+                "message",
+                "team_document",
+                "team_version",
+                "effect",
+                "replaces"
+              ],
+              "additionalProperties": false
+            },
+            "record": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "ok",
+            "checks",
+            "effect",
+            "replaces",
+            "title"
+          ],
+          "additionalProperties": false
         },
         "personal_entry": {
           "type": "object",
@@ -2725,6 +3110,39 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "memory": {
+          "description": "List or read versioned client preferences without a run. Session lists select team or personal; session document reads pin a listed version. A grant permits browsing only. Continue with memory.cursor; these documents cannot be grounds.",
+          "type": "object",
+          "properties": {
+            "scope": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "personal",
+                "team",
+                "shared",
+                "all"
+              ]
+            },
+            "document": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "for_session": {
+              "default": false,
+              "type": "boolean"
+            },
+            "cursor": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          },
+          "additionalProperties": false
+        },
         "pack": {
           "description": "Read a visible pack file without starting a run; especially SKILL.md for a generic skill",
           "type": "string",
@@ -2991,6 +3409,207 @@
             ],
             "additionalProperties": false
           }
+        },
+        "memory_page": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": [
+                "personal",
+                "team",
+                "shared",
+                "all"
+              ]
+            },
+            "snapshot": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "items": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "document": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "space": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "team"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                      }
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                    "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "enabled",
+                      "disabled",
+                      "superseded"
+                    ]
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "updated_by": {
+                    "type": "string",
+                    "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                  },
+                  "auto_load_allowed": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "document",
+                  "version",
+                  "space",
+                  "title",
+                  "path",
+                  "state",
+                  "bytes",
+                  "updated_at",
+                  "updated_by",
+                  "auto_load_allowed"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "next": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "scope",
+            "snapshot",
+            "items",
+            "next"
+          ],
+          "additionalProperties": false
+        },
+        "memory_document": {
+          "type": "object",
+          "properties": {
+            "document": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "space": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "team"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                }
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+              "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "enabled",
+                "disabled",
+                "superseded"
+              ]
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "updated_by": {
+              "type": "string",
+              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+            },
+            "auto_load_allowed": {
+              "type": "boolean"
+            },
+            "current_version": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "markdown": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "next": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "document",
+            "version",
+            "space",
+            "title",
+            "path",
+            "state",
+            "bytes",
+            "updated_at",
+            "updated_by",
+            "auto_load_allowed",
+            "current_version",
+            "markdown",
+            "offset",
+            "next"
+          ],
+          "additionalProperties": false
         },
         "warnings": {
           "description": "Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present",

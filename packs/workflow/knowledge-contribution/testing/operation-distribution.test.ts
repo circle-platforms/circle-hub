@@ -4,10 +4,11 @@ import { readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { verifyInstall, operationGenerated } from '../pack-files.ts';
 import { scratch, execute } from './operation-support.ts';
-import { scanForCredentials as hubScan } from '../../../../hub/records/scan.ts';
+import { scanForCredentials as hubScan, CREDENTIAL_SCANNER as HUB_CREDENTIAL_SCANNER } from '../../../../hub/records/scan.ts';
 import { scanForCredentials as skillScan, CREDENTIAL_SCANNER } from '../tools/operation-capture/lib/credentials.ts';
 import { sanitizeText } from '../tools/operation-capture/lib/redact.ts';
 import { fileURLToPath } from 'node:url';
+import {credentialScannerFiles} from '../../../../tools/gen-credential-scanner.ts';
 
 const skillRoot = new URL('../tools/operation-capture/', import.meta.url);
 
@@ -33,6 +34,7 @@ test('the standalone operation skill matches its signed installation and rejects
 });
 
 test('every runtime import stays inside the installed skill and the generated identity has no pack digest', async () => {
+  for(const [path,value] of await credentialScannerFiles())assert.equal(await readFile(new URL('../'+path,import.meta.url),'utf8'),value,path);
   const manifest = JSON.parse(await readFile(new URL('../pack.json', import.meta.url), 'utf8'));
   const generated = JSON.parse(await readFile(new URL('generated.json', skillRoot), 'utf8')) as Record<string, unknown>;
   assert.equal(generated.id, manifest.id);
@@ -78,12 +80,13 @@ test('the standalone credential scanner is byte-for-byte compatible with the Hub
     ["https://", "user", ":", "Synth3tic-value", "@", "192.0.2.20/synthetic"].join(''),
     `sk-Ab3${'Q'.repeat(37)}`,
     `${fence}BEGIN PRIVATE KEY${fence}\n${material}\n${fence}END PRIVATE KEY${fence}\n`,
+    'ＤＢ＿ＰＡＳＳＷＯＲＤ＝'+secret,'DB_PASS\u200bWORD='+secret,'DB_PASS\u00adWORD='+secret,'DB_PASSWORD&#61;'+secret,Buffer.from('DB_PASSWORD='+secret).toString('base64'),'/DB_PASS/WORD=/'+secret,
   ];
   for (const value of cases) {
     const bytes = Buffer.from(value);
     assert.deepEqual(skillScan(bytes), hubScan(bytes), value);
   }
-  assert.equal(CREDENTIAL_SCANNER, 'credential-scan@2');
+  assert.equal(CREDENTIAL_SCANNER,HUB_CREDENTIAL_SCANNER);
   const redacted = sanitizeText('ORBIT ready\npassword = "Synth3tic!"\n');
   assert.equal(redacted.text, 'ORBIT ready\npassword = ***\n');
   assert.equal(redacted.changed, true);

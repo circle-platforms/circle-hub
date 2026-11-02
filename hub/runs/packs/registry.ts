@@ -101,7 +101,7 @@ export interface PackRegistry {
   /** Publishes the pack in `directory` for its owner (T02); every refusal comes back as problems, never half a publication. */
   publish(owner: Principal, directory: string, options?:{answerRequests?:readonly string[]}): Promise<PublishOutcome>;
   /** Runs every check and refusal of publish for the pack in `directory` and stores nothing (pack publish --dry-run). */
-  check(owner: Principal, directory: string, options?:{answerRequests?:readonly string[]}): Promise<PublishCheck>;
+  check(owner: Principal, directory: string, options?:{answerRequests?:readonly string[];deferCredentials?:boolean}): Promise<PublishCheck>;
   /**
    * Admin: withdraws a published version (R01 R[1], T02 R[4]); existing runs keep it, new runs cannot use it (T02 R[6]). For
    * anyone else absent and forbidden are the same AccessError. Refused (ConflictError with the fix) when the version is the
@@ -716,7 +716,7 @@ class Registry implements PackRegistry {
     throw new Error('a publication ended as a check');
   }
 
-  async check(owner: Principal, directory: string, options:{answerRequests?:readonly string[]}={}): Promise<PublishCheck> {
+  async check(owner: Principal, directory: string, options:{answerRequests?:readonly string[];deferCredentials?:boolean}={}): Promise<PublishCheck> {
     const outcome = await this.#publication(owner, directory, options, true);
     if (!outcome.ok || !('created' in outcome)) return outcome;
     throw new Error('a check ended as a publication');
@@ -726,7 +726,7 @@ class Registry implements PackRegistry {
    * Publication and its check share every step up to the first write: a check (`dryRun`) runs every refusal, the product
    * variable names under their locks included, and stops before the bytes, the pack_version record and the decision.
    */
-  async #publication(owner: Principal, directory: string, options:{answerRequests?:readonly string[]}, dryRun: boolean): Promise<PublishOutcome | PublishCheck> {
+  async #publication(owner: Principal, directory: string, options:{answerRequests?:readonly string[];deferCredentials?:boolean}, dryRun: boolean): Promise<PublishOutcome | PublishCheck> {
     const refuse = (problems: PackProblem[], report: PublishReport | null = null): PublishOutcome => ({ ok: false, problems, report });
     const account = await this.account(owner);
     if (account === null) return refuse([problem('publish.account', '.', '发布人不是有效的 Hub 账号（不存在或已停用）', '用有效的账号发布')]);
@@ -765,7 +765,7 @@ class Registry implements PackRegistry {
       if (kind !== null && kind !== manifest.kind) {
         return refuse([problem('publish.kind_changed', 'pack.json', `包 ${manifest.id} 已发布的版本是${labelOf('pack_kind', kind)}，这一版写的是${labelOf('pack_kind', manifest.kind)}`, '种类不能改；换一个包号发布', { field: '/kind' })]);
       }
-      const validation = await validatePack(read.pack, { policy: this.#options.policy });
+      const validation = await validatePack(read.pack, { policy: this.#options.policy,deferCredentials:dryRun&&options.deferCredentials });
       if (!validation.ok) return refuse(validation.problems);
       if(manifest.dependencies?.some(dep=>dep.space))return refuse([problem('publish.personal_dependency','pack.json','团队发布不能依赖个人空间中的通用技能','先将依赖发布并安装到团队，再移除依赖的个人空间限定')]);
       // validatePack refuses these too; nothing below may run for a version no reference can name.

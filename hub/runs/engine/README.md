@@ -1032,3 +1032,8 @@ assembly continues to provide its complete knowledge port.
 Live withdrawal views use the current principal: readable ancestor references are listed, while other ancestors contribute only to a hidden count. Admission uses a boolean withdrawal check, so internal traversal never becomes an unfiltered public reference list.
 
 A submitter that loses its own ground right receives opaque SOURCE_UNAVAILABLE on cached replay. RESULT_GROUNDS_UNREADABLE is reserved for a still-authorized submitter whose other readers lack access. A positive quote or admitted input cannot become an absent-reference exception after its grant changes during admission.
+
+Generic record readers refuse memory documents/grants/shares and their private control actions (memory-refusal@1 and
+memory-unchanged@1) before the administrator/run branches. A rec: lookup, input binding or exact ground resolver receives
+the same absence as for a missing record; no audit or idempotency receipt becomes evidence. Optional knowledge integrations
+remain optional. Dedicated memory and console summary views keep their separate, narrower permission rules.
