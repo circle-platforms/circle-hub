@@ -1,3 +1,4 @@
+import * as personalSyncSchemas from './sync.ts';
 import {ContributionInput} from './contributions.ts';
 // Barrel of the Hub contracts. SCHEMA_REGISTRY is every record and pack-file shape that gets a generated JSON Schema.
 import type { z } from 'zod';
@@ -68,6 +69,7 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'knowledge.ts': knowledgeSchemas.schemas,
   'spaces.ts': spaceSchemas.schemas,
   'memory.ts':memorySchemas.MEMORY_SCHEMAS,
+  'sync.ts':personalSyncSchemas.PERSONAL_SYNC_SCHEMAS,
   'sharing.ts': sharingSchemas.schemas,
   'feeding.ts': feedingSchemas.FEEDING_SCHEMAS,
   'resources.ts': resourceSchemas.schemas,
@@ -77,3 +79,6 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
 });
 
 export * from './memory.ts';
+
+export * from './sync.ts';
+export * from './sync-canonical.ts';

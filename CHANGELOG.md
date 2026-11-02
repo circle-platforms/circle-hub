@@ -36,6 +36,9 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - The console uses the shared Circle design tokens and local system fonts, with a persistent system/light/dark theme
   switch on signed-in and sign-in pages. Fixed scripts and styles remain allowed only by their content hashes.
 
+- Personal knowledge and memory sync now has an independent HTTP contract and shared client encoding fixtures.
+  The contract preserves original evidence bytes and keeps MCP at six tools; storage and HTTP handlers are not yet implemented.
+
 - Memory refusal audits and unchanged-write receipts cannot be read as generic records or evidence. Owners see safe
   refusal summaries and administrators see counts; administrators retain visibility of grants in which they participate.
 

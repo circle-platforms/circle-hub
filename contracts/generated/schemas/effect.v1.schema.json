@@ -303,7 +303,16 @@
                 "MEMORY_VERSION_CONFLICT",
                 "MEMORY_RUN_FORBIDDEN",
                 "MEMORY_TEAM_DISABLED",
-                "MEMORY_CURSOR_STALE"
+                "MEMORY_CURSOR_STALE",
+                "SYNC_VERSION_CONFLICT",
+                "SYNC_OBJECT_HASH_MISMATCH",
+                "SYNC_OBJECT_INVALID",
+                "SYNC_OBJECT_MISSING",
+                "SYNC_BATCH_LIMIT",
+                "SYNC_SESSION_EXPIRED",
+                "SYNC_MODE_LOCAL",
+                "SYNC_EPOCH_CHANGED",
+                "SYNC_RATE_LIMITED"
               ]
             },
             "row": {
