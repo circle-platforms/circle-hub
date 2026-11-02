@@ -82,6 +82,8 @@
 
 ## 做了的
 
+- 场景 14 在“初次同步没有产出根”的断言失败时列出 counts 及各构建的 name／outcome／reason／root，保留原有断言与幂等／增量要求，不增加重试。根因仍未知：本机单跑通过，与场景 42 并行三轮也未复现，不能声称已修复间歇失败。
+
 - 第二轮复核第 1、2、3、5、6 项：启动前拒收个人导入输入、生产重查防护、事务后保留拒收审计、按空间排队、当前版本累计索引额度与产品独立计量、可配置的两级上限，以及带明确警告的搜索降级。迁移 11 和模型 19 只增加派生计量与搜索警告；旧记录及既有迁移 SQL 不改。实现与逐项回归见页末“第二轮实施与验证”。
 
 - 安全审查第 2 项：在复用旧回执之前检查个人 `tree:` 与 `src:` 依据，包含运行冻结的原件采集；使用注册的 `SPACE_RESULT_GROUNDS_PRIVATE` 拒收，不增加模型修复轮数。仅事实工作流的自动结果也在存运行和共享结果前检查；第三阶段将替换此临时规则。
@@ -202,3 +204,9 @@
 - 首次迁移回归发现 `roles.test.ts` 仍固定列出迁移到 10，改为 `MIGRATIONS.map`；新增测试的数字查询补齐类型后重跑。旧 SQL 快照保留，只刷新既有迁移源文件冻结断言；没有新增数据 SHA 校验。
 
 - 索引收尾：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 hub/records/space-index.test.ts hub/records/roles.test.ts hub/config/config.test.ts hub/records/migrations.snapshot.test.ts` 20 项通过，0 失败、0 跳过。运行角色实测能追加索引并更新同一版本累计值，不能删除计量行或改计量身份；提高限额后此前拒收的追加可继续完成。`npm run test:docs` 287 项通过，0 失败、0 跳过。
+
+- 场景 14 排查（协调者 Claude 补充日志，2026-11-02）：失败时同步层 error 为空、构建数至少 2，但没有 produced 根；重跑新增 1 个根，随后 diff 缺少初始根。原 SyncReport 未保留，不能从现有日志确定构建级拒收原因，内存／沙箱资源仅是待核对的假设。已给初始断言附上每个合成构建的 name、outcome、reason、root 与总 counts，断言、失败状态及幂等规则不放宽，没有新增自动重试或修改同步逻辑。
+- 场景 14 单独执行：4 项通过，0 失败、0 跳过。按协调者要求执行 `node --test --test-concurrency=2 tests/acceptance/14-knowledge-sync.test.ts tests/acceptance/42-r5-t4-2-operations.test.ts` 三轮（每轮独立临时 PostgreSQL／合成服务）：每轮 7 项通过（14 的 4 项、42 的 3 项），均 0 失败、0 跳过，约 102、84、81 秒。三轮同时有并行测试负载，仍未复现；这不证明间歇问题已消失。后续若再次失败，附带的构建原因可用来继续定位。
+
+- 第二轮受影响验收收尾：`node --test --test-concurrency=1 tests/acceptance/06-user-without-pack.test.ts tests/acceptance/12-console-security.test.ts tests/acceptance/13-idempotence.test.ts tests/acceptance/15-aliasing-end-to-end.test.ts tests/acceptance/17-hub-restart.test.ts tests/acceptance/19-concurrency.test.ts tests/acceptance/30-shared-results.test.ts tests/acceptance/33-r5-t1t3-knowledge-qa.test.ts tests/acceptance/39-r5-t9-2-skill-packs.test.ts tests/acceptance/46-knowledge-spaces.test.ts`：29 项通过，0 失败、0 跳过，约 257 秒。包含十路并发与重启回放、知识问答、升级后的四个技能引用及新空间边界。没有跑全量回归。
+- 未运行／跳过：`hub/platform/ownership.test.ts` 的真实平台集成整组因缺 PG 18 客户端跳过（不是通过）；其备份／恢复路径、Linux 隔离作业、来源归档检查、真实业务系统与部署均未执行。本轮没有改来源相关工具，无需追加来源检查；没有推送或创建 PR。类型检查、生成合约核对和文档检查均通过。第三阶段须保留决定 88 的补充提交，并用全部实际读者规则取代第二阶段临时防护。

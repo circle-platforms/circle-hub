@@ -42,7 +42,7 @@ describe('scenario 14: knowledge sync, idempotence, incrementality, and root dif
     assert.ok(sync.builds.length >= 2, 'sync covered multiple builds');
 
     const produced = sync.builds.find((b) => b.outcome === 'produced');
-    assert.ok(produced && produced.root);
+    assert.ok(produced && produced.root, JSON.stringify({counts:sync.counts,builds:sync.builds.map(({name,outcome,reason,root})=>({name,outcome,reason,root}))},null,2));
     initialRoot = produced.root;
 
     // Both name families present in build reports (e.g. Rel_FAMX_... and Rel_FAMY_...)
