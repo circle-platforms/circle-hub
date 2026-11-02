@@ -332,7 +332,8 @@ export class KnowledgeSpaces {
           fail('SPACE_ENTRY_INVALID', '团队导入须引用团队读取原文，或管理员本人声明的普通上传；个人空间原文须先共享或授权');
         teamSources.push({ sha256: ref.sha256, artifact: artifact.digest, size: artifact.body.size });
       }
-      const result = await resolveReference(ground.reference, { reader: { user: by.id, role: by.role }, parsers: this.#ctx.parsers, trees: this.treeReader(), sources: { read: hash => this.source(by, hash) } });
+      const result = await resolveReference(ground.reference, { reader: { user: by.id, role: by.role },teamParsersOnly:space==='team', parsers: this.#ctx.parsers, trees: this.treeReader(), sources: { read: hash => this.source(by, hash) } });
+      if(!result.resolved&&result.code==='TEAM_PARSER_REQUIRED')fail(result.code);
       if (verifyQuote(result, ground.quotation) !== true)
         fail('SPACE_ENTRY_INVALID', '依据不可读或引文与来源不一致');
     }
@@ -443,9 +444,14 @@ export class KnowledgeSpaces {
     const page=await this.#ctx.records.store.find({kind:'knowledge_share',key:'knowledge.share.by',value:by.id,newestFirst:true,limit:50,cursor});
     return {items:page.items.map(record=>({record:record.digest,...KnowledgeShareBody.parse(record.body)})),next:page.next};
   }
-  async #shareSource(by:Principal,reference:string,sources:Map<string,{sha256:string;artifact:string;size:number}>,seen=new Set<string>(),depth=0):Promise<void>{
+  async #shareSource(by:Principal,reference:string,sources:Map<string,{sha256:string;artifact:string;size:number}>,seen=new Set<string>(),depth=0,quotation?:string):Promise<void>{
     if(depth>64||seen.has(reference))fail('SHARE_GROUND_UNRESOLVED');
     seen=new Set(seen);seen.add(reference);const ref=parseReference(reference);
+    if(quotation!==undefined){
+      const resolved=await resolveReference(reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+      if(!resolved.resolved&&resolved.code==='TEAM_PARSER_REQUIRED')fail(resolved.code);
+      if(verifyQuote(resolved,quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
+    }
     if(ref.scheme==='src'){
       const artifact=(await this.source(by,ref.sha256))?.artifact;
       if(!artifact)fail('SHARE_GROUND_UNRESOLVED');
@@ -457,7 +463,7 @@ export class KnowledgeSpaces {
     }
     if(ref.scheme!=='tree'||!ref.entry)fail('SHARE_GROUND_UNRESOLVED');
     const version=await this.version(ref.root);
-    if(version){const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);const body=row?await this.#entry(row):null;if(!body||!body.grounds.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of body.grounds)await this.#shareSource(by,ground.reference,sources,seen,depth+1);}
+    if(version){const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);const body=row?await this.#entry(row):null;if(!body||!body.grounds.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of body.grounds)await this.#shareSource(by,ground.reference,sources,seen,depth+1,ground.quotation);}
     else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(!read?.grounds?.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of read.grounds)await this.#shareSource(by,ground,sources,seen,depth+1);}
   }
   async share(by:Principal,raw:unknown,session:string|null=null):Promise<KnowledgeShareReceipt>{
@@ -482,7 +488,8 @@ export class KnowledgeSpaces {
         if((await this.withdrawnGrounds(view.body.grounds.map(g=>g.reference))).length)fail('GROUNDS_WITHDRAWN');
         const resolved=[];
         for(const ground of view.body.grounds){
-          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+          if(!result.resolved&&result.code==='TEAM_PARSER_REQUIRED')fail(result.code);
           if(!result.resolved||!result.readable)fail('SHARE_GROUND_UNRESOLVED');resolved.push(result);
         }
         for(const [index,ground] of view.body.grounds.entries())if(verifyQuote(resolved[index],ground.quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
@@ -521,7 +528,7 @@ export class KnowledgeSpaces {
         const readable=await this.#ctx.packs.readableProducts(by);
         for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
         try{this.#scan(view.body);for(const source of sources.values()){const bytes=await this.#ctx.records.artifacts.source(by,source.sha256,{record:source.artifact,consumer:'model'});if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
-      }catch(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'))return receipt('rejected',error.code,error.message,null);throw error;}
+      }catch(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
       if(withinSpacePath(teamPath,PRODUCTS_PATH))return receipt('rejected','SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录',null);
       const body=SpaceEntryBody.parse({...view.body,space:'team',grounds,by:by.id,at,session,replaces:replacement?.entry??null,shared_from:source});
       const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:body.entry},{key:'knowledge.space.entry_owner',value:'team'}]},tx);

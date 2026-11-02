@@ -1246,3 +1246,5 @@ captures still use their own original authority. Current grant revocation applie
 An administrator's team import of their own ordinary upload records that administrator's declaration. Another account's
 upload and an original registered in a personal space cannot be declared through this route. Personal grants still apply
 by exact capture; `mayReadSource` checks that authority without reading or parsing the original bytes.
+
+提交共享、团队导入及其间接依据的引文核对只使用团队可用的解析器；个人解析器即使授权给全体管理员，也不能为团队核验背书。团队解析器安装后重查真实原文，不沿用个人解析器给出的片段。

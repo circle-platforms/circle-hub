@@ -295,7 +295,8 @@
                 "GROUNDS_WITHDRAWN",
                 "PACK_SPACE_DENIED",
                 "PACK_PERSONAL_PUBLICATION_DENIED",
-                "PACK_PERSONAL_CAPABILITY_DENIED"
+                "PACK_PERSONAL_CAPABILITY_DENIED",
+                "TEAM_PARSER_REQUIRED"
               ]
             },
             "row": {

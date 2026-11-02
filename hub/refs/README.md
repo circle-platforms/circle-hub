@@ -553,3 +553,5 @@ KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 
 `circle-hub skill bind-legacy <parser@version> <pack@version>` 为每个引用该解析器、缺少其技能摘要的历史运行单独追加绑定；全局迁移声明不再作为运行的隐式补锁。判断只使用完整结构引用（包括关联提交、核验结果和动作中的引用），不会从说明文字中捞片段。原运行、原结果和已有技能锁保持原字节。空技能集合或仅锁其他解析器的运行仍可补足目标解析器，已锁定该解析器的摘要不覆盖。
 
 每条运行绑定引用原运行记录和发布记录，标明迁移时点事后声明、管理员、时间和迁移验证测试名；复核的结果锁与有效条件包含追加摘要及声明记录。未补绑时明确返回“运行未锁定技能包摘要”和 `skill bind-legacy` 出口。同一摘要重复执行只补缺失记录，不重复追加；改变映射拒绝。扫描按页处理，整批事务失败不留下半批绑定。
+
+Team verification uses `ResolveContext.teamParsersOnly`: the current team parser set is used without personal run locks or personal-namespace fallback. Missing team capability returns `TEAM_PARSER_REQUIRED`. Personal reference reads keep their current grant and frozen-skill checks.

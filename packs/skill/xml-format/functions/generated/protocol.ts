@@ -199,6 +199,10 @@ export const PROTOCOL_CODES = {
   "PACK_PERSONAL_CAPABILITY_DENIED": {
     "when": "个人工作流或通用技能不能使用命名文档、业务系统、租约、设备派发或其他外部效果",
     "fix": "个人空间只使用上传、个人或团队知识及 Hub 生成的文件；需要其他能力时先发布到团队并由管理员分配"
+  },
+  "TEAM_PARSER_REQUIRED": {
+    "when": "团队核验须使用团队可用的解析器",
+    "fix": "先将解析器发布并安装到团队，或改用团队已支持的格式后重新核对引文"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

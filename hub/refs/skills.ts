@@ -287,13 +287,14 @@ export function createSkillParserRegistry(options:SkillParserOptions):ParserRegi
   const facade:ParserRegistry={register:parser=>current.register(parser),get:key=>current.get(key),forMediaType:type=>current.forMediaType(type),list:()=>current.list(),
     refresh:async()=>{current=(await freeze([])).parsers;},freeze,
     unavailable:key=>current.unavailable?.(key),
-    async forReference(parser,reader){
+    async forReference(parser,reader,options){
       const scoped=await freeze([]);
       const selected=scoped.parsers;
       const binding=(await records.store.find<any>({kind:'action',key:'refs.legacy-parser',value:parser,limit:1,newestFirst:false})).items[0];
       if(binding){const lock=SkillLocks.parse([binding.body.detail?.migration?.skill]);const out=await load(lock);out.bindingRecords=[binding.digest];out.bindingDisclosure='迁移时点事后声明；rec:'+binding.digest+'；按所列摘要复核，不证明旧执行当时使用该包';return out;}
       if(selected.get(parser)?.migration_test){const out=await load([]);out.unavailable=key=>'缺少旧解析器 '+key+' 的迁移时点事后声明；下一步：circle-hub skill bind-legacy '+key+' <技能包 id@版本>；也可给出已锁定技能摘要的运行号';return out;}
       if(selected.get(parser))return selected;
+      if(options?.teamOnly)return selected;
       if(reader?.user&&registry.personal){
         const account=await records.principals.get(reader.user);
         if(account&&!account.disabled){

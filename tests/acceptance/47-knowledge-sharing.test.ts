@@ -305,3 +305,26 @@ test('a readable copy of equal bytes never grants a frozen capture label and an 
   await spaces.grant(owner.principal,{path:'/capture-original',audience:'administrators',revoke:true});
   assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.run),null,'revocation is not bypassed by the equal copy');
 });
+
+test('team verification rejects personal fabricated parsers and rechecks quotes with the installed team parser',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,parser='synthetic-proof@1',fabricated='合成伪造的核验原文',truth='合成实际团队原文';
+  const description=(id:string,fake:boolean):PackDescription=>({id,version:'1.0.0',kind:'skill',title:'合成格式解析器',description:'合成安全回归格式',files:{'SKILL.md':'# Synthetic format\nRead the declared source format.','skill.json':{schema:'skill@1',parsers:[{parser,media_types:['text/x-synthetic-proof'],limits:{maxBytes:4096,maxDepth:10,maxNodes:100},function:{module:'functions/format.ts'}}]},'functions/format.ts':`export default input=>{const text=${fake?JSON.stringify(fabricated):"Buffer.from(input.bytes,'base64').toString('utf8')"};return {document:{parser:${JSON.stringify(parser)},model:{text},summary:{format:'synthetic'},selectors:['n/root'],properties:[],fragments:[{lookup:'n/root',selector:'n/root',text,byteRange:null}],quotation:{plain:{stream:text,units:[{selector:'n/root',parent:-1,start:0,end:text.length}]},properties:{stream:'',units:[]}}}};};`}});
+  const personal=description('synthetic-personal-parser',true),written=await writePack(join(dir,'fabricated-parser'),personal);
+  assert.ok((await hub.hub.registry.personal!.publish(owner.principal,written.dir)).ok);
+  const source=await hub.records.artifacts.ingest({bytes:Buffer.from(truth),mediaType:'text/x-synthetic-proof',origin:{read:{object:'synthetic:document:parser-proof'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:false}});
+  const reference=`src:${source.body.sha256}/${parser}/n/root`;
+  const entry=await spaces.write(owner.principal,{path:'/parser-proof',kind:'observation',statement:'合成解析器生成的个人条目',grounds:[{reference,quotation:fabricated}]});
+  assert.equal((await spaces.entry(owner.principal,entry.root,'/parser-proof',entry.entry))?.row.status,'verified','the personal parser is actually used in its private namespace');
+  const before=(await spaces.current('team'))!.root,receipt=await spaces.share(owner.principal,{root:entry.root,path:'/parser-proof',entry:entry.entry});
+  assert.equal(receipt.code,'TEAM_PARSER_REQUIRED');assert.equal(receipt.status,'rejected');assert.equal((await spaces.current('team'))!.root,before);
+  const nested=await spaces.write(owner.principal,{path:'/parser-nested',kind:'observation',statement:'合成间接引用',grounds:[{reference:`tree:${entry.root}/parser-proof@${entry.entry}`,quotation:'合成解析器生成的个人条目'}]});
+  assert.equal((await spaces.share(owner.principal,{root:nested.root,path:'/parser-nested',entry:nested.entry})).code,'TEAM_PARSER_REQUIRED','wrapping the forged quote in another personal entry cannot lend a team verification');
+  await hub.hub.registry.personal!.grant(owner.principal,personal.id,{audience:'administrators'});
+  await assert.rejects(spaces.write(hub.admin.principal,{path:'/parser-proof',kind:'observation',statement:'合成管理员团队写入',grounds:[{reference,quotation:fabricated}]},null,'team'),error=>(error as {code?:string}).code==='TEAM_PARSER_REQUIRED');
+  const team=description('synthetic-team-parser',false),publication=await hub.hub.registry.publish(hub.admin.principal,(await writePack(join(dir,'team-parser'),team)).dir);assert.ok(publication.ok,JSON.stringify(publication));
+  await hub.hub.registry.install(hub.admin.principal,team.id+'@'+team.version);
+  assert.equal((await spaces.share(owner.principal,{root:entry.root,path:'/parser-proof',entry:entry.entry})).code,'SHARE_QUOTE_MISMATCH','the team parser is used instead of the granted personal parser');
+  const correct=await spaces.write(owner.principal,{path:'/parser-correct',kind:'observation',statement:'合成真实原文核验',grounds:[{reference,quotation:truth}]});
+  const shared=await spaces.share(owner.principal,{root:correct.root,path:'/parser-correct',entry:correct.entry});assert.equal(shared.status,'merged',JSON.stringify(shared));
+  assert.equal((await reader.call('get_nodes',{reference:shared.reference!})).isError,false);
+});

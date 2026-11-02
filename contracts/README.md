@@ -402,3 +402,5 @@ Model 22 registers the phase-three security restrictions and `PACK_PERSONAL_CAPA
 skill methods cannot declare team resource inputs, leases or external effects; both publication and start enforce it.
 The four generic skill protocol mirrors are regenerated, with only patch manifests advancing HTML/mindmap to 1.0.8 and
 XML/workbook to 1.0.9. Their parsing business code is unchanged.
+
+The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team verification cannot use personal parser capabilities, including through indirect personal grounds. Protocol mirrors and the four patch manifests are regenerated without parser business changes.

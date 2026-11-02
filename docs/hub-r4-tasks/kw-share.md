@@ -261,3 +261,9 @@ CI 修复提交前的定向收尾：`node --test --test-concurrency=1 --test-rep
 `node --test --test-concurrency=1 --test-reporter=tap tests/acceptance/47-knowledge-sharing.test.ts hub/server/readers-sharing.test.ts packs/workflow/case-compile/recompose/end-to-end.test.ts`：15 项通过、0 失败、0 跳过。场景 47 在已有受理步骤直接验证收回、恢复、新增管理员读者、MCP 原始记录和新运行绑定，并核对无权限与缺失回应同形。重组交接仍实际通过。
 
 提交前类型检查通过；`hub/runs/engine/queries.test.ts` 的 10 项通过、0 跳过，保留管理员对合法未受理结果的既有查看范围，没有把未受理的原始提交开放给其他账户。
+
+### 第三阶段安全附页：团队解析器（中 1）
+
+先在本轮未合并的模型 22 登记 TEAM_PARSER_REQUIRED，团队条目写入与提交共享只选择团队可用解析器，不能沿用个人运行锁或个人解析器授权。间接个人条目的底层引文也重查，不能包裹一层条目绕过；团队运行的历史个人技能锁同样拒收。协议镜像及补丁清单同步，仍不改技能业务代码。
+
+定向命令：node --test --test-concurrency=1 --test-reporter=tap tests/acceptance/47-knowledge-sharing.test.ts hub/knowledge/sharing.test.ts hub/refs/skills-personal.test.ts hub/refs/resolve.test.ts；44 项通过、0 失败、0 跳过，类型通过。新场景实际发布会伪造引文的个人解析器，先证明个人核验确实使用了它，再验证直接共享、间接共享和获个人解析器授权的管理员团队写入均拒收。安装真正读取原文的团队解析器后，旧伪造引文返回逐字不符，正确引文可共享并由另一成员读取。首跑 22 项中 21 通过、1 项因夹具把 team 放进 session 参数而失败，修正参数后攻击断言保留并通过。

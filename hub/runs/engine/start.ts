@@ -1,5 +1,6 @@
 import {groundsAudience,guardedRecords} from './grounds.ts';
 import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
+import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -494,6 +495,7 @@ async function startFresh(
     try{const frozen=await ctx.parsers.freeze(dependencies,{principal:user,space:workflow.pack.space});skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
     catch(error){throw new Refusal([protocolError('SOURCE_UNAVAILABLE',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
   }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_UNAVAILABLE','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
+  if(!isPersonalSpace(workflow.pack.space)&&skills.some(skill=>skill.space))throw new Refusal([protocolError('TEAM_PARSER_REQUIRED',PROTOCOL_CODES.TEAM_PARSER_REQUIRED.when,{path:'/pack'})]);
   const startedAt = at.toISOString();
   let predecessor: StoredRecord<RunRecord> | null = null;
   if (input.predecessor !== undefined) {
