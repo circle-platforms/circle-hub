@@ -1,5 +1,5 @@
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
-import {SyncModeSchema} from '../../contracts/generated/vocabulary.ts';
+import {SyncModeSchema,type SyncMode} from '../../contracts/generated/vocabulary.ts';
 import {RecordKindSchema} from '../../contracts/src/records.ts';
 // Account/epoch-scoped, physically removable payloads. Audit capsules contain no plaintext.
 import type {Database} from './db.ts';
@@ -19,6 +19,11 @@ export class PgPersonalPayloads {
  readonly db:Database;
  readonly lock:(key:string,tx:Transaction)=>Promise<void>;
  constructor(db:Database,lock:(key:string,tx:Transaction)=>Promise<void>){this.db=db;this.lock=lock;}
+ /** A missing row is the historical Hub default; reading mode does not create personal content. */
+ async mode(owner:string,tx?:Transaction):Promise<SyncMode>{
+  const row=(await this.db.query('SELECT mode FROM personal_spaces WHERE owner=$1',[owner],tx)).rows[0];
+  return row?SyncModeSchema.parse(row.mode):SyncModeSchema.enum.hub;
+ }
  async scope(owner:string,tx?:Transaction):Promise<PersonalScope>{
   if(!tx)return this.db.transaction(t=>this.scope(owner,t));
   await this.lock('knowledge-space:'+owner,tx);

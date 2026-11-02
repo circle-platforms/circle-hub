@@ -582,6 +582,17 @@ REVOKE ALL ON FUNCTION hub_active_personal_insert() FROM PUBLIC;
 CREATE TRIGGER personal_payloads_active BEFORE INSERT ON personal_payloads FOR EACH ROW EXECUTE FUNCTION hub_active_personal_insert();
 CREATE TRIGGER personal_objects_active BEFORE INSERT ON personal_objects FOR EACH ROW EXECUTE FUNCTION hub_active_personal_insert();
 CREATE INDEX personal_record_bindings_scope ON personal_record_bindings(owner,epoch,record);
+CREATE FUNCTION hub_resume_personal(o text,e text,n text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ PERFORM 1 FROM public.personal_spaces WHERE owner=o AND epoch=e AND mode='local' FOR UPDATE;
+ IF NOT FOUND OR NOT EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=o AND epoch=e)
+ OR n=e OR n !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+ OR EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=o AND epoch=n)
+ OR EXISTS(SELECT 1 FROM public.personal_record_bindings WHERE owner=o AND epoch=n) THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='P0002';END IF;
+ UPDATE public.personal_spaces SET epoch=n,mode='hub' WHERE owner=o AND epoch=e;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_resume_personal(text,text,text) FROM PUBLIC;
 
 `},
   {version:15,name:'personal_sync_transport',sql:`CREATE TABLE personal_sync_heads (
@@ -747,7 +758,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     const owner = (await db.query<{ owns: boolean }>(`SELECT pg_get_userbyid(relowner) = $1 AS owns FROM pg_class WHERE relname = 'records' AND relkind = 'r'`, [role], t)).rows[0];
     if (owner === undefined) throw new MigrationError('还没有应用迁移，不能授权运行角色');
     if (owner.owns) throw new MigrationError(`运行角色 ${role} 拥有这些表，能关掉只追加的触发器；请让另一个角色执行迁移`);
-    await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text) TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text),hub_resume_personal(text,text,text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {

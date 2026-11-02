@@ -1980,8 +1980,16 @@
                   "pattern": "^[0-9a-f]{64}$"
                 },
                 "personal": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{64}$"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "No personal root while personal content is stored only locally"
                 },
                 "owner": {
                   "type": "string",

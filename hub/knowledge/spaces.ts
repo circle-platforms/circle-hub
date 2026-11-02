@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
-import { KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
+import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
@@ -152,7 +152,7 @@ export class KnowledgeSpaces {
       return previous ?? this.#save(space, null, [], ['/'], by, '建立个人知识空间', 0, tx);
     });
   }
-  async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: (await this.ensure(by)).root }; }
+  async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local?null:(await this.ensure(by)).root }; }
   async capacity(space: string, tx?: Transaction): Promise<number> {
     const row = (await this.#ctx.records.store.find({ key: QUOTA_KEY, value: space, kind: 'knowledge_space_quota', newestFirst: true, limit: 1 }, tx)).items[0];
     return row ? SpaceQuotaBody.parse(row.body).bytes : DEFAULT_PERSONAL_CAPACITY;
@@ -179,6 +179,7 @@ export class KnowledgeSpaces {
   }
   async paths(by: Principal, space: string): Promise<string[]> {
     by = await this.#user(by);
+    if(space===by.id&&await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local)return [];
     if (space === 'team' || space === by.id)
       return ['/'];
     const owner = await this.#ctx.records.principals.get(space);
@@ -999,7 +1000,7 @@ export class KnowledgeSpaces {
         const locks = run?.body.knowledge_spaces;
         if (!locks)
           continue;
-        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? await this.version(locks.personal) : await this.current(body.space);
+        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? (locks.personal?await this.version(locks.personal):null) : await this.current(body.space);
         if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
           continue;
       }
@@ -1033,7 +1034,7 @@ export class KnowledgeSpaces {
         const locks = run?.body.knowledge_spaces;
         if (!locks)
           continue;
-        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? await this.version(locks.personal) : await this.current(body.space);
+        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? (locks.personal?await this.version(locks.personal):null) : await this.current(body.space);
         if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
           continue;
       }

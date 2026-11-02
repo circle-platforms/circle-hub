@@ -2,7 +2,7 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
-import {SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
+import {ActionKindSchema,SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
 import {PERSONAL_SYNC_LIMITS,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncClient,PersonalSyncSession,PersonalSyncUpload,PersonalSyncMissing,PersonalSyncAbort,PersonalSyncReceipt,PersonalSyncState,PersonalSyncDescriptor,PersonalSyncItem,type PersonalSyncObject} from '../../contracts/src/sync.ts';
 import {decodePersonalSyncObject,encodePersonalSyncObject,normalizePersonalSyncText} from '../../contracts/src/sync-canonical.ts';
 import {SpaceQuotaBody} from '../../contracts/src/spaces.ts';
@@ -83,6 +83,19 @@ export class PgPersonalSync {
    state_version:hash({epoch:scope.epoch,mode:scope.mode,snapshot,knowledge:usage.knowledge,memory}),snapshot,last_synced_at:local||!head.last_synced_at?null:iso(head.last_synced_at),used_bytes:usage.used,capacity_bytes:usage.capacity,limits:this.limits});
  }
  state(by:Principal,outer?:Transaction):Promise<State>{return this.#scope(by,undefined,async(scope,tx)=>{if(scope.mode===SyncModeSchema.enum.hub)await this.#collect(scope,tx);return this.#state(scope,tx);},outer,true);}
+ /** Console-only return from a completed purge; full bidirectional mode changes remain in step 5. */
+ async resume(by:Principal,epoch:string,expectedState:string):Promise<State>{
+  return this.#scope(by,epoch,async(scope,tx)=>{
+   const previous=await this.#state(scope,tx);
+   if(previous.state_version!==expectedState)return fail('SYNC_VERSION_CONFLICT');
+   if(scope.mode!==SyncModeSchema.enum.local)return fail('SYNC_EPOCH_CHANGED');
+   const next={...scope,epoch:randomUUID(),mode:SyncModeSchema.enum.hub};
+   await this.#db.query('SELECT hub_resume_personal($1,$2,$3)',[by.id,scope.epoch,next.epoch],tx);
+   await this.#db.query('INSERT INTO personal_sync_heads(owner,epoch) VALUES($1,$2)',[by.id,next.epoch],tx);
+   await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now().toISOString(),previous_mode:scope.mode,mode:next.mode,previous_epoch:scope.epoch,epoch:next.epoch},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
+   return this.#state(next,tx);
+  },undefined,true);
+ }
  async stableItem(by:Principal,kind:z.infer<typeof PersonalSyncItem>['kind'],identity:string,outer?:Transaction):Promise<string>{
   PersonalSyncItem.shape.kind.parse(kind);if(!identity||Buffer.byteLength(identity)>4000)return fail('SYNC_OBJECT_INVALID');
   return this.#scope(by,undefined,async(scope,tx)=>{

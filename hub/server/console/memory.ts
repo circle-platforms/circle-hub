@@ -1,3 +1,4 @@
+import {personalLocal,personalSyncNotice} from './personal-sync.ts';
 // Memory uses the existing password session and form boundary, independently of knowledge grants.
 import {uiLabelOf,KnowledgeGranteeSchema,isKnowledgeGrantAction,type MemoryAction,type KnowledgeSpaceKind} from '../../../contracts/generated/vocabulary.ts';
 import {MemoryShareBody} from '../../../contracts/src/memory.ts';
@@ -21,6 +22,7 @@ const actionLabel=(action:MemoryAction)=>uiLabelOf('memory_action',action);
 
 export async function memoryPage(ctx:PageContext):Promise<PageResult>{
  const memory=ctx.deps.knowledge.memory;if(!memory)return neutralPage(ctx);
+ const local=await personalLocal(ctx);
  const scope=selectedScope(ctx),document=ctx.url.searchParams.get('document'),version=ctx.url.searchParams.get('version');
  if(document&&!Sha256.safeParse(document).success||version&&!Sha256.safeParse(version).success)return neutralPage(ctx);
  const tabs=knowledgeTabs(ctx);
@@ -56,15 +58,15 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   const owner=ctx.url.searchParams.get('space'),path=ctx.url.searchParams.get('path')??'/';
   const documents=(await memory.items(ctx.principal,scope)).filter(doc=>(!owner||doc.space===owner)&&containsDirectory(path,doc.path));
   const rows=await Promise.all(documents.map(async doc=>[link(location({scope,document:doc.document}),doc.title),(await currentAudience(ctx,doc.space,doc.path,false,undefined,true)).text,memoryState(doc.state),html`<span class="nowrap">${number(doc.bytes)} 字节</span>`,timestamp(doc.updated_at),directoryName(doc.path)]));
-  const team=scope==='team',canWrite=scope==='personal'||scope==='all'||team&&ctx.admin;
+  const team=scope==='team',canWrite=!local&&(scope==='personal'||scope==='all')||team&&ctx.admin;
   const usage=scope==='personal'||team&&ctx.admin?await memory.usage(ctx.principal,team?'team':ctx.principal.id):null;
   const controls=canWrite?button(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'),{primary:true}):html``;
   let grant=html``;
-  if(scope==='personal'){
+  if(scope==='personal'&&!local){
    const audience=await currentAudience(ctx,ctx.principal.id,path,false,undefined,true);
    grant=await grantDialog(ctx,{id:'memory-grants',trigger:false,current:audience.text,content:directoryName(path)+' · 只读，含全部子文件夹',checks:await memory.precheckGrant(ctx.principal,path),grants:(await memory.grants(ctx.principal)).filter(g=>containsDirectory(g.path,path)),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,disabled)});
   }
-  content=pageLayout(html`${tabs}${result}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${number(usage.active)} / ${number(usage.limits.spaceBytes)} 字节 · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${number(usage.limits.documentBytes)} 字节</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,'没有可读的记忆'))}`,{actions:html`${scope==='personal'?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
+  content=pageLayout(html`${tabs}${result}${scope==='personal'||scope==='all'?await personalSyncNotice(ctx):''}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${number(usage.active)} / ${number(usage.limits.spaceBytes)} 字节 · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${number(usage.limits.documentBytes)} 字节</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,'没有可读的记忆'))}`,{actions:html`${scope==='personal'&&!local?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
  }
  return {status:200,body:page(ctx.chrome(memoryLabel(),{active:'knowledge',hint:'记忆只用于客户端会话；知识与记忆的分享设置分别管理'}),await spaceLayout(ctx,content))};
 }

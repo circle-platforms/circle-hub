@@ -1036,3 +1036,5 @@ source links. Public team destinations, statements and safe receipt facts remain
 not rewritten. The marker comes from model 26 display metadata. Console contexts cache only the metadata flag for one
 request, and both members and administrators retain the normal raw-record refusals. The real-Hub regression uses
 synthetic console passwords through testConsoleCredentials and verifies team content remains available after purge.
+
+Decision 89 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms and explicit private references never restore purged content. No sync HTTP route or extra MCP tool is exposed here.

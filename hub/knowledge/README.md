@@ -1298,3 +1298,5 @@ scenario checks two clients, privacy and purge through this internal port alongs
 revision mapping, verified CAS and conflict projection are implemented in step 4; HTTP authentication stays in step 5.
 
 Cleared team src grounds use the existing source-hash index and metadata-only purge checks; no full team-source body scan or cross-request negative cache is used. A 400-source regression covers bounded matching loads and immediate invalidation.
+
+After a completed personal purge, local-mode personal paths and visible spaces are empty. New runs still freeze the team root but freeze personal as null; source binding explicitly handles that absence. Returning to Hub storage uses a new epoch and never restores old grants or roots. This is the step-2 review empty-view boundary, not the step-4 native sync adapter.

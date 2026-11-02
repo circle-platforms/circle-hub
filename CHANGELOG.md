@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Keep local personal views empty and allow their owner to return to Hub storage through a fresh epoch.
+
 - Synchronize legacy object directories before completing retirement.
 
 - Check cleared team grounds through the existing exact source index.

@@ -443,3 +443,5 @@ will use physical account/epoch isolation without epoch encryption. No storage o
 Decision 89 step-2 review item 5 (Claude 2026-11-03) sets model 26. The explicitly requested display text
 已清除的个人文件夹 is added to the existing sync_field display metadata. It changes no record, sync mode or permission
 rule. Only vocabulary.ts and protocol.ts change on generation; the four skill protocol mirrors and manifests remain current.
+
+Decision 89 step-2 review item 9 permits SpaceLocks.personal to be null when a run starts while personal content is stored only locally. The team root stays required, existing digests are unchanged, and explicit old personal references remain unreadable. Generation updates only the run, run-summary and tool schemas; no vocabulary/model or skill mirror changes are needed for this shape extension.

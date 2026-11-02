@@ -1,3 +1,4 @@
+import {personalLocal,personalSyncNotice} from './personal-sync.ts';
 import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
@@ -59,6 +60,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
   if (!spaces)
     return neutralPage(ctx);
   const space = ctx.url.searchParams.get('space') ?? ctx.principal.id;
+  if(space===ctx.principal.id&&!ctx.url.searchParams.has('root')&&await personalLocal(ctx))return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge'}),await spaceLayout(ctx,await personalSyncNotice(ctx)))};
   const paths = await spaces.paths(ctx.principal, space);
   if (!paths.length)
     return neutralPage(ctx);
@@ -202,6 +204,12 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   const spaces = ctx.deps.knowledge.spaces;
   if (!spaces)
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
+  if(action==='sync-resume'){
+    const api=ctx.deps.records.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
+    try{await api.resume(ctx.principal,values.get('epoch')??'',values.get('expected_state')??'');}
+    catch(error){if(error instanceof RecordsError&&error.code)throw new KnowledgeError(error.message,{code:error.code});throw error;}
+    return '/console/knowledge?scope=personal';
+  }
   if(action==='share-batch')return shareBatch(ctx,values);
   const get = (name: string) => values.get(name) ?? '', space = get('space') || ctx.principal.id, path = get('path') || '/';
   if(action==='grant'&&get('preview_grant')==='1')return grantPreviewLocation('/console/knowledge/space',{space:ctx.principal.id,path},'grant-knowledge',values);
@@ -249,7 +257,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
 export function spaceActionFailure(ctx: PageContext, error: unknown): PageResult {
   if (error instanceof KnowledgeError && error.code === 'SOURCE_UNAVAILABLE')
     return neutralPage(ctx);
-  const message = error instanceof KnowledgeError ? error.message : error instanceof z.ZodError || error instanceof SyntaxError ? '条目或表单格式不正确' : null;
+  const message = error instanceof KnowledgeError || error instanceof RecordsError&&error.code==='SYNC_MODE_LOCAL' ? error.message : error instanceof z.ZodError || error instanceof SyntaxError ? '条目或表单格式不正确' : null;
   if (message === null)
     throw error;
   return { status: 400, body: page(ctx.chrome('知识操作未完成', { active: 'knowledge' }), html `<p class="error">${message}</p><p>${link('/console/knowledge', '返回知识库')}</p>`) };

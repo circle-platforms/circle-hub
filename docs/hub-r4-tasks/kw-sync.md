@@ -551,3 +551,40 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 做了的：无独立持有者的旧文件删除后，严格打开并 fsync 所在目录，成功后才调用所有者退役完成函数。同步或关闭失败直接中止启动，保留待处理日志；重启遇到已删除文件时仍重新同步目录后再完成。不改普通对象写入的既有行为。
 
 验证：故障注入在 unlink 之后使目录同步失败，断言文件已不在、完成日志未写、清除被阻止；新实例恢复时执行真实目录 fsync，完成前再次核对日志不存在，随后清除成功。类型与差异检查通过；personal-retirement-durability、personal-upgrade、personal-mount-upgrade、personal-retirement-holds、environment、diagnostics、PG 18 ownership、lock-namespaces 共 31 项通过、0 失败、0 跳过。未跑全量回归、Linux CI、来源检查，文档检查留收尾。
+
+### 第 2 步安全审查修正 9：本机方式的空视图与返回入口
+
+做了的：
+
+- 个人方式只读查询不创建正文。清除后的个人知识／记忆列表为空；控制台在本人“个人／全部”和个人目录入口显示生成词表中的“同步方式／仅保存在本机”，提供“同步到 Hub”入口，隐藏不能使用的个人写入／授权控件。旧表单写入给出既有方式错误，不变成内部错误；团队内容仍可读。
+- MCP 的默认本人空间、显式本人空间及本机方式下启动的运行本人空间返回空节点；个人搜索和记忆页为空。显式旧私人引用保持不存在／无权同形；不恢复已清除内容或旧授权。
+- 为使这些用户仍可启动团队工作流，运行的 SpaceLocks.personal 允许 null，明确没有个人根；团队根照常锁定。重新生成三份受影响 Schema，六工具数量与权限不变，没有新增显示轴；四技能镜像未变化，不升级技能包。依据读取对空根明确处理，保留可选知识端口兼容。
+- 本人密码会话的返回入口只接收该主体的期望代次与状态，不接受目标账户。运行角色仍无 personal_spaces UPDATE，通过固定搜索路径、撤销 PUBLIC 执行权的所有者函数检查已完成的清除和新 UUID 后切换；旧代次不能复用。方式、空头与仅含元数据的审计同事务，失败全部回滚；停用账户、旧页面及竞争请求拒绝。此处只做审查要求的 local → hub 返回入口；完整双向方式预检、清除 HTTP、原生同步 CAS 仍属于后续步骤，不提前开放。迁移 14 尚未部署，按授权编辑并复核源快照；1～13、15 SQL 与第 3 步完全一致。
+- 新增运行角色与真实控制台／MCP 回归，核对故障回滚、并发只成功一次、无 UPDATE 权限、旧客户端拒绝、CSRF、管理员不能替他人切换、旧授权不复活、团队记忆与工作流保留。扩展工作流夹具时先后修正了 assign 的字符串参数次序及遗漏的 knowledge.json 目录要求；均保留原产品断言。
+
+最终验证：类型检查、生成及 175 文件合约核对、差异检查通过。全部工作流／引擎 2,765 项通过、0 失败、0 跳过；macOS 沙箱可用且用例实际执行。下列扩大定向组首跑 726 项中 725 通过、1 失败、0 跳过：验收 46 仍要求提示包含“服务器备份”，调整说明时误删该措辞；恢复为“同步到 Hub 的个人内容保存在 Hub 数据库和服务器备份中”，原断言不改。受影响的控制台／验收 46 复查 31 项全部通过、0 跳过；没有把首跑整组写成全绿。其余用例的通过结果保留，不重复累加计数。
+
+扩大组包含全部 records（含 password、锁命名及迁移快照）、PG 18 ownership、environment、diagnostics、新运行角色／真实控制台回归、合约与受影响知识／记忆／控制台及验收 46～49。49,000 条目知识视图测试通过，未修改其固定预期；大库退役复查仍为 8 次节点读取，本次扩大组测得约 1.90 秒，说明耗时随本机负载变化，前述 0.44 秒不是普遍保证。源比较确认迁移 1～13 和 15 与第 3 步完全相同；没有修改其他已应用 SQL。
+
+文档检查在暂存新增文件后通过 291 项、0 跳过；填入实际结果后的收尾复查同样为 291 项通过、0 跳过。已运行范围无遗留跳过。未运行全量 unit／acceptance、Linux CI、来源归档检查（来源工具／批准导入未改）；不把它们算通过。不推送、不建 PR、不部署。第 4 步尚未开始。
+
+```sh
+npm run typecheck
+npm run gen:contracts
+npm run verify:contracts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'packs/workflow/**/*.test.ts' 'hub/runs/engine/**/*.test.ts'
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'contracts/src/*.test.ts' 'hub/records/**/*.test.ts' \
+ hub/knowledge/spaces.test.ts hub/knowledge/spaces-review.test.ts hub/knowledge/memory.test.ts \
+ 'hub/knowledge/personal-*.test.ts' hub/knowledge/view-perf.test.ts \
+ hub/server/console.test.ts hub/server/console-knowledge.test.ts hub/server/console-memory.test.ts \
+ hub/server/console-sharing.test.ts hub/server/console-search.test.ts hub/server/console-sync-local.test.ts \
+ hub/server/console-sync-privacy.test.ts hub/platform/environment.test.ts hub/refs/diagnostics.test.ts \
+ hub/platform/ownership.test.ts tests/acceptance/46-knowledge-spaces.test.ts \
+ tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+# After restoring the existing backup wording; original assertions unchanged.
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+ hub/server/console.test.ts hub/server/console-knowledge.test.ts hub/server/console-sync-local.test.ts tests/acceptance/46-knowledge-spaces.test.ts
+npm run test:docs
+```
