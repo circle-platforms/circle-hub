@@ -254,10 +254,22 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   INSERT INTO knowledge_space_search_totals(quota_space,version,token_bytes)
     SELECT s.quota_space,s.version,sum(d.token_bytes) FROM knowledge_space_search s
     JOIN knowledge_space_search_documents d ON d.record=s.record GROUP BY s.quota_space,s.version;` },
+  {version:12,name:'memory_heads_and_usage',sql:`CREATE TABLE memory_heads (
+    document text PRIMARY KEY REFERENCES records(digest), space text NOT NULL,
+    version text NOT NULL REFERENCES records(digest), path text NOT NULL, state text NOT NULL,
+    bytes bigint NOT NULL CHECK(bytes>=0)
+  );
+  CREATE INDEX memory_heads_space ON memory_heads(space,document);
+  CREATE TABLE memory_space_usage (
+    space text PRIMARY KEY, active_bytes bigint NOT NULL CHECK(active_bytes>=0),
+    history_bytes bigint NOT NULL CHECK(history_bytes>=0)
+  );`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  memory_heads:'SELECT, INSERT, UPDATE (version,path,state,bytes)',
+  memory_space_usage:'SELECT, INSERT, UPDATE (active_bytes,history_bytes)',
   knowledge_space_search: 'SELECT, INSERT',
   knowledge_space_search_documents: 'SELECT, INSERT',
   knowledge_space_search_ready: 'SELECT, INSERT',

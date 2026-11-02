@@ -39,6 +39,8 @@ const COLUMN: Record<string, string> = {
   pointers: 'name',
   leases: 'key',
   lease_registrations: 'owner',
+  memory_heads:'space',
+  memory_space_usage:'space',
   knowledge_space_search: 'space',
   knowledge_space_search_documents: 'token_bytes',
   knowledge_space_search_ready: 'row_count',

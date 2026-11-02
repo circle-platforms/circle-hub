@@ -69,7 +69,7 @@ test('every variable is read and validated', () => {
   assert.equal(config.port, 0);
   assert.deepEqual(config.database, { host: '127.0.0.2', port: 6543, database: 'hub_main', user: 'hub_owner' });
   assert.deepEqual(config.keychain, { service: 'org.example.hub', account: 'vault-key' });
-  assert.deepEqual(config.limits, { maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000, maxEntryIndexBytes:2097152,maxSpaceIndexBytes:134217728 });
+  assert.deepEqual(config.limits, { maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000, maxEntryIndexBytes:2097152,maxSpaceIndexBytes:134217728,maxMemoryDocumentBytes:24000,maxMemorySpaceBytes:48000 });
   // The request limit follows a raised upload limit unless set explicitly.
   const raised = loadConfig({ ...BASE, CIRCLE_HUB_MAX_UPLOAD_BYTES: String(96 * 1024 * 1024) });
   assert.ok(raised.limits.maxRequestBytes >= Math.ceil((96 * 1024 * 1024) / 3) * 4);
@@ -216,4 +216,10 @@ test('knowledge index configuration bounds both byte limits independently of per
     for(const value of ['0','1023',String(maximum+1),'1.5','NaN'])assert.ok(problems({...BASE,[key]:value}).some(problem=>problem.includes(key)),key+':'+value);
     for(const value of ['1024',String(maximum)])assert.doesNotThrow(()=>loadConfig({...BASE,[key]:value}));
   }
+});
+
+test('memory document and active-space caps default to decimal bytes and are configurable',()=>{
+ assert.equal(loadConfig(BASE).limits.maxMemoryDocumentBytes,24000);assert.equal(loadConfig(BASE).limits.maxMemorySpaceBytes,48000);
+ const limits=loadConfig({...BASE,CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES:'12000',CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES:'36000'}).limits;assert.equal(limits.maxMemoryDocumentBytes,12000);assert.equal(limits.maxMemorySpaceBytes,36000);
+ for(const key of ['CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES','CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES'])assert.throws(()=>loadConfig({...BASE,[key]:'0'}));
 });

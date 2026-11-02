@@ -48,3 +48,5 @@ not read. `CIRCLE_HUB_HOME` is not among them (the platform reads the data root 
 
 `drift.test.ts` reads exports of hub/platform (tests only; the production code imports it not) and fails when
 the retired-name guard, the platform-only names or the keychain defaults stop agreeing.
+
+Memory limits use decimal UTF-8 bytes: CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES defaults to 24,000 (1–16 MiB) and CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES to 48,000 (1–64 MiB). The latter applies separately to team and each personal space and counts only enabled current text. Historical personal memory also counts toward personal capacity. Disabling an unchanged document remains possible when a limit is reduced.

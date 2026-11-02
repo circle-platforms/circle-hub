@@ -159,3 +159,5 @@ export function formatKnowledgeRetract(report: KnowledgeRetractReport): string[]
   lines.push('原记录未改动；读侧将显示根据已撤回');
   return lines;
 }
+
+export {MemoryDocuments} from './memory.ts';

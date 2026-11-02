@@ -102,7 +102,16 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   assert.equal(await kit.spaceIndex!.ready(spaceVersion.digest, '/'), true);
   assert.equal((await kit.spaceIndex!.search('合成', [{ version: spaceVersion.digest, paths: ['/'] }], 0, 1)).length, 1);
 
+  const document=await kit.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body:{space:member.id,by:member.id,at:new Date().toISOString(),intent:'a'.repeat(64)}});
+  const version=await kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{document:document.digest,space:member.id,title:'合成记忆',path:'/',state:'enabled',bytes:6,markdown:'合成',content_version:null,parent:null,by:member.id,at:new Date().toISOString(),intent:'b'.repeat(64),payload:'c'.repeat(64)}});
+  await kit.store.withTransaction(async tx=>{await kit.store.lock('knowledge-space:'+member.id,tx);await kit.memoryIndex!.apply({document:document.digest,space:member.id,version:version.digest,path:'/',state:'enabled',bytes:6},300,tx);});
+  assert.deepEqual(await kit.memoryIndex!.usage(member.id),{active:6,history:300});
   const refused = [
+    'DELETE FROM memory_heads',
+    'DELETE FROM memory_space_usage',
+    'UPDATE memory_heads SET space=space',
+    'UPDATE memory_heads SET document=document',
+    'UPDATE memory_space_usage SET space=space',
     'DELETE FROM knowledge_space_search',
     'DELETE FROM knowledge_space_search_ready',
     'DELETE FROM knowledge_space_search_totals',

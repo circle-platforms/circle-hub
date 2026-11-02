@@ -683,3 +683,5 @@ Run input declarations bind an ordinary upload's exact capture and uploader in `
 `sourceForRun` checks the run's current actual readers and never changes global artifact ACLs; generated and team-read
 captures keep their run-bound access. `canReadForRun` checks only permission metadata and does not read source bytes.
 Only the trusted engine supplies a prospective snapshot before an automatic result and its run are persisted.
+
+Migration 12 adds rebuildable memory heads and per-space active/history counters. Identity columns are protected from runtime updates. Projection updates and version records commit together under the shared knowledge-space business lock. Decreases update an initialized usage row instead of inserting a negative increment through an upsert constraint. Applied migrations are unchanged.

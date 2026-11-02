@@ -129,7 +129,7 @@ export class KnowledgeSpaces {
   }
   async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? []): Promise<SpaceVersion> {
     const body=this.#draft(space,previous,entries,directories,by,reason,bytes,sources,products);
-    if(space!=='team'&&body.used_bytes>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
+    if(space!=='team'&&body.used_bytes+((await this.#ctx.records.memoryIndex?.usage(space,tx))?.history??0)>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
     body.tree=await this.#tree(body.directories,entries,products,tx);
     const record=await this.#ctx.records.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body,index:[{key:VERSION_KEY,value:space}]},tx);
     const version={root:record.digest,body};await this.#index(version,tx);return version;

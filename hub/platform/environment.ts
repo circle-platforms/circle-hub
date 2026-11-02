@@ -53,6 +53,8 @@ export const HUB_CONFIG_VARIABLES: readonly string[] = [
   'CIRCLE_HUB_MAX_REQUEST_BYTES',
   'CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES',
   'CIRCLE_HUB_MAX_SPACE_INDEX_BYTES',
+  'CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES',
+  'CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES',
 ];
 
 /** Names only platform commands read; hub/config does not know them. */
