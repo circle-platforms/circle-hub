@@ -468,3 +468,20 @@ test('ingest validates provenance, visibility rules and the size cap', async (t)
   assert.deepEqual(await readdir(join(kit.dataDir, 'objects')), []);
   assert.equal((await kit.store.list({ kind: 'source_artifact' })).items.length, 0);
 });
+
+test('an exact uploader declaration is run-scoped, checks actual readers, and never lends a personal or foreign capture',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin,uploader,other}=await people(kit);
+ const artifact=await kit.artifacts.ingest({bytes:Buffer.from('synthetic declared run input'),mediaType:'text/plain',origin:{upload:{session:'synthetic-declaration'}},author:{user:uploader.id},provenanceType:'declared',visibility:{readers:[uploader.id],admins:false,packs:[],shareable:false}});
+ assert.equal(await kit.artifacts.mayDeclareUpload(uploader,artifact.digest),true);assert.equal(await kit.artifacts.mayDeclareUpload(other,artifact.digest),false);
+ const snapshot={...runRecord,run:'run_01arzte2b0dy6pj8cd4avj118q',runner:uploader.id,sources:[{role:'subject' as const,slot:'map',reference:'src:'+artifact.body.sha256,artifact:artifact.digest,upload_declaration:{by:uploader.id}}]};
+ await kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:snapshot,index:[{key:'runs.id',value:snapshot.run}]});
+ assert.equal(await kit.artifacts.source(admin,artifact.body.sha256),null);assert.ok(await kit.artifacts.sourceForRun(admin,artifact.body.sha256,snapshot.run));
+ assert.equal(await kit.artifacts.sourceForRun(other,artifact.body.sha256,snapshot.run),null);
+ await kit.authorizations.share(admin,snapshot.run,[other.id]);assert.ok(await kit.artifacts.sourceForRun(other,artifact.body.sha256,snapshot.run));assert.equal(await kit.artifacts.source(other,artifact.body.sha256),null);
+ const foreign={...snapshot,run:'run_01arzte2b0dy6pj8cd4avj118r',runner:other.id};await kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:foreign,index:[{key:'runs.id',value:foreign.run}]});assert.equal(await kit.artifacts.sourceForRun(admin,artifact.body.sha256,foreign.run),null);
+ const twin=await kit.artifacts.ingest({bytes:Buffer.from('synthetic declared run input'),mediaType:'text/plain',name:'synthetic-personal.txt',origin:{upload:{session:'synthetic-personal'}},author:{user:uploader.id},provenanceType:'declared',visibility:{readers:[uploader.id],admins:false,packs:[],shareable:false}});
+ await kit.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:{space:uploader.id,path:'/',sha256:twin.body.sha256,artifact:twin.digest,size:twin.body.size,by:uploader.id,at:new Date().toISOString()},index:[{key:'knowledge.space.source_hash',value:twin.body.sha256}]});
+ assert.equal(await kit.artifacts.mayDeclareUpload(uploader,twin.digest),false);
+ const personal={...snapshot,run:'run_01arzte2b0dy6pj8cd4avj118s',sources:snapshot.sources.map(binding=>({...binding,artifact:twin.digest}))};await kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:personal,index:[{key:'runs.id',value:personal.run}]});
+ assert.equal(await kit.artifacts.sourceForRun(admin,twin.body.sha256,personal.run,{record:twin.digest}),null);assert.ok(await kit.artifacts.sourceForRun(admin,artifact.body.sha256,snapshot.run,{record:artifact.digest}));
+});

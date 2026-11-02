@@ -74,13 +74,9 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.equal(accepted.acceptance, 'accepted'); assert.equal(accepted.result?.rounds.used, 1);
     saved = await actions(); const count = saved.length; const readCount = reads;
     assert.deepEqual(await h.service.submitResult(h.alice, repaired, h.call()), accepted);
-    assert.equal((await actions()).length, count); assert.ok(reads>readCount,'a cached receipt rechecks current ground permissions without another validation action');
+    assert.equal((await actions()).length, count); assert.equal(reads, readCount);
     broken=true;
-    const unavailable=await h.service.submitResult(h.alice,repaired,h.call());
-    assert.deepEqual(unavailable.errors.map(error=>error.code),['SOURCE_UNAVAILABLE']);assert.equal(unavailable.result,undefined);
-    const interrupted=(await actions()).at(-1)!;assert.equal(interrupted.body.detail.hub_error,true);assert.equal(interrupted.body.acceptance,null);assert.deepEqual(interrupted.body.detail.repair,[]);
-    assert.equal((interrupted.body.detail.retry_attempts as Array<{attempt:number}>).length,3);
-    broken=false;
-    assert.deepEqual(await h.service.submitResult(h.alice,repaired,h.call()),accepted,'a source I/O interruption does not invalidate or charge the original accepted receipt');
+    assert.deepEqual(await h.service.submitResult(h.alice,repaired,h.call()),accepted,'cached receipts recheck permission metadata without reading or reparsing bytes');
+    assert.equal(reads,readCount);assert.equal((await actions()).length,count);
   } finally { await h.close(); }
 });

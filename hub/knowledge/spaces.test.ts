@@ -182,3 +182,12 @@ test('citation totals include other authorized readers while personal statistics
  assert.equal((await spaces.entry(w.outsider,entry.root,'/notes',entry.entry))?.cited_count,null);
  assert.equal((await w.kit.store.countIndexed!({kind:'submission',index:[{key:'runs.submission.cites.entry',value:entry.entry}],since:'0001-01-01T00:00:00.000Z'})).count,0);
 });
+
+test('an administrator declares their own ordinary upload through team import without declaring another account or a personal original',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
+ const upload=(by:typeof w.admin,text:string)=>w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:'text/plain',origin:{upload:{session:'synthetic-team-import'}},author:{user:by.id},provenanceType:'declared',visibility:{readers:[by.id],admins:true,packs:[],shareable:true}});
+ const own=await upload(w.admin,'合成管理员署名原文');const saved=await spaces.write(w.admin,{kind:'observation',path:'/declared-import',statement:'合成团队声明',grounds:[{reference:'src:'+own.body.sha256,quotation:'管理员署名'}]},null,'team');
+ assert.ok(await spaces.entry(w.user,saved.root,'/declared-import',saved.entry));assert.equal((await spaces.source(w.user,own.body.sha256))?.artifact.digest,own.digest);
+ const foreign=await upload(w.user,'合成其他成员上传');await assert.rejects(spaces.write(w.admin,{kind:'observation',statement:'不得代为署名',grounds:[{reference:'src:'+foreign.body.sha256,quotation:'其他成员'}]},null,'team'),{code:'SPACE_ENTRY_INVALID'});
+ const personal=await spaces.importFile(w.admin,Buffer.from('合成个人空间原文'),'text/plain','synthetic-private.txt');await assert.rejects(spaces.write(w.admin,{kind:'observation',statement:'个人原文仍须共享',grounds:[{reference:'src:'+personal.body.sha256,quotation:'个人空间'}]},null,'team'),{code:'SPACE_ENTRY_INVALID'});
+});

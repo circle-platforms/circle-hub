@@ -349,3 +349,20 @@ test('a corrupted bound record preserves the integrity cause through Hub retry r
   assert.equal(restored.acceptance,'accepted',JSON.stringify(restored.errors));assert.equal(restored.result?.rounds.used,0);
 
 });
+
+test('a source private to another account and a nonexistent hash have the same absent diagnostic without an existence oracle',{skip},async t=>{
+ const {h,map}=await open();t.after(()=>h.close());
+ const privateSource=await h.upload(h.bob,Buffer.from('synthetic private source bytes never disclosed'),'text/plain');
+ assert.equal(await h.kit.artifacts.source(h.alice,privateSource.slice(4)),null);
+ const visible=[];
+ for(const reference of [privateSource,'src:'+'f'.repeat(64)]){
+  const {answer}=await submitQuote(h,map,{reference,text:'synthetic caller probe'});
+  assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+  assert.ok(answer.result?.unavailable_references?.includes(reference));
+  const requirement=Object.values(answer.result!.partitions).flat().find(item=>item.item===ITEM.c4)!.requirements.find(row=>row.requirement==='findings')!;
+  visible.push({layers:requirement.layers.map(layer=>[layer.layer,layer.terminal]),failures:requirement.claims.filter(claim=>claim.statement.verdict==='refute').map(claim=>[claim.statement.code,claim.statement.data?.why])});
+  const detail=await h.service.getRun(h.admin,answer.result!.run);assert.ok(detail?.latest,'the safe diagnostic result stays visible without exposing the referenced source');
+  assert.ok(!JSON.stringify(detail).includes('private source bytes never disclosed'));
+ }
+ assert.deepEqual(visible[0],visible[1]);
+});

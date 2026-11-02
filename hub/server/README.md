@@ -19,7 +19,8 @@ The six-tool MCP interface remains unchanged in count. `upload_file.share_entry`
 and address, or registered refusal code/reason; `withdraw_entry` appends withdrawal state. `start_run.pack_space` selects a
 personal workflow, and `get_nodes` reads an authorized pack or declared file using `pack`, `pack_space` and optional `file`.
 Pure generic skills expose their SKILL.md without inventing acceptance requirements. Actual result readers must have every
-underlying ground read right; workflow use never lends private inputs. Per-result state is rechecked for raw `rec:` reads,
+underlying ground read right. Binding an ordinary own upload declares it to that run's readers only; personal-space
+originals and personal-credential sources keep their independent restrictions. Per-result state is rechecked for raw `rec:` reads,
 and text/structured replies expose live withdrawal qualifiers. Username/password remains the only console sign-in for
 all roles; bearer tokens only authenticate MCP/Circle connections. No Circle repository or synchronization code changes.
 
@@ -985,3 +986,7 @@ establish target-server, real-user or production-network behavior.
 
 
 决定 88 第三阶段：“记录”页增加按授权人／接收人索引读取的个人知识与个人包授权历史。普通成员只看本人参与的授权；管理员仅看全体管理员授权，看不到成员间的授权。每次还核对记录正文的受众，错误索引不构成披露依据。提交共享只呈现安全元数据，管理员可见全部，成员只见本人；成员／时间过滤和各来源分页沿用当前页面，工具／运行过滤时不混入无关事件。团队目录显示为层级名称，拒收回执也显示目标；不展示提交原文、个人文件字节或未经处理的参数。
+Run source information identifies uploader declarations: binding an own ordinary upload makes it readable to the run's
+current actual readers in that run only. The console and MCP text show this scope; a bare source read gains no permission.
+References the submitter could not read remain absent diagnostics. Reader checks do not rerun fragment parsers, and an
+unreadable-reference observation in a stored result never authorizes reading the referenced body or a raw submission.

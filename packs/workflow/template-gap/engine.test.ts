@@ -11,6 +11,7 @@ import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../c
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { createPacksPort, createWorkflowStore, temporaryDirectory, writePack, type StartRunDetail } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
+import {repositorySkillVersion} from '../../../hub/testing/skills.ts';
 import { assignedCases, indexView, bindIndex, LOCK, PRODUCT, BUILD, ROOT } from './testing/index.ts';
 import { PACK_DIR } from './api.ts';
 import { openBed, type Bed } from './testing/bed.ts';
@@ -63,11 +64,13 @@ describe('publication', { skip }, () => {
     assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [15, 15, []]);
     assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']], ['tag_declarations', 1, 1, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
-    const [summary] = await store.summaries(bed.runner);
+    const summaries = await store.summaries(bed.runner);
+    assert.deepEqual(summaries.map(row=>row.pack).sort(),[`mindmap-format@${await repositorySkillVersion('mindmap-format')}`,'template-gap@1.2.14'].sort());
+    const summary = summaries.find(row=>row.id==='template-gap')!;
     assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.2.14', 'workflow', ['Synthetic Template', 'MEADOW']]);
     assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true], ['case_index', 'expected', false, false]]);
     assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'judgment', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0], ['tag_declarations', 'fact', ['static'], 'bookkeeping', 0]]);
-    assert.deepEqual(await store.summaries(bed.stranger), []);
+    assert.deepEqual((await store.summaries(bed.stranger)).map(row=>row.pack), [`mindmap-format@${await repositorySkillVersion('mindmap-format')}`]);
   });
 
   it('a sample that does not hold refuses the publication', async () => {
@@ -313,7 +316,7 @@ describe('refusals at start_run', { skip }, () => {
       const published = await withProduct.registry.publish(withProduct.owner, dir.path);
       assert.ok(published.ok, JSON.stringify(!published.ok && published.problems));
       await withProduct.registry.activate(withProduct.admin, 'other-synthetic');
-      const [summary] = await createWorkflowStore(withProduct.registry).summaries(withProduct.runner);
+      const summary = (await createWorkflowStore(withProduct.registry).summaries(withProduct.runner)).find(row=>row.id==='template-gap')!;
       const readable = await createPacksPort(withProduct.registry).readableProducts(withProduct.runner);
       const named = await start({ inputs: { documents: [{ external: onAgile('900951', renamed(baseDocument(), 'r0e2eprod002'), undefined, withProduct) }] }, product: 'Other Synthetic' }, withProduct.runner, withProduct);
       assert.deepEqual(

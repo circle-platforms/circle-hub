@@ -393,3 +393,7 @@ Decision 88 extends the same unmerged model 20 sharing contract: optional `share
 destination; new receipts include optional `target_path` (omitted in older receipts). Personal `source` remains separate
 from the team reference. Team revision lineage reuses `knowledge-space-entry@1.replaces` and the generated superseded
 state; no record mutation, migration, seventh tool or new vocabulary axis is needed.
+Model 21 clarifies the coordinator's upload declaration rule (2026-11-02): exact own ordinary captures bound as inputs are
+declared to that run's readers, and an administrator's own team import is a declaration. `upload_declaration` is optional
+on frozen source bindings. `unavailable_references` on validation results records Hub-observed absent diagnostics only;
+clients cannot set it as a permission exception. Old records and applied migrations are unchanged.

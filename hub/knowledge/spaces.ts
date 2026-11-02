@@ -328,8 +328,8 @@ export class KnowledgeSpaces {
         if (ref.scheme !== 'src')
           fail('SPACE_ENTRY_INVALID', '团队导入须引用业务系统的团队读取原文');
         const artifact = await this.#ctx.records.artifacts.readable(by, ref.sha256);
-        if (!artifact || !('read' in artifact.body.origin) || !artifact.body.visibility.admins)
-          fail('SPACE_ENTRY_INVALID', '上传署名和个人凭据原文尚不能作为团队导入的依据');
+        if (!artifact || !(('read' in artifact.body.origin&&artifact.body.visibility.admins)||await this.#ctx.records.artifacts.mayDeclareUpload(by,artifact.digest)))
+          fail('SPACE_ENTRY_INVALID', '团队导入须引用团队读取原文，或管理员本人声明的普通上传；个人空间原文须先共享或授权');
         teamSources.push({ sha256: ref.sha256, artifact: artifact.digest, size: artifact.body.size });
       }
       const result = await resolveReference(ground.reference, { reader: { user: by.id, role: by.role }, parsers: this.#ctx.parsers, trees: this.treeReader(), sources: { read: hash => this.source(by, hash) } });
@@ -930,6 +930,32 @@ export class KnowledgeSpaces {
     const source=artifact?null:await this.source(by,ref.sha256);if(!artifact&&!source)return false;
     const records=await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({key:'knowledge.space.source_hash',values:[ref.sha256],kind:'knowledge_space_source'});
     return records.some(record=>record.body.space!=='team'&&record.body.artifact===(artifact??source?.artifact.digest));
+  }
+  /** Space authorization alone, for exact-reference scope checks; never falls back to an unrelated capture. */
+  async mayReadSource(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<boolean> {
+    const records = await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({ key: 'knowledge.space.source_hash', values: [sha256], kind: 'knowledge_space_source' });
+    for (const record of records) {
+      const body = SpaceSourceBody.parse(record.body);
+      if(capture&&body.artifact!==capture)continue;
+      if (!(await this.mayRead(by, body.space, body.path)))
+        continue;
+      let owner = await this.#ctx.records.principals.get(body.space === 'team' ? body.by : body.space);
+      if (body.space === 'team' && (!owner || owner.disabled))
+        owner = (await this.#ctx.records.principals.list?.() ?? []).find(user => !user.disabled && user.role === 'admin') ?? null;
+      if (!owner || owner.disabled)
+        continue;
+      if (runId) {
+        const run = (await this.#ctx.records.store.find<any>({ key: 'runs.id', value: runId, kind: 'run', limit: 1 })).items[0];
+        const locks = run?.body.knowledge_spaces;
+        if (!locks)
+          continue;
+        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? await this.version(locks.personal) : await this.current(body.space);
+        if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
+          continue;
+      }
+      const source=await this.#ctx.records.store.get<import('../records/api.ts').SourceArtifactBody>(body.artifact);if(source?.kind==='source_artifact'&&source.body.sha256===sha256&&await this.#ctx.records.artifacts.canRead(owner,source))return true;
+    }
+    return false;
   }
   async hasSource(sha256: string): Promise<boolean> { return (await this.#ctx.records.store.find({ key: 'knowledge.space.source_hash', value: sha256, kind: 'knowledge_space_source', limit: 1 })).items.length > 0; }
   treeReader(): TreeReader {

@@ -221,9 +221,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(repeat);}
+  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(repeat);}
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body);return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(previous.body);}
+  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(previous.body);}
 
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -302,7 +302,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if (sessionMissing) {
     outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
   }
-  if(outcome.result.acceptance==='accepted'){const refusal=await groundsAudience(ctx,run,outcome.result);if(refusal)outcome={result:notAccepted(base,[refusal]),problems:new Set()};}
+  if(outcome.result.acceptance==='accepted'){const refusal=await groundsAudience(ctx,run,outcome.result,{submitter:user});if(refusal)outcome={result:notAccepted(base,[refusal]),problems:new Set()};}
   if(outcome.result.acceptance==='accepted')await applyDispatchResults(ctx,run,outcome.result);
   await recordResultRequests(ctx,run,outcome.result,roundsUsed,args);
   for(const error of outcome.result.errors)if(error.requirement&&isReason(error.code))outcome.problems.add(error.requirement);

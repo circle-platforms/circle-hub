@@ -675,7 +675,7 @@ async function startFresh(
   const runDigest = runRecordDigest(record, startedAt);
   const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user) : null;
   if (production !== null) {
-    const refusal=await groundsAudience(ctx,record,production.evaluation.result,{pending:true});if(refusal)throw new Refusal([refusal]);
+    const refusal=await groundsAudience(ctx,record,production.evaluation.result,{pending:true,submitter:user});if(refusal)throw new Refusal([refusal]);
     const resultTooLarge = tooLarge(ctx, production.evaluation.result, `这个被判对象的校验结果（${items.length} 个条目）`, subjectPath);
     if (resultTooLarge !== null) throw resultTooLarge;
   }
@@ -804,7 +804,7 @@ export async function recheckProduction(ctx:EngineContext,stored:StoredRecord<Ru
   const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest,stored.body.pack_space);
   if(!workflow||!isProduction(workflow))return null;
   const produced=await evaluateProduction(ctx,stored.body,stored.digest,workflow,traceId,user);
-  const refusal=await groundsAudience(ctx,stored.body,produced.evaluation.result);
+  const refusal=await groundsAudience(ctx,stored.body,produced.evaluation.result,{submitter:user});
   if(refusal){
     await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(stored.digest)],startedAt:produced.startedAt,endedAt:ctx.now().toISOString(),acceptance:'not_accepted',codes:[refusal.code],detail:{production:true,refusal:refusal.code,result:null,repair:[]}});
     return null;

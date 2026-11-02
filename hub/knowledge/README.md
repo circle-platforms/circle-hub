@@ -1243,3 +1243,6 @@ Frozen input captures retain their identity as well as their byte hash. Space-so
 substitute another authorized copy's artifact metadata. Every capture is checked when several inputs share bytes. Explicit
 space grants can supplement original read rights at input binding, with the requested capture retained; independent ordinary
 captures still use their own original authority. Current grant revocation applies to frozen capture reads.
+An administrator's team import of their own ordinary upload records that administrator's declaration. Another account's
+upload and an original registered in a personal space cannot be declared through this route. Personal grants still apply
+by exact capture; `mayReadSource` checks that authority without reading or parsing the original bytes.

@@ -620,6 +620,20 @@
       "items": {
         "type": "object",
         "properties": {
+          "upload_declaration": {
+            "description": "The uploader bound this exact ordinary upload as input and declared it to the actual readers of this run only; never a personal-space original",
+            "type": "object",
+            "properties": {
+              "by": {
+                "type": "string",
+                "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+              }
+            },
+            "required": [
+              "by"
+            ],
+            "additionalProperties": false
+          },
           "artifact": {
             "description": "Exact source_artifact record returned by this read, independent of equal-byte captures",
             "type": "string",

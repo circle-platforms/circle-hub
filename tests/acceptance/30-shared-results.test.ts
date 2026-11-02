@@ -65,9 +65,6 @@ test('administrator production sharing is read only, carries generated evidence 
   const submit=await viewer.call('submit_result',{run:runId,model:'synthetic',items:[]});assert.equal(submit.isError,true);assert.equal(submit.out.errors[0].code,'SOURCE_UNAVAILABLE');
   const ownSource=await viewer.upload(Buffer.from(JSON.stringify({schema:'synthetic-view@1',totals:{}})),'synthetic-view.json','application/json');
   const input={pack,product:bed.product.names[0],build:bed.site.RELEASED,client_key:'synthetic-share-key',inputs:{view:{reference:ownSource}}};
-  const refused=await viewer.call('start_run',input);assert.equal(refused.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE');assert.equal(refused.out.run,undefined,'a production policy does not grant its audience a new private upload');
-  const uploaded=(await bed.hub.records.artifacts.records(ownSource.slice(4))).find(row=>'upload' in row.body.origin)!;
-  await bed.hub.records.authorizations.share(bed.hub.admin.principal,artifactShareKey(uploaded),{kind:'pack_users',pack});
   const own=await viewer.call('start_run',input);assert.equal(own.isError,false,JSON.stringify(own.out.errors));assert.notEqual(own.out.run!.run,runId);
   await bed.hub.hub.registry.unassign(bed.hub.admin.principal,readerId,pack);
   assert.equal((await viewer.call('get_nodes',{reference:result,run:runId})).isError,true);

@@ -35,6 +35,7 @@ export type InputBinding = z.infer<typeof InputBinding>;
 
 /** A source bound to the run (P02), with the role it plays (A03). Inputs carry their slot; sources the pack bound itself carry none. */
 export const SourceBinding = z.strictObject({
+  upload_declaration:z.strictObject({by:UserId}).optional().describe('The uploader bound this exact ordinary upload as input and declared it to the actual readers of this run only; never a personal-space original'),
   artifact:Sha256.optional().describe('Exact source_artifact record returned by this read, independent of equal-byte captures'),
   read_manifest:Sha256.optional().describe('Observed read action that returned this exact capture'),
   meta_artifact:Sha256.optional().describe('Exact metadata source_artifact returned by the same read'),
@@ -45,7 +46,7 @@ export const SourceBinding = z.strictObject({
   external: ExternalObjectId.optional().describe('external object identity with the revision the Hub read'),
   media_type: z.string().optional(),
   label: z.string().optional().describe('display name, for example the title of a linked record'),
-});
+}).refine(source=>!source.upload_declaration||source.artifact!==undefined&&source.slot!==undefined,'an upload declaration pins an exact capture in an input slot');
 export type SourceBinding = z.infer<typeof SourceBinding>;
 
 /** An item the pack's projection function produced from the judged source. The Hub core never interprets `fields`. */

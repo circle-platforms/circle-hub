@@ -962,6 +962,7 @@ function pushCapped(blocks: Block[], block: Block & { entries: readonly Entry[] 
 function sourceEntry(s: SourceBinding, run: string): Entry {
   const clip = new Clip(null, seeConsole(run));
   const parts = [
+    s.upload_declaration && '绑定为输入即视为声明：本次运行的读者可读取该原文',
     s.slot && `输入 ${clip.field(s.slot, CLIP.code, '输入槽名的超出部分')}`,
     s.external && `外部对象 ${clip.field(s.external, CLIP.name, '外部对象编号的超出部分')}`,
     s.media_type && clip.field(s.media_type, CLIP.name, '媒体类型的超出部分'),

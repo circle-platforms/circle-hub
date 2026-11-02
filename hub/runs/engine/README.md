@@ -12,6 +12,13 @@ The citation index classifies space roots before indexing accepted submissions. 
 equal content cannot enter the team entry count through a private reference. The same classification applies during
 background backfill. Existing legacy node/entry counts and their limits stay compatible.
 
+Ordinary own uploads bound as inputs carry a frozen `upload_declaration`, visible in the console and MCP run text.
+Only actual current run readers inherit that exact capture's run-scoped read right; no global artifact grant is added.
+Permission checks use source/root metadata, without rereading bytes or parsing a selector already checked by the exact
+validator. An unavailable reference stays indistinguishable from a forbidden reference to the submitter. The Hub records
+those identities as `unavailable_references` diagnostic metadata on its validation result; raw client data cannot set a
+permission exception. Current readable grounds remain subject to every actual reader's current grants.
+
 
 Starting runs, boundary validation, terminal states and partitions: model elements W01 W02 W03 W05 W06 W07 W08, V01 V03 V04
 V05 V06 V07, T03 T04, A01-A04, B01 B05 and C08 R[4]. The server and the console import only `api.ts`.

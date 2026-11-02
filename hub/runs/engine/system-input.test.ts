@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
-import {accepted,runRecord} from '../../../contracts/src/fixtures.ts';
+import {accepted,partitions,runRecord} from '../../../contracts/src/fixtures.ts';
 import {ValidationResult} from '../../../contracts/src/validation.ts';
 import {RunRecord} from '../../../contracts/src/run.ts';
 import {digestOf} from '../../records/api.ts';
@@ -15,11 +15,12 @@ after(async()=>{await kit?.close();await pg?.stop();});
 test('system delivery inputs are reproducible and never alias a received user submission with identical bytes',async()=>{
   const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
   const at='2026-10-24T00:00:00.000Z';
-  const run=RunRecord.parse({...runRecord,runner:admin.id,version:'10.6',build:'rel_demo_10_6_1',started_at:at,submission_due:'2026-10-26T00:00:00.000Z'});
+  // This receipt tests delivery identity, without the unrelated and unretained sources in the schema example.
+  const run=RunRecord.parse({...runRecord,sources:[],target_basis:[],items:[],runner:admin.id,version:'10.6',build:'rel_demo_10_6_1',started_at:at,submission_due:'2026-10-26T00:00:00.000Z'});
   const stored=await putRun(kit.store,run,at);
   const input={run:run.run,run_record:stored.digest,observed_at:at,submission_due:run.submission_due};
   const action=await putAction(kit.store,{action:'validate',run:run.run,inputs:['rec:'+stored.digest],startedAt:at,endedAt:at,acceptance:null,codes:[],detail:{input,system_delivery:true}});
-  const result=ValidationResult.parse({...accepted,run:run.run,submission:digestOf(input),system_input:'rec:'+action.digest});
+  const result=ValidationResult.parse({...accepted,partitions:partitions({}),cross_item:[],run:run.run,submission:digestOf(input),system_input:'rec:'+action.digest});
   const saved=await putResult(kit.store,result,at);
   assert.equal(saved.body.submission,digestOf((await kit.store.get<{detail:{input:unknown}}>(action.digest))!.body.detail.input));
   assert.equal(await resultFor(kit.store,run.run,result.submission),null,'system results never occupy user submission indexes');

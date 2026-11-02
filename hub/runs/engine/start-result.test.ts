@@ -49,7 +49,7 @@ function skeleton(run: { run: string; items: { id: string }[]; slots?: { schema:
 }
 
 describe('start_run answers carry the production result and the evidence gaps', () => {
-  test('a production recheck refuses grounds hidden from a newly added result reader', {skip}, async()=>{
+  test('an uploader declaration remains scoped to the run when a result reader is added', {skip}, async()=>{
     const current=await openHarness(postgres);
     try{
       const input=await current.upload(current.alice,toyMap(standardDocument()));
@@ -58,10 +58,11 @@ describe('start_run answers carry the production result and the evidence gaps', 
       const stored=await runById(current.kit.store,first.run.run);assert.ok(stored);
       const ctx=createEngineContext({records:current.kit,workflows:current.workflows,packs:current.packs,knowledge:current.knowledge,external:current.external,parsers:createTestParserRegistry()});
       const before=(await resultsOf(current.kit.store,first.run.run)).length;
-      assert.equal(await recheckProduction(ctx,stored,current.alice,current.call().traceId),null);
-      assert.equal((await resultsOf(current.kit.store,first.run.run)).length,before,'rechecking does not append an accepted result with unreadable grounds');
+      assert.ok(await recheckProduction(ctx,stored,current.alice,current.call().traceId));
+      assert.ok((await current.service.getRun(current.bob,first.run.run))?.latest);
+      assert.equal(await current.kit.artifacts.source(current.bob,input.slice(4)),null,'a run declaration does not change global source access');
       const action=(await actionsOf(current.kit.store,first.run.run)).at(-1)!;
-      assert.deepEqual(action.body.codes,['RESULT_GROUNDS_UNREADABLE']);assert.equal(action.body.acceptance,'not_accepted');
+      assert.deepEqual(action.body.codes,[]);assert.notEqual(action.body.acceptance,'not_accepted');
     }finally{await current.close();}
   });
   test('startRun of a fact-only pack answers result {reference, counts}; startRunDetailed gives the same with the whole result and the run record', { skip }, async () => {

@@ -304,7 +304,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   const basis = run.target_basis.length === 0 ? html`<p class="empty">没有</p>` : html`${run.target_basis.map(claimBlock)}`;
   const sources = table(
     [axisUiLabel('source_role'), '引用', '输入', '外部对象', '媒体类型', '名称'],
-    run.sources.map((s) => [uiLabelOf('source_role', s.role), code(s.reference), s.slot ?? '', s.external ? code(s.external) : '', s.media_type ?? '', s.label ?? '']),
+    run.sources.map((s) => [uiLabelOf('source_role', s.role), code(s.reference), s.slot ?? '', s.external ? code(s.external) : '', s.media_type ?? '', html`${s.label??''}${s.upload_declaration?html`<p title="只对本次运行有效，不改变原文的全局读取权限">绑定为输入即视为声明：本次运行的读者可读取该原文</p>`:''}`]),
   );
   const requirements = table(
     ['键', '名称', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '修复轮数'],

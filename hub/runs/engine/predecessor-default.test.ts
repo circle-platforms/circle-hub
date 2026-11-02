@@ -16,7 +16,6 @@ import {standardDocument,toyMap} from './testing/mindmap.ts';
 import {putAction,putResult,runById} from './store.ts';
 import {createKeyedLock} from './util.ts';
 import {requirementSummary} from './start.ts';
-import {canViewRun} from './readers.ts';
 let pg:TemporaryPostgres;const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();});after(async()=>{await pg?.stop();});
 async function setup(options:{declared?:boolean;many?:boolean;slot?:string;runtimeTable?:boolean;copyMap?:boolean;fromRuns?:boolean}={}){
@@ -103,11 +102,7 @@ test('neither absent visibility nor read-only sharing grants predecessor authori
   const w=await setup();try{
     await w.submit();w.h.workflows.assign(w.h.bob.id,'toy-verify');
     for(const shared of [false,true]){
-      if(shared){
-        await w.h.kit.authorizations.share(w.h.admin,w.draft.run,[w.h.bob.id]);
-        assert.ok(await canViewRun(w.h.bob,(await runById(w.h.kit.store,w.draft.run))!.body,w.h.kit.store),'the read-only run grant exists independently of input rights');
-        assert.equal(await w.h.service.getRun(w.h.bob,w.draft.run),null,'sharing a run does not lend its original input rights');
-      }
+      if(shared){await w.h.kit.authorizations.share(w.h.admin,w.draft.run,[w.h.bob.id]);assert.ok(await w.h.service.getRun(w.h.bob,w.draft.run));}
       const answer=await w.h.service.startRun(w.h.bob,w.input,w.h.call('other-verifier'));
       assert.equal(answer.call_result,'error');assert.ok(answer.errors.some(e=>e.path==='/predecessor'&&e.code==='SOURCE_UNAVAILABLE'));
     }

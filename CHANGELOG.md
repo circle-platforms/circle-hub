@@ -14,6 +14,11 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Own ordinary uploads bound as run inputs now declare that exact capture to the run's current readers, with visible
+  provenance and no global read grant. Administrator imports likewise declare their own ordinary uploads. Source/root
+  permission checks preserve exact-validator outcomes and bounded byte-read retries; absent and forbidden references
+  remain indistinguishable. Personal-space originals and personal-credential sources keep independent authorization.
+
 - Personal grant audit summaries are limited to participants, or all-administrator grants for administrator views; administrators see safe sharing receipts without private input content. Frozen source capture checks prevent an authorized equal-byte copy from lending another capture's private metadata, and standalone binding/reader components tolerate missing knowledge services.
 
 - Sharing revisions now supersede only the submitter's own prior team entry from the same personal lineage, preserving withdrawal history. MCP and the console accept a team directory, default to the personal path, and show the target in merged/refused receipts while retaining the private origin.

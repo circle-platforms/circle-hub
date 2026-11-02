@@ -127,7 +127,7 @@ export async function bindInputs(
         mediaType: source.mediaType,
         sha256: ref.sha256,
         sourceRecord:source.artifact.digest,
-        binding: { reference: `src:${ref.sha256}`,artifact:source.artifact.digest,media_type: source.mediaType, ...(source.artifact.body.name ? { label: source.artifact.body.name } : {}) },
+        binding: { reference: `src:${ref.sha256}`,artifact:source.artifact.digest,...(await artifacts.mayDeclareUpload?.(user,source.artifact.digest)?{upload_declaration:{by:user.id}}:{}),media_type: source.mediaType, ...(source.artifact.body.name ? { label: source.artifact.body.name } : {}) },
         external: null,
         meta: null,
         record: null,

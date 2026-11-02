@@ -9,8 +9,10 @@ by owner/id rather than global pack id. `personalPackGrants` reduces the newest 
 current assignments, while an older personal run keeps its original audience.
 
 Raw personal metadata is read through authorized package views, not `rec:` record access. `sourceForRun` preserves
-private-run boundaries and original capture/read-tier rules; a workflow grant does not lend a connector original or
-personal-space capture. Knowledge and engine enforce the complete result-ground rule at admission and read time.
+private-run boundaries and original capture/read-tier rules. A frozen declaration lends an ordinary own upload only
+within its run; team-connection observations and Hub-generated files keep their established run scope. Personal-space
+captures and personal-credential sources still require their independent grants. Knowledge and engine enforce the
+complete result-ground rule at admission and read time.
 No migration or change to existing record/object bytes is required for these new registered kinds.
 
 
@@ -676,3 +678,8 @@ The second knowledge-space review adds `Artifacts.recordUploadRefusal` for a tru
 has rolled back. It appends safe scan/digest/uploader metadata only and never stores original bytes. Ordinary upload
 refusals keep their existing path; a transactional importer persists exactly one surviving audit, including a shared-path
 preflight refusal. The final error names that surviving audit rather than an action rolled back with the import.
+Run input declarations bind an ordinary upload's exact capture and uploader in `SourceBinding.upload_declaration`.
+`mayDeclareUpload` excludes another account's capture, personal-space originals and client operation captures.
+`sourceForRun` checks the run's current actual readers and never changes global artifact ACLs; generated and team-read
+captures keep their run-bound access. `canReadForRun` checks only permission metadata and does not read source bytes.
+Only the trusted engine supplies a prospective snapshot before an automatic result and its run are persisted.

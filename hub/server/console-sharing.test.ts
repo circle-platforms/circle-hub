@@ -12,9 +12,6 @@ const skip = await sandboxSkip();
 before(async()=>{postgres=await startPostgres();}); after(async()=>{await postgres?.stop();});
 test('console shared views are marked, administrator views list decisions, and revocation restores the neutral page', {skip}, async t=>{
   const h=await openHarness(postgres);t.after(()=>h.close());
-  // Shared view fixtures explicitly grant the input captures; sharing a run alone grants no source right.
-  const ingest=h.kit.artifacts.ingest.bind(h.kit.artifacts);
-  h.kit.artifacts.ingest=input=>ingest({...input,visibility:{...input.visibility,readers:[h.alice.id,h.bob.id,h.admin.id]}});
   const source=await h.upload(h.alice,toyMap(standardDocument()));
   const run=(await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:source}}},h.call())).run!;
   const context=(principal: typeof h.bob): PageContext=>({deps:{records:h.kit,runs:h.service} as unknown as ServerDeps,principal,admin:principal.role==='admin',url:new URL('http://127.0.0.1/console/results'),chrome:title=>({title,user:{name:principal.name,role:principal.role,admin:principal.role==='admin'},csrf:null}),userName:async id=>id?(await h.kit.principals.get(id))?.name??id:'—'});
@@ -35,9 +32,6 @@ test('console shared views are marked, administrator views list decisions, and r
 
 test('shared console receipts omit rejected validation explanations and pointers but preserve owner diagnostics', {skip}, async t=>{
   const h=await openHarness(postgres);t.after(()=>h.close());
-  // Shared view fixtures explicitly grant the input captures; sharing a run alone grants no source right.
-  const ingest=h.kit.artifacts.ingest.bind(h.kit.artifacts);
-  h.kit.artifacts.ingest=input=>ingest({...input,visibility:{...input.visibility,readers:[h.alice.id,h.bob.id,h.admin.id]}});
   const source=await h.upload(h.alice,toyMap(standardDocument()));
   const started=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',inputs:{map:{reference:source}}},h.call());
   assert.equal(started.call_result,'ok',JSON.stringify(started.errors));const run=started.run!;

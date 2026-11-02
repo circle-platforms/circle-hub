@@ -34,7 +34,7 @@ async function visibleRun(ctx: EngineContext, user: Principal, run: string): Pro
 export async function resultState(ctx:EngineContext,user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[]}>{
   const stored=await visibleRun(ctx,user,result.run);
   const readable=stored!==null&&await resultReadableBy(ctx,stored.body,result,user);
-  return {readable,grounds_withdrawn:readable?await withdrawnGrounds(ctx,result):[]};
+  return {readable,grounds_withdrawn:readable?await withdrawnGrounds(ctx,result,true):[]};
 }
 
 async function withRulingSummary(ctx:EngineContext,record:RunRecord,packages=new Map<string,Promise<LoadedWorkflow|null>>()):Promise<RunRecordView>{
@@ -84,7 +84,7 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
   const notices=await criterionNotices(ctx,stored.body);
-  const withdrawn=await withdrawnGrounds(ctx,results.map(row=>row.body));
+  const withdrawn=await withdrawnGrounds(ctx,results.map(row=>row.body),true);
   return { ...(withdrawn.length?{grounds_withdrawn:withdrawn}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
@@ -136,7 +136,7 @@ export async function getResult(ctx: EngineContext, user: Principal, run: string
   const store = ctx.deps.records.store;
   const management=submission===undefined?await abandonDecision(ctx,run):null;
   const found = management ? (await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null : submission===undefined?await latestAccepted(store,run):await resultFor(store,run,submission);
-  return found===null||!await resultReadableBy(ctx,stored.body,found.body,user)?null:{...await ruleWithdrawal(ctx,user,stored.body),grounds_withdrawn:await withdrawnGrounds(ctx,found.body),record:found.digest,result:found.body};
+  return found===null||!await resultReadableBy(ctx,stored.body,found.body,user)?null:{...await ruleWithdrawal(ctx,user,stored.body),grounds_withdrawn:await withdrawnGrounds(ctx,found.body,true),record:found.digest,result:found.body};
 }
 
 /** The runs of one pack the user may see, newest first. */

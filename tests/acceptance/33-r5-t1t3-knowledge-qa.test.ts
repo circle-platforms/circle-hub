@@ -21,7 +21,7 @@ let adminClient: McpClient;
 before(async () => {
   postgres = await startPostgres();
   // This scenario keeps originals administrator-only; a readable product tree grants no original bytes.
-  bed = await openBed({ postgres, syncTwoName: true, syncOneName: true, shareCatalogOriginals:false });
+  bed = await openBed({ postgres, syncTwoName: true, syncOneName: true });
   client = await bed.connect(bed.reviewer, 'session-knowledge-qa');
   adminClient = await bed.connect(bed.hub.admin, 'session-admin');
 });
