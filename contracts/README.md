@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 92 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 93 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -73,6 +73,15 @@ The phase-2 security review (Claude, requested by the owner on 2026-11-02) sets 
 projections. A team space version may have `by: null` for Hub directory registration; a personal version must still name
 its owner. The four generated skill protocol mirrors advance with their manifests to html-format/mindmap-format 1.0.5
 and xml-format/workbook-format 1.0.6; business code is unchanged.
+
+Decision 84 phase 3 (decision 87, task `kw-share.md`, 2026-11-02) sets model 19. It registers merged/rejected sharing
+status, the sharing receipt and four personal-pack record kinds, ordered sharing refusal codes and result-ground access
+and withdrawal codes. Entry provenance, personal pack/skill namespaces and promoted team-run sharing fields are additive;
+old records remain valid without them. Sharing receipts enforce owner and success/refusal cross-field consistency at
+runtime. The six tools gain sharing, withdrawal and authorized pack-file reads without changing protocol names or adding
+a tool. Generated skill mirrors/manifests are html-format/mindmap-format 1.0.6 and xml-format/workbook-format 1.0.7;
+no skill business code changes. The phase-2 temporary personal-ground code remains registered for old receipts, while
+phase 3 uses the complete current-reader rule.
 
 ## Editing `contracts/codes.json`
 

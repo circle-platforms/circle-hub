@@ -16,6 +16,17 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 - Second knowledge-space review: reject private input metadata before run creation, retain exactly one safe import-refusal audit after rollback, protect production rechecks, and serialize writes per space. Migration 11 counts current-version index references incrementally, isolates product quotas and adds configurable limits. Model 19 search warnings preserve usable matches without treating skipped scopes as a complete search; the four generic skills only update protocol mirrors and patch manifests.
 
+- Verified personal knowledge can be submitted to the team through MCP or the console. Ordered checks resolve grounds,
+  verify quotations, reject private-credential/unsigned-upload sources, deduplicate team content and scan credentials.
+  Merges preserve the original and record submitter/source; owners see safe merged/rejected receipts and can withdraw
+  their team submissions. Dependent entries/results show current withdrawal qualifiers without rewriting history.
+- Members can publish personal workflows and generic skills using the existing validators and sandbox. Owner-managed
+  use grants include specific members or all administrators; administrators have no default access. Pack ids, immutable
+  files and frozen skill closures keep their personal namespace. Team promotion requires the existing publish right;
+  new team runs follow assignments, while old personal results keep their audience. Result admission/read checks every
+  actual reader's underlying grounds and rechecks grants on cached retries. Console sign-in remains password-only.
+
+
 - Knowledge-space security review: preserve independent source captures, restrict run quotation lookup to declared inputs, hide personal audit history and citation counts from grantees, inspect shared-path imports, and register team directories as Hub actions. A temporary registered refusal prevents personal grounds from entering shared results until decision 84 phase 3.
 - Search migration 10 stores one bounded token document per immutable entry record and lightweight version references. Reads bypass write queues, and imports check the complete next snapshot before saving original bytes. Model 18 and four protocol-only skill patch releases accompany these changes.
 
