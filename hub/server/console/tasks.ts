@@ -68,7 +68,7 @@ export async function taskHead(ctx: PageContext, detail: RunDetail, titles: Read
   const line = [run.product, run.version, run.build].filter(Boolean).join(' / ');
   return card(null, html`<div class="dhead"><div class="grow">
 <div class="row"><h2 title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
-<p class="sub mt4">任务包 ${run.pack}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)} · 运行 ${code(run.run)}</p>
+<p class="sub mt4">工作流 ${run.pack}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)} · 运行 ${code(run.run)}</p>
 </div></div>`);
 }
 
@@ -104,7 +104,7 @@ function callDot(line: CallLogLine): DotState {
 
 function callSub(line: CallLogLine, run: RunRecordView): string {
   const parts: string[] = [];
-  if (line.tool === 'start_run') parts.push(`任务包 ${run.pack}`);
+  if (line.tool === 'start_run') parts.push(`工作流 ${run.pack}`);
   if (line.acceptance !== null) parts.push(uiLabelOf('acceptance', line.acceptance));
   if (line.call_result !== 'ok') parts.push(uiLabelOf('call_result', line.call_result));
   if (line.error_code !== null) parts.push(line.error_code);

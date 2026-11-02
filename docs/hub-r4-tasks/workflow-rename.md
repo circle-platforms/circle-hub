@@ -56,16 +56,26 @@
 - 第 1 项：生成器同步四份技能合约镜像后，原文档检查因版本未递增而失败；已按上述协调授权升补丁版并刷新发布清单，没有增加来源数据的 SHA 检查。
 - 第 2、3 项：原 `stateOf` 硬编码四种既有发布状态；已按上述协调授权增加 `pack_status` 显示轴，页面按原字段推导后取生成标签。
 - 现有目录接口对成员只返回可用工作流，移位不扩大读权；成员的原有知识读取仍保留。产品声明接口只提供当前启用版本，未启用或退役来源缺少产品线元数据时显示破折号，不从名称猜测。
+- 合约的技术种类名称保留；服务器持有的界面、命令与答复文字使用新界面用语。历史记录、作者内容及其他包给出的诊断原文照常显示，不做文字替换；例如运行引擎拒绝分配产品来源时的原诊断仍使用技术名称“产品包”。未为改名修改运行引擎或知识库业务代码。
 
 ## 做了的
 
 - 第 1 项：模型 16 与四种界面用语已生成；同步查询工作流、工作流分配、`SOURCE_UNAVAILABLE.fix`、`PACK_POLICY_DENIED.when` 及闭集校验提示。增加仅供显示的 `pack_status`，同步版本断言与四个技能的生成镜像及发布清单，技术名称、既有代码和协议未变。授权来源见“做法”的范围补充。
 - 第 2 项：保留 `/console/packs`，避免已有链接失效；导航改名，工作流与通用技能分栏并使用约定的标题悬停说明。详情上方单列验收要求，未能读取要求时明确显示暂不可读，版本与权限仍可见；不画节点图。状态由既有字段推导并取 `pack_status` 生成标签。
 - 第 3 项：知识库新增产品知识来源表（名称、版本、状态、产品线），连接新增业务系统接入表（名称、版本、状态、对应业务系统）；工作流页不列两者。详情保留原地址，面包屑与当前导航按归属显示。原有目录权限、知识读取与连接路由不变；未知元数据不猜测。
+- 第 4 项：同步服务器持有的任务筛选、团队分配、记录、搜索、空状态、错误、CLI 与工具答复文案；混合种类的发布与目录文案使用“发布内容”，具体种类取生成标签。发布操作按工作流、通用技能、产品知识来源、业务系统接入显示标题与返回位置，暂存清单种类只用于显示，上传校验、命令参数、权限和接口不变。卡片名称与种类分行显示。
 
 ## 验证
 
 - 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=2 contracts/src/vocabulary.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/tools.test.ts tools/gen-contracts.pack-vocabulary.test.ts` 118 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。
 - 第 2 项：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/server/console-places.test.ts` 12 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。页面检查覆盖导航、两栏、悬停说明、验收要求顺序与不显示节点图。
 - 第 3 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts` 23 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。覆盖归属与面包屑、成员权限保持、退役和未启用状态及缺少元数据；新增边界用例首次用了不支持状态覆盖的基础夹具，改为显式目录夹具后重跑通过。
+- 第 4 项：`npm run typecheck`、`npm run test:docs`（285 通过、0 跳过）通过；定向检查如下，最终均为 0 失败、0 跳过：
+  - `node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-manage.test.ts hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts hub/server/console/staging.test.ts hub/server/console-systems.test.ts hub/server/console-api-write.test.ts hub/server/console-api.test.ts hub/server/console-search.test.ts hub/server/console-live.test.ts hub/server/console-results.test.ts hub/server/console-page.test.ts`：93 通过。
+  - `node --test --test-concurrency=2 hub/server/cli.test.ts hub/server/mcp.test.ts hub/server/console.test.ts hub/server/assemble/sandbox-notice.test.ts`：90 通过。
+  - `node --test --test-concurrency=2 hub/server/text.test.ts hub/server/text-history.test.ts hub/server/cli-local-tools.test.ts hub/server/docs.test.ts hub/server/units.test.ts hub/server/command-bridge.test.ts hub/server/variables.test.ts hub/server/assemble/sandbox-notice.test.ts`：132 通过。
+  - `node --test --test-concurrency=1 --test-name-pattern='pack publish|publish needs|text from a pack|pack shapes|runs every check of publish|publishes a copy|--as|add and list a resource|update changes metadata|without the vault master key' hub/server/assemble/cli-admin.test.ts`：11 通过；模式之外未运行，不算通过。
+  - `node --test --test-concurrency=1 --test-name-pattern='a connector or registry message|the operator log takes' hub/server/assemble/assemble.test.ts`：2 通过；模式之外未运行，不算通过。
+  - 首次检查暴露了旧文案、旧目录位置和旧账户状态断言，已按实际行为同步后重跑；MCP 并发用例原先并行准备三个账户，触发已有的两路密码哈希上限，现仅串行准备账户，24 个并发 MCP 请求的断言保留。其他包的诊断原文断言保持原样。
+  - 隔离浏览器走查后分开卡片名称与种类；`npm run typecheck` 和 `node --test --test-concurrency=1 hub/server/console-places.test.ts` 重跑通过，13 通过、0 跳过。
 - 技能镜像的版本检查最初失败（同版内容改变），按协调授权升版并刷新清单后，上述文档检查重跑通过；首次失败不记为通过。未运行全量回归或来源相关检查。

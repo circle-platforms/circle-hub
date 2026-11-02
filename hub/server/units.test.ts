@@ -300,7 +300,7 @@ test('a document too large for its parse is answered with a smaller original, an
     assert.match(answer.fix ?? '', /^原样重读仍会失败；请来源维护者拆分原件后重读/);
   }
   for (const error of [new SandboxError('SANDBOX_VIOLATION', { reason: 'symbolic_link' }), new SandboxError('SANDBOX_TIMEOUT'), new SandboxError('FUNCTION_THREW')]) {
-    assert.equal(sandboxError(error).fix, '管理员核对技能包和沙箱状态，恢复后重新读取', error.code);
+    assert.equal(sandboxError(error).fix, '管理员核对通用技能和沙箱状态，恢复后重新读取', error.code);
   }
 });
 

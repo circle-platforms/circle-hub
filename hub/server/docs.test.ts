@@ -207,7 +207,7 @@ describe('runs over named documents', () => {
       );
       const boot = await kit.principals.bootstrapAdmin('管理员');
       const admin: Principal = { id: boot.user.id, name: boot.user.name, role: boot.user.role };
-      await kit.authorizations.grantPublishRight(admin, boot.user.id, '文档测试发布任务包');
+      await kit.authorizations.grantPublishRight(admin, boot.user.id, '文档测试发布工作流');
       const dir = (await writePack(join(scratch, DOCS_PACK), docsPack())).dir;
       const outcome = await hub.registry.publish(admin, dir);
       assert.ok(outcome.ok, JSON.stringify(outcome.ok ? [] : outcome.problems).slice(0, 300));

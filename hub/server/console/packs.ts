@@ -44,7 +44,7 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
       const state = stateOf(pack);
       const assigned = ctx.admin && kind === 'workflow' ? await assignedNames(ctx, pack) : null;
       cards.push(html`<a class="pack" href="/console/packs/${id}">
-<span class="pack-h"><span class="${PACK_ICON[pack.kind]}">${icon('pack')}</span><span class="grow"><b>${pack.title}</b><span class="sub">${uiLabelOf('pack_kind', pack.kind)} · <code>${pack.id}@${pack.version}</code></span></span>${chip(state.text, state.tone)}</span>
+<span class="pack-h"><span class="${PACK_ICON[pack.kind]}">${icon('pack')}</span><span class="grow"><b>${pack.title}</b><br><span class="sub">${uiLabelOf('pack_kind', pack.kind)} · <code>${pack.id}@${pack.version}</code></span></span>${chip(state.text, state.tone)}</span>
 <span class="pack-m"><span>所有者 ${await ctx.userName(pack.owner)}</span><span>发布于 ${when(pack.published_at)}</span>${versions.length > 1 ? html`<span>${versions.length} 个版本</span>` : ''}</span>
 ${assigned === null ? '' : html`<span class="pack-m"><span>使用范围：${assigned.length === 0 ? '尚未指定成员' : assigned.join('、')}</span></span>`}
 </a>`);
@@ -83,7 +83,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   }
   const head = card(null, html`<div class="dhead"><div class="grow"><div class="row"><span class="${PACK_ICON[pack.kind]}">${icon('pack')}</span><h2>${pack.title}</h2>${chip(state.text, state.tone)}</div>
 <p class="sub mt4">${uiLabelOf('pack_kind', pack.kind)} · ${code(`${pack.id}@${pack.version}`)} · 所有者 ${await ctx.userName(pack.owner)} · 发布于 ${when(pack.published_at)} · 内容哈希 ${code(pack.digest.slice(0, 16))}</p></div>
-${ctx.admin ? html`<div class="actions">${button('/console/operations/pack', '发布新版本', { icon: 'upload' })}</div>` : ''}</div>`);
+${ctx.admin ? html`<div class="actions">${button('/console/operations/pack', '发布新版本', { icon: 'upload',params:{kind:pack.kind} })}</div>` : ''}</div>`);
   const requirements = loaded === null ? (pack.kind === 'workflow' ? card({title:'验收要求'}, html`<p class="notice">验收要求暂不可读</p>`) : html``) : card({ title: '验收要求', meta: `${loaded.requirements.length} 项` }, table(
     ['要求项', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '必需', '检查项'],
     loaded.requirements.map((r) => [html`<b>${r.name}</b><div class="digest">${r.key}</div>`, r.description, r.layers.map((layer) => uiLabelOf('layer', layer)).join('、'), uiLabelOf('done_rule', r.done_rule), uiLabelOf('accepted_producer', r.accepted_producer), r.required ? '必需' : '可选', r.checks.length === 0 ? '未配置检查' : r.checks.join('、')]),
@@ -104,7 +104,7 @@ ${ctx.admin ? html`<div class="actions">${button('/console/operations/pack', '�
   const permissionActions: Html[] = [];
   if (ctx.admin) {
     if (pack.kind === 'workflow' && !pack.withdrawn) { const d = commands.packAssign(pack.id); dialogs.push(d); permissionActions.push(commandLink(d, '调整使用范围')); }
-    if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); permissionActions.push(commandLink(d, pack.active ? '停用产品包' : '启用产品包')); }
+    if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); permissionActions.push(commandLink(d, pack.active ? '停用产品知识来源' : '启用产品知识来源')); }
     const d = commands.packMaintainer(pack.id); dialogs.push(d); permissionActions.push(commandLink(d, '调整维护人'));
   }
   const permissions = card({ title: '版本与权限' }, html`${table(['版本', '发布时间', '状态', '内容哈希', '样例', ctx.admin ? '操作' : ''], versionRows)}

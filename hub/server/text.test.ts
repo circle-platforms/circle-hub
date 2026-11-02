@@ -400,7 +400,7 @@ describe('start_run text', () => {
       const text = toolText('start_run', startAnswer(run), { ...PAGING, record: RUN_RECORD, unavailable: [{ external: 'toy:broken:offline', role: 'expected' }] });
       withinBudget(text, `start_run ${n}`);
       const lines = linesOf(text);
-      assert.equal(lines[0], `运行 ${RUN}：任务包 toy-review@1.0.0，条目 ${n} 个，要求项 3 个`);
+      assert.equal(lines[0], `运行 ${RUN}：工作流 toy-review@1.0.0，条目 ${n} 个，要求项 3 个`);
       assert.equal(lines[1], '产品 meadow，版本 2.1，构建 b-2.1-7');
       assert.equal(lines[2], `锁定的知识根 ${H('d')}`);
       const order = ['规程：', '要求项：', '来源：', '条目（', '槽位模式', '示例 submit_result'].map((head) => indexOf(lines, (l) => l.startsWith(head)));
@@ -907,7 +907,7 @@ describe('get_nodes text', () => {
     const refused = fallbackText('start_run', { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: 'x' }, { code: 'SOURCE_UNAVAILABLE', message: 'y' }], trace: TRACE }, {});
     assert.deepEqual(linesOf(refused), ['调用结果：出错', '错误代码：SOURCE_UNAVAILABLE', '这次回答的文字没能排出（原因已记入管理员日志）；回答本身有效', `追踪 ${TRACE}`]);
     const started = fallbackText('start_run', startAnswer(runOf(items(3), { production: true }), { result: { reference: RESULT_RECORD, counts: partitionCountsOf(result.partitions) } }), {});
-    assert.ok(linesOf(started).includes(`运行 ${RUN}：任务包 toy-locate@1.0.0`), started);
+    assert.ok(linesOf(started).includes(`运行 ${RUN}：工作流 toy-locate@1.0.0`), started);
     assert.ok(linesOf(started).includes(`完整结果 ${RESULT_RECORD}（用 get_nodes 按引用读）`), started);
     // Whatever it is handed, it gives at least the trace line.
     assert.equal(fallbackText('get_nodes', null, {}), '这次回答的文字没能排出（原因已记入管理员日志）\n追踪 （未知）');
@@ -1087,7 +1087,7 @@ function packOf(i: number): PackSummary {
     id: `toy-pack-${i}`,
     version: `1.0.${i}`,
     kind: 'workflow',
-    title: `合成任务包 ${i}`,
+    title: `合成工作流 ${i}`,
     description: '评审合成的思维导图（合成）',
     products: ['Meadow', 'Lawn'],
     inputs: [
@@ -1108,9 +1108,9 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1), packOf(2)], trace: TRACE });
     const text = toolText('list_task_packs', answer);
     const lines = linesOf(text);
-    assert.equal(lines[0], '可用的任务包 2 个');
+    assert.equal(lines[0], '可用的工作流 2 个');
     assert.match(lines[1], /product 换成被判对象所属产品线的名字（“产品”里列出的任一个）$/);
-    assert.ok(lines.includes('- toy-pack-1@1.0.1 合成任务包 1（工作流包）：评审合成的思维导图（合成）'));
+    assert.ok(lines.includes('- toy-pack-1@1.0.1 合成工作流 1（工作流）：评审合成的思维导图（合成）'));
     assert.ok(lines.includes('  产品：Meadow、Lawn'));
     assert.ok(lines.includes(`  输入 map（被判对象，必填）：被评审的思维导图；接受 application/json、toy:mindmap；写法 {"reference":"src:${'0'.repeat(64)}"} 或 {"external":"toy:mindmap:<编号>"}`));
     assert.ok(lines.includes('  输入 story（期望来源，可选，可多个）：关联的需求；接受 toy:story；写法 {"external":"toy:story:<编号>"}'));

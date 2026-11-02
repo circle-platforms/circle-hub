@@ -5,6 +5,7 @@
 // reaches `secret set` through the command's readSecret option, never through argv or the environment. Each invocation
 // opens and closes its own records, like a CLI process. Platform commands (backup, restore, deploy, …) stop the server
 // and are refused here: they stay on the command line.
+import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import type { AssemblyModule, CliCommand } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
 
@@ -38,7 +39,7 @@ interface BridgedCommandDescriptions {
 const BRIDGED_COMMAND_DESCRIPTIONS: BridgedCommandDescriptions = {
   user: '用户',
   token: '令牌',
-  pack: '任务包',
+  pack: uiLabelOf('pack_kind', 'workflow'),
   resource: '资源',
   secret: '密钥',
   knowledge: '知识同步',

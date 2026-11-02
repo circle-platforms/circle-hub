@@ -590,7 +590,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 const definition = definitions.find(d => d.id === used.definition)!;
                 const pack = await (await s.hub(false)).packs.pack(definition.body.system_pack);
                 if (!pack || pack.kind !== 'system' || pack.digest !== definition.body.system_pack_digest)
-                    throw new CliError('凭据使用者的系统包不可核对；请先 update 绑定可用系统包');
+                    throw new CliError('凭据使用者的业务系统接入不可核对；请先 update 绑定可用业务系统接入');
                 const profile = await readProfile(pack);
                 const auth = profile.auth;
                 profileCache.set(used.definition + '/' + used.item, auth.kind === 'static_header' && auth.header.name.toLowerCase() === 'authorization' && auth.header.scheme === 'raw' && auth.credential === used.item && used.required === 'plain');
@@ -605,7 +605,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 const bad = used.find(c => profileCache.get(c.definition + '/' + c.item) !== true);
                 if (bad) {
                     const definition = definitions.find(d => d.id === bad.definition)!;
-                    throw new CliError(`Basic 只用于原样存整个 Authorization 头；资源 ${bad.definition} 的凭据项 ${bad.item}（系统包 ${String(definition.body.system_pack ?? '无')}）不合：按真实声明改用 --key，或给正确的原样 Authorization 凭据项换一个名字`);
+                    throw new CliError(`Basic 只用于原样存整个 Authorization 头；资源 ${bad.definition} 的凭据项 ${bad.item}（业务系统接入 ${String(definition.body.system_pack ?? '无')}）不合：按真实声明改用 --key，或给正确的原样 Authorization 凭据项换一个名字`);
                 }
             }
             s.out(`密钥 ${mapping.name} 的本版使用者：${used.map(c => c.definition + '/' + c.item).join('、')}`);

@@ -5,7 +5,7 @@
  * command uses (assembleCommand for `run show`). The default module, hub/server/assemble.ts, wires everything.
  */
 export class AssemblyMissingError extends Error {
-  constructor(message = '这个装配模块是占位，没有接上运行、知识、任务包和资源这几个包（默认的 hub/server/assemble.ts 会接上）：这时能用的只有 serve --migrate-only、用户与令牌管理、调用日志导出和平台命令') {
+  constructor(message = '这个装配模块是占位，没有接上运行、知识、工作流和资源这几个包（默认的 hub/server/assemble.ts 会接上）：这时能用的只有 serve --migrate-only、用户与令牌管理、调用日志导出和平台命令') {
     super(message);
     this.name = 'AssemblyMissingError';
   }

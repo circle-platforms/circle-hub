@@ -10,6 +10,11 @@ place. These lists use the existing permission-filtered pack catalog. Product li
 for the displayed version; absent metadata stays unknown. System mappings show existing resource bindings and their actual
 versions without calling business systems. Members retain their existing knowledge access; the move grants no catalog rights.
 
+Decision 85, item 4: server-owned console, CLI and answer text use the new display terms. Publication still uses the same
+upload/check/publish commands and authorization; `?kind=product` and `?kind=system` select the title and return location.
+Staged results retain the uploaded manifest's actual kind for display, without rewriting it or changing API payloads.
+Stored records, author-provided content and diagnostics supplied by other packages are shown without rewriting their text.
+
 Decision 83, second round item 5: `user list --json` emits public account fields only (no password material or tokens). The installer uses it after deployment migrations to distinguish existing administrators from incomplete initialization.
 
 Decision 83, second round item 4: `circle-hub user password-reset <user>` uses the host operator’s administrator identity, generates a one-time initial password and requires its first-use change. It appends the existing password-change history and revokes console credentials; account-bound MCP tokens remain valid. This command also recovers the sole administrator before the initial password was changed. Team resets run that command through the management bridge at `POST /console/admin/do/password-reset`; the old direct page reset route is absent. Administrator backup failures have separate counters for each socket peer; username failures still share the account counter across sources.

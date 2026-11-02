@@ -183,6 +183,22 @@ describe('tasks', () => {
 });
 
 describe('operations and commands', () => {
+  test('publication titles and form routes follow the kind without granting members administration', async () => {
+    const admin=await signIn(server.admin.token);
+    for(const kind of ['workflow','skill','product','system'] as const){
+      const operation=await get('/console/operations/pack?kind='+kind,admin);
+      assert.equal(operation.status,200);assert.ok(operation.body.includes(`发布${uiLabelOf('pack_kind',kind)}</h1>`));
+      const action='/console/admin/do/pack-stage'+(kind==='workflow'?'':'?kind='+kind);
+      assert.ok(operation.body.includes(`action="${action}"`));
+    }
+    assert.ok((await get('/console/knowledge',admin)).body.includes('href="/console/operations/pack?kind=product"'));
+    assert.ok((await get('/console/connections',admin)).body.includes('href="/console/operations/pack?kind=system"'));
+    const user=await member(), session=await signIn(user.token);
+    assert.equal((await get('/console/operations/pack?kind=system',session)).status,404);
+    const invalid=await get('/console/operations/pack?kind=__proto__',admin);
+    assert.ok(invalid.body.includes(`发布${uiLabelOf('pack_kind','workflow')}</h1>`));
+  });
+
   test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
     const admin=await signIn(server.admin.token);
     const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections',admin);
@@ -275,7 +291,7 @@ describe('operations and commands', () => {
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
     const detail=await get(`/console/team/${user.user.id}`,admin);
-    assert.match(detail.body,/成员详情|权限|任务包分配|已连接的 Circle/);
+    assert.match(detail.body,/成员详情|权限|工作流分配|已连接的 Circle/);
     assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
     assert.equal((await get(`/console/team/${other.user.id}`,session)).status,404);
     assert.equal((await get('/console/team/absent',admin)).status,404);

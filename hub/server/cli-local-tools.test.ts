@@ -80,7 +80,7 @@ test('client rejects changed wire bytes even with matching response headers and 
   } finally { await new Promise<void>((done) => server.close(() => done())); }
 });
 
-const DIGEST_REQUIRED = '必须给出 --digest <包号>；从控制台任务包页或运行摘要的 pack_digest 抄下包号后再试';
+const DIGEST_REQUIRED = '必须给出 --digest <包号>；从控制台工作流页或运行摘要的 pack_digest 抄下包号后再试';
 
 test('verify requires the published digest and names a changed or deleted file', async () => {
   const into = join(root, 'pinned');

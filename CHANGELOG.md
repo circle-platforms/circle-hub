@@ -17,6 +17,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - **Workflow terminology** — decision 85 starts the owner-approved UI rename in model 16: workflows, generic skills, product knowledge sources and business-system integrations retain their existing codes. The display-only publication-state axis preserves existing records and permissions; generated protocol mirrors and release manifests advance html-format/mindmap-format to 1.0.3 and xml-format/workbook-format to 1.0.4, with no parser changes.
 - **Workflow browsing** — the existing `/console/packs` links now open separate workflow and generic-skill columns; workflow acceptance requirements appear near the top of each detail page without a stage graph.
 - **Source catalog locations** — product knowledge sources appear under knowledge and business-system integrations under connections, with matching detail breadcrumbs and existing visibility rules.
+- **Publication context and wording** — task filters, team assignments, records, search, CLI and answer text use workflow display terms. The shared publication operation shows the kind and return location of each entry point while retaining the uploaded manifest and existing commands.
 
 - **Same-version bundle upgrades** — the installer stages each commit separately, deploys with its fixed Node path and updates the compatibility runtime link only after success; previous runtimes remain available for recovery.
 

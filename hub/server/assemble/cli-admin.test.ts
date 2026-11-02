@@ -671,19 +671,19 @@ describe('init-admin and the operator token', () => {
       const result = await admin.run(argv, asUser);
       assert.equal(result.code, 1, `${argv.join(' ')}: ${result.text}`);
       assert.match(result.text, /--as 根管理员 与令牌的账号 甲 不一致：有令牌时只读命令以令牌的账号读取/);
-      assert.doesNotMatch(result.text, /还没有资源|密钥库里还没有条目|还没有发布任何任务包/, 'nothing of the admin view was printed');
+      assert.doesNotMatch(result.text, /还没有资源|密钥库里还没有条目|还没有发布任何内容/, 'nothing of the admin view was printed');
     }
-    assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '甲'], asUser)).out, ['没有分配给你的任务包'], '--as naming the token\'s own account');
+    assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '甲'], asUser)).out, ['当前账户没有可用的工作流'], '--as naming the token\'s own account');
     for(const argv of [['secret','list'],['var','list']]){const denied=await admin.run(argv,asUser);assert.equal(denied.code,1);assert.match(denied.text,/管理员/);}
     const invalid = await admin.run(['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: 'C'.repeat(43) });
     assert.equal(invalid.code, 1);
     assert.match(invalid.text, /错误：CIRCLE_HUB_TOKEN 的令牌无效（不存在、已撤销，或者账号已停用）/);
     // The keychain item holds the admin's token: --as must name that admin too.
     assert.equal((await admin.run(['pack', 'list', '--as', '甲'])).code, 1);
-    assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '根管理员'])).out, ['还没有发布任何任务包']);
+    assert.deepEqual((await expectOk(admin, ['pack', 'list', '--as', '根管理员'])).out, ['还没有发布任何内容']);
     // No token at all: --as, or the only enabled admin (reads are not an access boundary).
     admin.tokens!.value = null;
-    assert.deepEqual((await expectOk(admin, ['pack', 'list'])).out, ['还没有发布任何任务包']);
+    assert.deepEqual((await expectOk(admin, ['pack', 'list'])).out, ['还没有发布任何内容']);
     const notAdmin = await admin.run(['pack', 'list', '--as', '甲']);
     assert.equal(notAdmin.code, 1);
     assert.match(notAdmin.text, /甲 不是启用中的管理员/);
@@ -1004,11 +1004,11 @@ describe('pack publish --dry-run', () => {
     const refused = await admin.run(['pack', 'publish', packs.review, '--dry-run']);
     assert.equal(refused.code, 1, refused.text);
     assert.match(refused.text, /\[publish\.no_right\]/);
-    assert.match(refused.text, /任务包未通过发布校验：1 个问题/);
+    assert.match(refused.text, /发布内容未通过发布校验：1 个问题/);
     assert.match(refused.text, /pack grant-publish 根管理员/);
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     const checked = await expectOk(admin, ['pack', 'publish', packs.review, '--dry-run']);
-    assert.match(checked.text, /发布校验通过：demo-check@1\.0\.0（工作流包，摘要 [0-9a-f]{64}）：样例 4\/4 通过/);
+    assert.match(checked.text, /发布校验通过：demo-check@1\.0\.0（工作流，摘要 [0-9a-f]{64}）：样例 4\/4 通过/);
     assert.match(checked.text, /包 demo-check 还没有已发布的版本，没有可比较的当前版本/);
     assert.match(checked.text, /试运行：没有发布，也没有写入任何内容/);
     await unpublished();
@@ -1047,21 +1047,21 @@ describe('pack', () => {
     assert.match(refused.text, /pack grant-publish 根管理员/);
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     const published = await expectOk(admin, ['pack', 'publish', packs.review]);
-    assert.match(published.text, /已发布 demo-check@1\.0\.0（工作流包，摘要 [0-9a-f]{64}）：样例 4\/4 通过/);
+    assert.match(published.text, /已发布 demo-check@1\.0\.0（工作流，摘要 [0-9a-f]{64}）：样例 4\/4 通过/);
     assert.match(published.text, /pack assign <用户> demo-check/);
     assert.match((await expectOk(admin, ['pack', 'publish', packs.review])).text, /已经以同样的内容发布过/);
     const brokenDir = (await writePack(join(packRoot, 'broken'), withFiles(reviewPack('1.0.1'), { 'samples/negative/codes-bad.json': null }))).dir;
     const broken = await admin.run(['pack', 'publish', brokenDir]);
     assert.equal(broken.code, 1);
     assert.match(broken.text, /\[publish\.unsampled\]/);
-    assert.match(broken.text, /任务包没有发布：1 个问题/);
+    assert.match(broken.text, /发布内容没有发布：1 个问题/);
     await expectOk(admin, ['pack', 'publish', packs.agile]);
     assert.match((await expectOk(admin, ['pack', 'publish', packs.product])).text, /pack activate demo/);
 
     const listed = await expectOk(admin, ['pack', 'list']);
-    assert.ok(listed.out.some((line) => line.startsWith('demo-check@1.0.0\t工作流包\t合成用例检查\t已发布\t所有者 根管理员')), listed.text);
-    assert.ok(listed.out.some((line) => line.startsWith('demo@1.0.0\t产品包\t合成产品线\t未启用')));
-    assert.ok(listed.out.some((line) => line.startsWith('demo-agile@1.0.0\t系统包')));
+    assert.ok(listed.out.some((line) => line.startsWith('demo-check@1.0.0\t工作流\t合成用例检查\t已发布\t所有者 根管理员')), listed.text);
+    assert.ok(listed.out.some((line) => line.startsWith('demo@1.0.0\t产品知识来源\t合成产品线\t未启用')));
+    assert.ok(listed.out.some((line) => line.startsWith('demo-agile@1.0.0\t业务系统接入')));
 
     await expectOk(admin, ['pack', 'assign', '甲', REVIEW_PACK]);
     const product = await admin.run(['pack', 'assign', '甲', PRODUCT_PACK]);
@@ -1070,18 +1070,18 @@ describe('pack', () => {
     assert.equal((await admin.run(['pack', 'assign', '甲', AGILE_PACK])).code, 1);
     assert.equal((await admin.run(['pack', 'assign', '甲', `${REVIEW_PACK}@1.0.0`])).code, 2, 'assignments name a pack id');
     const mine = await expectOk(admin, ['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken });
-    assert.deepEqual(mine.out, ['demo-check@1.0.0\t工作流包\t合成用例检查\t已发布'], 'a user sees the packs assigned to them');
+    assert.deepEqual(mine.out, ['demo-check@1.0.0\t工作流\t合成用例检查\t已发布'], 'a user sees the packs assigned to them');
     assert.match((await expectOk(admin, ['pack', 'list'])).text, /分配给 甲/);
 
     await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
-    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo@1.0.0\t产品包\t合成产品线\t已启用')));
+    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo@1.0.0\t产品知识来源\t合成产品线\t已启用')));
     await expectOk(admin, ['pack', 'deactivate', PRODUCT_PACK]);
-    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo@1.0.0\t产品包\t合成产品线\t未启用')));
+    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo@1.0.0\t产品知识来源\t合成产品线\t未启用')));
 
     await expectOk(admin, ['pack', 'unassign', '甲', REVIEW_PACK]);
-    assert.deepEqual((await expectOk(admin, ['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken })).out, ['没有分配给你的任务包']);
+    assert.deepEqual((await expectOk(admin, ['pack', 'list'], { [OPERATOR_TOKEN_VARIABLE]: userToken })).out, ['当前账户没有可用的工作流']);
     await expectOk(admin, ['pack', 'retire', `${REVIEW_PACK}@1.0.0`]);
-    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo-check@1.0.0\t工作流包\t合成用例检查\t已下架')));
+    assert.ok((await expectOk(admin, ['pack', 'list'])).out.some((line) => line.startsWith('demo-check@1.0.0\t工作流\t合成用例检查\t已退役')));
     assert.equal((await admin.run(['pack', 'retire', REVIEW_PACK])).code, 2, 'retire names a version');
     assert.equal((await admin.run(['pack'])).code, 2);
     assert.equal((await admin.run(['pack', 'revoke-publish', '根管理员'])).code, 0);
@@ -1153,7 +1153,7 @@ describe('resource and secret', () => {
       'agile-api',
       '--setting-json',
       'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
-    const id = /已添加资源 (res_[0-9a-z]{26})：合成敏捷平台（系统包 demo-agile@1\.0\.0，环境 测试）/.exec(added.text)?.[1];
+    const id = /已添加资源 (res_[0-9a-z]{26})：合成敏捷平台（业务系统接入 demo-agile@1\.0\.0，环境 测试）/.exec(added.text)?.[1];
     assert.ok(id, added.text);
     assert.match(added.text,/密钥 DEMO_.*还没有设置/);assert.match(added.text,/secret set --name/);
     const listed = await expectOk(admin, ['resource', 'list']);
@@ -1211,7 +1211,7 @@ describe('resource and secret', () => {
     const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
     assert.ok(id, added.text);
     const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '乙', '--environment', 'shared', '--setting-json', 'roots=["7714","7001"]']);
-    assert.match(renamed.text, new RegExp(`已更新资源 ${id}：乙（系统包 demo-agile@1\\.0\\.0，环境 共享）`));
+    assert.match(renamed.text, new RegExp(`已更新资源 ${id}：乙（业务系统接入 demo-agile@1\\.0\\.0，环境 共享）`));
     const listed = await expectOk(admin, ['resource', 'list']);
     const fields = listed.out[0].split('\t');
     assert.deepEqual(fields.slice(0, 5), [id, '乙', 'demo-agile@1.0.0', '共享', '启用']);
@@ -1386,7 +1386,7 @@ describe('resource and secret', () => {
       'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
       '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
     const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
-    assert.match((await expectOk(admin, ['pack', 'list'])).out[0], /^demo-agile@1\.0\.0\t系统包/);
+    assert.match((await expectOk(admin, ['pack', 'list'])).out[0], /^demo-agile@1\.0\.0\t业务系统接入/);
     assert.ok(!(await expectOk(admin,['secret','list'])).text.includes(PASSWORD));
     const listed = await expectOk(admin, ['resource', 'list']);
     assert.match(listed.out[0], /\t登录状态读不出：密钥库主密钥不存在；密钥只在显式初始化时创建$/);

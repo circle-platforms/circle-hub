@@ -127,12 +127,12 @@ export class CallNotes {
   readonly registryError = (error: unknown, context: string): void => {
     const text = `${context}: ${messageOf(error)}`;
     this.#note(`packs ${text}`);
-    this.log(`任务包：${text}`);
+    this.log(`发布管理：${text}`);
   };
 
   /** PackRegistryOptions.onTamper: an extracted pack did not match its digests (moved aside and rebuilt). */
   readonly tamper = (event: TamperEvent): void => {
-    this.log(`任务包 ${event.digest} 的解包目录与摘要不符，已${event.quarantine === null ? '删除' : `移到 ${event.quarantine}`}并重建：${event.problems.join('；')}`);
+    this.log(`发布目录 ${event.digest} 的解包目录与摘要不符，已${event.quarantine === null ? '删除' : `移到 ${event.quarantine}`}并重建：${event.problems.join('；')}`);
   };
 }
 

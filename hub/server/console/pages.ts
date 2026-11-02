@@ -126,13 +126,13 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
     { label: '全部', count: tasks.length, path: '/console/runs', params: { pack, cursor }, on: wanted === undefined },
     ...TASK_RESULT.filter((result) => (counts.get(result) ?? 0) > 0 || result === wanted).map((result) => ({ label: uiLabelOf('task_result', result), count: counts.get(result) ?? 0, path: '/console/runs', params: { pack, cursor, result }, on: result === wanted })),
   ], '按任务结果筛选');
-  const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button type="submit">筛选</button></form>`;
+  const filter = html`<form class="filters" method="get" action="/console/runs"><label>按${uiLabelOf('pack_kind','workflow')}筛选 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p class="mt12">${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
   const empty = tasks.length === 0 && !filtering;
   const list = empty
     ? card({ title: '尚无任务' }, html`<p class="sub">Circle 启动任务后在此列出。</p>`)
-    : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务')}${next}`);
+    : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '工作流版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务')}${next}`);
   return {
     status: 200,
     body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${empty ? '' : filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
@@ -284,7 +284,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
   const summary = definitions([
     ['运行', code(run.run)],
-    ['任务包', html`${run.pack} ${code(run.pack_digest)}`],
+    [uiLabelOf('pack_kind', 'workflow'), html`${run.pack} ${code(run.pack_digest)}`],
     ['产品 / 版本 / 构建', [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—'],
     ['锁定的知识版本', run.root === undefined ? '—' : link('/console/knowledge/tree', run.root, { root: run.root, path: '/' })],
     ['执行人', run.runner === undefined ? '—' : await ctx.userName(run.runner)],
@@ -329,7 +329,7 @@ ${definitions([
   [result.system_input?'系统交付输入内容哈希':'提交内容哈希',code(result.submission)],
   ['修复轮数', `已用 ${result.rounds.used}，最多 ${result.rounds.max}`],
   ['覆盖', coverageText(result.coverage) ?? '—'],
-  ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识版本 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
+  ['锁定', html`工作流 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识版本 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
   ['追踪', code(result.trace)],
 ])}
 ${commentary ? section('逐条模型判断（未采用）', commentaryJudgments(result,renderClaim)) : partitionGroups(result, run,renderClaim)}
@@ -506,20 +506,20 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
       ),
     );
   }
-  const flow = card({ title: '知识入库流程', hint: '个人知识保存在 Circle，不自动共享；团队知识由 Hub 校验出处，实际可读范围仍由任务包分配决定。' }, html`<div class="knowledge-flow">
+  const flow = card({ title: '知识入库流程', hint: '个人知识保存在 Circle，不自动共享；团队知识由 Hub 校验出处，实际可读范围仍由工作流分配决定。' }, html`<div class="knowledge-flow">
 <section class="knowledge-column" aria-label="个人知识"><h3>个人（仅本人可见）</h3>
 <div class="stage planned-stage" title="Circle 读取的网页、文件、系统数据连同出处归档"><b>原文归档</b>${planned()}</div>
 <div class="stage circle" title="模型在 Circle 中归纳，结果保留在本机，不上传 Hub"><b>模型归纳</b></div></section>
 <div class="knowledge-bridge" title="确认为事实后连同出处提交；Hub 校验可追溯性和引文一致性">提交共享 → Hub 出处校验</div>
 <section class="knowledge-column" aria-label="团队知识"><h3>团队（所有人可见，Hub）</h3>
 <div class="stage on-hub" title="可追溯至原文且引文一致方可入库；Hub 不调用模型"><b>出处校验</b></div>
-<div class="stage" title="按产品线与版本组织；业务系统与文档导入同样经 Hub 校验，可读范围按任务包分配"><b>共享知识</b></div></section>
+<div class="stage" title="按产品线与版本组织；业务系统与文档导入同样经 Hub 校验，可读范围按工作流分配"><b>共享知识</b></div></section>
 </div>`);
-  const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品包声明的来源导入到团队知识库（所有人可见）；仅管理员可用' }) : undefined;
+  const actions = ctx.admin ? html`${button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库（所有人可见）；仅管理员可用' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}` : undefined;
   return {
     status: 200,
     body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${sources}${flow}${pending}
-${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: '团队知识' }, html`<p class="empty">${ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品包后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的任务包所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: '团队知识' }, html`<p class="empty">${ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {

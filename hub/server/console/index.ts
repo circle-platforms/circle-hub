@@ -25,6 +25,7 @@ import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type
 import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
+import { publication } from './pack-display.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
 import { searchPage } from './search.ts';
@@ -498,7 +499,7 @@ ${pre(outcome.token)}
 <pre class="snippet">${circleEntry(mcpOrigin(request, secure))}</pre>
 ${secure ? html`<p class="sub">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
 <h2 class="mt16">接下来</h2>
-<ol class="small"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布任务包')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
+<ol class="small"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
 <p class="mt12">${link('/console/login', '前往登录')}</p>`,
     ),
     { 'set-cookie': cookie(secure ? SECURE_SETUP_COOKIE : SETUP_COOKIE, '', '/console/setup', 0, secure) },
@@ -575,7 +576,7 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     const body = await readBody(request, options.deps.config.limits.maxUploadBytes + ACTION_FORM_LIMIT);
     if (!body.ok) {
       if (body.reason === 'aborted') response.destroy();
-      else sendHtml(response, 413, page(ctx.chrome('发布任务包'), html`<p class="error">上传的文件太大（上限 ${options.deps.config.limits.maxUploadBytes} 字节）</p>`));
+      else sendHtml(response, 413, page(ctx.chrome(publication(ctx).title,{active:publication(ctx).active}), html`<p class="error">上传的文件太大（上限 ${options.deps.config.limits.maxUploadBytes} 字节）</p>`));
       return null;
     }
     let parsed;
@@ -708,7 +709,7 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
     const boundary = boundaryOf(request.headers['content-type']);
     if (boundary === null) {
       request.resume();
-      return sendJson(response, 400, { code: null, message: '上传请求的格式不对', fix: '以 multipart/form-data 上传，任务包 zip 放在字段 archive' }, headers);
+      return sendJson(response, 400, { code: null, message: '上传请求的格式不对', fix: '以 multipart/form-data 上传，发布内容的 zip 放在字段 archive' }, headers);
     }
     const sent = await readBody(request, options.deps.config.limits.maxUploadBytes + ACTION_FORM_LIMIT);
     if (!sent.ok) return sent.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '上传的文件太大', fix: `zip 不超过 ${options.deps.config.limits.maxUploadBytes} 字节` }, headers);
@@ -716,7 +717,7 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
       upload = parseMultipart(sent.bytes, boundary).files.find((file) => file.field === 'archive')?.bytes;
     } catch (error) {
       if (!(error instanceof UploadError)) throw error;
-      return sendJson(response, 400, { code: null, message: error.message, fix: '以 multipart/form-data 上传，任务包 zip 放在字段 archive' }, headers);
+      return sendJson(response, 400, { code: null, message: error.message, fix: '以 multipart/form-data 上传，发布内容的 zip 放在字段 archive' }, headers);
     }
   }
   if (upload === undefined && rest.join('/') !== 'packs/stage' && mediaTypeOf(request) !== 'application/json') {

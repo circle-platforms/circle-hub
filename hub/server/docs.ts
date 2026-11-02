@@ -190,7 +190,7 @@ export function createDocs(deps: DocsDeps): Docs {
         if (record.body.runner !== principal.id) return { ok: false, id: bare, reason: `运行 ${context.run} 不是这个账号的；${neutral}` };
         const workflow = typeof record.body.pack_digest === 'string' ? await deps.workflows.byDigest(record.body.pack_digest) : null;
         const declares = workflow?.workflow.inputs.some((slot) => slot.accepts.includes(DOC_EXTERNAL_TYPE)) ?? false;
-        if (!declares) return { ok: false, id: bare, reason: `运行 ${context.run} 的任务包没有声明命名文档输入；${neutral}` };
+        if (!declares) return { ok: false, id: bare, reason: `运行 ${context.run} 的工作流没有声明命名文档输入；${neutral}` };
       }
     }
     const pointer = await records.pointers.get(docPointerName(parsed.name));
@@ -218,7 +218,7 @@ export function createDocs(deps: DocsDeps): Docs {
       ...(run === null ? {} : { run }),
     });
     if (artifact.body.read_tier !== 'model_readable') {
-      return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 的凭据扫描有命中（读取档位“${labelOf('read_tier', artifact.body.read_tier)}”），不交给任务包` };
+      return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 的凭据扫描有命中（读取档位“${labelOf('read_tier', artifact.body.read_tier)}”），不交给工作流` };
     }
     const meta = await records.artifacts.ingest({
       bytes: new TextEncoder().encode(JSON.stringify({ title: `命名文档 ${parsed.name}`, name: parsed.name, revision: target, size: bytes.byteLength })),

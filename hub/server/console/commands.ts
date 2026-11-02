@@ -22,12 +22,12 @@ function dialogId(operation: string, object: string): string {
 
 export const commands = {
   memberPack: (user: string, pack: string, assigned: boolean): CommandDialog => ({
-    id: dialogId(`member-pack-${user}`, pack), title: '调整任务包使用范围',
+    id: dialogId(`member-pack-${user}`, pack), title: '调整工作流使用范围',
     text: '调整后对该成员的新任务生效；已有运行记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
   }),
   memberPublish: (user: string, granted: boolean): CommandDialog => ({
     id: dialogId('member-publish', user), title: '调整发布权',
-    text: '发布权只允许发布本人拥有的任务包。', command: command('pack', granted ? 'revoke-publish' : 'grant-publish', user),
+    text: '发布权只允许发布本人拥有的内容。', command: command('pack', granted ? 'revoke-publish' : 'grant-publish', user),
   }),
   userDisable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-disable', user.id), title: `停用成员 ${user.name}`,
@@ -71,14 +71,14 @@ export const commands = {
   }),
   packMaintainer: (pack: string): CommandDialog => ({
     id: dialogId('pack-maintainer', pack), title: '调整维护人',
-    text: `维护人可发布任务包的新版本；${pack} 的新版本只能由其所有者发布。`, command: `${command('pack', 'grant-publish', '成员编号')}\n${command('pack', 'revoke-publish', '成员编号')}`,
+    text: `维护人可发布新版本；${pack} 的新版本只能由其所有者发布。`, command: `${command('pack', 'grant-publish', '成员编号')}\n${command('pack', 'revoke-publish', '成员编号')}`,
   }),
   packRetire: (ref: string): CommandDialog => ({
     id: dialogId('pack-retire', ref), title: `退役版本 ${ref}`,
     text: '退役后该版本不再可用于新任务；已有任务照旧可读、可完成。', command: command('pack', 'retire', ref),
   }),
   packActivate: (pack: string, active: boolean): CommandDialog => ({
-    id: dialogId(active ? 'pack-deactivate' : 'pack-activate', pack), title: `${active ? '停用' : '启用'}产品包 ${pack}`,
+    id: dialogId(active ? 'pack-deactivate' : 'pack-activate', pack), title: `${active ? '停用' : '启用'}产品知识来源 ${pack}`,
     text: active ? '停用后该产品线的知识不再对全 Hub 生效。' : '启用后该产品线的知识对全 Hub 生效。', command: command('pack', active ? 'deactivate' : 'activate', pack),
   }),
   executorDisable: (executor: { id: string; target: string }): CommandDialog => ({

@@ -147,7 +147,7 @@ ${wires(rightNodes.length, false)}
       ];
     });
     const period = reads === null ? undefined : [...reads.values()][0];
-    systemsBody = html`${table(['系统', '系统包', '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统')}<p class="note">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
+    systemsBody = html`${table(['系统', uiLabelOf('pack_kind', 'system'), '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统')}<p class="note">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
   }
   let environmentsBody: Html;
   if (!ctx.admin) environmentsBody = html`<p class="sub">运行环境仅管理员可见。</p>`;
@@ -204,7 +204,7 @@ ${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'e
     body: page(ctx.chrome('连接', {
       active: 'connections',
       hint: 'Hub 以只读方式访问业务系统，不修改业务数据；派发作业的运行环境在此查看',
-      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' }) : ''}`,
+      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? html`${button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}` : ''}`,
     }), body),
   };
 }

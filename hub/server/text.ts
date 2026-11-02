@@ -22,6 +22,7 @@ import {
   STATIC_TERMINAL,
   UNSATISFIED_REASON,
   axisLabel,
+  uiLabelOf,
   labelOf,
   type Layer,
   type Partition,
@@ -348,8 +349,8 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
 
 /** A pack as one entry: its line, products, inputs, parameters, the example call and its requirements. */
 function packEntry(p: PackSummary): Entry {
-  const clip = new Clip(null, '在控制台任务包页 /console/packs 查看');
-  const lines: string[] = [`- ${clip.field(p.pack, CLIP.name, '任务包编号的超出部分')} ${clip.field(p.title, CLIP.name, '任务包标题的超出部分')}（${labelOf('pack_kind', p.kind)}）：${clip.field(p.description, CLIP.message, '任务包说明的超出部分')}`];
+  const clip = new Clip(null, '在控制台工作流页 /console/packs 查看');
+  const lines: string[] = [`- ${clip.field(p.pack, CLIP.name, '工作流编号的超出部分')} ${clip.field(p.title, CLIP.name, '工作流标题的超出部分')}（${uiLabelOf('pack_kind', p.kind)}）：${clip.field(p.description, CLIP.message, '工作流说明的超出部分')}`];
   if (p.products.length > 0) lines.push(`  产品：${p.products.map((name) => clip.field(name, CLIP.name, '产品名的超出部分')).join('、')}`);
   for (const input of p.inputs) {
     const shapes = [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
@@ -365,12 +366,12 @@ function packEntry(p: PackSummary): Entry {
 
 function listText(v: ListOut): string {
   if (v.call_result === 'error') return errorText(v);
-  const head = [`可用的任务包 ${v.packs.length} 个`];
+  const head = [`可用的工作流 ${v.packs.length} 个`];
   if (v.packs.some((p) => p.inputs.length > 0 || p.parameters.length > 0)) {
     const product = v.packs.some((p) => p.products.length > 0) ? '；product 换成被判对象所属产品线的名字（“产品”里列出的任一个）' : '';
     head.push(`示例 start_run 里的 ${EXAMPLE_SOURCE.slice(0, 8)}… 换成 upload_file 返回的引用，尖括号里的占位换成真实的编号或取值${product}`);
   }
-  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: () => '任务包：在控制台任务包页 /console/packs 查看' };
+  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: () => '工作流：在控制台工作流页 /console/packs 查看' };
   return fit([{ priority: 0, head }, packs], { tail: [traceLine(v.trace)] }).text;
 }
 
@@ -803,7 +804,7 @@ function startText(v: StartOut, context: TextContext): string {
   const blocks: Block[] = [];
   let supportedBlock:(Block & {entries:readonly Entry[]})|undefined;
   const headClip = new Clip(null, seeConsole(r.run));
-  const head = [`运行 ${r.run}：任务包 ${headClip.field(r.pack, CLIP.name, '任务包编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
+  const head = [`运行 ${r.run}：工作流 ${headClip.field(r.pack, CLIP.name, '工作流编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
   const production = v.result ?? null;
   const full = production !== null ? (context.production ?? null) : null;
   const layout = full !== null ? resultLayout(full, production!.reference) : null;
@@ -1169,7 +1170,7 @@ function buildView(c: Content & { text: string }): ContentView {
       const head = [
         ...(management?['管理放弃：要求项未满足（已放弃）；技术层沿用原记录，未重验；保留未知计数，不改变原效果及冻结。',`原技术记录有 ${typeof unwritten==='number'?unwritten:0} 处字段未写；管理出口不是旧技术出口，原件不回填。`]:[]),
         `结果 ${c.reference}（运行 ${result.run}）：${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
-        `修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}；覆盖：${oneLine(coverageText(result.coverage) ?? '')}；锁定：任务包 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`,
+        `修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}；覆盖：${oneLine(coverageText(result.coverage) ?? '')}；锁定：工作流 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`,
         ...(notices.length?[`旧结果：出口未写 ${missingExits.length} 处，缺失事实未写 ${missingFacts.length} 处；首处 ${notices[0].path}。原记录不回填，请按具名请求补齐事实后重评或开新修订`]:[]),
         ...(result.system_input?[`系统交付输入摘要 ${result.submission}；来源 ${result.system_input}`]:[]),
         `内容${RESULT_PARTS}`,
@@ -1439,7 +1440,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
   if (result !== undefined) {
     const covered = coverageText(result.coverage);
     head.push(`修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}${covered !== null ? `；覆盖：${oneLine(covered)}` : ''}`);
-    head.push(`锁定：任务包 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`);
+    head.push(`锁定：工作流 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`);
     if (result.trace !== v.trace) head.push(`结果出自追踪 ${result.trace} 的那次调用（同一提交的重复调用返回存下的结果）`);
     if (record !== null) head.push(`存下的结果 ${record}（用 get_nodes 按引用读；也可${toConsole}）`);
   }
@@ -1570,7 +1571,7 @@ export function fallbackText(tool: string, value: unknown, context: TextContext 
     const summary = recordsOf(v.run);
     if (typeof summary.run === 'string' && RUN_ID.test(summary.run)) {
       run = summary.run;
-      lines.push(`运行 ${run}${typeof summary.pack === 'string' ? `：任务包 ${oneLine(summary.pack).slice(0, CLIP.name)}` : ''}`);
+      lines.push(`运行 ${run}${typeof summary.pack === 'string' ? `：工作流 ${oneLine(summary.pack).slice(0, CLIP.name)}` : ''}`);
     } else if (typeof result.run === 'string' && RUN_ID.test(result.run)) {
       run = result.run;
       lines.push(`运行 ${run}`);

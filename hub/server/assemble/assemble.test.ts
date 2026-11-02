@@ -355,7 +355,7 @@ describe('call notes', () => {
       assert.ok(log.some((line) => line === `运行引擎（追踪 ${trace}，运行 无）：start_run: ${reason}`), `${reason} is in the operator log, with its trace`);
     }
     assert.ok(log.some((line) => /连接器：login_failed res_x/.test(line)), 'login events always reach the operator log');
-    assert.ok(log.some((line) => /任务包：packs.product_ambiguous: 合成的撞名/.test(line)), 'registry problems too');
+    assert.ok(log.some((line) => /发布管理：packs.product_ambiguous: 合成的撞名/.test(line)), 'registry problems too');
     assert.ok(!log.some((line) => line.includes('http')), 'per-request events are not logged');
     notes.engine({ traceId: null, run: null, what: 'sweep', detail: '没有调用' });
     assert.match(log.at(-1) ?? '', /运行引擎（追踪 无，运行 无）：sweep: 没有调用/);
