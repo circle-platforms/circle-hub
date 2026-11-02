@@ -436,6 +436,18 @@ describe('start_run text', () => {
     assert.equal(indexOf(linesOf(toolText('start_run', startAnswer(runOf(items(3))))), (l) => l.startsWith('接受这类对象的任务包输入')), -1, 'nothing said without accepting inputs');
   });
 
+  test('a run of a pack that ships tools/ names the local tools and the install command once, after the facts of the run', () => {
+    const install = `circle-hub local-tools install toy-review@1.0.0 --digest ${'a'.repeat(64)} --into <目录>`;
+    const local_tools = { count: 1, files: [{ path: 'tools/fetch-run.ts', sha256: 'b'.repeat(64), size: 81 }], install };
+    const withTools = linesOf(toolText('start_run', startAnswer(runOf(items(3)), { local_tools })));
+    const at = indexOf(withTools, (l) => l.startsWith('本地工具 1 个'));
+    assert.ok(at > 0, withTools.join('\n'));
+    assert.equal(withTools[at], `本地工具 1 个（客户端按包号核对后安装）；安装：${install}`);
+    assert.ok(at < indexOf(withTools, (l) => l === '规程：'), 'before the procedure');
+    const without = toolText('start_run', startAnswer(runOf(items(3))));
+    assert.equal(indexOf(linesOf(without), (l) => l.startsWith('本地工具')), -1, 'a pack without tools/ says nothing');
+  });
+
   test('the example skeleton parses with Submission once its lists are filled, and the slot records validate against the slot schema', () => {
     const run = runOf(items(62));
     const text = toolText('start_run', startAnswer(run));
@@ -1098,7 +1110,7 @@ function packOf(i: number): PackSummary {
     kind: 'workflow',
     title: `合成任务包 ${i}`,
     description: '评审合成的思维导图（合成）',
-    digest: `d${i}${'0'.repeat(63)}`,
+    digest: `${String(i)}${'0'.repeat(64)}`.slice(0, 64),
     products: ['Meadow', 'Lawn'],
     inputs: [
       { slot: 'map', role: 'subject', description: '被评审的思维导图', accepts: ['application/json', 'toy:mindmap'], required: true, many: false },
@@ -1189,6 +1201,15 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     const many = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE }));
     withinBudget(many, '300 packs');
     assert.match(noteOf(many)!, /\/console\/packs/);
+  });
+
+  test('a pack that ships tools/ shows one local-tools line with the digest-pinned install command; a pack without none', () => {
+    const install = `circle-hub local-tools install toy-pack-1@1.0.1 --digest ${'a'.repeat(64)} --into <目录>`;
+    const tools = { count: 2, files: [{ path: 'tools/fetch-run.ts', sha256: 'b'.repeat(64), size: 81 }, { path: 'tools/generate-workbook.ts', sha256: 'c'.repeat(64), size: 97 }], install };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [{ ...packOf(1), local_tools: tools }, packOf(2)], trace: TRACE });
+    const lines = linesOf(toolText('list_task_packs', answer));
+    assert.ok(lines.includes(`  本地工具 2 个；安装：${install}；清单见 structuredContent`), lines.join('\n'));
+    assert.equal(lines.filter((l) => l.startsWith('  本地工具')).length, 1, 'only the pack with tools/ carries the line');
   });
 
   test('an upload with a large structure summary stays within the budget and points at the source', () => {
