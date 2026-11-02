@@ -3,13 +3,15 @@ import {z} from 'zod';
 import {Sha256,IsoTime,UserId} from './common.ts';
 import {TreePath} from './reference.ts';
 import {SpaceId,SpaceGrantBody} from './spaces.ts';
-import {KnowledgeSpaceKindSchema,KnowledgeSearchScopeSchema,MemoryStatusSchema,MemoryShareEffectSchema,KnowledgeShareStatusSchema} from '../generated/vocabulary.ts';
+import {KnowledgeSpaceKindSchema,KnowledgeSearchScopeSchema,MemoryStatusSchema,MemoryShareEffectSchema,KnowledgeShareStatusSchema,ShareCheckSchema,StaticTerminalSchema} from '../generated/vocabulary.ts';
+import {PROTOCOL_CODES} from '../generated/protocol.ts';
 import {RecordKindSchema} from './records.ts';
 export const MEMORY_RECORD_KINDS=RecordKindSchema.extract(['memory_document','memory_version','memory_grant','memory_share']).options;
 export const isMemoryRecordKind=(kind:string)=>new Set<string>(MEMORY_RECORD_KINDS).has(kind);
 const Text=z.string().refine(text=>text.isWellFormed(),'well-formed Unicode text');
+const MemoryPath=TreePath.max(2000);
 const Key=Text.min(1).max(200).refine(value=>!value.includes('\0'),'no NUL in client key');
-export const MemoryWriteInput=z.strictObject({space:KnowledgeSpaceKindSchema.default('personal'),document:Sha256.optional(),expected_version:Sha256.nullable(),title:Text.min(1).max(300).optional(),path:TreePath.optional(),markdown:Text.optional(),enabled:z.boolean().optional(),client_key:Key})
+export const MemoryWriteInput=z.strictObject({space:KnowledgeSpaceKindSchema.default('personal'),document:Sha256.optional(),expected_version:Sha256.nullable(),title:Text.min(1).max(300).optional(),path:MemoryPath.optional(),markdown:Text.optional(),enabled:z.boolean().optional(),client_key:Key})
  .refine(value=>value.document?value.expected_version!==null:value.expected_version===null&&value.title!==undefined&&value.markdown!==undefined,'create requires title, markdown and null expected_version; update requires document and expected_version');
 export type MemoryWriteInput=z.infer<typeof MemoryWriteInput>;
 export const MemoryQuery=z.strictObject({scope:KnowledgeSearchScopeSchema.default('all'),document:Sha256.optional(),version:Sha256.optional(),for_session:z.boolean().default(false),cursor:z.string().max(4000).optional()})
@@ -20,9 +22,10 @@ export const MemoryVersionBody=z.strictObject({document:Sha256,space:SpaceId,par
  .refine(v=>(v.markdown===null)===(v.content_version!==null),'inline text or one content version');
 export type MemoryVersionBody=z.infer<typeof MemoryVersionBody>;
 export const MemoryGrantBody=SpaceGrantBody.safeExtend({intent:Sha256});
-export const MemoryShareInput=z.strictObject({document:Sha256,version:Sha256,team_path:TreePath.optional(),client_key:Key,check_only:z.boolean().default(false)});
-export const MemoryShareBody=z.strictObject({document:Sha256,version:Sha256,by:UserId,at:IsoTime,intent:Sha256,payload:Sha256,status:KnowledgeShareStatusSchema,code:z.string().nullable(),message:z.string(),target_path:TreePath,team_document:Sha256.nullable(),team_version:Sha256.nullable(),effect:MemoryShareEffectSchema.nullable(),replaces:Sha256.nullable()});
+export const MemoryShareInput=z.strictObject({document:Sha256,version:Sha256,team_path:MemoryPath.optional(),client_key:Key,check_only:z.boolean().default(false)});
+export const MemoryShareBody=z.strictObject({document:Sha256,version:Sha256,by:UserId,at:IsoTime,intent:Sha256,payload:Sha256,status:KnowledgeShareStatusSchema,code:z.string().refine(code=>Object.hasOwn(PROTOCOL_CODES,code),'registered protocol code').nullable(),message:z.string(),target_path:MemoryPath.optional(),team_document:Sha256.nullable(),team_version:Sha256.nullable(),effect:MemoryShareEffectSchema.nullable(),replaces:Sha256.nullable()});
 export type MemoryShareBody=z.infer<typeof MemoryShareBody>;
+export const MemoryCheckResult=z.strictObject({ok:z.boolean(),checks:z.array(z.strictObject({check:ShareCheckSchema,state:StaticTerminalSchema,code:z.string().nullable(),message:z.string(),fix:z.string()})),effect:MemoryShareEffectSchema.nullable(),replaces:Sha256.nullable(),title:z.string(),target_path:MemoryPath.optional(),share:MemoryShareBody.optional(),record:Sha256.optional()});
 export const MemoryMetadata=z.strictObject({document:Sha256,version:Sha256,space:SpaceId,title:Text,path:TreePath,state:MemoryStatusSchema,bytes:z.number().int().nonnegative(),updated_at:IsoTime,updated_by:UserId,auto_load_allowed:z.boolean()});
 export type MemoryMetadata=z.infer<typeof MemoryMetadata>;
 export const MemoryPage=z.strictObject({scope:KnowledgeSearchScopeSchema,snapshot:Sha256,items:z.array(MemoryMetadata).max(50),next:z.string().nullable()});

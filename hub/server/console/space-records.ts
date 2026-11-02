@@ -1,6 +1,7 @@
 // Decision 88 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
 import { SpaceGrantBody } from '../../../contracts/src/spaces.ts';
 import { KnowledgeShareBody, PersonalPackGrantBody } from '../../../contracts/src/sharing.ts';
+import {MemoryGrantBody,MemoryShareBody} from '../../../contracts/src/memory.ts';
 import { KnowledgeGranteeSchema, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { pathSegments } from '../../refs/api.ts';
 import { html, link, table, code, type Html } from './html.ts';
@@ -22,6 +23,7 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
   const kinds = [
     { kind: 'knowledge_space_grant', owner: 'knowledge.space.grant', grantee: 'knowledge.space.grantee', cursor: 'knowledge_grants', schema: SpaceGrantBody, title: uiLabelOf('knowledge_space_kind','personal')+'知识授权记录' },
     { kind: 'personal_pack_grant', owner: 'personal.pack.grant_owner', grantee: 'personal.pack.grantee', cursor: 'pack_grants', schema: PersonalPackGrantBody, title: uiLabelOf('knowledge_space_kind','personal')+uiLabelOf('pack_kind','workflow')+'与'+uiLabelOf('pack_kind','skill')+'授权记录' },
+    { kind: 'memory_grant', owner: 'memory.grant.owner', grantee: 'memory.grant.grantee', cursor: 'memory_grants', schema: MemoryGrantBody, title: uiLabelOf('knowledge_view','memory')+'授权记录' },
   ] as const;
   for (const kind of kinds) {
     const sources = ctx.admin
@@ -55,5 +57,13 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     rows.push([when(body.at), await ctx.userName(body.by), directory(body.target_path ?? body.source.path, true), uiLabelOf('knowledge_share_status', body.status), body.code ?? '—', body.message, code(`tree:${body.source.root}${body.source.path}@${body.source.entry}`)]);
   }
   cards.push(card({ title: '提交共享记录', hint: ctx.admin ? '管理员可见全部提交共享的安全回执；不包含个人原文或提交内容' : '仅显示本人提交共享的安全回执，拒收后个人原条目保留' }, html`${table(['时间', '提交人', '团队目录', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的提交共享记录')}${shares.next ? more(cursor, shares.next, '更早的提交共享') : ''}`));
+  const memoryShares=ctx.admin?await ctx.deps.records.store.list({kind:'memory_share',newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')}):await ctx.deps.records.store.find({kind:'memory_share',key:'memory.share.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')});
+  const memoryRows=[];
+  for(const record of memoryShares.items){
+    const parsed=MemoryShareBody.safeParse(record.body);if(!parsed.success)continue;const body=parsed.data;
+    if(!ctx.admin&&body.by!==ctx.principal.id||!inFilter(body.by,body.at))continue;
+    memoryRows.push([when(body.at),await ctx.userName(body.by),body.target_path?directory(body.target_path,true):'—',uiLabelOf('knowledge_share_status',body.status),body.code??'—',body.message,body.team_document?link('/console/knowledge',uiLabelOf('knowledge_view','memory'),{view:'memory',document:body.team_document,scope:'team'}):'—']);
+  }
+  cards.push(card({title:uiLabelOf('knowledge_view','memory')+'提交共享记录',hint:'只列安全回执，不显示个人记忆标题或正文'},html`${table(['时间','提交人','团队目录','状态','拒收码','说明','团队文档'],memoryRows,'本页没有匹配的提交共享记录')}${memoryShares.next?more('memory_shares',memoryShares.next,'更早的提交共享'):''}`));
   return html`${cards}`;
 }

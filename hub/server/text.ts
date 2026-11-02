@@ -379,6 +379,9 @@ function listText(v: ListOut): string {
 // ---------------------------------------------------------------- upload_file
 
 function uploadText(v: UploadOut): string {
+  if(v.memory_write)return `记忆已保存；${uiLabelOf('memory_status',v.memory_write.state)}\n文档 ${v.memory_write.document}\n版本 ${v.memory_write.version}\n大小 ${v.memory_write.bytes} 字节；不作为运行输入或依据\n${traceLine(v.trace)}`;
+  if(v.memory_share){const result=v.memory_share;return `${result.share?uiLabelOf('knowledge_share_status',result.share.status):'记忆共享预检'}；${uiLabelOf('memory_share_effect',result.effect??'create').replace('{title}',result.title)}\n${result.checks.map(check=>uiLabelOf('share_check',check.check)+'：'+uiLabelOf('static_terminal',check.state)+(check.code?' · '+check.code+'；'+check.fix:'')).join('\n')}\n${result.share?.team_document?'团队文档 '+result.share.team_document+'\n团队版本 '+result.share.team_version+'\n':''}${traceLine(v.trace)}`;}
+
   if(v.share){const head=`${labelOf('knowledge_share_status',v.share.status)}${v.share.reference?'；团队条目 '+v.share.reference:''}\n团队目录 ${v.share.target_path??v.share.source.path}；个人原条目保留；共享回执 ${v.share.record}`;return head+'\n'+(v.errors.length?errorText(v):traceLine(v.trace));}
   if(v.withdrawn_reference)return fit([{priority:0,head:[`${labelOf('knowledge_entry_status','withdrawn')}；${v.withdrawn_reference}`]}],{tail:[traceLine(v.trace)]}).text;
   if(v.personal_entry)return `个人条目已保存；${uiLabelOf('knowledge_entry_status',v.personal_entry.status)}\n引用 ${v.personal_entry.reference}\n知识版本 ${v.personal_entry.root}\n${traceLine(v.trace)}`;
@@ -1073,6 +1076,8 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
+  if(v.memory_document){const doc=v.memory_document;return `记忆 · ${oneLine(doc.title)}；${uiLabelOf('memory_status',doc.state)}\n文档 ${doc.document}\n版本 ${doc.version}\n所属空间 ${doc.space}；不作为运行输入或依据\n正文偏移 ${doc.offset}${doc.next?'；部分，继续读取时保留 memory 参数并传入 memory.cursor '+doc.next:'；本段结束'}\n\n${doc.markdown}\n${traceLine(v.trace)}`;}
+  if(v.memory_page){const result=v.memory_page;return `记忆 ${result.items.length} 篇 · ${uiLabelOf('knowledge_search_scope',result.scope)}\n${result.items.map(doc=>oneLine(doc.title)+' · '+uiLabelOf('memory_status',doc.state)+' · '+doc.bytes+' 字节\n文档 '+doc.document+'\n版本 '+doc.version+'\n所属空间 '+doc.space+'；会话加载资格 '+(doc.auto_load_allowed?'具备':'不具备')).join('\n\n')}${result.next?'\n部分；继续列出时保留 memory 参数并传入 memory.cursor '+result.next:''}\n${traceLine(v.trace)}`;}
   if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索${v.warnings?.length?'；部分范围未检索':''}）`,...(v.warnings??[]).map(warning=>`${warning.code}：${oneLine(warning.message)}；${oneLine(warning.fix??'')}`)],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];

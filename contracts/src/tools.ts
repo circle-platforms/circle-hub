@@ -1,3 +1,4 @@
+import {MemoryWriteInput,MemoryShareInput,MemoryWriteReceipt,MemoryShareBody,MemoryPage,MemoryDocumentView,MemoryCheckResult,MemoryQuery} from './memory.ts';
 import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 // The six MCP tools of the Hub (D06). Schemas here are the single source for the server, the tests and contracts/generated/tools.json.
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
@@ -41,6 +42,7 @@ export const SERVER_INSTRUCTIONS = `This server verifies results; it does not ge
 4. get_nodes / resolve_reference - read the expected sources and check exact values before you rely on them.
 5. submit_result - hand in your results item by item. If the receipt is not accepted, read the errors, fix exactly those points and submit again.
 Personal packs: list_task_packs includes space for personal workflows and generic skills. Use pack_space on start_run and get_nodes with pack, pack_space and file (default SKILL.md) to read their declared files. Pure generic skills have no acceptance and are read through get_nodes, not started as runs. Owners publish and grant personal packs through the console.
+Memory: get_nodes with memory lists or reads preferences, and upload_file with memory writes them optimistically using expected_version and client_key. memory_share previews with check_only=true and confirms on a second call. Memory has separate grants and is never an input or ground. Session mode reads only team and caller-owned enabled current documents.
 Sharing: upload_file with share_entry submits a verified personal entry; team_path optionally selects the team directory (default: the personal path); a receipt records that target with a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
 Personal knowledge: upload_file with personal_entry writes only to the caller's space; space=personal imports an original without drafting entries. get_nodes with search and scope searches current readable knowledge only without run. During a run, copy exact tree addresses from the frozen team/personal roots and the initiator's currently authorized content.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
@@ -71,6 +73,8 @@ export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary)
 });
 
 export const UploadFileInput = z.strictObject({
+  memory:MemoryWriteInput.optional().describe('Create or optimistically edit client session preferences; expected_version is null for creation. Personal writes belong to the caller; team writes require an administrator. This mode returns no evidence reference.'),
+  memory_share:MemoryShareInput.optional().describe('Share the caller\'s current personal memory with the team. First use check_only=true, then confirm; limits and administrator changes are checked again. No review or model generation occurs.'),
   file_path: z
     .string()
     .min(1)
@@ -87,9 +91,11 @@ export const UploadFileInput = z.strictObject({
   name: z.string().optional().describe('Original file name, for display'),
   provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
   captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
-}).refine(input => [input.file_path,input.personal_entry,input.share_entry,input.withdraw_entry].filter(value=>value!==undefined).length===1, 'provide exactly one payload mode');
+}).refine(input => [input.file_path,input.personal_entry,input.share_entry,input.withdraw_entry,input.memory,input.memory_share].filter(value=>value!==undefined).length===1, 'provide exactly one payload mode').refine(input=>!(input.memory||input.memory_share)||[input.space,input.media_type,input.name,input.provenance_type,input.captured_at].every(v=>v===undefined),'memory mode accepts no file metadata');
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
 export const UploadFileOutput = Envelope.safeExtend({
+  memory_write:MemoryWriteReceipt.optional(),
+  memory_share:MemoryCheckResult.optional(),
   personal_entry: SpaceEntryReceipt.optional(),
   share: KnowledgeShareReceipt.optional(),
   withdrawn_reference: referenceUriOf('tree').optional(),
@@ -104,7 +110,10 @@ export const UploadFileOutput = Envelope.safeExtend({
   if (o.acceptance !== 'accepted') {
     if (o.reference !== undefined) issue(ctx, ['reference'], 'an upload that is not accepted has no reference');
     if (o.artifact !== undefined) issue(ctx, ['artifact'], 'an upload that is not accepted has no exact artifact record');
+    if(o.memory_write!==undefined)issue(ctx,['memory_write'],'a refused memory write has no saved receipt');
     if (o.personal_entry !== undefined) issue(ctx, ['personal_entry'], 'a refused entry has no receipt');
+  } else if(o.memory_write!==undefined||o.memory_share!==undefined){
+    if(o.reference!==undefined||o.sha256!==undefined||o.artifact!==undefined)issue(ctx,['memory_write'],'memory never yields an evidence reference');
   } else if(o.share!==undefined||o.withdrawn_reference!==undefined){
     if(o.reference!==undefined)issue(ctx,['reference'],'an entry operation has no file receipt');
   } else if (o.personal_entry !== undefined) {
@@ -145,6 +154,7 @@ export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), resu
 });
 
 export const GetNodesInput = z.strictObject({
+  memory:MemoryQuery.optional().describe('List or read versioned client preferences without a run. Session lists select team or personal; session document reads pin a listed version. A grant permits browsing only. Continue with memory.cursor; these documents cannot be grounds.'),
   pack: z.string().min(1).max(100).optional().describe('Read a visible pack file without starting a run; especially SKILL.md for a generic skill'),
   pack_space: SpaceId.optional(),
   file: z.string().min(1).max(1000).optional().describe('Declared relative pack file; defaults to SKILL.md'),
@@ -161,7 +171,7 @@ export const GetNodesInput = z.strictObject({
   depth: z.number().int().min(0).max(6).optional().describe('Levels below each path; default 1'),
   reference: ReferenceUri.optional().describe('Read the content a reference points at instead of a subtree'),
   cursor: z.string().optional(),
-});
+}).refine(input=>input.memory===undefined||[input.pack,input.pack_space,input.file,input.space,input.search,input.scope,input.run,input.root,input.paths,input.depth,input.reference,input.cursor].every(v=>v===undefined),'memory is an independent non-evidence mode');
 
 const NodeEntry = z.strictObject({
   status: KnowledgeEntryStatusSchema.optional(),
@@ -195,6 +205,8 @@ const KnowledgeNode = z.strictObject({
 });
 
 export const GetNodesOutput = Envelope.extend({
+  memory_page:MemoryPage.optional(),
+  memory_document:MemoryDocumentView.optional(),
   warnings:z.array(ProtocolError).max(100).optional().describe('Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present'),
   matches: z.array(SpaceSearchHit).optional(),
   root: Sha256.optional().describe('Knowledge root the nodes belong to'),
@@ -213,7 +225,7 @@ export const GetNodesOutput = Envelope.extend({
     .optional(),
 }).superRefine((o, ctx) => {
   if (o.call_result === 'error') {
-    if ((o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
+    if (o.memory_page!==undefined||o.memory_document!==undefined||(o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
     return;
   }
   const nodes = o.nodes ?? [];
@@ -294,7 +306,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'upload_file',
     label: '上传文件',
     title: 'Upload a file',
-    description: 'Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference.',
+    description: 'Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
     input: UploadFileInput,
     output: UploadFileOutput,
     effect: 'none',

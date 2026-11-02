@@ -70,3 +70,25 @@ test('re-sharing supersedes the prior team version unless an administrator chang
  assert.notEqual(third.share?.team_document,team);assert.equal((await memory.read(w.user,team)).version,admin.version);assert.equal((await memory.read(w.user,team)).markdown,'管理员修订');
  await assert.rejects(memory.write(w.user,{space:'team',document:team,expected_version:admin.version,markdown:'无权覆盖',client_key:'denied'}),{code:'SOURCE_UNAVAILABLE'});
 });
+test('metadata pages are bounded in UTF-8 bytes and version changes invalidate their cursors',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
+ const saved=[];for(let n=0;n<10;n++)saved.push(await memory.write(w.user,{...create('合成','page-'+n),title:'合'.repeat(250),path:'/'+'字'.repeat(1000)}));
+ const seen=new Set<string>();let cursor:string|undefined;let firstCursor:string|undefined;
+ do{const result=await memory.query(w.user,{scope:'personal',cursor});assert.ok(result.memory_page);assert.ok(Buffer.byteLength(JSON.stringify(result.memory_page))<=16000);for(const row of result.memory_page.items){assert.ok(!seen.has(row.document));seen.add(row.document);}cursor=result.memory_page.next??undefined;firstCursor??=cursor;}while(cursor);
+ assert.equal(seen.size,10);assert.ok(firstCursor);
+ await memory.write(w.user,{document:saved[0].document,expected_version:saved[0].version,enabled:false,client_key:'page-change'});
+ await assert.rejects(memory.query(w.user,{scope:'personal',cursor:firstCursor}),{code:'MEMORY_CURSOR_STALE'});
+});
+test('history is owner or team-administrator only and sensitive share paths never enter receipts',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
+ const saved=await memory.write(w.user,create());await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});
+ assert.equal((await memory.history(w.user,saved.document)).items.length,1);
+ await assert.rejects(memory.history(w.outsider,saved.document),{code:'SOURCE_UNAVAILABLE'});
+ const secret='/DB_PASSWORD=synthetic-secret-9837';
+ for(const key of ['credentials','early-size']){
+  if(key==='early-size')w.kit.memoryIndex!.limits.spaceBytes=0;
+  const input={document:saved.document,version:saved.version,team_path:secret,client_key:key};
+  const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...input,check_only:true});assert.equal(plan.ok,false);assert.equal(plan.target_path,undefined);assert.equal(await w.kit.store.watermark!(),before);
+  const refused=await memory.share(w.user,input);assert.equal(refused.share?.target_path,undefined);assert.ok(!JSON.stringify(refused).includes('synthetic-secret-9837'));assert.ok(!JSON.stringify((await w.kit.store.get(refused.record!))?.body).includes('synthetic-secret-9837'));
+ }
+});

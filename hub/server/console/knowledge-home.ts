@@ -6,7 +6,7 @@ import {currentAudience,inScope,selectedScope,spaceLayout} from './space-layout.
 import {containsDirectory,directoryName} from './audience.ts';
 export async function knowledgeHome(ctx:PageContext):Promise<Html>{
  const spaces=ctx.deps.knowledge.spaces!; const scope=selectedScope(ctx);
- const visible=await spaces.visible(ctx.principal);
+ const visible=await spaces.visible(ctx.principal,'all',undefined,{initialize:false});
  const rows:Array<{cells:unknown[];at:string}>=[];
  for(const s of visible.filter(s=>inScope(scope,s.space,ctx.principal.id))){
   for(const row of s.version.body.entries){

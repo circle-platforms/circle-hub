@@ -29,6 +29,7 @@ import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage } from './spaces.ts';
+import {performMemoryAction} from './memory.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
@@ -843,7 +844,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
         if(file)upload={bytes:file.bytes,name:file.filename,mediaType:mediaTypeFor(file.bytes,undefined,file.filename)};
       }else{const parsed=await formOf(request,ACTION_FORM_LIMIT);if(parsed==='aborted')return void response.destroy();if(parsed==='too_large')return sendHtml(response,413,page(ctx.chrome('表单超出大小上限'),html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`));if(typeof parsed==='string')return forbidden(response,'表单格式不正确');values=parsed;}
       if(values.get('csrf')!==session!.csrf)return forbidden(response,'表单已过期或不是本控制台发出的');
-      try{const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):await performSpaceAction(ctx,segments[2],values,upload);return redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
+      try{const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);return redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
     }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;

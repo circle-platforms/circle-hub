@@ -16,7 +16,7 @@ function cursor(raw:string|undefined,snapshot:string,mode:string):number{
  try{const value=JSON.parse(Buffer.from(raw,'base64url').toString('utf8'));if(value.snapshot===snapshot&&value.mode===mode&&Number.isSafeInteger(value.offset)&&value.offset>=0)return value.offset;}catch{}
  return fail('MEMORY_CURSOR_STALE');
 }
-export interface MemorySharingResult {ok:boolean;checks:SharingCheck[];effect:MemoryShareBody['effect'];replaces:string|null;title:string;target_path:string;share?:MemoryShareBody;record?:string}
+export interface MemorySharingResult {ok:boolean;checks:SharingCheck[];effect:MemoryShareBody['effect'];replaces:string|null;title:string;target_path?:string;share?:MemoryShareBody;record?:string}
 export class MemoryDocuments{
  #ctx:KnowledgeContext;#spaces:KnowledgeSpaces;#queues=new Map<string,WriteQueue>();
  constructor(ctx:KnowledgeContext,spaces:KnowledgeSpaces){this.#ctx=ctx;this.#spaces=spaces;}
@@ -73,7 +73,27 @@ export class MemoryDocuments{
    return {memory_document:{...doc,markdown:bytes.subarray(offset,end).toString('utf8'),offset,next:end<bytes.length?nextCursor({snapshot,mode,offset:end}):null}};
   }
   const items=await this.items(by,q.scope,q.for_session),snapshot=digest({mode,items}),offset=cursor(q.cursor,snapshot,mode);if(offset>items.length)return fail('MEMORY_CURSOR_STALE');
-  return {memory_page:{scope:q.scope,snapshot,items:items.slice(offset,offset+50),next:offset+50<items.length?nextCursor({snapshot,mode,offset:offset+50}):null}};
+  const page=(end:number)=>({scope:q.scope,snapshot,items:items.slice(offset,end),next:end<items.length?nextCursor({snapshot,mode,offset:end}):null});
+  let end=offset;
+  while(end<items.length&&end-offset<50&&Buffer.byteLength(JSON.stringify(page(end+1)))<=16000)end++;
+  if(end===offset&&end<items.length)return fail('MEMORY_DOCUMENT_LIMIT');
+  return {memory_page:page(end)};
+ }
+ async history(by:Principal,document:string,rawCursor?:string){
+  by=await this.#user(by);const current=await this.read(by,document);
+  if(current.space!==by.id&&!(current.space==='team'&&by.role==='admin'))return fail('SOURCE_UNAVAILABLE');
+  const rows=(await this.#all('memory_version','memory.version.document',document)).reverse();
+  const snapshot=digest({by:by.id,document,version:current.current_version}),mode='memory.history',offset=cursor(rawCursor,snapshot,mode);
+  if(offset>rows.length)return fail('MEMORY_CURSOR_STALE');
+  const items=rows.slice(offset,offset+50).map(record=>{const body=MemoryVersionBody.parse(record.body);return {version:record.digest,title:body.title,path:body.path,state:record.digest===current.current_version?body.state:'superseded',bytes:body.bytes,at:body.at,by:body.by};});
+  return {items,next:offset+50<rows.length?nextCursor({snapshot,mode,offset:offset+50}):null};
+ }
+ async precheckGrant(by:Principal,path:string):Promise<SharingCheck[]>{
+  by=await this.#user(by);path=pathCheck(path);
+  const check:SharingCheck={check:ShareCheckSchema.enum.credentials,state:'pass',code:null,message:'',fix:''};
+  try{for(const head of await this.#index().heads(by.id))if(withinSpacePath(head.path,path)){const {body}=await this.#version(head);this.#scan(body.title,body.path,await this.#text(body));}}
+  catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';Object.assign(check,{state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix});}
+  return [check];
  }
  #scan(title:string,path:string,markdown:string){
   for(const [name,text] of [['title',title],['path',path],['markdown',markdown]]){const scan=scanForCredentials(Buffer.from(text));if(!scan.inspected||scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');if(scan.findings.length)throw new KnowledgeError(PROTOCOL_CODES.MEMORY_CREDENTIALS_DETECTED.when,{code:'MEMORY_CREDENTIALS_DETECTED',detail:{positions:scan.findings.map(f=>({field:name,line:f.line,detector:f.detector}))}});}
@@ -139,22 +159,23 @@ export class MemoryDocuments{
   const old=previous?(await this.#index().heads('team',tx)).find(h=>h.document===previous.team_document):undefined;
   const replacement=old&&old.version===previous?.team_version?old:undefined;
   const target=pathCheck(input.team_path??source.path),effect=replacement?'replace':'create';
+  const scan=scanForCredentials(Buffer.from(target)),safeTarget=scan.inspected&&!scan.truncated&&!scan.findings.length;
   try{
    const index=this.#index(),usage=await index.usage('team',tx);if(source.bytes>index.limits.documentBytes)fail('MEMORY_DOCUMENT_LIMIT');if(usage.active-(replacement?.state==='enabled'?replacement.bytes:0)+source.bytes>index.limits.spaceBytes)fail('MEMORY_SPACE_LIMIT');
    checks[phase++].state='pass';this.#scan(source.title,target,source.markdown);checks[phase].state='pass';
   }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
-  return {source,checks,replacement,target,effect:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
+  return {source,checks,replacement,target,safeTarget,effect:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
  }
  async share(by:Principal,raw:unknown):Promise<MemorySharingResult>{
   by=await this.#user(by);const input=MemoryShareInput.parse(raw),intent=digest([by.id,'memory.share',input.client_key]),payload=digest({...input,check_only:false});
-  if(input.check_only){const plan=await this.#sharePlan(by,input);return {ok:plan.ok,checks:plan.checks,effect:plan.effect,replaces:plan.replacement?.document??null,title:plan.source.title,target_path:plan.target};}
+  if(input.check_only){const plan=await this.#sharePlan(by,input);return {ok:plan.ok,checks:plan.checks,effect:plan.effect,replaces:plan.replacement?.document??null,title:plan.source.title,...(plan.safeTarget?{target_path:plan.target}:{})};}
   return this.#queue('team',()=>this.#ctx.records.store.withTransaction(async tx=>{
    await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await this.#ctx.records.store.lock('knowledge-space:team',tx);by=await this.#user(by);
    const cached=await this.#ctx.records.store.getByKey('memory_share',intent,tx);if(cached){const body=MemoryShareBody.parse(cached.body);if(body.payload!==payload)fail('IDEMPOTENCY_MISMATCH');return {ok:body.status==='merged',checks:[],effect:body.effect,replaces:body.effect==='replace'?body.team_document:null,title:'',target_path:body.target_path,share:body,record:cached.digest};}
    const plan=await this.#sharePlan(by,input,tx);let saved:MemoryWriteReceipt|null=null;
    if(plan.ok){const previous=plan.replacement?(await this.#version(plan.replacement,plan.replacement.version,tx)).body:undefined;saved=await this.#save(by,'team',intent,payload,{title:plan.source.title,path:plan.target,markdown:plan.source.markdown,state:'enabled',head:plan.replacement,previous},tx);}
-   const failed=plan.checks.find(c=>c.state!=='pass'),body=MemoryShareBody.parse({document:input.document,version:input.version,by:by.id,at:this.#now(),intent,payload,status:plan.ok?'merged':'rejected',code:failed?.code??null,message:failed?.message??'',target_path:plan.target,team_document:saved?.document??null,team_version:saved?.version??null,effect:plan.effect,replaces:plan.replacement?.version??null});
-   const record=await this.#ctx.records.store.put({kind:'memory_share',schema:'memory-share@1',provenance:'declared',unique_key:intent,body,index:[{key:'memory.share.by',value:by.id},{key:'memory.share.source',value:by.id+':'+input.document}]},tx);return {ok:plan.ok,checks:plan.checks,effect:plan.effect,replaces:plan.replacement?.document??null,title:plan.source.title,target_path:plan.target,share:body,record:record.digest};
+   const failed=plan.checks.find(c=>c.state!=='pass'),body=MemoryShareBody.parse({document:input.document,version:input.version,by:by.id,at:this.#now(),intent,payload,status:plan.ok?'merged':'rejected',code:failed?.code??null,message:failed?.message??'',...(plan.safeTarget?{target_path:plan.target}:{}),team_document:saved?.document??null,team_version:saved?.version??null,effect:plan.effect,replaces:plan.replacement?.version??null});
+   const record=await this.#ctx.records.store.put({kind:'memory_share',schema:'memory-share@1',provenance:'declared',unique_key:intent,body,index:[{key:'memory.share.by',value:by.id},{key:'memory.share.source',value:by.id+':'+input.document}]},tx);return {ok:plan.ok,checks:plan.checks,effect:plan.effect,replaces:plan.replacement?.document??null,title:plan.source.title,...(plan.safeTarget?{target_path:plan.target}:{}),share:body,record:record.digest};
   }));
  }
 }

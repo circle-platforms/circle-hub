@@ -188,7 +188,7 @@ export class KnowledgeSpaces {
     return grants.filter(g => g.audience === 'member' ? g.member === by.id : by.role === 'admin').map(g => g.path);
   }
   async mayRead(by: Principal, space: string, path = '/'): Promise<boolean> { return (await this.paths(by, space)).some(parent => withinSpacePath(path, parent)); }
-  async visible(by: Principal, scope: KnowledgeSearchScope = 'all',onUnavailable?:(space:string,error:unknown)=>void): Promise<VisibleSpace[]> {
+  async visible(by: Principal, scope: KnowledgeSearchScope = 'all',onUnavailable?:(space:string,error:unknown)=>void,options:{initialize?:boolean}={}): Promise<VisibleSpace[]> {
     by = await this.#user(by);
     const ids = new Set<string>();
     if (scope === 'personal' || scope === 'all')
@@ -208,7 +208,7 @@ export class KnowledgeSpaces {
       const paths = await this.paths(by, space);
       if (!paths.length)
         continue;
-      const version = space === by.id || space === 'team' ? await this.ensure(by, space) : await this.current(space);
+      const version = (space === by.id || space === 'team')&&options.initialize!==false ? await this.ensure(by, space) : await this.current(space);
       if (version)
         out.push({ space, version, paths });
       }catch(error){if(!onUnavailable)throw error;onUnavailable(space,error);}

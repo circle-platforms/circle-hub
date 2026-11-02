@@ -56,11 +56,11 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
 <span class="pack-m"><span>使用范围：${audience.text}</span><span>${uiLabelOf('knowledge_space_kind',pack.space&&pack.space!=='team'?'personal':'team')}</span></span>
 </a>`);
     }
-    return html`<div class="stack" id="${personal?'personal-':'team-'}${kind}">${sectionHead(uiLabelOf('knowledge_space_kind',personal?'personal':'team')+' · '+uiLabelOf('pack_kind', kind), `${cards.length} 个`, undefined, undefined, hint)}
-${cards.length === 0 ? card(null, html`<p class="empty">尚无可用的${uiLabelOf('pack_kind', kind)}</p>`) : cards}</div>`;
+    return html`<section class="stack" aria-label="${uiLabelOf('pack_kind',kind)}" id="${personal?'personal-':'team-'}${kind}">${sectionHead(uiLabelOf('knowledge_space_kind',personal?'personal':'team')+' · '+uiLabelOf('pack_kind', kind), `${cards.length} 个`, undefined, undefined, hint)}
+${cards.length === 0 ? card(null, html`<p class="empty">尚无可用的${uiLabelOf('pack_kind', kind)}</p>`) : cards}</section>`;
   };
   const body = await spaceLayout(ctx,liveModule('packs', ['pack.published'], html`<div class="grid g2 section">
-<section class="stack" aria-label="${uiLabelOf('pack_kind','workflow')}" id="workflow">${await columns('workflow','规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果',true)}${await columns('workflow','团队工作流按分配使用',false)}</section>
+<section class="stack" aria-label="${uiLabelOf('pack_kind','workflow')}" id="workflow">${await columns('workflow','规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果',true)}${await columns('workflow','规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果',false)}</section>
 <section class="stack" aria-label="${uiLabelOf('pack_kind','skill')}" id="skill">${await columns('skill','只规定做法，没有验收要求',true)}${await columns('skill','只规定做法，没有验收要求',false)}</section>
 </div>`),listings);
   return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {

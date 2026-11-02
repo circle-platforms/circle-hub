@@ -10697,6 +10697,56 @@
      "label": "取代 {title}"
     }
    ]
+  },
+  {
+   "axis": "memory_action",
+   "label": "记忆操作",
+   "owner": "K01",
+   "values": [
+    {
+     "code": "create",
+     "label": "新建记忆"
+    },
+    {
+     "code": "edit",
+     "label": "编辑记忆"
+    },
+    {
+     "code": "save",
+     "label": "保存记忆"
+    },
+    {
+     "code": "history",
+     "label": "版本历史"
+    },
+    {
+     "code": "share",
+     "label": "提交共享"
+    },
+    {
+     "code": "share_preview",
+     "label": "记忆共享预检"
+    },
+    {
+     "code": "enable_memory",
+     "label": "启用记忆"
+    },
+    {
+     "code": "disable_memory",
+     "label": "停用记忆"
+    }
+   ]
+  },
+  {
+   "axis": "knowledge_directory",
+   "label": "知识目录显示",
+   "owner": "K01",
+   "values": [
+    {
+     "code": "products",
+     "label": "产品"
+    }
+   ]
   }
  ],
  "kernelMapping": [

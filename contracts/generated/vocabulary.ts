@@ -101,6 +101,8 @@ export const AXES = {
   knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
   memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
+  memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史' }, { code: 'share', label: '提交共享' }, { code: 'share_preview', label: '记忆共享预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
+  knowledge_directory: { label: '知识目录显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1085,6 +1087,26 @@ export function isMemoryShareEffect(value: unknown): value is MemoryShareEffect 
   return (MEMORY_SHARE_EFFECT as readonly unknown[]).includes(value);
 }
 
+/** 记忆操作 (K01) */
+export const MEMORY_ACTION = ['create', 'edit', 'save', 'history', 'share', 'share_preview', 'enable_memory', 'disable_memory'] as const;
+export type MemoryAction = (typeof MEMORY_ACTION)[number];
+export const MEMORY_ACTION_LABEL = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本历史', 'share': '提交共享', 'share_preview': '记忆共享预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
+export const MEMORY_ACTION_UI = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本历史', 'share': '提交共享', 'share_preview': '记忆共享预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
+export const MemoryActionSchema = z.enum(MEMORY_ACTION);
+export function isMemoryAction(value: unknown): value is MemoryAction {
+  return (MEMORY_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 知识目录显示 (K01) */
+export const KNOWLEDGE_DIRECTORY = ['products'] as const;
+export type KnowledgeDirectory = (typeof KNOWLEDGE_DIRECTORY)[number];
+export const KNOWLEDGE_DIRECTORY_LABEL = { 'products': '产品' } as const satisfies { readonly [K in KnowledgeDirectory]: string };
+export const KNOWLEDGE_DIRECTORY_UI = { 'products': '产品' } as const satisfies { readonly [K in KnowledgeDirectory]: string };
+export const KnowledgeDirectorySchema = z.enum(KNOWLEDGE_DIRECTORY);
+export function isKnowledgeDirectory(value: unknown): value is KnowledgeDirectory {
+  return (KNOWLEDGE_DIRECTORY as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1184,6 +1206,8 @@ export interface AxisValues {
   knowledge_view: KnowledgeView;
   memory_status: MemoryStatus;
   memory_share_effect: MemoryShareEffect;
+  memory_action: MemoryAction;
+  knowledge_directory: KnowledgeDirectory;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1285,6 +1309,8 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   knowledge_view: KNOWLEDGE_VIEW_LABEL,
   memory_status: MEMORY_STATUS_LABEL,
   memory_share_effect: MEMORY_SHARE_EFFECT_LABEL,
+  memory_action: MEMORY_ACTION_LABEL,
+  knowledge_directory: KNOWLEDGE_DIRECTORY_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1386,6 +1412,8 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   knowledge_view: KNOWLEDGE_VIEW_UI,
   memory_status: MEMORY_STATUS_UI,
   memory_share_effect: MEMORY_SHARE_EFFECT_UI,
+  memory_action: MEMORY_ACTION_UI,
+  knowledge_directory: KNOWLEDGE_DIRECTORY_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

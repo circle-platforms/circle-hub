@@ -26,6 +26,7 @@ import { citationsLine, countText, nodeCitations } from './citations.ts';
 import { awaitingRequests } from './requests.ts';
 import { packSources } from './pack-sources.ts';
 import {knowledgeHome} from './knowledge-home.ts';
+import {memoryPage} from './memory.ts';
 import { spaceOverview } from './spaces.ts';
 
 export interface PageContext {
@@ -467,7 +468,8 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 }
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
-  if(ctx.deps.knowledge.spaces)return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge',hint:'个人、团队与当前授权的知识；记忆仅作会话偏好，不作为运行依据'}),await knowledgeHome(ctx))};
+  if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
+  if(ctx.deps.knowledge.spaces)return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge',hint:'个人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获授权者可读；记忆仅作会话偏好，不作为运行依据'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);

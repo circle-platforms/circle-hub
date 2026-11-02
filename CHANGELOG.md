@@ -14,6 +14,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Versioned memory stays separate from evidence and knowledge grants. The existing six tools support bounded reads,
+  optimistic writes and checked team sharing; the console provides plain-text editing, independent grants and history.
+  Re-sharing preserves administrator edits, and current session eligibility is rechecked on every continuation.
+
 - Personal workflow and skill methods cannot use named documents, business-system reads, leases or external effects;
   retained publications and dynamic outputs pass the same start boundary. Accepted raw submissions recheck current
   ground access. Team knowledge verification uses team parsers, and withdrawal warnings hide unreadable ancestor

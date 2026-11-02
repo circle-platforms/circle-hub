@@ -996,3 +996,11 @@ References the submitter could not read remain absent diagnostics. Reader checks
 unreadable-reference observation in a stored result never authorizes reading the referenced body or a raw submission.
 
 知识条目、节点、运行及结果的撤回提示仅列当前可读的引用；其他上级依据只给数量。控制台和 MCP 的文本、结构化返回均保留这项提示，不暴露其他目录或摘要。
+
+The knowledge page switches between knowledge and memory while retaining the eight global navigation places. Memory
+uses password sessions, the existing same-origin/CSRF form boundary and independent directory grants. Its plain-text
+editor and history never execute Markdown; sharing previews write nothing and confirmation rechecks limits and
+administrator changes. MCP memory modes stay within get_nodes and upload_file and return no evidence reference.
+Personal workflows offer no named-document, business-system, lease or dispatch actions; team management is separate.
+Memory audit views disclose only participant/all-administrator grants and safe share receipts, never private text.
+Client automatic loading and synchronization remain outside this Hub-side task.

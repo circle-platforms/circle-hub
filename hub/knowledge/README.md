@@ -1256,3 +1256,8 @@ by exact capture; `mayReadSource` checks that authority without reading or parsi
 Console previews use `spaces.precheckShare` and `spaces.precheckGrant`: checks stop at the first refusal or unavailable read, with later rows unchecked. They create no team root or audit record. Confirmation calls the normal transaction-bound writer again.
 
 MemoryDocuments stores client preference Markdown in independent append-only documents and revisions, with separate directory grants. Current enabled text defaults to 48,000 bytes per space and 24,000 bytes per document; disabled and historical text remains on disk and historical personal bytes share personal capacity with knowledge. Writes use the same space business lock as knowledge, current counters update incrementally, and rebuild is explicit. A member re-share supersedes their last team revision unless an administrator edited it. Memory is never a run input or ground; ordinary record readers refuse every memory record.
+
+Memory grants permit browsing independently of knowledge grants. Session reads permit only current enabled team or
+caller-owned documents. Owners and team administrators may browse revision history. Metadata pages and body chunks
+are bounded; continuations recheck the current version and permission. Read-only console panels do not initialize
+knowledge roots. Credential-bearing share destinations are omitted even when an earlier size check refuses sharing.

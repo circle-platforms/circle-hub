@@ -273,6 +273,17 @@ const uploadFile: Handler = async (deps, call, args) => ({ answer: await upload(
 async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unknown>): Promise<Answer> {
   const parsed = UploadFileInput.safeParse(args);
   if (!parsed.success) return errorAnswer('upload_file', schemaErrors('upload_file', parsed.error));
+  if(parsed.data.memory||parsed.data.memory_share){
+    const memory=deps.knowledge.memory;if(!memory)return errorAnswer('upload_file',[unavailable()]);
+    try{
+      if(parsed.data.memory)return {call_result:'ok',errors:[],acceptance:'accepted',memory_write:await memory.write(call.principal,parsed.data.memory)};
+      const result=await memory.share(call.principal,parsed.data.memory_share);
+      const errors=result.checks.filter(check=>check.state!=='pass'&&check.state!=='unchecked').map(check=>({code:check.code??'SOURCE_UNAVAILABLE',message:check.message,fix:check.fix}));
+      const prior=result.share?.code?Object.entries(PROTOCOL_CODES).find(([code])=>code===result.share!.code):undefined;
+      if(!errors.length&&prior)errors.push({code:prior[0] as ProtocolCode,message:result.share!.message,fix:prior[1].fix});
+      return result.ok?{call_result:'ok',errors:[],acceptance:'accepted',memory_share:result}:{...errorAnswer('upload_file',errors.length?errors:[unavailable()]),memory_share:result};
+    }catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);throw error;}
+  }
   if(parsed.data.share_entry||parsed.data.withdraw_entry){
     const spaces=deps.knowledge.spaces;if(!spaces)return errorAnswer('upload_file',[unavailable()]);
     try{
@@ -443,6 +454,11 @@ const getNodes: Handler = async (deps, call, args) => {
   const parsed = GetNodesInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
   const input = parsed.data;
+  if(input.memory){
+    if(!deps.knowledge.memory)return {answer:errorAnswer('get_nodes',[unavailable()])};
+    try{return {answer:{call_result:'ok',errors:[],...await deps.knowledge.memory.query(call.principal,input.memory)}};}
+    catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:error.message,fix:error.fix!}])};throw error;}
+  }
   const note = call.context.adminNote;
   if(input.pack!==undefined){
     if(!deps.registry||input.run!==undefined||input.search!==undefined||input.reference!==undefined||input.root!==undefined||input.paths!==undefined||input.depth!==undefined||input.space!==undefined||input.scope!==undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/pack','读取工作流或通用技能文件时只给 pack、pack_space、file 与 cursor')])};

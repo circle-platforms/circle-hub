@@ -1,0 +1,58 @@
+// Real HTTP and MCP boundaries over synthetic accounts and temporary storage only.
+import assert from 'node:assert/strict';
+import {before,after,test} from 'node:test';
+import {createTestHub} from './testing-real.ts';
+import {startPostgres,type TemporaryPostgres} from '../testing/postgres.ts';
+import {openConsole} from '../../tests/acceptance/support/console.ts';
+import {connect} from '../../tests/acceptance/support/mcp.ts';
+
+let postgres:TemporaryPostgres;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+const csrf=(text:string)=>/name="csrf" value="([^"]+)"/.exec(text)?.[1]??'';
+const url=(document?:string,extra:Record<string,string>={})=>'/console/knowledge?'+new URLSearchParams({view:'memory',scope:'personal',...(document?{document}:{}),...extra});
+async function world(){
+ const hub=await createTestHub({postgres,repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false});
+ const owner=await hub.createUser('合成记忆作者'),reader=await hub.createUser('合成记忆读者');
+ const client=await connect(hub,owner.token),other=await connect(hub,reader.token),admin=await connect(hub,hub.admin.token);
+ return {hub,owner,reader,client,other,admin,memory:hub.hub.knowledge.memory,close:async()=>{await client.close();await other.close();await admin.close();await hub.close();}};
+}
+test('memory MCP modes return versioned text without evidence identities or administrator access to private content',async t=>{
+ const w=await world();t.after(w.close);
+ const catalog=await w.hub.client(w.owner.token);const tools=await catalog.listTools();assert.equal(tools.tools.length,6);await catalog.close();
+ const saved=await w.client.call('upload_file',{memory:{title:'合成私有偏好',markdown:'先核对合成事实，再列缺失信息。',expected_version:null,client_key:'mcp-create'}});
+ assert.equal(saved.isError,false,saved.text);const doc=saved.out.memory_write!;assert.ok(doc);assert.equal(saved.out.reference,undefined);assert.equal(saved.out.artifact,undefined);
+ const listed=await w.client.call('get_nodes',{memory:{scope:'personal',for_session:true}});assert.equal(listed.out.memory_page?.items[0].document,doc.document);
+ const read=await w.client.call('get_nodes',{memory:{document:doc.document,version:doc.version,for_session:true}});assert.equal(read.out.memory_document?.markdown,'先核对合成事实，再列缺失信息。');assert.match(read.text,/不作为运行输入或依据/);
+ for(const denied of [w.other,w.admin]){
+  const hidden=await denied.call('get_nodes',{memory:{document:doc.document}}),missing=await denied.call('get_nodes',{memory:{document:'f'.repeat(64)}});assert.equal(hidden.isError,true);assert.deepEqual(hidden.out.errors,missing.out.errors);
+ }
+ for(const client of [w.client,w.admin])for(const digest of [doc.document,doc.version])assert.equal((await client.call('get_nodes',{reference:'rec:'+digest})).isError,true);
+ const logs=await w.hub.records.callLog.query(w.hub.admin.principal,{});assert.ok(!JSON.stringify(logs).includes('先核对合成事实'));assert.ok(!JSON.stringify(logs).includes('合成私有偏好'));
+});
+test('password console forms edit escaped text, manage independent grants and remove revoked shared memories',async t=>{
+ const w=await world();t.after(w.close);const own=await openConsole(w.hub,w.owner.token),other=await openConsole(w.hub,w.reader.token),admin=await openConsole(w.hub,w.hub.admin.token);
+ const home=await own.get(url(undefined,{edit:'1'}));assert.equal(home.status,200,home.body);assert.match(home.body,/保存记忆/);
+ const saved=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(home.body),space:'personal',title:'合成控制台记忆',path:'/preferences',markdown:'<script>合成纯文本</script>',expected_version:'',client_key:'console-create',enabled:'true'});
+ assert.equal(saved.status,303,saved.body);const target=String(saved.headers.location),document=new URL(target,'http://127.0.0.1').searchParams.get('document')!;
+ const detail=await own.get(target);assert.match(detail.body,/&lt;script&gt;合成纯文本&lt;\/script&gt;/);assert.doesNotMatch(detail.body,/<script>合成纯文本/);assert.match(detail.body,/版本历史/);
+ assert.equal((await admin.get(target)).status,404);
+ const grantPage=await own.get(url());assert.match(grantPage.body,/name="view" value="memory"/);
+ const granted=await own.post('/console/knowledge/do/memory-grant',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member:w.reader.user.name});assert.equal(granted.status,303,granted.body);
+ const shared=await other.get(url(undefined,{scope:'shared'}));assert.match(shared.body,/来自 合成记忆作者/);assert.match(shared.body,/合成控制台记忆/);assert.doesNotMatch(shared.body,/memory-write/);
+ assert.doesNotMatch((await other.get(url(document))).body,/版本历史|memory-write/);
+ const denied=await other.post('/console/knowledge/do/memory-write',{csrf:csrf(shared.body),space:'personal',document,expected_version:(await w.memory.read(w.owner.principal,document)).version,markdown:'不能改别人的偏好',client_key:'foreign-edit'});assert.equal(denied.status,404,denied.body);
+ const revoked=await own.post('/console/knowledge/do/memory-revoke',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member_id:w.reader.user.id});assert.equal(revoked.status,303,revoked.body);
+ assert.doesNotMatch((await other.get(url(undefined,{scope:'shared'}))).body,/合成控制台记忆/);assert.equal((await other.get(url(document))).status,404);
+ const origin=await own.send('/console/knowledge/do/memory-write',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:'csrf='+csrf(grantPage.body)});assert.equal(origin.status,403);
+});
+test('memory sharing previews write nothing and confirmation rechecks capacity instead of trusting a green page',async t=>{
+ const w=await world();t.after(w.close);const own=await openConsole(w.hub,w.owner.token);
+ const saved=await w.memory.write(w.owner.principal,{title:'合成共享偏好',markdown:'只陈述合成事实。',expected_version:null,client_key:'share-source'});
+ const before=await w.hub.records.store.watermark!();const preview=await own.get(url(saved.document,{share:'1',client_key:'share-confirm'}));
+ assert.equal(preview.status,200,preview.body);assert.match(preview.body,/新写入一篇/);assert.equal(await w.hub.records.store.watermark!(),before);
+ w.hub.records.memoryIndex!.limits.spaceBytes=0;
+ const refused=await own.post('/console/knowledge/do/memory-share',{csrf:csrf(preview.body),document:saved.document,version:saved.version,client_key:'share-confirm'});assert.equal(refused.status,303,refused.body);
+ const receipt=await own.get(String(refused.headers.location));assert.match(receipt.body,/MEMORY_SPACE_LIMIT/);assert.match(receipt.body,/已拒收/);assert.equal((await w.memory.items(w.owner.principal,'team')).length,0);
+ const retry=await w.client.call('upload_file',{memory_share:{document:saved.document,version:saved.version,client_key:'share-confirm'}});assert.equal(retry.out.errors[0]?.code,'MEMORY_SPACE_LIMIT',retry.text);
+ assert.equal((await w.hub.records.store.find({kind:'memory_share',key:'memory.share.by',value:w.owner.user.id})).items.length,1,'a cached refusal retains its cause and appends no second share receipt');
+});

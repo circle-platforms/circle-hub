@@ -409,3 +409,8 @@ The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team 
 Security model 22 adds optional live withdrawal counts (`grounds_withdrawn_hidden_count` in node views and `withdrawn_grounds_hidden_count` beside result receipts). They disclose no paths or digests and do not change stored records. The existing status label remains generated.
 
 Decision 88 and the approved memory protocol (Claude, 2026-11-02) add generated audience, pre-check, knowledge/memory view and memory-state labels in model 23. Memory is a client-context preference declaration, never run evidence. Its separate grants do not inherit knowledge grants. The default active-text cap is 48,000 bytes per space; re-sharing supersedes the earlier team revision unless an administrator edited it.
+
+Model 23 follows the phase-three security model 22 and retains its upload declarations, absent diagnostics and capability
+refusals. Generic protocol mirrors advance HTML/mindmap to 1.0.10 and XML/workbook to 1.0.11. Memory extends only
+get_nodes and upload_file; payload modes cannot mix with evidence or runs. Metadata pages have a 16,000-byte bound,
+and body reads continue at UTF-8 boundaries. Sensitive sharing destinations are omitted from refused receipts.
