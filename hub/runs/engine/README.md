@@ -1047,3 +1047,11 @@ outside the page, remain in the listing; their answers and grounds reads are bat
 cycle/depth limits, withdrawal and unknown results are not memoized. Standalone/mock stores without the candidate port
 retain the previous scan. No mutation path uses the read scope. Pagination, partial readership, exact-capture grants and
 revocations, off-page requests and constant page query batches have database-backed regressions.
+
+Console performance round 2: readonly queries memoize the complete protected request listing and complete top-level
+result readability check, keyed by engine, reader and full run/result bodies, within the existing request scope only.
+Failures are evicted, returned structures are isolated, and writes/admission never install this query port. Recursive
+proofs retain their depth/cycle checks. A result-head summary port supplies list rows and the fixed 120-task aggregate
+window without enumerating submission receipts, per-run request answers or detail-only withdrawal/criterion decoration.
+It shares management/latest selection with full detail, never substitutes an older visible head, and independently
+checks the last readable production result. No chart total or unknown partition changes; the full run route is retained.

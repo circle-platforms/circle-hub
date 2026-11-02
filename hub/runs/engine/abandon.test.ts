@@ -29,6 +29,7 @@ test('abandon is an authenticated administrative delivery, not a successful targ
   assert.equal(rejected.acceptance,'not_accepted');assert.equal(rejected.errors[0].code,'RUN_ABANDONED');
   assert.equal((await h.kit.store.find({kind:'submission',key:INDEX.submissionRun,value:run.run})).items.length,1);
   assert.equal((await h.service.getRun(h.alice,run.run))!.latest!.record,answer.record);
+  const summary=await h.service.getRunSummary!(h.alice,run.run),detail=await h.service.getRun(h.alice,run.run);assert.deepEqual(summary?.management,detail?.management);assert.deepEqual(summary?.latest,detail?.latest);
 });
 test('legacy missing exits use only this real management request in the new projection and preserve unknown counts', {skip},async()=>{
   const map=await h.upload(h.alice,toyMap(standardDocument()));

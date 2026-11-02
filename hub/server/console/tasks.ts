@@ -9,7 +9,7 @@ import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
-import type { RunDetail } from '../../ports.ts';
+import type { RunDetail, RunSummary } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
@@ -20,7 +20,7 @@ import { environmentState } from './connections.ts';
 export interface TaskRow {
   run: RunRecordView;
   /** Null when the run could not be read just now; its result is then not shown. */
-  detail: RunDetail | null;
+  detail: RunSummary | null;
   result: TaskResult | null;
   pending: number;
 }
@@ -28,9 +28,9 @@ export interface TaskRow {
 /** The detail of each run, to derive its result; a run that cannot be read is listed without one. */
 export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]): Promise<TaskRow[]> {
   return Promise.all(runs.map(async (run): Promise<TaskRow> => {
-    let detail: RunDetail | null = null;
+    let detail: RunSummary | null = null;
     try {
-      detail = await ctx.deps.runs.getRun(ctx.principal, run.run);
+      detail = await (ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal, run.run));
     } catch {
       detail = null;
     }

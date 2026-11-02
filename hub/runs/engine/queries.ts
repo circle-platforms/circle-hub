@@ -11,7 +11,7 @@ import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
 import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
-import type { RunDetail, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
+import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun } from './readers.ts';
 import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionsOf, INDEX, keyOwner } from './store.ts';
@@ -52,6 +52,28 @@ async function ruleWithdrawal(ctx:EngineContext,user:Principal,run:RunRecord):Pr
   return await ctx.deps.workflows.absence?.(user,run.pack,run.pack_space)==='withdrawn'?{rule_withdrawn:true}:{};
 }
 
+/** The same management/technical head and visibility rule for summaries and full detail. Never fall back past a hidden head. */
+async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord<RunRecord>){
+  const store=ctx.deps.records.store,run=stored.body.run;
+  const technicalLatest=await latestAccepted(store,run),management=await abandonDecision(ctx,run);
+  const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
+  const selected=management?managementResult:technicalLatest;
+  const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
+  return {latest,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{})};
+}
+
+/** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
+export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
+  const stored=await visibleRun(ctx,user,run);if(!stored)return null;
+  const [candidates,head]=await Promise.all([resultsOf(ctx.deps.records.store,run),selectedHead(ctx,user,stored)]);
+  let production:RunSummary['production']=null;
+  // Full detail takes the last readable production result, preserving its ordering even for legacy records.
+  for(const candidate of candidates.toReversed())if(candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){
+    production={record:candidate.digest,result:candidate.body};break;
+  }
+  return {run:await withRulingSummary(ctx,stored.body),latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
+}
+
 export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
   const stored = await visibleRun(ctx, user, run);
   if (stored === null) return null;
@@ -77,15 +99,11 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
       result: result !== undefined && result.body.acceptance === 'accepted' ? result.digest : null,
     };
   }));
-  const technicalLatest = await latestAccepted(store, run);
-  const management=await abandonDecision(ctx,run);
-  const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
-  const selected=management?managementResult:technicalLatest;
-  const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
+  const {latest,management}=await selectedHead(ctx,user,stored);
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
   const notices=await criterionNotices(ctx,stored.body);
   const withdrawn=await withdrawalState(ctx,results.map(row=>row.body),user,true);
-  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 

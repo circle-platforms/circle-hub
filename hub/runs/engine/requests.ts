@@ -9,6 +9,7 @@ import { ConflictError, type Principal, type StoredRecord } from '../../records/
 import type { EngineContext } from './deps.ts';
 import { canSeeRun } from './readers.ts';
 import {requestReadable} from './grounds.ts';
+import {queryRead} from './query-scope.ts';
 import { runById, keyOwner } from './store.ts';
 import { createRequestService, type RequestBody, type RequestView } from '../../requests/api.ts';
 export { createRequestService, RequestBodySchema } from '../../requests/api.ts';
@@ -18,8 +19,10 @@ export const putRequest=(ctx:EngineContext,input:RequestBody)=>service(ctx).writ
 export const answerRequest=(ctx:EngineContext,request:string,source:string)=>service(ctx).answer(request,source);
 export const requestRecords=(ctx:EngineContext,run?:string):Promise<RequestView[]>=>service(ctx).all(run);
 export async function requestsOf(ctx:EngineContext,by:Principal,run?:string):Promise<RequestView[]>{
-  const rows=await service(ctx).list(by,run),allowed=await Promise.all(rows.map(request=>requestReadable(ctx,by,request)));
+ return queryRead(ctx,['requests',by,run??null] as const,async([,by,run])=>{
+  const rows=await service(ctx).list(by,run??undefined),allowed=await Promise.all(rows.map(request=>requestReadable(ctx,by,request)));
   return rows.filter((_,i)=>allowed[i]);
+ });
 }
 export async function recordResultRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,roundsUsed:ReadonlyMap<string,number>=new Map(),input?:unknown):Promise<void>{
   if(isAbandonedResult(result))return;

@@ -2,7 +2,7 @@
 // the run page treats as authoritative, in one place, so no page computes it on its own. Unknown is never shown as passed.
 import { uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { isUnknownTerminal, type ValidationResult } from '../../../contracts/src/validation.ts';
-import type { RunDetail } from '../../ports.ts';
+import type { RunDetail,RunSummary } from '../../ports.ts';
 import { isAbandonedResult } from '../../runs/api.ts';
 import { type Html } from './html.ts';
 import { chip, type DotState, type Tone } from './ui.ts';
@@ -16,12 +16,12 @@ export function factOnly(detail: Pick<RunDetail, 'run'>): boolean {
  * The result the run page shows first: a system delivery, else the production result of a fact-only run, else the latest
  * accepted submission's result.
  */
-export function primaryResult(detail: RunDetail): { record: string; result: ValidationResult } | null {
+export function primaryResult(detail: RunSummary): { record: string; result: ValidationResult } | null {
   if (detail.latest?.result.system_input) return detail.latest;
   return factOnly(detail) ? detail.production : detail.latest;
 }
 
-export function taskResultOf(detail: RunDetail): TaskResult {
+export function taskResultOf(detail: RunSummary): TaskResult {
   if (detail.management !== undefined) return 'abandoned';
   const primary = primaryResult(detail);
   if (primary === null || primary.result.acceptance !== 'accepted') return 'awaiting';
@@ -38,7 +38,7 @@ export function taskResultOf(detail: RunDetail): TaskResult {
 }
 
 /** Requirements of delivered items still without a conclusion: the 未决项 of a delivered task. */
-export function pendingCount(detail: RunDetail): number {
+export function pendingCount(detail: RunSummary): number {
   const primary = primaryResult(detail);
   if (primary === null || primary.result.acceptance !== 'accepted') return 0;
   return primary.result.partitions.delivered.flatMap((item) => item.requirements).filter((r) => r.status === 'pending' || r.layers.some(isUnknownTerminal)).length;

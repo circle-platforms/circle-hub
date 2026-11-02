@@ -82,3 +82,19 @@ test('a run page retains off-page pending requests, answer state and pack filter
  for(let n=42;n<142;n++)await add(n);
  calls=0;await h.service.listRuns(h.alice,{limit:4});assert.equal(calls,small,'additional off-page runs do not add per-run queries to the same readable page');
 });
+
+test('one request reuses the protected global request list across run pages, without lending it to another reader',async t=>{
+ const h=await openHarness(postgres);t.after(h.close);
+ const body=RunRecord.parse({...runRecord,run:newId('run'),runner:h.alice.id,pack:`${h.review.pack.id}@${h.review.pack.version}`,pack_digest:h.review.pack.digest,requirements:[],sources:[],items:[],target_basis:[],client_key:'synthetic-request-reuse'});
+ const run=await putRun(h.kit.store,body,new Date(body.started_at).toISOString()),requests=createRequestService(h.kit);
+ const record=await requests.write({run:body.run,source:run.digest,kind:'repair',audience:h.alice.id,due:'2026-10-21T00:00:00.000Z',missing:'合成缺口',next_action:'原样重交',code:'not_covered'});
+ const original=Database.prototype.query;let calls=0;
+ Database.prototype.query=(async function(this:Database,...args:Parameters<typeof original>){calls++;return original.apply(this,args);}) as typeof original;t.after(()=>{Database.prototype.query=original;});
+ await withReadScope(async()=>{
+  assert.equal((await h.service.listRuns(h.admin,{limit:1})).requests?.[0].record,record.digest);
+  const before=calls;assert.equal((await h.service.listRequests!(h.admin))[0].record,record.digest);assert.equal(calls,before,'a second protected global listing adds no SQL');
+  assert.deepEqual(await h.service.listRequests!(h.bob),[],'a different reader rechecks visibility in the same outer request');
+ });
+ await requests.answer(record.digest,run.digest);
+ assert.equal((await h.service.listRequests!(h.admin))[0].answered_by,run.digest,'a fresh request observes an answer');
+});

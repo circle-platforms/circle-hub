@@ -13,7 +13,7 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { createEngineContext, type EngineContext, type RunsEngineDeps } from './deps.ts';
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
-import { getResult, getRun, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
+import { getResult, getRun, getRunSummary, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
@@ -125,6 +125,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     getRun(user, run): Promise<RunDetail | null> {
       return withQueryReads(ctx,current=>getRun(current, user, run));
     },
+    getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {

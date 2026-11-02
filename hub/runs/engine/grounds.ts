@@ -15,6 +15,7 @@ import {HubReadFailure,retryRead} from './retry-read.ts';
 import {attemptEvidence} from './retry-evidence.ts';
 import {receivedDigest} from './util.ts';
 import {unavailableError} from './errors.ts';
+import {queryRead} from './query-scope.ts';
 
 export function groundsOf(value:unknown):string[]{
   const metadata=new WeakMap<object,string>();
@@ -29,7 +30,7 @@ export function groundsOf(value:unknown):string[]{
     }
   }
   const found=new Set<string>(),seen=new Set<object>(),work=[value];
-  while(work.length){const row=work.pop();if(typeof row==='string'){if(Ground.safeParse(row).success)found.add(row);}else if(row&&typeof row==='object'&&!seen.has(row)){seen.add(row);for(const [key,item] of Object.entries(row))if(metadata.get(row)!==key)work.push(item);}}
+  while(work.length){const row=work.pop();if(typeof row==='string'){if(row.includes(':')&&Ground.safeParse(row).success)found.add(row);}else if(row&&typeof row==='object'&&!seen.has(row)){seen.add(row);for(const [key,item] of Object.entries(row))if(metadata.get(row)!==key)work.push(item);}}
   return [...found];
 }
 
@@ -199,11 +200,13 @@ export async function runReadableBy(ctx:EngineContext,by:Principal,run:RunRecord
 
 /** Instance diagnostics of a rejected submission do not grant access to its private grounds. */
 export async function resultReadableBy(ctx:EngineContext,run:RunRecord,result:ValidationResult,by:Principal):Promise<boolean>{
+ return queryRead(ctx,['result-readable',by,run,result] as const,async([,by,run,result])=>{
   if(run.runner===by.id)return true;
   if(!canSeeRun(by,run)&&result.acceptance!=='accepted'||!await groundsReadableBy(ctx,run,result,by,{trustedResult:true}))return false;
   const raw=await submissionByDigest(ctx.deps.records.store,run.run,result.submission);
   if(raw&&!await groundsReadableBy(ctx,run,raw.body,by,{unavailableReferences:result.unavailable_references}))return false;
   return true;
+ });
 }
 
 /** Request instances retain run-owner/administrator scope and never lend a private submission's diagnostics. */
