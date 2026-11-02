@@ -4,7 +4,7 @@
 
 本地工具装成 Circle 技能 skills/case-compile/，“技能目录”是加载时 Circle 显示的 Base directory；命令只写 node 加其下脚本，文件参数相对工作目录，令牌按下文 here-doc 走标准输入，不用 cd、管道或重定向。
 
-1. 先用 test-bed 预订整个自动化测试环境（acquire 的 need.devices 写清单全部设备）。第一次 start_run 用 case-compile，predecessor 写预订运行。对照某个构建时 product、build 和 version 写在 start_run 顶层，不写进 parameters。绑定 subject、contract、inventory、profile。整份脑图不填 parameters.autoid（Hub 选全部带文字 autoid、未声明不自动化的用例）；只编一条时从原文复制 autoid 字符串。后三项是发布的 doc:doc，profile 含 device_count 只读预检事实及可选 fold_newlines 名单。优先用敏捷文档号；只有本地导出时运行 `node <技能目录>/tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>`，上传中性文件名，在说明中原样给出两边摘要和“客户端规整”。不改写用例内容或编号。
+1. 先用 test-bed 预订整个自动化测试环境（acquire 的 need.devices 写清单全部设备；已持有整台预订（如刚装过构建）就沿用）。第一次 start_run 用 case-compile，predecessor 写预订运行。对照某个构建时 product、build 和 version 写在 start_run 顶层，不写进 parameters。绑定 subject、contract、inventory、profile。整份脑图不填 parameters.autoid（Hub 选全部带文字 autoid、未声明不自动化的用例）；只编一条时从原文复制 autoid 字符串。后三项是发布的 doc:doc，profile 含 device_count 只读预检事实及可选 fold_newlines 名单。优先用敏捷文档号；只有本地导出时运行 `node <技能目录>/tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>`，上传中性文件名，在说明中原样给出两边摘要和“客户端规整”。不改写用例内容或编号。
 2. 用 get_nodes 读本次绑定的源，按分页读完。启用只说明对象/方法身份存在，不是派发授权。设备命令按锁定命令树放行，只拒合约声明的破坏性命令；不在本环境的地址：作者原文里的照留并披露，计划改出的拒。其余只读原合约结构，不从 help 散文推断。仍缺合约事实时按补证请求交具名维护者，告诉用户在等哪个请求，不让用户替维护者选；不得改冻结 profile、加本地角色或 reviewed 标志绕过。不复制默认值、内部项、认证候选或脱敏凭据。plan 槽见 slots.schema.json：bucket 为自动化测试环境，replacements 为 {case,bed} 一一对应地址。平面计划 blocks: []，steps 为 {object,method,args,keywords}；块计划 blocks 非空，steps/expects 均为 []，不可混写。args 为文字，keywords 为文字或安全非负整数。
 3. 平面 steps 禁止 literal_assertion；expects 写 {text,quote:{reference,text},after}，至少一条；after 从 1 开始，指向产生这段输出的设备命令或主机 shell（流量期望指向触发命令），不指向等待。块断言写 blocks 并指向观察输出，见下文。quote 保留逐字原文及来源身份。replacements 只用于经合约类型确认的地址位置；其他位置的同样文字保持原样，不扫描全文找 IP，不凭外形判用途。平面计划未写 basis 时，text 是替换后引文的精确片段，不能正规化字形或吞掉空白；描述性期望用下述 model_judgment。平面步骤和 text 写最终文字。普通参数单行、无首尾空白、无 {}、{0} 或等号前缀；RESTORE_FROM 的守卫占位 {} 除外。设备命令须被锁定构建的命令树完整解析，参数按树的结构类型完整消费并核值；Hub 由计划命令生成 CommandIdentity，用例无须预先声明命令。用例有 data.command_identities 时，计划解析身份须与其一致（只应用显式类型化替换）。不接受缩写、前缀、字形或大小写折叠、从散文捞命令。主机命令只能在合约声明的具体方法、参数类型和效果授权范围内，安全性不按动作名或参数里的词判断。设备地址允许本自动化测试环境其他设备接口及本血缘分配；其余原地址仅通过 replacements 换入。本次运行冻结了已受理的判据声明时（答复列出声明 rec:、新判据与复核人），期望可逐字取自新判据：quote.reference 写该声明的 rec:，quote.text 逐字抄冻结的新判据，text 是其精确片段；包按冻结字节核对，客户端副本不算数，改写或拼接按 expect_not_in_criterion 退回。声明自己的引文在本次运行边界另行逐字核对，来源未绑定时记未知并补读，不当已通过。
 4. submit_result 后按修正说明修计划并自动重交，最多两轮。类型或效果缺失是缺原合约事实，不是计划内容为假，按第 2 步补齐前不生成或派发。首次只有 workbook_verified 的“缺少文件”可继续；每个用例的其他必需要求项都须 satisfied 才生成工作簿；全部用例的计划同一次 submit_result 提交。读完整结果，不能把 accepted 当成所有要求满足。
@@ -21,7 +21,7 @@ EOF
 6. 再执行 `node <技能目录>/tools/generate-workbook.ts --run <目录>/run.json --result <目录>/result.json --submission <目录>/submission.json --contract <目录>/contract.json --profile <目录>/profile.json --inventory <目录>/inventory.json --out <目录>/case.xlsx`。脚本不联网，只打印 sha256 与生成器版本，不覆盖旧文件。G 无法往返时按回执的步骤和规则修回计划、重取满足结果，不猜另一种解析；零参数不能写成空 G，数字文字关键字、混合引号等同样按回执处理。
 7. 用 upload_file 上传原始 case.xlsx，核对返回的 SHA 与脚本输出一致。第二次 start_run 仍绑定同一用例文档、合约、清单、配置与构建，另绑定 workbook 为上传返回的 src: 引用；predecessor、parameters.plan_run、inputs.plan_result 都写已满足的计划运行号（多用例时 plan_result 必填）。原样重交全部用例的步骤、期望和替换表。改了计划就重取满足结果、重新生成上传，再开新的核验运行。
 8. 读全部核验结果。支持回执 data 为 {sha256,autoids,bed:{id,manifest_sha256},build,generator,plan_run}（autoids 为全部用例），不含工作簿内容；派发前再核 plan_run 与 predecessor 相同并重查设备数与租约。原样转述“按合成合约核对”或“按发布的运行器合约核对”、身份前 12 位和“不证明在真实设备上跑得通”。未知须写明缺的事实并继续取证、补件或重开运行，不以未知结束。所有必需要求项 satisfied 且持有第 1 步的预订时 Hub 自行派发（答复“派发”行给作业号）。读进展和结果引用时逐字节原样重交派发所依据的提交（含全部计划）；作业未结束时交别的内容只存档、不核验，Hub 答 IDEMPOTENCY_MISMATCH 并附进展，派发照常；要改内容等作业结束后开新的核验运行。get_nodes 读结果引用看逐条结论。
-9. 有没通过的条目时，读该行 evidence 的日志与各设备会话逐条归因（计划、期望、产品或环境）；设备回显只用来理解失败，不抄进期望：回显点名的命令或配置先在锁定命令树和手册读到再改计划；说明不了的推断（时序、等待）是判断，写明预测，下次在被测命令前加只读观察区分，不符就换假设。只改失败用例，已通过用例的计划逐字不变；按第 1 步重新预订后整份重跑计划、生成、核验与派发，直到全部通过，或把剩余失败连同证据交用户决定。
+9. 有没通过的条目时，读该行 evidence 的日志与各设备会话逐条归因（计划、期望、产品或环境）；设备回显只用来理解失败，不抄进期望：回显点名的命令或配置先在锁定命令树和手册读到再改计划；说明不了的推断（时序、等待）是判断，写明预测，下次在被测命令前加只读观察区分，不符就换假设。只改失败用例，已通过用例的计划逐字不变；沿用第 1 步的预订整份重跑计划、生成、核验与派发，直到全部通过，或把剩余失败连同证据交用户决定。之后作业都有终态时用 test-bed release 释放该预订。
 
 等待写 max_wait_seconds 内的正整数秒；断言 text 同普通参数的取值规则。
 
@@ -31,7 +31,7 @@ allowed 只提供已声明范围内的收紧配置，不能替代原合约的参
 
 只使用 runtime-contract@2 的类型、角色闭集、效果与来源。旧合约未核对，不生成或派发。case_index 仅在有用例原始身份声明时绑定，用于额外核一致性。plan 通常省略 command_identities（不要求构造 raw、parsed 或 type）；主动提交时只作可选声明核对，结构错误、缺项、多项或与 Hub 身份不一致记违规，可删掉后重交。不要交命令短语猜测。
 
-喂入层：经 Hub 读到的用例、缺陷、构建、规格由程序自动喂入（带锁定树苗和冻结序号），视图只读冻结序号之前的喂入；Circle 只经 knowledge-contribution 回注程序填不了的语义（带逐字引文）。
+喂入层：经 Hub 读到的用例、缺陷、构建、规格由程序自动喂入（带冻结序号），视图只读冻结序号之前的喂入；Circle 只经 knowledge-contribution 回注程序填不了的语义（带逐字引文）。
 
 ## 自动化测试环境适配、前置与清理（写计划前先读完）
 
@@ -48,7 +48,7 @@ allowed 只提供已声明范围内的收紧配置，不能替代原合约的参
 
 命令授权与来源保留：运行器效果可声明 `command_scope` 路径前缀闭集；若同时有逐条 `commands`，按交集授权，身份声明不能代替锁定树解析。用例原文中可完整解析的作者命令按定义身份（来源根、路径、签名）计次数：可以改参数，不可以删命令；缺失次数是未完成义务。参数仍须满足树类型、角色与自动化测试环境约束。
 
-平面计划的清理在 `steps` 末尾连续排列，写 `cleanup: true`；主体省略。块计划末尾连续排清理块：CONFIG 写 `cleanup: true`，RESTORE_FROM 自动视为清理。每条非产品只读范围的设备命令都须在同一设备对象上有产品声明的逆操作。前导参数取产品规则；未给固定数量时须能由锁定逆签名唯一确定。按净效果核：主体内互为声明逆操作的先建后删相抵，只清理最后仍生效的配置。产品声明需确认的命令（confirmations，如 `clear ssl host <主机>`）：该步 keywords.prompt 写声明提示符（如 `abort:`），下一步同对象同方法只写声明应答（如 `YES`），应答不计命令与清理。不要把观察命令或正文里的词猜作修改/逆操作。对象序号只读冻结 profile 的显式 ordinal，按清单中同类型设备数量核对；越界时框架取不到那台设备，整卷不跑。
+平面计划的清理在 `steps` 末尾连续排列，写 `cleanup: true`；主体省略。块计划末尾连续排清理块：CONFIG 写 `cleanup: true`，RESTORE_FROM 自动视为清理。每条非产品只读范围的设备命令都须在同一设备对象上有产品声明的逆操作。前导参数取产品规则；未给固定数量时须能由锁定逆签名唯一确定。按净效果核：主体内互为声明逆操作的先建后删相抵，只清理最后仍生效的配置。产品声明需确认的命令（confirmations）：该步 keywords.prompt 写声明的提示符，下一步同对象同方法只写声明的应答，应答不计命令与清理。不要把观察命令或正文里的词猜作修改/逆操作。对象序号只读冻结 profile 的显式 ordinal，按清单中同类型设备数量核对；越界时框架取不到那台设备，整卷不跑。
 
 ## 块计划（B1）
 
