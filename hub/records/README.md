@@ -713,3 +713,30 @@ retained. A small portable decoder is checked against that parser for every name
 `node tools/gen-credential-scanner.ts --check` to check the generated data; the knowledge-contribution pack generator also
 mirrors the scanner, decoder and data into its standalone skill, without a runtime package dependency. This avoids two
 credential policies drifting apart; it adds no per-source hashing or data-verification pass.
+
+### Personal payload storage (decision 89, step 2)
+
+Migration 14 adds account/epoch-scoped PostgreSQL byte payloads, immutable digest capsules and purge journals. These
+payloads use no per-epoch encryption. Equal bytes are held independently across accounts; only an account/epoch deduplicates.
+New personal knowledge, directory snapshots, original captures and memory bodies are indirect from their first write.
+The logical envelope digest and original source byte hash remain unchanged. Reading an active record reconstructs its
+canonical body before the usual integrity check; a cleared record is absent to ordinary readers, with an explicit
+capsule inspection returning `cleared` only after validating its immutable digest chain. Missing active payloads are
+integrity failures, not successful deletion.
+
+The owner-only, one-time migration exemption is limited to private rows whose replacement matches a verified payload
+and capsule; all other columns remain identical. The migration marker prevents reuse, runtime grants cannot execute
+the converter or update records, and the append-only triggers remain enabled. A deferred binding constraint rejects
+capsules that would shadow unrelated records. The role regression temporarily grants UPDATE to prove the trigger
+itself still rejects an application role, even with the migration flag set and spoofed temporary catalog tables.
+The owner exemption also refuses a team record. Search paths pin the catalog and public schema ahead of temporary tables.
+
+Legacy directory objects and imported originals are materialized before serving. A persistent hash-only retirement
+journal resumes after crashes; purge refuses unfinished conversion or retirement. References held independently by team trees (including nested nodes) or ordinary
+captures keep their global copies. Personal payload bytes are deleted by the narrow purge function; immutable
+capsules and safe hashes remain. Purge also removes private search and memory projections and invalidates directory
+grants. It preserves team copies. PostgreSQL backup/restore includes both payloads and capsules in one snapshot:
+restoring a backup taken before a purge restores that old content. The restore command states this boundary.
+
+No sync HTTP handler or client is provided by this step. Current mode defaults to Hub. Clearing is an internal service
+operation until the checked, authenticated mode-switch routes are wired in subsequent steps.

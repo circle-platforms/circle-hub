@@ -333,3 +333,59 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 - `npm run test:docs` **290 项通过、0 失败、0 跳过**；`git diff --check` 通过。四技能版本为 html-format／mindmap-format 1.0.12，xml-format／workbook-format 1.0.13。
 - 同步处理器、实时 CAS／冲突／权限／清除、迁移／备份恢复及验收 49 未实现，未运行，不计通过；没有运行 46／47／48、全工作流／引擎、全量 unit／acceptance、Linux CI 或来源归档检查。没有改生产运行／依据、迁移或来源工具。没有新增与本次同步无关的数据 SHA 校验。
 - 仅本机签署第 1 步提交；没有推送、PR、部署或操作 Circle 仓库。按要求先报告第 1 步结果，再进入可清除载荷的第 2 步。
+
+### 实施第 2 步：可清除载荷、旧正文转换与清除边界
+
+依据：Claude 2026-11-02 明确批准第 1 步，并要求遵守第 13 节的受限转换、摘要不变和无代次加密条件。
+
+- 新增迁移 14；迁移 1～13 的 SQL 不改。个人记录从首次写入就保存为摘要胶囊，原正文及目录／原件字节进按账户、代次隔离的 PostgreSQL bytea 载荷。没有代次加密、密钥或新的配置变量；同字节不同账户物理分存。审计胶囊和清除／续办日志只保存摘要与安全标识。
+- 一次性转换仅针对个人空间的知识、目录快照、原件、引文、目录授权与记忆。迁移所有者逐行验证原逻辑摘要，正文转成载荷引用后保持原摘要、ID、时间等元数据不变。防篡改触发器继续启用，仅在迁移 14 尚未登记、调用者恰为表所有者、只改正文且胶囊／载荷完全匹配时放行；完成后不能重用。额外的延迟约束拒绝伪造绑定来遮蔽团队记录。
+- 旧目录树／原件在监听前分批物化；持久的摘要续办日志保证中断后可继续收尾。删除原全局文件前保护独立团队树的所有下级节点以及独立原件采集；不会因为根不同而误删相同子节点。全局原件机制保持，新的私人对象不落入不可清除的全局文件。
+- 清除服务只接受当前身份自己的代次，持既有个人空间锁；物理删除该代次载荷与搜索／记忆投影，原记录胶囊留存。当前和历史记录、原件、知识与记忆的目录授权均不可继续读取；新写入拒收。载荷仍在时核对原字节与逻辑摘要，清除后核对胶囊链并标记已清除；缺失或篡改的活动载荷按完整性失败处理，不冒充成功清除。
+- 团队知识与团队记忆不删除、不停用。直接或间接仍需已清除个人依据的旧团队条目在读取时显示待验证，历史正文不改。当前共享本来就要求先有可供团队读取的前件；回归保留该拒收规则，另以显式历史夹具覆盖旧依赖，而不是放宽发布规则来造夹具。
+- 备份沿用同一 PostgreSQL 一致快照，包含载荷与胶囊；ownership 增加真实 PG 18 的“备份→清除→恢复旧备份→再次清除”断言。恢复命令说明旧备份会带回已清除内容，不追溯擦除旧备份。
+- 首轮新增清除检查复现 NUL 的 PostgreSQL 元数据解码失败，修正仅用于检查的元数据视图，正文和摘要不改；旧库角色用例首次未给临时账户配口令而认证失败，补合成口令后通过。扩大组 62 项中 61 通过、1 项因行锁要求 UPDATE 权限失败，改为复用既有业务锁，不扩大运行角色权限。团队依赖夹具两次先后因来源 ID 不符合语法、当前共享资格不足而失败，修正来源 ID 并保留当前拒收断言，采用明确的旧团队记录夹具后通过。
+
+本步没有创建同步 HTTP、模式切换控制台或 Circle 客户端；先报告第 2 步，不开始第 3 步。
+
+#### 第 2 步最终验证
+
+- 本机 Node 24.22.1；数据库均为临时 PostgreSQL，ownership 使用已批准的 PG 18 客户端；合成原件和临时数据目录均随测试清理。没有读取个人配置、凭据库或持久部署。
+- 最终增加了运行角色即使临时获得正文 UPDATE 权限、设置迁移标志并伪造临时系统目录仍被触发器拒绝的回归；迁移所有者也不能把团队记录转换成个人记录。旧转换与原件清理未完成时拒绝清除；模拟“私有字节已复制、旧文件尚未删除”的中断点，重开后完成清理。私人原件的单独采集和空间事务统一先拿空间锁，再拿采集锁；12 路并发仍得到同一采集身份。
+- 转换逐行核对原记录摘要，升级测试同时核对迁移 1～13 的登记摘要不变；仅追加迁移 14。复核新增 SQL 后，迁移源文件固定摘要更新为 `48b5c333b10a96e5cec1798cc8bd3ecf0e4cfb51c5d6960ebc1dcdf024510bb6`；没有更新知识视图输出的固定摘要。
+- 首次扩大记录／知识／验收组 324 项中 323 通过、1 项失败：通用防篡改触发器对其他表求值了 records 专用字段。改为先检查表和操作，再检查转换条件，保留全部只追加拒收断言；随后复查组 48 项通过。最终以下记录／平台组 **245 项通过、0 失败、0 跳过**，包括所有记录测试、密码迁移、运行角色、锁命名空间、PG 18 ownership 的 3 项、CLI 恢复提示与引用次数夹具。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 \
+node --test --test-concurrency=1 --test-reporter=tap \
+  'hub/records/**/*.test.ts' hub/knowledge/personal-purge.test.ts \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts \
+  hub/platform/ownership.test.ts hub/platform/cli.test.ts hub/runs/engine/citations.test.ts
+```
+
+- 最后补充单条／批量正文、业务键、记录 ID、索引查询和历史列表等旧读取入口在清除后均无法读回的断言，单独复跑 `hub/records/personal-payloads.test.ts`：**5 项通过、0 失败、0 跳过**。
+- 最终知识服务、包约束与受影响验收组 **87 项通过、0 失败、0 跳过**。以上检查共同覆盖知识与记忆的未完成共享检查失效、成员／管理员旧授权失效、团队记忆保留、依赖个人依据的历史团队知识显示待验证、旧备份恢复内容及新的私人写入仍拒收。最后新增的间接依赖夹具首次因未按内容生成条目 ID 而被拒读，修正夹具后重跑本组，保留内容身份校验。知识视图输出字节保持既有值，冷 49,000 条用例仍在现有限额内；没有为通过测试更改输出摘要。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 \
+node --test --test-concurrency=1 --test-reporter=tap \
+  hub/knowledge/personal-purge.test.ts \
+  hub/knowledge/memory.test.ts hub/knowledge/spaces.test.ts \
+  hub/knowledge/sharing.test.ts hub/knowledge/view-perf.test.ts \
+  packs/workflow/case-review/packs.test.ts \
+  tests/acceptance/46-knowledge-spaces.test.ts \
+  tests/acceptance/47-knowledge-sharing.test.ts \
+  tests/acceptance/48-knowledge-console-memory.test.ts
+```
+
+- 按依据读取变更的持续要求，顺序运行全部工作流与引擎组：**2,765 项中 2,764 通过、1 失败、0 跳过**。唯一失败是 citations 的合成个人空间夹具使用不存在的账户，违反新增外键；修正为先创建合成成员，保留原计数和隐私断言。该文件最终在上文 245 项组中 **5 项全部通过**。没有把首次整组失败记成通过；没有重复整个 17 分钟的组来代替针对夹具的复查。macOS 沙箱依赖项实际执行，没有因缺少沙箱跳过。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 \
+node --test --test-concurrency=1 --test-reporter=tap \
+  'packs/workflow/**/*.test.ts' 'hub/runs/engine/**/*.test.ts'
+```
+
+- `npm run typecheck` 通过；`npm run verify:contracts` 通过，175 个生成文件一致，本步没有改合约或技能镜像；`npm run test:docs` **290 项通过、0 失败、0 跳过**；`git diff --check` 通过。
+- HTTP 同步、版本头／CAS／冲突、同步容量计量与验收 49 尚未实现，未运行，不计通过。未运行全量 unit／acceptance、Linux CI、来源归档检查；本步未改来源工具，不添加无关 SHA 数据核对。所有实际运行的测试均无跳过；首次失败及修正如上，不将跳过或未运行项算作通过。
+- 本步只在 kw-sync-local 签署本机提交，没有推送、PR 或部署；按要求报告第 2 步后再进入第 3 步。

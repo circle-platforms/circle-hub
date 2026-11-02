@@ -25,6 +25,14 @@ const libpq = await libpqAvailable();
 const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   records: 'body',
+  personal_spaces:'owner',
+  personal_payloads:'owner',
+  personal_record_bindings:'owner',
+  personal_objects:'owner',
+  personal_purges:'owner',
+  personal_legacy_ready:'record',
+  personal_legacy_retire:'sha256',
+  personal_legacy_retired:'sha256',
   record_index: 'value',
   record_keys: 'key',
   objects: 'media_type',
@@ -99,6 +107,8 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
   let keyProvider: FileKeyProvider;
   const port = socketPort();
   const appended: { id: string; digest: string }[] = [];
+  let privateOwner:import('../records/api.ts').Principal;
+  let privateDigest:string;
 
   const database = (user: string): DatabaseConfig => ({ host: layout.run, port, database: control.target.database, user });
   const kitConfig = (): RecordsConfig => ({ dataDir: layout.root, logDir: layout.logs, database: database(control.application.user), limits: { ...DEFAULT_LIMITS } });
@@ -165,6 +175,8 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     try {
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
+      privateOwner=user;
+      privateDigest=(await kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:user.id,markdown:'synthetic-private-backup'}})).digest;
       for (let n = 0; n < 5; n++) {
         const record = await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n, text: `合成 ${n}` }, unique_key: `synthetic.${n}`, index: [{ key: 'synthetic.n', value: String(n) }] });
         appended.push({ id: record.id, digest: record.digest });
@@ -194,6 +206,8 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     const before = await asOwner(async (s) => ({ tables: await summarizeTables(s), privileges: await rolePrivileges(s, role) }));
     const { dir, manifest } = await createBackup({ layout, postgres: control, libpqBin: libpq!, label: 'records' });
     await verifyBackup(dir);
+    const clearing=await openRecords(kitConfig(),{migrate:false,keyProvider});
+    try{const state=await clearing.personalPayloads!.inspect(privateDigest);await clearing.personalPayloads!.purge(privateOwner,state!.epoch);assert.equal(await clearing.store.get(privateDigest),null);}finally{await clearing.close();}
     assert.deepEqual(manifest.database.application_role, { name: role, privileges: before.privileges });
 
     assert.equal(await control.stop(), true);
@@ -217,6 +231,9 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     try {
       for (const record of appended) assert.equal((await kit.store.get(record.digest))?.id, record.id);
       assert.equal(await kit.vault.getText('synthetic.entry'), '合成');
+      assert.equal((await kit.store.get<{markdown:string}>(privateDigest))?.body.markdown,'synthetic-private-backup','the earlier backup restores content cleared after it was taken');
+      const restored=await kit.personalPayloads!.inspect(privateDigest);assert.equal(restored?.cleared,false);
+      await kit.personalPayloads!.purge(privateOwner,restored!.epoch);assert.equal(await kit.store.get(privateDigest),null);
       assert.equal((await kit.store.getByKey('claim', 'synthetic.0'))?.digest, appended[0].digest, 'unique business identities survive the restore');
       await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n: 99, text: '恢复之后' } });
     } finally {

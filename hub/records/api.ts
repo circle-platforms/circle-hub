@@ -1,3 +1,4 @@
+import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
 export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
@@ -167,6 +168,8 @@ export interface IndexEntry {
 }
 
 export interface RecordInput<B = unknown> {
+  /** Internal personal-space storage scope; never supplied by a model input. */
+  personalOwner?:string;
   kind: RecordKind;
   /**
    * `name@major` as contracts SchemaId (`^[a-z][a-z0-9_-]*@(0|[1-9][0-9]*)$`: lowercase letters, digits, `_` and `-`, no
@@ -275,9 +278,9 @@ export interface ObjectInfo {
   created_at: string;
 }
 
-/** Content-addressed bytes under <data>/objects/ab/<sha256>: written atomically, verified on every read, never overwritten or deleted. */
+/** Immutable content-addressed bytes. Personal originals use removable account/epoch-scoped payloads. */
 export interface ObjectStore {
-  put(bytes: Uint8Array, mediaType: string, tx?:Transaction): Promise<ObjectInfo & { created: boolean }>;
+  put(bytes: Uint8Array, mediaType: string, tx?:Transaction, personalOwner?:string): Promise<ObjectInfo & { created: boolean }>;
   /**
    * Null when absent. Throws IntegrityError when the stored bytes no longer hash to their name or when a registered object's
    * file is missing. No read-tier check: for trusted callers; readers go through Artifacts.source().
@@ -406,6 +409,8 @@ export interface SourceArtifactBody {
 export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 
 export interface IngestInput {
+  /** Internal scope for personal original imports. */
+  personalOwner?:string;
   /** An opaque matcher prepared for exactly this origin/author; revalidated before admission. */
   derivedCoverage?: DerivedCoverage;
   /** Source byte digests for a Hub-generated derivative; never a global pool of accepted text. */
@@ -827,6 +832,7 @@ export interface CallLog {
 
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export interface RecordsKit {
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'purge'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

@@ -55,13 +55,16 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     throw error;
   }
   const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
-  const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now });
+  const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now,personalPayloads:store.personalPayloads });
+  try{await objects.materializePersonalObjects();}
+  catch(error){await db.end().catch(()=>{});throw error;}
   const authorizations = new RecordAuthorizations(db, store, now);
   const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
   const principals = new PgPrincipals(db, now);
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   let closed: Promise<void> | undefined;
   return {
+    personalPayloads:store.personalPayloads,
     memoryIndex:new PgMemoryIndex(db,{documentBytes:config.limits.maxMemoryDocumentBytes,spaceBytes:config.limits.maxMemorySpaceBytes,spaceDocuments:config.limits.maxMemorySpaceDocuments}),
     spaceIndex: new PgSpaceSearchIndex(db,{entryBytes:config.limits.maxEntryIndexBytes,spaceBytes:config.limits.maxSpaceIndexBytes}),
     config: { dataDir: config.dataDir, logDir: config.logDir, limits: { ...config.limits } },

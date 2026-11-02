@@ -228,7 +228,18 @@ export class RecordArtifacts implements Artifacts {
     this.#options = options;
   }
 
-  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> { return this.#ingest(input, false,tx); }
+  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> {
+    return input.personalOwner?this.#personalIngest(input,false,tx):this.#ingest(input,false,tx);
+  }
+
+  #personalIngest(input:IngestInput,consume:boolean,outer?:Transaction):Promise<SourceArtifact>{
+    const snapshot={...input,bytes:consume?input.bytes:Uint8Array.from(input.bytes)};
+    return this.#store.withTransaction(async tx=>{
+      // Personal writes always acquire the space lock before the ingest deduplication lock.
+      await this.#store.lock('knowledge-space:'+input.personalOwner,tx);
+      return this.#ingest(snapshot,true,tx);
+    },outer);
+  }
 
   async recordUploadRefusal(input:Pick<IngestInput,'bytes'|'mediaType'|'origin'|'author'|'run'>,code:ProtocolCode){
     const origin=validOrigin(input.origin);if(!('upload'in origin))throw new TypeError('upload refusal requires an upload origin');
@@ -237,7 +248,7 @@ export class RecordArtifacts implements Artifacts {
     return this.#recordRefusedUpload({sha256:sha256Hex(bytes),size:bytes.length,mediaType:input.mediaType,origin,author,run:input.run??null,scan:this.#scan(bytes)},code);
   }
 
-  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, true); }
+  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return input.personalOwner?this.#personalIngest(input,true):this.#ingest(input, true); }
 
   async #ingest(input: IngestInput, consume: boolean,outer?:Transaction): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
@@ -329,13 +340,13 @@ export class RecordArtifacts implements Artifacts {
       ...('read' in origin ? [{ key: 'artifact.object', value: origin.read.object }] : []),
       ...(author.user === null ? [] : [{ key: 'artifact.author', value: author.user }]),
     ]);
-    await this.#objects.put(bytes, input.mediaType,outer);
+    await this.#objects.put(bytes, input.mediaType,outer,input.personalOwner);
     return this.#store.withTransaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [INGEST_LOCK_SPACE, dedupe], tx);
       const existing = await this.#store.find<SourceArtifactBody>({ key: 'artifact.dedupe', value: dedupe, kind: 'source_artifact', limit: 1 }, tx);
       if (existing.items[0] !== undefined) return existing.items[0];
       return this.#store.put<SourceArtifactBody>(
-        { kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
+        { personalOwner:input.personalOwner,kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
         tx,
       );
     },outer);

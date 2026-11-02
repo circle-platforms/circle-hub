@@ -1,7 +1,8 @@
+import {PgPersonalPayloads,personalRecordOwner} from './personal-payloads.ts';
 import { RecordsError } from './errors.ts';
-// Append-only record store over PostgreSQL. Bodies are stored as their RFC 8785 canonical text, so every value canonicalize
-// accepts (JSON data with well-formed strings, U+0000 included, which PostgreSQL text and jsonb reject raw) is kept exactly;
-// digests are re-verified on read. Input canonicalize refuses (a lone surrogate) is kept as an object instead (README).
+// Append-only logical records over PostgreSQL. Canonical text preserves every accepted JSON value, including U+0000.
+// Personal bodies use removable scoped payloads; immutable capsules retain their original logical digests.
+// Reads reconstruct and verify active records. Noncanonical input stays an object instead (README).
 import { noteNoncanonical, NONCANONICAL_EXPLANATION } from './integrity-notes.ts';
 import { parseStrictJson } from './strict-json.ts';
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
@@ -36,11 +37,13 @@ export interface StoreOptions {
 
 export class PgRecordStore implements RecordStore {
   readonly #db: Database;
+  readonly personalPayloads:PgPersonalPayloads;
   readonly #options: StoreOptions;
 
   constructor(db: Database, options: StoreOptions) {
     this.#db = db;
     this.#options = options;
+    this.personalPayloads=new PgPersonalPayloads(db,(key,tx)=>this.lock(key,tx));
   }
 
   async put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>> {
@@ -66,16 +69,18 @@ export class PgRecordStore implements RecordStore {
         const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);
         if (existing !== null) return { ...existing, created: false };
       }
+      const personalOwner=input.personalOwner??personalRecordOwner(kind.data,input.body);
+      const storedBody=personalOwner?await this.personalPayloads.bind(await this.personalPayloads.scope(personalOwner,t),digest,meta,body,t):body;
       const inserted = await this.#db.query<{ seq: string; id: string }>(
         `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (digest) DO NOTHING RETURNING seq, id`,
-        [newId('rcd'), digest, meta.kind, meta.schema, meta.provenance, createdAt, body, size],
+        [newId('rcd'), digest, meta.kind, meta.schema, meta.provenance, createdAt, storedBody, size],
         t,
       );
       let row = inserted.rows[0];
       const created = row !== undefined;
       if (row === undefined) {
-        const existing = await this.#db.query<{ seq: string; id: string }>('SELECT seq, id FROM records WHERE digest = $1', [digest], t);
+        const existing = await this.#db.query<{ seq: string; id: string }>('SELECT seq, id FROM hub_read_records() WHERE digest = $1', [digest], t);
         row = existing.rows[0];
         if (row === undefined) throw new IntegrityError('记录写入冲突后找不到同摘要的记录', { detail: { digest } });
       }
@@ -87,6 +92,7 @@ export class PgRecordStore implements RecordStore {
           t,
         );
       }
+      if(personalOwner)await this.#db.query('INSERT INTO personal_legacy_ready(record) VALUES($1) ON CONFLICT DO NOTHING',[digest],t);
       if (input.unique_key !== undefined) await this.#db.query('INSERT INTO record_keys (kind, key, digest) VALUES ($1, $2, $3)', [meta.kind, input.unique_key, digest], t);
       return { id: row.id, ...meta, digest, body: JSON.parse(body) as B, created };
     }, tx);
@@ -98,14 +104,16 @@ export class PgRecordStore implements RecordStore {
     const found = await this.#db.query<{ digest: string }>('SELECT digest FROM record_keys WHERE kind = $1 AND key = $2', [kind, key], tx);
     if (!found.rows.length) return null;
     const record = await this.get<B>(found.rows[0].digest, tx);
+    if(!record&&await this.personalPayloads.inspect(found.rows[0].digest,tx))return null;
     if (!record || record.kind !== kind) throw new IntegrityError('唯一业务键没有对应的完整记录');
     return record;
   }
 
   async get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
     if (!isSha256(digest)) return null;
-    const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE digest = $1`, [digest], tx);
-    return result.rows[0] === undefined ? null : verifiedRecord<B>(result.rows[0]);
+    const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE digest = $1`, [digest], tx);
+    if(result.rows[0]===undefined){await this.personalPayloads.inspect(digest,tx);return null;}
+    return verifiedRecord<B>(result.rows[0]);
   }
 
   async getText(digest: string, tx?: Transaction): Promise<(Omit<StoredRecord, 'body'> & { bodyText: string ;}) | null> {
@@ -114,14 +122,14 @@ export class PgRecordStore implements RecordStore {
 
   async getTexts(digests: readonly string[], tx?: Transaction): Promise<Map<string, Omit<StoredRecord, 'body'> & { bodyText: string ;}>> {
     const wanted = [...new Set(digests.filter(isSha256))]; if (!wanted.length) return new Map();
-    const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE digest=ANY($1::text[])`, [wanted], tx);
+    const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE digest=ANY($1::text[])`, [wanted], tx);
     return new Map(result.rows.map(row => { const record = verifiedRecordText(row); return [record.digest, record]; }));
   }
 
   async getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
     const wanted = [...new Set(digests.filter(isSha256))];
     if (!wanted.length) return new Map();
-    const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE digest = ANY($1::text[])`,[wanted],tx);
+    const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE digest = ANY($1::text[])`,[wanted],tx);
     return new Map(result.rows.map(row => { const record = verifiedRecord<B>(row); return [record.digest,record]; }));
   }
 
@@ -132,7 +140,7 @@ export class PgRecordStore implements RecordStore {
     if (!values.length) return [];
     const result = await this.#db.query(
       `SELECT DISTINCT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
-       FROM record_index i JOIN records r ON r.digest=i.digest
+       FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
        WHERE i.key=$1 AND i.value=ANY($2::text[]) ${query.kind === undefined ? '' : 'AND r.kind=$3'} ORDER BY r.seq`,
       query.kind === undefined ? [query.key,values] : [query.key,values,query.kind],tx);
     return result.rows.map(row => verifiedRecord<B>(row));
@@ -143,7 +151,7 @@ export class PgRecordStore implements RecordStore {
     const index = validateIndex(entries);
     if (index.length === 0) return 0;
     return this.#db.transaction(async (t) => {
-      const row = (await this.#db.query<{ seq: string }>('SELECT seq FROM records WHERE digest = $1', [digest], t)).rows[0];
+      const row = (await this.#db.query<{ seq: string }>('SELECT seq FROM hub_read_records() WHERE digest = $1', [digest], t)).rows[0];
       if (row === undefined) return 0;
       const held = Number((await this.#db.query<{ n: string }>('SELECT count(*) AS n FROM record_index WHERE digest = $1', [digest], t)).rows[0].n);
       const fresh = (await this.#db.query<{ key: string; value: string }>(
@@ -183,7 +191,7 @@ export class PgRecordStore implements RecordStore {
          SELECT DISTINCT r.digest
            FROM unnest($1::text[], $2::text[]) AS wanted(k, v)
            JOIN record_index i ON i.key = wanted.k AND i.value = wanted.v
-           JOIN records r ON r.digest = i.digest
+           JOIN hub_read_records() r ON r.digest = i.digest
           WHERE ($3::text IS NULL OR r.kind = $3) AND ($4::timestamptz IS NULL OR r.created_at >= $4)
           LIMIT $5
        ) AS found`,
@@ -203,7 +211,7 @@ export class PgRecordStore implements RecordStore {
       `SELECT wanted.value, matched.* FROM unnest($2::text[]) AS wanted(value)
        CROSS JOIN LATERAL (
          SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
-         FROM record_index i JOIN records r ON r.digest=i.digest
+         FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
          WHERE i.key=$1 AND i.value=wanted.value ${query.kind === undefined ? '' : 'AND r.kind=$3'}
          ORDER BY i.record_seq LIMIT 1
        ) AS matched`, query.kind === undefined ? [query.key, values] : [query.key, values, query.kind], tx);
@@ -212,7 +220,7 @@ export class PgRecordStore implements RecordStore {
 
   async getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
     if (typeof id !== 'string' || !RECORD_ID.test(id)) return null;
-    const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE id = $1`, [id], tx);
+    const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE id = $1`, [id], tx);
     return result.rows[0] === undefined ? null : verifiedRecord<B>(result.rows[0]);
   }
 
@@ -236,7 +244,7 @@ export class PgRecordStore implements RecordStore {
     }
     const result = await this.#db.query(
       `SELECT r.seq, r.id, r.digest, r.kind, r.schema, r.provenance, r.created_at, r.body
-         FROM record_index i JOIN records r ON r.digest = i.digest
+         FROM record_index i JOIN hub_read_records() r ON r.digest = i.digest
         WHERE ${where} ORDER BY i.record_seq ${descending ? 'DESC' : 'ASC'} LIMIT $3`,
       values,
       tx,
@@ -256,7 +264,7 @@ export class PgRecordStore implements RecordStore {
       where += ` AND seq ${descending ? '<' : '>'} $3`;
     }
     const result = await this.#db.query(
-      `SELECT ${COLUMNS} FROM records WHERE ${where} ORDER BY seq ${descending ? 'DESC' : 'ASC'} LIMIT $2`,
+      `SELECT ${COLUMNS} FROM hub_read_records() WHERE ${where} ORDER BY seq ${descending ? 'DESC' : 'ASC'} LIMIT $2`,
       values,
       tx,
     );

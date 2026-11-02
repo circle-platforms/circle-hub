@@ -1,5 +1,8 @@
+import {verifiedRecord} from './store.ts';
+import type {PgPersonalPayloads} from './personal-payloads.ts';
 // Content-addressed bytes under <root>/ab/<sha256> (adapted from the earlier knowledge object store): atomic write through a
-// hard link, read-only files, verified on every read, never overwritten and never deleted.
+// hard link, read-only files and verification on read. Personal bytes use removable scoped PostgreSQL payloads;
+// only their one-time legacy global files are retired after independent copies have been protected.
 import { createHash, randomBytes } from 'node:crypto';
 import { link, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,6 +19,7 @@ export function isMediaType(value: unknown): value is string {
 }
 
 export interface ObjectStoreOptions {
+  personalPayloads?:PgPersonalPayloads;
   maxBytes: number;
   now: () => Date;
 }
@@ -36,7 +40,7 @@ export class FileObjectStore implements ObjectStore {
     return join(this.root, sha256.slice(0, 2), sha256);
   }
 
-  async put(bytes: Uint8Array, mediaType: string,tx?:Transaction): Promise<ObjectInfo & { created: boolean }> {
+  async put(bytes: Uint8Array, mediaType: string,tx?:Transaction,personalOwner?:string): Promise<ObjectInfo & { created: boolean }> {
     if (!(bytes instanceof Uint8Array)) throw new TypeError('object bytes must be a Uint8Array');
     if (!isMediaType(mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(mediaType)}`);
     if (bytes.byteLength > this.#options.maxBytes) {
@@ -45,7 +49,11 @@ export class FileObjectStore implements ObjectStore {
       });
     }
     const sha256 = sha256Hex(bytes);
-    const created = await this.#write(sha256, bytes);
+    const created=personalOwner&&this.#options.personalPayloads?await this.#db.transaction(async t=>{
+      const scope=await this.#options.personalPayloads!.scope(personalOwner,t);
+      const exists=await this.#db.query('SELECT 1 FROM personal_objects WHERE owner=$1 AND epoch=$2 AND sha256=$3',[scope.owner,scope.epoch,sha256],t);
+      await this.#options.personalPayloads!.object(personalOwner,bytes,t);return !exists.rows.length;
+    },tx):await this.#write(sha256,bytes);
     const result = await this.#db.query(
       `INSERT INTO objects (sha256, size, media_type, created_at) VALUES ($1, $2, $3, $4)
        ON CONFLICT (sha256) DO NOTHING`,
@@ -64,6 +72,8 @@ export class FileObjectStore implements ObjectStore {
       bytes = await readFile(this.path(sha256));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const privateBytes=await this.#options.personalPayloads?.anyObject(sha256);if(privateBytes)return privateBytes;
+      const privateRows=await this.#db.query('SELECT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) AS cleared FROM personal_objects o WHERE sha256=$1',[sha256]);if(privateRows.rows.length&&privateRows.rows.every(r=>r.cleared))return null;
       // Registered but gone is data loss (objects are never deleted), not absence.
       if ((await this.stat(sha256)) !== null) throw new IntegrityError('有对象登记，但原件字节丢失；请从备份恢复', { detail: { sha256 } });
       return null;
@@ -72,6 +82,48 @@ export class FileObjectStore implements ObjectStore {
       throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）', { detail: { sha256 } });
     }
     return bytes;
+  }
+
+  /** One-time materialization of legacy personal trees/originals before serving requests. */
+  async materializePersonalObjects():Promise<void>{
+    const personal=this.#options.personalPayloads;if(!personal)return;
+
+    const copy=async(owner:string,hash:string,tree:boolean,depth=0):Promise<void>=>{
+      if(depth>64||!isSha256(hash))throw new IntegrityError('个人目录原件结构不完整');
+      const bytes=await this.get(hash);if(!bytes)throw new IntegrityError('缺少待迁移的个人原件');
+      await this.#db.transaction(tx=>personal.object(owner,bytes,tx));
+      await this.#db.query('INSERT INTO personal_legacy_retire(sha256) VALUES($1) ON CONFLICT DO NOTHING',[hash]);
+      if(tree){const value=JSON.parse(Buffer.from(bytes).toString());for(const child of value.children??[])await copy(owner,child.digest,true,depth+1);}
+    };
+    for(;;){
+      const rows=await this.#db.query('SELECT r.digest,r.kind,b.owner FROM records r JOIN personal_record_bindings b ON b.record=r.digest WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_ready d WHERE d.record=r.digest) AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=b.owner AND x.epoch=b.epoch) ORDER BY r.seq LIMIT 100');
+      if(!rows.rows.length)break;
+      for(const row of rows.rows){
+        const record=(await this.#db.query('SELECT * FROM hub_read_records() WHERE digest=$1',[row.digest])).rows[0];
+        if(!record)continue;const body=verifiedRecord<Record<string,unknown>>(record).body;
+        if(row.kind==='knowledge_space_version'&&body.tree)await copy(String(row.owner),String(body.tree),true);
+        if(row.kind==='source_artifact')await copy(String(row.owner),String(body.sha256),false);
+        await this.#db.query('INSERT INTO personal_legacy_ready(record) VALUES($1) ON CONFLICT DO NOTHING',[row.digest]);
+      }
+    }
+    const retired=await this.#db.query('SELECT sha256 FROM personal_legacy_retire q WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_retired d WHERE d.sha256=q.sha256)');
+    const protectedNodes=new Set<string>();
+    const protect=async(hash:string,depth=0):Promise<void>=>{
+      if(protectedNodes.has(hash))return;
+      if(depth>64||!isSha256(hash))throw new IntegrityError('团队目录原件结构不完整');
+      const bytes=await this.get(hash);if(!bytes)throw new IntegrityError('团队目录原件缺失');
+      protectedNodes.add(hash);for(const child of JSON.parse(Buffer.from(bytes).toString()).children??[])await protect(child.digest,depth+1);
+    };
+    if(retired.rows.length){
+      const roots=await this.#db.query("SELECT r.body FROM records r WHERE kind='knowledge_space_version' AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest)");
+      for(const row of roots.rows){const tree=JSON.parse(String(row.body)).tree;if(tree)await protect(tree);}
+    }
+    for(const row of retired.rows){const hash=String(row.sha256);
+      // Keep separately held team/product/run originals; audit mentions alone do not own content.
+      const independent=await this.#db.query("SELECT 1 FROM records r WHERE kind IN ('source_artifact','knowledge_space_version','tree_node') AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest) AND position($1 in body)>0 LIMIT 1",[hash]);
+      if(!protectedNodes.has(hash)&&!independent.rows.length)await unlink(this.path(hash)).catch((error:NodeJS.ErrnoException)=>{if(error.code!=='ENOENT')throw error;});
+      await this.#db.query('INSERT INTO personal_legacy_retired(sha256) VALUES($1) ON CONFLICT DO NOTHING',[hash]);
+    }
   }
 
   async stat(sha256: string,tx?:Transaction): Promise<ObjectInfo | null> {

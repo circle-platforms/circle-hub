@@ -144,7 +144,9 @@ test('before any submission is indexed as stored, a finished backfill marks its 
 
 test('identical personal content never enters the team entry count, including citation backfill', async t => {
   const kit = await openTestRecords({ postgres }); t.after(() => kit.close());
-  const store = kit.store, owner = 'usr_' + '0'.repeat(26);
+  const {user:admin}=await kit.principals.bootstrapAdmin('synthetic-citation-admin');
+  const owner=(await kit.principals.createUser(admin,'synthetic-citation-owner')).id;
+  const store = kit.store;
   const privateRoot = await store.put({ kind: 'knowledge_space_version', schema: 'knowledge-space-version@1', provenance: 'projected', body: { space: owner } });
   const privateBody = { grounds: [`tree:${privateRoot.digest}/notes@${ENTRY}`] };
   await store.put({ kind: 'submission', schema: SCHEMAS.submission, provenance: 'declared', body: { ...privateBody, before: true } });

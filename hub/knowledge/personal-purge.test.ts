@@ -1,0 +1,63 @@
+import {canonicalize,sha256Hex} from '../records/api.ts';
+import assert from 'node:assert/strict';
+import {after,before,test} from 'node:test';
+import {makeWorld,startPostgres} from './test-support.ts';
+let postgres:Awaited<ReturnType<typeof startPostgres>>;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+test('purge invalidates historical knowledge, source and memory directory grants while team memory survives',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,memory=w.knowledge.memory;
+ const original=await spaces.importFile(w.user,Buffer.from('合成私人原件：每次保留两份。'),'text/plain','synthetic.txt','/private');
+ const entry=await spaces.write(w.user,{kind:'observation',statement:'合成私人规则',path:'/private',grounds:[{reference:'src:'+original.body.sha256,quotation:'每次保留两份'}]});
+ const memo=await memory.write(w.user,{space:'personal',expected_version:null,title:'合成记忆',path:'/private',markdown:'合成偏好',client_key:'create'});
+ await spaces.grant(w.user,{path:'/private',audience:'member',member:w.outsider.id});
+ await memory.grant(w.user,{path:'/private',audience:'member',member:w.outsider.id});
+ const shared=await memory.share(w.user,{document:memo.document,version:memo.version,client_key:'share'});assert.ok(shared.ok&&shared.share?.team_document);
+ assert.ok(await spaces.entry(w.outsider,entry.root,'/private',entry.entry));assert.ok((await memory.read(w.outsider,memo.document)).markdown);
+ const pending={document:memo.document,version:memo.version,client_key:'pending'};assert.ok((await memory.share(w.user,{...pending,check_only:true})).ok);
+ const epoch=(await w.kit.personalPayloads!.inspect(memo.document))!.epoch;
+ await w.kit.personalPayloads!.purge(w.user,epoch);
+ await assert.rejects(memory.share(w.user,pending),{code:'SOURCE_UNAVAILABLE'});
+ for(const by of [w.user,w.outsider,w.admin]){
+  assert.equal(await spaces.entry(by,entry.root,'/private',entry.entry),null);
+  assert.equal(await spaces.source(by,original.body.sha256),null);
+  await assert.rejects(memory.read(by,memo.document),{code:'SOURCE_UNAVAILABLE'});
+ }
+ assert.equal((await spaces.visible(w.outsider,'shared')).length,0);
+ assert.equal((await memory.items(w.outsider,'shared')).length,0);
+ assert.equal((await memory.read(w.outsider,shared.share!.team_document!)).markdown,'合成偏好');
+});
+test('legacy team copies keep their bytes while cleared personal tree grounds become unverified',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
+ const source=await w.kit.artifacts.ingest({bytes:Buffer.from('合成来源：每次保留两份。'),mediaType:'text/plain',origin:{read:{object:'synthetic:document:shared-source'}},author:{user:w.user.id},provenanceType:'observed',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:false}});
+ const parent=await spaces.write(w.user,{kind:'observation',statement:'合成每次保留两份',path:'/parent',grounds:[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}]});
+ const leaf=await spaces.write(w.user,{kind:'observation',statement:'合成引用私人前件',path:'/leaf',grounds:[{reference:parent.reference,quotation:'每次保留两份'}]});
+ await spaces.grant(w.user,{path:'/parent',audience:'member',member:w.outsider.id});
+ await spaces.grant(w.user,{path:'/parent',audience:'administrators'});
+ const denied=await spaces.share(w.user,{root:leaf.root,path:'/leaf',entry:leaf.entry});assert.equal(denied.code,'SHARE_GROUND_UNREADABLE');
+ // Model a historical team copy; current admission correctly requires a team predecessor instead.
+ const previous=await spaces.ensure(w.admin,'team'),personal=await spaces.entry(w.user,leaf.root,'/leaf',leaf.entry);
+ const copied=await w.kit.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body:{...personal!.body,space:'team'}});
+ const leafNode=await w.kit.objects.put(Buffer.from(canonicalize({name:'leaf',children:[],entries:[leaf.entry]})),'application/json');
+ const rootNode=await w.kit.objects.put(Buffer.from(canonicalize({name:'',children:[{name:'leaf',digest:leafNode.sha256}],entries:[]})),'application/json');
+ const version=await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{...previous.body,parent:previous.root,tree:rootNode.sha256,directories:['/','/leaf'],entries:[{path:'/leaf',entry:leaf.entry,record:copied.digest,status:'verified'}]},index:[{key:'knowledge.space.version',value:'team'}]});
+ const dependentContent={...personal!.body.content,statement:'合成间接团队依据'};
+ const dependentId=sha256Hex(canonicalize(dependentContent));
+ const dependent=await w.kit.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body:{...personal!.body,space:'team',entry:dependentId,content:dependentContent,grounds:[{reference:`tree:${version.digest}/leaf@${leaf.entry}`,quotation:'每次保留两份'}]}});
+ const dependentNode=await w.kit.objects.put(Buffer.from(canonicalize({name:'dependent',children:[],entries:[dependentId]})),'application/json');
+ const nextTree=await w.kit.objects.put(Buffer.from(canonicalize({name:'',children:[{name:'dependent',digest:dependentNode.sha256},{name:'leaf',digest:leafNode.sha256}],entries:[]})),'application/json');
+ const next=await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{...version.body,parent:version.digest,tree:nextTree.sha256,directories:['/','/dependent','/leaf'],entries:[...version.body.entries,{path:'/dependent',entry:dependentId,record:dependent.digest,status:'verified'}]},index:[{key:'knowledge.space.version',value:'team'}]});
+ const shared={team_root:next.digest};
+ const team=await spaces.entry(w.admin,shared.team_root,'/leaf',leaf.entry);assert.equal(team?.row.status,'verified');
+ assert.equal((await spaces.entry(w.admin,shared.team_root,'/dependent',dependentId))?.row.status,'verified');
+ const before=await w.kit.store.get(team!.row.record);
+ const pending={root:parent.root,path:'/parent',entry:parent.entry};assert.ok((await spaces.precheckShare(w.user,pending)).ok);
+ const epoch=(await w.kit.personalPayloads!.inspect(parent.root))!.epoch;
+ await w.kit.personalPayloads!.purge(w.user,epoch);
+ await assert.rejects(spaces.share(w.user,pending),{code:'SOURCE_UNAVAILABLE'});
+ const after=await spaces.entry(w.admin,shared.team_root,'/leaf',leaf.entry);
+ assert.ok(after);assert.equal(after.row.status,'unverified');assert.equal(after.body.content.statement,'合成引用私人前件');
+ assert.equal((await spaces.entry(w.admin,shared.team_root,'/dependent',dependentId))?.row.status,'unverified');
+ assert.deepEqual(await w.kit.store.get(team!.row.record),before);
+ assert.equal(await spaces.entry(w.user,parent.root,'/parent',parent.entry),null);
+ assert.ok((await spaces.source(w.admin,source.body.sha256))?.bytes);
+});
