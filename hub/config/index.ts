@@ -21,6 +21,7 @@ export interface DatabaseConfig {
 export interface Limits {
   maxMemoryDocumentBytes:number;
   maxMemorySpaceBytes:number;
+  maxMemorySpaceDocuments:number;
   /** Largest upload or stored object, in bytes. */
   maxUploadBytes: number;
   /** Largest record body (canonical JSON), in bytes. */
@@ -62,6 +63,7 @@ export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
   maxSpaceIndexBytes:64*MIB,
   maxMemoryDocumentBytes:24000,
   maxMemorySpaceBytes:48000,
+  maxMemorySpaceDocuments:20,
 });
 
 /** The credential scan decodes an upload to one string; 256 MiB stays far below V8's string limit (about 512 Mi characters). */
@@ -214,6 +216,7 @@ export function loadConfig(
   const maxEntryIndexBytes=integer('CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES',DEFAULT_LIMITS.maxEntryIndexBytes,1024,16*MIB)??DEFAULT_LIMITS.maxEntryIndexBytes;
   const maxMemoryDocumentBytes=integer('CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES',DEFAULT_LIMITS.maxMemoryDocumentBytes,1,16*MIB)??DEFAULT_LIMITS.maxMemoryDocumentBytes;
   const maxMemorySpaceBytes=integer('CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES',DEFAULT_LIMITS.maxMemorySpaceBytes,1,64*MIB)??DEFAULT_LIMITS.maxMemorySpaceBytes;
+  const maxMemorySpaceDocuments=integer('CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS',DEFAULT_LIMITS.maxMemorySpaceDocuments,1,10000)??DEFAULT_LIMITS.maxMemorySpaceDocuments;
   const maxSpaceIndexBytes=integer('CIRCLE_HUB_MAX_SPACE_INDEX_BYTES',DEFAULT_LIMITS.maxSpaceIndexBytes,1024,4096*MIB)??DEFAULT_LIMITS.maxSpaceIndexBytes;
   const minimumRequest = Math.ceil(maxUploadBytes / 3) * 4;
   const maxRequestBytes =
@@ -236,6 +239,6 @@ export function loadConfig(
     ...(https ? { https } : {}),
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,
-    limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes },
+    limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes,maxMemorySpaceDocuments },
   };
 }

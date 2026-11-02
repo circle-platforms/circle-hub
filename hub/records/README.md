@@ -691,3 +691,9 @@ column grants are appended. Earlier migration source is unchanged. Foreign keys 
 nonnegative counters stay constrained, and runtime updates cannot change document or space identities. The reviewed
 whole-file snapshot is refreshed; existing per-migration SQL snapshots remain fixed. Whenever migrations.ts changes,
 run migrations.snapshot.test.ts in the targeted checks, together with ownership and lock-namespace checks as applicable.
+
+Security review migration 13 adds UTF-8 title/path/body counters and active-document counts to the existing memory
+projection. It backfills only these derived columns from immutable versions, preserves historical charges and does
+not rewrite earlier SQL or records. Runtime column grants cover the new counters but still protect space/document
+identity. Atomic updates and rebuilds use the same accounting; defaults are 48,000 active bytes and 20 documents per
+space. The reviewed source snapshot is updated together with an upgrade regression.

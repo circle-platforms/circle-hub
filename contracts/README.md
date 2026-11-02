@@ -417,6 +417,12 @@ and body reads continue at UTF-8 boundaries. Sensitive sharing destinations are 
 The same unmerged model 23 also generates knowledge-origin and memory-field display labels. They annotate directory
 rows and safe credential locations; they introduce no new record form, authority or evidence status.
 Claude's decision-88 layout/CI review adds a team-unassigned template to the same unmerged model 23 display axis.
+
+Model 24 records the console security review: active memory charges include UTF-8 titles, paths and bodies, with a
+configurable default of 20 enabled documents per space. Session lists and body reads enforce the same limits. It also
+registers the team-memory maintenance refusal and pre-check label before their implementation, plus generated usage
+labels. Protocol-only mirrors/manifests advance html-format/mindmap-format to 1.0.11 and xml-format/workbook-format to
+1.0.12; skill business code is unchanged. Authorization is the review and the standing generated-mirror authorization.
 Administrators see assignment names or that label; members see the existing team-scope label. Personal-grant wording
 does not describe team workflows. Assignment and administrator permissions, protocol bytes and the four generic skill
 mirrors/manifests do not change.

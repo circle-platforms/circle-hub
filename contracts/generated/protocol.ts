@@ -53,10 +53,11 @@ export const PROTOCOL_CODES = {
   PACK_PERSONAL_CAPABILITY_DENIED: { when: '个人工作流或通用技能不能使用命名文档、业务系统、租约、设备派发或其他外部效果', fix: '个人空间只使用上传、个人或团队知识及 Hub 生成的文件；需要其他能力时先发布到团队并由管理员分配' },
   TEAM_PARSER_REQUIRED: { when: '团队核验须使用团队可用的解析器', fix: '先将解析器发布并安装到团队，或改用团队已支持的格式后重新核对引文' },
   MEMORY_DOCUMENT_LIMIT: { when: '记忆正文超过单篇上限', fix: '缩短正文或由管理员调整单篇限额' },
-  MEMORY_SPACE_LIMIT: { when: '记忆正文超过空间有效总量上限', fix: '停用旧记忆、缩短正文或调整空间限额' },
+  MEMORY_SPACE_LIMIT: { when: '记忆内容或启用篇数超过空间上限', fix: '停用旧记忆、缩短标题目录正文，或请管理员调整空间字节与篇数限额' },
   MEMORY_CREDENTIALS_DETECTED: { when: '记忆含有疑似凭据', fix: '移除命中位置的凭据后重新提交' },
   MEMORY_VERSION_CONFLICT: { when: '记忆版本已变化', fix: '读取当前版本后合并修改并重试' },
   MEMORY_RUN_FORBIDDEN: { when: '记忆不能作为运行输入或依据', fix: '改用可核对出处的来源或知识条目' },
+  MEMORY_TEAM_DISABLED: { when: '团队记忆已被管理员停用，请联系管理员', fix: '由管理员核对并重新启用原团队记忆后，再提交共享' },
   MEMORY_CURSOR_STALE: { when: '记忆集合或权限已变化', fix: '从第一页重新读取' },
 } as const;
 
@@ -105,4 +106,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 23;
+export const MODEL_VERSION = 24;

@@ -14,6 +14,9 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Memory space limits count enabled titles, paths and bodies and default to 20 enabled documents per space. Session
+  lists and reads enforce the same limits, and upgrades preserve existing memory versions and historical usage.
+
 - Knowledge and workflows share permission-filtered space navigation and narrow-screen scope tabs. Owners select
   verified knowledge for checked sharing; team rows show source and submitter. Workflow audiences follow actual
   assignments, and administrator member metadata exposes capacity and all-administrator grant counts only.

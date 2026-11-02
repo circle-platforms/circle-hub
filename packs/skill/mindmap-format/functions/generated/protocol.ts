@@ -209,8 +209,8 @@ export const PROTOCOL_CODES = {
     "fix": "缩短正文或由管理员调整单篇限额"
   },
   "MEMORY_SPACE_LIMIT": {
-    "when": "记忆正文超过空间有效总量上限",
-    "fix": "停用旧记忆、缩短正文或调整空间限额"
+    "when": "记忆内容或启用篇数超过空间上限",
+    "fix": "停用旧记忆、缩短标题目录正文，或请管理员调整空间字节与篇数限额"
   },
   "MEMORY_CREDENTIALS_DETECTED": {
     "when": "记忆含有疑似凭据",
@@ -223,6 +223,10 @@ export const PROTOCOL_CODES = {
   "MEMORY_RUN_FORBIDDEN": {
     "when": "记忆不能作为运行输入或依据",
     "fix": "改用可核对出处的来源或知识条目"
+  },
+  "MEMORY_TEAM_DISABLED": {
+    "when": "团队记忆已被管理员停用，请联系管理员",
+    "fix": "由管理员核对并重新启用原团队记忆后，再提交共享"
   },
   "MEMORY_CURSOR_STALE": {
     "when": "记忆集合或权限已变化",

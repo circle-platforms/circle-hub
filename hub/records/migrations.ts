@@ -264,12 +264,27 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     space text PRIMARY KEY, active_bytes bigint NOT NULL CHECK(active_bytes>=0),
     history_bytes bigint NOT NULL CHECK(history_bytes>=0)
   );`},
+  {version:13,name:'memory_context_limits',sql:`ALTER TABLE memory_heads
+    ADD COLUMN context_bytes bigint NOT NULL DEFAULT 0 CHECK(context_bytes>=0);
+  ALTER TABLE memory_space_usage
+    ADD COLUMN active_documents bigint NOT NULL DEFAULT 0 CHECK(active_documents>=0);
+  UPDATE memory_heads h SET context_bytes=h.bytes
+    -- JSONB cannot decode NUL; this accounting-only view substitutes an equal-width control character.
+    +octet_length(replace(r.body,chr(92)||'u0000',chr(92)||'u0001')::jsonb->>'title')
+    +octet_length(replace(r.body,chr(92)||'u0000',chr(92)||'u0001')::jsonb->>'path')
+    FROM records r WHERE r.digest=h.version;
+  UPDATE memory_space_usage SET active_bytes=0,active_documents=0;
+  INSERT INTO memory_space_usage(space,active_bytes,history_bytes,active_documents)
+    SELECT space,coalesce(sum(context_bytes) FILTER(WHERE state='enabled'),0),0,
+      count(*) FILTER(WHERE state='enabled') FROM memory_heads GROUP BY space
+    ON CONFLICT(space) DO UPDATE SET active_bytes=EXCLUDED.active_bytes,
+      active_documents=EXCLUDED.active_documents;`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
-  memory_heads:'SELECT, INSERT, UPDATE (version,path,state,bytes)',
-  memory_space_usage:'SELECT, INSERT, UPDATE (active_bytes,history_bytes)',
+  memory_heads:'SELECT, INSERT, UPDATE (version,path,state,bytes,context_bytes)',
+  memory_space_usage:'SELECT, INSERT, UPDATE (active_bytes,history_bytes,active_documents)',
   knowledge_space_search: 'SELECT, INSERT',
   knowledge_space_search_documents: 'SELECT, INSERT',
   knowledge_space_search_ready: 'SELECT, INSERT',

@@ -32,6 +32,44 @@ test('unchanged writes preserve the version and idempotency while every new revi
  for(const [key,changes] of [['title',{title:'合成修改'}],['path',{path:'/new'}],['state',{enabled:true}]] as const)await assert.rejects(memory.write(w.user,{document:saved.document,expected_version:saved.version,...changes,client_key:'capacity-'+key}),{code:'SPACE_CAPACITY_EXCEEDED'});
  assert.equal(await versions(),before);
 });
+test('active memory quotas count UTF-8 titles and paths and protect both session list and body reads',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
+ const input={...create('','metadata-cap'),title:'合成标题',path:'/路径'},size=Buffer.byteLength(input.title+input.path);
+ w.kit.memoryIndex!.limits.spaceBytes=size-1;
+ await assert.rejects(memory.write(w.user,input),{code:'MEMORY_SPACE_LIMIT'});
+ w.kit.memoryIndex!.limits.spaceBytes=size;
+ const saved=await memory.write(w.user,{...input,client_key:'metadata-exact'});assert.equal((await memory.usage(w.user)).active,size);assert.equal((await memory.usage(w.user)).activeDocuments,1);
+ w.kit.memoryIndex!.limits.spaceBytes=size-1;
+ await assert.rejects(memory.query(w.user,{scope:'personal',for_session:true}),{code:'MEMORY_SPACE_LIMIT'});
+ await assert.rejects(memory.query(w.user,{document:saved.document,version:saved.version,for_session:true}),{code:'MEMORY_SPACE_LIMIT'});
+ assert.equal((await memory.read(w.user,saved.document)).markdown,'');
+});
+test('twenty active team memories are bounded even with empty bodies and replacements keep the same count',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,sources=[];
+ for(let n=0;n<21;n++)sources.push(await memory.write(w.user,{...create('','proliferation-'+n),title:'合成记忆 '+n,enabled:false}));
+ let first:Awaited<ReturnType<typeof memory.share>>|undefined;
+ for(let n=0;n<20;n++){const source=sources[n],shared=await memory.share(w.user,{document:source.document,version:source.version,client_key:'team-'+n});assert.equal(shared.ok,true);first??=shared;}
+ const last=sources[20],input={document:last.document,version:last.version,client_key:'team-cap'};
+ const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...input,check_only:true});assert.equal(plan.ok,false);assert.equal(plan.checks[0].code,'MEMORY_SPACE_LIMIT');assert.equal(await w.kit.store.watermark!(),before);
+ assert.equal((await memory.share(w.user,input)).ok,false);assert.equal((await memory.usage(w.admin,'team')).activeDocuments,20);
+ const changed=await memory.write(w.user,{document:sources[0].document,expected_version:sources[0].version,title:'合成修订标题',client_key:'replace-at-cap'});
+ assert.equal((await memory.share(w.user,{document:changed.document,version:changed.version,client_key:'replace-at-cap'})).share?.team_document,first!.share!.team_document);
+ assert.equal((await memory.usage(w.admin,'team')).activeDocuments,20);
+ w.kit.memoryIndex!.limits.spaceDocuments=19;
+ await assert.rejects(memory.query(w.outsider,{scope:'team',for_session:true}),{code:'MEMORY_SPACE_LIMIT'});
+ const team=await memory.read(w.admin,first!.share!.team_document!);
+ await assert.rejects(memory.query(w.outsider,{document:team.document,version:team.version,for_session:true}),{code:'MEMORY_SPACE_LIMIT'});
+});
+test('separate memory services serialize active document caps and disabling frees exactly one slot',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,other=new MemoryDocuments(w.knowledge.__context,w.knowledge.spaces!);
+ w.kit.memoryIndex!.limits.spaceDocuments=1;
+ const results=await Promise.allSettled([memory.write(w.user,create('','count-one')),other.write(w.user,create('','count-two'))]);
+ assert.equal(results.filter(result=>result.status==='fulfilled').length,1);assert.equal(results.filter(result=>result.status==='rejected'&&result.reason.code==='MEMORY_SPACE_LIMIT').length,1);
+ const saved=results.find((result):result is PromiseFulfilledResult<Awaited<ReturnType<typeof memory.write>>>=>result.status==='fulfilled')!.value;
+ await memory.write(w.user,{document:saved.document,expected_version:saved.version,enabled:false,client_key:'free-count'});
+ assert.equal((await memory.usage(w.user)).activeDocuments,0);
+ await other.write(w.user,create('','count-three'));assert.equal((await memory.usage(w.user)).activeDocuments,1);
+});
 test('memory writes are versioned, optimistic and idempotent; pagination preserves Unicode and invalidates old sessions',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const text='合成偏好。'.repeat(1200),first=await memory.write(w.user,create(text));
@@ -59,13 +97,14 @@ test('refused credentials and size limits retain one safe audit and no content o
 });
 test('active quotas are serialized across services, disable frees active bytes, and knowledge shares historical capacity',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,other=new MemoryDocuments(w.knowledge.__context,w.knowledge.spaces!);
- w.kit.memoryIndex!.limits.spaceBytes=10;
+ w.kit.memoryIndex!.limits.spaceBytes=Buffer.byteLength(create().title+create().path)+10;
  const results=await Promise.allSettled([memory.write(w.user,create('123456','one')),other.write(w.user,create('abcdef','two'))]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected'&&r.reason.code==='MEMORY_SPACE_LIMIT').length,1);
  const saved=results.find((r):r is PromiseFulfilledResult<Awaited<ReturnType<typeof memory.write>>>=>r.status==='fulfilled')!.value;
  await memory.write(w.user,{document:saved.document,expected_version:saved.version,enabled:false,client_key:'off'});assert.equal((await memory.usage(w.user)).active,0);
  const after=await memory.write(w.user,create('abcdef','three'));assert.equal(after.bytes,6);
  const usage=await memory.usage(w.user);await w.knowledge.spaces!.setCapacity(w.admin,w.user.id,usage.history);
  await assert.rejects(w.knowledge.spaces!.write(w.user,{kind:'observation',statement:'超过记忆共用容量'}),{code:'SPACE_CAPACITY_EXCEEDED'});
+ w.kit.memoryIndex!.limits.spaceBytes=48000;
  await assert.rejects(memory.write(w.user,create('x','capacity')),{code:'SPACE_CAPACITY_EXCEEDED'});
 });
 test('memory grants are independent of knowledge; recipients browse current text without session loading or history',async t=>{

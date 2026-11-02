@@ -176,6 +176,7 @@
               "MEMORY_CREDENTIALS_DETECTED",
               "MEMORY_VERSION_CONFLICT",
               "MEMORY_RUN_FORBIDDEN",
+              "MEMORY_TEAM_DISABLED",
               "MEMORY_CURSOR_STALE"
             ]
           },

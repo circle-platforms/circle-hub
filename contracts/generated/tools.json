@@ -1175,6 +1175,7 @@
                       "sandbox",
                       "references",
                       "size",
+                      "team_memory_status",
                       "personal_sources",
                       "local_only",
                       "dependencies"

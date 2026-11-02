@@ -97,14 +97,14 @@ export const AXES = {
   knowledge_grant_action: { label: '授权操作', owner: 'R01', values: [{ code: 'grant', label: '授权' }, { code: 'revoke', label: '收回授权' }] },
   knowledge_share_status: { label: '提交共享状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
   audience_scope: { label: '可见范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人' }, { code: 'members', label: '本人及 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
-  share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'personal_sources', label: '引用个人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读' }] },
+  share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读' }] },
   knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
   memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
   memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史' }, { code: 'share', label: '提交共享' }, { code: 'share_preview', label: '记忆共享预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
   knowledge_directory: { label: '知识目录显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
   knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
-  memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录' }, { code: 'markdown_text', label: 'Markdown 正文' }] },
+  memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录' }, { code: 'markdown_text', label: 'Markdown 正文' }, { code: 'active_content', label: '启用内容' }, { code: 'active_documents', label: '启用篇数' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1050,10 +1050,10 @@ export function isAudienceScope(value: unknown): value is AudienceScope {
 }
 
 /** 自动检查 (K02) */
-export const SHARE_CHECK = ['grounds', 'quotations', 'sources', 'duplicates', 'credentials', 'permission', 'structure', 'sandbox', 'references', 'size', 'personal_sources', 'local_only', 'dependencies'] as const;
+export const SHARE_CHECK = ['grounds', 'quotations', 'sources', 'duplicates', 'credentials', 'permission', 'structure', 'sandbox', 'references', 'size', 'team_memory_status', 'personal_sources', 'local_only', 'dependencies'] as const;
 export type ShareCheck = (typeof SHARE_CHECK)[number];
-export const SHARE_CHECK_LABEL = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
-export const SHARE_CHECK_UI = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
+export const SHARE_CHECK_LABEL = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
+export const SHARE_CHECK_UI = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
 export const ShareCheckSchema = z.enum(SHARE_CHECK);
 export function isShareCheck(value: unknown): value is ShareCheck {
   return (SHARE_CHECK as readonly unknown[]).includes(value);
@@ -1120,10 +1120,10 @@ export function isKnowledgeOrigin(value: unknown): value is KnowledgeOrigin {
 }
 
 /** 记忆字段显示 (K01) */
-export const MEMORY_FIELD = ['document_title', 'directory_path', 'markdown_text'] as const;
+export const MEMORY_FIELD = ['document_title', 'directory_path', 'markdown_text', 'active_content', 'active_documents'] as const;
 export type MemoryField = (typeof MEMORY_FIELD)[number];
-export const MEMORY_FIELD_LABEL = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文' } as const satisfies { readonly [K in MemoryField]: string };
-export const MEMORY_FIELD_UI = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文' } as const satisfies { readonly [K in MemoryField]: string };
+export const MEMORY_FIELD_LABEL = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
+export const MEMORY_FIELD_UI = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
 export const MemoryFieldSchema = z.enum(MEMORY_FIELD);
 export function isMemoryField(value: unknown): value is MemoryField {
   return (MEMORY_FIELD as readonly unknown[]).includes(value);

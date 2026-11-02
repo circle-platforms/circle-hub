@@ -62,7 +62,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   let closed: Promise<void> | undefined;
   return {
-    memoryIndex:new PgMemoryIndex(db,{documentBytes:config.limits.maxMemoryDocumentBytes,spaceBytes:config.limits.maxMemorySpaceBytes}),
+    memoryIndex:new PgMemoryIndex(db,{documentBytes:config.limits.maxMemoryDocumentBytes,spaceBytes:config.limits.maxMemorySpaceBytes,spaceDocuments:config.limits.maxMemorySpaceDocuments}),
     spaceIndex: new PgSpaceSearchIndex(db,{entryBytes:config.limits.maxEntryIndexBytes,spaceBytes:config.limits.maxSpaceIndexBytes}),
     config: { dataDir: config.dataDir, logDir: config.logDir, limits: { ...config.limits } },
     store,

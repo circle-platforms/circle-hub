@@ -27,7 +27,8 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_MAX_REQUEST_BYTES: '单个 HTTP 请求体的字节上限，默认按上传上限的 base64 长度再加 1 MiB，至少 48 MiB，最大 512 MiB',
   CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES:'单条知识的索引词项逻辑字节上限，默认 1 MiB，可设 1 KiB 到 16 MiB',
   CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES:'单篇记忆的 UTF-8 正文字节上限，默认 24,000，可配置',
-  CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES:'每空间启用记忆的 UTF-8 正文总量上限，默认 48,000，可配置',
+  CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES:'每空间启用记忆的标题、目录与正文 UTF-8 总量上限，默认 48,000，可配置',
+  CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS:'每空间当前启用记忆的篇数上限，默认 20，可配置',
   CIRCLE_HUB_MAX_SPACE_INDEX_BYTES:'个人、团队或每个产品挂载的当前版本索引逻辑字节上限，分别计量，默认 64 MiB，可设 1 KiB 到 4 GiB；历史引用仍占磁盘',
 } as const;
 

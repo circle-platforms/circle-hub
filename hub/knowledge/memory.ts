@@ -43,26 +43,36 @@ export class MemoryDocuments{
   if(source.document!==body.document||source.space!==body.space||source.markdown===null||source.bytes!==body.bytes)return fail('SOURCE_UNAVAILABLE');return source.markdown;
  }
  #metadata(head:MemoryHead,body:MemoryVersionBody,version=head.version):MemoryMetadata{return {document:head.document,version,space:head.space,title:body.title,path:body.path,state:version===head.version?body.state:'superseded',bytes:body.bytes,updated_at:body.at,updated_by:body.by,auto_load_allowed:false};}
+ #sessionLimits(heads:readonly MemoryHead[]){
+  const active=heads.filter(head=>head.state==='enabled'),limits=this.#index().limits;
+  if(active.some(head=>head.bytes>limits.documentBytes))return fail('MEMORY_DOCUMENT_LIMIT');
+  if(active.length>limits.spaceDocuments||active.reduce((sum,head)=>sum+head.contextBytes,0)>limits.spaceBytes)return fail('MEMORY_SPACE_LIMIT');
+ }
  async items(by:Principal,scope:KnowledgeSearchScope='all',forSession=false):Promise<MemoryMetadata[]>{
   by=await this.#user(by);const ids=new Set<string>();if(scope==='all'||scope==='personal')ids.add(by.id);if(scope==='all'||scope==='team')ids.add('team');
   if(scope==='all'||scope==='shared')for(const record of await this.#ctx.records.store.findMany({kind:'memory_grant',key:'memory.grant.grantee',values:[by.id,...(by.role==='admin'?['administrators']:[])]})){const body=MemoryGrantBody.parse(record.body);if(body.space!==by.id)ids.add(body.space);}
   const items:MemoryMetadata[]=[];
-  for(const space of ids)for(const head of await this.#index().heads(space)){
+  for(const space of ids){
+   if(forSession&&space!==by.id&&space!=='team')continue;
+   const heads=await this.#index().heads(space);if(forSession)this.#sessionLimits(heads);
+   for(const head of heads){
    if(!await this.#mayRead(by,space,head.path))continue;
    const {body}=await this.#version(head);if(space!==by.id&&!(space==='team'&&by.role==='admin')&&body.state!=='enabled')continue;
    const allowed=(space==='team'||space===by.id)&&body.state==='enabled';if(forSession&&!allowed)continue;
    items.push({...this.#metadata(head,body),auto_load_allowed:allowed});
+   }
   }
   return items.sort((a,b)=>a.document.localeCompare(b.document));
  }
  async read(by:Principal,document:string,version?:string,forSession=false){
   by=await this.#user(by);const doc=await this.#ctx.records.store.get(document);if(doc?.kind!=='memory_document')return fail('SOURCE_UNAVAILABLE');const identity=MemoryDocumentBody.parse(doc.body);
-  const head=(await this.#index().heads(identity.space)).find(h=>h.document===document);if(!head||!await this.#mayRead(by,head.space,head.path))return fail('SOURCE_UNAVAILABLE');
+  const heads=await this.#index().heads(identity.space),head=heads.find(h=>h.document===document);if(!head||!await this.#mayRead(by,head.space,head.path))return fail('SOURCE_UNAVAILABLE');
   const current=await this.#version(head);if(head.space!==by.id&&!(head.space==='team'&&by.role==='admin')&&current.body.state!=='enabled')return fail('SOURCE_UNAVAILABLE');
   const own=head.space===by.id,adminTeam=head.space==='team'&&by.role==='admin';
   if(version&&version!==head.version&&!own&&!adminTeam)return fail('SOURCE_UNAVAILABLE');
   if(forSession&&(!(own||head.space==='team')||current.body.state!=='enabled'))return fail('SOURCE_UNAVAILABLE');
   if(forSession&&version!==head.version)return fail('MEMORY_CURSOR_STALE');
+  if(forSession)this.#sessionLimits(heads);
   const selected=version??head.version,{body}=await this.#version(head,selected);
   return {...this.#metadata(head,body,selected),current_version:head.version,markdown:await this.#text(body),auto_load_allowed:(own||head.space==='team')&&selected===head.version&&body.state==='enabled'};
  }
@@ -113,8 +123,9 @@ export class MemoryDocuments{
    await this.#ctx.records.store.put({kind:'action',schema:'memory-unchanged@1',provenance:'observed',unique_key:intent,body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now(),intent,payload,receipt}},tx);
    return receipt;
   }
-  const index=this.#index(),bytes=Buffer.byteLength(input.markdown),usage=await index.usage(space,tx),active=usage.active-(input.head?.state==='enabled'?input.head.bytes:0)+(input.state==='enabled'?bytes:0);
-  if(bytes>index.limits.documentBytes&&!(input.state==='disabled'&&sameText))return fail('MEMORY_DOCUMENT_LIMIT');if(input.state==='enabled'&&active>index.limits.spaceBytes)return fail('MEMORY_SPACE_LIMIT');
+  const index=this.#index(),bytes=Buffer.byteLength(input.markdown),contextBytes=bytes+Buffer.byteLength(input.title+input.path),usage=await index.usage(space,tx);
+  const active=usage.active-(input.head?.state==='enabled'?input.head.contextBytes:0)+(input.state==='enabled'?contextBytes:0),documents=usage.activeDocuments-Number(input.head?.state==='enabled')+Number(input.state==='enabled');
+  if(bytes>index.limits.documentBytes&&!(input.state==='disabled'&&sameText))return fail('MEMORY_DOCUMENT_LIMIT');if(input.state==='enabled'&&(active>index.limits.spaceBytes||documents>index.limits.spaceDocuments))return fail('MEMORY_SPACE_LIMIT');
   if(input.state==='enabled'||!sameText||input.title!==input.previous?.title||input.path!==input.previous?.path)this.#scan(input.title,input.path,input.markdown);
   let document=input.head?.document,docBytes=0;
   if(!document){const body=MemoryDocumentBody.parse({space,by:by.id,at:this.#now(),intent});const doc=await this.#ctx.records.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body,index:[{key:'memory.document.space',value:space}]},tx);document=doc.digest;docBytes=Buffer.byteLength(canonicalize(body));}
@@ -125,7 +136,7 @@ export class MemoryDocuments{
    if(knowledge+usage.history+history>await this.#spaces.capacity(space,tx))return fail('SPACE_CAPACITY_EXCEEDED');
   }
   const stored=await this.#ctx.records.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body,unique_key:intent,index:[{key:'memory.version.document',value:document},{key:'memory.version.space',value:space}]},tx);
-  await index.apply({document,space,version:stored.digest,path:body.path,state:body.state,bytes},history,tx);return this.#receipt(body,stored.digest);
+  await index.apply({document,space,version:stored.digest,path:body.path,state:body.state,bytes,contextBytes},history,tx);return this.#receipt(body,stored.digest);
  }
  async write(by:Principal,raw:unknown):Promise<MemoryWriteReceipt>{
   by=await this.#user(by);const input=MemoryWriteInput.parse(raw),space=input.space==='team'?'team':by.id;if(space==='team'&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');
@@ -160,7 +171,7 @@ export class MemoryDocuments{
    for(const doc of await this.#all('memory_document','memory.document.space',space,tx)){
     const identity=MemoryDocumentBody.parse(doc.body);if(identity.space!==space)continue;history+=Buffer.byteLength(canonicalize(identity));
     const versions=await this.#all('memory_version','memory.version.document',doc.digest,tx);let latest:MemoryHead|undefined;
-    for(const row of versions){const body=MemoryVersionBody.parse(row.body);if(body.space!==space||body.document!==doc.digest)fail('SOURCE_UNAVAILABLE');history+=Buffer.byteLength(canonicalize(body));latest={document:doc.digest,space,version:row.digest,path:body.path,state:body.state,bytes:body.bytes};}
+    for(const row of versions){const body=MemoryVersionBody.parse(row.body);if(body.space!==space||body.document!==doc.digest)fail('SOURCE_UNAVAILABLE');history+=Buffer.byteLength(canonicalize(body));latest={document:doc.digest,space,version:row.digest,path:body.path,state:body.state,bytes:body.bytes,contextBytes:body.bytes+Buffer.byteLength(body.title+body.path)};}
     if(latest)heads.push(latest);
    }
    await this.#index().rebuild(space,heads,history,tx);return {documents:heads.length};
@@ -176,7 +187,8 @@ export class MemoryDocuments{
   const target=pathCheck(input.team_path??source.path),effect=replacement?'replace':'create';
   const scan=scanForCredentials(Buffer.from(target)),safeTarget=scan.inspected&&!scan.truncated&&!scan.findings.length;
   try{
-   const index=this.#index(),usage=await index.usage('team',tx);if(source.bytes>index.limits.documentBytes)fail('MEMORY_DOCUMENT_LIMIT');if(usage.active-(replacement?.state==='enabled'?replacement.bytes:0)+source.bytes>index.limits.spaceBytes)fail('MEMORY_SPACE_LIMIT');
+   const index=this.#index(),usage=await index.usage('team',tx),contextBytes=Buffer.byteLength(source.title+target+source.markdown),documents=usage.activeDocuments-Number(replacement?.state==='enabled')+1;
+   if(source.bytes>index.limits.documentBytes)fail('MEMORY_DOCUMENT_LIMIT');if(usage.active-(replacement?.state==='enabled'?replacement.contextBytes:0)+contextBytes>index.limits.spaceBytes||documents>index.limits.spaceDocuments)fail('MEMORY_SPACE_LIMIT');
    checks[phase++].state='pass';this.#scan(source.title,target,source.markdown);checks[phase].state='pass';
   }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
   return {source,checks,replacement,target,safeTarget,effect:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
