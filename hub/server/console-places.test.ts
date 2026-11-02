@@ -1,3 +1,4 @@
+import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // The seven places of the redesigned console (proposal decisions 3 and 6 of 2026-10-31) over HTTP with the fake services:
 // every page of an administrator and of a member answers with the side navigation, interface terms only, no style attribute
 // and no script; a task's result is derived in one place (display rule 20); the four operations are the only forms; every
@@ -13,8 +14,6 @@ import type { RunDetail } from '../ports.ts';
 import { shellWord } from './console/commands.ts';
 import { escapeHtml } from './console/html.ts';
 import { CSS } from './console/style.ts';
-import { LIVE_SCRIPT } from './console/script.ts';
-import { THEME_SCRIPT } from './console/theme.ts';
 import { NEUTRAL } from './console/pages.ts';
 import { taskResultOf } from './console/status.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -95,7 +94,7 @@ async function runWithResult(user: TestUser): Promise<string> {
 function assertPage(reply: Reply, path: string): void {
   assert.equal(reply.status, 200, `${path}: ${reply.body.slice(0, 300)}`);
   assert.match(String(reply.headers['content-security-policy']), /default-src 'none'/, path);
-  assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, '').replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i, path);
+  assert.doesNotMatch(reply.body.replace(LIVE_TAG, '').replace(THEME_TAGS, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="ch-nav" aria-label="主导航">/, path);
   for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);

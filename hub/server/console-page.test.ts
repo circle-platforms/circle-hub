@@ -100,3 +100,11 @@ test('probe rejects a username or password no console account can have before an
     assert.deepEqual(calls, [], 'nothing was sent');
   });
 });
+
+test('external scripts count unless the same-origin content path, SRI and script CSP all agree',()=>{
+ const bytes='synthetic fixed asset',hash=createHash('sha256').update(bytes).digest(),path='/console/assets/'+hash.toString('hex')+'.js',integrity='sha256-'+hash.toString('base64');
+ const tag=`<script defer src="${path}" integrity="${integrity}"></script>`,csp=`default-src 'none'; script-src '${integrity}'`;
+ assert.equal(summarizePage(tag,csp).scripts,0);
+ for(const bad of [tag.replace('integrity=','data-integrity='),tag.replace(path,'https://192.0.2.1'+path),tag.replace(path,path+'?x=1'),tag.replace('</script>','alert(1)</script>'),tag.replace(path,'/console/assets/'+'f'.repeat(64)+'.js')])assert.equal(summarizePage(bad,csp).scripts,1,bad);
+ assert.equal(summarizePage(tag,"script-src 'self'").scripts,1,'the probe still requires exact hashes');
+});

@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import {parse,type DefaultTreeAdapterMap} from 'parse5';
 
 export interface PageMetrics {
-  /** Script elements other than an inline one the page's CSP allows by its SHA-256 (the console's live module). */
+  /** Script elements other than fixed inline or immutable same-origin scripts pinned by the page's CSP. */
   scripts: number;
   externalAddresses: number;
   tableRows: number[];
@@ -107,13 +107,23 @@ function externalAddresses(body:string,scriptingEnabled:boolean):number {
   return count;
 }
 
-/** Inline scripts whose SHA-256 the script-src directive of `csp` names. */
+/** A hash alone never allows an arbitrary URL: external scripts also bind path, SRI and empty element text. */
 function allowedScripts(body: string, csp: string): number {
   const directive = csp.split(';').map((part) => part.trim()).find((part) => /^script-src\s/i.test(part)) ?? '';
   const hashes = new Set([...directive.matchAll(/'sha256-([A-Za-z0-9+/=]+)'/g)].map((match) => match[1]));
   let count = 0;
-  for (const match of body.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-    if (!/\bsrc\s*=/i.test(match[1]) && hashes.has(createHash('sha256').update(match[2], 'utf8').digest('base64'))) count++;
+  const pending:DefaultTreeAdapterMap['node'][]=[parse(body)];
+  while(pending.length){
+    const node=pending.pop()!;if('childNodes'in node)pending.push(...node.childNodes);if('content'in node)pending.push(node.content);
+    if(!('tagName'in node)||node.tagName!=='script')continue;
+    const attrs=new Map(node.attrs.map(attr=>[attr.name,attr.value]));
+    const text=node.childNodes.flatMap(child=>'value'in child?[child.value]:[]).join('');
+    const src=attrs.get('src');
+    if(src===undefined){if(hashes.has(createHash('sha256').update(text,'utf8').digest('base64')))count++;continue;}
+    const digest=/^\/console\/assets\/([a-f0-9]{64})\.js$/.exec(src)?.[1];
+    if(!digest||text!=='')continue;
+    const hash=Buffer.from(digest,'hex').toString('base64');
+    if(attrs.get('integrity')===`sha256-${hash}`&&hashes.has(hash))count++;
   }
   return count;
 }

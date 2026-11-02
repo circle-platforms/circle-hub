@@ -565,7 +565,7 @@ try{
 
 Claude 批准在同一分支继续三项修正，仍保持权限、撤回、未知和游标语义，没有跨请求授权缓存。此轮扩充允许路径为 records 的只读验证/来源端口、引擎及控制台查询、相应包 README/回归和控制台静态资源/CSP 测试；不改模型、迁移、依赖、同步分支或 Circle。P2 的内容摘要资源现在已授权。各修正分别签退提交；若需要改 `hub/records/read-scope.ts`，该文件及其直接回归单独提交，保留第一轮独立审查的对照。
 
-先用第一轮 HEAD 的临时副本和原数据/URL/预热/20 次方法采集 CPU profile。测量脚本在每个服务端 request → end 窗口记录 `process.cpuUsage` 的 user/system 增量和墙钟，另收集可重叠的端口调用次数、累计/最长耗时以及 profile 的单调时钟区间。重测前后使用同一增强脚本；CPU profile 与正式计时分开核对，报告 Node 进程 CPU，区分 PostgreSQL 子进程/等待及同机调度影响，不把重叠阶段耗时相加。
+先用第一轮 HEAD 的临时副本和原数据/URL/预热/20 次方法采集 CPU profile。测量脚本在每个服务端 request → end 窗口记录 `process.cpuUsage` 的 user/system 增量和墙钟，另收集可重叠的端口调用次数、累计/最长耗时以及 profile 的单调时钟区间。重测前后使用同一增强脚本；CPU profile 按请求窗口核对，不混入造数阶段，报告 Node 进程 CPU，区分 PostgreSQL 子进程/等待及同机调度影响，不把重叠阶段耗时相加。
 
 顺序：按 profile 删除总览重复验证/解析和未显示详情工作；成批核验目录来源及分享预检，继续校验所有所需字节/精确采集；最后把固定 CSS/JS 移到带摘要的同源不可变资源，保留首屏主题引导，登录/错误页同样引用样式。脚本/样式只允许同源或指定摘要，禁止 unsafe-inline，并覆盖缓存、资源路径、CSP、首屏主题和失效资源回归。最终记录 CPU/墙钟、SQL、各页 HTML/资源字节与完整引擎/工作流及受影响验收结果。
 
@@ -574,7 +574,7 @@ Claude 批准在同一分支继续三项修正，仍保持权限、撤回、未�
 - 新鲜基线（第一轮 `54b6649c`，相同合成数据）总览完整规模墙钟 p50/p95 为 1614.1 / 1749.8 ms，Node 进程 CPU 为 2475.9 / 2622.3 ms，SQL 141–142。此前 3122.9 ms 的 p95 不可当作 CPU 成本；本次仍报告真实墙钟，不承诺 300 ms。
 - `--cpu-prof` 的总览请求采样：依据遍历/验证约 40%（`groundsOf` inclusive 39.8%，包含结构校验），缓存可变返回值复制约 19%，GC self 17%。重复请求可读性检查驱动这些开销；记录完整性验证 inclusive 约 2%，不是主因。inclusive 栈百分比有嵌套，不相加。
 - 原端口阶段中位累计：3 次 listRuns 992.2 ms，120 次 getRun 的累计 28974.7 ms、单个最长中位约 327 ms，listRequests 272.8 ms；并行 getRun 的累计不是页面耗时。完整全局请求列表在同一请求被重复推导，同一结果随多项请求被重复检查。
-- 改为请求内复用完整请求列表和完整顶层结果可读性证明，键含引擎、读者、完整运行/结果输入；递归证明本身不缓存，深度、循环、当前精确采集和诊断例外不变；失败驱逐，返回值仍复制隔离。无 URI 分隔符的普通文字不再送进引用结构解析器；可能的引用仍走完整校验。
+- 改为请求内复用完整请求列表和完整顶层结果可读性证明，键含引擎、读者、完整运行/结果输入，证明与键使用同一 JSON 输入快照，调用方在首次 await 前修改对象也不能借用身份；递归证明本身不缓存，深度、循环、当前精确采集和诊断例外不变；失败驱逐，返回值仍复制隔离。无 URI 分隔符的普通文字不再送进引用结构解析器；可能的引用仍走完整校验。
 - 列表/图表使用新的内部结果摘要端口，和完整详情共用管理处置/最新结果选择，保留最后可读生产结果规则，不回退绕过不可读的新结果。摘要不装配页面没用的提交回执、每运行请求详情、撤回说明或要求项变动说明；详情页仍走原完整路径。汇总仍完整覆盖声明的最近 120 项，期间列表仍显示 20 项，没有缩小统计窗口。无协议或模型字段变化。
 - 已通过初轮查询/权限测试 12 项；新增摘要对照覆盖 owner/admin/部分可见读者、未知不变通过、最新结果隐藏不回退、后续撤权和管理处置；完整引擎/工作流检查及最终重测在本节后续统一记录。没有修改 `hub/records/read-scope.ts`。
 
@@ -583,3 +583,295 @@ Claude 批准在同一分支继续三项修正，仍保持权限、撤回、未�
 - 来源注册读取改用已有作用域内成批 find，保留全部续页、原追加顺序和精确采集选择；来源服务只在当前只读作用域复用已验证的读者和 source/readable 返回值，消费者、读者、采集参数都在键内。消费者和采集参数先验证再生成缓存键，错误类型的参数不能碰撞普通读取；补充两项暖缓存拒绝断言。写入/管理身份查询仍实时执行；返回字节复制隔离，不跨请求复用。
 - 预检在原有阶段内成批读取条目、全部原文字节和全部依据；按原输入顺序检查 settled 结果，保留最先错误和阶段，任何无权、损坏、凭据或不可检查结论仍拒绝。未省略来源字节、扫描、层级或完整性检查。
 - 新回归对比 2 / 12 个不同原文，均为 4 SQL；逐项核对精确采集及字节，覆盖本人、受让者、无权管理员、错误采集、缓存返回字节篡改、后续撤权和预检缺失原文。初轮来源/记录测试 59 通过；新增两项来源批次回归及受影响控制台复核均通过，最终完整测试与测量在后文统一记录。
+
+#### 修正三：内容摘要静态资源与 CSP
+
+- 只有 256 B 的固定主题恢复脚本留在页头并以 SHA-256 放行，先于样式链接执行；完整主题/交互脚本改为 defer 资源，实时更新模块继续只在需要它的页面加载。CSS、主题/交互和实时更新三个资源均按实际 UTF-8 内容生成 SHA-256 路径和 SRI。
+- `/console/assets/<sha256>.css|js` 只服务内存中的固定 allowlist；匿名 GET/HEAD 可读，`public, max-age=31536000, immutable`，ETag 条件读取返回 304，nosniff。错误摘要、未知路径、查询变体和写方法拒绝。该路由先于会话访问，不查询数据库，也不延长会话活跃期。
+- `default-src 'none'`、脚本仅三个固定摘要（bootstrap、theme、live），样式仅 `'self'`，基础策略的 connect/img/form 仍限同源（标准连接确认沿用原有已核验回调的 form-action 例外），禁止框架和 base；没有 unsafe-inline/unsafe-eval。外置脚本使用 [CSP3 的外部脚本摘要及 SRI 机制](https://www.w3.org/TR/CSP/#external-hash)，没有加入 script-src self 或任意地址。favicon 字节不变，它的固定内嵌样式也改为按摘要放行。
+- 登录、初始化、标准连接确认和错误页复用同一套样式/引导。原 CSP、注入、页面探针和脚本形状断言按精确资源标签调整；页面探针只认可相对内容摘要路径、SRI、script-src 三者一致且元素无内联文本的外置脚本，仍拒绝任意脚本、外域和缺失/错配摘要。这只改纯页面检查器 `scripts/real/console-page.ts`，未运行任何真实环境探针、读取真实环境文件或凭据。
+- 新增匿名资源字节/缓存/ETag/HEAD/拒绝路径、登录及错误页样式、bootstrap 存储不可用/损坏及恢复先于样式的回归。独立临时 Chromium profile 检查登录、总览 1440px 和错误页 390px，三张图片逐张查看；CSS 生效、控件可用、无横向滚动和 CSP 违规。另扣住外置主题脚本，确认 CSS 已生效而交互尚未执行时页面已恢复深色，随后放行并核对最终控件。
+
+#### 本轮测量方法与边界
+
+- 仍是同一套 5 成员、500/2000 知识、125/500 上传原文、50/200 运行、12 工作流、3 业务系统、25 记忆及原有配套记录，两次预热、每个 URL 20 次串行请求、最近秩 p50/p95。八区主页和 14 个主要详情共 22 URL × 2 规模；每版本 880 个计入统计的请求，另有预热和 20 成员的 8 页各 3 次 SQL 增长探针。临时 loopback PostgreSQL；脚本化模型、合成数据，无外部模型/业务系统访问。
+- 下方本轮脚本同时用于 `54b6649c` 的归档副本和本轮冻结代码副本，SHA-256 为 `87d96f468c9197bed16cb9a51d35e121efd64ada61e8ac83edd43479e61c925b`。两边都以 `node --cpu-prof --cpu-prof-dir=../profiles measure.ts` 运行；资源统计在页面计时窗口结束后完成，不计作页面 SQL/墙钟。每个资源校验路径、SRI 和实际字节，公共资源只取一次用于计数，主页面仍每次完整请求。代码副本和最终工作树逐文件核对，结果说明后补。
+- CPU 是服务端 request → response.end 的 `process.cpuUsage` user+system 增量（原始值分开保留），与同窗口墙钟并列。它是 Node 进程所有线程的 CPU，可因 GC 等并行而超过墙钟，包含该进程内测试客户端的同期少量工作；不含 PostgreSQL/沙箱子进程，也不是端到端浏览器时间。负载高时 CPU 也可能受内存压力影响，不能把墙钟差全部归因于代码或用二者相减推算数据库成本。
+- 端口阶段记录 calls/sum_ms/max_ms；并行调用和嵌套记录端口的耗时重叠，不能相加为总耗时。CPU profile 限定在服务端总览请求区间，排除造数和其他页面。`profileClockMarker` 给 V8 profile 时钟与 hrtime 的偏移校准范围；只分析该范围校准后的请求样本，不把启动/造数热点当总览热点。全程 profiler 开启，两个版本相同。
+- HTML/CSS/JS 均为未压缩 UTF-8 字节。HTML 包含其内联部分；CSS/JS 列是每页所需资源加内联字节，不能直接和 HTML 相加。旧版每页 CSS 53786 B，JS 为 24113 B（普通页）或 28896 B（实时页）；新版 CSS 仍 53786 B，JS 分别为 24369/29152 B，其中只有 bootstrap 的 256 B 内联。首次冷加载总脚本增加这 256 B，命中不可变缓存后外置资源无需再传正文。
+- 每次响应要求 200 且不含错误/无权/内部错误文案；每页测前后 records watermark 一致，禁止把错误页当有效测量或 GET 追加记录。物理 SQL 在 pg.Client 边界逐条计数（包括身份核验及使用时间更新），不是查询端口的调用次数。相同记录数和 20 成员增长探针用于核对可比性。
+
+#### 本轮完整结果
+
+本轮正式对照使用同一脚本，Node v24.22.1 / PostgreSQL 18.4 / Apple M4（10 核、16 GiB）。两个版本完整规模的各类记录数完全相同，包括 2000 knowledge_space_entry、520 knowledge_space_source、200 run、500 request 和 150 validation_result。表中“前”是 `54b6649c`，不是第一轮旧表；“后”是 `02a25641`、`dfb31c8e` 加本次静态资源代码的冻结副本。
+
+前版全部测量请求的 1 分钟 load 为 17.3–29.0，后版为 5.8–13.6；完整规模总览分别是 17.5–22.1 / 5.9–6.1。墙钟不可作同负载严格因果对照；CPU、SQL 和实际输入规模同时保留，没有挑掉较慢样本。下表是这两次完整测量的原始分位数。
+
+**500 条知识规模**
+
+| 页面 | 墙钟 ms p50/p95 前 → 后 | CPU ms p50/p95 前 → 后 | SQL 前 → 后 | HTML B 前 → 后 | CSS/JS B 后 |
+| --- | --- | --- | --- | --- | --- |
+| 总览 · 主页 | 853.3/1324.9 → 73.8/80.1 | 732.4/830.2 → 81.0/91.6 | 95–96 → 47 | 126126 → 44267 | 53786/29152 |
+| 任务 · 主页 | 1026.1/1343.4 → 55.4/56.9 | 631.1/730.7 → 55.9/68.6 | 71–76 → 36 | 178176 → 96317 | 53786/29152 |
+| 知识库 · 主页 | 99.8/173.3 → 31.7/34.0 | 30.0/38.3 → 13.4/20.6 | 39 → 39 | 192633 → 110774 | 53786/29152 |
+| 工作流 · 主页 | 12.1/25.9 → 3.5/5.1 | 4.9/7.9 → 2.0/4.2 | 15 → 15 | 99778 → 17919 | 53786/29152 |
+| 连接 · 主页 | 22.9/92.5 → 5.1/6.4 | 9.9/12.9 → 3.3/7.5 | 22 → 22 | 101354 → 19495 | 53786/29152 |
+| 记录 · 主页 | 16.4/115.3 → 6.4/8.0 | 10.0/14.0 → 4.7/8.7 | 29 → 29 | 193009 → 115701 | 53786/24369 |
+| 团队 · 主页 | 11.0/15.4 → 3.3/3.9 | 5.0/6.1 → 2.0/2.5 | 15 → 15 | 93105 → 11246 | 53786/29152 |
+| 设置 · 主页 | 7.7/19.6 → 2.1/2.8 | 3.2/4.6 → 1.2/2.4 | 14 → 14 | 97297 → 15438 | 53786/29152 |
+| 任务 · 任务详情 | 62.5/170.7 → 12.7/13.9 | 33.7/48.5 → 8.5/12.4 | 49 → 49 | 164920 → 83112 | 53786/29152 |
+| 知识库 · 我的首页 | 104.1/181.1 → 26.6/28.2 | 18.2/21.8 → 7.4/11.1 | 40 → 40 | 144586 → 67332 | 53786/24369 |
+| 知识库 · 文件夹 | 76.2/184.4 → 21.7/23.7 | 35.0/42.3 → 16.4/22.5 | 64 → 37 | 131391 → 54137 | 53786/24369 |
+| 知识库 · 条目详情 | 28.5/111.4 → 10.6/18.3 | 11.1/16.2 → 6.6/12.7 | 29 → 29 | 96630 → 19376 | 53786/24369 |
+| 知识库 · 打开原文 | 4.5/9.4 → 1.5/3.0 | 2.1/3.0 → 0.9/1.8 | 12 → 9 | 149771 → 72517 | 53786/24369 |
+| 知识库 · 记忆列表 | 14.3/31.1 → 4.2/5.4 | 5.7/8.0 → 2.3/4.0 | 48 → 48 | 90988 → 13734 | 53786/24369 |
+| 知识库 · 记忆详情 | 9.1/30.5 → 3.7/4.8 | 4.7/6.3 → 2.0/2.9 | 48 → 48 | 91682 → 14428 | 53786/24369 |
+| 工作流 · 流程详情 | 16.1/29.2 → 5.4/6.3 | 8.1/11.2 → 3.8/6.4 | 19 → 19 | 102632 → 25378 | 53786/24369 |
+| 连接 · 系统详情 | 20.0/63.3 → 4.3/5.4 | 8.0/11.2 → 2.9/4.9 | 22 → 22 | 103295 → 21436 | 53786/29152 |
+| 连接 · Circle 详情 | 19.7/104.6 → 4.5/6.9 | 7.7/9.9 → 2.9/4.5 | 22 → 22 | 101924 → 20065 | 53786/29152 |
+| 记录 · 调用详情 | 23.1/97.3 → 6.0/6.7 | 9.5/13.9 → 4.3/7.5 | 29 → 29 | 193973 → 116665 | 53786/24369 |
+| 团队 · 成员详情 | 10.0/18.6 → 4.5/5.8 | 4.9/6.4 → 2.4/3.0 | 23 → 23 | 102944 → 21085 | 53786/29152 |
+| 团队 · Circle 详情 | 10.7/15.8 → 3.0/3.8 | 4.4/6.2 → 1.8/2.3 | 15 → 15 | 94412 → 12553 | 53786/29152 |
+| 设置 · 凭据详情 | 10.0/25.2 → 2.2/2.9 | 2.9/5.4 → 1.3/2.5 | 14 → 14 | 99791 → 17932 | 53786/29152 |
+
+**2000 条知识规模**
+
+| 页面 | 墙钟 ms p50/p95 前 → 后 | CPU ms p50/p95 前 → 后 | SQL 前 → 后 | HTML B 前 → 后 | CSS/JS B 后 |
+| --- | --- | --- | --- | --- | --- |
+| 总览 · 主页 | 2623.7/3444.6 → 327.0/352.8 | 3094.3/3218.2 → 279.8/373.0 | 141–142 → 55 | 126627 → 44768 | 53786/29152 |
+| 任务 · 主页 | 1326.5/1824.0 → 157.7/173.6 | 1452.7/1647.3 → 167.9/235.0 | 76–77 → 36 | 370714 → 288855 | 53786/29152 |
+| 知识库 · 主页 | 83.0/118.9 → 31.9/33.0 | 44.9/57.9 → 19.4/27.4 | 37 → 37 | 196550 → 114691 | 53786/29152 |
+| 工作流 · 主页 | 7.6/12.6 → 3.3/3.9 | 4.5/5.6 → 1.6/4.0 | 15 → 15 | 99778 → 17919 | 53786/29152 |
+| 连接 · 主页 | 13.1/36.0 → 4.7/5.0 | 7.4/9.0 → 2.7/5.5 | 22 → 22 | 101354 → 19495 | 53786/29152 |
+| 记录 · 主页 | 27.0/82.2 → 9.5/11.6 | 14.8/20.7 → 7.7/11.6 | 29 → 29 | 193231 → 115926 | 53786/24369 |
+| 团队 · 主页 | 7.6/12.9 → 3.2/3.7 | 4.2/5.4 → 1.7/2.1 | 15 → 15 | 93105 → 11246 | 53786/29152 |
+| 设置 · 主页 | 11.0/32.1 → 1.9/2.5 | 3.5/5.3 → 1.0/1.5 | 14 → 14 | 97298 → 15439 | 53786/29152 |
+| 任务 · 任务详情 | 40.1/102.0 → 8.6/9.3 | 19.3/22.3 → 4.9/6.9 | 36 → 36 | 139930 → 57935 | 53786/29152 |
+| 知识库 · 我的首页 | 52.7/93.8 → 24.7/27.1 | 29.8/40.1 → 15.3/19.4 | 40 → 40 | 195643 → 118389 | 53786/24369 |
+| 知识库 · 文件夹 | 101.2/183.7 → 47.2/51.3 | 74.0/87.9 → 41.5/48.7 | 109 → 37 | 142602 → 65348 | 53786/24369 |
+| 知识库 · 条目详情 | 33.6/42.3 → 15.0/15.8 | 20.0/25.4 → 8.9/10.8 | 29 → 29 | 106307 → 29053 | 53786/24369 |
+| 知识库 · 打开原文 | 4.4/6.8 → 1.3/1.4 | 2.5/3.5 → 0.6/0.7 | 12 → 9 | 149771 → 72517 | 53786/24369 |
+| 知识库 · 记忆列表 | 10.3/16.5 → 3.8/4.2 | 5.4/7.7 → 1.6/1.9 | 48 → 48 | 90988 → 13734 | 53786/24369 |
+| 知识库 · 记忆详情 | 8.9/17.2 → 3.8/4.2 | 4.2/8.7 → 1.4/4.0 | 48 → 48 | 91682 → 14428 | 53786/24369 |
+| 工作流 · 流程详情 | 18.2/45.5 → 4.9/5.4 | 10.3/12.8 → 3.3/5.0 | 19 → 19 | 102632 → 25378 | 53786/24369 |
+| 连接 · 系统详情 | 14.9/28.2 → 4.7/5.3 | 8.4/14.2 → 2.8/3.9 | 22 → 22 | 103295 → 21436 | 53786/29152 |
+| 连接 · Circle 详情 | 14.0/31.2 → 4.7/5.5 | 8.3/12.8 → 2.7/3.4 | 22 → 22 | 101924 → 20065 | 53786/29152 |
+| 记录 · 调用详情 | 21.8/35.0 → 9.6/12.0 | 13.4/15.6 → 7.9/11.6 | 29 → 29 | 194195 → 116888 | 53786/24369 |
+| 团队 · 成员详情 | 20.0/198.2 → 5.3/5.8 | 6.0/9.1 → 2.6/3.2 | 23 → 23 | 102945 → 21086 | 53786/29152 |
+| 团队 · Circle 详情 | 10.3/18.3 → 3.2/3.4 | 3.4/6.2 → 1.7/1.8 | 15 → 15 | 94412 → 12553 | 53786/29152 |
+| 设置 · 凭据详情 | 5.4/9.6 → 1.9/2.3 | 2.2/4.2 → 1.0/1.8 | 14 → 14 | 99792 → 17933 | 53786/29152 |
+
+**5 → 20 成员的附加增长探针**（每页 3 次，仅 SQL；不是 20 次延迟分位数）
+
+| 主页 | 第一轮 5 → 20 SQL | 本轮 5 → 20 SQL |
+| --- | --- | --- |
+| 总览 | 141–142 → 142 | 55 → 55 |
+| 任务 | 76–77 → 73–77 | 36 → 36 |
+| 知识库 | 37 → 37 | 37 → 37 |
+| 工作流 | 15 → 15 | 15 → 15 |
+| 连接 | 22 → 22 | 22 → 22 |
+| 记录 | 29 → 29 | 29 → 29 |
+| 团队 | 15 → 15 | 15 → 15 |
+| 设置 | 14 → 14 | 14 → 14 |
+
+**阈值与边界。** 完整规模总览 p95 仍为 **352.8 ms**，是本轮唯一超过 300 ms 的页面；没有承诺达到 300 ms。最大 HTML 为任务主页的 **288855 B**（前版 370714 B），没有页面超过 500 KB。总览 HTML 126627 → 44768 B。文件夹从 64/109 SQL（两规模）降为 **37/37**，新增 2/12 原文回归也都是 4 SQL；没有逐来源加一条查询的模式。总览 47 → 55 SQL 对应 50 → 120 统计任务、1 → 3 运行列表页及完整请求分页；20 成员探针不再增加查询。稀疏可见读者为填满页仍需候选续页，完整全局请求/回答仍按既有语义分页，不能把它们宣称为所有数据分布下的常数。
+
+**总览阶段与 profile。** 以下是完整规模 20 请求的中位端口累计/单次最长；并行和嵌套不可相加。
+
+| 端口阶段 | 前：次数，累计 / 最长 ms | 后：次数，累计 / 最长 ms |
+| --- | --- | --- |
+| runs.listRuns | 3，1596.2 / 582.7 | 3，255.0 / 147.7 |
+| 任务结果读取 | getRun 120，45986.0 / 540.7 | getRunSummary 120，5958.4 / 64.2 |
+| runs.listRequests | 1，414.8 / 414.8 | 1，0.4 / 0.4 |
+| records.runCandidates | 3，139.0 / 61.6 | 3，102.9 / 43.8 |
+| records.findBatch | 290，7502.7 / 308.1 | 23，142.1 / 39.8 |
+
+正式 profile 的校准不确定区间前/后约 1.8 / 1.4 ms；按 20 个总览请求取样，排除启动和造数。前版 groundsOf inclusive 41.4%、返回值 clone inclusive 18.0%、GC self 16.1%；后版 groundsOf inclusive 4.1%（self 1.3%），idle 32.6%，clone inclusive 21.9%、queryRead inclusive 13.7%、验证记录 inclusive 8.7%。百分比的分母已缩小，不能把 clone 的占比提高误写成开销增加：它的采样累计从约 9899.9 → 1443.4 ms（20 请求），queryRead 的完整输入快照/编码约 902.3 ms，GC self 8825.4 → 438.1 ms。后版主要可见成本已转到候选读取、可变返回值复制和证明键的输入快照；相同记录仍经过原完整性校验，没有为了去掉约 2% 的前版验证热点改 read-scope。
+
+如继续优化，优先评估总览专用的列表/请求统计读取，保留公开 listRuns 的全部页外请求语义，减少本页无需展示的完整元数据；再评估以请求内可信不可变记录身份减少重复复制/完整 JSON 编码。涉及 read-scope 的改变必须单独提交并衔接正在进行的独立审查。候选端口还有约 103 ms 累计等待/解析，可另分解数据库与记录验证后再决定派生头索引；不直接引入跨请求授权缓存。
+
+#### 本轮验证
+
+- `node --test --test-concurrency=4 "packs/workflow/**/*.test.ts" "hub/runs/engine/**/*.test.ts"`：最终冻结代码 **2773 通过，0 失败、0 跳过**。包括运行分页、游标续页、仅部分可见读者、源精确采集、摘要/完整结果对照、未知与管理处置、证明输入快照、失败驱逐及后续撤权。此前修改中断的运行不计作通过；最终这次退出 0。
+- `node --test --test-concurrency=3 "hub/records/**/*.test.ts" "hub/knowledge/**/*.test.ts"`：**707 通过，0 失败、0 跳过**。补强缓存参数验证与身份快照后，再跑 `hub/knowledge/source-batch.test.ts hub/records/artifacts.test.ts`：**18 通过，0 失败、0 跳过**；独立查询/摘要/依据复核 **15 通过**。
+- `node --test --test-concurrency=3 "hub/server/console*.test.ts" "hub/server/console/**/*.test.ts" hub/server/units.test.ts tests/acceptance/12-console-security.test.ts tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts`：**231 通过，0 失败、0 跳过**。整理固定资源导入后，units/theme/page-probe 定向复跑 **35 通过**。
+- `node --test --test-concurrency=3 hub/server/standard-authorization.test.ts tests/acceptance/13-idempotence.test.ts tests/acceptance/19-concurrency.test.ts tests/acceptance/27-check-reads-bound-sources.test.ts tests/acceptance/30-shared-results.test.ts tests/acceptance/36-source-unreachable-exit.test.ts tests/acceptance/45-r5-capture-boundary.test.ts tests/acceptance/T7-4-withdrawal-read-lifecycle.test.ts`：**40 通过，0 失败、0 跳过**。覆盖标准连接的 CSP、幂等/并发、依据范围、共享结果、源不可达出口、采集和撤回生命周期。
+- `node node_modules/typescript/bin/tsc --noEmit`、`node tools/gen-contracts.ts --check`（155 文件匹配）、`node tools/gen-console-style.ts --check` 均退出 0。`git diff --check` 通过。
+- `node --test ".github/checks/*.test.ts"`：**312 通过，0 失败、0 跳过**，包含本轮完整表格、复现代码及任务范围检查。
+- 独立浏览器最终三张图已逐张查看；外置主题脚本被扣住时，CSS 已生效、背景为 rgb(17, 19, 22)、主题为 dark、控件仍 hidden，放行后控件显示且首屏保持 dark。登录/总览/390px 错误页均无 CSP 违规或横向溢出。预期错误页的主文档 404 单独识别，任何资源错误仍使检查失败。
+
+#### 复现命令与本轮测量脚本
+
+以下命令在仓库根目录执行，两次分别把 perfRevision 设为 `54b6649c` 和本轮最终提交。使用已有 Node 24 和 node_modules，不安装依赖。每次都新建 scratch；原始 JSON、profile 和图片留在临时目录，不进入 Git。此前第一轮脚本留作历史，本轮取本页最后一个 Disposable measurement harness 代码块。
+
+```sh
+perfSource=$(pwd)
+perfRevision=54b6649c
+perfRun=$(mktemp -d)
+mkdir "$perfRun/repo" "$perfRun/profiles"
+git archive "$perfRevision" | tar -x -C "$perfRun/repo"
+ln -s "$perfSource/node_modules" "$perfRun/repo/node_modules"
+git rev-parse "$perfRevision" > "$perfRun/baseline.txt"
+python3 - "$perfSource/docs/hub-r4-tasks/console-visual.md" "$perfRun/repo/measure.ts" <<'PY'
+import sys,pathlib,hashlib
+s=pathlib.Path(sys.argv[1]).read_text()
+start=s.rindex('```ts\n// Disposable measurement harness;')+len('```ts\n')
+end=s.index('\n```',start)
+b=s[start:end]+'\n'
+assert hashlib.sha256(b.encode()).hexdigest()=='87d96f468c9197bed16cb9a51d35e121efd64ada61e8ac83edd43479e61c925b'
+pathlib.Path(sys.argv[2]).write_text(b)
+PY
+(cd "$perfRun/repo" && node --cpu-prof --cpu-prof-dir=../profiles measure.ts > ../measurement.log 2>&1)
+```
+
+```ts
+// Disposable measurement harness; never imported by product code.
+import assert from 'node:assert/strict';
+import {Server} from 'node:http';
+import {performance} from 'node:perf_hooks';
+import {writeFile,readFile,mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {cpus,totalmem,platform,release,loadavg} from 'node:os';
+import pg from 'pg';
+import {parse} from 'parse5';
+import {createHash} from 'node:crypto';
+import {createTestHub} from './hub/server/testing-real.ts';
+import {openConsole} from './tests/acceptance/support/console.ts';
+import {connect} from './tests/acceptance/support/mcp.ts';
+import {workflowPack,systemPack,writePack} from './hub/runs/packs/testing/builder.ts';
+import {newId} from './hub/records/api.ts';
+const output=new URL(process.env.PERF_SMOKE?'../smoke-results/':'../results/',import.meta.url);await mkdir(output,{recursive:true});
+const stamp='2026-11-03T04:00:00.000Z';
+let clockCalibration:{start_us:number;end_us:number};
+function profileClockMarker(){const start_us=Number(process.hrtime.bigint()/1000n),until=performance.now()+80;while(performance.now()<until){}clockCalibration={start_us,end_us:Number(process.hrtime.bigint()/1000n)};}
+profileClockMarker();
+let active:any=null,unscopedQueries=0;const measurements=new Map<string,any>();
+const query=pg.Client.prototype.query,emit=Server.prototype.emit;
+(pg.Client.prototype as any).query=function(...args:any[]){const sql=typeof args[0]==='string'?args[0]:args[0]?.text??'<unknown>';if(active){active.queries++;active.sql[sql]=(active.sql[sql]??0)+1;}else unscopedQueries++;return (query as any).apply(this,args);};
+(Server.prototype as any).emit=function(event:string,...args:any[]){if(event==='request'&&args[0]?.headers['x-console-perf-id']){assert.equal(active,null);const req=args[0],res=args[1],id=req.headers['x-console-perf-id'],state={queries:0,sql:{},phases:{},cpu:process.cpuUsage(),start_us:Number(process.hrtime.bigint()/1000n),start:performance.now()};active=state;const end=res.end;res.end=function(...values:any[]){const used=process.cpuUsage(state.cpu);const result={cpu_ms:(used.user+used.system)/1000,cpu_user_ms:used.user/1000,cpu_system_ms:used.system/1000,start_us:state.start_us,end_us:Number(process.hrtime.bigint()/1000n),phases:state.phases,load:loadavg(),ms:performance.now()-state.start,queries:state.queries,sql:state.sql,status:res.statusCode};measurements.set(id,result);active=null;return end.apply(this,values);};}return emit.call(this,event,...args);};
+const hub=await createTestHub({repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false,requireOsIsolation:false,now:()=>new Date(stamp)});
+// Inclusive port timings overlap when calls run concurrently; they are not additive phases.
+for(const [port,names,prefix] of [[hub.hub.runs,['listRuns','getRun','getRunSummary','getResult','listRequests'],'runs'],[hub.hub.knowledge.spaces,['visible','entries','source','precheckGrant'],'spaces'],[hub.records.store,['get','getMany','find','findBatch','runCandidates'],'records']] as const){
+ for(const name of names){const target=port as any,original=target[name];if(typeof original!=='function')continue;target[name]=async function(...args:any[]){const state=active;if(!state)return original.apply(this,args);const started=performance.now();try{return await original.apply(this,args);}finally{const elapsed=performance.now()-started,key=prefix+'.'+name,phase=state.phases[key]??{calls:0,sum_ms:0,max_ms:0};phase.calls++;phase.sum_ms+=elapsed;phase.max_ms=Math.max(phase.max_ms,elapsed);state.phases[key]=phase;}};
+ }
+}
+const clients:any[]=[];const all:any[]=[];let runId='',callDigest='',entry:any,source:any,circle='';
+try{
+ const members=[hub.admin];for(let i=1;i<5;i++)members.push(await hub.createUser('合成容量测量成员 '+i));
+ for(const member of members)clients.push(await connect(hub,member.token));
+ for(let i=0;i<12;i++){
+  const pack=workflowPack({id:'synthetic-perf-'+i,title:'合成核对流程 '+i,product:{catalogs:[]}});
+  (pack.files['requirements.json'] as any).requirements=(pack.files['requirements.json'] as any).requirements.filter((r:any)=>r.key!=='level');(pack.files['slots.schema.json'] as any).run={};
+  pack.files['knowledge.json']={schema:'knowledge@1',requires:[]};
+  pack.files['functions/util.ts']='export function itemsOf(input){return input.inputs[0].model.items.map((item,i)=>({id:"item"+i,label:item.title,location:{parser:"json@1",selector:"p/items/"+i},fields:{title:item.title}}));}\n';
+  const written=await writePack(join(fileURLToPath(new URL('../fixtures/',import.meta.url)),'workflow'+i),pack);await hub.publishPack(written.dir);for(const member of members)await hub.assignPack(member.principal,pack.id);
+ }
+ const resources:any[]=[];for(let i=0;i<3;i++){const spec=systemPack({id:'synthetic-system-'+i});(spec.files['system.json'] as any).reads[0].external='synthetic'+i+':item';const p=await writePack(join(fileURLToPath(new URL('../fixtures/',import.meta.url)),'system'+i),spec);await hub.publishPack(p.dir);resources.push(await hub.addResource({system_pack:'synthetic-system-'+i,name:'合成只读系统 '+i,environment:'shared',origins:{api:'http://127.0.0.1:9'},settings:{}}));}
+ for(let i=0;i<5;i++)await hub.records.variables.setSecrets(hub.admin.principal,[{name:'PERF_SECRET_'+i,value:'synthetic-only-measurement-value-'+i,consumers:[{definition:resources[0].id,item:'password',sends_to:'a'.repeat(64)}]}],'合成体检数据');
+ const spaces=hub.hub.knowledge.spaces!;
+ for(const member of members){await spaces.directory(member.principal,'/方法');await spaces.grant(member.principal,{path:'/',audience:'administrators'});for(let i=0;i<5;i++)await hub.hub.knowledge.memory.write(member.principal,{title:'合成记忆 '+i,markdown:'合成偏好内容。'.repeat(30),path:'/偏好',expected_version:null,client_key:'perf-memory-'+i});}
+ circle=(await hub.records.principals.tokens(members[1].user.id))[0].id;
+ const teamGround=await hub.records.artifacts.ingest({bytes:Buffer.from('合成核对条款：验证请求的输入、权限和返回结果。'),mediaType:'text/plain',name:'合成团队依据.txt',origin:{read:{object:'synthetic:performance:source'}},author:{user:null},provenanceType:'observed',visibility:{readers:members.map(x=>x.user.id),admins:true,packs:[],shareable:false}});
+ const targets=[];for(const client of clients)targets.push(await client.upload(Buffer.from(JSON.stringify({items:Array.from({length:10},(_,i)=>({title:'合成检查 '+i}))})),'合成核对输入.json','application/json'));
+ const counts={personal:0,team:0,originals:0,runs:0};
+ const add=async(size:number)=>{
+  const each=size/10; // 50/200 personal entries per member, plus 250/1000 team entries.
+  for(let i=counts.personal;i<each;i++){
+   await Promise.all(members.map(async member=>{const saved=await spaces.write(member.principal,{kind:'observation',path:'/方法/组'+String(i%20).padStart(2,'0'),statement:`合成知识 ${member.user.name} ${i}：核对输入权限，保留证据并记录处理结果。${'核对输入是否完整，确认操作权限，逐项记录证据并检查结果。'.repeat(4)}`});if(member===members[0]&&i===0)entry=saved;}));
+   if(i%25===0)console.log('seed personal',i);
+  }
+  counts.personal=each;
+  for(let i=counts.team;i<size/2;i++){await spaces.write(hub.admin.principal,{kind:'observation',path:'/方法/组'+String(i%20).padStart(2,'0'),statement:`合成团队知识 ${i}：核对请求、输入、权限和返回结果。${'核对输入是否完整，确认操作权限，逐项记录证据并检查结果。'.repeat(4)}`,grounds:[{reference:'src:'+teamGround.body.sha256,quotation:'验证请求的输入、权限和返回结果'}]},null,'team');if(i%100===0)console.log('seed team',i);}
+  counts.team=size/2;
+  for(let i=counts.originals;i<size/20;i++)await Promise.all(members.map(async member=>{const file=await spaces.importFile(member.principal,Buffer.from(`合成原文 ${member.user.name} ${i}。`+'核对请求参数并保留验证结果。'.repeat(1600)),'text/plain',`合成原文 ${i}.txt`,'/方法/组'+String(i%20).padStart(2,'0'));if(member===members[0]&&i===0)source=file;}));
+  counts.originals=size/20;
+  for(let i=counts.runs;i<size/10;i++){const client=clients[i%5],started=await client.call('start_run',{pack:'synthetic-perf-'+i%12,inputs:{target:{reference:targets[i%5]}},client_key:'synthetic-perf-run-'+i});assert.equal(started.isError,false,started.text);runId=started.out.run!.run;if(i%4!==0){const submitted=await client.call('submit_result',{run:runId,model:'synthetic-scripted@1',items:started.out.run!.items.map((item:any)=>i%4===1?{item:item.id,handling:'skipped',reason:'合成夹具待人工核对'}:{item:item.id,handling:'handled',slots:{findings:[]}})});assert.ok(submitted.out.result,submitted.text);}await client.call('list_task_packs',{});if(i%25===0)console.log('seed runs',i);}
+  counts.runs=size/10;
+ };
+ const browser=await openConsole(hub,hub.admin.token);
+ const resourceBytes=new Map<string,string>();
+ const sizes=async(text:string)=>{
+  let css=0,js=0,inline_css=0,inline_js=0;const resources:{path:string;integrity:string;kind:'css'|'js'}[]=[];
+  const walk=(node:any)=>{
+   const attrs=new Map<string,string>((node.attrs??[]).map((a:any)=>[a.name,a.value]));
+   if(node.tagName==='style'){const count=Buffer.byteLength(node.childNodes.map((n:any)=>n.value??'').join(''));css+=count;inline_css+=count;}
+   if(node.tagName==='script'){const src=attrs.get('src');if(src)resources.push({path:src,integrity:attrs.get('integrity')??'',kind:'js'});else{const count=Buffer.byteLength(node.childNodes.map((n:any)=>n.value??'').join(''));js+=count;inline_js+=count;}}
+   if(node.tagName==='link'&&attrs.get('rel')==='stylesheet')resources.push({path:attrs.get('href')??'',integrity:attrs.get('integrity')??'',kind:'css'});
+   for(const child of node.childNodes??[])walk(child);
+  };walk(parse(text));
+  // Asset accounting is outside the timed page request and fetched once per immutable URL.
+  for(const resource of resources){
+   assert.match(resource.path,/^\/console\/assets\/[a-f0-9]{64}\.(?:css|js)$/);
+   let body=resourceBytes.get(resource.path);
+   if(body===undefined){const reply=await browser.get(resource.path);assert.equal(reply.status,200);assert.equal(reply.headers['cache-control'],'public, max-age=31536000, immutable');body=reply.body;resourceBytes.set(resource.path,body);}
+   const hash=createHash('sha256').update(body).digest();assert.equal(resource.integrity,'sha256-'+hash.toString('base64'));assert.ok(resource.path.endsWith(hash.toString('hex')+'.'+resource.kind));
+   if(resource.kind==='css')css+=Buffer.byteLength(body);else js+=Buffer.byteLength(body);
+  }
+  return {html:Buffer.byteLength(text),css,js,inline_css,inline_js};
+ };
+ const paths=async()=>{
+  callDigest=(await hub.records.callLog.query(hub.admin.principal,{limit:1})).items[0].digest;
+  const mem=(await hub.hub.knowledge.memory.items(hub.admin.principal,'personal'))[0];
+  return [
+   ['总览','主页','/console/overview'],['任务','主页','/console/runs'],['知识库','主页','/console/knowledge'],['工作流','主页','/console/packs'],['连接','主页','/console/connections'],['记录','主页','/console/records'],['团队','主页','/console/team'],['设置','主页','/console/settings'],
+   ['任务','任务详情','/console/runs/'+runId],['知识库','我的首页','/console/knowledge?scope=personal'],['知识库','文件夹','/console/knowledge/space?'+new URLSearchParams({space:hub.admin.user.id,path:'/方法/组00'})],['知识库','条目详情','/console/knowledge/space?'+new URLSearchParams({space:hub.admin.user.id,path:'/方法/组00',entry:entry.entry})],['知识库','打开原文','/console/knowledge/source?sha256='+source.body.sha256],['知识库','记忆列表','/console/knowledge?view=memory&scope=personal'],['知识库','记忆详情','/console/knowledge?'+new URLSearchParams({view:'memory',scope:'personal',document:mem.document})],['工作流','流程详情','/console/packs/synthetic-perf-0'],['连接','系统详情','/console/connections?system='+resources[0].id],['连接','Circle 详情','/console/connections?circle='+circle],['记录','调用详情','/console/records?call='+callDigest],['团队','成员详情','/console/team/'+members[1].user.id],['团队','Circle 详情','/console/team?circle='+circle],['设置','凭据详情','/console/settings?secret=PERF_SECRET_0']
+  ];
+ };
+ for(const size of (process.env.PERF_SMOKE?[20]:[500,2000])){
+  await add(size);const before=unscopedQueries;await new Promise(r=>setTimeout(r,1100));assert.equal(unscopedQueries,before,'background SQL would invalidate attribution');
+  const diagnostics=new pg.Client({...hub.records.database,password:async()=>hub.records.database.password??'',ssl:false});await diagnostics.connect();const pgVersion=(await diagnostics.query('SHOW server_version')).rows[0].server_version;active={queries:0,sql:{}};await diagnostics.query('SELECT 1');assert.equal(active.queries,1,'one physical SQL statement must count once');active=null;const recordCounts=Object.fromEntries((await diagnostics.query('SELECT kind,count(*)::int AS count FROM records GROUP BY kind ORDER BY kind')).rows.map(r=>[r.kind,r.count]));await diagnostics.end();
+  console.log('dataset',size,JSON.stringify(recordCounts));
+  for(const [area,name,path]of await paths()){
+   const watermark=await hub.records.store.watermark!(),rows:any[]=[];
+   for(let i=process.env.PERF_SMOKE?0:-2;i<(process.env.PERF_SMOKE?1:20);i++){
+    const id=encodeURIComponent(size+':'+area+':'+name+':'+i);const reply=await browser.send(path,{headers:{'x-console-perf-id':id}}),measured=measurements.get(id);assert.ok(measured);assert.equal(reply.status,200,path+' '+reply.body.slice(0,200));assert.doesNotMatch(reply.body,/该内容不存在或无权查看|Hub 内部错误|请求参数不对/);if(i>=0)rows.push({...measured,...await sizes(reply.body)});
+   }
+   assert.equal(await hub.records.store.watermark!(),watermark,'measured GETs must not append records');
+   const ordered=rows.map(r=>r.ms).sort((a,b)=>a-b),row={size,area,name,path,p50:ordered[Math.ceil(ordered.length*.5)-1],p95:ordered[Math.ceil(ordered.length*.95)-1],cpu_p50:[...rows].sort((a,b)=>a.cpu_ms-b.cpu_ms)[Math.ceil(rows.length*.5)-1].cpu_ms,cpu_p95:[...rows].sort((a,b)=>a.cpu_ms-b.cpu_ms)[Math.ceil(rows.length*.95)-1].cpu_ms,queries:[Math.min(...rows.map(r=>r.queries)),Math.max(...rows.map(r=>r.queries))],bytes:{html:[Math.min(...rows.map(r=>r.html)),Math.max(...rows.map(r=>r.html))],css:rows[0].css,js:rows[0].js,inline_css:rows[0].inline_css,inline_js:rows[0].inline_js},topSQL:Object.entries(rows[0].sql).sort((a:any,b:any)=>b[1]-a[1]).slice(0,10),rows};all.push(row);console.log('measured',size,area,name,Math.round(row.p50),Math.round(row.p95),row.queries,row.bytes.html);await writeFile(new URL('measurements.json',output),JSON.stringify({baseline:(await readFile(new URL('../baseline.txt',import.meta.url),'utf8')).trim(),node:process.version,postgres:pgVersion,clockCalibration:clockCalibration!,machine:{platform:platform(),release:release(),cpu:cpus()[0].model,cores:cpus().length,memory:totalmem(),load:loadavg()},recordCounts,size,all},null,2));
+  }
+ }
+ if(!process.env.PERF_SMOKE){
+  for(let i=5;i<20;i++)await hub.createUser('合成成员扩展 '+i);
+  const growth=[];
+  for(const [area,name,path]of (await paths()).filter(row=>row[1]==='主页')){
+   const rows=[];for(let i=0;i<3;i++){const id=encodeURIComponent('members20:'+area+':'+i),reply=await browser.send(path,{headers:{'x-console-perf-id':id}});assert.equal(reply.status,200);rows.push({...measurements.get(id),...await sizes(reply.body)});}
+   const result={area,name,path,queries:[Math.min(...rows.map(r=>r.queries)),Math.max(...rows.map(r=>r.queries))],html:Math.max(...rows.map(r=>r.html)),topSQL:Object.entries(rows[0].sql).sort((a:any,b:any)=>b[1]-a[1]).slice(0,10)};growth.push(result);console.log('member growth',JSON.stringify(result));
+  }
+  const file=new URL('measurements.json',output),saved=JSON.parse(await readFile(file,'utf8'));saved.memberGrowth=growth;await writeFile(file,JSON.stringify(saved,null,2));
+ }
+}finally{for(const client of clients)await client.close();await hub.close();(pg.Client.prototype as any).query=query;(Server.prototype as any).emit=emit;}
+```
+
+Profile 窗口分析器（存为临时 analyze-profile.py，执行 `python3 analyze-profile.py "$perfRun"`）：
+
+```python
+import sys,json,pathlib,collections,bisect,statistics
+p=pathlib.Path(sys.argv[1]);r=json.loads((p/'results/measurements.json').read_text());c=json.loads(sorted((p/'profiles').glob('*.cpuprofile'))[-1].read_text());nodes={n['id']:n for n in c['nodes']};parents={child:n['id'] for n in c['nodes'] for child in n.get('children',[])}
+marker_ids={n['id'] for n in c['nodes'] if n['callFrame']['functionName']=='profileClockMarker'}
+def ancestry(n):
+ while n in nodes:yield n;n=parents.get(n)
+marker=[];t=c['startTime']
+for sample,delta in zip(c['samples'],c['timeDeltas']):
+ t+=delta
+ if any(n in marker_ids for n in ancestry(sample)):marker.append(t)
+assert marker
+lo=r['clockCalibration']['start_us']-marker[0];hi=r['clockCalibration']['end_us']-marker[-1];offset=(lo+hi)/2
+print('clock offset us',offset,'calibration bounds',lo,hi)
+for size in [500,2000]:
+ x=next(x for x in r['all'] if x['size']==size and x['area']=='总览');rows=x['rows'];starts=[a['start_us'] for a in rows];ends=[a['end_us'] for a in rows];selfs=collections.Counter();inclusive=collections.Counter();t=c['startTime'];total=0
+ for sample,delta in zip(c['samples'],c['timeDeltas']):
+  t+=delta;at=t+offset;i=bisect.bisect_right(starts,at)-1
+  if i<0 or at>ends[i]:continue
+  total+=delta;f=nodes[sample]['callFrame'];selfs[(f['functionName'],f['url'].split('/repo/')[-1],f['lineNumber']+1)]+=delta;seen=set()
+  for n in ancestry(sample):
+   f=nodes[n]['callFrame'];key=(f['functionName'],f['url'].split('/repo/')[-1],f['lineNumber']+1)
+   if key not in seen:inclusive[key]+=delta;seen.add(key)
+ print('OVERVIEW',size,{k:x[k] for k in ['p50','p95','cpu_p50','cpu_p95','queries']})
+ print('load',[min(y['load'][0]for y in rows),max(y['load'][0]for y in rows)])
+ print('phases: name,calls,sum p50,max p50',[(k,rows[0]['phases'][k]['calls'],round(statistics.median(row['phases'].get(k,{}).get('sum_ms',0) for row in rows),1),round(statistics.median(row['phases'].get(k,{}).get('max_ms',0) for row in rows),1))for k in rows[0]['phases']])
+ print('profile wall sampled ms',round(total/1000,1))
+ for kind,counts in [('self',selfs),('inclusive',inclusive)]:
+  print(kind)
+  for key,v in counts.most_common(18):print(round(v/1000,1),round(v/total*100,1),key)
+```

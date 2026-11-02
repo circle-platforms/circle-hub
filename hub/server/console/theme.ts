@@ -1,5 +1,7 @@
 import { INTERACTION_SCRIPT } from './interaction.ts';
-// A fixed, hash-allowed classic script in <head>: restore the theme before the stylesheet paints.
+/** Only theme restoration blocks paint; controls and interactions load from the deferred immutable asset. */
+export const THEME_BOOTSTRAP = `(() => { let value; try { value = localStorage.getItem('circle-hub-theme'); } catch {} if (value === 'dark' || value === 'light') document.documentElement.setAttribute('data-theme', value); else document.documentElement.removeAttribute('data-theme'); })();`;
+// A fixed deferred classic script for theme controls and page interactions. The bootstrap above restores before paint.
 // CSS handles system changes, including when storage is unavailable or scripts are disabled.
 export const THEME_SCRIPT = `(() => {
   const key = 'circle-hub-theme';

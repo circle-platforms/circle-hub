@@ -1,11 +1,10 @@
+import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // A pure page test: a frozen synthetic run and injected read-only ports, no database or external client.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import type {ServerDeps} from './api.ts';
 import {runPage,type PageContext} from './console/pages.ts';
-import {LIVE_SCRIPT} from './console/script.ts';
-import {THEME_SCRIPT} from './console/theme.ts';
 
 test('run pages retain complete projected string fields as escaped read-only text',async()=>{
   const run=structuredClone(runRecord);
@@ -21,7 +20,7 @@ test('run pages retain complete projected string fields as escaped read-only tex
   const response=await runPage(context,run.run),body=String(response.body);
   assert.equal(response.status,200);assert.match(body,/投影字符串字段/);assert.ok(body.includes(long));
   assert.match(body,/&lt;script src=&quot;\/\/192\.0\.2\.1\/x&quot;&gt;原样&lt;\/script&gt;/);
-  const own=`<script type="module">${LIVE_SCRIPT}</script>`;assert.ok(body.includes(own),'the live module of the run page');
-  assert.doesNotMatch(body.replace(own,'').replace(`<script data-console-theme>${THEME_SCRIPT}</script>`,''),/<script\b|NOT_A_STRING_VALUE/);assert.match(body,/<details/);
+  const own=LIVE_TAG;assert.ok(body.includes(own),'the live module of the run page');
+  assert.doesNotMatch(body.replace(own,'').replace(THEME_TAGS,''),/<script\b|NOT_A_STRING_VALUE/);assert.match(body,/<details/);
   assert.ok(!body.includes('review_tables'),'the renderer names no workflow-specific field');
 });

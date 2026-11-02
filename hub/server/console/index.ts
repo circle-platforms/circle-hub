@@ -1,4 +1,6 @@
 import {tooltip,technical} from './presentation.ts';
+import {sendConsoleAsset} from './assets.ts';
+import {createHash} from 'node:crypto';
 import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
 import { LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
@@ -762,6 +764,7 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
 
 /** Handles every path under /console. */
 export async function handleConsole(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions): Promise<void> {
+  if(url.pathname.startsWith('/console/assets/'))return sendConsoleAsset(request,response,url);
   const segments = url.pathname.split('/').slice(2).filter((s) => s.length > 0);
   const secure = options.secureRequest(request);
   const cookieValue = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE);
@@ -776,7 +779,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     response.writeHead(200, {
       'content-type': 'image/svg+xml; charset=utf-8',
       'cache-control': 'public, max-age=86400',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+      'content-security-policy': `default-src 'none'; style-src 'sha256-${createHash('sha256').update(/<style>([\s\S]*?)<\/style>/.exec(FAVICON_SVG)![1]).digest('base64')}'`,
       'x-content-type-options': 'nosniff',
     });
     response.end(request.method === 'HEAD' ? undefined : FAVICON_SVG);
