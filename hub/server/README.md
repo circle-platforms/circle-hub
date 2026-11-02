@@ -1,5 +1,21 @@
 # hub/server
 
+## Console spaces (decision 86)
+
+Knowledge shows personal, team and shared-with-me columns. `/console/knowledge/space` browses a selected immutable root,
+its paths, entry grounds/current state and history. Owners add entries, replace or withdraw them, import originals and
+append/revoke read-only directory grants. Team administrators import only from team-observed sources and may withdraw
+team entries. Product browsing remains under virtual product mounts with its original permissions.
+`/console/knowledge/space-diff` selects two history roots, defaulting to previous/current; product versions are labeled
+separately. Search has four generated knowledge scopes, and every result marks its visibility. Private originals at
+`/console/knowledge/source` recheck path authorization; administrators have no implicit access.
+
+Owner form actions under `/console/knowledge/do/` use the signed-in password session, own-origin and CSRF checks;
+first-password-change restrictions apply before every route. Only administrators adjust capacity from Team, which
+reveals the quota without opening the member's content. Forms and imports have byte limits; personal originals create
+no drafted entries. Hover text states visibility, non-recoverable prior reads after revocation and inclusion in server
+backups. Sharing-to-team and synchronization remain later phases, without new commands or a seventh MCP tool.
+
 ## Space tools (decision 86)
 
 The server still publishes six MCP tools. `upload_file` takes exactly one of `file_path` (base64 bytes) or `personal_entry`.
@@ -12,7 +28,7 @@ idempotent annotation, because a stale version or duplicate entry may be refused
 `get_nodes` accepts `space=team` or a personal owner id and defaults standalone reads to the caller. `search` plus generated
 `scope` (personal/team/shared/all) is standalone only, with bounded cursor pages. With `run`, search is refused by the
 registered `SPACE_SEARCH_IN_RUN` code; address reads use the run's frozen roots and initiator permissions. `resolve_reference`
-reads space tree addresses and admitted constituent sources as well as legacy product roots. Current grants are checked
+reads space tree addresses and admitted constituent sources as well as legacy product roots. Node and exact-entry text disclose verification status, grounds and quotations because clients consume the text answer. Current grants are checked
 again when an old address is used, and a raw `rec:` space record cannot disclose an ungranted directory.
 
 

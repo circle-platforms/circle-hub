@@ -406,49 +406,16 @@ export class KnowledgeSpaces {
       return null;
     const current = await this.current(version.body.space);
     const state = current?.body.entries.find(r => r.entry === digest)?.status ?? row.status;
-    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest), cited_count: by.id === version.body.space ? await this.#citations(by, digest) : null };
+    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
   }
-  async #citations(by: Principal, entry: string): Promise<number | null> {
-    let count = 0, cursor: string | null = null, examined = 0;
-    do {
-      const page: Page<StoredRecord<any>> = await this.#ctx.records.store.find({ key: 'runs.submission.cites.personal_entry', value: sha256Hex(by.id + '\0' + entry), kind: 'submission', limit: 500, cursor });
-      for (const submission of page.items) {
-        if (++examined > 10000)
-          return null;
-        const runId = submission.body?.run;
-        if (typeof runId !== 'string')
-          continue;
-        const run = (await this.#ctx.records.store.find<any>({ key: 'runs.id', value: runId, kind: 'run', limit: 1 })).items[0];
-        if (run?.body.runner !== by.id)
-          continue;
-        const references: string[] = [];
-        const visit = (value: unknown, depth = 0): void => {
-          if (depth > 64)
-            return;
-          if (typeof value === 'string' && value.startsWith('tree:'))
-            references.push(value);
-          else if (Array.isArray(value))
-            for (const item of value)
-              visit(item, depth + 1);
-          else if (value && typeof value === 'object')
-            for (const item of Object.values(value))
-              visit(item, depth + 1);
-        };
-        visit(submission.body);
-        for (const reference of references) {
-          try {
-            const parsed = parseReference(reference);
-            if (parsed.scheme === 'tree' && parsed.entry === entry && (await this.version(parsed.root))?.body.space === by.id) {
-              count++;
-              break;
-            }
-          }
-          catch { }
-        }
-      }
-      cursor = page.next;
-    } while (cursor);
-    return count;
+  async #citations(space: string, entry: string): Promise<number | null> {
+    if (!this.#ctx.records.store.countIndexed) return null;
+    const personal = space !== 'team';
+    const result = await this.#ctx.records.store.countIndexed({
+      kind:'submission',since:'0001-01-01T00:00:00.000Z',cap:10000,
+      index:[{key:personal?'runs.submission.cites.personal_entry':'runs.submission.cites.entry',value:personal?sha256Hex(space+'\0'+entry):entry}],
+    });
+    return result.capped ? null : result.count;
   }
   async runAllows(by: Principal, root: string, path: string, runId?: string): Promise<boolean> {
     if (!runId)
@@ -739,6 +706,7 @@ export class KnowledgeSpaces {
   async importFile(by: Principal, bytes: Uint8Array, mediaType: string, name: string | null, path = '/', session: string | null = null) {
     by = await this.#user(by);
     path = pathCheck(path);
+    this.#scan({path,name});
     return this.#ctx.writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       const previous = await this.current(by.id, tx);

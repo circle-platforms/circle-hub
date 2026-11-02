@@ -6,6 +6,7 @@ import { KnowledgeError } from './api.ts';
 import { makeWorld, startPostgres, catalogXml, BASE_CATALOG } from './test-support.ts';
 import { pathOf } from '../refs/api.ts';
 import { Database, createPool } from '../records/db.ts';
+import { citationIndex } from '../runs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
@@ -57,6 +58,7 @@ test('source quotes are checked, missing grounds stay unverified and private imp
   await spaces.grant(w.user, { path: '/notes', audience: 'member', member: w.outsider.id, revoke: true });
   assert.equal(await spaces.source(w.outsider, source.body.sha256), null);
   await assert.rejects(spaces.write(w.user, note('DB_PASSWORD=hunter22x')), e => e instanceof KnowledgeError && e.code === 'SPACE_CREDENTIALS_DETECTED');
+    await assert.rejects(spaces.importFile(w.user,Buffer.from('合成安全原文'),'text/plain','DB_PASSWORD=hunter22x'),e=>e instanceof KnowledgeError&&e.code==='SPACE_CREDENTIALS_DETECTED');
 });
 test('versions preserve old references, show replacements and withdrawals, and compare entry paths', async (t) => {
   const w = await makeWorld(postgres);
@@ -167,4 +169,15 @@ test('missing search rows rebuild from immutable records and oversized nodes req
   assert.ok(await w.knowledge.treeReader().read(first.root, '/notes', first.entry, { user: w.user.id, role: 'user' }));
   assert.equal(await w.knowledge.getNodes({ root: second.root, paths: ['/notes'], depth: 0, cursor: 'malformed' }, w.outsider), null);
   await assert.rejects(spaces.write(w.user, note('合成大小边界' + 'a'.repeat(1000), '/duplicate')));
+});
+
+test('citation totals include other authorized readers while personal statistics remain owner-only',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
+ const entry=await spaces.write(w.user,note('合成引用计数','/notes'));
+ await spaces.grant(w.user,{path:'/notes',audience:'member',member:w.outsider.id});
+ const body={run:'run_'+'0'.repeat(26),grounds:[entry.reference]};
+ await w.kit.store.put({kind:'submission',schema:'submission@1',provenance:'declared',body,index:citationIndex(body,'1',new Map([[entry.root,w.user.id]]))});
+ assert.equal((await spaces.entry(w.user,entry.root,'/notes',entry.entry))?.cited_count,1);
+ assert.equal((await spaces.entry(w.outsider,entry.root,'/notes',entry.entry))?.cited_count,null);
+ assert.equal((await w.kit.store.countIndexed!({kind:'submission',index:[{key:'runs.submission.cites.entry',value:entry.entry}],since:'0001-01-01T00:00:00.000Z'})).count,0);
 });

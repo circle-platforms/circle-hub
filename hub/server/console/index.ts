@@ -11,6 +11,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { RecordsError, type Principal } from '../../records/api.ts';
+import { KnowledgeError } from '../../knowledge/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '../http.ts';
@@ -26,6 +27,8 @@ import { operationsPage, systemForgetPage, systemTrialPage } from './operations.
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
+import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure } from './spaces.ts';
+import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
 import { searchPage } from './search.ts';
@@ -528,7 +531,7 @@ const ROUTES: Record<string, Route> = {
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);
     if (rest.length > 1) return Promise.resolve(neutralPage(ctx));
-    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage };
+    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, 'space-diff':spaceDiffPage, source:spaceSourcePage };
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   packs: (ctx, rest) => (rest.length === 0 ? packsPage(ctx) : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
@@ -805,28 +808,42 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);
   if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';
-  if (isAction ? request.method !== 'POST' : request.method !== 'GET') {
+  const isKnowledgeAction=segments.length===3&&segments[0]==='knowledge'&&segments[1]==='do';
+  if (isAction||isKnowledgeAction ? request.method !== 'POST' : request.method !== 'GET') {
     request.resume();
-    return isAction
+    return isAction||isKnowledgeAction
       ? sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>管理操作只接受 POST</p>`), { allow: 'POST' })
       : sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>这个页面只接受 GET</p>`), { allow: 'GET' });
   }
   const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
   if (principal === null) {
-    if (isAction) request.resume();
+    if (isAction||isKnowledgeAction) request.resume();
     if (session !== null) options.sessions.close(session.id);
     // A session cookie the store no longer knows, or one whose token stopped working: the login page says the sign-in ended.
     const sent = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE) !== undefined;
     const cookies = sent ? [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure), cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '1', '/console/login', 120, secure)] : [];
     // After signing in, a page leads back to itself (an action to its page, not to the form's target).
-    const back = isAction || segments.length === 0 ? null : safeNext(`${url.pathname}${url.search}`);
+    const back = isAction || isKnowledgeAction || segments.length === 0 ? null : safeNext(`${url.pathname}${url.search}`);
     return redirect(response, back === null || back === HOME ? '/console/login' : `/console/login?next=${encodeURIComponent(back)}`, cookies);
   }
   if (segments.length === 0) return redirect(response, HOME);
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: PageResult | null;
   try {
-    if (isAction) {
+    if(isKnowledgeAction){
+      if(!sameOrigin(request,options.ownOrigins())){request.resume();return forbidden(response,'知识表单只能从本控制台提交');}
+      let values:URLSearchParams|Map<string,string>;
+      let upload:{bytes:Buffer;name:string;mediaType:string}|undefined;
+      if(mediaTypeOf(request)==='multipart/form-data'){
+        const boundary=boundaryOf(request.headers['content-type']);if(!boundary){request.resume();return forbidden(response,'上传请求的格式不正确');}
+        const read=await readBody(request,options.deps.config.limits.maxUploadBytes+ACTION_FORM_LIMIT);if(!read.ok){if(read.reason==='aborted')return void response.destroy();return sendHtml(response,413,page(ctx.chrome('原文超出大小上限'),html`<p>原文超出上传大小上限</p>`));}
+        const multipart=parseMultipart(read.bytes,boundary);values=multipart.fields;const file=multipart.files.find(file=>file.field==='archive');
+        if(file&&file.bytes.length>options.deps.config.limits.maxUploadBytes)return sendHtml(response,413,page(ctx.chrome('原文超出大小上限'),html`<p>原文超出上传大小上限</p>`));
+        if(file)upload={bytes:file.bytes,name:file.filename,mediaType:mediaTypeFor(file.bytes,undefined,file.filename)};
+      }else{const parsed=await formOf(request,ACTION_FORM_LIMIT);if(parsed==='aborted')return void response.destroy();if(parsed==='too_large')return sendHtml(response,413,page(ctx.chrome('表单超出大小上限'),html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`));if(typeof parsed==='string')return forbidden(response,'知识表单格式不正确');values=parsed;}
+      if(values.get('csrf')!==session!.csrf)return forbidden(response,'表单已过期或不是本控制台发出的');
+      try{const target=await performSpaceAction(ctx,segments[2],values,upload);return redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
+    }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;
     } else {
@@ -834,7 +851,9 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
       result = route === undefined ? neutralPage(ctx) : await route(ctx, segments.slice(1), options, session!);
     }
   } catch (error) {
-    if (error instanceof RecordsError && error.code === null && !(error.name === 'IntegrityError')) {
+    if(error instanceof KnowledgeError&&error.code){result=spaceActionFailure(ctx,error);}
+    else if(error instanceof UploadError&&isKnowledgeAction){result={status:400,body:page(ctx.chrome('原文上传未完成'),html`<p class="error">${error.message}</p>`)};}
+    else if (error instanceof RecordsError && (error.code === null||isKnowledgeAction&&error.code==='CREDENTIAL_IN_UPLOAD') && !(error.name === 'IntegrityError')) {
       result = { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">${error.message}</p>`) };
     } else if (error instanceof TypeError) {
       options.log(`控制台请求参数不对（${url.pathname}）：${error.message}`);

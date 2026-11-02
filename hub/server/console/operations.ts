@@ -104,7 +104,8 @@ ${field('版本线', html`<input name="line" placeholder="可留空">`, { hint: 
 </div>`, '开始导入', { primary: true });
   return html`${steps(['选择来源', '试运行', '导入', '发布新版本'], 0)}
 <section class="grid g-2-1 section">
-${card({ title: '导入知识', hint: '后台执行' }, html`${form}<p class="note">执行 ${code('circle-hub knowledge sync')}：从产品知识来源声明的来源以只读方式读取构建、手册与命令树，更新知识库；每条知识均附出处。可能需要几分钟。</p>`)}
+${card({ title: '导入团队知识', hint: '后台执行' }, html`${form}<p class="note">执行 ${code('circle-hub knowledge sync')}：从产品知识来源声明的来源以只读方式读取构建、手册与命令树，更新知识库；每条知识均附出处。可能需要几分钟。</p>`)}
+${ctx.deps.knowledge?.spaces ? card({title:'按团队读取原文导入',hint:'无须产品包；管理员填写陈述、目录与团队连接读取原文的引用，引文逐条核对'},html`${link('/console/knowledge/space','导入团队知识条目',{space:'team'})}`) : ''}
 ${plannedCard('上传文档导入', '从上传的文档与业务系统按条目导入，导入前预览差异；上线后在此选择来源。', 'book')}
 </section>
 <div class="mt16">${liveModule('imports', ['import.progress', 'knowledge.published'], card(null, jobsSection(jobs.list())))}</div>
@@ -115,7 +116,7 @@ const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 
   member: { title: '添加成员', hint: '创建密码账户，初始密码仅显示一次且首次登录须修改；Circle 连接绑定该成员账户', active: 'team' },
   system: { title: '接入业务系统', hint: 'Hub 以只读方式访问业务系统；凭据加密保存，页面与模型只可见名称', active: 'connections' },
   pack: { title: `发布${uiLabelOf('pack_kind','workflow')}`, hint: '上传发布内容，发布校验通过后确认发布，成为新版本', active: 'packs' },
-  knowledge: { title: '导入知识', hint: '从产品知识来源声明的来源导入知识，每条附出处；导入完成后为该版本线的当前版本', active: 'knowledge' },
+  knowledge: { title: '导入团队知识', hint: '从产品知识来源声明的来源导入团队知识，每条附出处；导入完成后为该版本线的当前版本', active: 'knowledge' },
 };
 
 /** One operation's page, or the four of them; administrators only, like the actions they post to. */

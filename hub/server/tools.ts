@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
-import type { Acceptance, CallResult } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type Acceptance, type CallResult } from '../../contracts/generated/vocabulary.ts';
 import { annotationsFor, type ToolAnnotations } from '../../contracts/src/annotations.ts';
 import { RunId, type ProtocolError } from '../../contracts/src/common.ts';
 import type { PackSummary } from '../../contracts/src/run.ts';
@@ -567,14 +567,18 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   let feedingReceipt:import('../knowledge/feeding.ts').FeedingReceipt|undefined;
   if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;const captures=detail?.run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===parsed.sha256&&binding.artifact;})??[];for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await deps.records.store.get<any>(capture.meta_artifact):null;feedingReceipt=await deps.knowledge.feeding?.observeSourceBounded(call.principal,parsed.sha256,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:detail?.run.target_basis.find(claim=>claim.statement.data?.root===detail?.run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}}
   const feedingState=parsed.scheme==='rec'?await deps.knowledge.feeding?.recordState(parsed.record,call.principal):null;
-  const derivedNote=[result.note,contributionNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
+  const spaceVersion=parsed.scheme==='tree'&&parsed.entry&&deps.knowledge.spaces?await deps.knowledge.spaces.version(parsed.root):null;
+  const spaceEntry=spaceVersion&&parsed.scheme==='tree'&&parsed.entry?await deps.knowledge.spaces!.entry(call.principal,parsed.root,parsed.path,parsed.entry):null;
+  if(spaceVersion&&parsed.scheme==='tree'&&!spaceEntry&&!spaceVersion.body.products.some(m=>parsed.path===m.path||parsed.path.startsWith(m.path+'/')))return {answer:errorAnswer('get_nodes',[unavailable()])};
+  const spaceNote=spaceEntry?'状态 '+labelOf('knowledge_entry_status',spaceEntry.row.status)+(spaceEntry.body.grounds.length?'；已逐条核对引文与路径':'；未提供依据，内容未核验'):null;
+  const derivedNote=[result.note,contributionNote,spaceNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
   const content = {
     reference: result.reference,
     read_tier: result.readTier,
     readable: result.readable,
     ...(result.readable && result.text !== null && result.readTier === 'model_readable' ? { text: result.text } : {}),
     ...(parsed.scheme === 'src' ? { sha256: parsed.sha256 } : {}),
-    ...(result.summary!==null||feedingState?{structure:{...result.summary,...(feedingState?{feeding_state:feedingState}:{})}}:{}),
+    ...(result.summary!==null||feedingState||spaceEntry?{structure:{...result.summary,...(feedingState?{feeding_state:feedingState}:{}),...(spaceEntry?{entry_status:spaceEntry.row.status,grounds:spaceEntry.body.grounds,data:spaceEntry.body.content.data,applicability:spaceEntry.body.content.applicability,...(spaceEntry.cited_count!==null?{cited_count:spaceEntry.cited_count}:{})}:{})}}:{}),
     ...(derivedNote?{note:derivedNote}:{}),
   };
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };

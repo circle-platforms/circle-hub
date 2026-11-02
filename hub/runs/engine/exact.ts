@@ -348,7 +348,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       if (scoped) {
         const spaceRoot=ref.scheme==='tree'&&spaces?await spaces.version(ref.root):null;
         let problem = scopeProblem(ref, scope);
-        if(spaceRoot&&scope.reader.run&&ref.scheme==='tree')problem=await spaces!.runAllows({id:scope.reader.user!,role:scope.reader.role,name:''},ref.root,ref.path,scope.reader.run)?null:'引用的知识空间不在发起人可读的锁定范围';
+        if(spaceRoot&&scope.reader.run&&ref.scheme==='tree')problem=await spaces!.runAllows({id:scope.reader.user!,role:scope.reader.role,name:''},ref.root,ref.path,scope.reader.run)?null:(scopeProblem(ref,scope)??'引用的知识树根不是本次运行锁定的根');
         if(ref.scheme==='src'&&spaces&&scope.reader.run&&await spaces.hasSource(ref.sha256)&&await spaces.source({id:scope.reader.user!,role:scope.reader.role,name:''},ref.sha256,scope.reader.run))problem=null;
         if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };

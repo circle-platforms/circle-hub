@@ -348,7 +348,7 @@ export function jobsSection(jobs: readonly Job[]): Html {
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
-  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
+  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入团队知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
   if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
     ? html`<p class="notice">尚未收到命令执行结果</p>`
