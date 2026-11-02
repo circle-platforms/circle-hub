@@ -5,15 +5,16 @@ import { IsoTime, Sha256, UserId, PackId, PackVersion } from './common.ts';
 import { PackManifest } from './pack.ts';
 import { SpaceEntryOrigin } from './spaces.ts';
 import {PROTOCOL_CODES} from '../generated/protocol.ts';
-import { referenceUriOf } from './reference.ts';
+import { referenceUriOf, TreePath } from './reference.ts';
 
-export const KnowledgeShareInput = SpaceEntryOrigin.omit({ space: true });
+export const KnowledgeShareInput = SpaceEntryOrigin.omit({ space: true }).extend({team_path:TreePath.optional()});
 export const KnowledgeShareBody = z.strictObject({
   source: SpaceEntryOrigin,
   by: UserId, at: IsoTime, session: z.string().nullable(),
   status: KnowledgeShareStatusSchema,
   code: z.string().refine(code=>Object.hasOwn(PROTOCOL_CODES,code),'a registered protocol code').nullable(), message: z.string(),
   team_root: Sha256.nullable(), reference: referenceUriOf('tree').nullable(),
+  target_path:TreePath.optional(),
 }).refine(row=>row.source.space===row.by,'only the personal owner submits sharing')
   .refine(row=>row.status==='merged'?row.code===null&&row.team_root!==null&&row.reference!==null:row.code!==null&&row.team_root===null&&row.reference===null,'merged receipts have a team reference; rejected receipts have a code');
 export type KnowledgeShareBody = z.infer<typeof KnowledgeShareBody>;

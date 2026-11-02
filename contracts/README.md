@@ -387,3 +387,9 @@ Model 19 (decision 86, second review): `get_nodes` knowledge-search answers opti
 existing `ProtocolError` shape. Matches from available scopes remain usable, and omitted incomplete/over-limit scopes are
 explicit. `SPACE_INDEX_LIMIT` distinguishes entry versus current-version limits in its actual message/fix. This does not
 change immutable knowledge records, six-tool routing, permissions or stored references.
+
+
+Decision 88 extends the same unmerged model 20 sharing contract: optional `share_entry.team_path` chooses the team
+destination; new receipts include optional `target_path` (omitted in older receipts). Personal `source` remains separate
+from the team reference. Team revision lineage reuses `knowledge-space-entry@1.replaces` and the generated superseded
+state; no record mutation, migration, seventh tool or new vocabulary axis is needed.

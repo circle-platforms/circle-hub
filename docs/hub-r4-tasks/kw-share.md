@@ -129,3 +129,13 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 `npm run typecheck`、`npm run verify:contracts`（151 文件）通过；`node --test --test-concurrency=1 hub/runs/engine/production-guard.test.ts tests/acceptance/46-knowledge-spaces.test.ts` 9 项通过，0 失败、0 跳过。阶段性输入拒收回归已改为完整规则：判断运行可使用本人的个人输入，管理员查询和直接 `rec:` 不可见其标签；自动事实结果仍按全部实际读者拒收，拒收不留运行；独立普通原文不受相同私有副本影响。维护重查使用同样完整规则。
 
 此前 15 文件验收组实际为 50 项、49 通过、1 失败，不计整组通过。失败为场景 33 仍把被新增夹具显式授予团队的原文当成不可读；该知识问答对照明确关闭团队原文授权，保留“可读产品目录不自动授原文字节”的原有断言。单跑 `tests/acceptance/33-r5-t1t3-knowledge-qa.test.ts` 1 项通过，0 失败、0 跳过；未删除或放宽拒读断言。后续收尾仍跑受影响验收组。
+
+
+### 决定 88 的共享修订与团队目录
+
+实现第 1、2 条：沿本人的个人 `replaces` 链查找本人同源团队提交，核对 `shared_from` 与作者；成功才在新版本中标出被取代并登记前后关系，其他人的团队条目照常去重且不修改。已撤回前件继续保持撤回，防止抹去既有撤回依据标记，同时记录修订关系。`team_path` 可选，默认个人路径；回执 `target_path` 兼容旧记录缺省值，拒收也写明目标，拒收不建目录。最小页面只补目标输入、回执列和正确的团队链接；未开始完整页面重做。
+
+新增回归先复现原功能不接受目标目录、回执无目标的问题；修订状态误用的非合约代码也被测试拦住，已改用生成状态 `superseded`。完整读者与索引规则没有放宽。核对旧团队引用显示被取代、本人旧个人条目保留、他人团队条目不变、重复与保留目录拒收、默认／显式目标和拒收不建目录；原文及旧记录不改。
+
+
+决定 88 第 1、2 项验证：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 contracts/src/sharing.test.ts hub/knowledge/sharing.test.ts hub/knowledge/spaces-review.test.ts` 17 项通过，0 失败、0 跳过。新增 MCP 与密码会话表单的目标目录／修订，以及被拒原始引文读取回归后，场景 47 的 9 项通过，0 失败、0 跳过；集成回归随下一步提交保留。未增加全量回归或数据 SHA 校验。

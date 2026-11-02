@@ -379,7 +379,7 @@ function listText(v: ListOut): string {
 // ---------------------------------------------------------------- upload_file
 
 function uploadText(v: UploadOut): string {
-  if(v.share){const head=`${labelOf('knowledge_share_status',v.share.status)}${v.share.reference?'；团队条目 '+v.share.reference:''}\n个人原条目保留；共享回执 ${v.share.record}`;return head+'\n'+(v.errors.length?errorText(v):traceLine(v.trace));}
+  if(v.share){const head=`${labelOf('knowledge_share_status',v.share.status)}${v.share.reference?'；团队条目 '+v.share.reference:''}\n团队目录 ${v.share.target_path??v.share.source.path}；个人原条目保留；共享回执 ${v.share.record}`;return head+'\n'+(v.errors.length?errorText(v):traceLine(v.trace));}
   if(v.withdrawn_reference)return fit([{priority:0,head:[`${labelOf('knowledge_entry_status','withdrawn')}；${v.withdrawn_reference}`]}],{tail:[traceLine(v.trace)]}).text;
   if(v.personal_entry)return `个人条目已保存；${uiLabelOf('knowledge_entry_status',v.personal_entry.status)}\n引用 ${v.personal_entry.reference}\n知识版本 ${v.personal_entry.root}\n${traceLine(v.trace)}`;
   const head = [`${axisLabel('acceptance')}：${labelOf('acceptance', v.acceptance)}${v.reference ? `，引用 ${v.reference}` : ''}`];

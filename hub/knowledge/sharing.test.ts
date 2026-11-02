@@ -81,3 +81,48 @@ test('submitters withdraw only their own team entries and withdrawn grounds prop
   const view=await spaces.entry(w.outsider,dependent.root,'/dependent',dependent.entry);assert.ok(view);assert.ok(view.grounds_withdrawn.includes(merged.reference));assert.equal(view.row.status,'verified');
   assert.equal((await spaces.entry(w.admin,merged.team_root,'/notes',entry.entry))?.row.status,'withdrawn');
 });
+
+
+test('a submitted personal revision supersedes only its own earlier team entry and records the selected team path',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,first=await verified(w),merged=await share(w,first);assert.ok(merged.team_root);
+  const source=await observed(w),grounds=[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}];
+  const peer=await spaces.write(w.outsider,{...note('合成他人团队条目'),grounds});
+  const peerReceipt=await spaces.share(w.outsider,{root:peer.root,path:'/notes',entry:peer.entry});assert.equal(peerReceipt.status,'merged');
+  const revision=await spaces.write(w.user,{...note('合成保留规则修订','/revised-personal'),grounds,replaces:first.entry});
+  const raw={root:revision.root,path:'/revised-personal',entry:revision.entry,team_path:'/chosen/new-directory'};
+  const shared=await spaces.share(w.user,raw);assert.equal(shared.status,'merged',JSON.stringify(shared));assert.ok(shared.team_root);
+  assert.equal(shared.target_path,raw.team_path);assert.equal(shared.source.path,raw.path);assert.equal(shared.reference,`tree:${shared.team_root}${raw.team_path}@${revision.entry}`);
+  const current=(await spaces.current('team'))!;assert.ok(current.body.directories.includes(raw.team_path));
+  assert.equal(current.body.entries.find(row=>row.entry===first.entry)?.status,'superseded');
+  assert.equal((await spaces.entry(w.outsider,merged.team_root,'/notes',first.entry))?.row.status,'superseded','historical reads derive the current replacement state');
+  const team=await spaces.entry(w.outsider,shared.team_root,raw.team_path,revision.entry);assert.equal(team?.body.replaces,first.entry);assert.equal(team?.body.by,w.user.id);assert.equal(team?.body.shared_from?.entry,revision.entry);
+  assert.equal(current.body.entries.find(row=>row.entry===peer.entry)?.status,'verified','another member’s team entry is unchanged');
+  const retry=await spaces.share(w.user,raw);assert.equal(retry.code,'SHARE_DUPLICATE');assert.equal(retry.target_path,raw.team_path);
+  const conflict=await spaces.write(w.user,{...note('合成他人团队条目','/revised-personal'),grounds,replaces:revision.entry});
+  const refused=await spaces.share(w.user,{root:conflict.root,path:'/revised-personal',entry:conflict.entry,team_path:'/another-target'});
+  assert.equal(refused.code,'SHARE_DUPLICATE');assert.equal(refused.target_path,'/another-target');assert.equal((await spaces.current('team'))!.root,current.root);
+});
+
+test('default team paths and refused custom targets are explicit in receipts without changing the personal origin',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entry=await verified(w);
+  const shared=await share(w,entry);assert.equal(shared.target_path,'/notes');
+  const noteOnly=await spaces.write(w.user,note('合成未核验路径','/private-path'));
+  const rejected=await spaces.share(w.user,{root:noteOnly.root,path:'/private-path',entry:noteOnly.entry,team_path:'/target/rejected'});
+  assert.equal(rejected.code,'SHARE_UNVERIFIED');assert.equal(rejected.target_path,'/target/rejected');assert.equal(rejected.source.path,'/private-path');
+  assert.ok(!(await spaces.current('team'))!.body.directories.includes('/target/rejected'),'a rejected submission creates no team directory');
+  const source=await observed(w),other=await spaces.write(w.user,{...note('合成保留新规则'),grounds:[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}],replaces:entry.entry});
+  const reserved=await spaces.share(w.user,{root:other.root,path:'/notes',entry:other.entry,team_path:'/产品/synthetic/1.0'});
+  assert.equal(reserved.code,'SHARE_GROUND_UNREADABLE');assert.equal(reserved.target_path,'/产品/synthetic/1.0');
+  assert.equal((await spaces.current('team'))!.body.entries.find(row=>row.entry===entry.entry)?.status,'verified','a failed revision cannot retire its previous team entry');
+});
+
+
+test('a new shared revision records a withdrawn predecessor without undoing its withdrawal',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,first=await verified(w),shared=await share(w,first);assert.ok(shared.reference&&shared.team_root);
+  await spaces.withdraw(w.user,first.entry,'team');
+  const source=await observed(w),next=await spaces.write(w.user,{...note('合成撤回之后的新修订'),replaces:first.entry,grounds:[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}]});
+  const receipt=await share(w,next);assert.equal(receipt.status,'merged');assert.ok(receipt.team_root);
+  assert.equal((await spaces.entry(w.user,receipt.team_root,'/notes',next.entry))?.body.replaces,first.entry);
+  assert.equal((await spaces.entry(w.outsider,shared.team_root,'/notes',first.entry))?.row.status,'withdrawn');
+  assert.deepEqual(await spaces.withdrawnGrounds([shared.reference]),[shared.reference]);
+});

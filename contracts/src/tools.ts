@@ -41,7 +41,7 @@ export const SERVER_INSTRUCTIONS = `This server verifies results; it does not ge
 4. get_nodes / resolve_reference - read the expected sources and check exact values before you rely on them.
 5. submit_result - hand in your results item by item. If the receipt is not accepted, read the errors, fix exactly those points and submit again.
 Personal packs: list_task_packs includes space for personal workflows and generic skills. Use pack_space on start_run and get_nodes with pack, pack_space and file (default SKILL.md) to read their declared files. Pure generic skills have no acceptance and are read through get_nodes, not started as runs. Owners publish and grant personal packs through the console.
-Sharing: upload_file with share_entry submits a verified personal entry; a receipt carries a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
+Sharing: upload_file with share_entry submits a verified personal entry; team_path optionally selects the team directory (default: the personal path); a receipt records that target with a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
 Personal knowledge: upload_file with personal_entry writes only to the caller's space; space=personal imports an original without drafting entries. get_nodes with search and scope searches current readable knowledge only without run. During a run, copy exact tree addresses from the frozen team/personal roots and the initiator's currently authorized content.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
 
@@ -79,7 +79,7 @@ export const UploadFileInput = z.strictObject({
     .refine((text) => text.length % 4 === 0, 'base64 text has a length divisible by four (RFC 4648 padding)')
     .meta({ contentEncoding: 'base64', contentMediaType: 'application/octet-stream' })
     .describe('The file to upload. Give the local path; the client sends the file bytes.').optional(),
-  share_entry: KnowledgeShareInput.optional().describe('Submit one caller-owned verified entry to team knowledge; returns a merged/rejected receipt without an approval queue'),
+  share_entry: KnowledgeShareInput.optional().describe('Submit one caller-owned verified entry to team knowledge; optional team_path chooses the team directory, otherwise the personal path; records the target and returns a merged/rejected receipt without an approval queue'),
   withdraw_entry: KnowledgeShareInput.optional().describe('Withdraw a caller-owned personal entry or a permitted team submission; old references keep their immutable content'),
   personal_entry: SpaceEntryInput.optional().describe('Store a personal knowledge entry instead of a file; quotes are verified by the Hub; a note without grounds is unverified'),
   space: KnowledgeSpaceKindSchema.extract(['personal']).optional().describe('Import a file into the caller personal knowledge space; the Hub never drafts an entry'),

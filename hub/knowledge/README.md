@@ -1228,3 +1228,12 @@ and history still count toward the separate personal capacity. Product mounts ha
 label an incomplete/over-limit index as empty or complete: it excludes that scope and returns registered-code `warnings` with
 available matches. Console and MCP show the omitted scope; cursors bind the set of available scopes and require a fresh first
 page when that set changes. `records` documents configurable limits and the additional historical database disk usage.
+
+
+Decision 88 sharing revisions: the personal `replaces` chain identifies only that submitter's prior team entry, checked
+against its immutable `shared_from` provenance and author. A successful resubmission records the team `replaces` link
+and supersedes the active predecessor; other authors' entries remain untouched and count toward team deduplication.
+An already withdrawn predecessor keeps its withdrawal and its dependants' qualifiers, while the new revision still
+records the relationship. Optional `team_path` selects a normal team directory (created with the version); otherwise the
+personal path is used. Every new merged/refused receipt records `target_path`, and the personal origin remains unchanged.
+No directory/version is created on refusal, and product mount paths remain reserved.
