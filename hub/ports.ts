@@ -264,6 +264,7 @@ export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
 }
 
 export interface NodesQuery {
+  run?: string;
   feeding_offset?: import('../contracts/src/feeding.ts').FeedingOffset;
   root: string;
   composition?: string | null;
@@ -324,6 +325,7 @@ export interface ReadRoot {
 }
 
 export interface KnowledgePort {
+  spaces?: import('./knowledge/api.ts').KnowledgeSpaces;
   feeding?:import('./knowledge/feeding.ts').FeedingLayer;
   seedlingRoot?(product:string,line:string):Promise<RootInfo|null>;
   /** Seedling pointer of the line, otherwise the sync root. Absent on older ports; runs then keep the seedling-then-sync fallback. */

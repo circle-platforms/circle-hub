@@ -14,6 +14,9 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Hub knowledge spaces** — decision 86 implements decision 84 phase 2 with model 17: personal/team CAS trees, immutable history, verified or unverified entries, directory grants/revocations, private originals and administrator-adjustable 1 GiB personal capacity. Existing product trees mount into team knowledge without data migration or hash changes.
+- **Scoped knowledge reads** — the existing six tools add caller-authored personal entries, private imports and GIN bigram search outside runs. Runs freeze the initiator/team snapshots; old references recheck current grants and personal citation counts remain separate from team counts. Skill protocol mirrors/manifests advance html-format/mindmap-format to 1.0.4 and xml-format/workbook-format to 1.0.5 without parser changes.
+
 - **Workflow terminology** — decision 85 starts the owner-approved UI rename in model 16: workflows, generic skills, product knowledge sources and business-system integrations retain their existing codes. The display-only publication-state axis preserves existing records and permissions; generated protocol mirrors and release manifests advance html-format/mindmap-format to 1.0.3 and xml-format/workbook-format to 1.0.4, with no parser changes.
 - **Workflow browsing** — the existing `/console/packs` links now open separate workflow and generic-skill columns; workflow acceptance requirements appear near the top of each detail page without a stage graph.
 - **Source catalog locations** — product knowledge sources appear under knowledge and business-system integrations under connections, with matching detail breadcrumbs and existing visibility rules.

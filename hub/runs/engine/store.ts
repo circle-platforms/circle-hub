@@ -26,6 +26,7 @@ export const INDEX = {
   /** The knowledge an accepted submission cites (citationIndex): a node by its root and path, an entry by its digest. */
   citesNode: 'runs.submission.cites.node',
   citesEntry: 'runs.submission.cites.entry',
+  citesPersonalEntry: 'runs.submission.cites.personal_entry',
   /**
    * On every accepted submission whose citations are indexed: CITES_STORED when indexed as it was stored (the oldest such
    * is where that started), CITES_BACKFILLED when indexed later by backfillCitations.
@@ -50,32 +51,43 @@ export const citedNodeKey = (root: string, path: string): string => sha256Hex(`$
  * its node (root and path) and, when pinned, its entry; at most MAX_CITED_NODES and MAX_CITED_ENTRIES, and the marker
  * (CITES_STORED as the submission is stored, CITES_BACKFILLED later).
  */
-export function citationIndex(body: unknown, marker: string = CITES_STORED): IndexEntry[] {
-  const nodes = new Set<string>();
-  const entries = new Set<string>();
+function citedTrees(body: unknown): Array<Extract<ReturnType<typeof parseReference>, { scheme: 'tree' }>> {
+  const references = new Map<string, Extract<ReturnType<typeof parseReference>, { scheme: 'tree' }>>();
   const visit = (value: unknown, depth: number): void => {
-    if (depth > 64) return;
-    if (typeof value === 'string') {
-      if (!value.startsWith('tree:')) return;
-      try {
-        const reference = parseReference(value);
-        if (reference.scheme !== 'tree') return;
-        if (nodes.size < MAX_CITED_NODES) nodes.add(citedNodeKey(reference.root, reference.path));
-        if (reference.entry !== undefined && entries.size < MAX_CITED_ENTRIES) entries.add(reference.entry);
-      } catch {
-        // Not a well-formed reference: the checks of the submission say so; nothing is cited by it.
-      }
-      return;
-    }
-    if (Array.isArray(value)) for (const item of value) visit(item, depth + 1);
+    if (depth > 64 || references.size >= MAX_CITED_NODES + MAX_CITED_ENTRIES) return;
+    if (typeof value === 'string' && value.startsWith('tree:')) {
+      try { const ref = parseReference(value); if (ref.scheme === 'tree') references.set(value, ref); } catch { /* Malformed references cite nothing. */ }
+    } else if (Array.isArray(value)) for (const item of value) visit(item, depth + 1);
     else if (isObject(value)) for (const item of Object.values(value)) visit(item, depth + 1);
   };
   visit(body, 0);
+  return [...references.values()];
+}
+
+/** A personal count is scoped to its owner even when another space has identical content. */
+export const personalCitedEntryKey = (owner: string, entry: string) => sha256Hex(owner + '\0' + entry);
+
+export function citationIndex(body: unknown, marker: string = CITES_STORED, personalRoots: ReadonlyMap<string, string> = new Map()): IndexEntry[] {
+  const nodes = new Set<string>(), entries = new Map<string, IndexEntry>();
+  for (const reference of citedTrees(body)) {
+    if (nodes.size < MAX_CITED_NODES) nodes.add(citedNodeKey(reference.root, reference.path));
+    if (reference.entry === undefined || entries.size >= MAX_CITED_ENTRIES) continue;
+    const owner = personalRoots.get(reference.root);
+    const index = owner ? { key: INDEX.citesPersonalEntry, value: personalCitedEntryKey(owner, reference.entry) } : { key: INDEX.citesEntry, value: reference.entry };
+    entries.set(index.key + ':' + index.value, index);
+  }
   return [
     { key: INDEX.citesIndexed, value: marker },
-    ...[...nodes].map((value) => ({ key: INDEX.citesNode, value })),
-    ...[...entries].map((value) => ({ key: INDEX.citesEntry, value })),
+    ...[...nodes].map(value => ({ key: INDEX.citesNode, value })),
+    ...entries.values(),
   ];
+}
+
+async function storedCitationIndex(store: Pick<RecordStore, 'getMany'>, body: unknown, marker: string = CITES_STORED) {
+  const roots = await store.getMany([...new Set(citedTrees(body).map(ref => ref.root))]);
+  const personal = new Map<string, string>();
+  for (const record of roots.values()) if (record.kind === 'knowledge_space_version' && isObject(record.body) && typeof record.body.space === 'string' && record.body.space !== 'team') personal.set(record.digest, record.body.space);
+  return citationIndex(body, marker, personal);
 }
 
 /**
@@ -87,7 +99,7 @@ export function citationIndex(body: unknown, marker: string = CITES_STORED): Ind
  * exact. `complete` stays false while there is no submission to mark; an aborted pass throws the signal's reason.
  */
 export async function backfillCitations(
-  store: Pick<RecordStore, 'list' | 'find' | 'addIndex'>,
+  store: Pick<RecordStore, 'list' | 'find' | 'addIndex' | 'getMany'>,
   options: { batch?: number; signal?: AbortSignal } = {},
 ): Promise<{ examined: number; indexed: number; complete: boolean }> {
   if (store.addIndex === undefined) return { examined: 0, indexed: 0, complete: false };
@@ -107,7 +119,7 @@ export async function backfillCitations(
       examined += 1;
       // A submission that did not parse cites nothing (putSubmission indexes only accepted ones).
       if (record.schema !== SCHEMAS.submission) continue;
-      if ((await store.addIndex(record.digest, citationIndex(record.body, CITES_BACKFILLED))) > 0) indexed += 1;
+      if ((await store.addIndex(record.digest, await storedCitationIndex(store, record.body, CITES_BACKFILLED))) > 0) indexed += 1;
     }
     cursor = page.next;
   } while (cursor !== null);
@@ -258,7 +270,7 @@ export async function putSubmission(
       { key: INDEX.submissionRun, value: input.run },
       { key: INDEX.submissionDigest, value: `${input.run}:${input.digest}` },
       // What an accepted submission cites, for the console's citation counts; a submission that does not parse cites nothing.
-      ...(input.parses ? citationIndex(input.body) : []),
+      ...(input.parses ? await storedCitationIndex(store, input.body) : []),
     ],
   });
 }

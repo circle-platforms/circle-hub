@@ -115,6 +115,26 @@ export const PROTOCOL_CODES = {
   "AUDIENCE_VISIBILITY_EXCEEDED": {
     "when": "P11 R[3] 第 9 款：内容可见范围不覆盖受众或身份未映射",
     "fix": "收窄受众，或由管理员补身份映射与覆盖确切内容的分享许可"
+  },
+  "SPACE_CAPACITY_EXCEEDED": {
+    "when": "个人空间容量不足",
+    "fix": "请管理员调整容量后重试"
+  },
+  "SPACE_ENTRY_INVALID": {
+    "when": "条目、依据或目录不符合知识空间约束",
+    "fix": "核对路径、引用与逐字引文后重试"
+  },
+  "SPACE_CREDENTIALS_DETECTED": {
+    "when": "个人条目或授权内容命中凭据扫描",
+    "fix": "移除凭据后重试；原文不向其他账户开放"
+  },
+  "SPACE_SEARCH_IN_RUN": {
+    "when": "任务读取不允许全文搜索",
+    "fix": "去掉 run 后检索线索；任务中按锁定地址读取"
+  },
+  "SPACE_VERSION_CONFLICT": {
+    "when": "知识版本已改变",
+    "fix": "刷新当前知识版本后重新提交"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

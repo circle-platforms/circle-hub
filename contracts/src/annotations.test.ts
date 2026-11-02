@@ -8,7 +8,7 @@ import { TOOLS } from './tools.ts';
 /** D06 F[0]-F[5]. start_run has two rows: closed-world, and open-world when the caller's packs read an external system to pick a build. */
 const D06 = {
   list_task_packs: { readOnlyHint: true, openWorldHint: false },
-  upload_file: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  upload_file: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   start_run: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   start_run_reading_external: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   get_nodes: { readOnlyHint: true, openWorldHint: false },

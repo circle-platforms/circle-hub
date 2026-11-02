@@ -1,3 +1,5 @@
+export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
 // Field names of stored bodies are snake_case like the contracts; enumerations come from the generated vocabulary.
 import type {
@@ -817,6 +819,7 @@ export interface CallLog {
 // ---------------------------------------------------------------- the kit
 
 export interface RecordsKit {
+  spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;
   store: RecordStore;
   objects: ObjectStore;

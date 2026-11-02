@@ -378,6 +378,7 @@ function listText(v: ListOut): string {
 // ---------------------------------------------------------------- upload_file
 
 function uploadText(v: UploadOut): string {
+  if(v.personal_entry)return `个人条目已保存；${uiLabelOf('knowledge_entry_status',v.personal_entry.status)}\n引用 ${v.personal_entry.reference}\n知识版本 ${v.personal_entry.root}\n${traceLine(v.trace)}`;
   const head = [`${axisLabel('acceptance')}：${labelOf('acceptance', v.acceptance)}${v.reference ? `，引用 ${v.reference}` : ''}`];
   if (v.size !== undefined) head.push(`大小 ${v.size} 字节${v.media_type ? `，媒体类型 ${oneLine(v.media_type)}` : ''}`);
   if (v.sha256 !== undefined) head.push(`sha256 ${v.sha256}`);
@@ -1065,6 +1066,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
+  if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索）`],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];
   const root = v.root ?? '';

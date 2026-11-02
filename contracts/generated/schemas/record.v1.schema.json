@@ -22,7 +22,12 @@
         "pack_version",
         "tree_node",
         "tree_root",
-        "root_pointer"
+        "root_pointer",
+        "knowledge_space_version",
+        "knowledge_space_entry",
+        "knowledge_space_grant",
+        "knowledge_space_source",
+        "knowledge_space_quota"
       ]
     },
     "schema": {

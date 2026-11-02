@@ -589,7 +589,7 @@
   {
     "name": "upload_file",
     "title": "Upload a file",
-    "description": "Upload a local file as a source artifact. Returns a reference to use as a run input. Identical bytes give the same reference.",
+    "description": "Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -602,6 +602,118 @@
           "contentEncoding": "base64",
           "contentMediaType": "application/octet-stream",
           "description": "The file to upload. Give the local path; the client sends the file bytes."
+        },
+        "personal_entry": {
+          "description": "Store a personal knowledge entry instead of a file; quotes are verified by the Hub; a note without grounds is unverified",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "definition",
+                "behaviour",
+                "case",
+                "defect",
+                "observation",
+                "procedure",
+                "pitfall"
+              ]
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 262144
+            },
+            "data": {
+              "default": {},
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "applicability": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "default": "/",
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+              "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+            },
+            "grounds": {
+              "default": [],
+              "maxItems": 100,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                  },
+                  "quotation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 65536
+                  }
+                },
+                "required": [
+                  "reference",
+                  "quotation"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "replaces": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "expected_version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "default": "条目写入",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "kind",
+            "statement"
+          ],
+          "additionalProperties": false
+        },
+        "space": {
+          "description": "Import a file into the caller personal knowledge space; the Hub never drafts an entry",
+          "type": "string",
+          "enum": [
+            "personal"
+          ]
         },
         "media_type": {
           "description": "Media type if known, for example text/markdown",
@@ -626,9 +738,6 @@
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
         }
       },
-      "required": [
-        "file_path"
-      ],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -806,6 +915,51 @@
             "additionalProperties": false
           }
         },
+        "personal_entry": {
+          "type": "object",
+          "properties": {
+            "space": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "team"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                }
+              ]
+            },
+            "root": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "entry": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "reference": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "verified",
+                "unverified",
+                "withdrawn",
+                "superseded"
+              ]
+            }
+          },
+          "required": [
+            "space",
+            "root",
+            "entry",
+            "reference",
+            "status"
+          ],
+          "additionalProperties": false
+        },
         "reference": {
           "description": "src:<sha256> of the stored bytes, to use as a run input; only when accepted",
           "type": "string",
@@ -849,8 +1003,7 @@
     "annotations": {
       "readOnlyHint": false,
       "destructiveHint": false,
-      "openWorldHint": false,
-      "idempotentHint": true
+      "openWorldHint": false
     }
   },
   {
@@ -1208,6 +1361,30 @@
         "run": {
           "type": "object",
           "properties": {
+            "knowledge_spaces": {
+              "description": "Team and initiator personal knowledge versions frozen at start; absent on historical runs",
+              "type": "object",
+              "properties": {
+                "team": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "personal": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "owner": {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                }
+              },
+              "required": [
+                "team",
+                "personal",
+                "owner"
+              ],
+              "additionalProperties": false
+            },
             "skills": {
               "description": "Skill package digests frozen at start; absent only on historical runs",
               "maxItems": 64,
@@ -2300,11 +2477,40 @@
   {
     "name": "get_nodes",
     "title": "Read knowledge nodes",
-    "description": "Read subtrees of the knowledge tree locked by a run, or the content a reference points at.",
+    "description": "Read personal or team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "space": {
+          "description": "team or the personal space owner user id; defaults to the caller personal space when no root is provided",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "team"
+            },
+            {
+              "type": "string",
+              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+            }
+          ]
+        },
+        "search": {
+          "description": "Full-text knowledge search without run only; results are leads, never task evidence",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "scope": {
+          "description": "Search personal, team, shared with the caller, or all visible spaces",
+          "type": "string",
+          "enum": [
+            "personal",
+            "team",
+            "shared",
+            "all"
+          ]
+        },
         "run": {
           "description": "Use the knowledge root locked by this run",
           "type": "string",
@@ -2519,6 +2725,78 @@
             "additionalProperties": false
           }
         },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "space": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "team"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                  }
+                ]
+              },
+              "root": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "entry": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "reference": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "verified",
+                  "unverified",
+                  "withdrawn",
+                  "superseded"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "statement": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "definition",
+                  "behaviour",
+                  "case",
+                  "defect",
+                  "observation",
+                  "procedure",
+                  "pitfall"
+                ]
+              }
+            },
+            "required": [
+              "space",
+              "root",
+              "entry",
+              "reference",
+              "status",
+              "path",
+              "statement",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
         "root": {
           "description": "Knowledge root the nodes belong to",
           "type": "string",
@@ -2589,6 +2867,49 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "verified",
+                        "unverified",
+                        "withdrawn",
+                        "superseded"
+                      ]
+                    },
+                    "grounds": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reference": {
+                            "type": "string",
+                            "maxLength": 8192,
+                            "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                            "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                          },
+                          "quotation": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "reference",
+                          "quotation"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "cited_count": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "entry": {
                       "type": "string",
                       "pattern": "^[0-9a-f]{64}$"

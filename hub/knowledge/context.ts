@@ -10,6 +10,7 @@ import type { KnowledgeStore } from './store.ts';
 
 /** The parts of the records kit the knowledge package uses. */
 export interface KnowledgeRecords {
+  spaceIndex?: import('../records/api.ts').RecordsKit['spaceIndex'];
   variables?: Pick<RecordVariables,'snapshot'|'valueAt'|'history'>;
   store: RecordStore;
   artifacts: Artifacts;

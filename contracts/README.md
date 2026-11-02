@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 87 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 92 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -57,6 +57,15 @@ Claude, coordinating under the owner's standing authorization for decision 84 (2
 `pack_status` axis in model 16: published, retired, enabled and inactive reuse the catalog's existing state labels.
 It changes neither records nor permissions. The same authorization covers updating the four generated skill protocol
 mirrors and their release manifests: html-format/mindmap-format 1.0.3, xml-format/workbook-format 1.0.4.
+
+Decision 84 phase 2 (task `kw-spaces.md`, 2026-11-02) sets model 17: product applicability is optional in K01;
+shared personal/team space shapes add immutable entry, tree, version, source, grant and quota records. Five generated axes
+cover space kind, verification state, search scope, grant audience and grant/revoke actions. The five `SPACE_*` refusal
+codes describe capacity, invalid entries, credentials, in-run search and version conflicts. Legacy product records and
+`tree:` addresses retain their format. New run summaries optionally lock team/personal roots; old runs need no added fields.
+The six tools stay unchanged: `upload_file` accepts a personal entry or a private original, and `get_nodes` adds space reads
+and standalone full-text search. Four protocol mirrors and release manifests advance to html-format/mindmap-format 1.0.4
+and xml-format/workbook-format 1.0.5, with no business-code changes. Tests read versions through `repositorySkillVersion`.
 
 ## Editing `contracts/codes.json`
 

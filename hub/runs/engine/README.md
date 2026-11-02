@@ -1,5 +1,18 @@
 # hub/runs/engine
 
+## Space locks and citations (decision 86)
+
+New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy
+run records and summaries remain valid without the field. Exact tree reads and private source aliases recheck both
+initiator and current-reader grants on every use, outside the immutable-content cache. Later owner/team roots are
+outside the locked scope; currently granted personal content remains addressable. An administrator's other personal
+permissions never enlarge the initiator's scope. Raw space records are not an alternative route around path grants.
+
+The citation index classifies space roots before indexing accepted submissions. Personal entries use an owner-scoped key;
+equal content cannot enter the team entry count through a private reference. The same classification applies during
+background backfill. Existing legacy node/entry counts and their limits stay compatible.
+
+
 Starting runs, boundary validation, terminal states and partitions: model elements W01 W02 W03 W05 W06 W07 W08, V01 V03 V04
 V05 V06 V07, T03 T04, A01-A04, B01 B05 and C08 R[4]. The server and the console import only `api.ts`.
 

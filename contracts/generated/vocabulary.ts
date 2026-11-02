@@ -90,6 +90,11 @@ export const AXES = {
   composition_basis: { label: '组成依据', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
   binding_status: { label: '版本绑定状态', owner: 'K03', values: [{ code: 'bound', label: '已绑定' }, { code: 'undeclared', label: '未声明' }, { code: 'conflict', label: '冲突' }] },
   binding_basis: { label: '版本绑定依据', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
+  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人' }, { code: 'team', label: '团队' }] },
+  knowledge_entry_status: { label: '条目状态', owner: 'K02', values: [{ code: 'verified', label: '已核验' }, { code: 'unverified', label: '未核验' }, { code: 'withdrawn', label: '已撤回' }, { code: 'superseded', label: '被取代' }] },
+  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的' }, { code: 'all', label: '全部' }] },
+  knowledge_grantee: { label: '授权对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
+  knowledge_grant_action: { label: '授权操作', owner: 'R01', values: [{ code: 'grant', label: '授权' }, { code: 'revoke', label: '收回授权' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -964,6 +969,56 @@ export function isBindingBasis(value: unknown): value is BindingBasis {
   return (BINDING_BASIS as readonly unknown[]).includes(value);
 }
 
+/** 知识空间 (K01) */
+export const KNOWLEDGE_SPACE_KIND = ['personal', 'team'] as const;
+export type KnowledgeSpaceKind = (typeof KNOWLEDGE_SPACE_KIND)[number];
+export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KnowledgeSpaceKindSchema = z.enum(KNOWLEDGE_SPACE_KIND);
+export function isKnowledgeSpaceKind(value: unknown): value is KnowledgeSpaceKind {
+  return (KNOWLEDGE_SPACE_KIND as readonly unknown[]).includes(value);
+}
+
+/** 条目状态 (K02) */
+export const KNOWLEDGE_ENTRY_STATUS = ['verified', 'unverified', 'withdrawn', 'superseded'] as const;
+export type KnowledgeEntryStatus = (typeof KNOWLEDGE_ENTRY_STATUS)[number];
+export const KNOWLEDGE_ENTRY_STATUS_LABEL = { 'verified': '已核验', 'unverified': '未核验', 'withdrawn': '已撤回', 'superseded': '被取代' } as const satisfies { readonly [K in KnowledgeEntryStatus]: string };
+export const KNOWLEDGE_ENTRY_STATUS_UI = { 'verified': '已核验', 'unverified': '未核验', 'withdrawn': '已撤回', 'superseded': '被取代' } as const satisfies { readonly [K in KnowledgeEntryStatus]: string };
+export const KnowledgeEntryStatusSchema = z.enum(KNOWLEDGE_ENTRY_STATUS);
+export function isKnowledgeEntryStatus(value: unknown): value is KnowledgeEntryStatus {
+  return (KNOWLEDGE_ENTRY_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 搜索范围 (K01) */
+export const KNOWLEDGE_SEARCH_SCOPE = ['personal', 'team', 'shared', 'all'] as const;
+export type KnowledgeSearchScope = (typeof KNOWLEDGE_SEARCH_SCOPE)[number];
+export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KnowledgeSearchScopeSchema = z.enum(KNOWLEDGE_SEARCH_SCOPE);
+export function isKnowledgeSearchScope(value: unknown): value is KnowledgeSearchScope {
+  return (KNOWLEDGE_SEARCH_SCOPE as readonly unknown[]).includes(value);
+}
+
+/** 授权对象 (R01) */
+export const KNOWLEDGE_GRANTEE = ['member', 'administrators'] as const;
+export type KnowledgeGrantee = (typeof KNOWLEDGE_GRANTEE)[number];
+export const KNOWLEDGE_GRANTEE_LABEL = { 'member': '指定成员', 'administrators': '全体管理员' } as const satisfies { readonly [K in KnowledgeGrantee]: string };
+export const KNOWLEDGE_GRANTEE_UI = { 'member': '指定成员', 'administrators': '全体管理员' } as const satisfies { readonly [K in KnowledgeGrantee]: string };
+export const KnowledgeGranteeSchema = z.enum(KNOWLEDGE_GRANTEE);
+export function isKnowledgeGrantee(value: unknown): value is KnowledgeGrantee {
+  return (KNOWLEDGE_GRANTEE as readonly unknown[]).includes(value);
+}
+
+/** 授权操作 (R01) */
+export const KNOWLEDGE_GRANT_ACTION = ['grant', 'revoke'] as const;
+export type KnowledgeGrantAction = (typeof KNOWLEDGE_GRANT_ACTION)[number];
+export const KNOWLEDGE_GRANT_ACTION_LABEL = { 'grant': '授权', 'revoke': '收回授权' } as const satisfies { readonly [K in KnowledgeGrantAction]: string };
+export const KNOWLEDGE_GRANT_ACTION_UI = { 'grant': '授权', 'revoke': '收回授权' } as const satisfies { readonly [K in KnowledgeGrantAction]: string };
+export const KnowledgeGrantActionSchema = z.enum(KNOWLEDGE_GRANT_ACTION);
+export function isKnowledgeGrantAction(value: unknown): value is KnowledgeGrantAction {
+  return (KNOWLEDGE_GRANT_ACTION as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1052,6 +1107,11 @@ export interface AxisValues {
   composition_basis: CompositionBasis;
   binding_status: BindingStatus;
   binding_basis: BindingBasis;
+  knowledge_space_kind: KnowledgeSpaceKind;
+  knowledge_entry_status: KnowledgeEntryStatus;
+  knowledge_search_scope: KnowledgeSearchScope;
+  knowledge_grantee: KnowledgeGrantee;
+  knowledge_grant_action: KnowledgeGrantAction;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1142,6 +1202,11 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   composition_basis: COMPOSITION_BASIS_LABEL,
   binding_status: BINDING_STATUS_LABEL,
   binding_basis: BINDING_BASIS_LABEL,
+  knowledge_space_kind: KNOWLEDGE_SPACE_KIND_LABEL,
+  knowledge_entry_status: KNOWLEDGE_ENTRY_STATUS_LABEL,
+  knowledge_search_scope: KNOWLEDGE_SEARCH_SCOPE_LABEL,
+  knowledge_grantee: KNOWLEDGE_GRANTEE_LABEL,
+  knowledge_grant_action: KNOWLEDGE_GRANT_ACTION_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1232,6 +1297,11 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   composition_basis: COMPOSITION_BASIS_UI,
   binding_status: BINDING_STATUS_UI,
   binding_basis: BINDING_BASIS_UI,
+  knowledge_space_kind: KNOWLEDGE_SPACE_KIND_UI,
+  knowledge_entry_status: KNOWLEDGE_ENTRY_STATUS_UI,
+  knowledge_search_scope: KNOWLEDGE_SEARCH_SCOPE_UI,
+  knowledge_grantee: KNOWLEDGE_GRANTEE_UI,
+  knowledge_grant_action: KNOWLEDGE_GRANT_ACTION_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

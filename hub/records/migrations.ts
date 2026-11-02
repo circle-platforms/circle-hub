@@ -217,10 +217,26 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   ALTER TABLE tokens ADD COLUMN console_session boolean NOT NULL DEFAULT false,
     ADD COLUMN expires_at timestamptz;
   ALTER TABLE user_history ADD COLUMN password_changed boolean NOT NULL DEFAULT false;` },
+  { version: 9, name: 'knowledge_space_search', sql: `CREATE TABLE knowledge_space_search (
+    version text NOT NULL REFERENCES records(digest),
+    space text NOT NULL,
+    path text NOT NULL,
+    entry text NOT NULL,
+    record text NOT NULL REFERENCES records(digest),
+    tokens text[] NOT NULL,
+    PRIMARY KEY(version,path,entry)
+  );
+  CREATE INDEX knowledge_space_search_tokens ON knowledge_space_search USING GIN(tokens);
+  CREATE INDEX knowledge_space_search_space ON knowledge_space_search(space,version);
+  CREATE TABLE knowledge_space_search_ready (
+    version text NOT NULL REFERENCES records(digest), path text NOT NULL, row_count integer NOT NULL, PRIMARY KEY(version,path)
+  );` },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  knowledge_space_search: 'SELECT, INSERT',
+  knowledge_space_search_ready: 'SELECT, INSERT',
   schema_migrations: 'SELECT',
   records: 'SELECT, INSERT',
   record_index: 'SELECT, INSERT',

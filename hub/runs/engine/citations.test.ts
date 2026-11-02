@@ -19,6 +19,7 @@ import {
   citedNodeKey,
   countCitations,
   putSubmission,
+  personalCitedEntryKey,
 } from './store.ts';
 
 let postgres: TemporaryPostgres;
@@ -107,13 +108,14 @@ test('submissions stored before citations were indexed are indexed by the backfi
   // A pass stopped after its first page leaves the rest to the next one.
   const stop = new AbortController();
   let pages = 0;
-  const stopping: Pick<RecordStore, 'list' | 'find' | 'addIndex'> = {
+  const stopping: Pick<RecordStore, 'list' | 'find' | 'addIndex' | 'getMany'> = {
     list: ((query, tx) => {
       pages += 1;
       if (pages > 1) stop.abort();
       return store.list(query, tx);
     }) as RecordStore['list'],
     find: store.find.bind(store),
+    getMany: store.getMany.bind(store),
     addIndex: store.addIndex!.bind(store),
   };
   await assert.rejects(backfillCitations(stopping, { batch: 1, signal: stop.signal }), { name: 'AbortError' });
@@ -138,4 +140,19 @@ test('before any submission is indexed as stored, a finished backfill marks its 
   assert.deepEqual(await backfillCitations(store), { examined: 1, indexed: 1, complete: true });
   assert.equal(await citationsIndexedSince(store), null, 'none was indexed as it was stored');
   assert.deepEqual(await countCitations(store, { nodes: [{ root: ROOT, path: '/catalog/beta' }], entries: [], since: '2026-10-01T00:00:00.000Z' }), { count: 1, capped: false });
+});
+
+test('identical personal content never enters the team entry count, including citation backfill', async t => {
+  const kit = await openTestRecords({ postgres }); t.after(() => kit.close());
+  const store = kit.store, owner = 'usr_' + '0'.repeat(26);
+  const privateRoot = await store.put({ kind: 'knowledge_space_version', schema: 'knowledge-space-version@1', provenance: 'projected', body: { space: owner } });
+  const privateBody = { grounds: [`tree:${privateRoot.digest}/notes@${ENTRY}`] };
+  await store.put({ kind: 'submission', schema: SCHEMAS.submission, provenance: 'declared', body: { ...privateBody, before: true } });
+  await putSubmission(store, { run: RUN, digest: '1'.repeat(64), body: privateBody, parses: true, createdAt: '2026-11-02T00:00:00.000Z' });
+  assert.equal((await countCitations(store, { nodes: [], entries: [ENTRY], since: '2026-01-01T00:00:00.000Z' }))?.count, 0);
+  await backfillCitations(store);
+  assert.equal((await store.find({ key: INDEX.citesPersonalEntry, value: personalCitedEntryKey(owner, ENTRY), kind: 'submission' })).items.length, 2);
+  assert.equal((await countCitations(store, { nodes: [], entries: [ENTRY], since: '2026-01-01T00:00:00.000Z' }))?.count, 0);
+  await putSubmission(store, { run: RUN, digest: '2'.repeat(64), body: { grounds: [`tree:${ROOT}/notes@${ENTRY}`] }, parses: true, createdAt: '2026-11-02T00:00:01.000Z' });
+  assert.equal((await countCitations(store, { nodes: [], entries: [ENTRY], since: '2026-01-01T00:00:00.000Z' }))?.count, 1);
 });

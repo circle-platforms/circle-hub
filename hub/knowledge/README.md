@@ -1,5 +1,37 @@
 # hub/knowledge: the content-addressed knowledge tree
 
+## Personal and team spaces (decision 86)
+
+Decision 84 phase 2 adds `knowledge.spaces` (`KnowledgeSpaces` from `api.ts`). Both spaces use the same entry content,
+CAS directory objects, immutable `knowledge_space_version` snapshots and rebuildable full-text index. A new root is the
+version record digest, so equal content in different namespaces never implies equal permissions. Existing product nodes,
+entries, composition records and references are unchanged; team snapshots mount the current readable product pointers
+under `/产品/<product>/<line>` without copying their trees. Product-line applicability is optional for new entries.
+
+Owners write entries and import originals into their own space, replace/withdraw entries and append directory grants
+or revocations. Administrators may import verified team entries from team business-system captures and withdraw team
+entries; product sync stays unchanged. Uploaded files cannot be team evidence until the later signing phase. Every ground
+and quotation is verified at the boundary; no grounds means the generated unverified state. Credential scanning covers
+content, metadata and grantable originals; personal-credential sources cannot be granted. The Hub never drafts entries.
+
+Reads recheck the enabled account and current path grants, including old versions and search pages. Administrators have
+no default access to personal content. Grant path comparison is segment-based, and raw space records cannot bypass it.
+`getNodes` and the tree reader understand both space and legacy roots. Runs lock team and initiator roots; both the actual
+reader and initiator must remain authorized, and a later owner/team version is outside that run. Citation counts for
+personal entries are owner-only and use a separate owner-scoped index rather than the team content count.
+
+`search` uses records' GIN projection over normalized statement/data/quotation bigrams. ACL scopes filter SQL before paging;
+cursors bind identity, roots, grants and query. Legacy product entries use the same projection without changing their
+content hashes. Missing projection rows are rebuilt from immutable records. Search only finds leads outside a run.
+Histories and diffs include product mounts and filter inaccessible paths; directory pages and search have byte/node caps.
+
+Personal capacity defaults to 1 GiB and is adjustable only by administrators. The accounting includes admitted entry/source
+bytes and successive snapshot metadata, including history; withdrawals do not free history. This is logical space usage,
+not a report of filesystem blocks. Grants and capacity changes are append-only records. Writes serialize before opening
+the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
+Member-to-team sharing, local synchronization, upload signing and account-deletion lifecycle remain later phases.
+
+
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed
 judgment model), **K05** (pinned reads), with **B03** tree references, **B05** actions, **D01 R[8]** (one product, several
 names) and **W09** (the sync is a standing obligation the Hub executes). Milestone 2 (brief section 6a, capabilities 4 and

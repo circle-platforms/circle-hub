@@ -1,5 +1,21 @@
 # hub/server
 
+## Space tools (decision 86)
+
+The server still publishes six MCP tools. `upload_file` takes exactly one of `file_path` (base64 bytes) or `personal_entry`.
+The latter carries caller-authored kind, statement, data, optional applicability/path, and reference/quotation grounds;
+missing grounds remain unverified. `replaces`, `expected_version` and `reason` support append-only edits. Its receipt
+returns the space root, content id, status and exact tree address. File imports with `space=personal` store a private
+original only; the Hub drafts nothing. Ordinary run-file uploads retain their behavior. Personal writes have no blanket
+idempotent annotation, because a stale version or duplicate entry may be refused.
+
+`get_nodes` accepts `space=team` or a personal owner id and defaults standalone reads to the caller. `search` plus generated
+`scope` (personal/team/shared/all) is standalone only, with bounded cursor pages. With `run`, search is refused by the
+registered `SPACE_SEARCH_IN_RUN` code; address reads use the run's frozen roots and initiator permissions. `resolve_reference`
+reads space tree addresses and admitted constituent sources as well as legacy product roots. Current grants are checked
+again when an old address is used, and a raw `rec:` space record cannot disclose an ungranted directory.
+
+
 Decision 85, item 2: the 工作流 navigation entry retains `/console/packs` so existing links stay valid. The page separates
 工作流 from 通用技能 using generated kind labels and title hover explanations. Workflow details show acceptance requirements
 in a full-width section above checks and version controls; the old stage graph is removed. Publication states derive from

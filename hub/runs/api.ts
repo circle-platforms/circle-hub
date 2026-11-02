@@ -73,5 +73,5 @@ export {recheckEffectChecks} from './engine/recheck-effect.ts';
 export { packSchema } from './engine/slots.ts';
 
 export {runById} from './engine/store.ts';
-export { backfillCitations, citedNodeKey, citationIndex, citationsComplete, countCitations, citationsIndexedSince, type CitationCount } from './engine/store.ts';
+export { backfillCitations, citedNodeKey, personalCitedEntryKey, citationIndex, citationsComplete, countCitations, citationsIndexedSince, type CitationCount } from './engine/store.ts';
 export {canViewRun} from './engine/readers.ts';

@@ -1,4 +1,6 @@
 import {FeedingLayer} from './feeding.ts';
+import { KnowledgeSpaces } from './spaces.ts';
+import { KnowledgeError } from './errors.ts';
 import {scheduleSync} from './sync-schedule.ts';
 import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
@@ -9,7 +11,7 @@ import type { KnownBuild } from '../../contracts/src/product.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
-import { pathSegments, type ParserRegistry, type TreeReader } from '../refs/api.ts';
+import { pathSegments, pathOf, type ParserRegistry, type TreeReader } from '../refs/api.ts';
 import type { CatalogView, SandboxLimits } from '../rules/api.ts';
 import { Builds, type LineReconciliation, type MoveRootOptions, type MoveRootResult } from './builds.ts';
 import { CalibrationStore, PLACEMENT_CHAIN, maskLiterals, type CalibrationState, type LabelledSamplesInput } from './calibration.ts';
@@ -21,7 +23,9 @@ import { contributionNodes } from './contribution-pages.ts';
 import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type PlacementOutcome, type PlacementSpan, type PlacementTree } from './placement.ts';
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
-import { KnowledgeStore } from './store.ts';
+import { KnowledgeStore, INDEX } from './store.ts';
+import { canonicalize } from '../records/api.ts';
+import { KnowledgeEntryBody } from '../../contracts/src/knowledge.ts';
 import { syncProduct, type SyncOptions, type SyncReport } from './sync.ts';
 import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
@@ -140,6 +144,47 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return root === null ? [] : [{root:root.root,composition:root.composition}];
   };
   const reading = new TreeReading(context);
+  const spaces = new KnowledgeSpaces(context, reading.treeReader(), async () => {
+    const mounts = [];
+    for (const pack of await context.packs.products()) {
+      const id = pack.product.id;
+      const lines = new Set((await builds.known(id)).map(build => build.line));
+      for (const line of [...lines].sort()) {
+        const info = (await rootForRead(id, { line }))?.info;
+        if (info) mounts.push({ product: id, line, path: pathOf(['产品', id, line]), root: info.root });
+      }
+      const unversioned = await builds.currentRoot(id, null);
+      if (unversioned) mounts.push({ product: id, line: null, path: pathOf(['产品', id, '不分版本']), root: unversioned.root });
+    }
+    return mounts.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  }, (query, by) => reading.getNodes(query, by), async mount => {
+    const composition = await reading.compositionOf(mount.root);
+    if (!composition) return null;
+    const index = context.records.spaceIndex;
+    if (!index) throw new KnowledgeError('知识搜索索引暂不可用');
+    if (await index.ready(composition.record, mount.path)) return { version: composition.record, rows: [] };
+    // Bound transient text memory while deriving a large legacy product's index.
+    const batch: Array<{path:string;entry:string}> = [];
+    const flush = async () => {
+      const records = await context.records.store.findFirstMany({ key: INDEX.entry, values: batch.map(row => row.entry), kind: 'tree_node' });
+      const rows = batch.map(row => {
+        const record = records.get(row.entry);
+        if (!record) throw new KnowledgeError('产品知识来源的条目记录暂不可读');
+        const body = KnowledgeEntryBody.parse(record.body);
+        return { space: 'team', path: mount.path + (row.path === '/' ? '' : row.path), entry: row.entry, record: record.digest, text: canonicalize([body.statement, body.data]) };
+      });
+      await index.add(composition.record, rows);
+      batch.length = 0;
+    };
+    for await (const row of composition.rows()) { batch.push(row); if (batch.length === 256) await flush(); }
+    if (batch.length) await flush();
+    return { version: composition.record, rows: [] };
+  }, async root => {
+    const composition = await reading.compositionOf(root);
+    const rows = [];
+    if (composition) for await (const row of composition.rows()) rows.push({ path: row.path, entry: row.entry });
+    return rows;
+  });
   const feeding=new FeedingLayer(context,reading);context.feeding=feeding;context.feedingReader??=feeding;
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);
@@ -238,6 +283,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   };
 
   return {
+    spaces,
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */
     __context: context,
@@ -272,10 +318,15 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     }),
     catalog: (root, catalogId, selection): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId, selection)),
     treeReader: (lock?: TreeLock | null): TreeReader => {
-      const reader=reading.treeReader(lock??null);
+      const legacy=reading.treeReader(lock??null), scoped=spaces.treeReader();
+      const reader:TreeReader={...legacy,
+        read:async(root,path,entry,who)=>await spaces.version(root)?scoped.read(root,path,entry,who):legacy.read(root,path,entry,who),
+        hasRoot:async(root,who)=>await spaces.version(root)?scoped.hasRoot!(root,who):legacy.hasRoot!(root,who),
+      };
       return {...reader,read:(...args)=>withReadCache(()=>reader.read(...args)),readEntry:(...args)=>withReadCache(()=>reader.readEntry(...args)),...(reader.hasRoot?{hasRoot:(...args:Parameters<NonNullable<TreeReader['hasRoot']>>)=>withReadCache(()=>reader.hasRoot!(...args))}:{})};
     },
     getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>withReadCache(async()=>{
+      if(await spaces.version(query.root))return spaces.getNodes(query,reader);
       // Establish permission before even decoding a contribution cursor.
       if(!(await reading.mayReadRoot(reader,query.root)))return null;
       const page=await contributionNodes(context,reading,contributions,query,reader);if(!page)return null;

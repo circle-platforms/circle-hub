@@ -2,6 +2,30 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "knowledge_spaces": {
+      "description": "Team and initiator personal knowledge versions frozen at start; absent on historical runs",
+      "type": "object",
+      "properties": {
+        "team": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "personal": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        }
+      },
+      "required": [
+        "team",
+        "personal",
+        "owner"
+      ],
+      "additionalProperties": false
+    },
     "skills": {
       "description": "Skill package digests frozen at start; absent only on historical runs",
       "maxItems": 64,

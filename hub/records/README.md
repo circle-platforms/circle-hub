@@ -1,5 +1,17 @@
 # records
 
+## Space search projection (decision 86)
+
+Migration 9 appends `knowledge_space_search` and its completion markers. The GIN array index stores normalized Unicode
+bigrams of text; each immutable version/path/entry row points to the authoritative entry record. The public `spaceIndex`
+API inserts derived rows, detects a missing projection by its recorded row count and searches only caller-supplied
+version/path scopes before pagination. `knowledge` supplies those scopes after authorization; this API grants no access.
+Runtime roles receive only SELECT and INSERT. The tables can be rebuilt from append-only records; history is never edited.
+Migrations 1–8 keep their SQL bytes. The pre-existing migration-source freeze assertion is refreshed for the append;
+no additional data SHA verification is introduced. A version-8 upgrade, GIN query, runtime-role permissions and frozen
+record replay are covered by targeted checks.
+
+
 Decision 83, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.
 
 Decision 83, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.

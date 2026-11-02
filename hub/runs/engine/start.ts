@@ -624,6 +624,7 @@ async function startFresh(
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const frozenCommandPolicy=await commandPolicyForRoot(ctx.deps.records.store,target.root);
   const record: RunRecord = RunRecord.parse({
+    ...(ctx.deps.knowledge.spaces?{knowledge_spaces:await ctx.deps.knowledge.spaces.locks(user)}:{}),
     ...(target.product ? {product_pack_digest:target.product.digest}:{}),
     skills,
     ...(frozenCommandPolicy?{command_policy:frozenCommandPolicy}:{}),
