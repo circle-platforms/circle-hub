@@ -4,10 +4,11 @@
 // with SOURCE_UNAVAILABLE (D05 R[3]); every value is its code plus its interface term (display rule 20); token values and
 // credential contents never appear. The write interfaces, which run the same commands as the forms, are console/api-write.ts.
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
+import {tokensForMembers} from './member-reads.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { ACTION_RESULT, TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
-import type { CallLogLine, User } from '../../records/api.ts';
+import type { CallLogLine, User, TokenInfo } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { nodeCitations } from './citations.ts';
 import { circlesOf, environmentState } from './connections.ts';
@@ -391,8 +392,8 @@ async function records(ctx: PageContext): Promise<ApiResult> {
   return ok({ records: items, next: page.next });
 }
 
-async function memberOf(ctx: PageContext, user: User): Promise<Record<string, unknown>> {
-  const tokens = await ctx.deps.records.principals.tokens(user.id);
+async function memberOf(ctx: PageContext, user: User,provided?:TokenInfo[]): Promise<Record<string, unknown>> {
+  const tokens = provided??await ctx.deps.records.principals.tokens(user.id);
   const used = tokens.map((t) => t.last_used_at).filter((at): at is string => at !== null).sort();
   return {
     id: user.id, name: user.name, role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
@@ -403,9 +404,8 @@ async function memberOf(ctx: PageContext, user: User): Promise<Record<string, un
 
 async function members(ctx: PageContext): Promise<ApiResult> {
   if (!ctx.admin) return neutral();
-  const out = [];
-  for (const user of await ctx.deps.records.principals.list()) out.push(await memberOf(ctx, user));
-  return ok({ members: out });
+  const users=await ctx.deps.records.principals.list(),tokens=await tokensForMembers(ctx.deps.records.principals,users.map(user=>user.id));
+  return ok({ members: await Promise.all(users.map(user=>memberOf(ctx,user,tokens.get(user.id)??[]))) });
 }
 
 /**

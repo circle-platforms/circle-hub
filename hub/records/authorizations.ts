@@ -1,3 +1,4 @@
+import {scopedRecordStore} from './read-scope.ts';
 import {mayUsePersonalPack} from './personal-packs.ts';
 // Authorization records (B04): publish-right grants, pack assignment and removal, resource configuration, sharing, and the
 // publish records of pack owners. Each decision is an append-only `authorization@1` record; the latest record per
@@ -80,12 +81,13 @@ function packVersionOf(object: unknown): { pack: string; version: string } | nul
 
 export class RecordAuthorizations implements Authorizations {
   readonly #db: Database;
-  readonly #store: RecordStore;
+  readonly #rawStore: RecordStore;
+  get #store():RecordStore{return scopedRecordStore(this.#rawStore);}
   readonly #now: () => Date;
 
   constructor(db: Database, store: RecordStore, now: () => Date) {
     this.#db = db;
-    this.#store = store;
+    this.#rawStore = store;
     this.#now = now;
   }
 
@@ -213,6 +215,21 @@ export class RecordAuthorizations implements Authorizations {
   async packsFor(user: string): Promise<string[]> {
     if (!isTerm(user)) return [];
     return this.#activeTerms({ key: 'authz.subject', value: `${ASSIGN}|${user}` }, (body) => body.object);
+  }
+
+  packsForMany(users:readonly string[]):Promise<Map<string,string[]>>{
+    return this.#activeTermsMany('authz.subject',users,body=>body.object);
+  }
+  usersOfMany(packs:readonly string[]):Promise<Map<string,string[]>>{
+    return this.#activeTermsMany('authz.object',packs,body=>body.subject);
+  }
+  async #activeTermsMany(key:string,terms:readonly string[],pick:(body:AuthorizationBody)=>string):Promise<Map<string,string[]>>{
+    const ids=[...new Set(terms.filter(isTerm))],out=new Map(ids.map(id=>[id,[] as string[]]));if(!ids.length)return out;
+    const values=ids.map(id=>`${ASSIGN}|${id}`),latest=new Map(values.map(value=>[value,new Map<string,AuthorizationRecord>()]));
+    const rows=await this.#db.query(`SELECT i.value AS wanted,r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+      FROM record_index i JOIN records r ON r.digest=i.digest WHERE i.key=$1 AND i.value=ANY($2::text[]) AND r.kind='authorization' ORDER BY r.seq`,[key,values]);
+    for(const row of rows.rows){const record=verifiedRecord<AuthorizationBody>(row);latest.get(String(row.wanted))!.set(`${record.body.permission}|${record.body.subject}|${record.body.object}`,record);}
+    ids.forEach((id,i)=>out.set(id,[...latest.get(values[i])!.values()].filter(record=>this.#active(record)).map(record=>pick(record.body)).sort()));return out;
   }
 
   async canUse(user: string, pack: string): Promise<boolean> {

@@ -142,6 +142,8 @@ export interface Principals {
   /** Revokes the live token with this value (RFC 7009: whoever holds a token may revoke it). False when there is none. */
   revokeTokenValue(token: string): Promise<boolean>;
   tokens(userId: string): Promise<TokenInfo[]>;
+  /** Same public metadata and ordering as tokens; console-session credentials remain excluded. */
+  tokensMany?(userIds:readonly string[]):Promise<Map<string,TokenInfo[]>>;
   /** Admins invite an enabled account: a code valid INVITATION_TTL_MS that the authorization page takes once. */
   invite(by: Principal, userId: string): Promise<IssuedInvitation>;
   /** Looks a code up without using it. */
@@ -152,6 +154,7 @@ export interface Principals {
   /** Registers a client; refused (LimitError) while too many registered in the last minutes. */
   registerClient(name: string, redirectUris: readonly string[]): Promise<OAuthClient>;
   client(clientId: string): Promise<OAuthClient | null>;
+  clientsMany?(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>;
   /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
   authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
@@ -678,9 +681,11 @@ export interface Authorizations {
   shares(by: Principal, object?: string): Promise<AuthorizationRecord[]>;
 
   packsFor(userId: string): Promise<string[]>;
+  packsForMany?(userIds:readonly string[]):Promise<Map<string,string[]>>;
   canUse(userId: string, packId: string): Promise<boolean>;
   canPublish(userId: string): Promise<boolean>;
   usersOf(packId: string): Promise<string[]>;
+  usersOfMany?(packIds:readonly string[]):Promise<Map<string,string[]>>;
   isSharedWith(userId: string, object: string): Promise<boolean>;
 
   /** Owner of a pack id: the subject of its first publication, or null when it was never published. */

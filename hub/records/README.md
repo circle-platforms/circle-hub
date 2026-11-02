@@ -876,3 +876,11 @@ Knowledge list candidates can read only the canonical entry timestamp header, be
 page. The header query neither grants access nor returns content; equivalent noncanonical text falls back to the existing verified parser without rewriting it. Citation counter batches retain distinct-record union,
 kind/time filters, caps and unknown-at-cap semantics. Request-scoped counter reads coalesce; transactions still bypass
 memoization. Header NUL handling and counter equivalence have real-database regressions. No migration is required.
+
+
+Member metadata batches read only the authorized identity set supplied by callers. Token rows retain their original
+ordering and revocation metadata and exclude console sessions; no bearer value, token digest or password material is
+selected. Client names batch separately. Assignment batches retain each index scope's original append order, latest
+triple, expiry test and sorted terms, including complete history beyond a single record page. Authorization store reads
+reuse verified pages only while a read scope is active; writes and explicit transaction reads still use their original
+boundaries. Regression coverage includes 5/20 members, revocation, expiry, console-session exclusion and metadata shape.

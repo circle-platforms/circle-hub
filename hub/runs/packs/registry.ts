@@ -1,3 +1,4 @@
+import {scopedRecordStore,memoReadPort} from '../../records/api.ts';
 import {defaultParsers} from '../../refs/api.ts';
 import { PersonalPacks } from './personal.ts';
 import { createRequestService } from '../../requests/api.ts';
@@ -133,6 +134,7 @@ export interface PackRegistry {
   /** Admins see every assignment, a user only their own. */
   assignments(by: Principal): Promise<AssignmentInfo[]>;
   usersOf(packId: string): Promise<string[]>;
+  usersOfMany?(packIds:readonly string[]):Promise<Map<string,string[]>>;
   packsFor(userId: string): Promise<string[]>;
   canUse(userId: string, packId: string): Promise<boolean>;
   /** Every active product pack in the version it is used in (the highest that is not withdrawn). */
@@ -217,7 +219,8 @@ type CollisionAt = 'activate' | 'publish' | 'retire';
 class Registry implements PackRegistry {
   readonly personal: PersonalPacks;
   readonly extractDir: string;
-  readonly #records: RegistryRecords;
+  readonly #rawRecords: RegistryRecords;
+  get #records():RegistryRecords {const raw=this.#rawRecords;return {...raw,store:scopedRecordStore(raw.store),principals:memoReadPort(raw.principals,['get','list'])};}
   readonly #now: () => Date;
   readonly #options: PackRegistryOptions;
   readonly #extractor: Extractor;
@@ -227,7 +230,7 @@ class Registry implements PackRegistry {
 
   constructor(options: PackRegistryOptions) {
     this.#options = options;
-    this.#records = options.records;
+    this.#rawRecords = options.records;
     this.#now = options.now ?? (() => new Date());
     this.#extractor = new Extractor({ root: options.extractDir, onTamper: options.onTamper });
     this.extractDir = this.#extractor.root;
@@ -632,6 +635,12 @@ class Registry implements PackRegistry {
 
   async usersOf(packId: string): Promise<string[]> {
     return (await this.#records.authorizations.usersOf(packId)).filter((u) => u !== WHOLE_HUB);
+  }
+
+  async usersOfMany(packIds:readonly string[]):Promise<Map<string,string[]>>{
+    const auth=this.#records.authorizations;
+    const rows=auth.usersOfMany?await auth.usersOfMany(packIds):new Map(await Promise.all(packIds.map(async id=>[id,await auth.usersOf(id)] as const)));
+    return new Map([...rows].map(([id,users])=>[id,users.filter(user=>user!==WHOLE_HUB)]));
   }
 
   packsFor(userId: string): Promise<string[]> {

@@ -10,7 +10,8 @@ import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
-import { circleName } from './circles.ts';
+import { circleNames } from './circles.ts';
+import {tokensForMembers} from './member-reads.ts';
 import { code, html, icon, link, liveModule, logo, page, pageLayout, table, href, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { readsText, systemReads } from './trial.ts';
@@ -27,10 +28,12 @@ const DAY = 86_400_000;
 
 export async function circlesOf(ctx: PageContext): Promise<Circle[]> {
   const users = ctx.admin ? await ctx.deps.records.principals.list() : [{ id: ctx.principal.id, name: ctx.principal.name, disabled: false }];
+  const enabled=users.filter(user=>!user.disabled),principals=ctx.deps.records.principals;
+  const tokens=await tokensForMembers(principals,enabled.map(user=>user.id)),names=await circleNames(principals,enabled.flatMap(user=>(tokens.get(user.id)??[]).filter(token=>token.revoked_at===null)));
   const out: Circle[] = [];
   for (const user of users) {
     if (user.disabled) continue;
-    for (const token of await ctx.deps.records.principals.tokens(user.id)) if (token.revoked_at === null) out.push({ name: await circleName(ctx.deps.records.principals,token), owner: user.name, token });
+    for (const token of tokens.get(user.id)??[]) if (token.revoked_at === null) out.push({ name: names.get(token.id)!, owner: user.name, token });
   }
   return out.sort((a, b) => (b.token.last_used_at ?? '').localeCompare(a.token.last_used_at ?? ''));
 }

@@ -30,7 +30,7 @@ import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
-import {withReadScope} from '../../records/api.ts';
+import {withReadScope,memoReadPort} from '../../records/api.ts';
 import {performMemoryAction} from './memory.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -642,7 +642,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
       if (userId === null || userId === undefined) return Promise.resolve('—');
       let pending = names.get(userId);
       if (pending === undefined) {
-        pending = options.deps.records.principals.get(userId).then((user) => user?.name ?? userId);
+        pending = memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.name ?? userId);
         names.set(userId, pending);
       }
       return pending;
@@ -677,7 +677,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: ApiResult;
   try {
-    result = await handleApi(ctx, rest, { jobs: options.jobs, run: bridgeRun(options, session!) });
+    result = await withReadScope(()=>handleApi(ctx, rest, { jobs: options.jobs, run: bridgeRun(options, session!) }));
   } catch (error) {
     if ((error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') || error instanceof TypeError) {
       options.log(`控制台接口参数不对（${url.pathname}）：${error instanceof Error ? error.message : String(error)}`);

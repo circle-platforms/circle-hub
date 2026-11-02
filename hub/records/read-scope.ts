@@ -28,18 +28,22 @@ export function scopedRecordStore(store:RecordStore):RecordStore{
  type CountQuery={index:readonly IndexEntry[];kind?:import('./api.ts').RecordKind;since?:string;cap?:number};
  let counts=new Map<string,Promise<{count:number;capped:boolean}>>();
  let pendingCounts=new Map<string,{query:CountQuery;resolve:(value:{count:number;capped:boolean})=>void;reject:(error:unknown)=>void}>();
- const flushCounts=async()=>{const batch=pendingCounts;pendingCounts=new Map();try{const input=[...batch.values()],rows=store.countIndexedBatch?await store.countIndexedBatch(input.map(p=>p.query)):await Promise.all(input.map(p=>store.countIndexed!(p.query)));input.forEach((p,i)=>p.resolve(rows[i]));}catch{await Promise.all([...batch.values()].map(async p=>{try{p.resolve(await store.countIndexed!(p.query));}catch(error){p.reject(error);}}));}};
+ const flushCounts=async()=>{if(!pendingCounts.size)return;const batch=pendingCounts;pendingCounts=new Map();try{const input=[...batch.values()],rows=store.countIndexedBatch?await store.countIndexedBatch(input.map(p=>p.query)):await Promise.all(input.map(p=>store.countIndexed!(p.query)));input.forEach((p,i)=>p.resolve(rows[i]));}catch{await Promise.all([...batch.values()].map(async p=>{try{p.resolve(await store.countIndexed!(p.query));}catch(error){p.reject(error);}}));}};
  let gets=new Map<string,Promise<StoredRecord|null>>(),finds=new Map<string,Promise<Page<StoredRecord>>>(),other=new Map<string,Promise<unknown>>();
  let pendingGets=new Map<string,{resolve:(r:StoredRecord|null)=>void;reject:(e:unknown)=>void}>();
  let pendingFinds=new Map<string,{query:FindQuery;resolve:(r:Page<StoredRecord>)=>void;reject:(e:unknown)=>void}>();
- const flushGets=async()=>{const batch=pendingGets;pendingGets=new Map();try{const rows=await store.getMany([...batch.keys()]);for(const [id,p]of batch)p.resolve(rows.get(id)??null);}catch{
+ const flushGets=async()=>{if(!pendingGets.size)return;const batch=pendingGets;pendingGets=new Map();try{const rows=await store.getMany([...batch.keys()]);for(const [id,p]of batch)p.resolve(rows.get(id)??null);}catch{
   // A corrupt sibling must not make a healthy record unavailable merely because both reads were coalesced.
   await Promise.all([...batch].map(async([id,p])=>{try{p.resolve(await store.get(id));}catch(error){p.reject(error);}}));
  }};
- const flushFinds=async()=>{const batch=pendingFinds;pendingFinds=new Map();try{const input=[...batch.values()],rows=store.findBatch?await store.findBatch(input.map(p=>p.query)):await Promise.all(input.map(p=>store.find(p.query)));input.forEach((p,i)=>p.resolve(rows[i]));}catch{
+ const flushFinds=async()=>{if(!pendingFinds.size)return;const batch=pendingFinds;pendingFinds=new Map();try{const input=[...batch.values()],rows=store.findBatch?await store.findBatch(input.map(p=>p.query)):await Promise.all(input.map(p=>store.find(p.query)));input.forEach((p,i)=>p.resolve(rows[i]));}catch{
   await Promise.all([...batch.values()].map(async p=>{try{p.resolve(await store.find(p.query));}catch(error){p.reject(error);}}));
  }};
- scope.clearers.add(()=>{gets=new Map();finds=new Map();other=new Map();counts=new Map();});
+ scope.clearers.add(()=>{
+  // Detach queued batches before clearing memo identities: a new read across a write must not replace an old resolver.
+  if(pendingGets.size)void flushGets();if(pendingFinds.size)void flushFinds();if(pendingCounts.size)void flushCounts();
+  gets=new Map();finds=new Map();other=new Map();counts=new Map();
+ });
  const clear=()=>{for(const invalidate of scope.clearers)invalidate();};
  const proxy=new Proxy(store,{get(target,key){
   if(key==='get')return async(id:string,tx?:unknown)=>{if(tx||!scope.active||scopes.getStore()!==scope)return target.get(id,tx as never);let value=gets.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingGets.set(id,{resolve,reject});if(pendingGets.size===1)queueMicrotask(()=>{void flushGets();});});gets.set(id,value);value.catch(()=>{if(gets.get(id)===value)gets.delete(id);});}return clone(await value);};

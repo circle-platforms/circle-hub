@@ -278,9 +278,13 @@ export class PgPrincipals implements Principals {
   }
 
   async tokens(userId: string): Promise<TokenInfo[]> {
-    if (typeof userId !== 'string' || !USER_ID.test(userId)) return [];
-    const rows = (await this.#db.query('SELECT id, user_id, label, client_id, created_at, created_by, last_used_at, revoked_at FROM tokens WHERE user_id = $1 AND NOT console_session ORDER BY created_at DESC, id DESC', [userId])).rows;
-    return rows.map(tokenOf);
+    return (await this.tokensMany([userId])).get(userId)??[];
+  }
+  async tokensMany(userIds:readonly string[]):Promise<Map<string,TokenInfo[]>>{
+    const ids=[...new Set(userIds.filter(id=>typeof id==='string'&&USER_ID.test(id)))],out=new Map<string,TokenInfo[]>(ids.map(id=>[id,[]]));
+    if(!ids.length)return out;
+    const rows=(await this.#db.query('SELECT id,user_id,label,client_id,created_at,created_by,last_used_at,revoked_at FROM tokens WHERE user_id=ANY($1::text[]) AND NOT console_session ORDER BY created_at DESC,id DESC',[ids])).rows;
+    for(const row of rows)out.get(String(row.user_id))!.push(tokenOf(row));return out;
   }
 
   async invite(by: Principal, userId: string): Promise<IssuedInvitation> {
@@ -369,9 +373,11 @@ export class PgPrincipals implements Principals {
   }
 
   async client(clientId: string): Promise<OAuthClient | null> {
-    if (typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) return null;
-    const row = (await this.#db.query('SELECT * FROM oauth_clients WHERE id = $1', [clientId])).rows[0];
-    return row === undefined ? null : clientOf(row);
+    return (await this.clientsMany([clientId])).get(clientId)??null;
+  }
+  async clientsMany(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>{
+    const ids=[...new Set(clientIds.filter(id=>typeof id==='string'&&CLIENT_ID.test(id)))];if(!ids.length)return new Map();
+    return new Map((await this.#db.query('SELECT * FROM oauth_clients WHERE id=ANY($1::text[])',[ids])).rows.map(row=>{const client=clientOf(row);return [client.id,client];}));
   }
 
   async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}

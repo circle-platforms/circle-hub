@@ -1,3 +1,4 @@
+import {memoReadPort} from '../../records/api.ts';
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
 // 任务包 (the design canvas's Workflows board): the packs the reader may use (administrators: every pack, with who may use
@@ -43,7 +44,7 @@ async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   if(pack.space&&pack.space!=='team')return (await currentAudience(ctx,pack.space,'/',false,pack.id)).text;
   if(pack.kind!=='workflow')return uiLabelOf('audience_scope','team');
   if(!ctx.admin)return uiLabelOf('knowledge_search_scope','team');
-  const users=(await ctx.deps.records.principals.list()).filter(user=>!user.disabled);
+  const users=(await memoReadPort(ctx.deps.records.principals,['get','list']).list()).filter(user=>!user.disabled);
   const assigned=new Set(pack.assigned_to??await ctx.deps.records.authorizations.usersOf(pack.id));
   const eligible=users.filter(user=>assigned.has(user.id));
   if(!eligible.length)return uiLabelOf('audience_scope','team_unassigned');

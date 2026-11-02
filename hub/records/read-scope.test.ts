@@ -79,3 +79,16 @@ test('candidate entry times read only the canonical header, tolerate unrelated e
  assert.deepEqual(await kit.store.entryCandidates!({digests:candidates,offset:2,limit:1}),{items:[],total:2});
  const invalid=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{at:'invalid'}});await assert.rejects(kit.store.entryTimes!([invalid.digest]),IntegrityError);
 });
+
+test('queued reads on both sides of a write all settle and the later reads do not reuse its old value',{timeout:5000},async()=>{
+ let n=0;const id='a'.repeat(64),record=()=>({digest:id,body:{n}}),page=()=>({items:[record()],next:null});
+ const store={getMany:async()=>new Map([[id,record()]]),get:async()=>record(),findBatch:async(queries:unknown[])=>queries.map(()=>page()),find:async()=>page(),countIndexedBatch:async(queries:unknown[])=>queries.map(()=>({count:n,capped:false})),countIndexed:async()=>({count:n,capped:false}),put:async()=>{n=1;return record();}} as unknown as RecordStore;
+ await withReadScope(async()=>{const scoped=scopedRecordStore(store),query={key:'synthetic.changed',value:'one'},count={index:[{key:query.key,value:query.value}]};
+  const before=[scoped.get<{n:number}>(id),scoped.find<{n:number}>(query),scoped.countIndexed!(count)];
+  const write=scoped.put({kind:'action',schema:'synthetic-change@1',provenance:'declared',body:{n:1}});
+  const after=[scoped.get<{n:number}>(id),scoped.find<{n:number}>(query),scoped.countIndexed!(count)];
+  const old=await Promise.all(before),now=await Promise.all(after);await write;
+  assert.deepEqual(old,[{digest:id,body:{n:0}},{items:[{digest:id,body:{n:0}}],next:null},{count:0,capped:false}]);
+  assert.deepEqual(now,[{digest:id,body:{n:1}},{items:[{digest:id,body:{n:1}}],next:null},{count:1,capped:false}]);
+ });
+});

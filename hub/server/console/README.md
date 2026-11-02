@@ -66,3 +66,11 @@
 清除先经原服务预检，再在 Dialog 里说明容量、文件夹分享、团队副本、本机副本与备份后果；必选复选项通过原生表单关联保留，确认仍用原 POST、CSRF、期望代次、状态与检查结果。重新启用同样由 Dialog 确认，仍使用所有者函数建立新代次。成功反馈从服务器会话消费一次，重新读取当前方式；重放旧回执时不会把旧清除当作新的清除。本轮不新增样式、状态轴、HTTP 权限或 MCP 工具。
 
 变基后的来源组件也保留清除标记：旧私人路径与引用不会因新版 SourceBlock／技术信息入口重新出现；团队已持有的正文与引文仍可读。模型仅给已有清除来源标签补上新版界面用语，生成物来自合并后的模型；迁移 14、15 原样保留。截图、检查及未运行项见 kw-sync 任务页的集成一节。
+
+Console performance changes preserve the same page and JSON projection. Team/connection pages and member JSON batch
+the public token metadata for their already authorized member IDs, then resolve client names once for displayed live
+devices. Disabled owners and revoked devices are still filtered at the original view boundary; Inspector actions and
+confirmations are unchanged. Workflow audience names share one current member list per request. Both page GET and
+read-only JSON GET own a read scope; POST and the long-lived event stream do not inherit one. Synthetic regressions
+include an ordinary reader's own-device boundary and immediate next-request revocation. Inline styles, scripts and
+strict CSP are unchanged (P2 deferred).
