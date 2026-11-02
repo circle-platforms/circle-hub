@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Personal grant audit summaries are limited to participants, or all-administrator grants for administrator views; administrators see safe sharing receipts without private input content. Frozen source capture checks prevent an authorized equal-byte copy from lending another capture's private metadata, and standalone binding/reader components tolerate missing knowledge services.
+
 - Sharing revisions now supersede only the submitter's own prior team entry from the same personal lineage, preserving withdrawal history. MCP and the console accept a team directory, default to the personal path, and show the target in merged/refused receipts while retaining the private origin.
 
 - Second knowledge-space review: reject private input metadata before run creation, retain exactly one safe import-refusal audit after rollback, protect production rechecks, and serialize writes per space. Migration 11 counts current-version index references incrementally, isolates product quotas and adds configurable limits. Model 19 search warnings preserve usable matches without treating skipped scopes as a complete search; the four generic skills only update protocol mirrors and patch manifests.
