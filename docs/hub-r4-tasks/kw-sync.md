@@ -690,3 +690,24 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node -
 npm run test:docs
 git diff --check
 ```
+
+### 第三轮复核修正：记录摘要读取保持索引执行计划
+
+来源：Claude 对 0ab652a8 的第三轮独立复核，以及要求先修复可用性问题、再继续第 5 步的指令；审查原文随本次提交收入 kw-sync-review.md。
+
+做了的：
+
+- 暂存尚未完成的第 5 步，不把 HTTP／方式切换的修改混入本项。只移除迁移 17 中 hub_read_records() 的 SET search_path 子句；该函数按调用者权限执行，返回类型、表和函数调用已限定模式名。保留所有 SECURITY DEFINER 的固定搜索路径与权限限制。
+- 将审查探针改写为仓库内的 read-plan.test.ts，不从审查临时目录导入。写入 50,000 条合成记录，以实际 EXPLAIN ANALYZE 的 JSON 执行计划检查：已存在和不存在的摘要，在迁移所有者与运行角色下都走 records_digest_key 的 Index Scan；拒绝 Function Scan／records 全表扫描，底层记录读取至多一行。保留真实 store.get 的返回值断言，不使用强制规划设置或易受机器负载影响的耗时门槛。
+- 迁移 14、15 从本项起冻结，将当前 SQL 身份加入既有固定快照；本项没有修改这两个迁移，也没有新增数据 SHA 扫描。复核迁移 17 的单处更正后同步迁移源文件的固定摘要；迁移 1～16 SQL 保持原样。
+- 更新 records README 与 CHANGELOG；审查附录保留原文。
+
+验证：修正前新回归真实失败 1 项（Function Scan），修正后独立运行 1 项通过、0 失败、0 跳过；初跑失败不算通过。最终定向组 287 项通过、0 失败、0 跳过，含全部 records（新执行计划回归、SECURITY DEFINER、运行角色、原件保留、迁移固定快照、密码与锁命名）、environment、diagnostics、PG 18 ownership 与验收 46～49；PG 18 备份／恢复与 macOS 沙箱项实际执行。npm run typecheck、git diff --check 通过，文档检查 291 项通过、0 跳过。未运行全量 unit／acceptance、全部工作流／引擎、Linux CI、来源归档检查；本项没有改运行／依据规则或来源工具。未推送、建 PR、部署。第 5 步的工作仍单独保留，不算本项完成。
+
+```sh
+npm run typecheck
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'hub/records/**/*.test.ts' hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+ 'tests/acceptance/46-*.test.ts' 'tests/acceptance/47-*.test.ts' 'tests/acceptance/48-*.test.ts' 'tests/acceptance/49-*.test.ts'
+npm run test:docs
+```

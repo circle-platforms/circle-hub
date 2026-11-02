@@ -842,3 +842,9 @@ source/run authorization and read tier. Retention creates no upload declaration 
 Captures carrying a personal scope keep that qualification even after their link is cleared; ordinary team import still
 requires its existing qualification. The new table is included in PostgreSQL backups; no file layout or
 per-epoch encryption was added. A historical purge that already removed bytes cannot be undone from a digest.
+
+The invoker-only `hub_read_records()` has no function-level SET clause: its fully qualified SQL must inline so digest
+predicates reach `records_digest_key` before reconstructing private or run-held bodies. A 50,000-record plan regression
+checks present and absent digest reads as both migration owner and runtime role, without a timing threshold or forced
+planner settings. Every SECURITY DEFINER retains its fixed search path. Migrations 14 and 15 are now frozen separately
+in the reviewed SQL snapshots; this correction changes migration 17 only.

@@ -767,8 +767,9 @@ REVOKE ALL ON FUNCTION hub_keep_inserted_run_originals() FROM PUBLIC;
 CREATE TRIGGER records_run_originals AFTER INSERT ON records FOR EACH ROW WHEN(NEW.kind='run') EXECUTE FUNCTION hub_keep_inserted_run_originals();
 SELECT public.hub_keep_run_originals(r.digest,false) FROM public.records r WHERE r.kind='run'
  AND EXISTS(SELECT 1 FROM public.object_holds h JOIN public.personal_record_bindings b ON b.record=h.sha256 WHERE h.record=r.digest AND h.artifact);
+-- Keep this invoker function inlineable so caller predicates reach the records indexes.
 CREATE OR REPLACE FUNCTION hub_read_records() RETURNS TABLE(seq pg_catalog.int8,id pg_catalog.text,digest pg_catalog.text,kind pg_catalog.text,schema pg_catalog.text,
- provenance pg_catalog.text,created_at pg_catalog.timestamptz,body pg_catalog.text,size pg_catalog.int4) LANGUAGE sql STABLE SET search_path=pg_catalog,public,pg_temp AS $fn$
+ provenance pg_catalog.text,created_at pg_catalog.timestamptz,body pg_catalog.text,size pg_catalog.int4) LANGUAGE sql STABLE AS $fn$
  SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,
  CASE WHEN h.artifact IS NOT NULL THEN h.body WHEN b.record IS NULL OR r.body<>b.marker OR p.data IS NULL THEN r.body
  ELSE pg_catalog.convert_from(p.data,'UTF8') END,r.size FROM public.records r
