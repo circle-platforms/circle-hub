@@ -44,7 +44,7 @@ administrator commands of `cli-admin.ts`.
 | `notes.ts` | admin notes and operator log text that records accept (no NUL, no lone surrogate, cut between code points) |
 | `upload.ts` | strict base64, media types (given, by name, sniffed), the parser structure summary |
 | `trace.ts`, `http.ts`, `release.ts` | W3C traceparent, Circle-Session-Id, loopback rules, body limits and the body budget, release.json |
-| `console/` | sign-in, sessions, CSRF, CSP and the eight places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, packs, connections, records, team, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
+| `console/` | sign-in, sessions, CSRF, CSP and the eight places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, workflows (with generic skills), connections, records, team, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
 | `main.ts` | `serve [--migrate-only] [--migrate]`, `loadServerConfig` (serve refuses the operator token, commands accept it) |
 | `cli.ts` | `main(argv)`: user, token, logs, run, platform delegation, `registerCommand` |
 | `assemble.ts`, `assemble/`, `cli-admin.ts`, `testing-real.ts` | the assembly module (`assemble` for serve, `assembleCommand` for one command, `registerCommands`), the administrator commands and `operatorAdmin`, the real Hub for acceptance tests: see `assemble/README.md` |
@@ -334,16 +334,18 @@ before console login. First-use restrictions also guard API reads/writes, live s
 Decision 84 supersedes decision 83's personal/team knowledge draft (`docs/design/personal-team-knowledge.md`, retained
 as a research record). Personal knowledge will live in both Circle and Hub with two-way sync and multiple clients; the
 individual chooses the mode, sets personal-space permissions and may share with administrators or others. Shared
-submissions require no review. The complete scheme stays in the owner's scheme document until finalized. No knowledge
-model or code is changed by this round. The owner subsequently chose “工作流” for the page: “通用技能” has no acceptance,
-while “工作流” contains the existing packs with acceptance. Renaming is a separate task. Product-pack and system-pack
-placement remains open; “产品知识来源” under Knowledge and “业务系统接入” under Connections are suggestions only.
+submissions require no review. The owner accepted all fourteen design recommendations; the implementation basis is
+`docs/design/knowledge-workflows.md`. Decision 85 implements its first stage: 工作流 contains workflows with acceptance
+and 通用技能 without acceptance; 产品知识来源 is under Knowledge and 业务系统接入 under Connections. The other stages
+(personal/team spaces, authorization, sharing, search and two-way synchronization) remain future work; this rename changes
+neither their models nor business code. Existing format skills remain globally installed parser providers, rather than
+the future per-account synchronized skill storage. `docs/design/console-navigation.md` records the current navigation.
 
 Decision 83 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
 last use and disconnect action. Team, Connections and member Settings omit token identifiers from their tables; exact
 identifiers remain inside disconnect command dialogs only.
 
-Decision 83 adds Team before Settings. Administrators manage member details, publish rights, task-pack assignments and
+Decision 83 adds Team before Settings. Administrators manage member details, publish rights, workflow assignments and
 Circle connections there using the existing commands. Members see only their own account. Settings retains system
 secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.
 
