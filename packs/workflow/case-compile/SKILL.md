@@ -1,8 +1,13 @@
+---
+name: case-compile
+description: 按运行器原始函数合约与 runtime-profile 核验单用例计划并生成执行工作簿（编译复现/回归用例到自动化测试环境跑）。Use when asked to compile, 编译 or turn a test mindmap into an executable workbook.
+---
+
 # 用例编译与工作簿核验
 
 客户端按受限结构填计划并生成工作簿，Hub 只核验及重算，不调用模型。两次运行不能合成一次：输入开始后冻结，不能在旧运行里补绑文件。
 
-本地工具装成 Circle 技能 skills/case-compile/，“技能目录”是加载时 Circle 显示的 Base directory；命令只写 node 加其下脚本，文件参数相对工作目录，令牌按下文 here-doc 走标准输入，不用 cd、管道或重定向。
+本地工具由客户端装进技能目录：客户端的安装器（`hub_skill_install`）按 `list_task_packs`/`start_run` 回答里钉到 id@version 和包号的命令核对清单与原字节后安装，装好的目录就是下文写的 `<技能目录>`（Base directory，加载技能时由客户端给出）；通用安装根是 `~/.agents/skills/<包>/`，Circle 与 DeepSeek Harness 都读这个目录。命令只写 node 加 `<技能目录>` 下脚本，文件参数相对工作目录，不用 cd、管道或重定向。客户端提供 `hub_skill_install`/`hub_skill_run` 时优先用它们跑第 5、6 步（参数与这里写的命令相同，`%HUB_URL%`/`%HUB_TOKEN%` 由客户端在执行时展开）；没有这两个工具的客户端按下面的 here-doc 写法自己展开同一个占位符。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Hub Bearer 令牌：模型只写占位符名字，令牌的值由客户端在本地工具执行时填入，不进模型参数、结果、日志或 Git。
 
 1. 先用 test-bed 预订整个自动化测试环境（acquire 的 need.devices 写清单全部设备；已持有整台预订（如刚装过构建）就沿用）。第一次 start_run 用 case-compile，predecessor 写预订运行。对照某个构建时 product、build 和 version 写在 start_run 顶层，不写进 parameters。绑定 subject、contract、inventory、profile。整份脑图不填 parameters.autoid（Hub 选全部带文字 autoid、未声明不自动化的用例）；只编一条时从原文复制 autoid 字符串。后三项是发布的 doc:doc，profile 含 device_count 只读预检事实及可选 fold_newlines 名单。优先用敏捷文档号；只有本地导出时运行 `node <技能目录>/tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>`，上传中性文件名，在说明中原样给出两边摘要和“客户端规整”。不改写用例内容或编号。
 2. 用 get_nodes 读本次绑定的源，按分页读完。启用只说明对象/方法身份存在，不是派发授权。设备命令按锁定命令树放行，只拒合约声明的破坏性命令；不在本环境的地址：作者原文里的照留并披露，计划改出的拒。其余只读原合约结构，不从 help 散文推断。仍缺合约事实时按补证请求交具名维护者，告诉用户在等哪个请求，不让用户替维护者选；不得改冻结 profile、加本地角色或 reviewed 标志绕过。不复制默认值、内部项、认证候选或脱敏凭据。plan 槽见 slots.schema.json：bucket 为自动化测试环境，replacements 为 {case,bed} 一一对应地址。平面计划 blocks: []，steps 为 {object,method,args,keywords}；块计划 blocks 非空，steps/expects 均为 []，不可混写。args 为文字，keywords 为文字或安全非负整数。
@@ -31,7 +36,7 @@ allowed 只提供已声明范围内的收紧配置，不能替代原合约的参
 
 只使用 runtime-contract@2 的类型、角色闭集、效果与来源。旧合约未核对，不生成或派发。case_index 仅在有用例原始身份声明时绑定，用于额外核一致性。plan 通常省略 command_identities（不要求构造 raw、parsed 或 type）；主动提交时只作可选声明核对，结构错误、缺项、多项或与 Hub 身份不一致记违规，可删掉后重交。不要交命令短语猜测。
 
-喂入层：经 Hub 读到的用例、缺陷、构建、规格由程序自动喂入（带冻结序号），视图只读冻结序号之前的喂入；Circle 只经 knowledge-contribution 回注程序填不了的语义（带逐字引文）。
+喂入层：经 Hub 读到的用例、缺陷、构建、规格由程序自动喂入（带冻结序号），视图只读冻结序号之前的喂入；客户端只经 knowledge-contribution 回注程序填不了的语义（带逐字引文）。
 
 ## 自动化测试环境适配、前置与清理（写计划前先读完）
 
