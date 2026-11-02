@@ -24,7 +24,7 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
   if(!admin)throw new Error('派发观察缺少具名管理员');
   jobs??=await ctx.deps.dispatch!.jobs({id:admin.id,name:admin.name,role:admin.role},run.run);
   if(!jobs.length)return false;
-  const workflow=await ctx.deps.workflows.byDigest(run.pack_digest);
+  const workflow=await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space);
   if(!workflow)throw new Error('派发观察缺少锁定的要求项模板');
   const questions=await requestRecords(ctx,run.run);
   const reports=new Map<string,z.infer<typeof Projection>|null>();

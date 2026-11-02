@@ -32,6 +32,17 @@ test('verified knowledge merges once with provenance and history without consult
   await assert.rejects(spaces.share(w.outsider,{root:entry.root,path:'/notes',entry:entry.entry}));
 });
 
+test('concurrent identical submissions merge once and preserve both personal originals',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,first=await verified(w);
+  const source=await observed(w),second=await spaces.write(w.outsider,{...note('合成保留规则'),grounds:[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}]});
+  const receipts=await Promise.all([share(w,first),spaces.share(w.outsider,{root:second.root,path:'/notes',entry:second.entry})]);
+  assert.deepEqual(receipts.map(row=>row.status).sort(),['merged','rejected']);
+  assert.equal(receipts.find(row=>row.status==='rejected')?.code,'SHARE_DUPLICATE');
+  assert.equal((await spaces.current('team'))?.body.entries.length,1);
+  assert.equal((await spaces.entry(w.user,first.root,'/notes',first.entry))?.row.status,'verified');
+  assert.equal((await spaces.entry(w.outsider,second.root,'/notes',second.entry))?.row.status,'verified');
+});
+
 test('unverified notes, private credentials and unsigned uploads stay personal with registered refusals',async t=>{
   const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
   const unverified=await spaces.write(w.user,note('合成尚未核验笔记'));assert.equal((await share(w,unverified)).code,'SHARE_UNVERIFIED');
@@ -66,6 +77,7 @@ test('submitters withdraw only their own team entries and withdrawn grounds prop
   const dependent=await spaces.write(w.outsider,{...note('合成依赖笔记','/dependent'),grounds:[{reference:merged.reference,quotation:'合成保留规则'}]});
   await assert.rejects(spaces.withdraw(w.outsider,entry.entry,'team'));
   await spaces.withdraw(w.user,entry.entry,'team');
+  assert.equal((await share(w,entry)).code,'SHARE_DUPLICATE','withdrawal does not allow the same content to overwrite its team history');
   const view=await spaces.entry(w.outsider,dependent.root,'/dependent',dependent.entry);assert.ok(view);assert.ok(view.grounds_withdrawn.includes(merged.reference));assert.equal(view.row.status,'verified');
   assert.equal((await spaces.entry(w.admin,merged.team_root,'/notes',entry.entry))?.row.status,'withdrawn');
 });

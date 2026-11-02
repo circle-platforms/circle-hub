@@ -747,6 +747,8 @@ class Registry implements PackRegistry {
       for(const id of answers){
         const request=await requests.inspect(id);
         const previous=request?.pack_digest?await this.byDigest(request.pack_digest):null;
+        const linked=request?.run?(await this.#records.store.find<{pack_space?:string}>({kind:'run',key:'runs.id',value:request.run,limit:1})).items[0]:null;
+        if(linked?.body.pack_space&&linked.body.pack_space!=='team')return refuse([problem('publish.answer_request','pack.json','团队发布不能回答个人空间的修复请求','在原个人空间发布修复版本，并保持原请求的空间范围')]);
         if(!request||request.kind!=='repair'||request.audience!==account.id||!previous||previous.id!==manifest.id||previous.owner!==account.id||request.pack_digest===digest||request.answered_by!==null&&request.answered_by!==earlier?.record)return refuse([problem('publish.answer_request','pack.json','指定请求对发布人不可用，或不属于这个包的待修复版本','给出发给本包作者的修复请求摘要；重试已有作答时使用相同版本')]);
       }
 

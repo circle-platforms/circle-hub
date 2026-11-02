@@ -31,6 +31,7 @@ export interface ServerDeps {
    * Without it start_run uses `runs.startRun` and the texts name the console instead of record references.
    */
   runsDetail?: Pick<RunsEngine, 'startRunDetailed' | 'getResult'>;
+  registry?: import('../runs/api.ts').PackRegistry;
   knowledge: KnowledgePort;
   workflows: WorkflowStore;
   packs: PackCatalogPort;

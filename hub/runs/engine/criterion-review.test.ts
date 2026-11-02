@@ -28,7 +28,8 @@ test('an author account never closes its own judgment request',async t=>{
 });
 test('a shared non-author can start read-only review without inheriting mutation rights and loses read admission on unshare',async t=>{
  const f=await setup(t);await f.h.kit.authorizations.share(f.h.admin,f.draft.run,[f.h.bob.id]);
- const sources=await f.h.kit.store.list<any>({kind:'source_artifact',limit:100});const expected=sources.items.find(record=>record.body.sha256===f.h.expected.slice(4))!;assert.ok(expected);await f.h.kit.authorizations.share(f.h.admin,artifactShareKey(expected),[f.h.bob.id]);
+ assert.equal(await f.h.service.getRun(f.h.bob,f.draft.run),null,'a run grant alone does not lend the original inputs');
+ const sources=await f.h.kit.store.list<any>({kind:'source_artifact',limit:100});for(const reference of [f.h.expected,f.h.subject]){const source=sources.items.find(record=>record.body.sha256===reference.slice(4))!;assert.ok(source);await f.h.kit.authorizations.share(f.h.admin,artifactShareKey(source),[f.h.bob.id]);}
  const r=await review(f,f.h.bob),record=await runById(f.h.kit.store,r.run);assert.equal(record!.body.predecessor_access,'view');assert.equal(record!.body.client_key,undefined);assert.equal(record!.body.leases,undefined);assert.ok(r.items.every(item=>item.reuse===undefined));
  const forbidden=await f.h.submit(f.draft.run,[],f.h.bob);assert.notEqual(forbidden.acceptance,'accepted');
  const answer=await decision(f,r,f.h.bob);assert.equal(answer.acceptance,'accepted',JSON.stringify(answer));const before=await f.h.service.getResult(f.h.bob,r.run);assert.ok(before);assert.equal((await createRequestService(f.h.kit).all(f.draft.run)).find(row=>row.record===f.request.record)!.answered_by,before.record);const bytes=JSON.stringify(before.result);

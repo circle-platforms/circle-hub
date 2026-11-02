@@ -964,19 +964,38 @@ getRun / getResult check the exact frozen pack version through the existing work
 
 `putSubmission` indexes the knowledge an accepted (parsed) submission cites, in the existing `record_index`, with no migration: each `tree:` reference among the body's strings as `runs.submission.cites.node` (SHA-256 of the root and the canonical path) and, when pinned to an entry, `runs.submission.cites.entry` (the entry digest), at most 100 nodes and 95 entries so a record stays within its 200 index entries, plus the marker `runs.submission.cites.indexed=1` on every accepted submission. Submissions accepted before this are indexed by `backfillCitations` (decision 80), which the engine's maintenance runs in the background: a pass at `startMaintenance` and at every tick until one reaches its end, aborted by `stopMaintenance` and resumed by the next. A pass walks the submissions oldest first up to the oldest one marked `indexed=1` (every later one was indexed as it was stored) and adds to each accepted one, through `RecordStore.addIndex`, the entries `putSubmission` gives it now, marked `runs.submission.cites.indexed=backfilled`; records and digests do not change and entries already held are kept. At its end it marks `runs.submission.cites.complete=1` on that boundary (before any, on the newest submission): `citationsComplete` is then true, later passes do nothing and the console's counts are exact for any window. Until then the console counts from the oldest submission indexed as it was stored on and says so. Tests: `citations.test.ts`, `maintenance-citations.test.ts`.
 
-## Temporary phase-2 personal-ground guard
+## Result readers and private runs (decision 87)
 
-Before result admission (including an automatic fact-only result), `personalGroundProblem` refuses personal-space `tree:`
-and `src:` grounds with `SPACE_RESULT_GROUNDS_PRIVATE`. It also checks frozen input captures, before an idempotent receipt
-can be reused, and does not charge a model repair round. Source classification respects an independently authorized capture;
-a private duplicate cannot change it. Raw submissions still follow W07; refusal does not publish an accepted result.
-This guard is explicitly temporary: decision 84 phase 3 replaces it with complete checks against all actual result readers.
+The temporary phase-2 `SPACE_RESULT_GROUNDS_PRIVATE` guard is replaced by `groundsAudience`. Before accepting a result,
+including a fact-only result computed at start, every ground must resolve for every enabled account in that run's actual
+audience. The audience includes the runner, current personal-workflow grantees or the existing team/admin sharing rules.
+It does not omit a grantee merely because that grantee lacks ground permissions. Space entries recursively check their
+constituent originals and referenced results recursively check their own grounds. Implicit structural claims also bind
+frozen input captures. Missing rights refuse admission with `RESULT_GROUNDS_UNREADABLE` and a share-or-grant remedy.
+The Hub performs this deterministic check as a function consumer, retaining the existing function-only read tier;
+models still receive no function-only bytes. Personal-pack file aliases supplement original source authority rather than
+replacing it, and exact scope admits only files of the frozen workflow/skill namespaces.
 
-Second phase-2 review: `bindInputs` now rejects a personal-space capture before its file name or projected text can enter
-any run, including judgment runs. The capture record decides this guard; an unrelated private copy of equal bytes never
-changes an independent original. Source-artifact record inputs also check original read rights before exposing metadata.
-Phase 3 replaces the temporary admission guard with actual result readers, rather than keeping a permanent private-input ban.
+A personal run freezes `pack_space`; administrators have no implicit access. Current workflow grants add read-only
+visibility, not submission/predecessor rights or the initiator's private inputs. A new run from a promoted team version
+freezes `team_shared` and follows assignments; historical personal runs keep their original audience. Query, preview,
+raw result-record and submission readers recheck input/ground rights. Revoking a ground can hide an old result without
+changing its bytes. Rejected private submissions never lend raw arguments or instance diagnostics to another reader.
+The `resultState` port returns current readability and per-result withdrawal qualifiers for server record reads.
+Record-to-input bindings, check reads and exact-value resolution use those same current views. A revoked basis cannot be
+copied through an old result record, and an administrator cannot read a private original through its metadata record.
+Private run requests keep their owner scope even in global administrator lists; a workflow grant adds result readership,
+not request authority. Workflow owner lookup and repair publication answers retain the frozen namespace when personal
+and team packages have identical manifest bytes.
 
-Automatic production rechecks apply the same temporary phase-2 admission guard before appending a replacement result.
-Legacy runs cannot bypass it through maintenance; a refusal records its registered code and preserves every old result.
-The regression uses a real assembly and an explicitly persisted legacy private capture, with an independent-capture control.
+Authorization refusals are re-evaluated on an identical retry after grants change. Cached accepted receipts recheck
+current readers and withdrawals; a failed current check returns the current refusal and never replays a stored contribution. The original stored receipt is unchanged, and the tool call records its current error.
+A source I/O interruption remains an unfinished Hub check with bounded retries and no model repair charge; it is not
+reported as an audience permission refusal. Once restored, an identical retry can return the original accepted receipt.
+A missing/revoked frozen skill also preserves the received submission and returns a controlled unavailable receipt.
+`grounds_withdrawn` is derived for entry/result reads, including referenced results; accepted historical records retain
+their original digest. A new submission grounded in withdrawn content is refused as `GROUNDS_WITHDRAWN`. This mechanism
+verifies access and quotation facts; it makes no judgment about the truth of client-authored claims.
+
+Production rechecks use the same full audience guard before writing a replacement result. Source-artifact inputs retain
+original metadata read checks; removing the phase-2 temporary ban never gives an administrator private input labels.

@@ -28,6 +28,8 @@ export interface BedOptions {
   syncTwoName?: boolean | { options?: Record<string, unknown>; includeUnreleased?: boolean };
   /** Sync the single-name product at start (default true). */
   syncOneName?: boolean;
+  /** Explicitly share the synced synthetic catalog originals for result readers (default true). */
+  shareCatalogOriginals?: boolean;
   /** Configure the PLM resource (default true). */
   plm?: boolean;
   /** More pack directories to publish after the repository's. */
@@ -122,6 +124,22 @@ export async function openBed(options: BedOptions): Promise<Bed> {
     if (options.syncOneName !== false) {
       syncs.one = await hub.knowledgeSync(second.line);
       assert.equal(syncs.one.error, null, JSON.stringify(syncs.one).slice(0, 2000));
+    }
+
+    // A readable catalog does not lend its sync administrator's original-file rights to result readers.
+    // The shared corporate fixture explicitly imports those observed originals into the team space.
+    if(options.shareCatalogOriginals!==false){
+      const shared=new Set<string>();
+      for(const active of await hub.hub.registry.activeProducts())for(const build of await hub.hub.knowledge.builds(active.product.id)){
+        if(!build.root)continue;
+        for(const source of await hub.hub.knowledge.rootSources?.(build.root)??[]){
+          if(shared.has(source.sha256))continue;shared.add(source.sha256);
+          const original=await hub.records.artifacts.source(hub.admin.principal,source.sha256,{record:source.artifact,consumer:'model'});
+          assert.ok(original?.bytes,'synthetic catalog original must be readable before sharing');
+          const text=new TextDecoder('utf-8',{fatal:true}).decode(original.bytes);
+          await hub.hub.knowledge.spaces!.write(hub.admin.principal,{kind:'observation',path:'/合成目录依据',statement:'合成共享目录原文 '+shared.size,grounds:[{reference:'src:'+source.sha256,quotation:[...text].slice(0,80).join('')}]},null,'team');
+        }
+      }
     }
 
     const user = async (name: string, packs: string[] = Object.values(WORKFLOW)): Promise<TestUser> => {

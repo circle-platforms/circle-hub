@@ -501,7 +501,7 @@ export class KnowledgeSpaces {
           }
           grounds.push({...ground,reference});
         }
-        if(previous.body.entries.some(row=>row.entry===input.entry&&active(row)))fail('SHARE_DUPLICATE');
+        if(previous.body.entries.some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
         const readable=await this.#ctx.packs.readableProducts(by);
         for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
         try{this.#scan(view.body);for(const source of sources.values()){const bytes=await this.#ctx.records.artifacts.source(by,source.sha256,{record:source.artifact,consumer:'model'});if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}

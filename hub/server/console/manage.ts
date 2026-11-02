@@ -449,6 +449,7 @@ export async function publishStage(ctx: PageContext, deps: ManageDeps, token: st
   if (taken === null) return { run: null, stage: null, refused: { status: 404, message: NEUTRAL } };
   const { stage, dir } = taken;
   try {
+    if(stage.space)return {run:null,stage,refused:{status:404,message:NEUTRAL}};
     if ((await stagedDigest(dir))?.digest !== stage.digest) return { run: null, stage, refused: { status: 409, message: '暂存内容在校验后发生了变化，未发布；请重新上传并校验' } };
     const run = withoutPaths(await deps.bridge.run(['pack', 'publish', dir, '--stage'], { token }), dir);
     deps.log(`控制台管理操作 pack publish（${ctx.principal.name}）：退出码 ${run.code}`);

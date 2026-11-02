@@ -1,6 +1,6 @@
 import type { ContributionLayer } from '../../knowledge/api.ts';
 import { isKnowledgeContributionSchema } from '../../../contracts/src/contributions.ts';
-// Visibility (R02) and the readers hub/refs resolves references with. A user sees their own runs; an admin sees every run;
+// Visibility (R02) and the readers hub/refs resolves references with. Owners see their runs; admins see team runs;
 // a run the Hub executes itself is shown to admins only (W06 R[3]). Records reach a reader only through the run they belong
 // to; absent and forbidden give the same null.
 import type { ProducerKind } from '../../../contracts/generated/vocabulary.ts';
@@ -10,10 +10,11 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { runIsSharedWith } from '../../records/api.ts';
 import type { Artifacts, Principal, RecordStore } from '../../records/api.ts';
 import type { ReaderIdentity, RecordReader, SourceReader } from '../../refs/api.ts';
-import { SCHEMAS, runById } from './store.ts';
+import { SCHEMAS, runById, actionOfSubmission } from './store.ts';
 import { isObject } from './util.ts';
 
-export function canSeeRun(user: Principal, run: Pick<RunRecord, 'runner' | 'host'>): boolean {
+export function canSeeRun(user: Principal, run: Pick<RunRecord, 'runner' | 'host' | 'pack_space'>): boolean {
+  if (run.pack_space&&run.pack_space!=='team')return run.runner===user.id;
   if (user.role === 'admin') return true;
   if (run.host === 'hub') return false;
   return run.runner !== undefined && run.runner === user.id;
@@ -21,7 +22,7 @@ export function canSeeRun(user: Principal, run: Pick<RunRecord, 'runner' | 'host
 
 /** Read-only sharing never changes canSeeRun, the submission and lineage guard. */
 export async function canViewRun(user: Principal, run: RunRecord, store: RecordStore): Promise<boolean> {
-  return canSeeRun(user, run) || await runIsSharedWith(store, user.id, run);
+  return canSeeRun(user, run) || await runIsSharedWith(store, user.id, run, new Date(),user.role);
 }
 
 export function identityOf(user: Principal, run?: string): ReaderIdentity {
@@ -60,19 +61,22 @@ export function runOfRecord(record: { kind: string; schema: string; body: unknow
 }
 
 /** Records for reference resolution: run, submission, validation result and action records through their run; contributions through their product. */
-export function recordReader(store: RecordStore, contributions?: Pick<ContributionLayer, 'read'>): RecordReader {
+export function recordReader(store: RecordStore, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>): RecordReader {
   return {
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
-      if(record.kind.startsWith('knowledge_space_'))return null;
+      if(record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_'))return null;
       if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) {
         if ((await contributions?.read(digest, principalOf(reader))) == null) return null;
-      } else if (reader.role !== 'admin') {
+      } else if (reader.role !== 'admin'||runOfRecord(record)!==null) {
         const run = runOfRecord(record);
         if (run === null) return null;
         const owner = record.kind === 'run' ? (record.body as RunRecord) : (await runById(store, run))?.body;
-        if (owner === undefined || !await canViewRun(principalOf(reader), owner, store)) return null;
+        if (owner === undefined || !await (readRun?readRun(principalOf(reader),owner):canViewRun(principalOf(reader), owner, store))) return null;
+        if(record.kind==='validation_result'&&readResult&&!await readResult(principalOf(reader),owner,record.body))return null;
+        if(record.kind==='request'&&readRequest&&!await readRequest(principalOf(reader),record.body))return null;
+        if(record.kind==='submission'&&owner.runner!==reader.user&&(await actionOfSubmission(store,record.digest))?.body.acceptance!=='accepted')return null;
         if (!canSeeRun(principalOf(reader),owner)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return null;
         if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
       }

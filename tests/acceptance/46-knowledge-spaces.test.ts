@@ -135,7 +135,7 @@ test('run space locks survive later writes and administrator reads remain limite
   assert.ok(frozenSource);
   for(const ground of [locked.reference,'src:'+frozenSource.sha256]){
     const refused=await client.call('submit_result',{run:run.run,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',statement:'合成个人依据不得进入共享结果',grounds:[ground]}]});
-    assert.equal(refused.out.errors[0]?.code,'SPACE_RESULT_GROUNDS_PRIVATE',refused.text);
+    assert.equal(refused.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE',refused.text);
     assert.equal(refused.out.acceptance,'not_accepted');
   }
   assert.equal((await hub.hub.runs.getRun(hub.admin.principal,run.run))?.latest,null);
@@ -292,25 +292,31 @@ test('space ensure, search and starting another run do not wait behind an unrela
   }finally{if(timer)clearTimeout(timer);release();await write;index.add=original;}
 });
 
-test('phase 2 refuses private originals before either judgment or fact-only runs can expose input labels',async()=>{
+test('private input labels follow actual reader rights and automatic production requires every result reader',async()=>{
   await hub.assignPack(owner.principal,LOCATE_PACK);
   const map={root:{data:{id:'r1',text:'合成个人输入'},children:[{data:{id:'c1',text:'合成个人用例',resource:['合成功能']},children:[]}]},template:'default',theme:'fresh-blue',version:'1.4.43'};
   const bytes=Buffer.from(JSON.stringify(map)),source=await hub.hub.knowledge.spaces!.importFile(owner.principal,bytes,'application/json','synthetic-private-map.json');
-  const before=(await hub.records.store.list({kind:'run',limit:500})).items.length;
-  for(const pack of [REVIEW_PACK,LOCATE_PACK])for(const reference of [{reference:'src:'+source.body.sha256},{reference:'src:'+source.body.sha256,artifact:source.digest},{reference:'rec:'+source.digest}]){
-    const refused=await client.call('start_run',{pack,inputs:{map:reference}});
-    assert.equal(refused.out.errors[0]?.code,reference.reference.startsWith('rec:')?'SOURCE_UNAVAILABLE':'SPACE_RESULT_GROUNDS_PRIVATE',refused.text);
-    assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
-    assert.ok(!refused.text.includes('synthetic-private-map.json'));assert.ok(!refused.text.includes('合成个人用例'));
+  const references=[{reference:'src:'+source.body.sha256},{reference:'src:'+source.body.sha256,artifact:source.digest},{reference:'rec:'+source.digest}];
+  for(const reference of references){
+    const started=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:reference}});
+    if(reference.reference.startsWith('rec:')){assert.equal(started.out.errors[0]?.code,'SOURCE_UNAVAILABLE',started.text);continue;}
+    assert.equal(started.isError,false,started.text);assert.ok(started.out.run);
+    assert.equal(await hub.hub.runs.getRun(hub.admin.principal,started.out.run.run),null,'administrator run queries never expose private projected labels');
+    const hidden=await admin.call('query_run',{run:started.out.run.run});assert.equal(hidden.out.errors[0]?.code,'SOURCE_UNAVAILABLE',hidden.text);
+    assert.ok(!hidden.text.includes('synthetic-private-map.json'));assert.ok(!hidden.text.includes('合成个人用例'));
   }
-  assert.equal((await hub.records.store.list({kind:'run',limit:500})).items.length,before,'no projected private label is persisted in a run');
-  const adminInput=await admin.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'rec:'+source.digest}}});
-  assert.equal(adminInput.out.errors[0]?.code,'SOURCE_UNAVAILABLE');
+  const before=(await hub.records.store.list({kind:'run',limit:500})).items.length;
+  for(const reference of references){
+    const refused=await client.call('start_run',{pack:LOCATE_PACK,inputs:{map:reference}});
+    assert.equal(refused.out.errors[0]?.code,reference.reference.startsWith('rec:')?'SOURCE_UNAVAILABLE':'RESULT_GROUNDS_UNREADABLE',refused.text);
+    assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
+  }
+  assert.equal((await hub.records.store.list({kind:'run',limit:500})).items.length,before,'a refused automatic result does not leave its run');
+  const adminInput=await admin.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'rec:'+source.digest}}});assert.equal(adminInput.out.errors[0]?.code,'SOURCE_UNAVAILABLE');
   const ordinary=await hub.records.artifacts.ingest({bytes,mediaType:'application/json',name:'synthetic-common-map.json',origin:{upload:{session:null,message:null}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:true}});
-  const allowed=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}});
-  assert.equal(allowed.isError,false,allowed.text);
+  const allowed=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}});assert.equal(allowed.isError,false,allowed.text);assert.ok(allowed.out.run);
+  assert.ok(await hub.hub.runs.getRun(hub.admin.principal,allowed.out.run.run),'a private duplicate does not hide an independent authorized input');
 });
-
 
 test('MCP and console search report skipped over-limit scopes while retaining available matches',async()=>{
   const spaces=hub.hub.knowledge.spaces!,index=hub.records.spaceIndex!;

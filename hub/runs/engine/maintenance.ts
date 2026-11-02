@@ -145,6 +145,8 @@ async function rootUpdateRequest(ctx:EngineContext,stored:StoredRecord<RunRecord
 async function repairedPackRequests(ctx:EngineContext):Promise<void>{
   for(const request of await requestRecords(ctx)){
     if(request.answered_by===null||!request.pack_digest||request.kind!=='repair')continue;
+    const origin=request.run?await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,request.run!)):null;
+    if(origin?.body.pack_space&&origin.body.pack_space!=='team')continue;
     const old=await ctx.deps.workflows.byDigest(request.pack_digest);
     const answer=await ctx.deps.records.store.get<{pack:string;version:string;digest:string}>(request.answered_by);
     if(!old||answer?.kind!=='pack_version'||answer.body.pack!==old.pack.id||answer.body.digest===request.pack_digest)continue;
@@ -153,7 +155,7 @@ async function repairedPackRequests(ctx:EngineContext):Promise<void>{
     let cursor:string|null=null;
     do{
       const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{pack:old.pack.id},{limit:200,cursor});
-      for(const run of page.items){if(run.body.pack_digest!==request.pack_digest||!run.body.runner||await abandonDecision(ctx,run.body.run))continue;
+      for(const run of page.items){if(run.body.pack_space&&run.body.pack_space!=='team'||run.body.pack_digest!==request.pack_digest||!run.body.runner||await abandonDecision(ctx,run.body.run))continue;
         await putRequest(ctx,{run:run.body.run,answer_action:'rerun',kind:'disposition',audience:run.body.runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:answer.digest,code:'awaiting_step',missing:'请求 rec:'+request.record+' 已由版本 '+answer.body.pack+'@'+answer.body.version+' 作答；旧运行仍锁定原版本',next_action:'运行者用 start_run 以本运行为 predecessor、包 '+answer.body.pack+'@'+answer.body.version+' 开新修订重跑；发布作答不改变旧判决'});}
       cursor=page.next;
     }while(cursor!==null);

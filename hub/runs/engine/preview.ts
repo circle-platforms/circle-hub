@@ -1,3 +1,4 @@
+import {runReadableBy} from './grounds.ts';
 // resolve_reference (T04, D06): a preview of how an exact value resolves against what is bound to a run: a reference given
 // as text, a command through the locked catalogs, a quotation verbatim in the bound sources the reader may read. It returns
 // the resolution state, the candidates citable as grounds with their text and the diagnostics; it is never evidence and
@@ -42,11 +43,11 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
 
   if (input.run !== undefined) {
     const stored = await runById(ctx.deps.records.store, input.run);
-    if (stored === null || !await canViewRun(user, stored.body, ctx.deps.records.store)) {
+    if (stored === null || !await runReadableBy(ctx,user,stored.body)) {
       ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `run ${input.run} is unknown or not visible to ${user.id}` });
       return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
     }
-    const workflow = await ctx.deps.workflows.byDigest(stored.body.pack_digest);
+    const workflow = await ctx.deps.workflows.byDigest(stored.body.pack_digest,stored.body.pack_space);
     if (workflow === null) {
       ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `pack version ${stored.body.pack} is no longer loadable` });
       return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };

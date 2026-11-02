@@ -12,7 +12,7 @@ export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<E
  const ctx=createEngineContext(deps),store=deps.records.store;
  const saved=await runById(store,input.run);if(!saved)throw new Error('冻结运行不可回读；请管理员恢复运行记录后重核');
  if(ctx.parsers.forRun)ctx.parsers=await ctx.parsers.forRun(saved.body.run);
- const run=saved.body,workflow=await deps.workflows.byDigest(run.pack_digest);
+ const run=saved.body,workflow=await deps.workflows.byDigest(run.pack_digest,run.pack_space);
  if(!workflow || workflow.pack.digest!==run.pack_digest || `${workflow.pack.id}@${workflow.pack.version}`!==run.pack)throw new Error('缺少冻结版本的任务包；请恢复原包后重核');
  // Both paths require an active reader; only submitted replay needs the reader value for source resolution.
  const requireReplayReader=async()=>{

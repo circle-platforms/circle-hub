@@ -329,7 +329,7 @@ export function startRunExample(pack: PackSummary): string {
   const product = pack.products.length > 0 ? { product: pack.products[0] } : {};
   const inputs = Object.fromEntries(pack.inputs.filter((i) => i.required).map((i) => [i.slot, bindingExample(i.accepts[0] ?? '')]));
   const parameters = Object.fromEntries(pack.parameters.filter((p) => p.required).map((p) => [p.name, `<${p.name}>`]));
-  const call = { pack: pack.pack, ...product, inputs, ...(Object.keys(parameters).length > 0 ? { parameters } : {}) };
+  const call = { pack: pack.pack, ...(pack.space?{pack_space:pack.space}:{}),...product, inputs, ...(Object.keys(parameters).length > 0 ? { parameters } : {}) };
   return JSON.stringify(StartRunInput.safeParse(call).success ? call : { pack: pack.pack, inputs: {} });
 }
 
@@ -359,7 +359,8 @@ function packEntry(p: PackSummary): Entry {
     );
   }
   for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
-  lines.push(`  示例 start_run：${startRunExample(p)}`);
+  if(p.space)lines.push(`  ${labelOf('knowledge_space_kind','personal')}：${p.space}`);
+  lines.push(p.kind==='skill'&&p.requirements.length===0?`  读取做法 get_nodes：${JSON.stringify({pack:p.pack,...(p.space?{pack_space:p.space}:{}),file:'SKILL.md'})}`:`  示例 start_run：${startRunExample(p)}`);
   for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
 }
@@ -378,6 +379,8 @@ function listText(v: ListOut): string {
 // ---------------------------------------------------------------- upload_file
 
 function uploadText(v: UploadOut): string {
+  if(v.share){const head=`${labelOf('knowledge_share_status',v.share.status)}${v.share.reference?'；团队条目 '+v.share.reference:''}\n个人原条目保留；共享回执 ${v.share.record}`;return head+'\n'+(v.errors.length?errorText(v):traceLine(v.trace));}
+  if(v.withdrawn_reference)return fit([{priority:0,head:[`${labelOf('knowledge_entry_status','withdrawn')}；${v.withdrawn_reference}`]}],{tail:[traceLine(v.trace)]}).text;
   if(v.personal_entry)return `个人条目已保存；${uiLabelOf('knowledge_entry_status',v.personal_entry.status)}\n引用 ${v.personal_entry.reference}\n知识版本 ${v.personal_entry.root}\n${traceLine(v.trace)}`;
   const head = [`${axisLabel('acceptance')}：${labelOf('acceptance', v.acceptance)}${v.reference ? `，引用 ${v.reference}` : ''}`];
   if (v.size !== undefined) head.push(`大小 ${v.size} 字节${v.media_type ? `，媒体类型 ${oneLine(v.media_type)}` : ''}`);
@@ -1004,7 +1007,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     const status=entry.status?`；状态 ${labelOf('knowledge_entry_status',entry.status)}`:'';
     const grounds=entry.grounds?.map(ground=>`；依据 ${ground.reference}，逐字引文 ${clip.field(ground.quotation,CLIP.field,'依据引文的超出部分','用 get_nodes 读取条目引用以取得完整依据')}`).join('')??'';
     const citations=typeof entry.cited_count==='number'?`；累计被引用 ${entry.cited_count} 次`:'';
-    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}${status}${grounds}${citations}`, omitted: clip.omitted };
+    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}${status}${grounds}${entry.grounds_withdrawn?.length?'；'+labelOf('validity_status','grounds_withdrawn'):''}${citations}`, omitted: clip.omitted };
   });
   for (const view of node.contributions ?? []) {
     const clip = new Clip(`rec:${view.record}`);

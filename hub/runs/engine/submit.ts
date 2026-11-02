@@ -1,4 +1,5 @@
-import {personalGroundProblem} from './personal-grounds.ts';
+import {groundsAudience} from './grounds.ts';
+
 import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
 import {submissionOrigin} from './independence.ts';
 import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
@@ -95,6 +96,8 @@ async function resultForObserver(ctx: EngineContext, run: string, submission: st
     if (priorSession === undefined || priorModel === undefined || priorSession !== session || priorModel !== model) continue;
     const record = await store.get<ValidationResult>(detail.result);
     if (record === null || record.kind !== 'validation_result') continue;
+    // Authorization can change without changing the submission. Re-evaluate a prior audience refusal.
+    if(record.body.errors.some(error=>error.code==='RESULT_GROUNDS_UNREADABLE'))return null;
     if(transitional(record.body))continue;
     return record.body;
   }
@@ -182,6 +185,10 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
       ctx.log({traceId:call.traceId,run:stored.body.run,what:'submit_result interrupted',detail:describe(error)});
       const received=receivedDigest(args);
       const record=await submissionByDigest(ctx.deps.records.store,stored.body.run,received.digest);
+      if(error instanceof HubReadFailure){
+        if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[error.reason],result:'error',errorCode:error.reason,detail:{hub_error:true,source:error.reference,reason:error.reason,retry_attempts:error.attempts,submission:received.digest,session:sessionOf(call),model:typeof args.model==='string'?args.model:null,repair:[],result:null,fix:error.fix}});
+        return {call_result:'error',acceptance:'not_accepted',errors:[protocolError('SOURCE_UNAVAILABLE',error.message,{fix:error.fix})]};
+      }
       if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{hub_error:true,submission:received.digest,session:sessionOf(call),model:typeof args.model==='string'?args.model:null,repair:[],result:null,fix:'Hub 将在启动和每分钟自动重验，最多三次；也可带同一会话原样重交，不需要修改提交'}});
       return {call_result:'error',acceptance:'not_accepted',errors:[{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带同一会话原样重交，不需要修改提交'}]};
     }
@@ -189,7 +196,8 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
 }
 
 async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>, refresh = false): Promise<SubmitAnswer> {
-  if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};
+  let parserError:ProtocolError|null=null;
+  if(ctx.parsers.forRun)try{ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};}catch{parserError=protocolError('SOURCE_UNAVAILABLE','运行锁定的通用技能暂不可读取',{fix:'个人技能由所有者补齐使用授权；团队技能由管理员恢复冻结版本后重试'});}
   const store = ctx.deps.records.store;
   const run = stored.body;
   const received = receivedDigest(args);
@@ -205,18 +213,17 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       ? { record: existing, why: isVerbatimObject(existing) ? (received.canonical ? 'too_large' : 'canonical') : null }
       : await storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt);
   const record = kept.record;
-  const privateGround=await personalGroundProblem(ctx,user,args,run.sources);
-  if(privateGround){await putAction(store,{action:'validate',run:run.run,inputs:['rec:'+record.digest],submissionRecord:record.digest,startedAt,endedAt:ctx.now().toISOString(),acceptance:'not_accepted',codes:[privateGround.code],detail:{refusal:privateGround.code}});return {call_result:'error',acceptance:'not_accepted',errors:[privateGround]};}
+
   const management=await abandonDecision(ctx,run.run);
   const owner = keyOwner(run);
   const successors = (await successorsOf(store, run.run)).filter((s) => packIdOf(s.body.pack) === packIdOf(run.pack) && keyOwner(s.body) === owner);
-  const eligible=!refresh&&management===null&&successors.length===0;
-  const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest):undefined;
+  const eligible=!refresh&&parserError===null&&management===null&&successors.length===0;
+  const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if (repeat !== null) return answerOf(repeat);
+  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(repeat);}
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
+  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body);return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(previous.body);}
 
   const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -233,6 +240,8 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       detail: { submission: received.digest, session, model, ...(input.extra?.refusal === 'session_missing' ? {} : {repair: input.repair}), result: input.result, ...(input.extra ?? {}) },
       submissionRecord: record.digest,
     });
+
+  if(parserError){await action({acceptance:'not_accepted',codes:[parserError.code],repair:[],result:null});return {call_result:'error',acceptance:'not_accepted',errors:[parserError]};}
 
   if (packIdOf(run.pack) !== 'knowledge-contribution') {
     for (const binding of run.sources) {
@@ -262,7 +271,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
     return answerOf(saved.body);
   }
-  const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest):frozenWorkflow;
+  const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):frozenWorkflow;
   if (workflow === null) {
     ctx.log({ traceId: call.traceId, run: run.run, what: 'submit_result', detail: `pack version ${run.pack} (${run.pack_digest}) is no longer loadable` });
     await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null });
@@ -293,6 +302,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if (sessionMissing) {
     outcome = { ...outcome, result: notAccepted(base, [protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核缺少本会话的 id，整份提交未受理', {path:'', fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），把同一份提交原样再交'}), ...outcome.result.errors]), problems: new Set() };
   }
+  if(outcome.result.acceptance==='accepted'){const refusal=await groundsAudience(ctx,run,outcome.result);if(refusal)outcome={result:notAccepted(base,[refusal]),problems:new Set()};}
   if(outcome.result.acceptance==='accepted')await applyDispatchResults(ctx,run,outcome.result);
   await recordResultRequests(ctx,run,outcome.result,roundsUsed,args);
   for(const error of outcome.result.errors)if(error.requirement&&isReason(error.code))outcome.problems.add(error.requirement);

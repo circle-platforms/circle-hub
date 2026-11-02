@@ -85,7 +85,7 @@ export async function systemForgetPage(ctx: PageContext, form: Form, outcome: Fo
 function packPage(ctx: PageContext, staging: PackStaging): Html {
   const kind=publishingKind(ctx), label=uiLabelOf('pack_kind',kind);
   const form = actionForm('pack-stage', ctx.csrf ?? '', html`<div class="fields">${field(`${label} zip 文件`, html`<input type="file" name="archive" accept=".zip,application/zip" required>`, { hint: '发布目录压缩成的 zip，目录中要有 pack.json', full: true })}</div>`, '上传并校验', { multipart: true, primary: true, kind });
-  const staged = staging.list(ctx.principal.id).filter(stage=>(stage.kind??'workflow')===kind);
+  const staged = staging.list(ctx.principal.id).filter(stage=>!stage.space&&(stage.kind??'workflow')===kind);
   const waiting = staged.length === 0 ? '' : html`<div class="mt16">${card({ title: `暂存的${label}`, tail: chip('等待发布中', 'judgment'), hint: '仅暂存人可见，30 分钟内有效' }, html`<div class="stack">${staged.map((stage) => html`<div><p>${code(`${stage.pack}@${stage.version}`)} <span class="sub">摘要 ${stage.digest.slice(0, 12)}… · 暂存至 ${when(new Date(stage.expires).toISOString())}</span></p>${stageForms(stage, ctx.csrf ?? '')}</div>`)}</div>`)}</div>`;
   return html`${steps(['上传', '发布校验', '发布', '完成'], 0)}
 <section class="grid g-2-1 section">

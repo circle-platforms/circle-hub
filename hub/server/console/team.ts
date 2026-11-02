@@ -12,7 +12,7 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
   const users = member !== undefined ? [await principals.get(member)].filter(user => user !== null)
     : ctx.admin ? await principals.list() : [await principals.get(ctx.principal.id)].filter(user => user !== null);
   if (member !== undefined && users.length === 0) return neutralPage(ctx);
-  const packs = (await ctx.deps.packs.list(ctx.principal)).filter(pack => pack.kind === 'workflow' && !pack.withdrawn);
+  const packs = (await ctx.deps.packs.list(ctx.principal)).filter(pack => pack.kind === 'workflow' && !pack.space && !pack.withdrawn);
   const dialogs: CommandDialog[] = [];
   const members: unknown[][] = [], circles: unknown[][] = [], permissions: Array<[string, unknown]> = [], assignments: unknown[][] = [];
   for (const user of users) {

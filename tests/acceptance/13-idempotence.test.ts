@@ -65,7 +65,7 @@ describe('scenario 13: idempotence of start_run and submit_result', () => {
 
     // First submission
     const firstSubmit = await client.call('submit_result', submission);
-    assert.equal(firstSubmit.isError, false);
+    assert.equal(firstSubmit.isError, false,firstSubmit.text);
     assert.equal(firstSubmit.out.acceptance, 'accepted');
     const firstResult = resultOf(firstSubmit);
 

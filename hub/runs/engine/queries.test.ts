@@ -23,6 +23,9 @@ before(async () => {
   postgres = await startPostgres();
   if (skip) return;
   h = await openHarness(postgres);
+  // Run sharing does not grant source rights. These query fixtures explicitly use team-readable captures.
+  const ingest=h.kit.artifacts.ingest.bind(h.kit.artifacts);
+  h.kit.artifacts.ingest=input=>ingest({...input,visibility:{...input.visibility,readers:[h.alice.id,h.bob.id,h.admin.id]}});
   map = await h.upload(h.alice, toyMap(standardDocument()));
   run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } } }, h.call())).run!;
   await h.service.submitResult(h.alice, { run: run.run, model: 'model-a', items: [] }, h.call());

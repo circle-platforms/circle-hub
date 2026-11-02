@@ -286,7 +286,7 @@ async function packs(ctx: PageContext): Promise<ApiResult> {
   for (const [id, versions] of byId(await ctx.deps.packs.list(ctx.principal))) {
     const pack = shownVersion(versions);
     out.push({
-      id, title: pack.title, kind: pack.kind, kind_label: uiLabelOf('pack_kind', pack.kind), version: pack.version, state: stateOf(pack).text,
+      id:pack.id,...(pack.space?{space:pack.space}:{}), title: pack.title, kind: pack.kind, kind_label: uiLabelOf('pack_kind', pack.kind), version: pack.version, state: stateOf(pack).text,
       owner: await person(ctx, pack.owner), published_at: pack.published_at, versions: versions.map((v) => ({ version: v.version, digest: v.digest, published_at: v.published_at, withdrawn: v.withdrawn })),
       ...(pack.assigned_to === undefined ? {} : { assigned: await Promise.all(pack.assigned_to.map((user) => person(ctx, user))) }),
     });
@@ -296,12 +296,12 @@ async function packs(ctx: PageContext): Promise<ApiResult> {
 
 async function pack(ctx: PageContext, id: string): Promise<ApiResult> {
   if (!PACK_ID.test(id)) return neutral();
-  const versions = byId(await ctx.deps.packs.list(ctx.principal)).get(id);
+  const versions = byId(await ctx.deps.packs.list(ctx.principal)).get(ctx.url.searchParams.has('space')&&ctx.url.searchParams.get('space')!=='team'?ctx.url.searchParams.get('space')+'/'+id:id);
   if (versions === undefined) return neutral();
   const shown = shownVersion(versions);
   let workflow = null;
   if (shown.kind === 'workflow') {
-    const loaded = await ctx.deps.workflows.byDigest(shown.digest).catch(() => null);
+    const loaded = await ctx.deps.workflows.byDigest(shown.digest,shown.space).catch(() => null);
     if (loaded !== null) workflow = {
       inputs: loaded.workflow.inputs.map((input) => ({ slot: input.slot, role: input.role, description: input.description, required: input.required })),
       requirements: loaded.requirements.map((r) => ({ key: r.key, name: r.name, description: r.description, layers: r.layers.map((layer) => ({ layer, label: uiLabelOf('layer', layer) })), done_rule: r.done_rule, accepted_producer: r.accepted_producer, required: r.required, checks: r.checks })),
@@ -309,7 +309,7 @@ async function pack(ctx: PageContext, id: string): Promise<ApiResult> {
     };
   }
   return ok({
-    id, title: shown.title, kind: shown.kind, kind_label: uiLabelOf('pack_kind', shown.kind), state: stateOf(shown).text, owner: await person(ctx, shown.owner),
+    id,...(shown.space?{space:shown.space}:{}), title: shown.title, kind: shown.kind, kind_label: uiLabelOf('pack_kind', shown.kind), state: stateOf(shown).text, owner: await person(ctx, shown.owner),
     versions: versions.map((v) => ({ version: v.version, digest: v.digest, published_at: v.published_at, withdrawn: v.withdrawn, active: v.active, samples: v.samples })),
     ...(shown.assigned_to === undefined ? {} : { assigned: await Promise.all(shown.assigned_to.map((user) => person(ctx, user))) }),
     workflow,

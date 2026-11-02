@@ -1,8 +1,9 @@
+import {withdrawnGrounds,groundsReadableBy,runReadableBy,resultReadableBy} from './grounds.ts';
 import {criterionNotices} from './criterion-changes.ts';
 import { isReason,labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { abandonDecision } from './management.ts';
 import { requestsOf } from './requests.ts';
-// Queries for the server and console (R02): owners/admins retain full access; explicit shares add read-only visibility.
+// Queries for the server and console (R02): owners retain access; team admins and grants remain subject to current grounds.
 // Absent and forbidden give the same null or empty page. Phase and counts are derived, never stored.
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
@@ -19,6 +20,7 @@ import { isObject, receivedDigest } from './util.ts';
 export interface StoredResult {
   /** Current package state; never rewrite the result named by record. */
   rule_withdrawn?: true;
+  grounds_withdrawn?:string[];
   /** Digest of the validation_result record. */
   record: string;
   result: ValidationResult;
@@ -26,20 +28,27 @@ export interface StoredResult {
 
 async function visibleRun(ctx: EngineContext, user: Principal, run: string): Promise<StoredRecord<RunRecord> | null> {
   const stored = await runById(ctx.deps.records.store, run);
-  return stored !== null && await canViewRun(user, stored.body, ctx.deps.records.store) ? stored : null;
+  return stored !== null && await runReadableBy(ctx,user,stored.body) ? stored : null;
+}
+
+export async function resultState(ctx:EngineContext,user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[]}>{
+  const stored=await visibleRun(ctx,user,result.run);
+  const readable=stored!==null&&await resultReadableBy(ctx,stored.body,result,user);
+  return {readable,grounds_withdrawn:readable?await withdrawnGrounds(ctx,result):[]};
 }
 
 async function withRulingSummary(ctx:EngineContext,record:RunRecord,packages=new Map<string,Promise<LoadedWorkflow|null>>()):Promise<RunRecordView>{
   if(hasRulingSummary(record))return record;
-  let loading=packages.get(record.pack_digest);
-  if(!loading){loading=ctx.deps.workflows.byDigest(record.pack_digest);packages.set(record.pack_digest,loading);}
+  const key=(record.pack_space??'team')+'/'+record.pack_digest;
+  let loading=packages.get(key);
+  if(!loading){loading=ctx.deps.workflows.byDigest(record.pack_digest,record.pack_space);packages.set(key,loading);}
   const workflow=await loading;
   return {...record,requirements:summaryOf(record,workflow??undefined).requirements};
 }
 
 /** Read the exact frozen version through the existing metadata port, after run visibility has been checked. */
 async function ruleWithdrawal(ctx:EngineContext,user:Principal,run:RunRecord):Promise<{rule_withdrawn:true}|Record<string,never>>{
-  return await ctx.deps.workflows.absence?.(user,run.pack)==='withdrawn'?{rule_withdrawn:true}:{};
+  return await ctx.deps.workflows.absence?.(user,run.pack,run.pack_space)==='withdrawn'?{rule_withdrawn:true}:{};
 }
 
 export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
@@ -48,7 +57,8 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const store = ctx.deps.records.store;
   // A shared view includes accepted validation bodies only; rejected receipts fall back to public action codes.
   const owner = canSeeRun(user, stored.body);
-  const results = (await resultsOf(store, run)).filter(record => owner || record.body.acceptance === 'accepted');
+  const results=[] as StoredRecord<ValidationResult>[];
+  for(const record of await resultsOf(store,run))if(await resultReadableBy(ctx,stored.body,record.body,user))results.push(record);
   const byDigest = new Map(results.filter(r=>r.body.system_input===undefined).map((r) => [r.body.submission, r]));
   const submissions: RunSubmissionView[] = [];
   for (const record of await submissionsOf(store, run)) {
@@ -56,13 +66,14 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
     const detail = action !== null && isObject(action.body.detail) ? action.body.detail : {};
     const submission = typeof detail.submission === 'string' ? detail.submission : isVerbatimObject(record) ? null : receivedDigest(record.body).digest;
     const result = submission === null ? undefined : byDigest.get(submission);
+    const privateReceipt=!owner||stored.body.runner!==user.id&&!await groundsReadableBy(ctx,stored.body,record.body,user);
     const codes = action?.body.codes ?? [];
     const hubError = action?.body.result === 'error' && detail.hub_error === true;
     submissions.push({
       record: record.digest,
       received_at: record.created_at,
       acceptance: hubError || action === null && result === undefined ? null : result?.body.acceptance ?? action?.body.acceptance ?? 'not_accepted',
-      errors: !owner && result===undefined ? publicReceiptErrors(codes) : action===null&&result===undefined ? [{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带原会话原样重交'}] : hubError ? [{code: action?.body.error_code ?? 'check_error', message: '未校验（中断）', ...(typeof detail.fix === 'string' ? {fix: detail.fix} : {})}] : result?.body.errors ?? publicReceiptErrors(codes),
+      errors: privateReceipt && result===undefined ? publicReceiptErrors(codes) : action===null&&result===undefined ? [{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带原会话原样重交'}] : hubError ? [{code: action?.body.error_code ?? 'check_error', message: '未校验（中断）', ...(typeof detail.fix === 'string' ? {fix: detail.fix} : {})}] : result?.body.errors ?? publicReceiptErrors(codes),
       result: result !== undefined && result.body.acceptance === 'accepted' ? result.digest : null,
     });
   }
@@ -70,10 +81,11 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const management=await abandonDecision(ctx,run);
   const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
   const selected=management?managementResult:technicalLatest;
-  const latest=selected!==null&&(!owner&&selected.body.acceptance!=='accepted')?null:selected;
+  const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
   const notices=await criterionNotices(ctx,stored.body);
-  return { ...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  const withdrawn=await withdrawnGrounds(ctx,results.map(row=>row.body));
+  return { ...(withdrawn.length?{grounds_withdrawn:withdrawn}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
@@ -98,7 +110,7 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
       if (error instanceof TypeError || error instanceof RangeError || error instanceof RecordsError && error.name === 'RecordsError') return {items:[],next:null};
       throw error;
     }
-    for (const record of page.items) if (await canViewRun(user,record.body,ctx.deps.records.store)) rows.push(record.body);
+    for (const record of page.items) if (await runReadableBy(ctx,user,record.body)) rows.push(record.body);
     cursor = page.next;
   } while (cursor !== null);
   const compare = (a: string,b: string): number => a === b ? 0 : a < b ? -1 : 1;
@@ -124,7 +136,7 @@ export async function getResult(ctx: EngineContext, user: Principal, run: string
   const store = ctx.deps.records.store;
   const management=submission===undefined?await abandonDecision(ctx,run):null;
   const found = management ? (await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null : submission===undefined?await latestAccepted(store,run):await resultFor(store,run,submission);
-  return found === null || !canSeeRun(user,stored.body) && found.body.acceptance !== 'accepted' ? null : { ...await ruleWithdrawal(ctx,user,stored.body),record: found.digest, result: found.body };
+  return found===null||!await resultReadableBy(ctx,stored.body,found.body,user)?null:{...await ruleWithdrawal(ctx,user,stored.body),grounds_withdrawn:await withdrawnGrounds(ctx,found.body),record:found.digest,result:found.body};
 }
 
 /** The runs of one pack the user may see, newest first. */

@@ -1,5 +1,20 @@
 # hub/knowledge: the content-addressed knowledge tree
 
+## Verified sharing (decision 87)
+
+`spaces.share` accepts only the caller's currently verified personal entry. The ordered checks re-resolve all grounds,
+verify each exact quotation, recursively check source eligibility, compare only team content, then scan content and
+complete original bytes for credentials. Personal-credential reads and unsigned uploads are refused. Personal-entry
+dependencies must already have a team counterpart, so a merge never leaves a team entry dependent on private read rights.
+Deduplication includes team history and the caller-readable legacy product mounts; inaccessible product mounts and other
+people's personal spaces are not an existence oracle. Original capture authority and phase-2 read-tier rules stay intact.
+
+Success appends a team entry, source aliases, a new immutable version and a `knowledge_share` receipt in one transaction;
+the personal original remains. The team copy records `shared_from`, submitter and time. Failure appends a registered safe
+code/reason receipt with no original or credential text. `shareHistory` pages only the caller's receipts. The submitter may
+withdraw their own team submission; an administrator may withdraw any team entry. A withdrawal changes only the appended
+projection. Entry reads recursively derive withdrawn-ground qualifiers, without rewriting dependent records.
+
 ## Personal and team spaces (decision 86)
 
 Decision 84 phase 2 adds `knowledge.spaces` (`KnowledgeSpaces` from `api.ts`). Both spaces use the same entry content,
@@ -23,13 +38,13 @@ personal entries are owner-only and use a separate owner-scoped index rather tha
 `search` uses records' GIN projection over normalized statement/data/quotation bigrams. ACL scopes filter SQL before paging;
 cursors bind identity, roots, grants and query. Legacy product entries use the same projection without changing their
 content hashes. Missing projection rows are rebuilt from immutable records. Search only finds leads outside a run.
-Histories and diffs include product mounts and filter inaccessible paths; directory pages and search have byte/node caps.
+Team histories and diffs include product mounts; personal histories/diffs are owner-only, including whole-space grantees. Directory pages and search have byte/node caps.
 
 Personal capacity defaults to 1 GiB and is adjustable only by administrators. The accounting includes admitted entry/source
 bytes and successive snapshot metadata, including history; withdrawals do not free history. This is logical space usage,
 not a report of filesystem blocks. Grants and capacity changes are append-only records. Writes serialize before opening
 the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
-Member-to-team sharing, local synchronization, upload signing and account-deletion lifecycle remain later phases.
+Local synchronization, upload signing and account-deletion lifecycle remain later phases.
 
 
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed

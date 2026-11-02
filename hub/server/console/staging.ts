@@ -19,6 +19,7 @@ export interface StagedPack {
   id: string;
   /** User id of the administrator who staged it, the only one who may publish it. */
   by: string;
+  space?:string;
   /** The pack's id and version as its pack.json names them. */
   pack: string;
   version: string;
@@ -66,7 +67,7 @@ export class PackStaging {
    * Keeps a checked directory for the administrator `by`. Null, with the directory removed, when its pack.json cannot be
    * read or the store is closed.
    */
-  async add(by: string, unpacked: { root: string; dir: string }): Promise<StagedPack | null> {
+  async add(by: string, unpacked: { root: string; dir: string },space?:string): Promise<StagedPack | null> {
     const read = this.#closed ? null : await stagedDigest(unpacked.dir);
     if (read === null || this.#closed) {
       await rm(unpacked.root, { recursive: true, force: true });
@@ -74,7 +75,7 @@ export class PackStaging {
     }
     while (this.#entries.size >= this.#max) await this.remove(this.#entries.keys().next().value!);
     const created = this.#now();
-    const stage: StagedPack = { id: randomBytes(18).toString('base64url'), by, ...read, created, expires: created + this.#ttlMs };
+    const stage: StagedPack = { ...(space?{space}:{}),id: randomBytes(18).toString('base64url'), by, ...read, created, expires: created + this.#ttlMs };
     const timer = setTimeout(() => void this.remove(stage.id), this.#ttlMs);
     timer.unref();
     this.#entries.set(stage.id, { stage, root: unpacked.root, dir: unpacked.dir, timer });

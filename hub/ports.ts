@@ -205,6 +205,7 @@ export interface RunsService {
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[]}>;
+  requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
   /** Own runs for a user, every run for an admin, newest first. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
 }
