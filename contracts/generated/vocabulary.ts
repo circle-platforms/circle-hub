@@ -43,6 +43,7 @@ export const AXES = {
   signing: { label: '署名方式', owner: 'D03', values: [{ code: 'own_credential', label: '本人凭据' }, { code: 'service_on_behalf', label: '服务账号代表发起用户' }] },
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
+  request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '教训' }] },
@@ -58,6 +59,7 @@ export const AXES = {
   pack_kind: { label: '任务包种类', ui: '类型', owner: 'T01', values: [{ code: 'product', label: '产品包' }, { code: 'workflow', label: '工作流包' }, { code: 'system', label: '系统包' }, { code: 'skill', label: '通用技能包', ui: '技能包' }] },
   environment: { label: '环境类别', ui: '环境', owner: 'D01', values: [{ code: 'test', label: '测试' }, { code: 'shared', label: '共享' }, { code: 'production', label: '生产', ui: '正式' }] },
   permission_role: { label: '权限角色', ui: '角色', owner: 'R01', values: [{ code: 'user', label: '用户', ui: '成员' }, { code: 'admin', label: '管理员' }] },
+  account_status: { label: '账户状态', owner: 'R01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
   validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
   qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }, { code: 'legacy_keyword_rules', label: '旧规则（关键词）' }, { code: 'possible_credentials', label: '可能含凭据' }] },
@@ -491,6 +493,16 @@ export function isRequestKind(value: unknown): value is RequestKind {
   return (REQUEST_KIND as readonly unknown[]).includes(value);
 }
 
+/** 请求状态 (B07) */
+export const REQUEST_STATUS = ['waiting', 'overdue', 'answered'] as const;
+export type RequestStatus = (typeof REQUEST_STATUS)[number];
+export const REQUEST_STATUS_LABEL = { 'waiting': '等待回应中', 'overdue': '已逾期', 'answered': '已回答' } as const satisfies { readonly [K in RequestStatus]: string };
+export const REQUEST_STATUS_UI = { 'waiting': '等待回应中', 'overdue': '已逾期', 'answered': '已回答' } as const satisfies { readonly [K in RequestStatus]: string };
+export const RequestStatusSchema = z.enum(REQUEST_STATUS);
+export function isRequestStatus(value: unknown): value is RequestStatus {
+  return (REQUEST_STATUS as readonly unknown[]).includes(value);
+}
+
 /** 许可种类 (B04) */
 export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share'] as const;
 export type PermissionKind = (typeof PERMISSION_KIND)[number];
@@ -639,6 +651,16 @@ export const PERMISSION_ROLE_UI = { 'user': '成员', 'admin': '管理员' } as 
 export const PermissionRoleSchema = z.enum(PERMISSION_ROLE);
 export function isPermissionRole(value: unknown): value is PermissionRole {
   return (PERMISSION_ROLE as readonly unknown[]).includes(value);
+}
+
+/** 账户状态 (R01) */
+export const ACCOUNT_STATUS = ['enabled', 'disabled'] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUS)[number];
+export const ACCOUNT_STATUS_LABEL = { 'enabled': '已启用', 'disabled': '已停用' } as const satisfies { readonly [K in AccountStatus]: string };
+export const ACCOUNT_STATUS_UI = { 'enabled': '已启用', 'disabled': '已停用' } as const satisfies { readonly [K in AccountStatus]: string };
+export const AccountStatusSchema = z.enum(ACCOUNT_STATUS);
+export function isAccountStatus(value: unknown): value is AccountStatus {
+  return (ACCOUNT_STATUS as readonly unknown[]).includes(value);
 }
 
 /** 引用形式 (B03) */
@@ -972,6 +994,7 @@ export interface AxisValues {
   signing: Signing;
   disposition: Disposition;
   request_kind: RequestKind;
+  request_status: RequestStatus;
   permission_kind: PermissionKind;
   knowledge_layer: KnowledgeLayer;
   entry_kind: EntryKind;
@@ -987,6 +1010,7 @@ export interface AxisValues {
   pack_kind: PackKind;
   environment: Environment;
   permission_role: PermissionRole;
+  account_status: AccountStatus;
   reference_scheme: ReferenceScheme;
   validity_status: ValidityStatus;
   qualifier_mark: QualifierMark;
@@ -1059,6 +1083,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   signing: SIGNING_LABEL,
   disposition: DISPOSITION_LABEL,
   request_kind: REQUEST_KIND_LABEL,
+  request_status: REQUEST_STATUS_LABEL,
   permission_kind: PERMISSION_KIND_LABEL,
   knowledge_layer: KNOWLEDGE_LAYER_LABEL,
   entry_kind: ENTRY_KIND_LABEL,
@@ -1074,6 +1099,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   pack_kind: PACK_KIND_LABEL,
   environment: ENVIRONMENT_LABEL,
   permission_role: PERMISSION_ROLE_LABEL,
+  account_status: ACCOUNT_STATUS_LABEL,
   reference_scheme: REFERENCE_SCHEME_LABEL,
   validity_status: VALIDITY_STATUS_LABEL,
   qualifier_mark: QUALIFIER_MARK_LABEL,
@@ -1146,6 +1172,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   signing: SIGNING_UI,
   disposition: DISPOSITION_UI,
   request_kind: REQUEST_KIND_UI,
+  request_status: REQUEST_STATUS_UI,
   permission_kind: PERMISSION_KIND_UI,
   knowledge_layer: KNOWLEDGE_LAYER_UI,
   entry_kind: ENTRY_KIND_UI,
@@ -1161,6 +1188,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   pack_kind: PACK_KIND_UI,
   environment: ENVIRONMENT_UI,
   permission_role: PERMISSION_ROLE_UI,
+  account_status: ACCOUNT_STATUS_UI,
   reference_scheme: REFERENCE_SCHEME_UI,
   validity_status: VALIDITY_STATUS_UI,
   qualifier_mark: QUALIFIER_MARK_UI,

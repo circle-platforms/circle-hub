@@ -1,4 +1,5 @@
-// /console: sign-in with a Hub token, then the seven places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
+import { LimitError, validPassword } from '../../records/api.ts';
+// /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
 // 设置) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
 // decision 75; the older paths (/console/results, /console/admin/...) stay. The
 // session cookie is HttpOnly, SameSite=Strict and scoped to /console. Every POST form (sign-in, sign-out, first-admin
@@ -29,6 +30,7 @@ import { recordsPage } from './records.ts';
 import { searchPage } from './search.ts';
 import { resultPage, resultsPage } from './results.ts';
 import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings.ts';
+import { teamPage } from './team.ts';
 import { stepper } from './ui.ts';
 import { LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
@@ -68,7 +70,6 @@ const SECURE_SETUP_COOKIE = '__Secure-circle_hub_setup';
 const ENDED_COOKIE = 'circle_hub_ended';
 const SECURE_ENDED_COOKIE = '__Secure-circle_hub_ended';
 const HOME = '/console/overview';
-const TOKEN = /^(?:Bearer[ \t]+)?([A-Za-z0-9_-]{43})$/i;
 
 function sendHtml(response: ServerResponse, status: number, body: Html, headers: Record<string, string | string[]> = {}): void {
   setCommonHeaders(response);
@@ -106,14 +107,11 @@ async function loginPage(options: ConsoleOptions, response: ServerResponse, stat
   const body = page(
     anonymous('登录'),
     html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
-<div class="callout info mt16">${logo()}<span><b>从 Circle 打开</b><br>已连接的 Circle 可获取一次性登录链接（${LOGIN_LINK_TTL_MS / 60_000} 分钟内有效，仅可使用一次），浏览器打开链接并确认后即登录，无需输入。</span></div>
-<div class="divider">访问令牌登录 · 供 Circle 不可用时使用</div>
-<form method="post" action="/console/login">
-<div class="field"><label for="hub-token">访问令牌</label><input id="hub-token" class="input" type="password" name="token" autocomplete="off" size="50" required placeholder="粘贴管理员签发的令牌"></div>
+<form method="post" action="/console/login" class="mt16">
+<div class="field"><label for="hub-username">用户名</label><input id="hub-username" class="input" name="username" autocomplete="username" maxlength="200" required></div>
+<div class="field"><label for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><input id="hub-password" class="input" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>
 <input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
-<button type="submit" class="btn primary">登录</button>
-</form>
-<p class="sub mt12">访问令牌由管理员在 Circle 中执行 ${code('circle-hub token issue')} 签发，仅显示一次；遗失后重新签发。</p>`,
+<button type="submit" class="btn primary">登录</button></form>`,
   );
   const cookies = [cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure)];
   if (ended) cookies.push(cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '', '/console/login', 0, secure));
@@ -145,7 +143,7 @@ async function formOf(request: IncomingMessage, limit = LOGIN_FORM_LIMIT): Promi
 
 /** Trimmed fields; an absent one is the empty string. A secret value (value, value_<n>) is taken as typed. */
 function fields(get: (name: string) => string | null | undefined): Form {
-  return { get: (name) => (name === 'value' || /^value_[0-9]$/.test(name) ? (get(name) ?? '') : (get(name) ?? '').trim()) };
+  return { get: (name) => (name === 'value' || name === 'password' || name === 'current' || name === 'confirm' || /^value_[0-9]$/.test(name) ? (get(name) ?? '') : (get(name) ?? '').trim()) };
 }
 
 async function login(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions): Promise<void> {
@@ -170,21 +168,71 @@ async function login(request: IncomingMessage, response: ServerResponse, options
     forbidden(response, '表单已过期或不是本控制台发出的，请重新打开登录页');
     return;
   }
-  const match = TOKEN.exec((form.get('token') ?? '').trim());
-  const principal = match === null ? null : await options.deps.records.principals.authenticate(`Bearer ${match[1]}`);
-  if (match === null || principal === null) {
-    await loginPage(options, response, 401, '令牌无效：不存在、已撤销，或账号已停用', secure);
-    return;
+  const rawName = (form.get('username') ?? '').trim();
+  const name = rawName.length <= 200 && [...rawName].length <= 100 ? rawName : '';
+  const peerKey = 'peer:' + (request.socket.remoteAddress ?? 'unknown');
+  // Every account, administrators included, signs in with its username and password (owner, 2026-11-02); a token only
+  // connects a Circle and is never accepted here.
+  const accountKey = 'account:' + name;
+  if (!options.sessions.takeLoginAttempt(accountKey) || !options.sessions.takeLoginAttempt(peerKey,50)) return loginPage(options,response,429,'登录失败次数过多，请在 15 分钟后重试',secure);
+  const principals=options.deps.records.principals;
+  let token: string | null = null;
+  try {
+    const verified=await principals.verifyPassword(name,form.get('password') ?? '');
+    if (verified) token=(await principals.openConsoleSession(verified.user.id,verified.revision))?.token ?? null;
+  } catch(error) {
+    if (error instanceof LimitError) return loginPage(options,response,429,'密码校验繁忙，请稍后重试',secure);
+    throw error;
   }
-  const session = options.sessions.open(match[1], secure);
-  redirect(response, safeNext(form.get('next')), [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+  if (token === null) return loginPage(options,response,401,'用户名或密码无效，或账号不可用',secure);
+  options.sessions.clearLoginAttempts(accountKey); options.sessions.clearLoginAttempts(peerKey);
+  const session=options.sessions.open(token,secure);
+  const principal=await principals.authenticate('Bearer '+token);
+  const state=principal ? await principals.passwordState?.(principal.id) : null;
+  const next=safeNext(form.get('next'));
+  redirect(response,state?.mustChange ? '/console/password?next='+encodeURIComponent(next) : next,[cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE,session.id,'/console',undefined,secure),cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE,'','/console/login',0,secure)]);
+}
+
+/** Password forms have no data navigation until the forced first change is complete. */
+async function passwordPage(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, principal: Principal | null, secure: boolean, rest: string[]): Promise<void> {
+  if (!session || !principal) { request.resume(); return redirect(response,'/console/login'); }
+  const mustChange = (await options.deps.records.principals.passwordState(principal.id)).mustChange;
+  if (rest.length > 0) { request.resume(); return sendHtml(response,404,page(anonymous(NEUTRAL),html``)); }
+  const show = (status: number, message = '') => sendHtml(response,status,page(anonymous('修改密码'),html`
+<p>${principal.name}</p>${mustChange ? html`<p class="notice">首次登录必须修改密码。</p>` : ''}${message ? html`<p class="error">${message}</p>` : ''}
+<form method="post" action="/console/password"><input type="hidden" name="csrf" value="${session.csrf}"><input type="hidden" name="next" value="${safeNext(url.searchParams.get('next'))}">
+<div class="field"><label>当前密码 <input type="password" name="current" autocomplete="current-password" maxlength="256" required></label></div>
+<div class="field"><label title="12 至 256 个字符，不含控制字符">新密码 <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></label></div>
+<div class="field"><label>再次输入新密码 <input type="password" name="confirm" autocomplete="new-password" maxlength="256" required></label></div><button type="submit" class="btn primary">修改密码</button></form>`));
+  if (request.method === 'GET') return show(200);
+  if (request.method !== 'POST') { request.resume(); return sendHtml(response,405,page(anonymous('方法不允许'),html`<p>只接受 POST</p>`),{allow:'POST'}); }
+  if (!sameOrigin(request,options.ownOrigins())) { request.resume(); return forbidden(response,'密码表单只能从本控制台提交'); }
+  const form=await formOf(request);
+  if (typeof form === 'string' || form.get('csrf') !== session.csrf) return forbidden(response,'表单已过期或不是本控制台发出的');
+  const key='password:'+principal.id;
+  if (!options.sessions.takeLoginAttempt(key)) return show(429,'密码操作失败次数过多，请在 15 分钟后重试');
+  try {
+    const password=form.get('password') ?? '';
+    if (!validPassword(password) || password !== form.get('confirm')) return show(400,'新密码须为 12 至 256 个字符，不含控制字符，且两次输入一致');
+    if (!await options.deps.records.principals.changePassword(principal,form.get('current') ?? '',password)) return show(400,'当前密码无效，或新密码与当前密码相同');
+    options.sessions.clearLoginAttempts(key);
+    options.sessions.close(session.id);
+    sendHtml(response,200,page(anonymous('密码已修改'),html`<p>请用新密码重新登录。</p><p>${link('/console/login','登录',{next:safeNext(form.get('next'))})}</p>`),{'set-cookie':cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE,'','/console',0,secure)});
+  } catch(error) {
+    if (error instanceof LimitError) return show(429,'密码校验繁忙，请稍后重试');
+    if (error instanceof TypeError) return show(400,'密码格式不正确');
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------- one-time login links
 
 const LINK_INVALID = '登录链接已失效：该链接已使用或已过期。请在 Circle 中重新获取。';
 
-/** GET shows whose session the link opens and asks to confirm (so a prefetch or a planted link signs nobody in); POST opens it. */
+/**
+ * A link from Circle leads to the password sign-in at its page (owner, 2026-11-02: every account signs in with username and
+ * password). It signs nobody in, so a prefetch or a planted link cannot either; POST still consumes it.
+ */
 async function loginLink(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, secure: boolean, code: string): Promise<void> {
   const links = options.loginLinks;
   if (links === undefined) {
@@ -195,15 +243,8 @@ async function loginLink(request: IncomingMessage, response: ServerResponse, opt
     const found = links.peek(code);
     const principal = found === null ? null : await options.deps.records.principals.authenticate(`Bearer ${found.token}`);
     if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p><p class="mt12">${link('/console/login', '前往登录页')}</p>`));
-    const nonce = options.sessions.issueNonce(secure);
-    return sendHtml(
-      response,
-      200,
-      page(anonymous('从 Circle 登录'), html`<p class="mt12">以 <b>${principal.name}</b>（${uiLabelOf('permission_role', principal.role)}）的身份登录控制台。</p>
-<form method="post" action="/console/login/${code}" class="mt16"><input type="hidden" name="csrf" value="${nonce}"><button type="submit" class="btn primary">登录</button></form>
-<p class="sub mt12">链接仅可使用一次；不是本人请求的链接时，关闭本页即可。</p>`),
-      { 'set-cookie': cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure) },
-    );
+    // A link from Circle leads every account to the password sign-in at the requested page; it never opens a session.
+    return redirect(response,'/console/login?next='+encodeURIComponent(found.next));
   }
   if (request.method !== 'POST') {
     request.resume();
@@ -222,13 +263,12 @@ async function loginLink(request: IncomingMessage, response: ServerResponse, opt
   const taken = links.take(code);
   const principal = taken === null ? null : await options.deps.records.principals.authenticate(`Bearer ${taken.token}`);
   if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p>`));
-  const session = options.sessions.open(taken.token, secure);
-  redirect(response, taken.next, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+  redirect(response,'/console/login?next='+encodeURIComponent(taken.next));
 }
 
 /**
- * POST /console/api/login-links: a client asks with its Bearer token for a one-time link that opens a console session on
- * that token, optionally at `next` (a console path). No session cookie is involved.
+ * POST /console/api/login-links: a client asks with its Bearer token for a one-time link to the console, optionally at
+ * `next` (a console path). The link only leads to the password sign-in there; it never opens a session (owner, 2026-11-02).
  */
 async function loginLinks(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, secure: boolean): Promise<void> {
   const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'", 'cache-control': 'no-store' };
@@ -348,7 +388,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
     if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新授权' };
     if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
       open.invitation = null;
-      return { status: 409, error: '邀请码已失效（已使用、已过期，或账号已停用）：请管理员重新签发' };
+      return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status','disabled')}）：请管理员重新签发` };
     }
     const code = store!.grant(open, named.id);
     if (code === null) return { status: 409, error: '该授权请求已处理' };
@@ -389,17 +429,18 @@ const SETUP_STEPS = ['初始化码', '创建管理员', '连接 Circle', '完成
 
 async function setupPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, prefill = ''): Promise<void> {
   if (await hasAdmin(options.deps)) {
-    sendHtml(response, status === 200 ? 409 : status, page(anonymous('初始化'), html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}<p class="mt12">这个 Hub 已经有管理员；请用令牌${link('/console/login', '登录')}。</p>`));
+    sendHtml(response, status === 200 ? 409 : status, page(anonymous('初始化'), html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}<p class="mt12">这个 Hub 已经有管理员；请用用户名和密码${link('/console/login', '登录')}。</p>`));
     return;
   }
   const nonce = options.sessions.issueNonce(secure);
   const body = page(
-    { ...anonymous('创建首位管理员'), wide: true },
+    { ...anonymous('创建首位管理员'), wide: true, hint: '使用初始化码创建首位管理员；管理员用户名必填，密码可留空。' },
     html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error mt12">${message}</p>`}
-<p class="sub mt12">输入安装时显示的初始化码，创建首位管理员。初始化码仅可使用一次，24 小时内有效；也可在 Hub 所在的主机上执行 ${code('circle-hub setup-code')} 重新生成。</p>
+<p class="sub mt12">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
 <form method="post" action="/console/setup">
 <div class="field"><label for="setup-code">初始化码</label><input id="setup-code" class="input" name="code" autocomplete="off" size="40" required value="${prefill}"></div>
-<div class="field"><label for="admin-name">管理员姓名</label><input id="admin-name" class="input" name="name" autocomplete="off" size="24" required></div>
+<div class="field"><label for="admin-name">管理员用户名</label><input id="admin-name" class="input" name="name" autocomplete="off" size="24" required></div>
+<div class="field"><label for="admin-password" title="可留空；留空则生成初始密码，仅显示一次，首次登录必须修改">管理员密码（可选）</label><input id="admin-password" class="input" type="password" name="password" autocomplete="new-password" maxlength="256"></div>
 <input type="hidden" name="csrf" value="${nonce}">
 <button type="submit" class="btn primary">创建管理员</button>
 </form>
@@ -440,27 +481,27 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
     return;
   }
   options.log(`控制台建立了第一位管理员 ${outcome.name}`);
-  const session = options.sessions.open(outcome.token, secure);
+  // No session is opened here: like every account, the new administrator signs in with username and password.
   sendHtml(
     response,
     200,
     page(
       { ...anonymous('管理员已创建'), wide: true },
       html`${stepper(SETUP_STEPS, 2)}
-<p class="mt12">已创建管理员 ${outcome.name}，并已登录。</p>
-<p class="notice">下面是这位管理员的备用登录令牌，只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
+<p class="mt12">已创建管理员 ${outcome.name}。</p>${outcome.password === null ? '' : html`<p class="notice">初始密码仅显示一次；首次登录必须修改。</p>${pre(outcome.password)}`}
+<p class="notice">下面是这位管理员的访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
 <h2 class="mt16">在 Circle 中连接这个 Hub</h2>
-<p class="sub">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；本浏览器已登录，确认授权即完成连接。</p>
+<p class="sub">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；先用用户名和密码登录控制台，再确认授权即完成连接。</p>
 <pre class="snippet">${circleEntry(mcpOrigin(request, secure), false)}</pre>
 <p class="sub">客户端不支持 MCP 标准授权时改用访问令牌：在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，配置写成：</p>
 <pre class="snippet">${circleEntry(mcpOrigin(request, secure))}</pre>
 ${secure ? html`<p class="sub">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
 <h2 class="mt16">接下来</h2>
 <ol class="small"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布任务包')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
-<p class="mt12">${link(HOME, '进入总览')}</p>`,
+<p class="mt12">${link('/console/login', '前往登录')}</p>`,
     ),
-    { 'set-cookie': [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_SETUP_COOKIE : SETUP_COOKIE, '', '/console/setup', 0, secure)] },
+    { 'set-cookie': cookie(secure ? SECURE_SETUP_COOKIE : SETUP_COOKIE, '', '/console/setup', 0, secure) },
   );
 }
 
@@ -494,10 +535,11 @@ const ROUTES: Record<string, Route> = {
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
+  team: (ctx, rest) => rest.length <= 1 ? teamPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx)),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   admin: (ctx, rest, options, session) => {
     if (!ctx.admin) return Promise.resolve(neutralPage(ctx));
-    if (rest.length === 0) return settingsPage(ctx, bridgeRun(options, session));
+    if (rest.length === 0) return teamPage(ctx);
     if (rest.length === 2 && rest[0] === 'jobs') return Promise.resolve(jobPage(ctx, options.jobs.get(rest[1])));
     if (rest.length === 1 && Object.hasOwn(ADMIN_PAGES, rest[0])) return ADMIN_PAGES[rest[0]](ctx, [], options, session);
     return Promise.resolve(neutralPage(ctx));
@@ -743,6 +785,14 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     if (request.method === 'POST') return logout(request, response, options, session);
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>退出只接受 POST</p>`), { allow: 'POST' });
+  }
+  const signedIn = session === null ? null : await options.deps.records.principals.authenticate('Bearer '+session.token);
+  const passwordState = signedIn === null ? null : await options.deps.records.principals.passwordState?.(signedIn.id);
+  if (segments[0] === 'password') return passwordPage(request,response,url,options,session,signedIn,secure,segments.slice(1));
+  if (passwordState?.mustChange) {
+    request.resume();
+    if (segments[0] === 'api') return sendJson(response,403,{code:null,message:'首次登录必须修改密码',fix:'前往 /console/password 修改密码'});
+    return redirect(response,'/console/password?next='+encodeURIComponent(safeNext(url.pathname+url.search)));
   }
   if (segments[0] === 'authorize') return authorizePage(request, response, options, session, secure, segments.slice(1));
   if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);

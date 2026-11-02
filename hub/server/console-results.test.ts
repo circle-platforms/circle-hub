@@ -8,7 +8,7 @@ import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
 import { probeConsole } from '../../scripts/real/console-page.ts';
 import { defaultPacks, fakeWorkflowPack } from './fakes.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { SYNTHETIC_CONSOLE_PASSWORD, testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let server: TestServer;
 before(async () => { server = await createTestServer({ packs: [...defaultPacks(), fakeWorkflowPack('facts', '合成事实', ['text/plain'], { factsOnly: true })] }); });
@@ -25,7 +25,7 @@ async function send(path: string, cookie = '', method = 'GET', body = '', extra:
 const csrf = (body: string) => /name="csrf" value="([^"]+)"/.exec(body)![1];
 async function login(user: TestUser) {
   const form = await send('/console/login');
-  const logged = await send('/console/login', form.headers['set-cookie']![0].split(';')[0], 'POST', new URLSearchParams({ token: user.token, csrf: csrf(form.body) }).toString());
+  const logged = await send('/console/login', form.headers['set-cookie']![0].split(';')[0], 'POST', new URLSearchParams({ ...testConsoleCredentials(user.token), csrf: csrf(form.body) }).toString());
   assert.equal(logged.status, 303);
   return logged.headers['set-cookie']![0].split(';')[0];
 }
@@ -121,7 +121,7 @@ test('security gates and immediate revocation apply to result pages', async () =
   assert.equal((await send(path, cookie, 'GET', '', { origin: 'http://192.0.2.1' })).status, 403);
   assert.equal((await send(path)).headers.location, `/console/login?next=${encodeURIComponent(path)}`);
   const tokens = await server.records.principals.tokens(user.user.id);
-  for (const token of tokens) await server.records.principals.revokeToken(server.admin.principal, token.id);
+  await server.records.principals.resetPassword(server.admin.principal,user.user.id);
   assert.equal((await send(path, cookie)).headers.location, `/console/login?next=${encodeURIComponent(path)}`);
 });
 
@@ -186,14 +186,14 @@ test('a filtered empty list page retains the service cursor', async () => {
 test('the owner probe logs in, reads the actual console and logs out on synthetic records', async () => {
   const user = await server.createUser('探测联测');
   const id = await start(user, 'facts', 7);
-  const stats = await probeConsole({ url: server.url, path: `/console/results/${id}`, token: user.token });
+  const stats = await probeConsole({ url: server.url, path: `/console/results/${id}`, username: '管理员', password: SYNTHETIC_CONSOLE_PASSWORD });
   assert.equal(stats.status, 200); assert.equal(stats.csp, true); assert.equal(stats.scripts, 0);
   assert.equal(stats.externalAddresses, 0); assert.deepEqual(stats.tableRows, [7]); assert.equal(stats.logoutStatus, 303);
 });
 
 test('independent probe sessions print the same digest for the same synthetic result page',async()=>{
   const user=await server.createUser('摘要');const id=await start(user);
-  const options={url:server.url,path:`/console/results/${id}`,token:user.token};
+  const options={url:server.url,path:`/console/results/${id}`,username:'管理员',password:SYNTHETIC_CONSOLE_PASSWORD};
   assert.equal((await probeConsole(options)).sha256,(await probeConsole(options)).sha256);
 });
 

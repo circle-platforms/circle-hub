@@ -62,8 +62,8 @@ export function definitions(pairs: readonly (readonly [string, unknown])[]): Htm
   return html`<dl>${pairs.map(([term, value]) => html`<dt>${term}</dt><dd>${value}</dd>`)}</dl>`;
 }
 
-export function section(title: string, body: unknown): Html {
-  return html`<section><h2>${title}</h2>${body}</section>`;
+export function section(title: string, body: unknown, hint?: string): Html {
+  return html`<section><h2${hint === undefined ? '' : html` title="${hint}"`}>${title}</h2>${body}</section>`;
 }
 
 /**
@@ -101,8 +101,8 @@ export const CONTENT_SECURITY_POLICY = [
   "base-uri 'none'",
 ].join('; ');
 
-/** The seven places of the console (proposal decision 3 of 2026-10-31): no sub-menus and no counters. */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'settings';
+/** The eight places of decision 83: no sub-menus and no counters. */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings';
 
 export interface PageChrome {
   title: string;
@@ -112,8 +112,10 @@ export interface PageChrome {
   csrf: string | null;
   /** The place of the navigation this page belongs to; none on the neutral page, which never depends on the path. */
   active?: NavKey;
-  /** One line under the title. */
+  /** One factual line under the title (a period, a count, the way back). */
   sub?: unknown;
+  /** How to read the page: shown on hover over the title, never inline. */
+  hint?: string;
   /** Buttons to the right of the title. */
   actions?: unknown;
   /** A page without an account shown as a wider card (the setup steps). */
@@ -168,6 +170,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['packs', '任务包', '/console/packs', 'pack'],
   ['connections', '连接', '/console/connections', 'sys'],
   ['records', '记录', '/console/records', 'rec'],
+  ['team', '团队', '/console/team', 'users'],
   ['settings', '设置', '/console/settings', 'gear'],
 ];
 
@@ -185,7 +188,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   // Escaped text can never hold this attribute: only liveModule() writes it.
   const updates = user !== null && content.text.includes(' data-live="');
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
-  const top = html`<header class="top"><div><h1>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub" id="page-sub">${chrome.sub}</p>`}${state}</div>${chrome.actions === undefined ? '' : html`<div class="actions">${chrome.actions}</div>`}</header>`;
+  const top = html`<header class="top"><div><h1${chrome.hint === undefined ? '' : html` title="${chrome.hint}"`}>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub" id="page-sub">${chrome.sub}</p>`}${state}</div>${chrome.actions === undefined ? '' : html`<div class="actions">${chrome.actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<div class="login"><div class="login-card${chrome.wide ? ' setup-card' : ''}">${brand()}${top}${content}</div></div>`);
   const nav = NAV.map(([key, label, path, name]) => html`<a class="nav-item${key === chrome.active ? ' on' : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}>${icon(name, 'nav-ico')}<span>${label}</span></a>`);
   return htmlDocument(chrome.title, html`<div class="shell">

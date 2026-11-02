@@ -29,12 +29,24 @@ export interface TestServerOptions {
   withoutRunsDetail?: boolean;
   /** Intervals and limits of the console's live updates. */
   live?: AppOptions['live'];
+  /** A command bridge over this test's scratch records, created before its HTTP listener starts. */
+  bridge?: (records: TestRecordsKit) => NonNullable<AppOptions['bridge']>;
 }
 
 export interface TestUser {
   user: User;
   principal: Principal;
   token: string;
+}
+
+export const SYNTHETIC_CONSOLE_PASSWORD = 'synthetic-console-only-2026';
+const consoleAccounts = new Map<string, string>();
+/** Remembers which synthetic member a test token belongs to, so console helpers sign members in with a password. */
+export function registerTestConsoleAccount(token: string, name: string): void { consoleAccounts.set(token, name); }
+/** Existing token-based test helpers use the corresponding synthetic account's password at the browser boundary. */
+export function testConsoleCredentials(token: string): Record<string,string> {
+  const name=consoleAccounts.get(token.replace(/^Bearer\s+/i,''));
+  return name === undefined ? {token} : {username:name,password:SYNTHETIC_CONSOLE_PASSWORD};
 }
 
 export interface TestFakes {
@@ -136,9 +148,11 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
-    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }) });
+    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}) });
     const info = await app.listen();
-    const boot = await records.principals.bootstrapAdmin('管理员');
+    // Administrators sign in to the console with a password too (owner, 2026-11-02); the synthetic one never needs changing.
+    const boot = await records.principals.bootstrapAdmin('管理员', { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });
+    consoleAccounts.set(boot.token.token, boot.user.name);
     const admin: TestUser = { user: boot.user, principal: principalOf(boot.user), token: boot.token.token };
     const clients = new Set<TestMcpClient>();
 
@@ -153,12 +167,15 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       admin,
       logs,
       async createUser(name, role = 'user') {
-        const user = await records.principals.createUser(admin.principal, name, role);
+        const user = await records.principals.createUser(admin.principal, name, role, {password:SYNTHETIC_CONSOLE_PASSWORD,mustChange:false});
         const token = await records.principals.issueToken(admin.principal, user.id, 'test');
+        consoleAccounts.set(token.token,name);
         return { user, principal: principalOf(user), token: token.token };
       },
       async issueToken(user) {
-        return (await records.principals.issueToken(admin.principal, user.id, 'test')).token;
+        const token=(await records.principals.issueToken(admin.principal, user.id, 'test')).token;
+        consoleAccounts.set(token,user.name);
+        return token;
       },
       async assign(user, packId) {
         await records.authorizations.assign(admin.principal, user.id, packId);

@@ -248,7 +248,7 @@ describe('users, tokens and logs', () => {
     assert.match(listed.text, /笔记本/);
     const users = await run(['user', 'list'], env);
     assert.match(users.text, /根管理员\t管理员/);
-    assert.match(users.text, /甲\t用户\t启用/);
+    assert.match(users.text, /甲\t用户\t已启用/);
 
     const kit = await openRecords(loadServerConfig(env), { migrate: false });
     try {

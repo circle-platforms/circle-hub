@@ -94,14 +94,14 @@ ${kpi(ctx.admin ? '成员' : '本人', count(users.size), { unit: '人', note: c
     return { label: d.label, parts: tools.map((tool, j) => ({ value: inDay.filter((line) => line.tool === tool).length, fill: TOOL_FILLS[j % TOOL_FILLS.length] })) };
   });
   const legend = html`<div class="result-legend">${tools.map((tool, j) => html`<span title="${tool}"><i class="${TOOL_FILLS[j % TOOL_FILLS.length].replace('fill-', '')}"></i>${toolName(tool)} <b class="num">${items.filter((line) => line.tool === tool).length}</b></span>`)}</div>`;
-  const distribution = card({ title: '工具调用分布', meta: `按日 · 按工具 · ${scope}` }, html`${legend}${dayBars(perDay, '每日各工具的调用次数')}<div class="axis"><span>${days[0].label}</span><span>${days[Math.floor(days.length / 2)].label}</span><span>今日</span></div>`);
+  const distribution = card({ title: '工具调用分布', hint: `按日、按工具统计，${scope}` }, html`${legend}${dayBars(perDay, '每日各工具的调用次数')}<div class="axis"><span>${days[0].label}</span><span>${days[Math.floor(days.length / 2)].label}</span><span>今日</span></div>`);
   const byUser = new Map<string, number>();
   for (const line of items) if (line.user !== null) byUser.set(line.user, (byUser.get(line.user) ?? 0) + 1);
   const top = [...byUser].sort((a, b) => b[1] - a[1]).slice(0, 6);
   const people = [];
   for (const [user, n] of top) people.push(html`<div class="frow"><span class="fname">${await ctx.userName(user)}</span>${hbar(n, top[0][1], 'fill-hub')}<span class="fval num">${n}</span></div>`);
   const results = CALL_RESULT.map((result) => ({ result, n: items.filter((line) => line.call_result === result).length }));
-  const side = card({ title: ctx.admin ? '按成员' : '调用状态', meta: scope }, html`${ctx.admin ? html`<div class="funnel">${people.length === 0 ? html`<p class="empty">没有调用</p>` : people}</div>${sectionHead('调用状态')}` : ''}${stackBar(results.map((r) => ({ value: r.n, fill: RESULT_FILL[r.result] })), '调用结果的占比')}<div class="result-legend mt8">${results.map((r) => html`<span><i class="${RESULT_FILL[r.result].replace('fill-', 'f-')}"></i>${uiLabelOf('call_result', r.result)} <b class="num">${r.n}</b></span>`)}</div>`);
+  const side = card({ title: ctx.admin ? '按成员' : '调用状态', hint: ctx.admin ? `按成员统计，${scope}` : `按调用状态统计，${scope}` }, html`${ctx.admin ? html`<div class="funnel">${people.length === 0 ? html`<p class="empty">没有调用</p>` : people}</div>${sectionHead('调用状态')}` : ''}${stackBar(results.map((r) => ({ value: r.n, fill: RESULT_FILL[r.result] })), '调用结果的占比')}<div class="result-legend mt8">${results.map((r) => html`<span><i class="${RESULT_FILL[r.result].replace('fill-', 'f-')}"></i>${uiLabelOf('call_result', r.result)} <b class="num">${r.n}</b></span>`)}</div>`);
   return html`${kpis}<section class="grid g-2-1 section">${distribution}${side}</section>`;
 }
 
@@ -126,7 +126,7 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
 ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></label>` : ''}<label>工具 <select name="tool">${toolOptions}</select></label>
 <label>运行 <input name="run" value="${run ?? ''}"></label><label>从 <input name="from" value="${param(ctx, 'from') ?? ''}" placeholder="2026-11-01"></label>
 <label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label><button type="submit">筛选</button></form>`;
-  const chrome = ctx.chrome('记录', { active: 'records', sub: ctx.admin ? '操作与校验记录仅追加、不可修改，可按成员、工具、运行与时间筛选。' : '仅显示与本人相关的调用；记录仅追加、不可修改。' });
+  const chrome = ctx.chrome('记录', { active: 'records', hint: ctx.admin ? '操作与校验记录仅追加、不可修改，可按成员、工具、运行与时间筛选' : '仅显示与本人相关的调用；记录仅追加、不可修改' });
   if (problems.length > 0 || from === null || to === null) {
     return { status: 400, body: page(chrome, html`${card(null, html`${filters}<p class="error">${problems.join('；')}</p>`)}`) };
   }
@@ -148,7 +148,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   return {
     status: 200,
     body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div><div class="mt16">${await trials(ctx, path, userId, from, to)}</div>
-${sectionHead('知识流向', '按成员、任务包追踪知识的来源、去向及所用流程')}
+${sectionHead('知识流向', undefined, undefined, undefined, '按成员、任务包追踪知识的来源、去向及所用流程')}
 ${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`),
   };
 }

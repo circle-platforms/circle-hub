@@ -5,12 +5,13 @@ nav_order: 4
 
 # circle-hub 设计
 
-设计的权威是通用模型 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)，[通用模型](generic-model.md)是它的摘要；两者不一致时以模型为准。下面“现行”一表是摘要、检查单和研究提案；“已被取代”一表是旧服务器时期的设计篇，每篇开头注明被什么取代，只作记录保留。英文译文在 [en/](en/README.md)，两者有出入以中文为准。实现进度在 [Hub r4 进度](../hub-r4-progress.md)。
+设计的权威是通用模型 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)，[通用模型](generic-model.md)是它的摘要；两者不一致时以模型为准。下面“现行”一表是摘要、检查单和研究提案；“已被取代”一表是旧服务器时期或后续决定已取代的设计篇，每篇开头注明被什么取代，只作记录保留。英文译文在 [en/](en/README.md)，两者有出入以中文为准。实现进度在 [Hub r4 进度](../hub-r4-progress.md)。
 
 ## 现行
 
 | 篇 | 回答什么 |
 |---|---|
+| [控制台导航](console-navigation.md) | 决定 83 的八项导航、团队与设置的职责 |
 | **[通用模型](generic-model.md)** | **11 组 73 个元素、三条不变量、词表、七个内核名字，以及第一个里程碑用到哪些** |
 | [对象标准：五要素检查单](object-standard.md) | 四个对象就是四个家；五要素作设计检查单和记录页布局，不作存储分区 |
 | [置真对接架构：理论基础、条件命题与产品研究框架](truth-docked-architecture.md) | 研究提案与数学审计：理论基础、条件命题与反例、未证义务；不是实现说明 |
@@ -19,6 +20,7 @@ nav_order: 4
 
 | 篇 | 原来回答什么 | 现在看哪里 |
 |---|---|---|
+| [个人与团队知识库整合调研](personal-team-knowledge.md) | 第一轮的需求与同类项目调研；个人只放 Circle 本地的旧建议已失效 | [决定 84：知识库与工作流：个人与团队](../hub-r4-progress.md)；完整方案在所有者的方案文档中，定稿后再写入设计 |
 | [审批与执行链](approvals-and-enforcement.md) | 变更集审批、执行链、错误码目录 | 许可 B04、发布校验 T02、边界校验 T03、两道强制边界 P11 |
 | [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予、两人规则 | 权限角色 R01（用户、管理员）、可见性 R02 |
 | [术语与状态](vocabulary.md) | 旧术语表、状态枚举与颜色 | 模型的词表（生成在 `contracts/generated/vocabulary.ts`） |

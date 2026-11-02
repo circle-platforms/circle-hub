@@ -200,6 +200,80 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 describe('init-admin and the operator token', () => {
+  test('user list JSON distinguishes an empty database and existing administrators without exposing password material', async () => {
+    const admin=await setup({initAdmin:false});
+    assert.deepEqual(JSON.parse((await expectOk(admin,['user','list','--json'])).text),[]);
+    const created=await admin.run(['init-admin','合成列表管理员']);assert.equal(created.code,0,created.text);
+    const initial=created.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(initial);
+    await expectOk(admin,['user','create','合成列表成员']);
+    await expectOk(admin,['user','disable','合成列表成员']);
+    const listed=await expectOk(admin,['user','list','--json']);const users=JSON.parse(listed.text);
+    assert.equal(users.length,2);assert.equal(users.find((user:any)=>user.role==='admin')?.name,'合成列表管理员');
+    assert.equal(users.find((user:any)=>user.role==='user')?.disabled,true);
+    assert.deepEqual(Object.keys(users[0]).sort(),['id','name','role','disabled','created_at','updated_at'].sort());
+    assert.doesNotMatch(listed.text,/password|token/);assert.ok(!listed.text.includes(initial));
+  });
+
+  test('password-reset recovers the sole administrator before the first change and revokes console sessions only', async () => {
+    const admin=await setup();
+    const original=admin.init!.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(original);
+    const state=await withKit(admin,async kit=>{
+      const users=await kit.principals.list();assert.equal(users.length,1);
+      const user=users[0], verified=await kit.principals.verifyPassword(user.name,original);assert.ok(verified?.mustChange);
+      const session=await kit.principals.openConsoleSession(user.id,verified.revision);assert.ok(session);
+      return {user,session:session.token,history:await kit.principals.history(user.id)};
+    });
+    const reset=await admin.run(['user','password-reset',state.user.name]);assert.equal(reset.code,0,reset.text);
+    const password=reset.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(password&&password!==original);
+    assert.equal(reset.out.filter(line=>line===password).length,1);assert.match(reset.text,/初始密码.*仅显示一次.*首次登录必须修改/);
+    assert.equal(reset.err.length,0);
+    await withKit(admin,async kit=>{
+      assert.equal(await kit.principals.verifyPassword(state.user.name,original),null);
+      const verified=await kit.principals.verifyPassword(state.user.name,password);assert.ok(verified?.mustChange);
+      assert.equal(await kit.principals.authenticate('Bearer '+state.session),null);
+      assert.equal((await kit.principals.authenticate('Bearer '+admin.tokens!.value))?.id,state.user.id,'the host operator token remains usable');
+      const history=await kit.principals.history(state.user.id);assert.equal(history.length,state.history.length+1);
+      assert.equal(history.at(-1)?.password_changed,true);assert.equal(history.at(-1)?.changed_by,state.user.id);
+      assert.ok(!JSON.stringify(history).includes(password));
+      assert.equal(await kit.principals.changePassword(verified.user,password,'synthetic-recovered-admin-password'),true);
+      assert.equal((await kit.principals.verifyPassword(state.user.name,'synthetic-recovered-admin-password'))?.mustChange,false);
+    });
+    assert.ok(!(await admin.run(['user','list'])).text.includes(password),'listing never retrieves the initial password');
+  });
+
+  test('password-reset refuses missing, invalid and member operator tokens and a forged --as without changing history', async () => {
+    const admin=await setup();
+    const memberToken=await userWithToken(admin,'合成重置权限成员');
+    const before=await withKit(admin,async kit=>kit.principals.history((await kit.principals.findByName('根管理员'))!.id));
+    for(const token of ['invalid',memberToken])assert.equal((await admin.run(['user','password-reset','根管理员'],{[OPERATOR_TOKEN_VARIABLE]:token})).code,1);
+    const stored=admin.tokens!.value;admin.tokens!.value=null;
+    assert.equal((await admin.run(['user','password-reset','根管理员'])).code,1);admin.tokens!.value=stored;
+    assert.equal((await admin.run(['user','password-reset','根管理员','--as','根管理员'])).code,2);
+    assert.equal((await admin.run(['user','password-reset','合成不存在账户'])).code,1);
+    assert.equal((await admin.run(['user','password-reset'])).code,2);
+    const after=await withKit(admin,async kit=>kit.principals.history((await kit.principals.findByName('根管理员'))!.id));
+    assert.deepEqual(after,before);
+  });
+
+  test('initial passwords use stdin when supplied and otherwise appear once with a forced first change', async () => {
+    const supplied='synthetic-install-password';
+    const configured=await setup({initAdmin:false});configured.stdin.push(supplied);
+    const created=await configured.run(['init-admin','合成安装管理员','--password-stdin']);assert.equal(created.code,0,created.text);
+    assert.ok(!created.text.includes(supplied));
+    await withKit(configured,async kit=>{
+      const verified=await kit.principals.verifyPassword('合成安装管理员',supplied);assert.ok(verified);assert.equal(verified.mustChange,false);
+    });
+    const random=await setup();
+    const password=random.init!.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(password);
+    assert.equal(random.init!.out.filter(line=>line===password).length,1);
+    await withKit(random,async kit=>{
+      const verified=await kit.principals.verifyPassword('根管理员',password);assert.ok(verified?.mustChange);
+    });
+    const member=await random.run(['user','create','合成口令成员']);assert.equal(member.code,0,member.text);
+    const initial=member.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(initial);
+    assert.ok(!(await random.run(['user','list'])).text.includes(initial));
+    await withKit(random,async kit=>assert.ok((await kit.principals.verifyPassword('合成口令成员',initial))?.mustChange));
+  });
   test('an existing administrator can reissue into the Linux file store without displaying the token', async () => {
     const admin = await setup({store:(config,service)=>fileOperatorTokens(config.dataDir,service ?? config.keychain.service)});
     const config=loadServerConfig(admin.deployment.env);const store=fileOperatorTokens(config.dataDir,config.keychain.service);

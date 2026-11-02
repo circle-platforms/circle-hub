@@ -8,7 +8,7 @@ import { backfillCitations, putSubmission } from '../runs/engine/store.ts';
 import { NEUTRAL } from './console/pages.ts';
 import { SEARCH_MAX_HITS, SEARCH_MAX_QUERY } from './console/search.ts';
 import { ROOT_1 } from './fakes.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let server: TestServer;
 let clock = Date.parse('2026-11-01T09:00:00.000Z');
@@ -49,7 +49,7 @@ async function signIn(token: string): Promise<string> {
   const reply = await send('/console/login', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}`, origin: `http://127.0.0.1:${server.port}` },
-    body: new URLSearchParams({ token, csrf: nonce }).toString(),
+    body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: nonce }).toString(),
   });
   assert.equal(reply.status, 303, reply.body);
   return `circle_hub_session=${valueOf(cookieOf(reply, 'circle_hub_session'))}`;

@@ -14,6 +14,43 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Same-version bundle upgrades** — the installer stages each commit separately, deploys with its fixed Node path and updates the compatibility runtime link only after success; previous runtimes remain available for recovery.
+
+- **Knowledge decision 84** — records the owner’s personal/team knowledge and workflow naming decisions; the earlier local-only proposal is retained as superseded research, with implementation and renaming deferred. The future 工作流 page distinguishes 通用技能 (no acceptance) and 工作流 (existing packs with acceptance); product/system placement remains open.
+
+- **Resumable administrator initialization** — the installer checks database accounts after deployment migrations, retries an incomplete first-admin setup and gives explicit host recovery commands without a terminal.
+
+- **Password recovery command** — `user password-reset` recovers initial passwords, terminates console sessions and powers Team resets through the command bridge.
+
+- **Password-only console sign-in** — every account, administrators included, signs in to the console with username and password; tokens only connect Circle, the administrator backup token sign-in is removed, one-time links from Circle lead to the password form and the setup page no longer opens a session.
+
+- **Password wording** — Chinese console, installer, CLI and credential messages consistently use “密码” under the owner’s second-round correction.
+
+- **Installer workflow login check** — the fresh-runner install uses synthetic credentials on stdin and checks the username/password page, as approved in decision 83's second round.
+
+- **Account status vocabulary** — decision 83's second round gives account states generated labels in model 15, distinct from occupied runtime environments.
+
+- **Console hover guidance** — decision 83 applies heading hints to the remaining detail, management and authorization pages while retaining facts and commands.
+
+- **Username and password login** — decision 83 adds administrator/member password accounts, first-use changes, Team password resets, bounded browser sessions and stdin-only installer initialization. MCP authorization remains account-bound.
+
+- **Knowledge integration research** — decision 83 inventories requirements and compares personal/team designs; decision 84 supersedes its proposed boundaries, with implementation outside this task.
+
+- **Circle device lists** — decision 83 shows device names and disconnect actions without token identifiers in tables.
+
+- **Team page** — decision 83 adds the eighth navigation entry and moves member and permission management out of Settings.
+
+- **Console scope** — decision 83 reserves separate future pages for schedules and bots without adding placeholders.
+
+- **Knowledge flow** — decision 83 groups the diagram into personal and team columns with a shared submission boundary.
+
+- **Knowledge browsing** — decision 83 gives role-specific empty states and per-product version selectors for comparison.
+
+- **Knowledge intake pending items** — decision 83 moves the pending queue to knowledge and hides it when empty.
+
+- **Console requests** — decision 83 combines waiting and overdue requests, showing member names and generated status labels without record digests.
+
+- **Console walkthrough task lists** (owner decision 83). Empty unfiltered task lists show their empty state without filters or zero counters; active filters remain available to clear, and ordering explanations use a hover hint.
 - **circle-hub's own mark** (owner decision 82). The console no longer shows Circle's ring: its mark is the Hub at the centre with the Circles on an orbit around it, in Circle's four colours, drawn inline on every page, and the browser shows it as the console's icon (`GET /console/favicon.svg`; the pages' `img-src` is now `'self'`).
 - **Targeted connection-login reset** (owner decision 81). Administrators can clear the failure record for the credentials typed in a blocked connection attempt, through its form or `POST /console/api/systems/test/forget`. It removes only that stop from the vault and the running process, retains concurrent newer failures and other credentials, and never sends a login or retries automatically. No CLI command is added.
 - **Runtime environment response times** (owner decision 81). Each environment shows its observed calls in the last 24 hours, with median and slowest send-to-receive time, from the existing dispatch journal. The bounded scan discloses partial counts, duplicate transport/read records count once, and new timed exchanges send a coalesced administrator-only `environment.status` event.

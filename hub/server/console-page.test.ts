@@ -10,6 +10,9 @@ import { test } from 'node:test';
 import { probeConsole, summarizePage } from '../../scripts/real/console-page.ts';
 
 const body = '<html><form action="/console/logout"><input name="csrf" value="synthetic-csrf"></form><p>合成私密名称</p><table><thead><tr><th>名称</th></tr></thead><tbody><tr><td>合成内容</td></tr><tr><td>合成内容</td></tr></tbody></table></html>';
+/** The probe signs in as a console account does, with its username and password; the trailing space is part of the password. */
+const USERNAME = '合成探测管理员';
+const PASSWORD = 'synthetic-probe-password ';
 async function fixture(action: (url: string, calls: string[]) => Promise<void>, target = body, status = 200) {
   const calls: string[] = [];
   const server = createServer(async (req, res) => {
@@ -22,7 +25,8 @@ async function fixture(action: (url: string, calls: string[]) => Promise<void>, 
     } else if (req.url === '/console/login') {
       assert.match(req.headers.cookie ?? '', /circle_hub_login=synthetic-nonce/);
       assert.equal(req.headers.origin, `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`);
-      assert.equal(form.get('csrf'), 'synthetic-nonce'); assert.equal(form.get('token'), 't'.repeat(43));
+      assert.equal(form.get('csrf'), 'synthetic-nonce'); assert.equal(form.get('username'), USERNAME); assert.equal(form.get('password'), PASSWORD);
+      assert.equal(form.has('token'), false, 'a token never signs in');
       res.writeHead(303, { location: '/console/runs', 'set-cookie': 'circle_hub_session=synthetic-session; Path=/console' }); res.end();
     } else if (req.url === '/console/logout') {
       assert.equal(form.get('csrf'), 'synthetic-csrf'); assert.match(req.headers.cookie ?? '', /circle_hub_session=synthetic-session/);
@@ -38,17 +42,21 @@ async function fixture(action: (url: string, calls: string[]) => Promise<void>, 
   finally { await new Promise<void>((resolve, reject) => server.close((e) => e ? reject(e) : resolve())); }
 }
 
-test('the CLI prints only metrics and signs out without exposing synthetic page content or its token', async () => {
+test('the CLI prints only metrics and signs out without exposing synthetic page content, the username or the password', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'console-probe-'));
   try {
-    const tokenFile = join(dir, 'token'); await writeFile(tokenFile, `${'t'.repeat(43)}\n`, { mode: 0o600 });
+    const passwordFile = join(dir, 'password'); await writeFile(passwordFile, `${PASSWORD}\n`, { mode: 0o600 });
+    const run = (args: string[]) => new Promise<{ code: number | null; text: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ['scripts/real/console-page.ts', ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let text = ''; child.stdout.on('data', (c) => { text += String(c); }); child.stderr.on('data', (c) => { text += String(c); });
+      child.on('error', reject); child.on('close', (code) => resolve({ code, text }));
+    });
     await fixture(async (url, calls) => {
-      const output = await new Promise<{ code: number | null; text: string }>((resolve, reject) => {
-        const child = spawn(process.execPath, ['scripts/real/console-page.ts', '--token-file', tokenFile, '--url', url, '--path', '/console/results?build=synthetic-10.7'], { stdio: ['ignore', 'pipe', 'pipe'] });
-        let text = ''; child.stdout.on('data', (c) => { text += String(c); }); child.stderr.on('data', (c) => { text += String(c); });
-        child.on('error', reject); child.on('close', (code) => resolve({ code, text }));
-      });
-      assert.equal(output.code, 0, output.text); assert.doesNotMatch(output.text, /合成|synthetic|tttt|token|127\.0\.0\.1/);
+      // The password never travels on argv: there is no flag for it, and nothing is sent.
+      const onArgv = await run(['--username', USERNAME, '--password', PASSWORD.trim(), '--url', url, '--path', '/console/results']);
+      assert.equal(onArgv.code, 1); assert.doesNotMatch(onArgv.text, /合成|synthetic|password/); assert.deepEqual(calls, []);
+      const output = await run(['--username', USERNAME, '--password-file', passwordFile, '--url', url, '--path', '/console/results?build=synthetic-10.7']);
+      assert.equal(output.code, 0, output.text); assert.doesNotMatch(output.text, /合成|synthetic|password|token|127\.0\.0\.1/);
       assert.match(output.text, /状态码 200/); assert.match(output.text, /CSP 有/); assert.match(output.text, /脚本标签 0/); assert.match(output.text, /外部地址 0/); assert.match(output.text, /表 1：2 行/); assert.match(output.text, /SHA-256 [0-9a-f]{12}/);
       assert.equal(calls.at(-1), 'POST /console/logout');
     });
@@ -73,13 +81,22 @@ test('metrics detect unsafe markup, external addresses and each table independen
 
 test('an unavailable page still signs out using a freshly read console form', async () => {
   await fixture(async (url, calls) => {
-    const stats = await probeConsole({ url, token: 't'.repeat(43), path: '/console/results/absent' });
+    const stats = await probeConsole({ url, username: USERNAME, password: PASSWORD, path: '/console/results/absent' });
     assert.equal(stats.status, 404); assert.equal(stats.logoutStatus, 303); assert.equal(calls.at(-1), 'POST /console/logout'); assert.ok(calls.includes('GET /console/runs'));
   }, '对你不可用', 404);
 });
 
 test('probe rejects foreign URLs and non-console paths before any login', async () => {
   for (const [url, path] of [['http://192.0.2.1', '/console/results'], ['http://127.0.0.1', '//192.0.2.1/console'], ['http://127.0.0.1', '/mcp'], ['http://127.0.0.1', '/console/../mcp']]) {
-    await assert.rejects(probeConsole({ url, path, token: 't'.repeat(43) }));
+    await assert.rejects(probeConsole({ url, path, username: USERNAME, password: PASSWORD }));
   }
+});
+
+test('probe rejects a username or password no console account can have before any login', async () => {
+  await fixture(async (url, calls) => {
+    for (const [username, password] of [['', PASSWORD], [' \t', PASSWORD], ['合'.repeat(101), PASSWORD], ['合成\n管理员', PASSWORD], [USERNAME, ''], [USERNAME, 'short-pass'], [USERNAME, `${PASSWORD}\n`], [USERNAME, 'p'.repeat(257)]]) {
+      await assert.rejects(probeConsole({ url, path: '/console/results', username, password }), /invalid (?:username|password)/);
+    }
+    assert.deepEqual(calls, [], 'nothing was sent');
+  });
 });

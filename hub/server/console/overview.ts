@@ -12,7 +12,7 @@ import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
-import { button, card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
+import { card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
 
 export const PERIODS = [7, 14, 30] as const;
 export const RECENT_LIMIT = 120;
@@ -145,25 +145,25 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   const totals = new Map<TaskResult, number>();
   for (const task of tasks) if (task.result !== null) totals.set(task.result, (totals.get(task.result) ?? 0) + 1);
   const legend = html`<div class="result-legend">${shown.filter((result) => (totals.get(result) ?? 0) > 0 || result === 'passed').map((result) => html`<span>${swatch(TASK_FILL[result])}${uiLabelOf('task_result', result)} <b class="num">${totals.get(result) ?? 0}</b></span>`)}</div>`;
-  const daily = card({ title: '每日任务结果', meta: `按任务结果 · ${scope}` }, html`${legend}${dayBars(columns, `${scope}每天的任务结果`)}<div class="axis"><span>${columns[0].label}</span><span>${columns[Math.floor(columns.length / 2)].label}</span><span>今日</span></div>`);
+  const daily = card({ title: '每日任务结果', hint: `按任务结果统计，${scope}` }, html`${legend}${dayBars(columns, `${scope}每天的任务结果`)}<div class="axis"><span>${columns[0].label}</span><span>${columns[Math.floor(columns.length / 2)].label}</span><span>今日</span></div>`);
   const checks = checkCounts(tasks);
   const checkTotal = checks.reduce((n, c) => n + c.value, 0);
-  const checkCard = card({ title: '检查项结果', meta: '全部结果中的检查项' }, html`<div class="donut-box">${donut(checks.map((c) => ({ value: c.value, stroke: c.stroke })), { value: count(checkTotal), label: '项检查' }, '检查项结果的分布')}
+  const checkCard = card({ title: '检查项结果', hint: `${scope}全部结果中的检查项` }, html`<div class="donut-box">${donut(checks.map((c) => ({ value: c.value, stroke: c.stroke })), { value: count(checkTotal), label: '项检查' }, '检查项结果的分布')}
 <ul class="dlist">${checks.map((c) => html`<li>${swatch(c.fill)}<span>${c.label}</span><b class="num">${c.value}</b><em class="num">${checkTotal === 0 ? '—' : `${Math.round((c.value / checkTotal) * 100)}%`}</em></li>`)}</ul></div>
 <p class="note">“等待判定中”不计入通过；“未知”与“检查未完成”单独统计，不计入未通过。</p>`);
   const stuck = blockers(tasks);
-  const stuckCard = card({ title: '主要阻塞原因', meta: scope }, html`${stuck.length === 0 ? html`<p class="empty">没有被退回或未完成的条目。</p>` : html`<div class="funnel">${stuck.map((s) => html`<div class="frow"><span class="fname" title="${s.label}">${s.label}</span>${hbar(s.value, stuck[0].value, 'fill-wait')}<span class="fval num">${s.value}</span></div>`)}</div>`}
+  const stuckCard = card({ title: '主要阻塞原因', hint: `${scope}被退回或未完成的条目，按原因汇总` }, html`${stuck.length === 0 ? html`<p class="empty">没有被退回或未完成的条目。</p>` : html`<div class="funnel">${stuck.map((s) => html`<div class="frow"><span class="fname" title="${s.label}">${s.label}</span>${hbar(s.value, stuck[0].value, 'fill-wait')}<span class="fval num">${s.value}</span></div>`)}</div>`}
 <p class="note">相关请求已下发至对应的 Circle，在 Circle 中处理。</p>`);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
   const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id));
-  const systems = card({ title: '业务系统', meta: '只读访问 · 近 24 小时读取' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="sub">${reads === null ? '暂不可用' : readsText(reads.get(r.id))}</span></a>`)}</div>`}
+  const systems = card({ title: '业务系统', hint: '只读访问；近 24 小时的读取次数与耗时' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="sub">${reads === null ? '暂不可用' : readsText(reads.get(r.id))}</span></a>`)}</div>`}
 <div class="card-f"><span class="chip plain">只读访问，不修改业务数据</span>${link('/console/connections', '查看全部')}</div>`);
   const lines = await readableLines(ctx);
   let current = 0;
   for (const line of lines) {
     for (const build of await ctx.deps.knowledge.builds(line.id)) if (build.root !== null) { current += 1; break; }
   }
-  const knowledge = card({ title: '知识库', meta: '按产品线' }, html`<div class="kstats two"><div><span class="sub">产品线</span><b class="num">${lines.length}</b></div><div><span class="sub">已有知识的产品线</span><b class="num">${current}</b></div></div>
+  const knowledge = card({ title: '知识库', hint: '按产品线统计' }, html`<div class="kstats two"><div><span class="sub">产品线</span><b class="num">${lines.length}</b></div><div><span class="sub">已有知识的产品线</span><b class="num">${current}</b></div></div>
 <p class="sub">每条知识均附出处；成员可读分配给自己的任务包所绑定的产品线。</p><div class="card-f"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
   const storage = await storageFacts(ctx);
@@ -177,19 +177,19 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
 </div>`;
   const periods = html`<nav class="seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` class="on" aria-current="true"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
   const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
-${liveModule('overview-today', ['task.updated'], html`<section class="card section"><div class="card-h"><h3>今日任务</h3><span class="meta">每行一个任务，点击查看执行过程</span></div>${await todayTasks(ctx, today, titles, now)}</section>`)}
+${liveModule('overview-today', ['task.updated'], html`<section class="card section"><div class="card-h"><h3 title="每行一个任务，点击查看执行过程">今日任务</h3></div>${await todayTasks(ctx, today, titles, now)}</section>`)}
 ${liveModule('overview-results', ['task.updated'], html`<section class="grid g-2-1 section">${daily}${checkCard}</section>`)}
 ${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<section class="grid g3 section">${stuckCard}${systems}${knowledge}</section>`)}
-${sectionHead('规划中的功能', '已规划、尚未上线的功能，上线后在此处启用')}
+${sectionHead('规划中的功能', undefined, undefined, undefined, '已规划、尚未上线的功能，上线后在此处启用')}
 <section class="grid g3">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section>
-${sectionHead('运行状况', '服务、证书、数据库、备份与记录')}
+${sectionHead('运行状况', undefined, undefined, undefined, '服务、证书、数据库、备份与记录')}
 ${health}`;
   return {
     status: 200,
     body: page(ctx.chrome('总览', {
       active: 'overview',
       sub: `${scope} · 截至 ${when(new Date(now).toISOString())}`,
-      actions: html`${periods}${ctx.admin ? button('/console/operations/member', '添加成员', { primary: true, icon: 'plus' }) : ''}`,
+      actions: periods,
     }), body),
   };
 }

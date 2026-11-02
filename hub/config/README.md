@@ -1,5 +1,7 @@
 # config
 
+Decision 83, second round item 3: user-facing configuration descriptions and errors use “密码” consistently. No configuration name or secret-loading rule changes.
+
 Part of the records package; decisions and tests are in [../records/README.md](../records/README.md) (decision 12).
 
 - `guard.ts`: side-effect module. Import it first in every Hub entry point: a process that sees any `CIRCLE_SERVER_*`

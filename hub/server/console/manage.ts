@@ -16,6 +16,7 @@
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { initialPassword, validPassword } from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
 import { NEUTRAL, neutralPage } from './pages.ts';
@@ -73,6 +74,8 @@ export interface Action {
   background?: boolean;
   /** The result's standard output holds a value shown only once (an issued token). */
   once?: boolean;
+  /** A more specific one-time notice for an output other than a token. */
+  onceNotice?: string;
 }
 
 const USERS = '/console/admin';
@@ -100,6 +103,13 @@ const SECRETS = '/console/admin/secrets';
 const KNOWLEDGE = '/console/admin/knowledge';
 
 export const ACTIONS: Readonly<Record<string, Action>> = {
+  'password-reset': {
+    title: '重置密码',
+    back: '/console/team',
+    once: true,
+    onceNotice: '初始密码仅显示一次；首次登录必须修改，请交给该账户的使用者。',
+    build: (form) => ({ argv: ['user', 'password-reset', word(form, 'user', '成员')] }),
+  },
   'user-create': {
     title: '新建用户',
     back: USERS,
@@ -288,7 +298,7 @@ function onceNotice(argv: readonly string[]): string | null {
 }
 
 function runLines(run: CommandRun, notice: string | null): Html {
-  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${run.code === 0 ? '已完成' : run.code === 2 ? '参数不正确，未执行' : '未完成'}（退出码 ${run.code}）</p>
+  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${labelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
 ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
@@ -296,7 +306,7 @@ ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
 function actionChrome(ctx: PageContext, action: Action) {
-  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', sub: '与命令行执行相同的命令，写入相同的记录' });
+  return ctx.chrome(action.title, { active: (action.back.startsWith('/console/operations/member') || action.back === '/console/team') ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', hint: '与命令行执行相同的命令，写入相同的记录' });
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
@@ -306,9 +316,9 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
   const several = !('code' in runs);
   const body = steps.map((step, index) => several
     ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
-    : card(null, runLines(step.run, action.once === true ? TOKEN_ONCE : null)));
+    : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
   const trust = ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : '';
-  const connected = html`<p class="sub">成员完成连接后，${link('/console/settings', '设置')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
+  const connected = html`<p class="sub">成员完成连接后，${link('/console/team', '团队')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
   const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
@@ -324,7 +334,7 @@ export function formErrorPage(ctx: PageContext, action: Action, message: string)
   return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
 }
 
-const jobState = (job: Job): Html => job.result === null ? chip('进行中', 'judgment') : job.result.code === 0 ? chip('已完成', 'pass') : chip(`未完成，退出码 ${job.result.code}`, 'fail');
+const jobState = (job: Job): Html => chip(labelOf('action_result', job.result === null ? 'unknown' : job.result.code === 0 ? 'completed' : 'error'), job.result === null ? 'unknown' : job.result.code === 0 ? 'pass' : 'fail');
 
 export function jobsSection(jobs: readonly Job[]): Html {
   return section('后台任务', table(['开始', '任务', '发起人', '状态'], jobs.map((job) => [
@@ -336,10 +346,10 @@ export function jobsSection(jobs: readonly Job[]): Html {
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
-  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务` });
-  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务（服务重启后，之前的任务不再列出；它们写下的记录照常保留）</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
+  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
+  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
-    ? html`<p class="notice">进行中，刷新本页查看进展</p>`
+    ? html`<p class="notice">尚未收到命令执行结果</p>`
     : runLines(job.result, null);
   return {
     status: 200,
@@ -554,7 +564,7 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
 // ---------------------------------------------------------------- setup
 
 export type SetupOutcome =
-  | { ok: true; token: string; name: string }
+  | { ok: true; token: string; name: string; password: string | null }
   | { ok: false; status: number; message: string };
 
 /**
@@ -563,25 +573,28 @@ export type SetupOutcome =
  */
 export async function completeSetup(
   dataDir: string,
-  principals: { list(): Promise<{ role: string }[]>; bootstrapAdmin(name: string): Promise<{ user: { name: string }; token: { token: string } }> },
+  principals: { list(): Promise<{ role: string }[]>; bootstrapAdmin(name: string, credential?: {password:string;mustChange:boolean}): Promise<{ user: { name: string }; token: { token: string } }> },
   form: Form,
   now: Date = new Date(),
 ): Promise<SetupOutcome> {
-  if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的令牌登录' };
+  if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的用户名和密码登录' };
   const name = form.get('name');
   if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员姓名' };
   const check = await checkSetupCode(dataDir, form.get('code'), now);
   if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在 Hub 所在的主机上执行 circle-hub setup-code 生成' };
   if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
   if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
+  const supplied=form.get('password');
+  if (supplied && !validPassword(supplied)) return {ok:false,status:400,message:'密码须为 12 至 256 个字符，不含控制字符'};
+  const password=supplied || initialPassword();
   let created;
   try {
-    created = await principals.bootstrapAdmin(name);
+    created = await principals.bootstrapAdmin(name,{password,mustChange:supplied === ''});
   } catch (error) {
     return { ok: false, status: 409, message: error instanceof Error ? error.message : String(error) };
   }
   await removeSetupCode(dataDir);
-  return { ok: true, token: created.token.token, name: created.user.name };
+  return { ok: true, token: created.token.token, name: created.user.name, password: supplied ? null : password };
 }
 
 export function environmentOptions(selected = ''): Html {

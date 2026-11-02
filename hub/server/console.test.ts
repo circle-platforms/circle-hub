@@ -1,4 +1,4 @@
-// The console: sign-in with a token (with the Origin a browser derives under the pages' Referrer-Policy), cookie flags, CSRF
+// The console: every account signs in with its password, never a token (with the Origin a browser derives under the pages' Referrer-Policy), cookie flags, CSRF
 // and same-origin refusals, the strict CSP, escaping of stored case text, the pages (runs, run detail with the three groups,
 // item cells, partitions, claims and the submissions marked unverified, knowledge, packs, admin) with their visibility, and
 // that a revoked token or a sign-out ends the session at once.
@@ -10,7 +10,7 @@ import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabu
 import { NEUTRAL } from './console/pages.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let postgres: TemporaryPostgres;
 let server: TestServer;
@@ -66,7 +66,7 @@ async function signIn(token: string, port = server.port): Promise<string> {
     method: 'POST',
     port,
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: `http://127.0.0.1:${port}` },
-    body: form({ token, csrf: nonce }),
+    body: form({ ...testConsoleCredentials(token), csrf: nonce }),
   });
   assert.equal(reply.status, 303, reply.body);
   return `circle_hub_session=${cookieValue(cookieHeader(reply, 'circle_hub_session'))}`;
@@ -156,10 +156,10 @@ describe('sign-in', () => {
     assert.equal(cookieValue(login), csrfOf(page.body));
   });
 
-  test('a valid token opens a session: HttpOnly, SameSite=Strict, Path=/console, and the token is not in the cookie', async () => {
+  test('a password opens a session: HttpOnly, SameSite=Strict, Path=/console, and the token is not in the cookie', async () => {
     const user = await person();
     const { nonce, cookie } = await loginForm();
-    const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ token: `Bearer ${user.token}`, csrf: nonce }) });
+    const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ ...testConsoleCredentials(user.token), csrf: nonce }) });
     assert.equal(reply.status, 303);
     assert.equal(reply.headers.location, '/console/overview');
     const session = cookieHeader(reply, 'circle_hub_session') ?? '';
@@ -175,17 +175,17 @@ describe('sign-in', () => {
     const user = await person();
     const headers = (cookie: string, extra: Record<string, string> = {}) => ({ 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own(), ...extra });
     const a = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form({ token: user.token }) })).status, 403, 'no nonce');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form(testConsoleCredentials(user.token)) })).status, 403, 'no nonce');
     const b = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form({ token: user.token, csrf: b.nonce }) })).status, 403, 'the nonce of another form');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form({ ...testConsoleCredentials(user.token), csrf: b.nonce }) })).status, 403, 'the nonce of another form');
     const forged = 'x'.repeat(43);
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(`circle_hub_login=${forged}`), body: form({ token: user.token, csrf: forged }) })).status, 403, 'a nonce the server never issued');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(`circle_hub_login=${forged}`), body: form({ ...testConsoleCredentials(user.token), csrf: forged }) })).status, 403, 'a nonce the server never issued');
     const c = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { origin: 'http://localhost:9999' }), body: form({ token: user.token, csrf: c.nonce }) })).status, 403, 'another local origin');
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { 'content-type': 'application/json' }), body: JSON.stringify({ token: user.token, csrf: c.nonce }) })).status, 403, 'not a form');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { origin: 'http://localhost:9999' }), body: form({ ...testConsoleCredentials(user.token), csrf: c.nonce }) })).status, 403, 'another local origin');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { 'content-type': 'application/json' }), body: JSON.stringify({ ...testConsoleCredentials(user.token), csrf: c.nonce }) })).status, 403, 'not a form');
     const d = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ token: user.token, csrf: d.nonce }) })).status, 303);
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ token: user.token, csrf: d.nonce }) })).status, 403, 'a nonce is used once');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ ...testConsoleCredentials(user.token), csrf: d.nonce }) })).status, 303);
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ ...testConsoleCredentials(user.token), csrf: d.nonce }) })).status, 403, 'a nonce is used once');
   });
 
   test('a browser can sign in and out: the Origin it derives under the pages\' Referrer-Policy is accepted', async () => {
@@ -196,7 +196,7 @@ describe('sign-in', () => {
     const signedIn = await send('/console/login', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `circle_hub_login=${cookieValue(cookieHeader(login, 'circle_hub_login'))}`, origin: loginOrigin },
-      body: form({ token: user.token, csrf: csrfOf(login.body) }),
+      body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(login.body) }),
     });
     assert.equal(signedIn.status, 303, signedIn.body);
     const session = `circle_hub_session=${cookieValue(cookieHeader(signedIn, 'circle_hub_session'))}`;
@@ -211,23 +211,27 @@ describe('sign-in', () => {
     const foreign = await send('/console/login', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: again.cookie, origin: 'null' },
-      body: form({ token: user.token, csrf: again.nonce }),
+      body: form({ ...testConsoleCredentials(user.token), csrf: again.nonce }),
     });
     assert.equal(foreign.status, 403, 'Origin: null is never taken for this console');
   });
 
-  test('a bad token is refused with a new form; pages without a session redirect to the login page', async () => {
-    const { nonce, cookie } = await loginForm();
-    const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ token: 'B'.repeat(43), csrf: nonce }) });
-    assert.equal(reply.status, 401);
-    assert.match(reply.body, /令牌无效/);
-    assert.notEqual(csrfOf(reply.body), nonce);
+  test('a wrong password or a token is refused with a new form; pages without a session redirect to the login page', async () => {
+    const user = await person();
+    for (const fields of [{ username: user.user.name, password: 'synthetic-wrong-password' }, { token: user.token }] as Record<string, string>[]) {
+      const { nonce, cookie } = await loginForm();
+      const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ ...fields, csrf: nonce }) });
+      assert.equal(reply.status, 401, Object.keys(fields).join(' and '));
+      assert.match(reply.body, /用户名或密码无效/);
+      assert.notEqual(csrfOf(reply.body), nonce);
+      assert.equal(cookieHeader(reply, 'circle_hub_session'), undefined);
+    }
     const anonymous = await send('/console/runs');
     assert.equal(anonymous.status, 303);
     assert.equal(anonymous.headers.location, '/console/login?next=%2Fconsole%2Fruns');
   });
 
-  test('revoking the token ends the console session at the next page; signing out needs the session CSRF token', async () => {
+  test('resetting the password ends the console session at the next page; signing out needs the session CSRF token', async () => {
     const user = await person();
     const session = await signIn(user.token);
     const page = await get('/console/runs', session);
@@ -242,7 +246,7 @@ describe('sign-in', () => {
     const again = await signIn(user.token);
     assert.equal((await get('/console/runs', again)).status, 200);
     const [token] = await server.records.principals.tokens(user.user.id);
-    await server.records.principals.revokeToken(server.admin.principal, token.id);
+    await server.records.principals.resetPassword(server.admin.principal,user.user.id);
     const after = await get('/console/runs', again);
     assert.equal(after.status, 303);
     assert.equal(after.headers.location, '/console/login?next=%2Fconsole%2Fruns');
@@ -293,8 +297,8 @@ describe('pages', () => {
     // Display rule 13: the three groups derived from the partition list.
     const adopted = page.body.indexOf('已采用的成果（已交付');
     const open = page.body.indexOf('仍需处理的事项（已拒收、派发结果未确认、未完成');
-    const requests = page.body.indexOf('未回答的请求');
-    assert.ok(adopted > 0 && open > adopted && requests > open, 'adopted, still to handle, requests');
+    assert.ok(adopted > 0 && open > adopted, 'adopted and still to handle');
+    assert.doesNotMatch(page.body, /未回答的请求/, 'empty request sections stay hidden');
     // Display rule 3: the submission as received, marked unverified, next to its receipt.
     assert.ok(page.body.includes('提交内容（未经平台验证）'));
     assert.ok(page.body.includes('scripted-model@test'), 'the submitted text is shown');
@@ -333,7 +337,7 @@ describe('pages', () => {
       assert.ok(page.body.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
       assert.ok(page.body.includes('&quot;&gt;&lt;img src=x onerror=alert(2)&gt;'));
       const admin = await signIn(server.admin.token);
-      const adminPage = await get('/console/admin', admin);
+      const adminPage = await get('/console/team', admin);
       assert.ok(!adminPage.body.includes('<b>名字</b>') && adminPage.body.includes('&lt;b&gt;名字&lt;/b&gt;'));
     } finally {
       server.fakes.runs.items = null;
@@ -382,7 +386,7 @@ describe('pages', () => {
 
     const stranger = await person([]);
     const strangerSession = await signIn(stranger.token);
-    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的产品线/);
+    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的团队知识/);
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
@@ -399,7 +403,7 @@ describe('pages', () => {
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
-      assert.match(page.body, /没有可读的产品线/);
+      assert.match(page.body, /没有可读的团队知识/);
     } finally {
       await bare.close();
     }
@@ -430,10 +434,10 @@ describe('pages', () => {
     assert.equal(mine.status, 200);
     assert.ok(mine.body.includes('我的 Circle'));
     for (const token of await server.records.principals.tokens(server.admin.user.id)) assert.ok(!mine.body.includes(token.id), 'no other account\'s token');
-    for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(mine.body.includes(token.id), 'the member\'s own token');
+    for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(!mine.body.includes(token.id), 'device rows do not expose token identifiers');
 
     const session = await signIn(server.admin.token);
-    for (const path of ['/console/admin', '/console/settings']) {
+    for (const path of ['/console/admin', '/console/team']) {
       const admin = await get(path, session);
       assert.equal(admin.status, 200, path);
       assert.ok(admin.body.includes(user.user.name));

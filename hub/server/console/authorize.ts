@@ -4,6 +4,7 @@
 // a signed-in browser may still switch to an invitation. Approving sends the browser to the client's redirect URI with a
 // one-time code, refusing with access_denied; both end the request. No password is asked (owner-confirmed item 1), and
 // the page carries no script. The confirm page allows its form to lead to the redirect URI's origin (CSP form-action).
+import { labelOf as uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
 import { AUTHORIZATION_REQUEST_TTL_MS, redirectIsLocal } from '../oauth.ts';
@@ -14,7 +15,7 @@ const STEPS = ['身份', '确认授权', '完成'] as const;
 /** Wrong invitation codes one authorization request accepts before it ends. */
 export const MAX_INVITATION_FAILURES = 5;
 
-const chrome = (title: string) => ({ title, user: null, csrf: null, wide: true });
+const chrome = (title: string, hint?: string) => ({ title, hint, user: null, csrf: null, wide: true });
 
 /** Where the redirect URI is, for the page: the origin of an http(s) URI, the scheme of a private-use one. */
 export function redirectTarget(uri: string): string {
@@ -59,11 +60,11 @@ ${error === null ? '' : html`<p class="error">${error}</p>`}
 
 /** The identity step: the invitation code, or signing in to the console first. */
 export function identityPage(request: AuthorizationRequest, error: string | null): Html {
-  return page(chrome('授权 Circle 连接 Hub'), html`${stepper(STEPS, 0)}
-<p class="mt12"><b>${request.client.name}</b> 请求连接本 Hub。输入管理员签发的邀请码，确认以哪个账号授权。</p>
+  return page(chrome('授权 Circle 连接 Hub', '输入管理员签发的邀请码确认账号；也可用密码登录控制台后授权。'), html`${stepper(STEPS, 0)}
+<p class="mt12"><b>${request.client.name}</b> 请求连接本 Hub。</p>
 ${card(null, facts(request), 'mt12')}
 <div class="mt16">${invitationForm(request, error, true)}</div>
-<p class="sub mt12">邀请码在添加成员时签发，24 小时内有效，仅可使用一次。也可先${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}，再以登录的账号授权。</p>`);
+<p class="sub mt12">邀请码 24 小时内有效，仅可使用一次。${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}</p>`);
 }
 
 /**
@@ -79,12 +80,12 @@ export function confirmPage(request: AuthorizationRequest, account: { id: string
   const other = via === 'session'
     ? html`<details class="mt16"><summary>以其他账号授权</summary><div class="mt12">${invitationForm(request, null, false)}</div></details>`
     : '';
-  return page(chrome('授权 Circle 连接 Hub'), html`${stepper(STEPS, 1)}
+  return page(chrome('授权 Circle 连接 Hub', '管理员在团队页管理连接；成员在设置页查看本人的 Circle。断开由管理员生成命令执行。'), html`${stepper(STEPS, 1)}
 ${error === null ? '' : html`<p class="error mt12">${error}</p>`}
 <p class="mt12">以 <b>${account.name}</b>（${account.role}）的身份授权 <b>${request.client.name}</b> 连接本 Hub。</p>
 ${card(null, facts(request), 'mt12')}
 ${redirectNotice(request.redirectUri, account.name)}
-${callout('info', html`<span>授权后，该客户端以 ${account.name} 的身份调用 Hub 的工具，权限与该账号相同；在设置的“已连接的 Circle”中可随时断开。</span>`)}
+${callout('info', html`<span>授权后，该客户端以 ${account.name} 的身份调用 Hub 的工具，权限与该账号相同。</span>`)}
 ${decide}${other}`);
 }
 
@@ -109,6 +110,6 @@ export function refusedPage(message: string): Html {
 export function invitationProblem(reason: Extract<InvitationCheck, { ok: false }>['reason']): string {
   if (reason === 'used') return '邀请码已使用：请管理员重新签发';
   if (reason === 'expired') return '邀请码已过期：请管理员重新签发';
-  if (reason === 'disabled') return '该账号已停用，不能授权';
+  if (reason === 'disabled') return `该账号${uiLabelOf('account_status','disabled')}，不能授权`;
   return '邀请码不正确';
 }

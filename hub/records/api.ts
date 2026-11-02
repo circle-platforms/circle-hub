@@ -27,6 +27,7 @@ export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncod
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
+export { initialPassword, validPassword } from './password.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
@@ -53,6 +54,7 @@ export interface User extends Principal {
 
 /** One snapshot of a user row after a change: who changed it and when (role changes are recorded this way). */
 export interface UserChange {
+  password_changed?: true;
   user: string;
   name: string;
   role: PermissionRole;
@@ -111,8 +113,15 @@ export type InvitationCheck = { ok: true; invitation: string; user: User; expire
 
 export interface Principals {
   /** Creates the first admin and its token. Refused (ConflictError) once any admin exists. */
-  bootstrapAdmin(name: string): Promise<{ user: User; token: IssuedToken }>;
-  createUser(by: Principal, name: string, role?: PermissionRole): Promise<User>;
+  bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }>;
+  createUser(by: Principal, name: string, role?: PermissionRole, credential?: { password: string; mustChange: boolean }): Promise<User>;
+  /** Password material never leaves the principals boundary; only this state is public. */
+  passwordState(userId: string): Promise<{ configured: boolean; mustChange: boolean; revision: number }>;
+  verifyPassword(name: string, password: string): Promise<{ user: User; revision: number; mustChange: boolean } | null>;
+  /** A bounded console credential, hidden from Circle device listings. Refused after a concurrent password change. */
+  openConsoleSession(userId: string, revision: number): Promise<IssuedToken | null>;
+  resetPassword(by: Principal, userId: string): Promise<string>;
+  changePassword(by: Principal, current: string, next: string): Promise<boolean>;
   setRole(by: Principal, userId: string, role: PermissionRole): Promise<User>;
   setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User>;
   get(userId: string): Promise<User | null>;
