@@ -12,7 +12,7 @@ export const LIVE_SCRIPT = `(() => {
   const due = new Set(), held = new Set();
   let shown = new Date(), broken = false, timer = 0, poll = 0, retry = 0, source = null, fetching = false;
   stop = () => { lifetime.abort();pending.abort();source?.close();clearTimeout(timer);clearTimeout(retry);clearInterval(poll); };
-  const mark = () => { state.hidden = !broken;state.textContent = broken ? '连接中断，数据截至 ' + shown.toLocaleTimeString('zh-CN',{hour12:false}) + '，等待重新连接中' : ''; };
+  const mark = () => { state.hidden = !broken;state.textContent = broken ? '连接中断，数据截至 ' + shown.toLocaleTimeString('zh-CN',{hour12:false}) + '，正在重新连接' : ''; };
   const busy = m => { const target = document.querySelector(':target'),active = document.activeElement;return (target && m.contains(target)) || (active && m.contains(active) && active.matches('input,textarea,select')) || m.querySelector('form[aria-busy="true"],form[data-live-dirty]'); };
   const refresh = async ids => {
    if (fetching) { for (const id of ids) due.add(id);return; }

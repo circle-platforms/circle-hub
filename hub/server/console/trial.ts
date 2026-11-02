@@ -112,8 +112,8 @@ export function trialCard(report: SystemTrialReport): Html {
   const tried = report.routes.filter((route) => route.tried).length;
   const spent = Date.parse(report.ended_at) - Date.parse(report.started_at);
   return card(
-    { title: '尝试连接结果', meta: `${uiLabelOf('environment', report.environment)} · 尝试读取 ${tried} 个接口 · 用时 ${duration(spent)}` },
-    html`${technicalCode(`${report.system_pack.id}@${report.system_pack.version}`)}${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '业务系统接入没有声明接口')}<p class="ch-meta">每次尝试连接记一条尝试读取记录，包含操作者、时间与各接口的结果；不保存配置、凭据内容或来源原文。登录失败时，加密保存用于防止重复登录的摘要。需要参数的接口不尝试读取；登录失败后，同样的凭据不再发送。</p>`,
+    { title: '尝试连接结果',hint:'每次尝试连接记一条尝试读取记录，不保存配置、凭据内容或来源原文，登录失败后相同凭据不再发送。', meta: `${uiLabelOf('environment', report.environment)} · 尝试读取 ${tried} 个接口 · 用时 ${duration(spent)}` },
+    html`${technicalCode(`${report.system_pack.id}@${report.system_pack.version}`)}${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '业务系统接入没有声明接口')}`,
   );
 }
 

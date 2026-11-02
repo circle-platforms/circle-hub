@@ -226,11 +226,11 @@ test('shared revisions use the selected team directory through MCP and password-
   const team=(await spaces.current('team'))!,current=await spaces.entry(other.principal,team.root,'/revision-team/second',changed.entry);
   assert.equal(current?.body.replaces,first.entry);assert.equal(current?.body.shared_from?.path,body.path);
   assert.match((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).text,/被取代/);
-  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队目录/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
+  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队文件夹/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
 });
 
 test('rejected raw submissions never disclose copied private quotations through direct records or record inputs',async()=>{
-  const spaces=hub.hub.knowledge.spaces!,privateQuote='合成仅本人可读的拒收原始引文甲';
+  const spaces=hub.hub.knowledge.spaces!,privateQuote='合成仅自己可见可读的拒收原始引文甲';
   const privateSource=await spaces.importFile(owner.principal,Buffer.from(privateQuote),'text/plain','synthetic-rejected-quote.txt','/rejected-private');
   const personal=await spaces.write(owner.principal,{kind:'observation',statement:'合成被拒提交依据',path:'/rejected-private',grounds:[{reference:'src:'+privateSource.body.sha256,quotation:privateQuote}]});
   const input=await hub.records.artifacts.ingest({bytes:Buffer.from('{"synthetic":"public-input-for-rejected-submission"}'),mediaType:'application/json',origin:{read:{object:'synthetic:document:submission-input'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id,other.user.id],admins:true,packs:[],shareable:false}});
@@ -260,8 +260,8 @@ test('records disclose member grants only to participants and give administrator
     const published=await personal.publish(owner.principal,written.dir);assert.ok(published.ok,JSON.stringify(published));
     await personal.grant(owner.principal,id,{audience,...(audience==='member'?{member:other.user.id}:{})});
   }
-  const first=await spaces.write(owner.principal,{kind:'observation',statement:'合成审计甲未核验条目',path:'/audit-owner-source'});
-  const second=await spaces.write(other.principal,{kind:'observation',statement:'合成审计乙未核验条目',path:'/audit-other-source'});
+  const first=await spaces.write(owner.principal,{kind:'observation',statement:'合成审计甲待验证条目',path:'/audit-owner-source'});
+  const second=await spaces.write(other.principal,{kind:'observation',statement:'合成审计乙待验证条目',path:'/audit-other-source'});
   await spaces.share(owner.principal,{root:first.root,path:'/audit-owner-source',entry:first.entry,team_path:'/audit-owner-target'});
   await spaces.share(other.principal,{root:second.root,path:'/audit-other-source',entry:second.entry,team_path:'/audit-other-target'});
   // A stale or wrong projection must not turn a member grant into an administrator-visible event.

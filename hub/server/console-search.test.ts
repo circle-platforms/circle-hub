@@ -171,7 +171,7 @@ describe('a knowledge node\'s citations', () => {
 
     const page = await send(`/console/knowledge/tree?root=${ROOT_1}&path=%2Fcatalog%2Falpha`, { headers: { cookie: reader } });
     assert.match(page.body, /近 30 天被引用 2 次/);
-    assert.match(page.body, /<th[^>]*>出处<\/th>/);
+    assert.match(page.body, /<th[^>]*>来源<\/th>/);
 
     const stranger = await signIn((await member([])).token);
     const hidden = await send(`/console/api/knowledge/node?root=${ROOT_1}&path=%2Fcatalog%2Falpha`, { headers: { cookie: stranger } });

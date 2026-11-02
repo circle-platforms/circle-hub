@@ -125,12 +125,12 @@ function entriesOf(zip: Buffer, limits: ZipLimits): Entry[] {
   const offset = zip.readUInt32LE(eocd + 16);
   if (disk !== 0 || zip.readUInt16LE(eocd + 6) !== 0 || count === 0xffff || offset === 0xffffffff) throw new UploadError('不支持分卷或 ZIP64 格式的 zip 文件');
   if (count > limits.maxEntries) throw new UploadError(`zip 里的文件太多（${count} 个，上限 ${limits.maxEntries}）`);
-  if (offset + size > eocd) throw new UploadError('zip 文件的目录损坏');
+  if (offset + size > eocd) throw new UploadError('zip 文件的文件夹损坏');
   const entries: Entry[] = [];
   let at = offset;
   let total = 0;
   for (let i = 0; i < count; i++) {
-    if (at + 46 > eocd || zip.readUInt32LE(at) !== 0x02014b50) throw new UploadError('zip 文件的目录损坏');
+    if (at + 46 > eocd || zip.readUInt32LE(at) !== 0x02014b50) throw new UploadError('zip 文件的文件夹损坏');
     const flags = zip.readUInt16LE(at + 8);
     const method = zip.readUInt16LE(at + 10);
     const crc = zip.readUInt32LE(at + 16);

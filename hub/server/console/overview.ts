@@ -100,7 +100,7 @@ async function periodTasks(ctx: PageContext, today: readonly TaskRow[], titles: 
   if (rows.length === 0) return html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-note">在 Circle 中运行工作流后，这里显示任务。</p>${link('/console/packs','查看工作流')}</section>`;
   const spansToShow=[];
   for(const row of rows){const span=spans.get(row.run.run),start=Date.parse(row.run.started_at),end=row.result==='awaiting'?now:span?.end??start,who=row.run.runner?await ctx.userName(row.run.runner):uiLabelOf('execution_host',row.run.host);spansToShow.push({label:taskTitle(row.run,titles),detail:who+' · '+(row.result?uiLabelOf('task_result',row.result):'结果暂不可用'),start,end:Math.max(start,end),url:'/console/runs/'+row.run.run});}
-  return html`${timeline('期间任务',spansToShow,'最多显示最近20个任务；调用扫描上限500条，等待区间右端是当前截至时间')}${today.length>rows.length?html`<p>${link('/console/runs','查看全部任务')}</p>`:''}`;
+  return html`${timeline('期间任务',spansToShow,'最多显示最近 20 个任务；调用扫描上限 500 条，等待区间右端是当前截至时间')}${today.length>rows.length?html`<p>${link('/console/runs','查看全部任务')}</p>`:''}`;
 }
 
 export async function overviewPage(ctx: PageContext): Promise<PageResult> {
@@ -119,8 +119,8 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   const kpis = html`<section class="ch-section" data-columns="4">
 ${kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个`, state: 'info' })}
 ${kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '—' : `${Math.round((passed / settled.length) * 100)}`, { unit: settled.length === 0 ? '' : '%', note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: 'ok' })}
-${kpi('未决项', count(pending), { unit: '项', note: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) })}
-${kpi('期间任务等待回应中的请求', count(requests.length), { unit: '条', note: '在接收人的 Circle 中处理', state: requests.length > 0 ? 'warn' : 'idle' })}
+${kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) })}
+${kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的 Circle 中处理', state: requests.length > 0 ? 'warn' : 'idle' })}
 </section>`;
   // Each day's results: a column per day stacked by task result, the held result only while one exists.
   const dayStarts = Array.from({ length: days }, (_, i) => startOfDay(now - (days - 1 - i) * DAY));
@@ -136,7 +136,7 @@ ${kpi('期间任务等待回应中的请求', count(requests.length), { unit: '�
   const daily=chart('每日任务数量',columns.map((column,i)=>({label:column.label,values:[tasks.filter(task=>{const at=Date.parse(task.run.started_at);return at>=dayStarts[i]&&(i===dayStarts.length-1||at<dayStarts[i+1]);}).length]})),[{label:'任务'}],'bar',scope);
   const resultsTable=html`<details class="ch-tableview"><summary>按结果以表格查看</summary>${table(['日期',...shown.map(result=>uiLabelOf('task_result',result)),'结果暂不可用'],columns.map((column,i)=>[column.label,...column.parts.map(part=>part.value),tasks.filter(task=>task.result===null&&Date.parse(task.run.started_at)>=dayStarts[i]&&(i===dayStarts.length-1||Date.parse(task.run.started_at)<dayStarts[i+1])).length]))}</details>`;
   const checks=checkCounts(tasks),checkTotal=checks.reduce((sum,item)=>sum+item.value,0);
-  const checkCard=card({title:'检查项结果',hint:scope+'全部结果中的检查项'},html`${kpi('检查项',checkTotal)}${parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布')}<p class="ch-meta">“等待判定中”不计入通过；“未知”与“检查未完成”单独统计，不计入未通过。</p>`);
+  const checkCard=card({title:'检查项结果',hint:scope+'全部结果中的检查项；等待判定中不计入通过，未知与检查未完成单独统计，不计入未通过。'},html`${kpi('检查项',checkTotal)}${parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布')}`);
   const stuck=blockers(tasks),stuckCard=card({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},stuck.length?comparisons('主要阻塞原因',stuck):html`<p class="ch-empty-note">没有被退回或未完成的条目。</p>`);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
   const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id),now-since);
@@ -147,8 +147,8 @@ ${kpi('期间任务等待回应中的请求', count(requests.length), { unit: '�
   for (const line of lines) {
     for (const build of await ctx.deps.knowledge.builds(line.id)) if (build.root !== null) { current += 1; break; }
   }
-  const knowledge = card({ title: '知识库', meta:'当前快照', hint: '按产品线统计' }, html`<div class="ch-stats">${kpi('产品线',lines.length)}${kpi('已有知识的产品线',current)}</div>
-<p class="ch-meta">每条知识均附出处；成员可读分配给自己的工作流所绑定的产品线。</p><div class="ch-actions"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
+  const knowledge = card({ title: '知识库', meta:'当前快照', hint: '按产品线统计，成员可读分配给自己的工作流所绑定的产品线。' }, html`<div class="ch-stats">${kpi('产品线',lines.length)}${kpi('已有知识的产品线',current)}</div>
+<div class="ch-actions"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
   const storage = await storageFacts(ctx);
   const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : html`最近 ${when(storage.backups.latest_at)}`;

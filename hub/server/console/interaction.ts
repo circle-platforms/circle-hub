@@ -49,8 +49,9 @@ export const INTERACTION_SCRIPT = `(() => {
   const selected = shell?.querySelector('[aria-selected="true"] a[href],.ch-row[aria-current="true"] a[href]');
   const node = heading || selected; if (node) { if (heading) heading.tabIndex = -1; node.focus({preventScroll:true}); }
  };
+ const controlTips=()=>{for(const control of document.querySelectorAll('button[title],a.ch-btn[title]')){if(control.closest('.ch-tip')||control.querySelector('.ch-tip-bubble'))continue;const description=control.getAttribute('title');let host=control;if(control.matches(':disabled,[aria-disabled="true"]')){host=document.createElement('span');control.replaceWith(host);host.append(control);host.tabIndex=0;host.setAttribute('title',description);}if(control.tagName==='BUTTON')control.dataset.actionLabel=control.textContent.trim();host.classList.add('ch-tip');host.setAttribute('aria-description',description);const bubble=document.createElement('span');bubble.className='ch-tip-bubble';bubble.setAttribute('role','tooltip');bubble.setAttribute('aria-hidden','true');bubble.textContent=description;host.append(bubble);}};
  const initialize = () => {
-  updateBulk(document);syncDialog();
+  controlTips();updateBulk(document);syncDialog();
   document.dispatchEvent(new Event('circle-hub:render'));
   for (const toast of document.querySelectorAll('[data-toast-success]')) {
    if (successful.has(toast)) continue;successful.add(toast);
@@ -68,7 +69,7 @@ export const INTERACTION_SCRIPT = `(() => {
   if (request) request.abort();request = new AbortController();const own = ++sequence;
   const saved = snapshot(old),x = scrollX,y = scrollY;
   old.setAttribute('aria-busy','true');old.querySelectorAll('.ch-plot').forEach(node => node.classList.add('is-loading'));
-  const waiting = setTimeout(() => announce('等待页面加载中'),10000);
+  const waiting = setTimeout(() => announce('正在加载页面'),10000);
   try {
    const answer = await fetch(url.href,{credentials:'same-origin',cache:'no-store',headers:{accept:'text/html'},signal:request.signal});
    const doc = new DOMParser().parseFromString(await answer.text(),'text/html'),fresh = doc.querySelector('.ch-app');
@@ -83,6 +84,7 @@ export const INTERACTION_SCRIPT = `(() => {
   } catch (error) { if (error.name !== 'AbortError') announce('页面加载未完成，请检查连接后重试。'); }
   finally { clearTimeout(waiting);if (own === sequence) { const shell = document.querySelector('.ch-app');shell?.removeAttribute('aria-busy');shell?.querySelectorAll('.ch-plot').forEach(node => node.classList.remove('is-loading')); } }
  };
+ const positionTip=element=>{const trigger=element.closest?.('.ch-tip');if(!trigger)return;const bubble=trigger.querySelector('.ch-tip-bubble');if(!bubble)return;trigger.classList.remove('is-below','is-edge-right');const panel=trigger.closest('.ch-dialog-panel')?.getBoundingClientRect(),bounds=bubble.getBoundingClientRect();trigger.classList.toggle('is-below',bounds.top<Math.max(8,panel?.top+8||8));trigger.classList.toggle('is-edge-right',bounds.right>Math.min(innerWidth-8,panel?.right-8||innerWidth-8));};
  const showChart = (target) => {
   const figure = target.closest('[data-chart]');if (!figure) return;
   const index = target.dataset.chartIndex;
@@ -93,9 +95,9 @@ export const INTERACTION_SCRIPT = `(() => {
   figure.querySelectorAll('[data-chart-index]').forEach(node => {node.classList.toggle('is-hot',node === target);node.tabIndex = node === target ? 0 : -1;});
  };
  const hideChart = (figure) => { figure.querySelector('.ch-chart-tip')?.setAttribute('hidden','');figure.querySelector('.ch-chart')?.classList.remove('is-dim');figure.querySelectorAll('[data-chart-index]').forEach(node => node.classList.remove('is-hot')); };
- document.addEventListener('pointerover',event => { const target = event.target.closest?.('[data-chart-index]');if(target)showChart(target); });
+ document.addEventListener('pointerover',event => { positionTip(event.target);const target = event.target.closest?.('[data-chart-index]');if(target)showChart(target); });
  document.addEventListener('pointerout',event => { const figure = event.target.closest?.('[data-chart]');if(figure && !figure.contains(event.relatedTarget))hideChart(figure); });
- document.addEventListener('focusin',event => { const target = event.target.closest?.('[data-chart-index]');if(target)showChart(target); });
+ document.addEventListener('focusin',event => { positionTip(event.target);const target = event.target.closest?.('[data-chart-index]');if(target)showChart(target); });
  document.addEventListener('focusout',event => { const figure = event.target.closest?.('[data-chart]');if(figure && !figure.contains(event.relatedTarget))hideChart(figure); });
  document.addEventListener('click',event => {
   if (!(event.target instanceof Element) || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
@@ -135,11 +137,11 @@ export const INTERACTION_SCRIPT = `(() => {
   const rows = [...row.parentElement.children].filter(node => node.hasAttribute('data-row-href')),at = rows.indexOf(row),next = rows[at+(event.key === 'ArrowUp'?-1:1)];
   if(next) { event.preventDefault();void navigate(next.dataset.rowHref); }
  });
- const post = async (form,body,label,old) => {
+ const post = async (form,body,label,old,action) => {
   if(request)request.abort();const own=++sequence;
-  const waiting=setTimeout(()=>{if(form.isConnected)announce('等待'+label+'中');},10000);
+  const waiting=setTimeout(()=>{if(form.isConnected)announce('正在'+label);},10000);
   try {
-   let answer=await fetch(form.action,{method:'POST',credentials:'same-origin',headers:{accept:'text/html','circle-hub-form':'enhanced'},body}),destination=null;
+   let answer=await fetch(action.href,{method:'POST',credentials:'same-origin',headers:{accept:'text/html','circle-hub-form':'enhanced'},body}),destination=null;
    if(answer.ok&&answer.headers.get('content-type')?.includes('application/json')){const result=await answer.json();if(typeof result.location!=='string')throw new Error('Invalid form result');destination=new URL(result.location,location.href);if(destination.origin!==location.origin||!destination.pathname.startsWith('/console/'))throw new Error('Invalid form destination');answer=await fetch(destination.href,{credentials:'same-origin',cache:'no-store',headers:{accept:'text/html'}});}
    const redirected=!!destination||answer.redirected,target=answer.redirected?new URL(answer.url):destination||new URL(answer.url);
    const doc=new DOMParser().parseFromString(await answer.text(),'text/html'),fresh=doc.querySelector('.ch-app,[data-sign-in]');
@@ -160,11 +162,11 @@ export const INTERACTION_SCRIPT = `(() => {
   if (form.method.toLowerCase() !== 'post') return;
   if (pendingForms.has(form)) { event.preventDefault();return; }pendingForms.add(form);delete form.dataset.liveDirty;form.setAttribute('aria-busy','true');
   if (event.submitter?.name) { const value = document.createElement('input');value.type='hidden';value.name=event.submitter.name;value.value=event.submitter.value;value.dataset.submitterCopy='';form.append(value); }
-  const label = event.submitter?.textContent.trim().replace(/…$/,'') || '操作',data=new FormData(form);
+  const label = (event.submitter?.dataset.actionLabel||event.submitter?.textContent.trim())?.replace(/…$/,'') || '操作',data=new FormData(form);
   for (const button of form.querySelectorAll('button[type="submit"],button:not([type])')) if(!button.disabled) { button.disabled=true;button.setAttribute('aria-busy','true');disabledByUs.add(button); }
-  const action=new URL(form.action,location.href),old=document.querySelector('.ch-app,[data-sign-in]');
+  const action=new URL(event.submitter?.getAttribute('formaction')||form.action,location.href),old=document.querySelector('.ch-app,[data-sign-in]');
   if(old && action.origin===location.origin && action.pathname.startsWith('/console/') && !action.pathname.startsWith('/console/authorize')){
-   event.preventDefault();void post(form,form.enctype==='multipart/form-data'?data:new URLSearchParams([...data].filter(([,value])=>typeof value==='string')),label,old);
+   event.preventDefault();void post(form,form.enctype==='multipart/form-data'?data:new URLSearchParams([...data].filter(([,value])=>typeof value==='string')),label,old,action);
   }
  });
  document.addEventListener('invalid',event => {

@@ -43,7 +43,7 @@ export const commands = {
   }),
   userInvite: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-invite', user.id), title: `签发邀请码：${user.name}`,
-    text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的 Circle 打开授权页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
+    text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的 Circle 打开连接确认页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
   }),
   tokenIssue: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('token-issue', user.id), title: `签发 Circle 访问令牌：${user.name}`,
@@ -55,7 +55,7 @@ export const commands = {
   }),
   secretUnset: (name: string): CommandDialog => ({
     id: dialogId('secret-unset', name), title: `吊销凭据 ${name}`,
-    text: '吊销后引用该凭据的读取与派发不再可用；历史记录保留。', command: command('secret', 'unset', `--name=${name}`, REASON),
+    text: '吊销后引用该凭据的读取与派发不再可用；版本记录保留。', command: command('secret', 'unset', `--name=${name}`, REASON),
   }),
   resourceToggle: (resource: { id: string; name: string; enabled: boolean }): CommandDialog => ({
     id: dialogId(resource.enabled ? 'resource-disable' : 'resource-enable', resource.id), title: `${resource.enabled ? '停用' : '启用'}业务系统 ${resource.name}`,
@@ -103,6 +103,6 @@ export const commands = {
   }),
   restore: (): CommandDialog => ({
     id: 'cmd-restore', title: '恢复',
-    text: '校验备份后恢复到空的数据根；恢复后的记录以备份为准，需停止 Hub 后执行。', command: command('restore', '备份目录'),
+    text: '校验备份后恢复到空的数据根；恢复后的记录以备份为准，需停止 Hub 后执行。', command: command('restore', '备份文件夹'),
   }),
 };

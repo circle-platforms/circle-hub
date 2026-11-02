@@ -2,7 +2,7 @@
 import { uiLabelOf, type KnowledgeGrantee } from '../../../contracts/generated/vocabulary.ts';
 import type { User } from '../../records/api.ts';
 export interface AudienceGrant { path?: string; audience: KnowledgeGrantee; member: string | null }
-export function directoryName(path: string): string { return path.split('/').filter(Boolean).join(' › ') || '整个个人空间'; }
+export function directoryName(path: string): string { return path.split('/').filter(Boolean).join(' › ') || '根文件夹'; }
 export const containsDirectory = (parent: string, path: string) => parent === '/' || parent === path || path.startsWith(parent + '/');
 export function describeAudience(input: { owner: string; viewer: string; ownerName: string; path?: string; product?: boolean; grants?: readonly AudienceGrant[]; users?: readonly User[] }): { text: string; inherited: string[]; members: string[] } {
   const { owner, viewer, ownerName, path = '/', users = [] } = input;

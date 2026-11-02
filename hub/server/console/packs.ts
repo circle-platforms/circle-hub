@@ -4,7 +4,7 @@ import {personalPackControls} from './personal-packs.ts';
 // it), and one pack's requirements, checks, versions and permissions. Publishing runs in the console (the publish
 // operation); changing who may use or maintain a pack, retiring a version and switching a product pack are commands for the
 // administrator's Circle (proposal decision 6 of 2026-10-31).
-import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { PACK_KIND, axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import {timestamp} from './knowledge-display.ts';
@@ -56,7 +56,7 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
   const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope)),listings);
   return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {
     active: 'packs', hint: '按当前读取权限列出工作流与通用技能',
-    actions:html`${button('/console/packs/-/publish','发布个人工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把个人工作流授权给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
+    actions:html`${button('/console/packs/-/publish','发布我的工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的工作流分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
 
@@ -65,7 +65,7 @@ export const PACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 async function packList(ctx:PageContext,listings:readonly PackListing[],scope:KnowledgeSearchScope,selected?:PackListing):Promise<Html>{
   const groups=byId(listings.filter(pack=>inScope(scope,pack.space??'team',ctx.principal.id)));
   const values=KnowledgeSearchScopeSchema.enum,scopes=scope==='all'?[values.personal,values.shared,values.team]:[scope];
-  const kinds=selected&&(selected.kind==='product'||selected.kind==='system')?[selected.kind]:['workflow','skill'] as const;
+  const kinds=selected&&(selected.kind==='product'||selected.kind==='system')?[selected.kind]:PACK_KIND.filter(kind=>kind==='workflow'||kind==='skill');
   const sections:Html[]=[];
   for(const kind of kinds)for(const group of scopes){
     const rows:Html[]=[];
@@ -128,9 +128,9 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
     if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); permissionActions.push(commandLink(d, pack.active ? '停用产品知识来源' : '启用产品知识来源')); }
     const d = commands.packMaintainer(pack.id); dialogs.push(d); permissionActions.push(commandLink(d, '调整维护人'));
   }
-  const permissions = card({ title: '版本记录' }, html`${table(['发布时间', '状态', '查看', '样例', '版本'], versionRows,'没有版本记录',undefined,{selected:versions.indexOf(pack),hrefs:versions.map(version=>href('/console/packs/'+pack.id,{space:pack.space,version:version.version,scope:ctx.url.searchParams.get('scope')}))})}
+  const permissions = card({ title: '版本记录',hint:'使用范围、维护人与下架动作在管理员的 Circle 中执行生成的命令。' }, html`${table(['发布时间', '状态', '查看', '样例', '版本'], versionRows,'没有版本记录',undefined,{selected:versions.indexOf(pack),hrefs:versions.map(version=>href('/console/packs/'+pack.id,{space:pack.space,version:version.version,scope:ctx.url.searchParams.get('scope')}))})}
 ${kv([['所有者', await ctx.userName(pack.owner)], ...(assigned === null ? [] : [['使用范围', assigned.length === 0 ? uiLabelOf('audience_scope','team_unassigned') : assigned.join('、')] as const])])}
-${permissionActions.length === 0 ? '' : html`<div class="ch-actions"><div class="ch-actions">${permissionActions}</div></div><p class="ch-meta">调整使用范围、维护人与退役版本生成命令，在管理员的 Circle 中执行。</p>`}`);
+${permissionActions.length === 0 ? '' : html`<div class="ch-actions"><div class="ch-actions">${permissionActions}</div></div>`}`);
   if(ctx.admin&&!pack.space&&!pack.withdrawn)dialogs.push(commands.packRetire(`${pack.id}@${pack.version}`));
   const body = html`${head}
 <div class="ch-section">${requirements}</div>${personalControls.body}

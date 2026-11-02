@@ -13,12 +13,12 @@ test('the shared panel groups only current authorized paths and keeps displayed 
  assert.match(body,/合成授权人/);assert.match(body,/<details open>/);assert.match(body,/scope=shared/);assert.doesNotMatch(body,/private/);
  assert.match(body,/>allowed</);assert.match(body,/>child</);assert.doesNotMatch(body,/>\/allowed/);
  assert.match(body,/scope=shared" aria-current="page"/);
- assert.match(body,/scope=shared" aria-current="page">共享给我的<span class="ch-count">1<\/span>/);
+ assert.match(body,/scope=shared" aria-current="page">与我共享 <span class="ch-count">1<\/span>/);
  assert.ok(body.indexOf('scope=all')<body.indexOf('scope=personal'));assert.ok(body.indexOf('scope=personal')<body.indexOf('scope=shared'));assert.ok(body.indexOf('scope=shared')<body.indexOf('scope=team'));
  visible[0].paths=['/ancestor/allowed'];visible[0].version.body.directories=['/','/ancestor','/ancestor/allowed','/ancestor/allowed/child'];
  const nested=render(await spaceLayout(ctx,html``));assert.match(nested,/>allowed</);assert.match(nested,/>child</);assert.doesNotMatch(nested,/>ancestor</);
  visible.length=0;ctx.url=new URL('http://127.0.0.1/console/knowledge');
- assert.doesNotMatch(render(await spaceLayout(ctx,html``)),/共享给我的/);
+ assert.doesNotMatch(render(await spaceLayout(ctx,html``)),/与我共享/);
  assert.equal(inScope('personal','reader','reader'),true);assert.equal(inScope('shared','owner','reader'),true);assert.equal(inScope('team','owner','reader'),false);
 });
 test('unreadable product ancestors are absent and rendering requests no root initialization',async()=>{
@@ -35,5 +35,5 @@ test('the memory panel derives directories from memory permissions without query
  const body=render(await spaceLayout(ctx,html``));assert.match(body,/合成记忆作者/);assert.match(body,/>偏好</);assert.match(body,/>排版</);assert.doesNotMatch(body,/>\/偏好/);
  assert.match(String(knowledgeTabs(ctx)),/view=memory" aria-current="page"/);
  const own=render(await spaceLayout({...ctx,principal:{...ctx.principal,id:'owner'},url:new URL('http://127.0.0.1/console/knowledge?scope=personal&view=memory')},html``));assert.doesNotMatch(own,/<summary>个人<\/summary>/);
- items.length=0;assert.doesNotMatch(render(await spaceLayout(ctx,html``)),/共享给我的/);
+ items.length=0;assert.doesNotMatch(render(await spaceLayout(ctx,html``)),/与我共享/);
 });

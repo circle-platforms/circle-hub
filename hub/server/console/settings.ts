@@ -1,3 +1,4 @@
+import {tooltip} from './presentation.ts';
 import {dot} from './ui.ts';
 import {stat,facts,technicalCode,technical} from './presentation.ts';
 // 设置 (the design canvas's Admin board): members and the Circles connected with their tokens, credentials and the Hub's
@@ -69,13 +70,13 @@ const shortPrint = (fingerprint: string): string => {
 /** Steps to trust this Hub's certificate authority in a browser, per operating system of the reader's computer. */
 export function trustSteps(): Html {
   return html`<details><summary>浏览器信任步骤（macOS / Linux / Windows）</summary>
-<p class="ch-meta">颁发机构证书位于 Hub 数据目录的 ${code('tls/ca.crt')}，复制到访问控制台的电脑后：</p>
+<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到本机，按系统导入，并在 Circle 的 trust_cert_files 中填写路径。')}</p>
 <ol class="ch-meta">
 <li><b>macOS</b>：双击证书加入“钥匙串访问”的“系统”钥匙串，打开证书，在“信任”中将“使用此证书时”设为“始终信任”。</li>
 <li><b>Linux</b>：复制到 ${code('/usr/local/share/ca-certificates/circle-hub.crt')}，执行 ${code('sudo update-ca-certificates')}；Firefox 在“设置 → 隐私与安全 → 证书”中导入。</li>
 <li><b>Windows</b>：双击证书，选择“安装证书”，存储位置选“本地计算机”，放入“受信任的根证书颁发机构”。</li>
 </ol>
-<p class="ch-meta">Circle 在设置的 ${code('trust_cert_files')} 中写入证书路径后即信任本 Hub。</p></details>`;
+</details>`;
 }
 
 /**
@@ -121,7 +122,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
     ['访问地址', code(originOf(ctx))],
   ]));
   const certificate = cert === null
-    ? card({ title: '证书', lead: html`${dot('idle')}`, tail: chip('未启用 HTTPS', 'unchecked') }, html`<p class="ch-meta">Hub 未启用内置 HTTPS；启用后在此显示证书指纹与有效期。</p>`)
+    ? card({ title: '证书',hint:'启用内置 HTTPS 后显示证书指纹与有效期。', lead: html`${dot('idle')}`, tail: chip('未启用 HTTPS', 'unchecked') }, html`<p class="ch-meta">内置 HTTPS 未启用</p>`)
     : card({ title: '证书', lead: html`${dot(cert.daysLeft > 30 ? 'ok' : 'warn')}`, meta: `剩余 ${cert.daysLeft} 天` }, html`${kv([
         ['颁发机构指纹', authority === null ? '未读到颁发机构证书' : html`${technicalCode(authority)}`],
         ['服务器证书指纹', html`${technicalCode(cert.fingerprint)}`],
@@ -139,7 +140,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
     : backups.count === 0
       ? html`<p class="ch-meta">尚无备份。</p>`
       : kv([['最近备份', backups.latest_at === null ? '时间未读到' : when(backups.latest_at)], ['份数', `${backups.count} 份`]]);
-  const backup = card({ title: '备份', lead: html`${dot(backups !== null && backups.count > 0 ? 'ok' : 'idle')}` }, html`${backupState}<p class="ch-meta">备份在 Hub 所在的主机上执行。</p>${ctx.admin ? html`<div class="ch-actions">${commandLink(commands.backup(), '备份命令')}</div>` : ''}`);
+  const backup = card({ title: '备份',hint:'备份在 Hub 所在的主机上执行。', lead: html`${dot(backups !== null && backups.count > 0 ? 'ok' : 'idle')}` }, html`${backupState}${ctx.admin ? html`<div class="ch-actions">${commandLink(commands.backup(), '备份命令')}</div>` : ''}`);
   return html`<section class="ch-section" data-columns="4">${service}${certificate}${backup}${database}</section>`;
 }
 
@@ -220,7 +221,7 @@ ${card(null, secretBody)}
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
 ${await hubState(ctx)}
 ${sectionHead('需停机或在主机上执行的操作', undefined, undefined, undefined, '控制台不执行这些操作；在 Hub 所在主机上的管理员 Circle 中执行')}
-${card(null, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div><p class="ch-meta">部署与回滚见 ${code('circle-hub deploy')} 与 ${code('circle-hub rollback')}。</p>`)}
+${card({title:'主机操作',hint:'部署与回滚在 Hub 主机上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}`;
   return {
     status: 200,
@@ -237,7 +238,7 @@ async function memberSettings(ctx: PageContext): Promise<PageResult> {
   const rows = await Promise.all(tokens.filter(token => token.revoked_at === null).map(async token => [await circleName(ctx.deps.records.principals, token),ctx.principal.name,when(token.last_used_at),'由管理员断开']));
   const body = html`<section class="ch-section" data-columns="2" id="mine">
 ${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的 Circle', undefined, undefined, undefined, '每台设备上的 Circle 独立连接；断开由管理员在 Circle 中执行')}${table(['设备名','成员','最近使用时间','操作'], rows, '尚无已连接的 Circle')}`))}
-${card({ title: '连接新的 Circle', meta: 'MCP 标准授权' }, html`<p class="ch-meta">把以下配置写入新设备上 Circle 的 settings.json。Circle 打开授权页后，在已登录控制台的浏览器中确认以本账号授权；在其他设备上，输入管理员签发的邀请码。</p><pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>`)}
+${card({ title: '连接新的 Circle', meta: 'MCP 标准连接确认',hint:'把配置写入新设备的 Circle，浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>`)}
 </section>
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
 ${await hubState(ctx)}`;

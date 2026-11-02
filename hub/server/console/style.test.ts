@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { DESIGN_CSS } from './style.generated.ts';
-import { generateConsoleCss, generatedModule } from '../../../tools/gen-console-style.ts';
+import { generateConsoleCss, generatedModule, INTERACTION_CSS } from '../../../tools/gen-console-style.ts';
 
 const source = () => JSON.parse(readFileSync(new URL('../../../docs/design/circle-design-system/tokens.json', import.meta.url), 'utf8'));
 const bundle = readFileSync(new URL('../../../docs/design/circle-design-system/components/bundle.css', import.meta.url), 'utf8');
@@ -13,7 +13,8 @@ test('the checked-in stylesheet reproduces every shared source byte with no runt
   assert.equal(DESIGN_CSS, css);
   assert.equal(readFileSync(new URL('./style.generated.ts', import.meta.url), 'utf8'), generatedModule(css));
   assert.equal(generateConsoleCss(source(), bundle), css, 'repeated generation is deterministic');
-  assert.ok(css.endsWith(bundle), 'the complete component sheet is included verbatim');
+  assert.ok(css.includes(bundle), 'the complete component sheet is included verbatim');
+  assert.ok(css.endsWith(INTERACTION_CSS),'the normative state correction follows the older shared bundle');
   assert.doesNotMatch(generatedModule(css), /import |readFile/);
   assert.match(execFileSync(process.execPath, ['tools/gen-console-style.ts', '--check'], { cwd: new URL('../../../', import.meta.url), encoding: 'utf8' }), /matches the shared design sources/);
   assert.equal(spawnSync(process.execPath, ['tools/gen-console-style.ts', '--unknown'], { cwd: new URL('../../../', import.meta.url) }).status, 2);

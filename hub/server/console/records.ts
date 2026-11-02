@@ -69,7 +69,7 @@ async function statistics(ctx:PageContext,now:number,daysCount:number,query:Para
  const totals=new Map<string,number>();for(const line of items)if(line.user)totals.set(line.user,(totals.get(line.user)??0)+1);
  const top=await Promise.all([...totals].sort((a,b)=>b[1]-a[1]).slice(0,6).map(async([user,value])=>({label:await ctx.userName(user),value})));
  const statuses=CALL_RESULT.map(result=>({label:uiLabelOf('call_result',result),value:items.filter(line=>line.call_result===result).length,className:RESULT_FILL[result]}));
- return html`${kpis}<section data-columns="2">${distribution}<div class="ch-section">${ctx.admin&&top.length?comparisons('按成员',top,scope+'；最多显示调用次数前6名'):''}${parts(statuses,'调用状态')}</div></section>`;
+ return html`${kpis}<section data-columns="2">${distribution}<div class="ch-section">${ctx.admin&&top.length?comparisons('按成员',top,scope+'；最多显示调用次数前 6 名'):''}${parts(statuses,'调用状态')}</div></section>`;
 }
 
 /** The records page at `path` (/console/records, or /console/admin/calls for administrators only). */
@@ -124,6 +124,6 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
     status: 200,
     body: page(chrome,pageLayout(html`<nav class="ch-seg" aria-label="时间范围">${[7,14,30].map(value=>html`<a href="${path+'?'+new URLSearchParams({...user?{user}:{},...tool?{tool}:{},...run?{run}:{},days:String(value)})}"${value===days&&!from&&!to?html` aria-current="page"`:''}>近 ${value} 天</a>`)}</nav>${await statistics(ctx,now,days,{userId,tool,runId:run,from:rangeFrom,to:rangeTo})}<div>${list}</div><div>${await trials(ctx,path,userId,rangeFrom,rangeTo)}</div>${await spaceRecords(ctx,path,userId,rangeFrom,rangeTo)}
 ${sectionHead('知识流向', undefined, undefined, undefined, '按成员、工作流追踪知识的来源、去向及所用流程')}
-${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`,{inspector,detail:!!selected,back:link(path,'返回记录',Object.fromEntries([...ctx.url.searchParams].filter(([key])=>key!=='call')))})),
+${plannedCard('知识流向', '记录中已包含每条知识的来源与每次引用；上线后在此将两者关联展示。', 'flow')}`,{inspector,detail:!!selected,back:link(path,'返回记录',Object.fromEntries([...ctx.url.searchParams].filter(([key])=>key!=='call')))})),
   };
 }

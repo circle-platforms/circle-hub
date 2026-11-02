@@ -5,7 +5,7 @@ import type { DynamicTerminal, Nature, StaticTerminal } from '../../../contracts
 import { html, href, icon, type Html, type ICONS } from './html.ts';
 
 import {time,fullTime} from './format.ts';
-import {panel, badge, facts, commandLink as sharedCommandLink,commandModal as sharedCommandModal} from './presentation.ts';
+import {tooltip,panel, badge, facts, commandLink as sharedCommandLink,commandModal as sharedCommandModal} from './presentation.ts';
 
 /** The colour families of states, named after the terminals they colour (display rule 5: unknown has its own). */
 export type Tone = Extract<StaticTerminal, 'pass' | 'judgment' | 'unchecked' | 'incomplete'> | Extract<DynamicTerminal, 'fail'> | Extract<Nature, 'unknown'>;
@@ -31,14 +31,14 @@ export interface CardHead {
 }
 
 export const card=panel;
-export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk'}={}):Html{
- return html`<div class="ch-stat"><span class="ch-stat-label">${options.state?dot(options.state):''}${label}</span><span class="ch-stat-value">${value}${options.unit?html`<span class="ch-stat-unit"> ${options.unit}</span>`:''}</span>${options.note?html`<span class="ch-stat-note">${options.note}</span>`:''}</div>`;
+export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
+ return html`<div class="ch-stat"><span class="ch-stat-label">${options.state?dot(options.state):''}${options.hint?tooltip(label,options.hint):label}</span><span class="ch-stat-value">${value}${options.unit?html`<span class="ch-stat-unit"> ${options.unit}</span>`:''}</span>${options.note?html`<span class="ch-stat-note">${options.note}</span>`:''}</div>`;
 }
 export function callout(tone:'info'|'warn'|'unknown',body:unknown):Html{
  return html`<div class="ch-toast" role="status">${dot(tone==='info'?'info':tone==='warn'?'warn':'unknown')}<span>${body}</span></div>`;
 }
 export function sectionHead(title:unknown,sub?:unknown,extra?:unknown,id?:string,hint?:string):Html{
- return html`<div class="ch-page-head"${id?html` id="${id}"`:''}><h2 class="ch-section-label"${hint?html` title="${hint}" tabindex="0"`:''}>${title}${sub?html` · ${sub}`:''}</h2>${extra??''}</div>`;
+ return html`<div class="ch-page-head"${id?html` id="${id}"`:''}><h2 class="ch-section-label">${hint?tooltip(title,hint):title}${sub?html` · ${sub}`:''}</h2>${extra??''}</div>`;
 }
 
 /** A link styled as a button. */

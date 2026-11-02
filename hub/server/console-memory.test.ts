@@ -36,7 +36,7 @@ test('password console forms edit escaped text, manage independent grants and re
  const home=await own.get(url(undefined,{edit:'1'}));assert.equal(home.status,200,home.body);assert.match(home.body,/保存记忆/);
  const saved=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(home.body),space:'personal',title:'合成控制台记忆',path:'/preferences',markdown:'<script>合成纯文本</script>',expected_version:'',client_key:'console-create',enabled:'true'});
  assert.equal(saved.status,303,saved.body);const target=String(saved.headers.location),document=new URL(target,'http://127.0.0.1').searchParams.get('document')!;
- const detail=await own.get(target);assert.match(detail.body,/&lt;script&gt;合成纯文本&lt;\/script&gt;/);assert.doesNotMatch(detail.body,/<script>合成纯文本/);assert.match(detail.body,/版本历史/);
+ const detail=await own.get(target);assert.match(detail.body,/&lt;script&gt;合成纯文本&lt;\/script&gt;/);assert.doesNotMatch(detail.body,/<script>合成纯文本/);assert.match(detail.body,/版本记录/);
  assert.equal((await admin.get(target)).status,404);
  const grantPage=await own.get(url());assert.match(grantPage.body,/action="\/console\/knowledge\/do\/memory-grant"/);
  const preview=await own.post('/console/knowledge/do/memory-grant',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member:w.reader.user.name,preview_grant:'1'});assert.equal(preview.status,303);
@@ -44,7 +44,7 @@ test('password console forms edit escaped text, manage independent grants and re
  assert.equal((await w.memory.grants(w.owner.principal)).length,0);
  const granted=await own.post('/console/knowledge/do/memory-grant',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member:w.reader.user.name});assert.equal(granted.status,303,granted.body);
  const shared=await other.get(url(undefined,{scope:'shared'}));assert.match(shared.body,/来自 合成记忆作者/);assert.match(shared.body,/合成控制台记忆/);assert.doesNotMatch(shared.body,/memory-write/);
- assert.doesNotMatch((await other.get(url(document))).body,/版本历史|memory-write/);
+ assert.doesNotMatch((await other.get(url(document))).body,/版本记录|memory-write/);
  const denied=await other.post('/console/knowledge/do/memory-write',{csrf:csrf(shared.body),space:'personal',document,expected_version:(await w.memory.read(w.owner.principal,document)).version,markdown:'不能改别人的偏好',client_key:'foreign-edit'});assert.equal(denied.status,404,denied.body);
  const revoked=await own.post('/console/knowledge/do/memory-revoke',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member_id:w.reader.user.id});assert.equal(revoked.status,303,revoked.body);
  assert.doesNotMatch((await other.get(url(undefined,{scope:'shared'}))).body,/合成控制台记忆/);assert.equal((await other.get(url(document))).status,404);

@@ -1,3 +1,4 @@
+import {tooltip,technical} from './presentation.ts';
 import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
 import { LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
@@ -354,7 +355,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   }
   if (!sameOrigin(request, options.ownOrigins())) {
     request.resume();
-    return forbidden(response, '授权表单只能从本控制台的页面提交');
+    return forbidden(response, '连接确认表单只能从本控制台的页面提交');
   }
   const form = await formOf(request);
   if (form === 'aborted') return void response.destroy();
@@ -372,7 +373,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
       open.failures += 1;
       if (open.failures >= MAX_INVITATION_FAILURES) {
         store!.end(open.id);
-        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次未通过验证，该授权请求已结束。`));
+        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次未通过验证，该连接请求已结束。`));
       }
       return show(400, invitationProblem(check.reason));
     }
@@ -391,13 +392,13 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
     }
     if (named === null) return { status: 401, error: '请先输入邀请码' };
     // The account must still be the one the page named: signing in as someone else in another tab changes nothing here.
-    if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新授权' };
+    if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新确认连接' };
     if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
       open.invitation = null;
       return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status','disabled')}）：请管理员重新签发` };
     }
     const code = store!.grant(open, named.id);
-    if (code === null) return { status: 409, error: '该授权请求已处理' };
+    if (code === null) return { status: 409, error: '该连接请求已处理' };
     options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获授权，账号 ${named.id}`);
     return to({ code });
   };
@@ -442,7 +443,7 @@ async function setupPage(options: ConsoleOptions, response: ServerResponse, stat
   const body = page(
     { ...anonymous('创建首位管理员'), wide: true, hint: '使用初始化码创建首位管理员；管理员用户名必填，密码可留空。' },
     html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error">${message}</p>`}
-<p class="ch-meta">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
+<p class="ch-meta">初始化码 24 小时内有效，仅可使用一次</p>${technical(code('circle-hub setup-code'),'查看重新生成命令')}
 <form method="post" action="/console/setup">
 <div class="ch-field"><label class="ch-field-label" for="setup-code">初始化码</label><div class="ch-input"><input id="setup-code" name="code" autocomplete="off" size="40" required value="${prefill}"></div></div>
 <div class="ch-field"><label class="ch-field-label" for="admin-name">管理员用户名</label><div class="ch-input"><input id="admin-name" name="name" autocomplete="off" size="24" required></div></div>
@@ -498,11 +499,11 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
 <p class="notice">下面是这位管理员的访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
 <h2>在 Circle 中连接这个 Hub</h2>
-<p class="ch-meta">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；先用用户名和密码登录控制台，再确认授权即完成连接。</p>
+<h2 class="ch-section-label">${tooltip('连接 Circle','把配置写入 Circle 的 settings.json，首次连接时登录控制台并确认身份。')}</h2>
 <pre class="ch-quote">${circleEntry(mcpOrigin(request, secure), false)}</pre>
-<p class="ch-meta">客户端不支持 MCP 标准授权时改用访问令牌：在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，配置写成：</p>
+<h2 class="ch-section-label">${tooltip('兼容连接方式','客户端不支持 MCP 标准连接确认时，在 Circle 中用 /secrets CIRCLE_HUB_TOKEN 保存令牌后采用下方配置。')}</h2>
 <pre class="ch-quote">${circleEntry(mcpOrigin(request, secure))}</pre>
-${secure ? html`<p class="ch-meta">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
+${secure ? html`${trustSteps()}` : ''}
 <h2>接下来</h2>
 <ol class="ch-meta"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
 <p>${link('/console/login', '前往登录')}</p>`,

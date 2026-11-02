@@ -85,7 +85,7 @@ async function execute(ctx: PageContext, options: WriteOptions, name: string, fi
   }
   const last = steps[steps.length - 1];
   if (last.code !== 0) {
-    return { status: last.code === 2 ? 400 : 409, body: { code: null, message: last.code === 2 ? '参数不正确，未执行' : '操作未完成', fix: last.stderr[last.stderr.length - 1] ?? '按命令的输出处理后重试', steps } };
+    return { status: last.code === 2 ? 400 : 409, body: { code: null, message: last.code === 2 ? '参数不正确，未执行' : '操作未完成', fix: last.stderr[last.stderr.length - 1] ?? '按命令的输来源理后重试', steps } };
   }
   if (name !== 'member-add') return { status: 200, body: { steps } };
   // The value shown once: the invitation code (or the token), and the Circle entry that goes with it.
@@ -184,7 +184,7 @@ async function stage(ctx: PageContext, options: WriteOptions): Promise<ApiResult
   const result = await stagePack(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, options.token, options.upload);
   if (result.refused !== null) return refusal(result.refused);
   const run = result.run!;
-  const check = { command: 'circle-hub pack publish <目录> --stage --dry-run', code: run.code, stdout: run.stdout, stderr: run.stderr };
+  const check = { command: 'circle-hub pack publish <文件夹> --stage --dry-run', code: run.code, stdout: run.stdout, stderr: run.stderr };
   if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '未通过发布校验', fix: '按校验结果中每条问题的处理修改后重新上传', check } };
   if (result.published !== null) return { status: 200, body: { check, stage: null, published: result.published } };
   if (result.stage === null) return { status: 409, body: { code: null, message: '发布校验已通过，但暂存未能保存', fix: '重新上传', check } };
@@ -199,8 +199,8 @@ async function publish(ctx: PageContext, options: WriteOptions, id: string): Pro
   const result = await publishStage(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, options.token, id);
   if (result.refused !== null) return refusal(result.refused);
   const run = result.run!;
-  const steps = [{ command: 'circle-hub pack publish <目录> --stage', code: run.code, stdout: run.stdout, stderr: run.stderr }];
-  if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '操作未完成', fix: run.stderr[run.stderr.length - 1] ?? '按命令的输出处理后重新上传', steps } };
+  const steps = [{ command: 'circle-hub pack publish <文件夹> --stage', code: run.code, stdout: run.stdout, stderr: run.stderr }];
+  if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '操作未完成', fix: run.stderr[run.stderr.length - 1] ?? '按命令的输来源理后重新上传', steps } };
   return { status: 200, body: { steps, pack: result.stage!.pack, version: result.stage!.version } };
 }
 

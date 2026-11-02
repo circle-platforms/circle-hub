@@ -25,6 +25,14 @@ const SHELL_CSS = `
 .ch-plot{max-width:480px}
 .ch-plot:has([data-timeline]){max-width:680px;overflow-x:auto}
 .ch-chart[data-timeline]{min-width:600px}
+.ch-tip-bubble{display:none}
+.ch-tip:hover .ch-tip-bubble,.ch-tip:focus-within .ch-tip-bubble,.ch-tip.is-open .ch-tip-bubble{display:block;animation:ch-tip-in var(--dur-fast) var(--ease-enter)}
+@keyframes ch-tip-in{from{opacity:0}to{opacity:1}}
+.ch-tip.is-below .ch-tip-bubble{top:calc(100% + 8px);bottom:auto}
+.ch-tip.is-edge-right .ch-tip-bubble{left:auto;right:0;transform:none}
+.ch-chart.is-dim .bar:not(.is-hot){opacity:.9}
+.ch-plot.is-loading{opacity:.9}
+.ch-plot.is-loading .ch-chart.is-dim .bar:not(.is-hot){opacity:1}
 .ch-chart-tip{top:var(--space-2);right:var(--space-2);max-width:calc(100% - 16px)}
 .ch-chart-tip p,.ch-chart-tip .when{overflow-wrap:anywhere}
 .ch-chart [data-chart-index].is-hot .crosshair{visibility:visible}
@@ -32,15 +40,13 @@ const SHELL_CSS = `
 .ch-chart [data-chart-index]:focus-visible .hit{stroke:var(--focus-ring);stroke-width:2}
 .ch-chart [data-row-href] .hit{cursor:pointer}
 .ch-field-error{display:block}
-.ch-table tbody tr[data-row-href]:hover,.ch-row[data-row-href]:hover{background:var(--surface-hover)}
-.ch-table tbody tr[aria-selected="true"]:hover,.ch-row[aria-current="true"]:hover{background:color-mix(in srgb,var(--area) 10%,var(--surface-1))}
-.ch-app[aria-busy="true"] .ch-table tbody{opacity:.5}
+.ch-app[aria-busy="true"] .ch-table tbody{opacity:.9}
 .ch-connection-map{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--space-5)}
 @media(max-width:760px){.ch-connection-map{grid-template-columns:minmax(0,1fr)}}
 
 
 .ch-actions a.ch-chip { display:inline-flex;align-items:center;gap:var(--space-2); }
-.ch-chip[aria-current] { background:var(--surface-pressed);box-shadow:none;color:var(--text-primary); }
+.ch-chip[aria-current] { background:var(--surface-pressed);box-shadow:inset 0 0 0 1px var(--focus-ring);color:var(--text-primary); }
 [data-columns] { display:grid; gap:var(--space-6); align-items:start; }
 [data-columns="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
 [data-columns="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
@@ -83,7 +89,7 @@ const SHELL_CSS = `
 .ch-table-wrap .ch-table [data-technical] { min-width: 4em; }
 .ch-table-wrap .ch-table [data-technical][open] { max-width: 24rem; }
 .ch-seg a { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--space-3); border-radius: var(--radius-sm); font: 500 12px/1 var(--font-sans); color: var(--text-secondary); white-space: nowrap; }
-.ch-seg a[aria-current] { background: var(--surface-2); color: var(--text-primary); box-shadow: 0 0 0 1px var(--line-hairline); }
+.ch-seg a[aria-current] { background: var(--surface-2); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--focus-ring); }
 .ch-row[data-row-href], .ch-table tr[data-row-href] { cursor: pointer; }
 .ch-row-title { overflow-wrap: anywhere; }
 .ch-inspector [data-area-content] .ch-section + .ch-section { margin-top: var(--space-5); }
@@ -114,7 +120,7 @@ const SHELL_CSS = `
 .ch-nav-foot .ch-section { flex: 1; gap: 0; min-width: 0; }
 .ch-nav-foot .ch-seg { max-width: 100%; }
 .ch-nav-foot form { flex: none; }
-.ch-seg button[aria-checked="true"] { background: var(--surface-2); color: var(--text-primary); box-shadow: 0 0 0 1px var(--line-hairline); }
+.ch-seg button[aria-checked="true"] { background: var(--surface-2); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--focus-ring); }
 [data-sign-in] { box-sizing: border-box; width: min(440px, calc(100% - 32px)); margin: auto; background: var(--surface-2); padding: var(--space-6); border-radius: var(--radius-xl); box-shadow: none; }
 [data-sign-in][data-wide] { width: min(720px, calc(100% - 32px)); }
 body:has(> [data-sign-in]) { display: flex; min-height: 100vh; padding: var(--space-6) 0; box-sizing: border-box; background: var(--surface-0); }

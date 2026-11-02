@@ -62,7 +62,7 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
   });
   const total=memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:{})});
-  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)}<span class="ch-count">${(subset?count('workflow')+count('skill'):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
+  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)} <span class="ch-count">${(subset?count('workflow')+count('skill'):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
  const recentPacks=packs?.filter(p=>(p.kind==='workflow'||p.kind==='skill')&&inScope(scope,p.space??'team',ctx.principal.id));
  const count= recentPacks?new Set(recentPacks.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:

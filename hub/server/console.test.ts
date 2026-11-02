@@ -268,7 +268,7 @@ describe('pages', () => {
     for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录']) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
     }
-    const blocks = [...page.body.matchAll(/<div class="ch-source"><dl[^>]*>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
+    const blocks = [...page.body.matchAll(/<div class="ch-source"(?: data-evidence)?><dl[^>]*>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
     assert.ok(blocks.length >= 2, 'the target basis and the finding are shown as claims');
     const order: readonly string[] = DISPLAY_ORDER;
     for (const labels of blocks) {

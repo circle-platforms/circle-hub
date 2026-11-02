@@ -14,6 +14,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Console vocabulary values use the model's interface labels, while static copy follows the shared Chinese wording and
+  spacing rules. Explanations appear in keyboard-accessible tooltips; rendered-page checks preserve original evidence.
+  Selected and hovered row helpers, control borders and chart loading states meet the shared contrast requirements.
+
 - Console rows select contextual actions instead of carrying buttons. Keyboard selection, dialogs, pending submissions,
   live refresh and success messages share consistent behavior; charts offer matching hover, keyboard and table views,
   with unified periods and compact numeric/time formatting. Native forms and strict hash-based CSP remain supported.

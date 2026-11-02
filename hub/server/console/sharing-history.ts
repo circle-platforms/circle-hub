@@ -1,3 +1,4 @@
+import {evidence} from './presentation.ts';
 // A receipt keeps its source identity; display resolves the owner's readable statement instead of a digest.
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import type {KnowledgeShareReceipt} from '../../../contracts/src/sharing.ts';

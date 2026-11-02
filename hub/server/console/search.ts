@@ -159,7 +159,7 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const results = await searchHub(ctx, raw);
   const chrome = ctx.chrome('搜索', results.q === '' ? { hint: '在任务、工作流、知识库与记录中查找' } : { sub: `“${results.q}”的查找结果` });
   const form = html`<form class="ch-actions" data-filters method="get" action="/console/search"><label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label><button class="ch-btn ch-btn--secondary" type="submit">搜索</button></form>`;
-  if (results.q === '') return { status: 200, body: page(chrome, html`${spaceKnowledge}${card(null, html`${form}<p class="ch-meta">可按任务的运行编号、工作流、产品线、版本、知识条目路径（以 / 开头）、工具名称或成员姓名查找。</p>`)}`) };
+  if (results.q === '') return { status: 200, body: page(chrome, html`${spaceKnowledge}${card(null, html`${form}`)}`) };
   const partial = (yes: boolean, what: string) => (yes ? html`<p class="ch-meta">${what}</p>` : '');
   const knowledgeRow = (hit: KnowledgeHit) => {
     if (hit.kind === 'line') return ['产品线', link('/console/knowledge/product', hit.title, { id: hit.product }), hit.names.join('、')];

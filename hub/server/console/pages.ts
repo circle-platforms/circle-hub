@@ -1,11 +1,10 @@
-import {panel as knowledgePanel,facts as knowledgeFacts,section as knowledgeSection,areaPage as knowledgeShell,technicalCode,technical,stat,sourceBlock} from './presentation.ts';
+import {tooltip,panel as knowledgePanel,facts as knowledgeFacts,section as knowledgeSection,areaPage as knowledgeShell,technicalCode,technical,stat,sourceBlock} from './presentation.ts';
 import { digestOf } from '../../records/api.ts';
 // The console pages that read: tasks, one task, knowledge and task packs. Every enumeration value is shown through its
 // interface term (uiLabelOf, display rule 20), every claim in DISPLAY_ORDER, unknown with its own symbol and colour; absent
 // and forbidden are the same neutral page. The task page keeps the run's authoritative view (display rule 17) under the
 // waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
-import { DISPLAY_ORDER } from '../../../contracts/generated/protocol.ts';
 import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isEntryKind, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
@@ -83,19 +82,19 @@ function errorsTable(errors: readonly ProtocolError[]): Html {
 
 /** Current rule status is a view qualifier, never a replacement for the immutable receipt. */
 export function ruleWithdrawalNotice(detail:Pick<RunDetail,Extract<ValidityStatus,'rule_withdrawn'|'grounds_withdrawn'>> & Pick<RunDetail,'grounds_withdrawn_hidden_count'>):Html{
-  const grounds=detail.grounds_withdrawn?.length||detail.grounds_withdrawn_hidden_count?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；依据当前已撤回，历史回执保留。${detail.grounds_withdrawn_hidden_count?`另有 ${detail.grounds_withdrawn_hidden_count} 项依据不可读取。`:''}</p>`:html``;
+  const grounds=detail.grounds_withdrawn?.length||detail.grounds_withdrawn_hidden_count?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；来源当前已撤回，原有回执保留。${detail.grounds_withdrawn_hidden_count?`另有 ${detail.grounds_withdrawn_hidden_count} 项来源不可读取。`:''}</p>`:html``;
   return html`${grounds}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
 }
 
 export function claimBlock(claim: Claim): Html {
-  return html`<div class="ch-source">${definitions(claimFields(claim, false, INTERFACE_LABELS).map(([label,value])=>[label,/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`;
+  return technical(html`<div class="ch-source" data-evidence>${definitions(claimFields(claim, false, INTERFACE_LABELS).map(([label,value])=>[label,/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`,'查看主张');
 }
 
 // ---------------------------------------------------------------- runs
 
 /** Bind the live condition only to result claims; the claim and its receipt remain original evidence. */
 export function claimBlockAtRead(ruleWithdrawn:boolean):typeof claimBlock{
-  return ruleWithdrawn?claim=>html`<div class="ch-source">${definitions(claimFields(claim,true,INTERFACE_LABELS).map(([label,value])=>[label,/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`:claimBlock;
+  return ruleWithdrawn?claim=>technical(html`<div class="ch-source" data-evidence>${definitions(claimFields(claim,true,INTERFACE_LABELS).map(([label,value])=>[label,/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`,'查看主张'):claimBlock;
 }
 
 /** Tasks per page: each one's result needs its run read, so a page stays small. */
@@ -185,7 +184,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
       ]);
     }
   }
-  return table(['条目', '位置', '原因', `条目结果（每种${axisUiLabel('layer')}一格）`, '要求项', `各${axisUiLabel('layer')}的结果`, axisUiLabel('requirement_status'), `结论（${DISPLAY_ORDER.join('、')}）`], rows, '没有条目');
+  return table(['条目', '位置', '原因', `条目结果（每种${axisUiLabel('layer')}一格）`, '要求项', `各${axisUiLabel('layer')}的结果`, axisUiLabel('requirement_status'), '结论'], rows, '没有条目');
 }
 
 /**
@@ -307,7 +306,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   const basis = run.target_basis.length === 0 ? html`<p class="empty">没有</p>` : html`${run.target_basis.map(claimBlock)}`;
   const sources = table(
     [axisUiLabel('source_role'), '引用', '输入', '外部对象', '媒体类型', '名称'],
-    run.sources.map((s) => [uiLabelOf('source_role', s.role), technicalCode(s.reference), s.slot ?? '', s.external ? technicalCode(s.external) : '', s.media_type ?? '', html`${s.label??''}${s.upload_declaration?html`<p title="只对本次运行有效，不改变原文的全局读取权限">绑定为输入即视为声明：本次运行的读者可读取该原文</p>`:''}`]),
+    run.sources.map((s) => [uiLabelOf('source_role', s.role), technicalCode(s.reference), s.slot ?? '', s.external ? technicalCode(s.external) : '', s.media_type ?? '', html`${s.label??''}${s.upload_declaration?html`<p>${tooltip('本次任务可读','绑定原文为输入只对本次任务的读者开放，不改变全局读取权限。')}</p>`:''}`]),
   );
   const requirements = table(
     ['键', '名称', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '修复轮数'],
@@ -328,7 +327,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     const management=isAbandonedResult(result);
     const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
     return html`<p><strong>${management?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}</strong></p>
-${management?html`<p>技术层未重新核验；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“出口未写”；本投影出口仅引用本次真实处置请求。</p>`:''}
+${management?html`<p>技术层未重新验证；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“出口未写”；本投影出口仅引用本次真实处置请求。</p>`:''}
 ${definitions([
   [recordLabel, technicalCode(latest.record)],
   [result.system_input?'系统交付输入内容哈希':'提交内容哈希',technicalCode(result.submission)],
@@ -382,8 +381,8 @@ ${section('错误与修正', errorsTable(result.errors))}`;
 ${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="ch-section" id="task-evidence"><h2 class="ch-section-label" title="结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。">完整记录</h2>
 ${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${technical(summary)}
 ${await runSharing(ctx,run)}
-${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${technicalCode(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
-${section('版本依据', basis)}
+${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${technicalCode(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新验证；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
+${section('版本来源', basis)}
 ${section('来源', sources)}
 ${section('要求项', requirements)}
 ${section(`条目（${run.items.length}）`, items)}
@@ -473,7 +472,7 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'个人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获授权者可读；记忆仅作会话偏好，不作为运行依据'}),await knowledgeHome(ctx))};
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
@@ -518,11 +517,11 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     );
   }
   const flow = html``;
-  const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品目录沿用产品线读权，仅管理员可用' })}` : undefined;
+  const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品文件夹沿用产品线读权，仅管理员可用' })}` : undefined;
   return {
     status: 200,
-    body: knowledgeShell(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'个人、团队与共享给本账户的知识；已核验与未核验内容分别标示':'统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
-${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品目录':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品目录':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">团队知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link('/console/knowledge/product',line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
+    body: knowledgeShell(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'我的、团队与与本账户共享的知识；已验证与待验证内容分别标示':'统一的知识库：每条知识均附来源，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品文件夹':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品文件夹':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">团队知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link('/console/knowledge/product',line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {
@@ -603,7 +602,7 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
     const grounds = (entry: string) => {
       const found = byEntry.get(entry);
       if (found === undefined || found.grounds === null) return '—';
-      if (found.grounds.length === 0) return '未记录出处';
+      if (found.grounds.length === 0) return '未记录来源';
       return html`${found.grounds.map((ground) => html`<div>${technicalCode(ground)}</div>`)}${found.grounds_truncated ? html`<div class="ch-meta">仅列出前 ${found.grounds.length} 条</div>` : ''}`;
     };
     return knowledgeSection(
@@ -617,18 +616,18 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
 ${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), technicalCode(child.path)]), '没有下级')}
 ${cited === null
   ? table(
-    ['种类', '陈述', '适用', '引用', '数据'],
+    ['类型', '陈述', '适用', '引用', '数据'],
     node.entries.map((entry) => [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, entry.applicability, technicalCode(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
     '没有条目',
   )
   : table(
-    ['种类', '陈述', '适用', '引用', '出处', `近 ${cited.days} 天被引用`, '数据'],
+    ['类型', '陈述', '适用', '引用', '来源', `近 ${cited.days} 天被引用`, '数据'],
     node.entries.map((entry) => {
       const counted = byEntry.get(entry.entry);
       return [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, entry.applicability, technicalCode(entry.reference), grounds(entry.entry), counted === undefined ? '—' : countText(cited, counted.count, counted.capped), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))];
     }),
     '没有条目',
-  )}${cited?.entries_truncated ? html`<p class="ch-meta">条目较多，仅前 ${cited.entries.length} 条给出出处与被引用次数。</p>` : ''}`,
+  )}${cited?.entries_truncated ? html`<p class="ch-meta">条目较多，仅前 ${cited.entries.length} 条给出来源与被引用次数。</p>` : ''}`,
     );
   });
   const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';

@@ -112,7 +112,7 @@ async function approveWithInvitation(url: string, invitation: string): Promise<U
   const verified = await post(path, { csrf: csrfOf(page.body), step: 'identity', code: invitation }, cookie);
   assert.equal(verified.status, 303, verified.body);
   const confirm = await send(path, { headers: { cookie } });
-  assert.match(confirm.body, /的身份授权/);
+  assert.match(confirm.body, /的身份允许/);
   const approved = await post(path, approval(confirm.body), cookie);
   assert.equal(approved.status, 303, approved.body);
   return new URL(String(approved.headers.location));
@@ -226,14 +226,14 @@ describe('the MCP standard authorization', () => {
     const { verifier, challenge } = pkce();
     const { path, page, cookie } = await openPage(authorizeUrl(client, challenge), session);
     assert.equal(page.status, 200);
-    assert.match(page.body, new RegExp(`以 <b>${user.user.name}</b>`));
+    assert.match(page.body, new RegExp(`以 <b data-evidence>${user.user.name}</b>`));
     assert.match(String(page.headers['content-security-policy']), /form-action 'self' http:\/\/127\.0\.0\.1:43123(;|$)/);
-    assert.match(page.body, /以其他账号授权/, 'a signed-in browser may still use an invitation');
+    assert.match(page.body, /以其他账号连接/, 'a signed-in browser may still use an invitation');
     assert.doesNotMatch(page.body, /回调地址不在本机/, 'a loopback redirect stays on this machine');
     // A redirect URI on another host is named as such before anyone approves.
     const remote = await register('https://192.0.2.30/callback', '远程服务');
     const away = await openPage(authorizeUrl(remote, challenge, {}, 'https://192.0.2.30/callback'), session);
-    assert.match(away.page.body, /回调地址不在本机。<\/b>授权后，授权码发送到 https:\/\/192\.0\.2\.30/);
+    assert.match(away.page.body, /回调地址不在本机。<\/b>确认后，连接码发送到 https:\/\/192\.0\.2\.30/);
     const approved = await post(path, approval(page.body), cookie);
     const redirect = new URL(String(approved.headers.location));
     const reply = await exchange({ grant_type: 'authorization_code', code: redirect.searchParams.get('code')!, client_id: client, redirect_uri: 'http://127.0.0.1:43123/callback', code_verifier: verifier, resource: `${origin()}/mcp` });
@@ -242,7 +242,7 @@ describe('the MCP standard authorization', () => {
     const issued = JSON.parse(reply.body);
     assert.deepEqual(await server.records.principals.authenticate(`Bearer ${issued.access_token}`), user.principal);
     // The browser comes back to the page: it says the request ended.
-    assert.match((await send(path, { headers: { cookie } })).body, /已授权/);
+    assert.match((await send(path, { headers: { cookie } })).body, /已允许/);
 
     // RFC 7009: the holder revokes the token; the Hub then refuses it.
     const revoked = await send('/oauth/revoke', { method: 'POST', headers: FORM, body: form({ token: issued.access_token }) });
@@ -370,7 +370,7 @@ describe('the MCP standard authorization', () => {
     clock += AUTHORIZATION_REQUEST_TTL_MS;
     const expired = await send(path, { headers: { cookie } });
     assert.equal(expired.status, 410);
-    assert.match(expired.body, /授权请求已过期/);
+    assert.match(expired.body, /连接请求已过期/);
 
     const fresh = await openPage(authorizeUrl(client, challenge));
     let page = fresh.page;
@@ -472,7 +472,7 @@ describe('decisions, names and limits', () => {
     const switched = `${await signIn(second.token)}; ${bound}`;
     const refused = await post(opened.path, fields, switched);
     assert.equal(refused.status, 409);
-    assert.match(refused.body, new RegExp(`以 <b>${second.user.name}</b>`), 'the page now names the account that is signed in');
+    assert.match(refused.body, new RegExp(`以 <b data-evidence>${second.user.name}</b>`), 'the page now names the account that is signed in');
     const approved = await post(opened.path, approval(refused.body), switched);
     assert.equal(approved.status, 303);
   });
@@ -499,7 +499,7 @@ describe('decisions, names and limits', () => {
     const client = await register('com.example.circle:/callback');
     const { challenge } = pkce();
     const { page } = await openPage(authorizeUrl(client, challenge, {}, 'com.example.circle:/callback'), await signIn((await member()).token));
-    assert.match(page.body, /授权码交给本机上处理 com\.example\.circle: 链接的应用/);
+    assert.match(page.body, /连接码交给本机上处理 com\.example\.circle: 链接的应用/);
     assert.doesNotMatch(page.body, /回调地址不在本机/);
   });
 

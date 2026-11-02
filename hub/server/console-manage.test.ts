@@ -274,7 +274,7 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const member = await post('member-add', { name: 'carol', role: 'user', label: 'MacBook' });
   assert.equal(member.status, 200, member.body);
   assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
-  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /授权页/.test(member.body));
+  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /连接确认页/.test(member.body));
   assert.ok(!member.body.includes('CIRCLE_HUB_TOKEN'), 'the standard authorization needs no token in the Circle entry');
   const withToken = await post('member-add', { name: 'dave', role: 'user', label: 'MacBook', connect: 'token' });
   assert.equal(withToken.status, 200, withToken.body);
@@ -410,7 +410,7 @@ test('a failing check offers no 发布 step and keeps nothing; content already p
   // A message of the command that names the private directory shows <目录> instead.
   const echoed = await stage(cookie, { ...PACK, id: 'echo-pack' });
   assert.equal(echoed.answer.status, 409);
-  assert.ok(!echoed.answer.body.includes(echoed.dir) && echoed.answer.body.includes('读不出 &lt;目录&gt; 里的 pack.json'), echoed.answer.body);
+  assert.ok(!echoed.answer.body.includes(echoed.dir) && echoed.answer.body.includes('读不出 &lt;文件夹&gt; 里的 pack.json'), echoed.answer.body);
   await assert.rejects(access(echoed.dir));
 
   const empty = await send('POST', '/console/admin/do/pack-stage', { cookie, body: Buffer.from(`--${BOUNDARY}\r\nContent-Disposition: form-data; name="csrf"\r\n\r\n${csrf}\r\n--${BOUNDARY}\r\nContent-Disposition: form-data; name="archive"; filename="x.zip"\r\n\r\nnot a zip\r\n--${BOUNDARY}--\r\n`), type: `multipart/form-data; boundary=${BOUNDARY}` });

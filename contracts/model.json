@@ -8486,7 +8486,8 @@
      "code": "relay",
      "label": "转述"
     }
-   ]
+   ],
+   "ui": "来源等级"
   },
   {
    "axis": "expectation_basis",
@@ -8497,7 +8498,8 @@
      "label": "模型判断"
     }
    ],
-   "owner": "A02"
+   "owner": "A02",
+   "ui": "期望检查文字来源"
   },
   {
    "axis": "provenance_type",
@@ -8610,7 +8612,7 @@
   {
    "axis": "resolution",
    "label": "解析状态",
-   "ui": "出处定位",
+   "ui": "来源定位",
    "owner": "T04",
    "values": [
     {
@@ -9095,7 +9097,8 @@
      "code": "lease",
      "label": "租约"
     }
-   ]
+   ],
+   "ui": "动作类型"
   },
   {
    "axis": "lease_op",
@@ -9362,7 +9365,8 @@
      "label": "判断",
      "ui": "独立判定"
     }
-   ]
+   ],
+   "ui": "请求类型"
   },
   {
    "axis": "request_status",
@@ -9410,7 +9414,8 @@
      "code": "share",
      "label": "分享"
     }
-   ]
+   ],
+   "ui": "许可类型"
   },
   {
    "axis": "knowledge_layer",
@@ -9464,7 +9469,8 @@
      "code": "pitfall",
      "label": "教训"
     }
-   ]
+   ],
+   "ui": "知识条目类型"
   },
   {
    "axis": "node_level",
@@ -9589,7 +9595,8 @@
      "code": "human",
      "label": "人"
     }
-   ]
+   ],
+   "ui": "生产者类型"
   },
   {
    "axis": "determinism",
@@ -9991,7 +9998,8 @@
      "code": "run",
      "label": "运行"
     }
-   ]
+   ],
+   "ui": "目标类型"
   },
   {
    "axis": "measure",
@@ -10103,7 +10111,8 @@
      "code": "applicability_claim",
      "label": "适用条件主张"
     }
-   ]
+   ],
+   "ui": "按文档的产出类型"
   },
   {
    "axis": "task_output_kind",
@@ -10122,7 +10131,8 @@
      "code": "score",
      "label": "分数"
     }
-   ]
+   ],
+   "ui": "按任务的产出类型"
   },
   {
    "axis": "relation_kind",
@@ -10141,7 +10151,8 @@
      "code": "covers",
      "label": "覆盖"
     }
-   ]
+   ],
+   "ui": "关系类型"
   },
   {
    "axis": "exit_action",
@@ -10221,7 +10232,8 @@
      "code": "secret",
      "label": "密钥"
     }
-   ]
+   ],
+   "ui": "变量类型"
   },
   {
    "axis": "digest_rule",
@@ -10418,7 +10430,8 @@
      "code": "declared",
      "label": "声明"
     }
-   ]
+   ],
+   "ui": "组成来源"
   },
   {
    "axis": "binding_status",
@@ -10452,7 +10465,8 @@
      "code": "declared",
      "label": "声明"
     }
-   ]
+   ],
+   "ui": "版本绑定来源"
   },
   {
    "axis": "knowledge_space_kind",
@@ -10461,7 +10475,8 @@
    "values": [
     {
      "code": "personal",
-     "label": "个人"
+     "label": "个人",
+     "ui": "我的"
     },
     {
      "code": "team",
@@ -10476,11 +10491,13 @@
    "values": [
     {
      "code": "verified",
-     "label": "已核验"
+     "label": "已核验",
+     "ui": "已验证"
     },
     {
      "code": "unverified",
-     "label": "未核验"
+     "label": "未核验",
+     "ui": "待验证"
     },
     {
      "code": "withdrawn",
@@ -10499,7 +10516,8 @@
    "values": [
     {
      "code": "personal",
-     "label": "个人"
+     "label": "个人",
+     "ui": "我的"
     },
     {
      "code": "team",
@@ -10507,7 +10525,8 @@
     },
     {
      "code": "shared",
-     "label": "共享给我的"
+     "label": "共享给我的",
+     "ui": "与我共享"
     },
     {
      "code": "all",
@@ -10528,7 +10547,8 @@
      "code": "administrators",
      "label": "全体管理员"
     }
-   ]
+   ],
+   "ui": "分享对象"
   },
   {
    "axis": "knowledge_grant_action",
@@ -10537,13 +10557,16 @@
    "values": [
     {
      "code": "grant",
-     "label": "授权"
+     "label": "授权",
+     "ui": "已分享"
     },
     {
      "code": "revoke",
-     "label": "收回授权"
+     "label": "收回授权",
+     "ui": "已收回分享"
     }
-   ]
+   ],
+   "ui": "分享操作"
   },
   {
    "axis": "knowledge_share_status",
@@ -10558,7 +10581,8 @@
      "code": "rejected",
      "label": "已拒收"
     }
-   ]
+   ],
+   "ui": "分享到团队状态"
   },
   {
    "axis": "audience_scope",
@@ -10567,19 +10591,23 @@
    "values": [
     {
      "code": "owner",
-     "label": "仅本人"
+     "label": "仅本人",
+     "ui": "仅自己可见"
     },
     {
      "code": "members",
-     "label": "本人及 {n} 名成员"
+     "label": "本人及 {n} 名成员",
+     "ui": "已分享给 {n} 名成员"
     },
     {
      "code": "administrators",
-     "label": "本人及全体管理员（当前 {n} 人）"
+     "label": "本人及全体管理员（当前 {n} 人）",
+     "ui": "已分享给全体管理员（当前 {n} 人）"
     },
     {
      "code": "combined",
-     "label": "本人及 {m} 名成员、全体管理员（当前 {n} 人）"
+     "label": "本人及 {m} 名成员、全体管理员（当前 {n} 人）",
+     "ui": "已分享给 {m} 名成员、全体管理员（当前 {n} 人）"
     },
     {
      "code": "received",
@@ -10587,7 +10615,8 @@
     },
     {
      "code": "team",
-     "label": "全体成员（团队）"
+     "label": "全体成员（团队）",
+     "ui": "全员可见"
     },
     {
      "code": "team_unassigned",
@@ -10597,7 +10626,8 @@
      "code": "product",
      "label": "该产品线的读者"
     }
-   ]
+   ],
+   "ui": "分享范围"
   },
   {
    "axis": "share_check",
@@ -10606,7 +10636,8 @@
    "values": [
     {
      "code": "grounds",
-     "label": "依据可解析"
+     "label": "依据可解析",
+     "ui": "来源可解析"
     },
     {
      "code": "quotations",
@@ -10650,7 +10681,8 @@
     },
     {
      "code": "personal_sources",
-     "label": "引用个人凭据来源的条目"
+     "label": "引用个人凭据来源的条目",
+     "ui": "引用私人凭据来源的条目"
     },
     {
      "code": "local_only",
@@ -10658,7 +10690,8 @@
     },
     {
      "code": "dependencies",
-     "label": "依赖的个人条目或技能可读"
+     "label": "依赖的个人条目或技能可读",
+     "ui": "依赖的私人条目或技能可读"
     }
    ]
   },
@@ -10730,15 +10763,18 @@
     },
     {
      "code": "history",
-     "label": "版本历史"
+     "label": "版本历史",
+     "ui": "版本记录"
     },
     {
      "code": "share",
-     "label": "提交共享"
+     "label": "提交共享",
+     "ui": "分享到团队"
     },
     {
      "code": "share_preview",
-     "label": "记忆共享预检"
+     "label": "记忆共享预检",
+     "ui": "分享到团队预检"
     },
     {
      "code": "enable_memory",
@@ -10759,7 +10795,8 @@
      "code": "products",
      "label": "产品"
     }
-   ]
+   ],
+   "ui": "知识文件夹显示"
   },
   {
    "axis": "knowledge_origin",
@@ -10768,7 +10805,8 @@
    "values": [
     {
      "code": "personal_entry",
-     "label": "个人条目"
+     "label": "个人条目",
+     "ui": "私人条目"
     },
     {
      "code": "team_import",
@@ -10791,7 +10829,8 @@
     },
     {
      "code": "directory_path",
-     "label": "目录"
+     "label": "目录",
+     "ui": "文件夹"
     },
     {
      "code": "markdown_text",
