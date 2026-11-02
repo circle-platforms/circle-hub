@@ -15,6 +15,10 @@ upload/check/publish commands and authorization; `?kind=product` and `?kind=syst
 Staged results retain the uploaded manifest's actual kind for display, without rewriting it or changing API payloads.
 Stored records, author-provided content and diagnostics supplied by other packages are shown without rewriting their text.
 
+Decision 85, item 5: after a successful console-bridged `user password-reset`, the console clears only that account's
+`account:<username>` login-attempt counter. A refused form or failed command clears nothing; other accounts and peer-based
+backup-login limits retain their counters. The existing administrator checks, command bridge and first-change requirement apply.
+
 Decision 83, second round item 5: `user list --json` emits public account fields only (no password material or tokens). The installer uses it after deployment migrations to distinguish existing administrators from incomplete initialization.
 
 Decision 83, second round item 4: `circle-hub user password-reset <user>` uses the host operator’s administrator identity, generates a one-time initial password and requires its first-use change. It appends the existing password-change history and revokes console credentials; account-bound MCP tokens remain valid. This command also recovers the sole administrator before the initial password was changed. Team resets run that command through the management bridge at `POST /console/admin/do/password-reset`; the old direct page reset route is absent. Administrator backup failures have separate counters for each socket peer; username failures still share the account counter across sources.

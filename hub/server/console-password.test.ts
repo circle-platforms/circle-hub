@@ -92,6 +92,27 @@ test('a valid administrator token and a valid member token are both refused by t
     assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/overview','the account signs in with its password');
   }
 });
+test('only a successful bridged password reset clears the target account login lock',async()=>{
+  const initial='synthetic-locked-password';
+  const user=await server.records.principals.createUser(server.admin.principal,'合成待解锁账户','user',{password:initial,mustChange:false});
+  const other=await server.records.principals.createUser(server.admin.principal,'合成保持锁定账户','user',{password:initial,mustChange:false});
+  for(const target of [user,other]){
+    for(let i=0;i<5;i++)assert.equal((await login({username:target.name,password:'synthetic-wrong-password'})).status,401);
+    assert.equal((await login({username:target.name,password:initial})).status,429);
+  }
+  const admin=cookie(await login(testConsoleCredentials(server.admin.token)),'circle_hub_session');
+  const team=await send(`/console/team/${user.id}`,'GET',undefined,admin);
+  assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:'wrong',user:user.id},admin)).status,403);
+  assert.equal((await login({username:user.name,password:initial})).status,429,'a refused form does not clear the lock');
+  assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(team.body),user:'usr_00000000000000000000000000'},admin)).status,409);
+  assert.equal((await login({username:user.name,password:initial})).status,429,'a failed command does not clear the lock');
+  const reset=await send('/console/admin/do/password-reset','POST',{csrf:csrf(team.body),user:user.id},admin);
+  assert.equal(reset.status,200,reset.body);
+  const password=/(?:>|\n)([A-Za-z0-9_-]{24})(?=<|\n)/.exec(reset.body)?.[1];assert.ok(password);
+  const signed=await login({username:user.name,password});
+  assert.equal(signed.status,303);assert.match(String(signed.headers.location),/^\/console\/password/);
+  assert.equal((await login({username:other.name,password:initial})).status,429,'only the reset account is unlocked');
+});
 test('an administrator who must change the password signs in with it and can neither read nor reset other accounts first',async()=>{
   const initial='synthetic-admin-initial';
   const admin=await server.records.principals.createUser(server.admin.principal,'合成初始管理员','admin',{password:initial,mustChange:true});

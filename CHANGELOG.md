@@ -18,6 +18,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - **Workflow browsing** — the existing `/console/packs` links now open separate workflow and generic-skill columns; workflow acceptance requirements appear near the top of each detail page without a stage graph.
 - **Source catalog locations** — product knowledge sources appear under knowledge and business-system integrations under connections, with matching detail breadcrumbs and existing visibility rules.
 - **Publication context and wording** — task filters, team assignments, records, search, CLI and answer text use workflow display terms. The shared publication operation shows the kind and return location of each entry point while retaining the uploaded manifest and existing commands.
+- **Password-reset login recovery** — a successful reset through the console's command bridge clears the target account's login lock immediately; failed resets and other accounts retain their counters.
 
 - **Same-version bundle upgrades** — the installer stages each commit separately, deploys with its fixed Node path and updates the compatibility runtime link only after success; previous runtimes remain available for recovery.
 

@@ -607,7 +607,13 @@ async function action(request: IncomingMessage, response: ServerResponse, option
   }
   if (name === 'system-test') return systemTrialPage(ctx, form, await runTrial(ctx, form));
   if (name === 'system-test-forget') return systemForgetPage(ctx, form, await runForgetTrial(ctx, form));
-  return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
+  const result = await runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
+  if (name === 'password-reset' && result.status === 200) {
+    const principals = options.deps.records.principals;
+    const user = await principals.get(form.get('user')) ?? await principals.findByName(form.get('user'));
+    if (user !== null) options.sessions.clearLoginAttempts(`account:${user.name}`);
+  }
+  return result;
 }
 
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
