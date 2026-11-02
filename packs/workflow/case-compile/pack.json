@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.12",
+  "version": "3.9.13",
   "kind": "workflow",
   "dependencies": [
     {
@@ -16,8 +16,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "16dd6410025cefd6a271b4c8fbd7da28faf2e26bf5649a910659747655b86b5f",
-      "size": 17561
+      "sha256": "ba25351e121b546a25589cde54c87a74524428966b7fa71154250340774260de",
+      "size": 17607
     },
     {
       "path": "checks.json",
@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "6f1c7fd908cf26bef9f31a603965392569d67e2260fa7557ba439e5d8ac049a9",
+      "sha256": "44ff178d7a6ecb26aacd986d1585c8a3f5061201ce246d0157a8df251a32f2ac",
       "size": 39653
     },
     {
@@ -411,7 +411,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "e00c149fb4c24f26a9589f7a20c0a8dd77f69cb426d85ba9cff698b15ff684ed",
+      "sha256": "6d4463598a7d1d0ff5aef91d4ce1159c01ae94819eca20c5cb2d026f6a40d63f",
       "size": 39657
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "45e93faaddf6350826ff5d568bb34a0252184bb096f7f66cadde31bca07aaf2e",
+      "sha256": "fe5ae32398301b8e6e0d8a17cca5086d04d1780181ef4963a8f1e3da826b99fd",
       "size": 39607
     },
     {
@@ -526,7 +526,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "5bfd972a03bd90d6557b3b903dd9f689990dc4cf0446a76c1ee383598af43d45",
+      "sha256": "ae8f6f7d54d526ea4775695105e6fbb71ed1e9c3ed43eea337b3255aeeb74006",
       "size": 39611
     },
     {
@@ -626,7 +626,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "c7d03f2254717e6f8cca289364201b6cee044e467c0a2d6a229afe9e0588d41c",
+      "sha256": "8d91a74ee14450ee3bc8aa596c49d6b8b11fe004b3486b115e72b36d20d5e343",
       "size": 556
     },
     {

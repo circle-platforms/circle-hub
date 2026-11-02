@@ -1,4 +1,4 @@
-# case-compile 3.9.12
+# case-compile 3.9.13
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -573,3 +573,13 @@ second device's peer, covered by the runner's own cleanup, was skipped, its expl
   the locked command tree and the manual before the plan changes; an inference the echo does not explain is a judgment with a
   written prediction, a read-only observation before the command under test tells it apart next time, and a miss changes the
   hypothesis instead of repeating the change. The cleanup bullet says reverse order binds within one device.
+
+### 3.9.13: one booking for the reruns, released after the work, as CES (decision 119)
+
+- SKILL steps 1 and 9 (task page release-after-work): two reproduction sessions in a row left their whole-bed booking held
+  and the integrator released it both times; step 1 acquired, nothing said to release, and step 9's "book again per step 1"
+  contradicted test-bed (the plan, verification and dispatch runs keep the booking's lease). As CES rule 8 (release the bed
+  after the work): step 1 keeps a whole-bed booking already held (for instance from installing a build), step 9 reruns under
+  it, and once every job has an end the booking is released with test-bed release.
+- The confirmation rule no longer quotes one product's command, prompt and answer as examples: the model uses the prompt and
+  answer the product declares.
