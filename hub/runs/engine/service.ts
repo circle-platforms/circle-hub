@@ -1,4 +1,5 @@
 import { createDocumentCache } from '../../refs/api.ts';
+import {withQueryReads} from './query-scope.ts';
 import {requestReadable} from './grounds.ts';
 import { abandonRun } from './management.ts';
 import { maintainRuns } from './maintenance.ts';
@@ -104,7 +105,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       timer.unref();
     },
     async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}stopIndexing.abort();await indexing;await ongoing;},
-    listRequests(user,run) { return requestsOf(ctx,user,run); },
+    listRequests(user,run) { return withQueryReads(ctx,current=>requestsOf(current,user,run)); },
     async startRun(user, input, context) {
       return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer);
     },
@@ -122,18 +123,18 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       return withDocuments(ctx,context,current=>previewReference(current,user,input,context));
     },
     getRun(user, run): Promise<RunDetail | null> {
-      return getRun(ctx, user, run);
+      return withQueryReads(ctx,current=>getRun(current, user, run));
     },
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {
-      return listRuns(ctx, user, query);
+      return withQueryReads(ctx,current=>listRuns(current, user, query));
     },
     getResult(user, run, submission) {
-      return getResult(ctx, user, run, submission);
+      return withQueryReads(ctx,current=>getResult(current, user, run, submission));
     },
     runsFor(user, pack, query) {
-      return runsFor(ctx, user, pack, query);
+      return withQueryReads(ctx,current=>runsFor(current, user, pack, query));
     },
   };
 }

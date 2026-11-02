@@ -30,6 +30,7 @@ import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
+import {withReadScope} from '../../records/api.ts';
 import {performMemoryAction} from './memory.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -861,7 +862,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
       if (result === null) return;
     } else {
       const route = Object.hasOwn(ROUTES, segments[0]) ? ROUTES[segments[0]] : undefined;
-      result = route === undefined ? neutralPage(ctx) : await route(ctx, segments.slice(1), options, session!);
+      result = route === undefined ? neutralPage(ctx) : await withReadScope(()=>route(ctx, segments.slice(1), options, session!));
     }
   } catch (error) {
     if(error instanceof KnowledgeError&&error.code){result=spaceActionFailure(ctx,error);}

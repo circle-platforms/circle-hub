@@ -6,7 +6,7 @@ import { RecordsError } from './errors.ts';
 import { noteNoncanonical, NONCANONICAL_EXPLANATION } from './integrity-notes.ts';
 import { parseStrictJson } from './strict-json.ts';
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
-import { SchemaId } from '../../contracts/src/common.ts';
+import { SchemaId,RunId,IsoTime } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { FindQuery, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
@@ -249,6 +249,46 @@ export class PgRecordStore implements RecordStore {
       tx,
     );
     return page<B>(result.rows, limit);
+  }
+
+  async findBatch<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>{
+    const input=queries.map((q,n)=>{
+      if(typeof q.key!=='string'||!INDEX_KEY.test(q.key))throw new TypeError(`invalid index key ${JSON.stringify(q.key)}`);
+      if(!isIndexValue(q.value))return null;
+      if(q.kind!==undefined&&!RecordKindSchema.safeParse(q.kind).success)throw new TypeError('unknown record kind');
+      return {n,key:q.key,value:q.value,kind:q.kind??null,after:decodeCursor(q.cursor),lim:pageLimit(q.limit),descending:q.newestFirst===true};
+    }).filter(q=>q!==null);
+    const groups=new Map<number,Row[]>();
+    if(input.length){const result=await this.#db.query(`SELECT q.n,r.*
+      FROM jsonb_to_recordset($1::jsonb) AS q(n int,key text,value text,kind text,after bigint,lim int,descending boolean)
+      CROSS JOIN LATERAL (
+        SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+        FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
+        WHERE i.key=q.key AND i.value=q.value AND (q.kind IS NULL OR r.kind=q.kind)
+          AND (q.after IS NULL OR (q.descending AND i.record_seq<q.after) OR (NOT q.descending AND i.record_seq>q.after))
+        ORDER BY CASE WHEN q.descending THEN i.record_seq END DESC,CASE WHEN NOT q.descending THEN i.record_seq END ASC
+        LIMIT q.lim+1
+      ) r ORDER BY q.n`,[JSON.stringify(input)],tx);
+      for(const row of result.rows){const n=Number(row.n);const rows=groups.get(n)??[];rows.push(row);groups.set(n,rows);}
+    }
+    // Lateral rows retain the requested order; the outer group ordering alone is not an SQL order guarantee.
+    return queries.map((q,n)=>{if(!isIndexValue(q.value))return {items:[],next:null};const rows=groups.get(n)??[];rows.sort((a,b)=>{const order=BigInt(String(a.seq))-BigInt(String(b.seq));return order===0n?0:(order>0n?1:-1)*(q.newestFirst===true?-1:1);});return page<B>(rows,pageLimit(q.limit));});
+  }
+
+  async runCandidates<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>{
+    const limit=pageLimit(query.limit);if(query.pack!==undefined&&!isIndexValue(query.pack))return [];
+    // Only the contract's ASCII headers are ordered. Mask an unrelated escaped NUL in this SQL projection,
+    // never in the selected record text: PostgreSQL JSON text extraction otherwise rejects the whole body.
+    const values:unknown[]=['run','\\u0000','\\uFFFD',limit];
+    const body="replace(r.body,$2::text,$3::text)::json",at=`(${body}->>'started_at')`,id=`(${body}->>'run')`;
+    let where='r.kind=$1';
+    // Cursor strings are untrusted. Both contract headers are ASCII without controls, so U+0001 has the same
+    // ordering against every valid header as an embedded NUL, which PostgreSQL text parameters cannot carry.
+    if(query.after){values.push(...query.after.map(value=>value.replaceAll('\0','\u0001')));where+=` AND (${at} IS NULL OR ${id} IS NULL OR (${at} COLLATE "C",${id} COLLATE "C")<($5::text COLLATE "C",$6::text COLLATE "C"))`;}
+    if(query.pack!==undefined){values.push(query.pack);where+=` AND EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='runs.pack' AND i.value=$${values.length})`;}
+    const result=await this.#db.query(`SELECT ${COLUMNS.split(', ').map(c=>'r.'+c).join(', ')} FROM hub_read_records() r WHERE ${where}
+      ORDER BY ${at} COLLATE "C" DESC NULLS FIRST,${id} COLLATE "C" DESC NULLS FIRST LIMIT $4`,values,tx);
+    return result.rows.map(row=>{const record=verifiedRecord<B>(row),body=record.body as Record<string,unknown>;if(!RunId.safeParse(body?.run).success||!IsoTime.safeParse(body?.started_at).success)throw new IntegrityError('运行排序字段不完整');return record;});
   }
 
   async list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>> {

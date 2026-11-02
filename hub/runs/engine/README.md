@@ -1037,3 +1037,13 @@ Generic record readers refuse memory documents/grants/shares and their private c
 memory-unchanged@1) before the administrator/run branches. A rec: lookup, input binding or exact ground resolver receives
 the same absence as for a missing record; no audit or idempotency receipt becomes evidence. Optional knowledge integrations
 remain optional. Dedicated memory and console summary views keep their separate, narrower permission rules.
+
+
+Console performance: read-only run/list/result/request calls create or reuse one asynchronous records scope. The native
+store supplies ordered candidates, and the engine applies the existing recursive readership predicates to every candidate
+until it has a full visible page plus one. Reader/pack-bound cursors still use body time and run ID; append order is not
+presentation order. Partial readers may require additional candidate batches. All unanswered requests, including those
+outside the page, remain in the listing; their answers and grounds reads are batched, not truncated. Recursive proofs,
+cycle/depth limits, withdrawal and unknown results are not memoized. Standalone/mock stores without the candidate port
+retain the previous scan. No mutation path uses the read scope. Pagination, partial readership, exact-capture grants and
+revocations, off-page requests and constant page query batches have database-backed regressions.

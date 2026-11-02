@@ -2,6 +2,7 @@ export {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export {withReadScope,scopedRecordStore,memoReadPort} from './read-scope.ts';
 export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
 // Field names of stored bodies are snake_case like the contracts; enumerations come from the generated vocabulary.
@@ -232,6 +233,10 @@ export interface ListQuery extends PageQuery {
 }
 
 export interface RecordStore {
+  /** Native batches of the existing indexed page operation, preserving each query's cursor/order and verification. */
+  findBatch?<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>;
+  /** Descending (started_at,run) candidates, before engine visibility checks; never an authorization decision. */
+  runCandidates?<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>;
   /** Internal append-log position; never part of a record digest. Snapshot horizons may contain gaps. */
   position?(digest:string,tx?:Transaction):Promise<number|null>;
   watermark?(tx?:Transaction):Promise<number>;

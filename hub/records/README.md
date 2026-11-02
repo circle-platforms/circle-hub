@@ -862,3 +862,11 @@ SELECT/INSERT on mode receipts. Migrations 14 and 15 remain frozen, and migratio
 The principals port now distinguishes access Bearers from password-console session credentials and returns the
 server's token/OAuth-client IDs for auditing, without exposing token values. Existing internal console authentication
 is unchanged. Member sync metadata rechecks the current actor's enabled/admin role and exposes mode/time only.
+
+Console performance reads use an asynchronous, read-only scope. Verified digest reads and indexed pages coalesce into
+native batches; callers receive independent copies. Explicit transaction reads bypass the scope. Scope closure, writes
+through the adapter and failed reads invalidate or evict their entries. A failed batch retries its members individually,
+so one corrupt sibling cannot hide healthy records. No authorization value survives a request or an escaped adapter.
+`runCandidates` orders contract ASCII headers by `(started_at, run)` before engine checks; the original text is still
+verified. Its SQL-only projection masks escaped NUL outside those headers because PostgreSQL JSON extraction otherwise
+rejects valid unrelated parameter strings. This is not a visibility port. No migration or record format changes.

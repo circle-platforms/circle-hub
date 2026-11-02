@@ -18,9 +18,8 @@ export const putRequest=(ctx:EngineContext,input:RequestBody)=>service(ctx).writ
 export const answerRequest=(ctx:EngineContext,request:string,source:string)=>service(ctx).answer(request,source);
 export const requestRecords=(ctx:EngineContext,run?:string):Promise<RequestView[]>=>service(ctx).all(run);
 export async function requestsOf(ctx:EngineContext,by:Principal,run?:string):Promise<RequestView[]>{
-  const out:RequestView[]=[];
-  for(const request of await service(ctx).list(by,run))if(await requestReadable(ctx,by,request))out.push(request);
-  return out;
+  const rows=await service(ctx).list(by,run),allowed=await Promise.all(rows.map(request=>requestReadable(ctx,by,request)));
+  return rows.filter((_,i)=>allowed[i]);
 }
 export async function recordResultRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,roundsUsed:ReadonlyMap<string,number>=new Map(),input?:unknown):Promise<void>{
   if(isAbandonedResult(result))return;

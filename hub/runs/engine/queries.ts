@@ -58,11 +58,10 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const store = ctx.deps.records.store;
   // A shared view includes accepted validation bodies only; rejected receipts fall back to public action codes.
   const owner = canSeeRun(user, stored.body);
-  const results=[] as StoredRecord<ValidationResult>[];
-  for(const record of await resultsOf(store,run))if(await resultReadableBy(ctx,stored.body,record.body,user))results.push(record);
+  const candidates=await resultsOf(store,run),readable=await Promise.all(candidates.map(record=>resultReadableBy(ctx,stored.body,record.body,user)));
+  const results=candidates.filter((_,i)=>readable[i]);
   const byDigest = new Map(results.filter(r=>r.body.system_input===undefined).map((r) => [r.body.submission, r]));
-  const submissions: RunSubmissionView[] = [];
-  for (const record of await submissionsOf(store, run)) {
+  const submissions: RunSubmissionView[] = await Promise.all((await submissionsOf(store,run)).map(async record=>{
     const action = await actionOfSubmission(store, record.digest);
     const detail = action !== null && isObject(action.body.detail) ? action.body.detail : {};
     const submission = typeof detail.submission === 'string' ? detail.submission : isVerbatimObject(record) ? null : receivedDigest(record.body).digest;
@@ -70,14 +69,14 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
     const privateReceipt=!owner||stored.body.runner!==user.id&&!await groundsReadableBy(ctx,stored.body,record.body,user);
     const codes = action?.body.codes ?? [];
     const hubError = action?.body.result === 'error' && detail.hub_error === true;
-    submissions.push({
+    return {
       record: record.digest,
       received_at: record.created_at,
       acceptance: hubError || action === null && result === undefined ? null : result?.body.acceptance ?? action?.body.acceptance ?? 'not_accepted',
       errors: privateReceipt && result===undefined ? publicReceiptErrors(codes) : action===null&&result===undefined ? [{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带原会话原样重交'}] : hubError ? [{code: action?.body.error_code ?? 'check_error', message: '未校验（中断）', ...(typeof detail.fix === 'string' ? {fix: detail.fix} : {})}] : result?.body.errors ?? publicReceiptErrors(codes),
       result: result !== undefined && result.body.acceptance === 'accepted' ? result.digest : null,
-    });
-  }
+    };
+  }));
   const technicalLatest = await latestAccepted(store, run);
   const management=await abandonDecision(ctx,run);
   const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
@@ -103,17 +102,33 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
     } catch { return { items: [], next: null }; }
   }
   const rows: RunRecord[] = [];
-  let cursor: string | null = null;
-  do {
+  const store=ctx.deps.records.store;
+  if(store.runCandidates){
+    let candidateAfter:readonly [string,string]|undefined=after?[after.at,after.id]:undefined;
+    while(rows.length<=limit){
+      const count=Math.min(500,Math.max(32,limit+1-rows.length));
+      let candidates:StoredRecord<RunRecord>[];
+      try{candidates=await store.runCandidates<RunRecord>({...(candidateAfter?{after:candidateAfter}:{}),...(query.pack===undefined?{}:{pack:query.pack}),limit:count});}
+      catch(error){if(error instanceof TypeError||error instanceof RangeError||error instanceof RecordsError&&error.name==='RecordsError')return {items:[],next:null};throw error;}
+      const readable=await Promise.all(candidates.map(record=>runReadableBy(ctx,user,record.body)));
+      for(let i=0;i<candidates.length&&rows.length<=limit;i++)if(readable[i])rows.push(candidates[i].body);
+      if(candidates.length<count)break;
+      const last=candidates.at(-1)!;candidateAfter=[last.body.started_at,last.body.run];
+    }
+  }else{
+   let cursor: string | null = null;
+   do {
     let page: Page<StoredRecord<RunRecord>>;
     try { page = await listRunRecords(ctx.deps.records.store, query.pack === undefined ? {} : {pack:query.pack}, { limit:500, cursor }); }
     catch (error) {
       if (error instanceof TypeError || error instanceof RangeError || error instanceof RecordsError && error.name === 'RecordsError') return {items:[],next:null};
       throw error;
     }
-    for (const record of page.items) if (await runReadableBy(ctx,user,record.body)) rows.push(record.body);
+    const readable=await Promise.all(page.items.map(record=>runReadableBy(ctx,user,record.body)));
+    rows.push(...page.items.filter((_,i)=>readable[i]).map(record=>record.body));
     cursor = page.next;
-  } while (cursor !== null);
+   } while (cursor !== null);
+  }
   const compare = (a: string,b: string): number => a === b ? 0 : a < b ? -1 : 1;
   const order = (a: RunRecord,b: RunRecord): number => compare(b.started_at,a.started_at) || compare(b.run,a.run);
   rows.sort(order);
@@ -123,10 +138,10 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const last = items.at(-1);
   const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
   let requests=(await requestsOf(ctx,user)).filter(r=>r.answered_by===null);
-  if(query.pack){const matches=[] as typeof requests;for(const request of requests){const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);if(pack?.split('@')[0]===query.pack)matches.push(request);}requests=matches;}
+  if(query.pack){const matches=await Promise.all(requests.map(async request=>{const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);return pack?.split('@')[0]===query.pack;}));requests=requests.filter((_,i)=>matches[i]);}
   const overdue_requests=requests.filter(request=>Date.parse(request.due)<=ctx.now().getTime());
-  const open_runs:string[]=[];
-  for(const run of items){const superseded=await hasSuccessor(ctx,run);if((superseded||await abandonDecision(ctx,run.run))&&!requests.some(r=>r.run===run.run))continue;const latest=await latestAccepted(ctx.deps.records.store,run.run);if(!latest||requests.some(r=>r.run===run.run)||latest.body.partitions.incomplete.length||latest.body.partitions.quarantined.length||latest.body.errors.some(e=>(e.rounds_left??0)>0))open_runs.push(run.run);}
+  const open=await Promise.all(items.map(async run=>{const superseded=await hasSuccessor(ctx,run);if((superseded||await abandonDecision(ctx,run.run))&&!requests.some(r=>r.run===run.run))return false;const latest=await latestAccepted(ctx.deps.records.store,run.run);return !latest||requests.some(r=>r.run===run.run)||latest.body.partitions.incomplete.length>0||latest.body.partitions.quarantined.length>0||latest.body.errors.some(e=>(e.rounds_left??0)>0);}));
+  const open_runs=items.filter((_,i)=>open[i]).map(run=>run.run);
   return {items,next,...(overdue_requests.length?{overdue_requests}:{}),...(requests.length?{requests}:{}),...(open_runs.length?{open_runs}:{})};
 }
 
