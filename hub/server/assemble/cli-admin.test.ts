@@ -2,6 +2,7 @@ import { syntheticKeychain, recordingRunner, socketPort, freePort, captureIo } f
 import type {Environment} from '../../../contracts/generated/vocabulary.ts';
 import {secretNameOf} from '../../../contracts/src/variables.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../connectors/testing/credentials.ts';
+import { repositorySkillVersion } from '../../testing/skills.ts';
 // The administrator commands through the server CLI's main, in-process, on a temporary socket-only PostgreSQL: init-admin
 // (the token stored, never printed; a token it cannot store is revoked or said to be live), the operator token from
 // CIRCLE_HUB_TOKEN or the store and every state-changing command refused without it or for a non-admin, read-only commands
@@ -1408,9 +1409,9 @@ describe('knowledge', () => {
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     await expectOk(admin, ['pack', 'publish', packs.site]);
     await expectOk(admin, ['pack', 'publish', packs.xml]);
-    await expectOk(admin, ['pack', 'install', 'xml-format@1.0.3']);
+    await expectOk(admin, ['pack', 'install', 'xml-format@' + await repositorySkillVersion('xml-format')]);
     await expectOk(admin, ['pack', 'publish', packs.html]);
-    await expectOk(admin, ['pack', 'install', 'html-format@1.0.2']);
+    await expectOk(admin, ['pack', 'install', 'html-format@' + await repositorySkillVersion('html-format')]);
     await expectOk(admin, ['pack', 'publish', packs.product]);
     await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
     await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);
