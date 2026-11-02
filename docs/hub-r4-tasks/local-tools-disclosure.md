@@ -1,6 +1,6 @@
 # 任务：任务包回答披露包号与本地工具（script-distribution 第二步）
 
-依据：决定 35 第 12 问（本地工具下发：只读下载出口，客户端按包号核对后安装）；`docs/hub-r4-tasks/script-distribution.md` 第二步（`list_task_packs` 的每个包加 `digest`，带 `tools/` 的包另列本地工具的路径和 SHA-256，回答文字写一行安装命令不带令牌；`start_run` 的回答同样写这一行）；通用模型 T01 R[1]（规程随 start_run 下发、带摘要）。所有者 2026-11-02 要求 Circle 与 DeepSeek Harness 作为客户端完全兼容，DSH 侧没有 `circle-hub` CLI，模型必须能从 Hub 的回答里拿到包号和安装入口（会话 run_01m6dkfqfpq7561nvvphgr6kr0 卡在 `workbook_verified` 缺工作簿，正是缺这一步的披露）。
+依据：决定 35 第 12 问（本地工具下发：只读下载出口，客户端按包号核对后安装）；`docs/hub-r4-tasks/script-distribution.md` 第二步（`list_task_packs` 的每个包加 `digest`，带 `tools/` 的包另列本地工具的路径和 SHA-256，回答文字写一行安装命令不带令牌；`start_run` 的回答同样写这一行）；通用模型 T01 R[1]（规程随 start_run 下发、带摘要）。所有者 2026-11-02 要求 Circle 与 DeepSeek Harness 作为客户端完全兼容，DSH 侧没有 `circle-hub` CLI，模型必须能从 Hub 的回答里拿到包号和安装入口（一次会话卡在 `workbook_verified` 缺工作簿，正是缺这一步的披露）。
 
 - 分支和工作树：`local-tools-disclosure`（从 hub-redesign `fda6a971c` 开出，工作树在任务工作树目录下同名文件夹）。
 - 可以改的路径：
