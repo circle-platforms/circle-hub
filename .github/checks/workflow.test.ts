@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 
 const WORKFLOW = readFileSync(new URL('../workflows/checks.yml', import.meta.url), 'utf8');
 const MACOS = readFileSync(new URL('../workflows/macos.yml', import.meta.url), 'utf8');
+const RELEASE = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8');
 
 /** One job as text (the workflows are plain enough that indentation finds it). */
 function job(name: string, workflow = WORKFLOW): string {
@@ -63,7 +64,7 @@ describe('test jobs count what ran', () => {
   });
 
   it('no plain scalar holds a colon and a space, which YAML refuses (the whole workflow would then fail to start)', () => {
-    for (const workflow of [WORKFLOW, MACOS]) {
+    for (const workflow of [WORKFLOW, MACOS, RELEASE]) {
       const refused = workflow.split('\n').filter((line) => {
         const value = /^\s*(?:- )?[\w-]+: (?!["'|>])(.*)$/.exec(line)?.[1];
         return value !== undefined && value.includes(': ');
@@ -75,6 +76,7 @@ describe('test jobs count what ran', () => {
   it('no job reaches a secret', () => {
     assert.doesNotMatch(WORKFLOW, /secrets\./);
     assert.doesNotMatch(MACOS, /secrets\./);
+    assert.doesNotMatch(RELEASE, /secrets\./);
   });
 });
 

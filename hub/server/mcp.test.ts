@@ -197,7 +197,7 @@ describe('list_task_packs', () => {
     const all = await client.call('list_task_packs', {});
     assert.equal(all.isError, false);
     assert.deepEqual((all.structuredContent.packs as { id: string }[]).map((p) => p.id).sort(), ['local-review', 'review']);
-    assert.match(all.content[0].text ?? '', /^可用的任务包 2 个/);
+    assert.match(all.content[0].text ?? '', /^可用的工作流 2 个/);
     const products = await client.call('list_task_packs', { kind: 'product' });
     assert.deepEqual(products.structuredContent.packs, []);
     const bad = await client.call('list_task_packs', { kind: 'plugin' });
@@ -810,7 +810,7 @@ describe('start_run with the engine\'s detail', () => {
       const result = started.structuredContent.result as { reference: string };
       const lines = (started.content[0].text ?? '').split('\n');
       assert.equal(lines[0], '调用结果：正常');
-      assert.ok(lines.includes(`运行 ${run}：任务包 locate@1.0.0`), lines.join('\n'));
+      assert.ok(lines.includes(`运行 ${run}：工作流 locate@1.0.0`), lines.join('\n'));
       assert.ok(lines.includes(`完整结果 ${result.reference}（用 get_nodes 按引用读）`));
       assert.equal(lines.at(-1), `追踪 ${started.structuredContent.trace}`);
       const [line] = (await other.records.callLog.query(other.admin.principal, { userId: user.user.id, tool: 'start_run', limit: 1 })).items;
@@ -1251,7 +1251,7 @@ describe('tokens and concurrency', () => {
   });
 
   test('concurrent calls from several clients all answer, each with its own trace and call-log line', async () => {
-    const users = await Promise.all([person(), person(), person()]);
+    const users = [await person(), await person(), await person()];
     const clients = await Promise.all(users.map((u) => connect(u)));
     const before = (await server.records.callLog.query(server.admin.principal, { tool: 'upload_file', limit: 500 })).items.length;
     const results = await Promise.all(

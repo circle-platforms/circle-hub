@@ -95,6 +95,9 @@ async function execute(ctx: PageContext, options: WriteOptions, name: string, fi
     status: 200,
     body: {
       steps,
+      username: String(fields.name ?? ''),
+      initial_password: steps[0].stdout.find(line => /^[A-Za-z0-9_-]{24}$/.test(line)) ?? null,
+      must_change_password: true,
       ...(withToken ? { token: output.find((line) => TOKEN.test(line)) ?? null } : { invitation: output.find((line) => INVITATION.test(line)) ?? null }),
       circle_entry: JSON.parse(circleEntry(originOf(ctx), withToken)) as unknown,
     },
@@ -224,7 +227,7 @@ export async function handleApiWrite(ctx: PageContext, rest: readonly string[], 
   if (path === 'systems/test') {
     const outcome = await runTrial(ctx, formOf(fields));
     if ('report' in outcome) return { status: 200, body: { report: trialJson(outcome.report) } };
-    return outcome.status === 404 ? neutral() : { status: outcome.status, body: { code: null, message: outcome.message, fix: outcome.status === 503 ? '重启 Hub 后重试' : '按说明改正访问地址、凭据或系统包后重试' } };
+    return outcome.status === 404 ? neutral() : { status: outcome.status, body: { code: null, message: outcome.message, fix: outcome.status === 503 ? '重启 Hub 后重试' : '按说明改正访问地址、凭据或业务系统接入后重试' } };
   }
   const step = STAGE_STEP.exec(path);
   if (step !== null && step[2] === 'publish') return publish(ctx, options, step[1]);

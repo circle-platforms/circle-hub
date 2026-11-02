@@ -67,9 +67,9 @@ export async function taskHead(ctx: PageContext, detail: RunDetail, titles: Read
   const who = run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner);
   const line = [run.product, run.version, run.build].filter(Boolean).join(' / ');
   return card(null, html`<div class="dhead"><div class="grow">
-<div class="row"><h2>${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
-<p class="sub mt4">任务包 ${run.pack}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)} · 运行 ${code(run.run)}</p>
-</div><div class="actions"><span class="chip plain">需人工处理的事项在对应的 Circle 中完成</span></div></div>`);
+<div class="row"><h2 title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
+<p class="sub mt4">工作流 ${run.pack}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)} · 运行 ${code(run.run)}</p>
+</div></div>`);
 }
 
 // ---------------------------------------------------------------- the waterfall
@@ -104,7 +104,7 @@ function callDot(line: CallLogLine): DotState {
 
 function callSub(line: CallLogLine, run: RunRecordView): string {
   const parts: string[] = [];
-  if (line.tool === 'start_run') parts.push(`任务包 ${run.pack}`);
+  if (line.tool === 'start_run') parts.push(`工作流 ${run.pack}`);
   if (line.acceptance !== null) parts.push(uiLabelOf('acceptance', line.acceptance));
   if (line.call_result !== 'ok') parts.push(uiLabelOf('call_result', line.call_result));
   if (line.error_code !== null) parts.push(line.error_code);
@@ -188,7 +188,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const due = Date.parse(request.due);
     const overdue = open && Number.isFinite(due) && due < now;
     const audience = /^usr_[0-9a-z]{26}$/.test(request.audience) ? await ctx.userName(request.audience) : request.audience;
-    const state = open ? (overdue ? '已逾期，等待回应中' : '等待回应中') : '已回答';
+    const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : 'answered');
     steps.push({
       name: uiLabelOf('request_kind', request.kind),
       sub: `接收人 ${audience} · 期限 ${when(request.due)} · ${state}`,
@@ -199,7 +199,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
       point: !open,
       open,
       depth: 0,
-      dur: open ? '等待中' : '',
+      dur: open ? uiLabelOf('request_status', 'waiting') : '',
     });
   }
 
@@ -260,15 +260,14 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
 <div><b class="num">${toolCalls}</b><span>工具调用</span></div>
 <div><b class="num">${detail.run.items.length}</b><span>条目</span></div>
 <div${pending > 0 ? html` class="unk"` : ''}><b class="num">${pending}</b><span>未决项</span></div>
-<div${waiting > 0 ? html` class="unk"` : ''}><b class="num">${waiting}</b><span>等待回应中</span></div>
+<div${waiting > 0 ? html` class="unk"` : ''}><b class="num">${waiting}</b><span>${uiLabelOf('request_status','waiting')}</span></div>
 <div><b class="num">${total === null ? '—' : duration(total)}</b><span>从第一次调用到最后一次</span></div>
 </div>`;
-  const legend = html`<div class="wf-legend mt12"><span><i class="k-circle"></i>Circle 调用</span><span><i class="k-hub"></i>Hub 校验</span><span><i class="k-wait"></i>等待回应中</span><span><i class="k-hand"></i>等待判定中</span><span><i class="k-fail"></i>未通过</span></div>`;
-  const process = card({ title: '执行过程', meta: open ? `截至 ${clock(now)}` : `${clock(t0)} 至 ${clock(t1)}` }, html`${summary}${legend}
+  const legend = html`<div class="wf-legend mt12"><span><i class="k-circle"></i>Circle 调用</span><span><i class="k-hub"></i>Hub 校验</span><span><i class="k-wait"></i>${uiLabelOf('request_status','waiting')}</span><span><i class="k-hand"></i>${uiLabelOf('static_terminal','judgment')}</span><span><i class="k-fail"></i>${uiLabelOf('dynamic_terminal','fail')}</span></div>`;
+  const process = card({ title: '执行过程', meta: open ? `截至 ${clock(now)}` : `${clock(t0)} 至 ${clock(t1)}`, hint: '每段工具调用的长度是 Hub 处理这次调用的时间；提交前的空档是 Circle 在本机的时间，Hub 不调用模型，也不观测这段时间。' }, html`${summary}${legend}
 <div class="wf mt16"><div class="wf-axis"><span class="sub">步骤</span><span class="wf-ticks flex">${ticks.map((t) => html`<span>${t}</span>`)}</span><span class="wf-dur">耗时</span></div>
 <div class="wf-rows">${rows}</div></div>
-${callsShown ? '' : html`<p class="note">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}
-<p class="note">每段工具调用的长度是 Hub 处理这次调用的时间；提交前的空档是 Circle 在本机的时间，Hub 不调用模型，也不观测这段时间。</p>`);
+${callsShown ? '' : html`<p class="note">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow = [...calls].sort((a, b) => b.duration_ms - a.duration_ms).slice(0, 3);
   const longest = slow.length === 0 ? '' : card({ title: '耗时最长的调用' }, html`<ul class="slow">${slow.map((line) => html`<li><span><b>${toolName(line.tool)}</b> <span class="sub">${clock(line.at)}</span></span>${hbar(line.duration_ms, slow[0].duration_ms, 'fill-hub')}<span class="wf-dur">${duration(line.duration_ms)}</span></li>`)}</ul>`);
   return html`${process}${longest === '' ? '' : html`<div class="mt16">${longest}</div>`}`;

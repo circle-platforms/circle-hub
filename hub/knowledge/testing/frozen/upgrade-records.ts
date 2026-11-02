@@ -52,8 +52,10 @@ export async function restoreRecords(db: Database, objects: ObjectStore, dump: R
       const existing = (await db.query<{ n: string }>(`SELECT count(*) AS n FROM ${quoted(table.name)}`, [], tx)).rows[0]!;
       if (Number(existing.n) !== 0) throw new Error(`table ${table.name} is not empty before the restore`);
       if (table.rows.length === 0) continue;
+      // Only the dumped columns are written: a column added by a later migration takes its default, never a NULL.
+      const columns = [...new Set(table.rows.flatMap((row) => Object.keys(row)))].map(quoted).join(', ');
       await db.query(
-        `INSERT INTO ${quoted(table.name)} OVERRIDING SYSTEM VALUE SELECT * FROM jsonb_populate_recordset(NULL::${quoted(table.name)}, $1::jsonb)`,
+        `INSERT INTO ${quoted(table.name)} (${columns}) OVERRIDING SYSTEM VALUE SELECT ${columns} FROM jsonb_populate_recordset(NULL::${quoted(table.name)}, $1::jsonb)`,
         [JSON.stringify(table.rows)],
         tx,
       );

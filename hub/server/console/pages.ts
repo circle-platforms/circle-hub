@@ -23,6 +23,8 @@ import { code, definitions, html, icon, link, liveModule, page, pre, section, ta
 import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell } from './tasks.ts';
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
+import { awaitingRequests } from './requests.ts';
+import { packSources } from './pack-sources.ts';
 
 export interface PageContext {
   deps: ServerDeps;
@@ -30,7 +32,7 @@ export interface PageContext {
   admin: boolean;
   url: URL;
   /** The chrome of a page: its title, and the place of the navigation, a line and buttons when the page has them. */
-  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'actions'>) => PageChrome;
+  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'hint' | 'actions'>) => PageChrome;
   /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
   csrf?: string;
   /** The request came over HTTPS (the built-in listener or the configured proxy). */
@@ -55,7 +57,7 @@ export interface PageResult {
 export const NEUTRAL = '该内容不存在或无权查看';
 
 export function neutralPage(ctx: PageContext): PageResult {
-  return { status: 404, body: page(ctx.chrome(NEUTRAL), html`${callout('info', '对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。')}<p class="mt16">${link('/console/overview', '返回总览')}</p>`) };
+  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。'}), html`<p class="mt16">${link('/console/overview', '返回总览')}</p>`) };
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -98,6 +100,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
   const cursor = param(ctx, 'cursor');
   const wanted = param(ctx, 'result');
+  const filtering = pack !== undefined || wanted !== undefined;
   if (wanted !== undefined && !isTaskResult(wanted)) return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), html`<p class="error">筛选的任务结果不对</p>`) };
   const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: TASKS_PER_PAGE, cursor: cursor ?? null });
   const [tasks, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
@@ -123,18 +126,17 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
     { label: '全部', count: tasks.length, path: '/console/runs', params: { pack, cursor }, on: wanted === undefined },
     ...TASK_RESULT.filter((result) => (counts.get(result) ?? 0) > 0 || result === wanted).map((result) => ({ label: uiLabelOf('task_result', result), count: counts.get(result) ?? 0, path: '/console/runs', params: { pack, cursor, result }, on: result === wanted })),
   ], '按任务结果筛选');
-  const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button type="submit">筛选</button></form>`;
+  const filter = html`<form class="filters" method="get" action="/console/runs"><label>按${uiLabelOf('pack_kind','workflow')}筛选 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p class="mt12">${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
-  const feedingTodos=await ctx.deps.knowledge.feeding?.todos(ctx.principal)??[];
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
-  const list = card({ title: listing.items.length === 0 ? '尚无任务' : '任务', meta: `本页 ${tasks.length} 个任务${wanted === undefined ? '' : `，筛选后 ${shown.length} 个`} · 按开始时间` }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, listing.items.length === 0 ? 'Circle 启动任务后在此列出。' : '本页没有符合筛选的任务')}${next}`);
+  const empty = tasks.length === 0 && !filtering;
+  const list = empty
+    ? card({ title: '尚无任务' }, html`<p class="sub">Circle 启动任务后在此列出。</p>`)
+    : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '工作流版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务')}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', sub: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验。' }), html`${filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
-${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
-${liveModule('task-requests', ['request.updated'], html`${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
-${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`)}
-<p class="note">请求的处理在接收人的 Circle 中完成；本页只显示请求的接收人、期限与状态。</p>`),
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${empty ? '' : filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
+${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, listing.overdue_requests, true))}`),
   };
 }
 
@@ -282,7 +284,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
   const summary = definitions([
     ['运行', code(run.run)],
-    ['任务包', html`${run.pack} ${code(run.pack_digest)}`],
+    [uiLabelOf('pack_kind', 'workflow'), html`${run.pack} ${code(run.pack_digest)}`],
     ['产品 / 版本 / 构建', [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—'],
     ['锁定的知识版本', run.root === undefined ? '—' : link('/console/knowledge/tree', run.root, { root: run.root, path: '/' })],
     ['执行人', run.runner === undefined ? '—' : await ctx.userName(run.runner)],
@@ -327,7 +329,7 @@ ${definitions([
   [result.system_input?'系统交付输入内容哈希':'提交内容哈希',code(result.submission)],
   ['修复轮数', `已用 ${result.rounds.used}，最多 ${result.rounds.max}`],
   ['覆盖', coverageText(result.coverage) ?? '—'],
-  ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识版本 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
+  ['锁定', html`工作流 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识版本 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
   ['追踪', code(result.trace)],
 ])}
 ${commentary ? section('逐条模型判断（未采用）', commentaryJudgments(result,renderClaim)) : partitionGroups(result, run,renderClaim)}
@@ -369,7 +371,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     body: page(
       ctx.chrome('任务', { active: 'tasks', sub: html`${link('/console/runs', '全部任务')} · ${taskTitle(run, titles)}` }),
       html`${liveModule('task', ['task.updated', 'request.updated'], html`${head}<div class="mt16">${process}</div>`, { run: run.run })}
-${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="record"><h2>完整记录</h2><p class="sub">结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。</p>
+${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="record"><h2 title="结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。">完整记录</h2>
 ${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${summary}
 ${await runSharing(ctx,run)}
 ${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${code(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
@@ -381,7 +383,7 @@ ${projectedFields}
 ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / 请求','条目 / 判据','原断言','旧值 / 新值','状态 / 复核人 / 理由','接收人 / 期限','下一步'],run.criterion_changes.map(change=>[html`${code(change.declaration)}<br>${code(change.request)}`,html`${code(change.item)}<br>${code(change.criterion)}`,change.assertion,html`${pre(change.old)}${pre(change.new)}`,change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.accepted===false?`未接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.expired?'请求已过期，仍在等待作者以外的账号复核；新修订不带这条声明':'等待作者以外的账号复核中',html`${code(change.audience)}<br>${change.due}`,change.next_action]),'没有判据变更声明')):''}
 ${section(axisUiLabel('partition'), results)}
 ${commentary}
-${section('未回答的请求', table(['请求','种类','接收人','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
+${await awaitingRequests(ctx, detail.requests ?? [])}
 ${section('提交与回执', submissions)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}
 </div>`, { run: run.run })}`,
@@ -462,7 +464,10 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 }
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
+  const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
+  const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
+  const pending = todos.length === 0 ? html`` : section('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [code(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? code(JSON.stringify(row.detail)) : '—'])));
   const blocks: Html[] = [];
   for (const line of lines) {
     const builds = await ctx.deps.knowledge.builds(line.id);
@@ -490,29 +495,31 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
     rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
       unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
+    const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
+    if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
+    const options = versions;
+    const diff = options.length === 0 ? html`` : html`<form class="filters" method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">版本差异</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button type="submit">比较</button></form>`;
     blocks.push(
       card(
-        { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}` },
-        html`${table(['版本', '名称族', '构建', '已发布', '已产出版本', '当前版本'], rows, '还没有构建')}<div class="card-f"><span class="sub">当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。</span>${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>`,
+        { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
+        html`${table(['版本', '名称族', '构建', '已发布', '已产出版本', '当前版本'], rows, '还没有构建')}<div class="card-f">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
   }
-  const diffForm = html`<form class="filters" method="get" action="/console/knowledge/diff"><label>从版本（内容哈希） <input name="from" size="66"></label><label>到版本（内容哈希） <input name="to" size="66"></label><button type="submit">比较</button></form>`;
-  const flow = card({ title: '知识入库流程', meta: '共享知识须经 Hub 出处校验' }, html`<div class="stages">
-<div class="stage planned-stage"><span class="host"><span class="dot idle"></span>仅本人可见</span><b>原文归档</b><span class="sub">Circle 读取的网页、文件、系统数据连同出处归档</span>${planned()}</div>
-<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>模型归纳</b><span class="sub">模型生成的归纳保留在本机，不上传 Hub</span></div>
-<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>提交共享</b><span class="sub">确认为事实后，连同出处提交</span></div>
-<div class="stage on-hub"><span class="host"><span class="dot info"></span>Hub</span><b>出处校验</b><span class="sub">可追溯至原文且引文一致方可入库</span></div>
-<div class="stage"><span class="host"><span class="dot ok"></span>所有人可见</span><b>共享知识</b><span class="sub">按产品线与版本组织，所有 Circle 可读取、可引用</span></div>
-</div><p class="note">从业务系统与文档导入的知识同样经 Hub 校验；个人账号读取的内容不会自动成为共享知识。</p>`);
-  const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload' }) : undefined;
+  const flow = card({ title: '知识入库流程', hint: '个人知识保存在 Circle，不自动共享；团队知识由 Hub 校验出处，实际可读范围仍由工作流分配决定。' }, html`<div class="knowledge-flow">
+<section class="knowledge-column" aria-label="个人知识"><h3>个人（仅本人可见）</h3>
+<div class="stage planned-stage" title="Circle 读取的网页、文件、系统数据连同出处归档"><b>原文归档</b>${planned()}</div>
+<div class="stage circle" title="模型在 Circle 中归纳，结果保留在本机，不上传 Hub"><b>模型归纳</b></div></section>
+<div class="knowledge-bridge" title="确认为事实后连同出处提交；Hub 校验可追溯性和引文一致性">提交共享 → Hub 出处校验</div>
+<section class="knowledge-column" aria-label="团队知识"><h3>团队（所有人可见，Hub）</h3>
+<div class="stage on-hub" title="可追溯至原文且引文一致方可入库；Hub 不调用模型"><b>出处校验</b></div>
+<div class="stage" title="按产品线与版本组织；业务系统与文档导入同样经 Hub 校验，可读范围按工作流分配"><b>共享知识</b></div></section>
+</div>`);
+  const actions = ctx.admin ? html`${button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库（所有人可见）；仅管理员可用' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}` : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识库', { active: 'knowledge', sub: '统一的知识库：每条知识均附出处，按产品线与版本组织。', ...(actions === undefined ? {} : { actions }) }), html`${flow}
-${sectionHead('按产品线浏览', '可读的产品线及其版本')}
-${liveModule('lines', ['knowledge.published'], blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`)}
-<div class="mt16">${card({ title: '版本差异', meta: '两个版本之间新增、删除与修改的条目' }, diffForm)}</div>`),
-  };
+    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${sources}${flow}${pending}
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: '团队知识' }, html`<p class="empty">${ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {

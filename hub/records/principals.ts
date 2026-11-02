@@ -4,7 +4,7 @@
 // administrator issues: a code is twelve characters shown once, kept as its SHA-256, valid INVITATION_TTL_MS and used once,
 // by the client it authorized; a token issued through the authorization names its client.
 import { randomBytes } from 'node:crypto';
-import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
@@ -12,6 +12,7 @@ import type { Database, PgTransaction, Row } from './db.ts';
 import { sha256Hex } from './digest.ts';
 import { AccessError, ConflictError, IntegrityError, LimitError } from './errors.ts';
 import { newId } from './ids.ts';
+import { hashPassword, initialPassword, matchesPassword } from './password.ts';
 
 const ADMIN: PermissionRole = 'admin';
 const USER: PermissionRole = 'user';
@@ -108,25 +109,79 @@ export class PgPrincipals implements Principals {
     this.#now = now;
   }
 
-  async bootstrapAdmin(name: string): Promise<{ user: User; token: IssuedToken }> {
+  async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }> {
     const clean = validName(name);
+    const hash = credential ? await hashPassword(credential.password) : null;
     return this.#db.transaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1)', [ADMIN_SET_LOCK], tx);
       const admins = await this.#db.query('SELECT 1 FROM users WHERE role = $1 LIMIT 1', [ADMIN], tx);
       if ((admins.rowCount ?? 0) > 0) throw new ConflictError('已经有管理员；第一位管理员只能引导一次，之后由管理员添加用户');
-      const user = await this.#insertUser(tx, clean, ADMIN, null);
+      const user = await this.#insertUser(tx, clean, ADMIN, null, hash, credential?.mustChange);
       const token = await this.#issue(tx, user.id, '引导', null);
       return { user, token };
     });
   }
 
-  async createUser(by: Principal, name: string, role: PermissionRole = USER): Promise<User> {
+  async createUser(by: Principal, name: string, role: PermissionRole = USER, credential?: { password: string; mustChange: boolean }): Promise<User> {
     const clean = validName(name);
     const wanted = validRole(role);
+    const hash = credential ? await hashPassword(credential.password) : null;
     return this.#db.transaction(async (tx) => {
       await this.#decider(tx, by, true);
-      return this.#insertUser(tx, clean, wanted, by.id);
+      return this.#insertUser(tx, clean, wanted, by.id, hash, credential?.mustChange);
     });
+  }
+
+  async passwordState(userId: string): Promise<{ configured: boolean; mustChange: boolean; revision: number }> {
+    const row = (await this.#db.query('SELECT password_hash IS NOT NULL AS configured, password_must_change, password_revision FROM users WHERE id = $1', [userId])).rows[0];
+    return {configured: row?.configured === true, mustChange: row?.password_must_change === true, revision: Number(row?.password_revision ?? 0)};
+  }
+
+  async verifyPassword(name: string, password: string): Promise<{ user: User; revision: number; mustChange: boolean } | null> {
+    const row = typeof name === 'string' && NAME.test(name) ? (await this.#db.query('SELECT * FROM users WHERE name = $1', [name])).rows[0] : undefined;
+    const matches = await matchesPassword(password, row?.password_hash === undefined || row.password_hash === null ? null : String(row.password_hash));
+    if (!matches || row === undefined || row.disabled) return null;
+    return {user:userOf(row),revision:Number(row.password_revision),mustChange:row.password_must_change === true};
+  }
+
+  async openConsoleSession(userId: string, revision: number): Promise<IssuedToken | null> {
+    return this.#db.transaction(async tx => {
+      const row = (await this.#db.query('SELECT * FROM users WHERE id = $1 FOR SHARE', [userId], tx)).rows[0];
+      if (!row || row.disabled || row.password_hash === null || Number(row.password_revision) !== revision) return null;
+      const token = await this.#issue(tx,userId,'控制台登录',userId,null,true);
+      return token;
+    });
+  }
+
+  async resetPassword(by: Principal, userId: string): Promise<string> {
+    const password=initialPassword(), hash=await hashPassword(password);
+    await this.#db.transaction(async tx => {
+      await this.#decider(tx,by,true);
+      await this.#locked(tx,userId);
+      await this.#replacePassword(tx,by,userId,hash,true);
+    });
+    return password;
+  }
+
+  async changePassword(by: Principal, current: string, next: string): Promise<boolean> {
+    const found=await this.#db.query('SELECT password_hash, password_revision FROM users WHERE id = $1 AND NOT disabled',[by.id]);
+    const row=found.rows[0];
+    if (!row || !await matchesPassword(current,row.password_hash === null ? null : String(row.password_hash)) || next === current) return false;
+    const hash=await hashPassword(next);
+    return this.#db.transaction(async tx => {
+      await this.#decider(tx,by,false);
+      const locked=(await this.#db.query('SELECT password_revision FROM users WHERE id = $1 FOR UPDATE',[by.id],tx)).rows[0];
+      if (Number(locked?.password_revision) !== Number(row.password_revision)) return false;
+      await this.#replacePassword(tx,by,by.id,hash,false);
+      return true;
+    });
+  }
+
+  async #replacePassword(tx: PgTransaction, by: Principal, userId: string, hash: string, mustChange: boolean): Promise<void> {
+    const at=this.#now().toISOString();
+    const row=(await this.#db.query('UPDATE users SET password_hash=$2, password_must_change=$3, password_revision=password_revision+1, updated_at=$4 WHERE id=$1 RETURNING *',[userId,hash,mustChange,at],tx)).rows[0];
+    await this.#db.query('UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL',[by.id,at,userId],tx);
+    await this.#db.query('INSERT INTO user_history (user_id,name,role,disabled,changed_by,changed_at,password_changed) VALUES ($1,$2,$3,$4,$5,$6,true)',[userId,row.name,row.role,row.disabled,by.id,at],tx);
   }
 
   async setRole(by: Principal, userId: string, role: PermissionRole): Promise<User> {
@@ -179,6 +234,7 @@ export class PgPrincipals implements Principals {
       disabled: row.disabled === true,
       changed_by: row.changed_by === null ? null : String(row.changed_by),
       changed_at: iso(row.changed_at),
+      ...(row.password_changed === true ? {password_changed:true as const} : {}),
     }));
   }
 
@@ -190,7 +246,7 @@ export class PgPrincipals implements Principals {
       const decider = await this.#decider(tx, by, false);
       if (decider.role !== ADMIN && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
-      if (target.disabled) throw new ConflictError('用户已停用，不能签发令牌');
+      if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能签发令牌`);
       if (client !== undefined && (await this.#db.query('SELECT 1 FROM oauth_clients WHERE id = $1', [client], tx)).rowCount === 0) throw new ConflictError('没有这个客户端');
       return this.#issue(tx, target.id, label, decider.id, client ?? null);
     });
@@ -223,7 +279,7 @@ export class PgPrincipals implements Principals {
 
   async tokens(userId: string): Promise<TokenInfo[]> {
     if (typeof userId !== 'string' || !USER_ID.test(userId)) return [];
-    const rows = (await this.#db.query('SELECT id, user_id, label, client_id, created_at, created_by, last_used_at, revoked_at FROM tokens WHERE user_id = $1 ORDER BY created_at DESC, id DESC', [userId])).rows;
+    const rows = (await this.#db.query('SELECT id, user_id, label, client_id, created_at, created_by, last_used_at, revoked_at FROM tokens WHERE user_id = $1 AND NOT console_session ORDER BY created_at DESC, id DESC', [userId])).rows;
     return rows.map(tokenOf);
   }
 
@@ -231,7 +287,7 @@ export class PgPrincipals implements Principals {
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, true);
       const target = await this.#locked(tx, userId);
-      if (target.disabled) throw new ConflictError('用户已停用，不能邀请');
+      if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能邀请`);
       const code = invitationCode();
       const at = this.#now();
       const row = (
@@ -271,7 +327,7 @@ export class PgPrincipals implements Principals {
       if (taken === undefined) return null;
       const user = await this.#locked(tx, String(taken.user_id));
       // A disabled account leaves the invitation unused: the update is rolled back with the transaction.
-      if (user.disabled) throw new ConflictError('用户已停用');
+      if (user.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}`);
       return user;
     }).catch((error: unknown) => {
       if (error instanceof ConflictError) return null;
@@ -325,8 +381,8 @@ export class PgPrincipals implements Principals {
     const row = (
       await this.#db.query(
         `SELECT t.id AS token_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
-          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled`,
-        [sha256Hex(match[1])],
+          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2)`,
+        [sha256Hex(match[1]),this.#now().toISOString()],
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;
@@ -360,12 +416,12 @@ export class PgPrincipals implements Principals {
     if ((others.rowCount ?? 0) === 0) throw new ConflictError('这是最后一位启用中的管理员，不能撤下或停用');
   }
 
-  async #insertUser(tx: PgTransaction, name: string, role: PermissionRole, by: string | null): Promise<User> {
+  async #insertUser(tx: PgTransaction, name: string, role: PermissionRole, by: string | null, hash: string | null = null, mustChange = false): Promise<User> {
     const at = this.#now().toISOString();
     const id = newId('usr');
     const inserted = await this.#db.query(
-      'INSERT INTO users (id, name, role, disabled, created_at, updated_at) VALUES ($1, $2, $3, false, $4, $4) ON CONFLICT (name) DO NOTHING RETURNING *',
-      [id, name, role, at],
+      'INSERT INTO users (id, name, role, disabled, created_at, updated_at, password_hash, password_must_change, password_revision) VALUES ($1, $2, $3, false, $4, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING RETURNING *',
+      [id, name, role, at, hash, mustChange, hash === null ? 0 : 1],
       tx,
     );
     if (inserted.rows[0] === undefined) throw new ConflictError('用户名已经存在');
@@ -390,13 +446,13 @@ export class PgPrincipals implements Principals {
     );
   }
 
-  async #issue(tx: PgTransaction, userId: string, label: string, by: string | null, client: string | null = null): Promise<IssuedToken> {
+  async #issue(tx: PgTransaction, userId: string, label: string, by: string | null, client: string | null = null, consoleSession = false): Promise<IssuedToken> {
     const token = randomBytes(32).toString('base64url');
     const id = newId('tok');
     const at = this.#now().toISOString();
     await this.#db.query(
-      'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [id, userId, sha256Hex(token), label, at, by, client],
+      'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      [id, userId, sha256Hex(token), label, at, by, client, consoleSession, consoleSession ? new Date(this.#now().getTime()+12*60*60*1000).toISOString() : null],
       tx,
     );
     return { id, user: userId, token, label, created_at: at };

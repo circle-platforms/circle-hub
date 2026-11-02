@@ -210,6 +210,13 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   );` },
   { version: 6, name: 'call_reasons', sql: V6_CALL_REASONS },
   { version: 7, name: 'standard_authorization', sql: V7_STANDARD_AUTHORIZATION },
+  { version: 8, name: 'console_passwords', sql: `ALTER TABLE users
+    ADD COLUMN password_hash text,
+    ADD COLUMN password_must_change boolean NOT NULL DEFAULT false,
+    ADD COLUMN password_revision integer NOT NULL DEFAULT 0;
+  ALTER TABLE tokens ADD COLUMN console_session boolean NOT NULL DEFAULT false,
+    ADD COLUMN expires_at timestamptz;
+  ALTER TABLE user_history ADD COLUMN password_changed boolean NOT NULL DEFAULT false;` },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -223,7 +230,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   call_logs: 'SELECT, INSERT',
   call_notes: 'SELECT, INSERT',
   call_reasons: 'SELECT, INSERT',
-  users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at)',
+  users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at, password_hash, password_must_change, password_revision)',
   tokens: 'SELECT, INSERT, UPDATE (last_used_at, revoked_at, revoked_by)',
   oauth_clients: 'SELECT, INSERT, DELETE',
   invitations: 'SELECT, INSERT, UPDATE (used_at, used_by_client)',

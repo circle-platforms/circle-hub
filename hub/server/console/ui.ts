@@ -27,10 +27,12 @@ export interface CardHead {
   lead?: unknown;
   /** After the title (a chip), pushed to the right when there is no meta. */
   tail?: unknown;
+  /** How to read the card: shown on hover over the title, never inline (factual notes stay in meta). */
+  hint?: string;
 }
 
 export function card(head: CardHead | null, body: unknown, cls = ''): Html {
-  const top = head === null ? '' : html`<div class="card-h">${head.lead ?? ''}<h3>${head.title}</h3>${head.tail ?? ''}${head.meta === undefined ? '' : html`<span class="meta">${head.meta}</span>`}</div>`;
+  const top = head === null ? '' : html`<div class="card-h">${head.lead ?? ''}<h3${head.hint === undefined ? '' : html` title="${head.hint}"`}>${head.title}</h3>${head.tail ?? ''}${head.meta === undefined ? '' : html`<span class="meta">${head.meta}</span>`}</div>`;
   return html`<article class="card${cls ? ` ${cls}` : ''}">${top}${body}</article>`;
 }
 
@@ -42,13 +44,14 @@ export function callout(tone: 'info' | 'warn' | 'unknown', body: unknown): Html 
   return html`<div class="callout ${tone} mt12">${icon(tone === 'info' ? 'info' : 'warn')}<span>${body}</span></div>`;
 }
 
-export function sectionHead(title: unknown, sub?: unknown, extra?: unknown, id?: string): Html {
-  return html`<div class="section-h"${id === undefined ? '' : html` id="${id}"`}><h2>${title}</h2>${extra ?? ''}${sub === undefined ? '' : html`<p>${sub}</p>`}</div>`;
+/** A section's heading: `sub` is a factual note shown beside it, `hint` how to read the section, shown on hover only. */
+export function sectionHead(title: unknown, sub?: unknown, extra?: unknown, id?: string, hint?: string): Html {
+  return html`<div class="section-h"${id === undefined ? '' : html` id="${id}"`}><h2${hint === undefined ? '' : html` title="${hint}"`}>${title}</h2>${extra ?? ''}${sub === undefined ? '' : html`<p>${sub}</p>`}</div>`;
 }
 
 /** A link styled as a button. */
-export function button(path: string, text: unknown, options: { primary?: boolean; icon?: keyof typeof ICONS; params?: Record<string, string | number | null | undefined> } = {}): Html {
-  return html`<a class="btn${options.primary ? ' primary' : ''}" href="${href(path, options.params)}">${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
+export function button(path: string, text: unknown, options: { primary?: boolean; icon?: keyof typeof ICONS; params?: Record<string, string | number | null | undefined>; hint?: string } = {}): Html {
+  return html`<a class="btn${options.primary ? ' primary' : ''}" href="${href(path, options.params)}"${options.hint === undefined ? '' : html` title="${options.hint}"`}>${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
 }
 
 /** A card for a capability that is planned and not built: its place is kept, nothing in it pretends to be data. */

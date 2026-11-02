@@ -15,17 +15,19 @@
 // administrator exists; its token is shown once and opens a session.
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
-import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, labelOf, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
+import { initialPassword, validPassword } from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
 import { NEUTRAL, neutralPage } from './pages.ts';
 import { stagedDigest, type PackStaging, type StagedPack } from './staging.ts';
 import { checkSetupCode, removeSetupCode } from '../setup-code.ts';
-import { code, html, link, liveModule, page, pre, section, table, type Html } from './html.ts';
+import { code, html, link, liveModule, page, pre, section, table, type Html, type PageChrome } from './html.ts';
 import { circleEntry, originOf } from './settings.ts';
 import { callout, card, chip, stepper, when } from './ui.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { UploadError, unpackZip } from './upload.ts';
+import { packHome, publication, publishingKind } from './pack-display.ts';
 
 /** A form's fields, trimmed; absent fields are the empty string. */
 export type Form = { get(name: string): string };
@@ -67,12 +69,15 @@ export interface Action {
   title: string;
   /** Where the result page links back to. */
   back: string;
+  active?: NonNullable<PageChrome['active']>;
   /** One command, or several run in order; a command that does not finish (exit code other than 0) stops the rest. */
   build(form: Form): Built | Built[];
   /** Runs as a background job (knowledge sync). */
   background?: boolean;
   /** The result's standard output holds a value shown only once (an issued token). */
   once?: boolean;
+  /** A more specific one-time notice for an output other than a token. */
+  onceNotice?: string;
 }
 
 const USERS = '/console/admin';
@@ -100,6 +105,13 @@ const SECRETS = '/console/admin/secrets';
 const KNOWLEDGE = '/console/admin/knowledge';
 
 export const ACTIONS: Readonly<Record<string, Action>> = {
+  'password-reset': {
+    title: '重置密码',
+    back: '/console/team',
+    once: true,
+    onceNotice: '初始密码仅显示一次；首次登录必须修改，请交给该账户的使用者。',
+    build: (form) => ({ argv: ['user', 'password-reset', word(form, 'user', '成员')] }),
+  },
   'user-create': {
     title: '新建用户',
     back: USERS,
@@ -120,11 +132,11 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
   'token-revoke': { title: '撤销令牌', back: USERS, build: (form) => ({ argv: ['token', 'revoke', word(form, 'token', '令牌编号')] }) },
   'pack-grant': { title: '授予发布权', back: PACKS, build: (form) => ({ argv: ['pack', 'grant-publish', word(form, 'user', '用户')] }) },
   'pack-revoke': { title: '撤销发布权', back: PACKS, build: (form) => ({ argv: ['pack', 'revoke-publish', word(form, 'user', '用户')] }) },
-  'pack-assign': { title: '分配任务包', back: PACKS, build: (form) => ({ argv: ['pack', 'assign', word(form, 'user', '用户'), word(form, 'pack', '任务包')] }) },
-  'pack-unassign': { title: '取消分配', back: PACKS, build: (form) => ({ argv: ['pack', 'unassign', word(form, 'user', '用户'), word(form, 'pack', '任务包')] }) },
-  'pack-retire': { title: '下架任务包版本', back: PACKS, build: (form) => ({ argv: ['pack', 'retire', word(form, 'ref', '包号@版本')] }) },
-  'pack-activate': { title: '启用产品包', back: PACKS, build: (form) => ({ argv: ['pack', 'activate', word(form, 'pack', '产品包')] }) },
-  'pack-deactivate': { title: '停用产品包', back: PACKS, build: (form) => ({ argv: ['pack', 'deactivate', word(form, 'pack', '产品包')] }) },
+  'pack-assign': { title: '分配工作流', back: PACKS, build: (form) => ({ argv: ['pack', 'assign', word(form, 'user', '用户'), word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))] }) },
+  'pack-unassign': { title: '取消分配', back: PACKS, build: (form) => ({ argv: ['pack', 'unassign', word(form, 'user', '用户'), word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))] }) },
+  'pack-retire': { title: '下架工作流版本', back: PACKS, build: (form) => ({ argv: ['pack', 'retire', word(form, 'ref', '包号@版本')] }) },
+  'pack-activate': { title: '启用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'activate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
+  'pack-deactivate': { title: '停用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'deactivate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
   'resource-add': {
     title: '添加资源',
     back: RESOURCES,
@@ -136,7 +148,7 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
       const plaintext = form.get('plaintext').split(/[,，\s]+/).filter(Boolean);
       return {
         argv: [
-          'resource', 'add', word(form, 'system_pack', '系统包'),
+          'resource', 'add', word(form, 'system_pack', uiLabelOf('pack_kind', 'system')),
           flag('name', word(form, 'name', '资源名')),
           flag('environment', environment),
           ...origins.map((line) => flag('origin', line)),
@@ -273,9 +285,9 @@ export class JobStore {
 // ---------------------------------------------------------------- rendering
 
 /** A POST form to an action of this console, with the session's CSRF token. */
-export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean; primary?: boolean } = {}): Html {
+export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean; primary?: boolean; kind?: PackKind } = {}): Html {
   const button = options.primary ? html`<div class="form-f"><button type="submit" class="primary">${submit}</button></div>` : html`<button type="submit">${submit}</button>`;
-  return html`<form method="post" action="/console/admin/do/${name}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html` class="inline"` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
+  return html`<form method="post" action="/console/admin/do/${name}${options.kind&&options.kind!=='workflow'?'?kind='+encodeURIComponent(options.kind):''}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html` class="inline"` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
 }
 
 const TOKEN_ONCE = '下面的令牌只显示这一次：现在复制，保存到只有使用者能读的地方。离开这页就再也看不到它。';
@@ -288,7 +300,7 @@ function onceNotice(argv: readonly string[]): string | null {
 }
 
 function runLines(run: CommandRun, notice: string | null): Html {
-  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${run.code === 0 ? '已完成' : run.code === 2 ? '参数不正确，未执行' : '未完成'}（退出码 ${run.code}）</p>
+  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${labelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
 ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
@@ -296,7 +308,7 @@ ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
 function actionChrome(ctx: PageContext, action: Action) {
-  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', sub: '与命令行执行相同的命令，写入相同的记录' });
+  return ctx.chrome(action.title, { active: action.active ?? ((action.back.startsWith('/console/operations/member') || action.back === '/console/team') ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings'), hint: '与命令行执行相同的命令，写入相同的记录' });
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
@@ -306,9 +318,9 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
   const several = !('code' in runs);
   const body = steps.map((step, index) => several
     ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
-    : card(null, runLines(step.run, action.once === true ? TOKEN_ONCE : null)));
+    : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
   const trust = ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : '';
-  const connected = html`<p class="sub">成员完成连接后，${link('/console/settings', '设置')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
+  const connected = html`<p class="sub">成员完成连接后，${link('/console/team', '团队')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
   const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
@@ -324,7 +336,7 @@ export function formErrorPage(ctx: PageContext, action: Action, message: string)
   return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
 }
 
-const jobState = (job: Job): Html => job.result === null ? chip('进行中', 'judgment') : job.result.code === 0 ? chip('已完成', 'pass') : chip(`未完成，退出码 ${job.result.code}`, 'fail');
+const jobState = (job: Job): Html => chip(labelOf('action_result', job.result === null ? 'unknown' : job.result.code === 0 ? 'completed' : 'error'), job.result === null ? 'unknown' : job.result.code === 0 ? 'pass' : 'fail');
 
 export function jobsSection(jobs: readonly Job[]): Html {
   return section('后台任务', table(['开始', '任务', '发起人', '状态'], jobs.map((job) => [
@@ -336,10 +348,10 @@ export function jobsSection(jobs: readonly Job[]): Html {
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
-  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务` });
-  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务（服务重启后，之前的任务不再列出；它们写下的记录照常保留）</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
+  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
+  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
-    ? html`<p class="notice">进行中，刷新本页查看进展</p>`
+    ? html`<p class="notice">尚未收到命令执行结果</p>`
     : runLines(job.result, null);
   return {
     status: 200,
@@ -402,7 +414,7 @@ export interface PublishStageResult {
 export async function stagePack(ctx: PageContext, deps: ManageDeps, token: string, upload: Buffer | undefined): Promise<StageResult> {
   const none = { run: null, stage: null, published: null };
   if (deps.bridge === undefined) return { ...none, refused: { status: 503, message: BRIDGE_MISSING } };
-  if (upload === undefined || upload.length === 0) return { ...none, refused: { status: 400, message: '请选择要上传的任务包 zip 文件' } };
+  if (upload === undefined || upload.length === 0) return { ...none, refused: { status: 400, message: `请选择要上传的${uiLabelOf('pack_kind',publishingKind(ctx))} zip 文件` } };
   let unpacked: { root: string; dir: string };
   try {
     unpacked = await unpackZip(upload);
@@ -437,7 +449,7 @@ export async function publishStage(ctx: PageContext, deps: ManageDeps, token: st
   if (taken === null) return { run: null, stage: null, refused: { status: 404, message: NEUTRAL } };
   const { stage, dir } = taken;
   try {
-    if ((await stagedDigest(dir))?.digest !== stage.digest) return { run: null, stage, refused: { status: 409, message: '暂存的任务包在校验后发生了变化，未发布；请重新上传并校验' } };
+    if ((await stagedDigest(dir))?.digest !== stage.digest) return { run: null, stage, refused: { status: 409, message: '暂存内容在校验后发生了变化，未发布；请重新上传并校验' } };
     const run = withoutPaths(await deps.bridge.run(['pack', 'publish', dir, '--stage'], { token }), dir);
     deps.log(`控制台管理操作 pack publish（${ctx.principal.name}）：退出码 ${run.code}`);
     return { run, stage, refused: null };
@@ -454,15 +466,17 @@ export async function discardStage(ctx: PageContext, deps: ManageDeps, id: strin
   return taken.stage;
 }
 
-const PACK_BACK = '/console/operations/pack';
-const PUBLISH: Action = { title: '发布任务包', back: PACK_BACK, build: () => { throw new FormError('请上传任务包'); } };
+const publishAction = (ctx: PageContext, kind: PackKind = publishingKind(ctx)): Action => ({
+  ...publication(ctx, kind), build: () => { throw new FormError('请上传发布内容'); },
+});
 const PACK_STEP_NAMES = ['上传', '发布校验', '发布', '完成'] as const;
 const shortDigest = (digest: string): string => `${digest.slice(0, 12)}…`;
 
 /** The 发布 and 放弃 forms of a stage, with the session's CSRF token. */
 export function stageForms(stage: StagedPack, csrf: string): Html {
+  const options = { inline: true, kind: stage.kind };
   const id = html`<input type="hidden" name="stage" value="${stage.id}">`;
-  return html`<div class="row">${actionForm('pack-publish', csrf, id, '发布', { inline: true, primary: false })}${actionForm('pack-discard', csrf, id, '放弃', { inline: true })}</div>`;
+  return html`<div class="row">${actionForm('pack-publish', csrf, id, '发布', { ...options, primary: false })}${actionForm('pack-discard', csrf, id, '放弃', options)}</div>`;
 }
 
 function checkLines(run: CommandRun): Html {
@@ -471,18 +485,20 @@ function checkLines(run: CommandRun): Html {
 }
 
 function refusedPage(ctx: PageContext, refusal: StepRefusal): PageResult {
+  const action = publishAction(ctx);
   // A stage that ended, expired or belongs to someone else: the console's neutral answer.
   if (refusal.status === 404) return neutralPage(ctx);
-  return { status: refusal.status, body: page(actionChrome(ctx, PUBLISH), html`${card(null, html`<p class="error">${refusal.message}</p>`)}<p class="mt16">${link(PACK_BACK, '返回')}</p>`) };
+  return { status: refusal.status, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${refusal.message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
 }
 
 /** The check's page: every result of the dry run, then the 发布 step when the pack was staged. */
 export function stageResultPage(ctx: PageContext, result: StageResult): PageResult {
+  const action = publishAction(ctx, result.stage?.kind);
   if (result.refused !== null) return refusedPage(ctx, result.refused);
   const run = result.run!;
   const stage = result.stage;
   const next = stage !== null
-    ? card({ title: '发布', tail: chip('等待发布中', 'judgment'), meta: `暂存至 ${when(new Date(stage.expires).toISOString())}` }, html`<p>任务包 ${code(`${stage.pack}@${stage.version}`)}（摘要 ${shortDigest(stage.digest)}）已暂存。发布执行 ${code('circle-hub pack publish <目录> --stage')}，写入发布记录；暂存 30 分钟内有效，过期后需重新上传。</p>${stageForms(stage, ctx.csrf ?? '')}`)
+    ? card({ title: '发布', tail: chip('等待发布中', 'judgment'), meta: `暂存至 ${when(new Date(stage.expires).toISOString())}` }, html`<p>${uiLabelOf('pack_kind',stage.kind??publishingKind(ctx))} ${code(`${stage.pack}@${stage.version}`)}（摘要 ${shortDigest(stage.digest)}）已暂存。发布执行 ${code('circle-hub pack publish <目录> --stage')}，写入发布记录；暂存 30 分钟内有效，过期后需重新上传。</p>${stageForms(stage, ctx.csrf ?? '')}`)
     : result.published !== null
       ? callout('info', html`相同内容已发布为 ${code(`${result.published.pack}@${result.published.version}`)}，无需再次发布；未暂存。`)
       : run.code === 0
@@ -491,18 +507,19 @@ export function stageResultPage(ctx: PageContext, result: StageResult): PageResu
   const status = run.code === 0 ? 200 : run.code === 2 ? 400 : 409;
   return {
     status,
-    body: page(actionChrome(ctx, PUBLISH), html`${stepper(PACK_STEP_NAMES, stage !== null ? 2 : 1)}<div class="stack">${card({ title: '发布校验', meta: code('circle-hub pack publish <目录> --stage --dry-run') }, checkLines(run))}${next}</div><p class="mt16">${link(PACK_BACK, '返回')}</p>`),
+    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, stage !== null ? 2 : 1)}<div class="stack">${card({ title: '发布校验', meta: code('circle-hub pack publish <目录> --stage --dry-run') }, checkLines(run))}${next}</div><p class="mt16">${link(action.back, '返回')}</p>`),
   };
 }
 
 /** The publication's page: the command's output, the steps complete when it published. */
 export function publishResultPage(ctx: PageContext, result: PublishStageResult): PageResult {
+  const action = publishAction(ctx, result.stage?.kind);
   if (result.refused !== null) return refusedPage(ctx, result.refused);
   const run = result.run!;
   const status = run.code === 0 ? 200 : run.code === 2 ? 400 : 409;
   return {
     status,
-    body: page(actionChrome(ctx, PUBLISH), html`${stepper(PACK_STEP_NAMES, run.code === 0 ? 4 : 2)}<div class="stack">${card({ title: '发布', meta: code('circle-hub pack publish <目录> --stage') }, runLines(run, null))}</div><p class="mt16">${run.code === 0 ? html`${link('/console/packs', '查看任务包')} · ` : ''}${link(PACK_BACK, '返回')}</p>`),
+    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, run.code === 0 ? 4 : 2)}<div class="stack">${card({ title: '发布', meta: code('circle-hub pack publish <目录> --stage') }, runLines(run, null))}</div><p class="mt16">${run.code === 0 ? html`${link(packHome(result.stage?.kind??publishingKind(ctx)).path,`查看${uiLabelOf('pack_kind',result.stage?.kind??publishingKind(ctx))}`)} · ` : ''}${link(action.back, '返回')}</p>`),
   };
 }
 
@@ -512,7 +529,8 @@ export async function runPackStep(ctx: PageContext, deps: ManageDeps, name: Pack
   if (name === 'pack-publish') return publishResultPage(ctx, await publishStage(ctx, deps, token, form.get('stage')));
   const discarded = await discardStage(ctx, deps, form.get('stage'));
   if (discarded === null) return refusedPage(ctx, { status: 404, message: NEUTRAL });
-  return { status: 200, body: page(actionChrome(ctx, PUBLISH), html`${card(null, html`<p>已放弃暂存的任务包 ${code(`${discarded.pack}@${discarded.version}`)}，暂存内容已删除。</p>`)}<p class="mt16">${link(PACK_BACK, '返回')}</p>`) };
+  const action = publishAction(ctx, discarded.kind);
+  return { status: 200, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已放弃暂存的${uiLabelOf('pack_kind',discarded.kind??publishingKind(ctx))} ${code(`${discarded.pack}@${discarded.version}`)}，暂存内容已删除。</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
 }
 
 /** Runs one action for `principal` (an administrator) with the session's token; the steps of 发布任务包 go to runPackStep. */
@@ -554,7 +572,7 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
 // ---------------------------------------------------------------- setup
 
 export type SetupOutcome =
-  | { ok: true; token: string; name: string }
+  | { ok: true; token: string; name: string; password: string | null }
   | { ok: false; status: number; message: string };
 
 /**
@@ -563,25 +581,28 @@ export type SetupOutcome =
  */
 export async function completeSetup(
   dataDir: string,
-  principals: { list(): Promise<{ role: string }[]>; bootstrapAdmin(name: string): Promise<{ user: { name: string }; token: { token: string } }> },
+  principals: { list(): Promise<{ role: string }[]>; bootstrapAdmin(name: string, credential?: {password:string;mustChange:boolean}): Promise<{ user: { name: string }; token: { token: string } }> },
   form: Form,
   now: Date = new Date(),
 ): Promise<SetupOutcome> {
-  if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的令牌登录' };
+  if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的用户名和密码登录' };
   const name = form.get('name');
   if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员姓名' };
   const check = await checkSetupCode(dataDir, form.get('code'), now);
   if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在 Hub 所在的主机上执行 circle-hub setup-code 生成' };
   if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
   if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
+  const supplied=form.get('password');
+  if (supplied && !validPassword(supplied)) return {ok:false,status:400,message:'密码须为 12 至 256 个字符，不含控制字符'};
+  const password=supplied || initialPassword();
   let created;
   try {
-    created = await principals.bootstrapAdmin(name);
+    created = await principals.bootstrapAdmin(name,{password,mustChange:supplied === ''});
   } catch (error) {
     return { ok: false, status: 409, message: error instanceof Error ? error.message : String(error) };
   }
   await removeSetupCode(dataDir);
-  return { ok: true, token: created.token.token, name: created.user.name };
+  return { ok: true, token: created.token.token, name: created.user.name, password: supplied ? null : password };
 }
 
 export function environmentOptions(selected = ''): Html {

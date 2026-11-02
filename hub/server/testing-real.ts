@@ -42,6 +42,7 @@ import { removeTree } from './assemble/files.ts';
 import type { LeaseService } from '../leases/service.ts';
 import { assembleHub, type AssembledHub } from './assemble/hub.ts';
 import type { ClientOptions, TestMcpClient, TestUser, ToolCallResult } from './testing.ts';
+import { SYNTHETIC_CONSOLE_PASSWORD, registerTestConsoleAccount } from './testing.ts';
 
 export type { ClientOptions, TestMcpClient, TestUser, ToolCallResult } from './testing.ts';
 
@@ -252,7 +253,9 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       // Outside the records' data directory, which records remove without unlocking read-only trees.
       extractDir: join(scratch, 'extracted'),
     });
-    const boot = await records.principals.bootstrapAdmin('管理员');
+    // Administrators sign in to the console with a password too (owner, 2026-11-02).
+    const boot = await records.principals.bootstrapAdmin('管理员', { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });
+    registerTestConsoleAccount(boot.token.token, boot.user.name);
     const admin: TestUser = { user: boot.user, principal: principalOf(boot.user), token: boot.token.token };
     await records.authorizations.grantPublishRight(admin.principal, admin.user.id, '测试 Hub 的管理员发布任务包');
 
@@ -316,12 +319,16 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       logs,
       leases: hub.leases,
       async createUser(name, role = 'user') {
-        const user = await records.principals.createUser(admin.principal, name, role);
+        // Members sign in to the console with a password (decision 83); the synthetic one never needs changing.
+        const user = await records.principals.createUser(admin.principal, name, role, { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });
         const token = await records.principals.issueToken(admin.principal, user.id, 'test');
+        registerTestConsoleAccount(token.token, name);
         return { user, principal: principalOf(user), token: token.token };
       },
       async issueToken(user) {
-        return (await records.principals.issueToken(admin.principal, user.id, 'test')).token;
+        const token = (await records.principals.issueToken(admin.principal, user.id, 'test')).token;
+        registerTestConsoleAccount(token, user.name);
+        return token;
       },
       async assignPack(user, packId) {
         await hub.registry.assign(admin.principal, user.id, packId);

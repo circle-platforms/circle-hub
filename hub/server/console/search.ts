@@ -154,9 +154,9 @@ async function memberNamed(ctx: PageContext, q: string): Promise<string | null> 
 export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const raw = ctx.url.searchParams.get('q') ?? '';
   const results = await searchHub(ctx, raw);
-  const chrome = ctx.chrome('搜索', { sub: results.q === '' ? '在任务、任务包、知识库与记录中查找' : `“${results.q}”的查找结果` });
+  const chrome = ctx.chrome('搜索', results.q === '' ? { hint: '在任务、工作流、知识库与记录中查找' } : { sub: `“${results.q}”的查找结果` });
   const form = html`<form class="filters" method="get" action="/console/search"><label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label><button type="submit">搜索</button></form>`;
-  if (results.q === '') return { status: 200, body: page(chrome, card(null, html`${form}<p class="sub mt12">可按任务的运行编号、任务包、产品线、版本、知识条目路径（以 / 开头）、工具名称或成员姓名查找。</p>`)) };
+  if (results.q === '') return { status: 200, body: page(chrome, card(null, html`${form}<p class="sub mt12">可按任务的运行编号、工作流、产品线、版本、知识条目路径（以 / 开头）、工具名称或成员姓名查找。</p>`)) };
   const partial = (yes: boolean, what: string) => (yes ? html`<p class="sub">${what}</p>` : '');
   const knowledgeRow = (hit: KnowledgeHit) => {
     if (hit.kind === 'line') return ['产品线', link('/console/knowledge/product', hit.title, { id: hit.product }), hit.names.join('、')];
@@ -166,13 +166,13 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const records = ctx.admin ? '/console/admin/calls' : '/console/records';
   const body = html`${card(null, form)}
 ${sectionHead('任务', `${results.tasks.length} 个`)}
-${card(null, html`${table(['任务', '任务包', '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), code(hit.pack), hit.runner ?? '—', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}
-${sectionHead('任务包', `${results.packs.length} 个`)}
-${card(null, table(['任务包', '名称', '类型'], results.packs.map((hit) => [link(`/console/packs/${hit.id}`, hit.id), hit.title, hit.kind_label]), '没有匹配的任务包'))}
+${card(null, html`${table(['任务', uiLabelOf('pack_kind', 'workflow'), '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), code(hit.pack), hit.runner ?? '—', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}
+${sectionHead('发布内容', `${results.packs.length} 个`)}
+${card(null, table(['标识', '名称', '类型'], results.packs.map((hit) => [link(`/console/packs/${hit.id}`, hit.id), hit.title, hit.kind_label]), '没有匹配的发布内容'))}
 ${sectionHead('知识库', `${results.knowledge.length} 项`)}
 ${card(null, html`${table(['类型', '名称', '所在'], results.knowledge.map(knowledgeRow), '没有匹配的知识')}${partial(results.partial.knowledge, `仅查找了前 ${MAX_LINES} 条产品线或前 ${MAX_ROOTS} 个当前版本，或匹配多于 ${SEARCH_MAX_HITS} 项；可能还有其他匹配。`)}`)}
 ${sectionHead('记录', `${results.records.length} 条`)}
 ${card(null, html`${table(['时间', '工具', '运行', ...(ctx.admin ? ['成员'] : [])], results.records.map((hit) => [when(hit.at), hit.tool_label, hit.run === null ? '—' : link(records, hit.run, { run: hit.run }), ...(ctx.admin ? [hit.user ?? '—'] : [])]), '没有匹配的记录')}${partial(results.partial.records, `仅查找了最近的 ${CALLS_SCANNED} 条调用记录，或匹配多于 ${SEARCH_MAX_HITS} 条；可能还有其他匹配。`)}`)}
-${ctx.admin ? html`${sectionHead('成员', `${results.members.length} 人`)}${card(null, table(['姓名', '角色', '编号'], results.members.map((hit) => [link('/console/settings', hit.name), hit.role_label, code(hit.id)]), '没有匹配的成员'))}` : ''}`;
+${ctx.admin ? html`${sectionHead('成员', `${results.members.length} 人`)}${card(null, table(['姓名', '角色', '编号'], results.members.map((hit) => [link(`/console/team/${hit.id}`, hit.name), hit.role_label, code(hit.id)]), '没有匹配的成员'))}` : ''}`;
   return { status: 200, body: page(chrome, body) };
 }

@@ -11,7 +11,7 @@ import { after, before, describe, test } from 'node:test';
 import { ConnectorError, Redactor, TrialLoginStops, forgetTrialLogin, readProfile, trialSystem, type ConnectorLogEvent } from '../connectors/api.ts';
 import { PLM_FUNCTIONS, PLM_PRODUCTS, agileFixture, plmSystem, startAgileStub, startPlmStub, writePack, type AgileStub, type PlmStub } from '../connectors/testing/api.ts';
 import type { PackHandle } from '../ports.ts';
-import { createTestServer, type TestServer } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer } from './testing.ts';
 
 const PASSWORD = 'Synthetic#Pass42';
 
@@ -34,7 +34,7 @@ before(async () => {
   const options = {
           store: server.records.store,
           load: async (ref: string) => {
-            if (ref !== 'plm-test') throw new ConnectorError('PACK_UNAVAILABLE', `系统包 ${ref} 不可用`);
+            if (ref !== 'plm-test') throw new ConnectorError('PACK_UNAVAILABLE', `业务系统接入 ${ref} 不可用`);
             return { pack: handle, profile: await readProfile(handle) };
           },
           redactor,
@@ -82,7 +82,7 @@ async function signIn(token: string): Promise<{ cookie: string; csrf: string }> 
   const reply = await send('/console/login', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}`, origin: origin() },
-    body: new URLSearchParams({ token, csrf: nonce }).toString(),
+    body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: nonce }).toString(),
   });
   assert.equal(reply.status, 303, reply.body);
   const cookie = `circle_hub_session=${valueOf(cookieOf(reply, 'circle_hub_session'))}`;

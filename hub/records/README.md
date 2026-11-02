@@ -1,5 +1,9 @@
 # records
 
+Decision 83, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.
+
+Decision 83, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.
+
 Persistence layer and identity primitives of the Hub: model elements B01 B02 B04 B05 B08, R01 and R02 (visibility).
 The package owns `hub/records/**`, `hub/config/**` and `hub/testing/**`. Other packages code against
 `hub/records/api.ts` (types and pure helpers) and open the kit through `hub/records/index.ts`.
@@ -31,6 +35,19 @@ const kit = await openRecords(loadConfig(process.env), { keyProvider, migrate: f
 | `../testing` | | `startPostgres()` (temporary cluster from the embedded binaries), `openTestRecords()` |
 
 ## Storage
+
+Decision 83 adds migration 8 for console passwords. User rows hold a random-salt scrypt digest and a mandatory-first-change
+flag, never plaintext. Password revisions prevent a verification from creating a session after a concurrent reset.
+Password changes and administrator resets append a `user_history` snapshot marked `password_changed`, revoke all console
+credentials and preserve the account's Circle tokens. Console credentials expire after 12 hours and are excluded from
+device listings; disabling an account still invalidates every credential. Existing accounts retain their identifiers and
+tokens; administrators without a password can use their existing backup token and reset a password on Team.
+
+The scrypt parameters are N=131072, r=8, p=1, with two concurrent derivations per process and constant-time comparison.
+See [OWASP's password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
+and [Node 24 crypto](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback).
+User/list APIs never return password material. The existing migration snapshots cover the appended migration; applied SQL
+remains unchanged. Runtime UPDATE grants include only the new password columns in addition to the existing mutable fields.
 
 Tables (migration 1, `records`): `records` (seq, id, digest, kind, schema, provenance, created_at, body, size),
 `record_index` (key, value, digest, record_seq), `objects` (sha256, size, media_type, created_at), `users`,
@@ -202,7 +219,7 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     before the query, so callers never see a raw driver error for their input.
 16. **Two database roles** (append-only must hold against the running Hub itself): the owner role applies migrations
     (`migrateRecords`) and grants the runtime role exactly `RUNTIME_GRANTS`: SELECT and INSERT on the history tables, the
-    column UPDATEs the mutable tables need (users: role, disabled, updated_at; tokens: last_used_at, revoked_at, revoked_by;
+    column UPDATEs the mutable tables need (users: role, disabled, updated_at and password fields; tokens: last_used_at, revoked_at, revoked_by;
     pointers: target, version, moved_at, action_digest), SELECT on `schema_migrations`; no DELETE, TRUNCATE or DDL, and
     not the owner, so it cannot `DISABLE TRIGGER` either (all refused with 42501). `grantRuntime` refuses a runtime role
     that owns the tables. The runtime role opens the kit with `migrate: false`, which only verifies that exactly this

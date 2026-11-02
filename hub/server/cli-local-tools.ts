@@ -50,7 +50,7 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
     case 'mismatch':
       return `本地工具核对未通过；第一处不符 ${reason.path}；重新核对来源和本地目录后重试`;
     case 'digest':
-      return '必须给出 --digest <包号>；从控制台任务包页或运行摘要的 pack_digest 抄下包号后再试';
+      return '必须给出 --digest <包号>；从控制台工作流页或运行摘要的 pack_digest 抄下包号后再试';
     case 'into':
       return '必须给出 --into <目录>；安装只写到这个目录里';
     case 'address':

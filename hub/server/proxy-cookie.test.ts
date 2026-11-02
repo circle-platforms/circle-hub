@@ -5,7 +5,21 @@ import { createApp } from './app.ts';
 import type { ServerDeps } from './api.ts';
 
 interface Reply { status: number; cookies: string[]; body: string }
-const token = 't'.repeat(43);
+/** The administrator signs in with a password, as every account does; each sign-in opens its own console token. */
+const admin = { id: 'synthetic-user', name: 'synthetic', role: 'admin' as const };
+const password = 'synthetic-proxy-password';
+const consoleTokens = new Set<string>();
+const principals = {
+  verifyPassword: async (name: string, given: string) => (name === admin.name && given === password ? { user: admin, revision: 1, mustChange: false } : null),
+  openConsoleSession: async (userId: string, revision: number) => {
+    if (userId !== admin.id || revision !== 1) return null;
+    const token = String(consoleTokens.size + 1).padStart(43, 't');
+    consoleTokens.add(token);
+    return { token };
+  },
+  passwordState: async () => ({ configured: true, mustChange: false, revision: 1 }),
+  authenticate: async (value: string | null) => (consoleTokens.has(String(value).replace(/^Bearer /, '')) ? admin : null),
+};
 const csrf = (reply: Reply) => /name="csrf" value="([^"]+)"/.exec(reply.body)?.[1] ?? '';
 const namedCookie = (reply: Reply, name: string) => reply.cookies.find(value => value.startsWith(`${name}=`)) ?? '';
 const valueOf = (value: string) => value.split(';')[0]!.split('=').slice(1).join('=');
@@ -13,7 +27,7 @@ const valueOf = (value: string) => value.split(';')[0]!.split('=').slice(1).join
 test('trusted proxy cookies are Secure and HTTPS and HTTP sessions cannot be replayed across channels', async () => {
   const deps = {
     config: { host: '127.0.0.1', port: 0, allowedHosts: ['hub.example'], proxyOrigin: 'https://hub.example', proxyPeer: '127.0.0.1', limits: { maxRequestBytes: 1024 } },
-    records: { principals: { authenticate: async (value: string | null) => value === `Bearer ${token}` ? { id: 'synthetic-user', name: 'synthetic', role: 'user' } : null } },
+    records: { principals },
     runs: { listRuns: async () => ({ items: [], next: null }) }, knowledge: {},
   } as unknown as ServerDeps;
   const app = createApp(deps, { log: () => {} });
@@ -25,7 +39,7 @@ test('trusted proxy cookies are Secure and HTTPS and HTTP sessions cannot be rep
     });
     req.once('error', reject); req.end(body);
   });
-  const form = (nonce: string) => new URLSearchParams({ csrf: nonce, token }).toString();
+  const form = (nonce: string) => new URLSearchParams({ csrf: nonce, username: admin.name, password }).toString();
   const headers = (origin: string, cookie: string) => ({ origin, cookie, 'content-type': 'application/x-www-form-urlencoded' });
   const secureHost = 'hub.example';
   const plainHost = `hub.example:${port}`;

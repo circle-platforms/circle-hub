@@ -13,9 +13,12 @@ import type { CommandBridge, CommandInput } from './command-bridge.ts';
 
 interface User { id: string; name: string; role: 'user' | 'admin'; disabled: boolean; created_at: string; updated_at: string }
 
+/** The token of each account's console session: what openConsoleSession issues and the commands then act with. */
 const ADMIN_TOKEN = 'A'.repeat(43);
 const MEMBER_TOKEN = 'M'.repeat(43);
 const TOKENS = new Map([[ADMIN_TOKEN, 'usr_00000000000000000000000001'], [MEMBER_TOKEN, 'usr_00000000000000000000000002']]);
+/** Every synthetic account, administrators included, signs in to the console with this password; a token never does. */
+const PASSWORD = 'synthetic-api-password';
 const users: User[] = [
   { id: 'usr_00000000000000000000000001', name: 'root', role: 'admin', disabled: false, created_at: '2026-11-01T00:00:00.000Z', updated_at: '2026-11-01T00:00:00.000Z' },
   { id: 'usr_00000000000000000000000002', name: 'bob', role: 'user', disabled: false, created_at: '2026-11-01T00:00:00.000Z', updated_at: '2026-11-01T00:00:00.000Z' },
@@ -26,6 +29,7 @@ const bridge: CommandBridge = {
   async run(argv, input) {
     calls.push({ argv, input });
     if (argv.includes('fails')) return { code: 1, stdout: [], stderr: ['用户名已经存在'] };
+    if (argv[0] === 'user' && argv[1] === 'create') return {code:0,stdout:['初始密码（仅显示一次，首次登录必须修改）：','p'.repeat(24)],stderr:[]};
     if (argv[0] === 'user' && argv[1] === 'invite') return { code: 0, stdout: [`已为 ${argv[2]} 签发邀请码，2026-11-02T00:00:00.000Z 前有效，仅可使用一次。邀请码只显示这一次：`, 'ABCD-EFGH-JKMN', '成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码'], stderr: [] };
     if (argv[0] === 'token' && argv[1] === 'issue') return { code: 0, stdout: ['已签发令牌 tok_synthetic。令牌只显示这一次：', 'T'.repeat(43)], stderr: [] };
     if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: [`发布校验通过：synthetic-pack@1.0.0，检查目录 ${argv[2]}`, '试运行：没有发布，也没有写入任何内容'], stderr: [] };
@@ -35,6 +39,15 @@ const bridge: CommandBridge = {
 };
 
 const principals = {
+  async verifyPassword(name: string, password: string) {
+    const user=users.find(user=>user.name===name && !user.disabled);
+    return user && password===PASSWORD ? {user,revision:1,mustChange:false} : null;
+  },
+  async openConsoleSession(id:string) {
+    const token=[...TOKENS].find(([,user])=>user===id)?.[0];
+    return token === undefined ? null : {token};
+  },
+  async passwordState() {return {configured:true,mustChange:false,revision:1};},
   async authenticate(header: string | null | undefined) {
     const id = TOKENS.get(String(header).replace(/^Bearer /, ''));
     const user = users.find((u) => u.id === id && !u.disabled);
@@ -93,11 +106,12 @@ function send(method: string, path: string, options: { cookie?: string; body?: s
   });
 }
 
-async function signIn(token: string, at = port): Promise<{ cookie: string; csrf: string }> {
+/** Signs an account in with its username and password, as every account does. */
+async function signIn(username: string, at = port): Promise<{ cookie: string; csrf: string }> {
   const page = await send('GET', '/console/login', { port: at, origin: null });
   const nonce = /name="csrf" value="([^"]+)"/.exec(page.body)![1];
   const loginCookie = ([] as string[]).concat(page.headers['set-cookie'] ?? []).find((c) => c.startsWith('circle_hub_login='))!.split(';')[0];
-  const reply = await send('POST', '/console/login', { port: at, cookie: loginCookie, type: 'application/x-www-form-urlencoded', body: new URLSearchParams({ token, csrf: nonce }).toString() });
+  const reply = await send('POST', '/console/login', { port: at, cookie: loginCookie, type: 'application/x-www-form-urlencoded', body: new URLSearchParams({ username, password: PASSWORD, csrf: nonce }).toString() });
   assert.equal(reply.status, 303, reply.body);
   const cookie = ([] as string[]).concat(reply.headers['set-cookie'] ?? []).find((c) => c.startsWith('circle_hub_session='))!.split(';')[0];
   const me = JSON.parse((await send('GET', '/console/api/me', { port: at, cookie, origin: null })).body);
@@ -109,8 +123,8 @@ const post = (path: string, body: unknown, who = admin, extra: { origin?: string
   send('POST', `/console/api/${path}`, { cookie: who.cookie, csrf: extra.csrf ?? who.csrf, body: typeof body === 'string' ? body : JSON.stringify(body), ...(extra.type ? { type: extra.type } : {}), ...('origin' in extra ? { origin: extra.origin } : {}) });
 
 test('a write needs this console\'s Origin, the session\'s CSRF token in its header, a JSON object and an administrator', async () => {
-  admin = await signIn(ADMIN_TOKEN);
-  const member = await signIn(MEMBER_TOKEN);
+  admin = await signIn('root');
+  const member = await signIn('bob');
   calls.length = 0;
   assert.equal((await post('members', { name: 'carol' }, admin, { origin: null })).status, 403, 'no Origin');
   assert.equal((await post('members', { name: 'carol' }, admin, { origin: 'http://192.0.2.1' })).status, 403, 'a foreign Origin');
@@ -137,6 +151,8 @@ test('adding a member runs user create then user invite and answers the invitati
   assert.deepEqual(calls.map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
   assert.ok(calls.every((call) => call.input.token === ADMIN_TOKEN), 'the commands act as the signed-in administrator');
   const body = JSON.parse(reply.body);
+  assert.equal(body.initial_password,'p'.repeat(24));
+  assert.equal(body.must_change_password,true);
   assert.equal(body.invitation, 'ABCD-EFGH-JKMN');
   assert.deepEqual(body.circle_entry.mcp_servers[0], { name: 'circle-hub', url: `http://127.0.0.1:${port}/mcp`, transport: 'streamable_http' });
   assert.deepEqual(body.steps.map((step: { command: string }) => step.command), ['circle-hub user create carol --role=user', 'circle-hub user invite carol']);
@@ -214,7 +230,7 @@ test('a task pack is checked from its zip into a stage, then published by the ad
   // Another administrator's session cannot publish it: the stage belongs to the one who checked it.
   users.push({ id: 'usr_00000000000000000000000003', name: 'root2', role: 'admin', disabled: false, created_at: users[0].created_at, updated_at: users[0].updated_at });
   TOKENS.set('C'.repeat(43), 'usr_00000000000000000000000003');
-  const other = await signIn('C'.repeat(43));
+  const other = await signIn('root2');
   assert.equal((await post(`packs/stage/${answer.stage.id}/publish`, {}, other)).status, 404);
 
   const published = await post(answer.publish_url.replace('/console/api/', ''), {});
@@ -230,7 +246,7 @@ test('a task pack is checked from its zip into a stage, then published by the ad
 });
 
 test('without a command bridge the operations answer 503 and point to the administrator\'s Circle', async () => {
-  const bare = await signIn(ADMIN_TOKEN, barePort);
+  const bare = await signIn('root', barePort);
   const reply = await send('POST', '/console/api/members', { port: barePort, cookie: bare.cookie, csrf: bare.csrf, body: JSON.stringify({ name: 'carol' }) });
   assert.equal(reply.status, 503);
   assert.match(JSON.parse(reply.body).fix, /管理员的 Circle/);

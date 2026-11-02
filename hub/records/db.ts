@@ -28,7 +28,7 @@ export function createPool(config: DatabaseConfig, max = 10): pg.Pool {
     database: config.database,
     user: config.user,
     password: async () => {
-      if (password === undefined) throw new RecordsError('数据库要求口令，但没有配置口令；口令只经密钥库提供，不从环境变量或口令文件读取');
+      if (password === undefined) throw new RecordsError('数据库要求密码，但没有配置密码；密码只经密钥库提供，不从环境变量或密码文件读取');
       return password;
     },
     ssl: false,

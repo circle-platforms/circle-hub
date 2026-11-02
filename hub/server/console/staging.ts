@@ -7,6 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isPackKind, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, manifestDigest } from '../../runs/api.ts';
 
 export const STAGE_TTL_MS = 30 * 60 * 1000;
@@ -21,6 +22,8 @@ export interface StagedPack {
   /** The pack's id and version as its pack.json names them. */
   pack: string;
   version: string;
+  /** Presentation metadata only; the command remains responsible for all manifest validation. */
+  kind?: PackKind;
   /** The pack digest that passed the check: a publication of the stage must still have it. */
   digest: string;
   created: number;
@@ -36,11 +39,11 @@ interface Entry {
 }
 
 /** The pack digest of the pack.json in `dir` (SHA-256 of its canonical JSON); null when it cannot be read. */
-export async function stagedDigest(dir: string): Promise<{ digest: string; pack: string; version: string } | null> {
+export async function stagedDigest(dir: string): Promise<{ digest: string; pack: string; version: string; kind?: PackKind } | null> {
   try {
-    const manifest = JSON.parse(await readFile(join(dir, MANIFEST_FILE), 'utf8')) as { id?: unknown; version?: unknown };
+    const manifest = JSON.parse(await readFile(join(dir, MANIFEST_FILE), 'utf8')) as { id?: unknown; version?: unknown; kind?: unknown };
     if (typeof manifest.id !== 'string' || typeof manifest.version !== 'string') return null;
-    return { digest: manifestDigest(manifest), pack: manifest.id, version: manifest.version };
+    return { digest: manifestDigest(manifest), pack: manifest.id, version: manifest.version, ...(isPackKind(manifest.kind)?{kind:manifest.kind}:{}) };
   } catch {
     return null;
   }

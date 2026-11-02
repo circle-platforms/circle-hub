@@ -24,6 +24,7 @@ import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOption
 import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
+import { initialPassword } from '../records/api.ts';
 import { issueSetupCode } from './setup-code.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
@@ -46,8 +47,8 @@ interface ReservedCommandDescriptions {
   readonly 'operator-token':string;
 }
 const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
-  pack: '管理任务包',
-  skill:'管理通用技能包的迁移声明',
+  pack: '管理工作流',
+  skill:'管理通用技能的迁移声明',
   resource: '管理资源声明',
   secret: '管理密钥库条目',
   knowledge: '读取和管理知识树',
@@ -78,8 +79,9 @@ function usage(extra: readonly CliCommand[]): string {
     '',
     `  ${SERVE_USAGE}`,
     `  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先建第一位管理员，并只显示一次它的令牌`,
-    '  user list                                    列出用户',
+    '  user list [--json]                           列出用户（JSON 不含密码摘要或令牌）',
     '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）',
+    '  user password-reset <用户>                   重置初始密码，只显示一次；首次登录须修改，控制台会话立即失效',
     '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它',
     '  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误',
     '  token revoke <令牌编号>                        撤销令牌（立即生效）',
@@ -219,23 +221,42 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const admins = (await kit.principals.list()).filter((user) => user.role === 'admin');
     if (admins.length === 0) {
       if (role !== 'admin') throw new CliError('还没有管理员', '先建第一位管理员：circle-hub init-admin <名字>（令牌存进钥匙串），或 circle-hub user create <名字> --role admin（令牌显示一次）');
-      const { user, token } = await kit.principals.bootstrapAdmin(positionals[0]);
+      const password = initialPassword();
+      const { user, token } = await kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:true});
+      io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
+      io.stdout(password);
       out(io, `已建立第一位管理员 ${user.name}（${user.id}）`);
       io.stdout(`它的令牌 ${token.id} 只显示这一次，请立即保存到只有你能读的地方：`);
       io.stdout(token.token);
       return 0;
     }
     const by = await operatorOf(ctx, options);
-    const user = await kit.principals.createUser(by, positionals[0], role);
+    const password = initialPassword();
+    const user = await kit.principals.createUser(by, positionals[0], role, {password,mustChange:true});
+    io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
+    io.stdout(password);
     out(io, `已建立用户 ${user.name}（${user.id}，${roleText(user.role)}）；令牌用 circle-hub token issue ${user.name} 签发`);
     return 0;
   }
   if (sub === 'list') {
-    parse(rest, {}, 0);
+    const { values } = parse(rest, { json: { type: 'boolean' } }, 0);
     const kit = await ctx.records();
     const users = await kit.principals.list();
+    if (values.json) { io.stdout(jsonSafe(JSON.stringify(users))); return 0; }
     if (users.length === 0) io.stdout('还没有用户');
-    for (const user of users) out(io, [user.id, user.name, roleText(user.role), user.disabled ? '停用' : '启用', user.created_at].join('\t'));
+    for (const user of users) out(io, [user.id, user.name, roleText(user.role), labelOf('account_status', user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
+    return 0;
+  }
+  if (sub === 'password-reset') {
+    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
+    noAs(values.as);
+    const by = await operatorOf(ctx, options);
+    const kit = await ctx.records();
+    const user = await requireUser(kit, positionals[0]);
+    const password = await kit.principals.resetPassword(by, user.id);
+    out(io, `已重置 ${user.name}（${user.id}）的密码；该账户的控制台会话已失效`);
+    io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
+    io.stdout(password);
     return 0;
   }
   if (sub === 'disable' || sub === 'enable') {
@@ -245,7 +266,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const kit = await ctx.records();
     const user = await requireUser(kit, positionals[0]);
     const changed = await kit.principals.setDisabled(act.admin, user.id, sub === 'disable');
-    out(io, `${changed.name}（${changed.id}）已${changed.disabled ? '停用：它的令牌立即失效' : '恢复'}`);
+    out(io, `${changed.name}（${changed.id}）${labelOf('account_status', changed.disabled ? 'disabled' : 'enabled')}${changed.disabled ? '：它的令牌立即失效' : ''}`);
     // Disabling the operator token's own account cuts it off: say so, and how to recover (records keep an enabled admin).
     if (changed.disabled) await sayIfLost(io, act);
     return 0;
@@ -262,7 +283,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     io.stdout('成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码');
     return 0;
   }
-  throw new UsageError('user 的子命令是 create、list、disable、enable 或 invite');
+  throw new UsageError('user 的子命令是 create、list、disable、enable、password-reset 或 invite');
 }
 
 async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
@@ -465,7 +486,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   }
   // Item ids and labels come from users' documents, build names from the build site: every line is made safe.
   const run = detail.run;
-  out(io, `运行 ${run.run}：任务包 ${run.pack}，开始于 ${run.started_at}`);
+  out(io, `运行 ${run.run}：工作流 ${run.pack}，开始于 ${run.started_at}`);
   out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
   out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
   if(detail.management)out(io,'管理状态：已放弃；选择来源 rec:'+detail.management.record+(detail.management.result?'':'；管理投影等待 Hub 自动补齐')) ;

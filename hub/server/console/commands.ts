@@ -21,6 +21,14 @@ function dialogId(operation: string, object: string): string {
 }
 
 export const commands = {
+  memberPack: (user: string, pack: string, assigned: boolean): CommandDialog => ({
+    id: dialogId(`member-pack-${user}`, pack), title: '调整工作流使用范围',
+    text: '调整后对该成员的新任务生效；已有运行记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
+  }),
+  memberPublish: (user: string, granted: boolean): CommandDialog => ({
+    id: dialogId('member-publish', user), title: '调整发布权',
+    text: '发布权只允许发布本人拥有的内容。', command: command('pack', granted ? 'revoke-publish' : 'grant-publish', user),
+  }),
   userDisable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-disable', user.id), title: `停用成员 ${user.name}`,
     text: '停用后该成员的全部 Circle 与控制台会话立即失效；记录保留，可再启用。', command: command('user', 'disable', user.id),
@@ -38,8 +46,8 @@ export const commands = {
     text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的 Circle 打开授权页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
   }),
   tokenIssue: (user: { id: string; name: string }): CommandDialog => ({
-    id: dialogId('token-issue', user.id), title: `签发备用登录令牌：${user.name}`,
-    text: '新令牌仅在签发时显示一次；用于 Circle 不可用时登录控制台，也可写入新的 Circle。', command: command('token', 'issue', user.id, '--label=备用登录'),
+    id: dialogId('token-issue', user.id), title: `签发 Circle 访问令牌：${user.name}`,
+    text: '新令牌仅在签发时显示一次，只用于连接 Circle，不能登录控制台；所有账户都用用户名和密码登录控制台。', command: command('token', 'issue', user.id, '--label=Circle'),
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
@@ -63,14 +71,14 @@ export const commands = {
   }),
   packMaintainer: (pack: string): CommandDialog => ({
     id: dialogId('pack-maintainer', pack), title: '调整维护人',
-    text: `维护人可发布任务包的新版本；${pack} 的新版本只能由其所有者发布。`, command: `${command('pack', 'grant-publish', '成员编号')}\n${command('pack', 'revoke-publish', '成员编号')}`,
+    text: `维护人可发布新版本；${pack} 的新版本只能由其所有者发布。`, command: `${command('pack', 'grant-publish', '成员编号')}\n${command('pack', 'revoke-publish', '成员编号')}`,
   }),
   packRetire: (ref: string): CommandDialog => ({
     id: dialogId('pack-retire', ref), title: `退役版本 ${ref}`,
     text: '退役后该版本不再可用于新任务；已有任务照旧可读、可完成。', command: command('pack', 'retire', ref),
   }),
   packActivate: (pack: string, active: boolean): CommandDialog => ({
-    id: dialogId(active ? 'pack-deactivate' : 'pack-activate', pack), title: `${active ? '停用' : '启用'}产品包 ${pack}`,
+    id: dialogId(active ? 'pack-deactivate' : 'pack-activate', pack), title: `${active ? '停用' : '启用'}产品知识来源 ${pack}`,
     text: active ? '停用后该产品线的知识不再对全 Hub 生效。' : '启用后该产品线的知识对全 Hub 生效。', command: command('pack', active ? 'deactivate' : 'activate', pack),
   }),
   executorDisable: (executor: { id: string; target: string }): CommandDialog => ({

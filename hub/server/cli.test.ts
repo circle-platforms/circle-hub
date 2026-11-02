@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { FileKeyProvider, MIGRATIONS, openRecords } from '../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import type { AssemblyModule, CliCommand, CliIo } from './api.ts';
@@ -156,7 +157,7 @@ describe('serve', () => {
     const env = await migrated();
     const result = await run(['serve'], env, { assembly: missingAssembly });
     assert.equal(result.code, 1);
-    assert.match(result.text, /错误：这个装配模块是占位，没有接上运行、知识、任务包和资源这几个包（默认的 hub\/server\/assemble\.ts 会接上）/);
+    assert.match(result.text, /错误：这个装配模块是占位，没有接上运行、知识、工作流和资源这几个包（默认的 hub\/server\/assemble\.ts 会接上）/);
   });
 
   test('serve refuses an operator token in its environment, by name and without its value, before anything starts', async () => {
@@ -248,7 +249,7 @@ describe('users, tokens and logs', () => {
     assert.match(listed.text, /笔记本/);
     const users = await run(['user', 'list'], env);
     assert.match(users.text, /根管理员\t管理员/);
-    assert.match(users.text, /甲\t用户\t启用/);
+    assert.ok(users.text.includes(`甲\t用户\t${labelOf('account_status', 'enabled')}`));
 
     const kit = await openRecords(loadServerConfig(env), { migrate: false });
     try {
@@ -452,7 +453,7 @@ process.exitCode = await main(['token', 'issue', '甲', '--raw'], { keyProvider:
     for (const line of shown.out) assert.ok(!raw.some((char) => line.includes(char)), `a raw control character reached the terminal: ${JSON.stringify(line)}`);
     assert.ok(shown.out.includes(`- 已交付 doc:n1\\x1b[1A\\x0d伪造 标题ok\\x1b[2J\\x1b]0;pwned\\x07\\x1b]52;c;ZWNobyBoaQ==\\x07\\x9b31m\\u202e反向`), shown.text);
     assert.ok(shown.out.some((line) => line.includes('构建 b-2.1\\x1b[2K')));
-    assert.ok(shown.out.some((line) => line.includes('任务包 review@1.0.0\\u2028伪造的行')));
+    assert.ok(shown.out.some((line) => line.includes('工作流 review@1.0.0\\u2028伪造的行')));
     const json = await run(['run', 'show', run0, '--json'], env, { assembly: async () => assembly });
     assert.equal(json.code, 0);
     const text = json.out.join('\n');
@@ -561,13 +562,13 @@ describe('commands of other packages', () => {
     const result = await run(['demo-check', 'a'], env);
     assert.equal(result.code, 0, result.text);
     assert.deepEqual(seen, [['a', '根管理员', '1']]);
-    const packCommand: CliCommand = { name: 'pack', summary: '合成的任务包命令', run: async (args, ctx) => (ctx.io.stdout(`pack ${args.join(' ')}`), 0) };
+    const packCommand: CliCommand = { name: 'pack', summary: '合成的工作流命令', run: async (args, ctx) => (ctx.io.stdout(`pack ${args.join(' ')}`), 0) };
     const assembly: AssemblyModule = { assemble: () => Promise.reject(new Error('not used')), registerCommands: (register) => register(packCommand) };
     const pack = await run(['pack', 'list'], env, { assembly: async () => assembly });
     assert.equal(pack.code, 0, pack.text);
     assert.deepEqual(pack.out, ['pack list']);
     const help = await run(['help'], env, { assembly: async () => assembly });
-    assert.match(help.text, /合成的任务包命令/);
+    assert.match(help.text, /合成的工作流命令/);
   });
 
   test('run show reads through the module\'s command-time assembly with the CLI\'s stderr, never serve\'s', async () => {

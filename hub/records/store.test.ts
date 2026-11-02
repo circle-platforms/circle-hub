@@ -378,7 +378,7 @@ test('the pool never falls back to a password file or PG* variables when the ser
   const { password: _password, ...withoutPassword } = postgres.config;
   const db = new Database(createPool(withoutPassword, 1));
   try {
-    await assert.rejects(db.query('SELECT 1'), /口令只经密钥库提供/);
+    await assert.rejects(db.query('SELECT 1'), /密码只经密钥库提供/);
   } finally {
     await db.end();
   }

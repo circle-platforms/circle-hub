@@ -1,5 +1,9 @@
 # hub/server assembly
 
+Decision 85 changes only server-owned display text in this package: registry log prefixes describe publication and
+sandbox notices cover scripts from all published kinds. CLI kind and publication-state text comes from generated display
+labels. Pack validation, engine decisions, permission rules and supplied diagnostic text are unchanged.
+
 The assembly plugs the real packages into the server core: `hub/server/assemble.ts` (the `AssemblyModule` that `serve`
 and the CLI load), the administrator commands `hub/server/cli-admin.ts`, the in-process real Hub for acceptance tests
 `hub/server/testing-real.ts`, and the modules and tests under `hub/server/assemble/`. Brief sections 3, 4, 5, 6 and 9;

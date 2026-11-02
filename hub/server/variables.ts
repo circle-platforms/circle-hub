@@ -36,7 +36,7 @@ export interface VariableCommandSession {
     err(line: string): void;
 }
 export const VAR_USAGE = 'var set <名字> [--file <文件>] [--text] [--not-secret] --reason <理由> | unset <名字> --reason <理由> | list [--run <运行> | --root <根摘要>] | show <名字> [--history] [--value]';
-export const NAMED_SECRET_USAGE = 'secret set --name <名字>… [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> | unset --name <名字> --reason <理由> | list | show --name <名字> [--history] | import --env-file <文件> --key <键>=<名字>… [--basic <用户键>:<口令键>=<名字>] [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> [--dry-run]';
+export const NAMED_SECRET_USAGE = 'secret set --name <名字>… [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> | unset --name <名字> --reason <理由> | list | show --name <名字> [--history] | import --env-file <文件> --key <键>=<名字>… [--basic <用户键>:<密码键>=<名字>] [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> [--dry-run]';
 const CONFIG = 'resource_config' satisfies PermissionKind;
 export interface DeploymentDefinition {
     key: string;
@@ -545,7 +545,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                     const at = input.indexOf('=');
                     const keys = input.slice(0, at).split(':');
                     if (at <= 0 || keys.length !== (basic ? 2 : 1) || keys.some(k => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || scanForCredentials(Buffer.from(k)).findings.length > 0))
-                        throw new UsageError(`第 ${++index} 个映射格式无效；写成 键=名字 或 用户键:口令键=名字`);
+                        throw new UsageError(`第 ${++index} 个映射格式无效；写成 键=名字 或 用户键:密码键=名字`);
                     mappings.push({ name: nameInput(input.slice(at + 1), index++, 'secret'), keys, basic });
                 }
             if (!v['env-file'] || !mappings.length)
@@ -590,7 +590,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 const definition = definitions.find(d => d.id === used.definition)!;
                 const pack = await (await s.hub(false)).packs.pack(definition.body.system_pack);
                 if (!pack || pack.kind !== 'system' || pack.digest !== definition.body.system_pack_digest)
-                    throw new CliError('凭据使用者的系统包不可核对；请先 update 绑定可用系统包');
+                    throw new CliError('凭据使用者的业务系统接入不可核对；请先 update 绑定可用业务系统接入');
                 const profile = await readProfile(pack);
                 const auth = profile.auth;
                 profileCache.set(used.definition + '/' + used.item, auth.kind === 'static_header' && auth.header.name.toLowerCase() === 'authorization' && auth.header.scheme === 'raw' && auth.credential === used.item && used.required === 'plain');
@@ -605,7 +605,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 const bad = used.find(c => profileCache.get(c.definition + '/' + c.item) !== true);
                 if (bad) {
                     const definition = definitions.find(d => d.id === bad.definition)!;
-                    throw new CliError(`Basic 只用于原样存整个 Authorization 头；资源 ${bad.definition} 的凭据项 ${bad.item}（系统包 ${String(definition.body.system_pack ?? '无')}）不合：按真实声明改用 --key，或给正确的原样 Authorization 凭据项换一个名字`);
+                    throw new CliError(`Basic 只用于原样存整个 Authorization 头；资源 ${bad.definition} 的凭据项 ${bad.item}（业务系统接入 ${String(definition.body.system_pack ?? '无')}）不合：按真实声明改用 --key，或给正确的原样 Authorization 凭据项换一个名字`);
                 }
             }
             s.out(`密钥 ${mapping.name} 的本版使用者：${used.map(c => c.definition + '/' + c.item).join('、')}`);

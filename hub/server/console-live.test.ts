@@ -17,7 +17,7 @@ import { LIVE_EVENTS, environmentTransition, eventsOf, visibleTo, wantedEvents, 
 import type { PageContext } from './console/pages.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
 import { SessionStore } from './console/session.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 const LIVE = { pollMs: 40, heartbeatMs: 250 };
 let postgres: TemporaryPostgres;
@@ -63,7 +63,7 @@ async function signIn(token: string, port = server.port): Promise<string> {
   const reply = await send(port, '/console/login', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}` },
-    body: new URLSearchParams({ token, csrf: nonce }).toString(),
+    body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: nonce }).toString(),
   });
   assert.equal(reply.status, 303, reply.body);
   return `circle_hub_session=${valueOf(cookieOf(reply, 'circle_hub_session'))}`;
@@ -229,7 +229,7 @@ describe('the event stream', () => {
     await Promise.all([admin.ended, own.ended, theirs.ended]);
   });
 
-  test('a stream ends when its session signs out and when its token is revoked', async () => {
+  test('a stream ends when its session signs out and when its password is reset', async () => {
     const user = await member();
     const session = await signIn(user.token);
     const first = await openStream('/console/api/stream', session);
@@ -241,7 +241,7 @@ describe('the event stream', () => {
     const token = await server.issueToken(user.principal);
     const second = await openStream('/console/api/stream', await signIn(token));
     await delay(100);
-    for (const t of await server.records.principals.tokens(user.user.id)) if (t.revoked_at === null) assert.ok(await server.records.principals.revokeToken(server.admin.principal, t.id));
+    await server.records.principals.resetPassword(server.admin.principal,user.user.id);
     await until(second.isEnded, 'the end after revocation', 3_000);
   });
 

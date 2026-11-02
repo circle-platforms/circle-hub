@@ -1,5 +1,30 @@
 # hub/server
 
+Decision 85, item 2: the 工作流 navigation entry retains `/console/packs` so existing links stay valid. The page separates
+工作流 from 通用技能 using generated kind labels and title hover explanations. Workflow details show acceptance requirements
+in a full-width section above checks and version controls; the old stage graph is removed. Publication states derive from
+the existing catalog fields through the generated `pack_status` display axis.
+
+Decision 85, item 3: knowledge lists 产品知识来源 and connections lists 业务系统接入, with details returning to the matching
+place. These lists use the existing permission-filtered pack catalog. Product lines come only from the active declaration
+for the displayed version; absent metadata stays unknown. System mappings show existing resource bindings and their actual
+versions without calling business systems. Members retain their existing knowledge access; the move grants no catalog rights.
+
+Decision 85, item 4: server-owned console, CLI and answer text use the new display terms. Publication still uses the same
+upload/check/publish commands and authorization; `?kind=product` and `?kind=system` select the title and return location.
+Staged results retain the uploaded manifest's actual kind for display, without rewriting it or changing API payloads.
+Stored records, author-provided content and diagnostics supplied by other packages are shown without rewriting their text.
+
+Decision 85, item 5: after a successful console-bridged `user password-reset`, the console clears only that account's
+`account:<username>` login-attempt counter. A refused form or failed command clears nothing; other accounts and peer-based
+backup-login limits retain their counters. The existing administrator checks, command bridge and first-change requirement apply.
+
+Decision 83, second round item 5: `user list --json` emits public account fields only (no password material or tokens). The installer uses it after deployment migrations to distinguish existing administrators from incomplete initialization.
+
+Decision 83, second round item 4: `circle-hub user password-reset <user>` uses the host operator’s administrator identity, generates a one-time initial password and requires its first-use change. It appends the existing password-change history and revokes console credentials; account-bound MCP tokens remain valid. This command also recovers the sole administrator before the initial password was changed. Team resets run that command through the management bridge at `POST /console/admin/do/password-reset`; the old direct page reset route is absent. Administrator backup failures have separate counters for each socket peer; username failures still share the account counter across sources.
+
+Decision 83, second round item 3: Chinese account, login and credential instructions consistently use “密码”, including console forms, CLI output and errors. Legacy source words remain recognized by the credential scanner.
+
 The MCP server, the console (read-only pages, and management for administrators: decision 75), the HTTP surface and the server CLI of the Hub. Model elements: D05 (uniform
 response), D06 (the six tools), B08 (call log), R01 and R02 (roles, visibility); brief sections 3, 6 and 9. The server is
 built against the ports of `hub/ports.ts` (RunsService, KnowledgePort, WorkflowStore, PackCatalogPort,
@@ -19,7 +44,7 @@ administrator commands of `cli-admin.ts`.
 | `notes.ts` | admin notes and operator log text that records accept (no NUL, no lone surrogate, cut between code points) |
 | `upload.ts` | strict base64, media types (given, by name, sniffed), the parser structure summary |
 | `trace.ts`, `http.ts`, `release.ts` | W3C traceparent, Circle-Session-Id, loopback rules, body limits and the body budget, release.json |
-| `console/` | sign-in, sessions, CSRF, CSP and the seven places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, packs, connections, records, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
+| `console/` | sign-in, sessions, CSRF, CSP and the eight places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, workflows (with generic skills), connections, records, team, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
 | `main.ts` | `serve [--migrate-only] [--migrate]`, `loadServerConfig` (serve refuses the operator token, commands accept it) |
 | `cli.ts` | `main(argv)`: user, token, logs, run, platform delegation, `registerCommand` |
 | `assemble.ts`, `assemble/`, `cli-admin.ts`, `testing-real.ts` | the assembly module (`assemble` for serve, `assembleCommand` for one command, `registerCommands`), the administrator commands and `operatorAdmin`, the real Hub for acceptance tests: see `assemble/README.md` |
@@ -287,6 +312,63 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83, second round item 1: member status uses R01's generated `account_status` (enabled/disabled), including the Team
+page and CLI account listings. In-use only describes an occupied runtime environment. Model 15 stays the revision.
+
+Decision 83's remaining-page pass moves reading guidance on task details, neutral pages, operation results, forms,
+background jobs and authorization to heading/label hover hints. Breadcrumbs, measured times, counts, commands, one-time
+values, permission consequences and missing-evidence facts remain visible. Background jobs display the generated action
+result: an outstanding result is unknown, rather than success or failure.
+
+Decision 83 makes username/password the ordinary sign-in for administrators and members. Only administrators create
+accounts; `user create` generates an initial password shown once and requires a first-login change. Team manages
+resets; members change their own password there. Passwords travel through forms or stdin, never command arguments or logs.
+Five failed attempts per account and 50 per peer in 15 minutes are bounded in process memory, including unknown accounts;
+a restart clears these counters. Successful logins clear that account and peer. Two expensive derivations run at most.
+The existing administrator token remains a backup; members cannot use a Circle token to sign in to the console.
+Password-created sessions have independent, hidden, 12-hour credentials. Password reset ends browser sessions while
+Circle tokens stay bound to their member account. Existing members without a password require an administrator reset
+before console login. First-use restrictions also guard API reads/writes, live streams and authorization confirmations.
+
+
+Decision 84 supersedes decision 83's personal/team knowledge draft (`docs/design/personal-team-knowledge.md`, retained
+as a research record). Personal knowledge will live in both Circle and Hub with two-way sync and multiple clients; the
+individual chooses the mode, sets personal-space permissions and may share with administrators or others. Shared
+submissions require no review. The owner accepted all fourteen design recommendations; the implementation basis is
+`docs/design/knowledge-workflows.md`. Decision 85 implements its first stage: 工作流 contains workflows with acceptance
+and 通用技能 without acceptance; 产品知识来源 is under Knowledge and 业务系统接入 under Connections. The other stages
+(personal/team spaces, authorization, sharing, search and two-way synchronization) remain future work; this rename changes
+neither their models nor business code. Existing format skills remain globally installed parser providers, rather than
+the future per-account synchronized skill storage. `docs/design/console-navigation.md` records the current navigation.
+
+Decision 83 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
+last use and disconnect action. Team, Connections and member Settings omit token identifiers from their tables; exact
+identifiers remain inside disconnect command dialogs only.
+
+Decision 83 adds Team before Settings. Administrators manage member details, publish rights, workflow assignments and
+Circle connections there using the existing commands. Members see only their own account. Settings retains system
+secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.
+
+Decision 83 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
+their future management belongs on separate pages with separate navigation entries.
+
+Decision 83 groups knowledge intake by personal and team visibility, with the share/verification boundary between two
+columns. Runtime explanations are hover hints. This diagram grants no new read rights; source archiving stays planned.
+
+Decision 83 hides product browsing and version comparison until a readable product line exists. Comparison selects
+produced versions of that product instead of asking for digests; import keeps its name and explains its scope on hover.
+
+Decision 83 places knowledge intake pending items on the knowledge page. Empty queues are hidden and the same
+principal-scoped feeding query remains the source; the tasks page no longer reads it.
+
+Decision 83 combines pending and overdue requests in one shared list on the task and task-detail pages. It deduplicates
+record identities, resolves member names, puts overdue requests first and hides an empty list. Labels use B07's generated
+display axis; requests and their answer rules are unchanged.
+
+Owner decision 83 (2026-11-02), walkthrough item 4: an empty, unfiltered task page hides the pack/result filters and
+zero-page counts. An active filter remains visible even when empty. Nonempty lists keep factual page/filter counts;
+the ordering explanation is a title hint. The walkthrough task page records each scoped check.
+
 Server-rendered HTML, no external assets; `Content-Security-Policy: default-src 'none'; style-src 'sha256-…'; img-src
 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
 stylesheet and the one inline module script (`console/script.ts`, the live updates below; signed-in pages with a live
@@ -300,9 +382,9 @@ paths with encoded query parameters).
 The pages follow the design canvas (version 25) and the owner's choices in the simplification proposal of 2026-10-31
 (decision 77 in `docs/hub-r4-progress.md`):
 
-- **Seven places** in a side navigation: 总览 `/console/overview` (the home `/console` and a sign-in lead to), 任务
+- **Eight places** in a side navigation: 总览 `/console/overview` (the home `/console` and a sign-in lead to), 任务
   `/console/runs`, 知识库 `/console/knowledge`, 任务包 `/console/packs`, 连接 `/console/connections`, 记录
-  `/console/records`, 设置 `/console/settings`; the account and the sign-out button below them.
+  `/console/records`, 团队 `/console/team`, 设置 `/console/settings`; the account and the sign-out button below them.
 - **Interface terms** (display rule 20): every vocabulary value is shown by `uiLabelOf`, its `ui` term where the model
   gives one (引用校验 for the static layer, 未检查 for unchecked, 派发结果未确认 for quarantined, …), so the console
   never shows the model's internal words; the text models read keeps `labelOf` (`claims.ts` and the counts of `text.ts`
@@ -442,20 +524,21 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser
   sees that the request ended.
-- **One-time login links** (decision 78): a client asks with its Bearer token, `POST /console/api/login-links` with an
-  optional JSON `{"next": "/console/…"}`, and gets `{url, expires_at}`: `/console/login/<code>`, valid
-  `LOGIN_LINK_TTL_MS` (5 minutes), used once, only its SHA-256 kept, at most five open per token (a sixth ends that
-  token's oldest). `GET` shows which account it signs in and asks to
-  confirm (so a prefetch or a planted link signs nobody in); the `POST` (its own login nonce, this origin) opens a session
-  on the client's token, which every page re-authenticates, and goes to `next`. A spent or expired link says so without
-  naming the account. `next` is only ever a path of this console (`safeNext`); a page opened without a session sends the
-  browser to `/console/login?next=<that page>`, and signing in leads back there.
+- **One-time login links** (decisions 78 and 83): the existing Bearer endpoint and five-minute lifetime remain.
+  An administrator can confirm a link as a backup sign-in, still subject to a forced password change. A member's link
+  leads to username/password sign-in at the requested console path and never opens a token-authenticated browser session.
+  Spent and expired links disclose no account. Return paths remain local to this console.
+
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
-  the nonce in both and a token that authenticates. The session cookie `circle_hub_session` is a random id,
+  the nonce in both and a username and password. Every account, administrators included, signs in this way; the console
+  never accepts a token (owner, 2026-11-02), and a one-time link from Circle only leads to this form at its page. The session cookie `circle_hub_session` is a random id,
   `Path=/console; HttpOnly; SameSite=Strict` (no `Secure`: plain HTTP on loopback); the token stays in server memory and
   every page re-authenticates it, so a revoked token or a disabled account ends the session at the next page. Sessions
-  end after 2 hours idle or 12 hours. `POST /console/logout` needs the session's CSRF token. Everything else is GET.
+  end after 2 hours idle or 12 hours. Password changes/resets revoke password sessions; Circle disconnects do not.
+  `POST /console/password` changes the current account's password; `POST /console/password/reset` is administrator-only
+  and returns a random initial password once. Both require the session CSRF token and own origin.
+  `POST /console/logout` needs the session's CSRF token.
   `Origin: null` is never taken for this console's own origin (the pages' `same-origin` referrer policy makes a browser
   send the real one).
 - **Pages**: runs (`RunsService.listRuns`, pack filter, paging); one run, the authoritative view (display rule 17):
@@ -497,7 +580,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   Only the runner and admins can read results; a missing, hidden, malformed or non-production run gives the same neutral
   404. All existing authentication, Host/Origin checks, read-only methods, CSP and escaping apply unchanged.
 
-- **Integrator probe**: `node scripts/real/console-page.ts --token-file <file> --path <console path> [--url <Hub origin>]`
+- **Integrator probe**: `node scripts/real/console-page.ts --username <name> --password-file <file> --path <console path> [--url <Hub origin>]`
   signs in through the CSRF form, reads one page and signs out in a `finally` block. It only accepts a loopback HTTP
   origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
   script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
@@ -516,7 +599,7 @@ The refresh target reader follows the [HTML shared declarative refresh steps](ht
 
 Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. Decision 77 keeps four of the operations
 as console pages under `/console/operations/`: adding a member (`member-add`: `user create`, then `user invite`, the
-invitation code shown once with this Hub's Circle entry for the standard authorization; or `token issue` for a client
+initial password and invitation code shown once with this Hub's Circle entry for the standard authorization; or `token issue` for a client
 without it), connecting a business system (`system-add`: `resource add`, then `secret set` for the credentials typed with
 it), publishing a task pack (`pack-stage`, then `pack-publish` or `pack-discard`, below) and importing knowledge
 (`knowledge-sync`). Every
@@ -548,9 +631,11 @@ Knowledge sync runs as a background job of this process (`JobStore`, the last 50
 with the process, their records stay). A token issued here is shown once on the result page.
 
 The first administrator: `circle-hub setup-code` (refused once an administrator exists) prints a one-time code and
-keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code and a name
+keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code, a username and an optional password
 while no administrator exists (its own nonce cookie, own origin), creates the administrator with `bootstrapAdmin`,
-removes the code, opens a session and shows the token once with the Circle `mcp_servers` entry to paste. The sign-in
+removes the code and shows the administrator's access token once; that token only connects a Circle. No session is
+opened: the administrator signs in with the username and password like every account. A generated initial password is
+also shown once and requires a password change before any data page, management action or stream can be used. The sign-in
 page links there while no administrator exists.
 
 ## CLI

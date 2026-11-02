@@ -1,9 +1,11 @@
 // The console's management (decision 75) end to end over HTTP with synthetic records and a recording command bridge:
-// first-admin setup with the one-time code, the management pages, actions as POST forms (own origin, the session's CSRF
+// first-admin setup with the one-time code (it opens no session: the administrator signs in with the password and first
+// changes an initial one), the management pages, actions as POST forms (own origin, the session's CSRF
 // token, administrators only) turned into exact `circle-hub` argv, the secret value kept out of argv, a background job,
 // and 发布任务包 in two steps: a zip upload checked with the dry run from a private directory, kept for its administrator
 // alone until it is published or discarded, at most 30 minutes and never past the app's close, the directory gone after.
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -22,6 +24,12 @@ interface User { id: string; name: string; role: 'user' | 'admin'; disabled: boo
 
 const TOKENS = new Map<string, string>(); // token -> user id
 const users: User[] = [];
+/** Each account's console password as the records keep it (they keep a hash): what verifyPassword checks. */
+const passwords = new Map<string, { password: string; mustChange: boolean; revision: number }>();
+/** The tokens openConsoleSession issued, one per sign-in, apart from the account's Circle token. */
+const consoleTokens = new Set<string>();
+const ADMIN_PASSWORD = 'synthetic-management-admin';
+const MEMBER_PASSWORD = 'synthetic-management-member';
 let dataDir: string;
 let port: number;
 let close: () => Promise<void>;
@@ -38,8 +46,8 @@ const bridge: CommandBridge = {
     calls.push(call);
     if (argv[0] === 'pack' && argv[1] === 'publish' && call.packJson?.includes('echo-pack')) return { code: 1, stdout: [], stderr: [`读不出 ${argv[2]} 里的 pack.json`] };
     if (argv[0] === 'pack' && argv[1] === 'publish' && call.packJson?.includes('failing-pack')) return { code: 1, stdout: [], stderr: ['- [publish.unsampled] checks.json：检查 titles 没有反例样例（处理：补一个反例样例）'] };
-    if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: ['发布校验通过：synthetic-pack@1.0.0（工作流包，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过', '包 synthetic-pack 还没有已发布的版本，没有可比较的当前版本', '试运行：没有发布，也没有写入任何内容；去掉 --dry-run 即发布这个版本'], stderr: [] };
-    if (argv[0] === 'pack' && argv[1] === 'publish') return { code: 0, stdout: ['已发布 synthetic-pack@1.0.0（工作流包，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过'], stderr: [] };
+    if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: ['发布校验通过：synthetic-pack@1.0.0（工作流，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过', '包 synthetic-pack 还没有已发布的版本，没有可比较的当前版本', '试运行：没有发布，也没有写入任何内容；去掉 --dry-run 即发布这个版本'], stderr: [] };
+    if (argv[0] === 'pack' && argv[1] === 'publish') return { code: 0, stdout: ['已发布 synthetic-pack@1.0.0（工作流，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过'], stderr: [] };
     if (argv[0] === 'token' && argv[1] === 'issue') return { code: 0, stdout: ['已为 alice 签发令牌 tok_synthetic。令牌只显示这一次，请立即保存到只有使用者能读的地方：', 'T'.repeat(43)], stderr: [] };
     if (argv[0] === 'secret' && argv[1] === 'list') return { code: 0, stdout: ['DEMO 第 1 版'], stderr: [] };
     return { code: 0, stdout: [`已执行 ${argv.slice(0, 2).join(' ')}`], stderr: [] };
@@ -47,6 +55,30 @@ const bridge: CommandBridge = {
 };
 
 const principals = {
+  async verifyPassword(name:string,password:string) {
+    const user=users.find(user=>user.name===name&&!user.disabled);
+    const stored=user === undefined ? undefined : passwords.get(user.id);
+    return user && stored?.password === password ? {user,revision:stored.revision,mustChange:stored.mustChange} : null;
+  },
+  async openConsoleSession(userId: string, revision: number) {
+    if (passwords.get(userId)?.revision !== revision) return null;
+    const token = randomBytes(32).toString('base64url');
+    consoleTokens.add(token);
+    TOKENS.set(token, userId);
+    return { id: `tok_console_${consoleTokens.size}`, token };
+  },
+  async passwordState(userId: string) {
+    const stored = passwords.get(userId);
+    return { configured: stored !== undefined, mustChange: stored?.mustChange ?? false, revision: stored?.revision ?? 0 };
+  },
+  async changePassword(by: { id: string }, current: string, next: string) {
+    const stored = passwords.get(by.id);
+    if (stored === undefined || stored.password !== current || next === current) return false;
+    passwords.set(by.id, { password: next, mustChange: false, revision: stored.revision + 1 });
+    // As in the records, a new password ends the account's console sessions; its Circle token stays.
+    for (const [token, id] of TOKENS) if (id === by.id && consoleTokens.has(token)) TOKENS.delete(token);
+    return true;
+  },
   async authenticate(header: string | null | undefined) {
     const id = TOKENS.get(String(header).replace(/^Bearer /, ''));
     const user = users.find((u) => u.id === id && !u.disabled);
@@ -55,10 +87,11 @@ const principals = {
   async list() { return users; },
   async get(id: string) { return users.find((u) => u.id === id) ?? null; },
   async tokens() { return []; },
-  async bootstrapAdmin(name: string) {
+  async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }) {
     if (users.some((u) => u.role === 'admin')) throw new Error('已经有管理员');
     const user: User = { id: 'usr_admin', name, role: 'admin', disabled: false, created_at: '2026-10-31T00:00:00.000Z' };
     users.push(user);
+    if (credential !== undefined) passwords.set(user.id, { ...credential, revision: 1 });
     const token = 'A'.repeat(43);
     TOKENS.set(token, user.id);
     return { user, token: { id: 'tok_admin', token } };
@@ -112,10 +145,26 @@ const cookieValue = (answer: Answer, name: string): string => {
 const csrfOf = (body: string): string => /name="csrf" value="([^"]+)"/.exec(body)![1];
 const form = (fields: Record<string, string>) => new URLSearchParams(fields).toString();
 
+/** Posts the sign-in form with these fields and a nonce of its own. */
+async function signIn(fields: Record<string, string>): Promise<Answer> {
+  const login = await send('GET', '/console/login');
+  const nonce = cookieValue(login, 'circle_hub_login');
+  return send('POST', '/console/login', { cookie: `circle_hub_login=${nonce}`, body: form({ ...fields, csrf: nonce }) });
+}
+
+/** An account as createUser makes it: the user and the console password it signs in with. */
+function addAccount(user: User, password: string): void {
+  users.push(user);
+  passwords.set(user.id, { password, mustChange: false, revision: 1 });
+}
+
+/** Whether a command ran with a console session token of this account (never with its Circle token). */
+const actsAs = (input: CommandInput, userId: string): boolean => consoleTokens.has(input.token) && TOKENS.get(input.token) === userId;
+
 let session = '';
 let csrf = '';
 
-test('the first administrator is created with the setup code; the token is shown once and opens a session', async () => {
+test('the first administrator is created with the setup code; the token shown once only connects Circle and the administrator signs in with the password', async () => {
   const login = await send('GET', '/console/login');
   assert.match(login.body, /还没有管理员/);
   const page = await send('GET', '/console/setup');
@@ -141,10 +190,34 @@ test('the first administrator is created with the setup code; the token is shown
   const nonce4 = cookieValue(fourth, 'circle_hub_setup');
   const done = await send('POST', '/console/setup', { cookie: `circle_hub_setup=${nonce4}`, body: form({ csrf: nonce4, code: code.toLowerCase(), name: 'root' }) });
   assert.equal(done.status, 200, done.body);
-  assert.ok(done.body.includes('A'.repeat(43)), 'the token is on the page once');
+  assert.equal(done.body.split('A'.repeat(43)).length - 1, 1, 'the token is on the page once');
+  assert.match(done.body, /访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次/);
   assert.match(done.body, /mcp_servers/);
+  assert.ok(!done.cookies.some((c) => c.startsWith('circle_hub_session=')), 'creating the administrator opens no session');
+  assert.match(done.body, /<a [^>]*href="\/console\/login"[^>]*>前往登录<\/a>/);
   await assert.rejects(access(join(dataDir, 'config', 'setup-code.json')), 'the code is used up');
-  session = cookieValue(done, 'circle_hub_session');
+  const initial = /初始密码仅显示一次；首次登录必须修改。<\/p><pre>([A-Za-z0-9_-]{24})<\/pre>/.exec(done.body)?.[1];
+  assert.ok(initial, 'the generated initial password is on the page');
+
+  // The token shown is no console credential; the initial password signs in, but only to change it.
+  assert.equal((await signIn({ token: 'A'.repeat(43) })).status, 401);
+  assert.equal((await signIn({ username: 'root', password: 'A'.repeat(43) })).status, 401);
+  const first = await signIn({ username: 'root', password: initial });
+  assert.equal(first.status, 303);
+  assert.equal(first.location, '/console/password?next=%2Fconsole%2Foverview');
+  const forced = `circle_hub_session=${cookieValue(first, 'circle_hub_session')}`;
+  const blocked = await send('GET', '/console/operations/member', { cookie: forced });
+  assert.equal(blocked.status, 303, 'no management page before the change');
+  assert.match(String(blocked.location), /^\/console\/password\?next=/);
+  const change = await send('GET', '/console/password', { cookie: forced });
+  assert.match(change.body, /首次登录必须修改密码/);
+  const changed = await send('POST', '/console/password', { cookie: forced, body: form({ csrf: csrfOf(change.body), current: initial, password: ADMIN_PASSWORD, confirm: ADMIN_PASSWORD, next: '/console/overview' }) });
+  assert.equal(changed.status, 200, changed.body);
+  assert.match(changed.body, /请用新密码重新登录/);
+  assert.equal((await signIn({ username: 'root', password: initial })).status, 401, 'the initial password is spent');
+  const signedIn = await signIn({ username: 'root', password: ADMIN_PASSWORD });
+  assert.equal(signedIn.location, '/console/overview');
+  session = cookieValue(signedIn, 'circle_hub_session');
 
   const closed = await send('GET', '/console/setup');
   assert.equal(closed.status, 409, 'no second first administrator');
@@ -175,7 +248,7 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const post = (name: string, fields: Record<string, string>) => send('POST', `/console/admin/do/${name}`, { cookie: `circle_hub_session=${session}`, body: form({ csrf, ...fields }) });
   assert.equal((await post('user-create', { name: 'alice', role: 'user' })).status, 200);
   assert.deepEqual(calls.at(-1)!.argv, ['user', 'create', 'alice', '--role=user']);
-  assert.equal(calls.at(-1)!.input.token, 'A'.repeat(43), 'the command acts with the session token');
+  assert.ok(actsAs(calls.at(-1)!.input, 'usr_admin'), 'the command acts with the session token of the signed-in administrator');
 
   const issued = await post('token-issue', { user: 'usr_alice', label: '--raw' });
   assert.deepEqual(calls.at(-1)!.argv, ['token', 'issue', 'usr_alice', '--label=--raw']);
@@ -234,12 +307,8 @@ test('actions refuse a missing or wrong CSRF token, a foreign origin, GET, a non
   assert.equal((await send('GET', '/console/admin/do/user-create', { cookie })).status, 405);
   assert.equal((await send('POST', '/console/admin/do/backup', { cookie, body: form({ csrf }) })).status, 404);
   assert.equal((await send('POST', '/console/admin/do/user-create', { body: form({ csrf, name: 'x' }) })).status, 303, 'no session: back to sign-in');
-  users.push({ id: 'usr_bob', name: 'bob', role: 'user', disabled: false, created_at: 't' });
-  TOKENS.set('B'.repeat(43), 'usr_bob');
-  const login = await send('GET', '/console/login');
-  const nonce = cookieValue(login, 'circle_hub_login');
-  const signedIn = await send('POST', '/console/login', { cookie: `circle_hub_login=${nonce}`, body: form({ csrf: nonce, token: 'B'.repeat(43) }) });
-  const bob = cookieValue(signedIn, 'circle_hub_session');
+  addAccount({ id: 'usr_bob', name: 'bob', role: 'user', disabled: false, created_at: 't' }, MEMBER_PASSWORD);
+  const bob = cookieValue(await signIn({ username: 'bob', password: MEMBER_PASSWORD }), 'circle_hub_session');
   const bobPage = await send('GET', '/console/runs', { cookie: `circle_hub_session=${bob}` });
   const bobCsrf = /name="csrf" value="([^"]+)"/.exec(bobPage.body)?.[1] ?? '';
   assert.equal((await send('POST', '/console/admin/do/user-create', { cookie: `circle_hub_session=${bob}`, body: form({ csrf: bobCsrf, name: 'x' }) })).status, 404, 'a non-admin gets the neutral page');
@@ -272,14 +341,29 @@ async function stage(cookie: string, packJson: Record<string, unknown> = PACK, c
   return { answer, dir: call.argv[2] };
 }
 
-test('发布任务包 checks the upload with the dry run first, then publishes the staged directory, which is removed after', async () => {
+test('publication results retain the actual manifest kind and use the same commands for every entry point', async () => {
+  const cookie=`circle_hub_session=${session}`;
+  for(const kind of ['product','system'] as const){
+    const title=kind==='product'?'发布产品知识来源':'发布业务系统接入';
+    const checked=await send('POST','/console/admin/do/pack-stage?kind='+kind,{cookie,...upload({...PACK,id:'synthetic-'+kind,kind},csrf)});
+    assert.equal(checked.status,200,checked.body);assert.ok(checked.body.includes(title+'</h1>'));
+    assert.ok(checked.body.includes('action="/console/admin/do/pack-publish?kind='+kind+'"'));
+    const id=stageIdOf(checked.body);
+    const published=await send('POST','/console/admin/do/pack-publish',{cookie,body:form({csrf,stage:id})});
+    assert.equal(published.status,200,published.body);assert.ok(published.body.includes(title+'</h1>'));
+    assert.deepEqual(calls.at(-1)!.argv.slice(0,2),['pack','publish']);assert.equal(calls.at(-1)!.argv.at(-1),'--stage');
+    assert.ok(!calls.at(-1)!.argv.some(word=>word.startsWith('--kind')),'display context never changes command arguments');
+  }
+});
+
+test('发布工作流 checks the upload with the dry run first, then publishes the staged directory, which is removed after', async () => {
   calls.length = 0;
   const cookie = `circle_hub_session=${session}`;
   const { answer, dir } = await stage(cookie);
   assert.equal(answer.status, 200, answer.body);
   const check = calls.at(-1)!;
   assert.deepEqual([check.argv[0], check.argv[1], check.argv[3], check.argv[4]], ['pack', 'publish', '--stage', '--dry-run'], 'the check is the dry run of publish');
-  assert.equal(check.input.token, 'A'.repeat(43), 'as the signed-in administrator');
+  assert.ok(actsAs(check.input, 'usr_admin'), 'as the signed-in administrator');
   assert.match(answer.body, /发布校验已通过/);
   assert.match(answer.body, /还没有已发布的版本，没有可比较的当前版本/, 'the comparison with the version in use is on the page');
   assert.match(answer.body, /action="\/console\/admin\/do\/pack-publish"/);
@@ -288,7 +372,7 @@ test('发布任务包 checks the upload with the dry run first, then publishes t
   await access(dir);
   const id = stageIdOf(answer.body);
   const operation = await send('GET', '/console/operations/pack', { cookie });
-  assert.ok(operation.body.includes(id) && /暂存的任务包/.test(operation.body), 'the operation page lists the stage');
+  assert.ok(operation.body.includes(id) && /暂存的工作流/.test(operation.body), 'the operation page lists the stage');
 
   const published = await send('POST', '/console/admin/do/pack-publish', { cookie, body: form({ csrf, stage: id }) });
   assert.equal(published.status, 200, published.body);
@@ -336,12 +420,8 @@ test('a failing check offers no 发布 step and keeps nothing; content already p
 test('only the administrator who staged a pack can publish or discard it; any other id reads the same', async () => {
   calls.length = 0;
   const cookie = `circle_hub_session=${session}`;
-  users.push({ id: 'usr_dave', name: 'dave', role: 'admin', disabled: false, created_at: 't' });
-  TOKENS.set('D'.repeat(43), 'usr_dave');
-  const login = await send('GET', '/console/login');
-  const nonce = cookieValue(login, 'circle_hub_login');
-  const signedIn = await send('POST', '/console/login', { cookie: `circle_hub_login=${nonce}`, body: form({ csrf: nonce, token: 'D'.repeat(43) }) });
-  const dave = `circle_hub_session=${cookieValue(signedIn, 'circle_hub_session')}`;
+  addAccount({ id: 'usr_dave', name: 'dave', role: 'admin', disabled: false, created_at: 't' }, 'synthetic-management-dave');
+  const dave = `circle_hub_session=${cookieValue(await signIn({ username: 'dave', password: 'synthetic-management-dave' }), 'circle_hub_session')}`;
   const daveCsrf = csrfOf((await send('GET', '/console/operations/pack', { cookie: dave })).body);
 
   const { answer, dir } = await stage(cookie);
@@ -358,7 +438,7 @@ test('only the administrator who staged a pack can publish or discard it; any ot
 
   const discarded = await send('POST', '/console/admin/do/pack-discard', { cookie, body: form({ csrf, stage: id }) });
   assert.equal(discarded.status, 200);
-  assert.match(discarded.body, /已放弃暂存的任务包/);
+  assert.match(discarded.body, /已放弃暂存的工作流/);
   await assert.rejects(access(dir), 'discarding removes the directory');
   assert.equal(calls.length, 1, 'discarding publishes nothing');
 });
@@ -377,7 +457,7 @@ test('a stage expires after 30 minutes: its 发布 step reads like an unknown st
 });
 
 test('every action is declared with a page to return to', () => {
-  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations)(?:\/|$)/.test(action.back), name);
+  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations|team)(?:\/|$)/.test(action.back), name);
 });
 
 test('closing the app removes every staged directory', async () => {

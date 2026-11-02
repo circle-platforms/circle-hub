@@ -40,6 +40,7 @@ const secret = (): string => randomBytes(32).toString('base64url');
 export class SessionStore {
   readonly #sessions = new Map<string, ConsoleSession>();
   readonly #nonces = new Map<string, { expires: number; secure: boolean }>();
+  readonly #attempts = new Map<string, { count: number; expires: number }>();
   readonly #now: () => number;
   readonly #limits: SessionLimits;
 
@@ -47,6 +48,18 @@ export class SessionStore {
     this.#now = now;
     this.#limits = { ...DEFAULT_SESSION_LIMITS, ...limits };
   }
+
+  /** Reserve before verification so concurrent failures cannot bypass the per-window bound. */
+  takeLoginAttempt(key: string, maximum = 5): boolean {
+    const now = this.#now();
+    for (const [id, entry] of this.#attempts) if (entry.expires <= now) this.#attempts.delete(id);
+    const entry = this.#attempts.get(key) ?? {count:0,expires:now+15*60*1000};
+    if (entry.count >= maximum || (!this.#attempts.has(key) && this.#attempts.size >= 10_000)) return false;
+    entry.count++;
+    this.#attempts.set(key,entry);
+    return true;
+  }
+  clearLoginAttempts(key: string): void { this.#attempts.delete(key); }
 
   /** A one-time login nonce; the oldest are dropped beyond the limit. */
   issueNonce(secure = false): string {
@@ -101,6 +114,7 @@ export class SessionStore {
   clear(): void {
     this.#sessions.clear();
     this.#nonces.clear();
+    this.#attempts.clear();
   }
 }
 
@@ -135,8 +149,8 @@ export function safeNext(value: string | null | undefined): string {
 
 /**
  * One-time login links (decision 78), in memory like the sessions: a client asks for one with its Bearer token
- * (POST /console/api/login-links); the browser opens it within LOGIN_LINK_TTL_MS, confirms, and gets a session on that
- * token, which every page re-authenticates. Only the SHA-256 of a link's code is kept; a code works once.
+ * (POST /console/api/login-links); opened within LOGIN_LINK_TTL_MS, it leads to the password sign-in at its page and
+ * never opens a session (owner, 2026-11-02). Only the SHA-256 of a link's code is kept; a code works once.
  */
 export class LoginLinkStore {
   readonly #links = new Map<string, { token: string; next: string; expires: number }>();
