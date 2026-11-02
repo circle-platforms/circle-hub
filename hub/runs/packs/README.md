@@ -19,6 +19,12 @@ Team publication cannot depend on a personal skill namespace; publish/install de
 from the promoted team version carry the team-sharing flag and follow assignments. Existing personal runs keep their
 personal namespace and are never widened. Synchronization, signing and account-deletion cleanup remain later phases.
 
+Personal publication resolves the complete skill dependency graph against the publisher's current permissions, before
+samples and again at publication. Only owned skills, installed team skills and currently authorized personal skills
+qualify; missing and forbidden dependencies have the same refusal. Grant pre-checks traverse owned dependencies, but
+stop with a fixed refusal on any foreign personal dependency without querying its recipient ACL. Only the owner's own
+dependency grants can affect a preview, including for nested skills and unqualified personal dependency names.
+
 
 Publish, validate, assign, activate, withdraw and load task packs. Model elements: T01 (task pack), T02 (publish record and
 publish check), W02 (requirement templates), W03 (workflow and product binding), W05 (slots), C05 (rules with samples), C07

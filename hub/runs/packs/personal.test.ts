@@ -10,6 +10,40 @@ before(async()=>{postgres=await startPostgres();});
 after(()=>postgres?.stop());
 const skill=(id='synthetic-personal-skill'):PackDescription=>({id,version:'1.0.0',kind:'skill',title:'合成个人技能',description:'合成步骤，不作验收',files:{'SKILL.md':'# 合成技能\n\n按合成步骤检查。\n','skill.json':{schema:'skill@1',parsers:[]}}});
 
+test('personal publication admits only usable skill dependencies and treats absent and private skills alike',async t=>{
+ const bed=await openPackTestbed({postgres});t.after(()=>bed.close());const personal=bed.registry.personal!,privateSkill=skill('synthetic-private-dependency');
+ assert.ok((await personal.publish(bed.carol,(await bed.write(privateSkill)).dir)).ok);
+ const pack=workflowPack({id:'synthetic-dependent-flow'});pack.dependencies=[{pack:privateSkill.id,space:bed.carol.id,version:'1.0.0'}];
+ const written=await bed.write(pack),denied=await personal.publish(bed.alice,written.dir);assert.equal(denied.ok,false);if(denied.ok)return;
+ const absent=await personal.check(bed.alice,(await bed.write({...pack,dependencies:[{pack:'synthetic-absent',space:bed.carol.id}]})).dir);assert.equal(absent.ok,false);if(absent.ok)return;
+ assert.deepEqual(denied.problems,absent.problems);assert.equal((await personal.versions(bed.alice.id,pack.id)).length,0);
+ await personal.grant(bed.carol,privateSkill.id,{audience:'member',member:bed.alice.id});assert.ok((await personal.publish(bed.alice,written.dir)).ok);
+ const own=skill('synthetic-own-dependency');assert.ok((await personal.publish(bed.alice,(await bed.write(own)).dir)).ok);
+ const team=skill('synthetic-team-dependency');await bed.publish(bed.alice,team);
+ const teamFlow={...pack,id:'synthetic-team-dependent',dependencies:[{pack:team.id}]};assert.equal((await personal.check(bed.alice,(await bed.write(teamFlow)).dir)).ok,false);
+ await bed.registry.install(bed.admin,team.id+'@'+team.version);assert.ok((await personal.publish(bed.alice,(await bed.write(teamFlow)).dir)).ok);
+ const ownedFlow={...pack,id:'synthetic-own-dependent',dependencies:[{pack:own.id}]};assert.ok((await personal.publish(bed.alice,(await bed.write(ownedFlow)).dir)).ok);
+ assert.equal((await personal.precheckGrant(bed.alice,ownedFlow.id,[bed.bob])).at(-1)?.state,'violation');
+ await personal.grant(bed.alice,own.id,{audience:'member',member:bed.bob.id});assert.equal((await personal.precheckGrant(bed.alice,ownedFlow.id,[bed.bob])).at(-1)?.state,'pass');
+ await personal.grant(bed.alice,ownedFlow.id,{audience:'member',member:bed.bob.id});assert.ok(await personal.resolve(bed.bob,bed.alice.id,ownedFlow.id));
+ assert.equal((await personal.check(bed.alice,(await bed.write({...pack,id:'synthetic-wrong-version',dependencies:[{pack:own.id,space:bed.alice.id,version:'9.0.0'}]})).dir)).ok,false);
+ assert.equal((await personal.check(bed.alice,(await bed.write({...pack,id:'synthetic-wrong-kind',dependencies:[{pack:pack.id,space:bed.alice.id}]})).dir)).ok,false);
+});
+
+test('third-party dependency grants never change personal workflow grant previews, including transitive dependencies',async t=>{
+ const bed=await openPackTestbed({postgres});t.after(()=>bed.close());const personal=bed.registry.personal!,dependency=skill('synthetic-foreign-dependency');
+ assert.ok((await personal.publish(bed.carol,(await bed.write(dependency)).dir)).ok);await personal.grant(bed.carol,dependency.id,{audience:'member',member:bed.alice.id});
+ const pack=workflowPack({id:'synthetic-oracle-flow'});pack.dependencies=[{pack:dependency.id,space:bed.carol.id}];assert.ok((await personal.publish(bed.alice,(await bed.write(pack)).dir)).ok);
+ const before=await bed.kit.store.watermark!(),preview=await personal.precheckGrant(bed.alice,pack.id,[bed.bob]);assert.equal(preview.at(-1)?.state,'violation');assert.equal(await bed.kit.store.watermark!(),before);
+ await personal.grant(bed.carol,dependency.id,{audience:'member',member:bed.bob.id});assert.deepEqual(await personal.precheckGrant(bed.alice,pack.id,[bed.bob]),preview);
+ const admin=await personal.precheckGrant(bed.alice,pack.id,[bed.admin]);await personal.grant(bed.carol,dependency.id,{audience:'administrators'});assert.deepEqual(await personal.precheckGrant(bed.alice,pack.id,[bed.admin]),admin);assert.deepEqual(admin,preview);
+ await assert.rejects(personal.grant(bed.alice,pack.id,{audience:'member',member:bed.bob.id}));assert.equal(await personal.resolve(bed.bob,bed.alice.id,pack.id),null);
+ const nested={...skill('synthetic-nested-dependency'),dependencies:pack.dependencies};assert.ok((await personal.publish(bed.alice,(await bed.write(nested)).dir)).ok);
+ const indirect={...pack,id:'synthetic-indirect-flow',dependencies:[{pack:nested.id}]};assert.ok((await personal.publish(bed.alice,(await bed.write(indirect)).dir)).ok);
+ const indirectPreview=await personal.precheckGrant(bed.alice,indirect.id,[bed.bob]);assert.deepEqual(indirectPreview,preview);
+ await assert.rejects(personal.grant(bed.alice,nested.id,{audience:'member',member:bed.bob.id}));assert.deepEqual(await personal.precheckGrant(bed.alice,indirect.id,[bed.bob]),indirectPreview);
+});
+
 test('a member without team publication rights owns a separate namespace with current grants and no administrator bypass',async t=>{
   const bed=await openPackTestbed({postgres});t.after(()=>bed.close());const personal=bed.registry.personal!;
   const source=await bed.write(skill()),first=await personal.publish(bed.carol,source.dir);assert.equal(first.ok,true,JSON.stringify(first));if(!first.ok)return;

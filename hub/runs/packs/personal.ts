@@ -18,6 +18,7 @@ import { parseDeclarations, packJsonReader } from './load.ts';
 import { compareVersions, parsePackRef } from './versions.ts';
 import { problem } from './problems.ts';
 import {personalPackProblems} from './personal-capabilities.ts';
+import type {SkillDependency} from '../../../contracts/src/skills.ts';
 
 export class PersonalPacks {
   #options:PackRegistryOptions; #team:PackRegistry; #extractor:Extractor; #writes:Promise<unknown>=Promise.resolve();
@@ -25,6 +26,30 @@ export class PersonalPacks {
   #now(){return (this.#options.now?.()??new Date()).toISOString();}
   async #account(by:Principal){const account=await this.#team.account(by);if(!account)throw new AccessError('对象不存在或无权读取');return account;}
   async #own(by:Principal,space=by.id){by=await this.#account(by);if(by.id!==space)throw new AccessError('对象不存在或无权读取');return by;}
+  async #dependencyProblems(by:Principal,dependencies:readonly SkillDependency[],grant=false,targets?:readonly Principal[]):Promise<PackProblem[]>{
+    if(!dependencies.length)return [];
+    const unavailable=()=>[problem('personal.dependency','pack.json','所依赖的通用技能不存在或无权使用','先发布本人技能、取得授权或安装团队技能，再核对依赖版本')];
+    const foreign=()=>[problem('personal.dependency','pack.json','依赖他人的个人通用技能，不能向其他账户授权','改用本人的通用技能或团队通用技能后发布修订版本')];
+    const team=await this.#team.installedSkills(),pending=dependencies.map(dep=>({dep,scope:by.id as string|undefined})),seen=new Set<string>(),owned=new Set<string>();
+    while(pending.length){
+      const {dep,scope:inherited}=pending.shift()!,scope=dep.space??inherited;
+      // Foreign ACLs never participate in a grant preview, including through an owned dependency.
+      if(grant&&scope&&scope!=='team'&&scope!==by.id)return foreign();
+      let info=scope?await this.resolve(by,scope,dep.pack+(dep.version?'@'+dep.version:'')):null;
+      if(info?.kind!=='skill')info=null;
+      if(!info&&!dep.space)info=team.find(pack=>pack.info.id===dep.pack&&(dep.version===undefined||pack.info.version===dep.version))?.info??null;
+      if(!info)return unavailable();
+      if(grant&&info.space&&info.space!=='team'){
+        if(info.space!==by.id)return foreign();
+        owned.add(info.id);
+      }
+      const key=(info.space??'team')+'/'+info.id+'@'+info.version;if(seen.has(key))continue;seen.add(key);if(seen.size>64)return unavailable();
+      for(const nested of info.manifest.dependencies??[])pending.push({dep:nested,scope:info.space});
+    }
+    if(owned.size&&targets===undefined)return [problem('personal.grantee','pack.json','先填写授权对象并预检','填写授权对象后重试')];
+    for(const pack of owned)for(const target of targets??[])if(!await this.mayUse(target,by.id,pack))return [problem('personal.dependency','pack.json','依赖的个人技能对授权对象不可读','先对相同对象授权依赖，或使用团队技能')];
+    return [];
+  }
   async #all(kind:RecordKind,key:string,value:string,tx?:Transaction){const out:StoredRecord<unknown>[]=[];let cursor:string|null=null;do{const page:Page<StoredRecord<unknown>>=await this.#options.records.store.find({kind,key,value,limit:500,cursor},tx);out.push(...page.items);cursor=page.next;}while(cursor);return out;}
   async mayUse(by:Principal,space:string,pack:string){by=await this.#account(by);if(!UserId.safeParse(space).success||!PackId.safeParse(pack).success)return false;const owner=await this.#options.records.principals.get(space);return !!owner&&!owner.disabled&&await mayUsePersonalPack(this.#options.records.store,by,space,pack);}
   async #info(record:StoredRecord<unknown>,tx?:Transaction):Promise<PackVersionInfo>{
@@ -71,11 +96,13 @@ export class PersonalPacks {
     const read=await readPackDirectory(directory,{limits:this.#options.limits});if(!read.ok)return refuse(read.problems);
     const {manifest,digest}=read.pack;if(manifest.kind!=='workflow'&&manifest.kind!=='skill')return refuse([problem('personal.kind','pack.json','个人空间只接受工作流与通用技能','选择团队空间并按团队权限发布')]);
     const validation=await validatePack(read.pack,{policy:this.#options.policy});if(!validation.ok)return refuse(validation.problems);const capabilities=personalPackProblems(validation.pack.declarations);if(capabilities.length)return refuse(capabilities);const versionErrors=versionProblems(manifest);if(versionErrors.length)return refuse(versionErrors);
+    const dependencyErrors=await this.#dependencyProblems(by,manifest.dependencies??[]);if(dependencyErrors.length)return refuse(dependencyErrors);
     let staged:StagedTree|null=null;
     try{
       if(needsSandbox(validation.pack))staged=await this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));
       const report=await runPublishCheck({pack:validation.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});report.warnings.unshift(...validation.pack.warnings);const errors=refusalsOf(report,validation.pack);if(errors.length)return refuse(errors,report);
       const checkExisting=async(tx?:Transaction)=>{
+        const dependencies=await this.#dependencyProblems(by,manifest.dependencies??[]);if(dependencies.length)return {failure:refuse(dependencies,report)};
         const versions=await this.versions(by.id,manifest.id,tx),existing=versions.find(info=>info.version===manifest.version)??null;
         if(versions.some(info=>info.kind!==manifest.kind))return {failure:refuse([problem('publish.kind_changed','pack.json','包种类与本空间已发布版本不一致','使用新的包号')],report)};
         if(existing&&(existing.digest!==digest||existing.withdrawn))return {failure:refuse([problem(existing.withdrawn?'publish.version_withdrawn':'publish.version_reused','pack.json','本空间中的该版本号已被使用','提高版本号后重新发布')],report)};
@@ -123,10 +150,7 @@ export class PersonalPacks {
       const versions=await this.versions(by.id,pack);if(!versions.length)throw new AccessError('对象不存在或无权读取');
       for(const version of versions){const opened=await this.open(by.id,version.digest);if(!opened)throw new IntegrityError('包文件暂不可读');for(const file of version.manifest.files){const scan=scanForCredentials(await readFile(join(opened.handle.directory,file.path)));if(!scan.inspected||scan.truncated||scan.findings.length){checks[phase]={...checks[phase],state:'violation',message:'包文件可能含有凭据',fix:'移除凭据并发布修订版本'};return checks;}}}
       checks[phase++].state='pass';
-      if(targets===undefined&&versions.some(v=>v.manifest.dependencies?.some(dep=>dep.space))){checks[phase].message='先填写授权对象并预检';return checks;}
-      for(const version of versions)for(const dep of version.manifest.dependencies??[])if(dep.space)for(const target of targets??[])if(!await this.mayUse(target,dep.space,dep.pack)){
-        checks[phase]={...checks[phase],state:'violation',message:'依赖的个人技能对授权对象不可读',fix:'先对相同对象授权依赖，或使用团队技能'};return checks;
-      }
+      for(const version of versions){const problems=await this.#dependencyProblems(by,version.manifest.dependencies??[],true,targets);if(problems.length){checks[phase]={...checks[phase],state:problems[0].rule==='personal.grantee'?'unchecked':'violation',message:problems[0].message,fix:problems[0].fix};return checks;}}
       checks[phase].state='pass';return checks;
     }catch(error){if(error instanceof AccessError)throw error;checks[phase]={...checks[phase],state:'incomplete',message:'包文件暂不可读',fix:'恢复读取后重试'};return checks;}
   }
