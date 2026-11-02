@@ -177,6 +177,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Fixed
 
+- Personal-content upgrades preserve independently owned definitions, pack files and workflow objects; private imports have distinct capture identities.
+
 - Personal-content upgrades now resume correctly when historical team trees mount product knowledge.
 
 - Console workflow cards distinguish received grants from personal ownership and show team member assignments.

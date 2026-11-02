@@ -343,6 +343,64 @@ BEGIN
  END IF;
  RAISE EXCEPTION 'append-only table %: % rejected',TG_TABLE_NAME,TG_OP USING ERRCODE='HU001';
 END $fn$;
+-- Exact storage references, not arbitrary mentions in prose, grounds or generator inputs.
+CREATE TABLE object_holds (
+ record text NOT NULL REFERENCES records(digest),sha256 text NOT NULL,artifact boolean NOT NULL,members boolean NOT NULL,
+ PRIMARY KEY(record,sha256,artifact,members)
+);
+CREATE INDEX object_holds_target ON object_holds(artifact,sha256,record);
+CREATE INDEX object_holds_members ON object_holds(members) WHERE members;
+CREATE TRIGGER object_holds_append_only BEFORE UPDATE OR DELETE ON object_holds FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER object_holds_no_truncate BEFORE TRUNCATE ON object_holds FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+CREATE FUNCTION hub_object_refs(k text,b text) RETURNS TABLE(sha256 text,artifact boolean,members boolean)
+ LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE d jsonb;op text[]:='{}';ap text[]:='{}';path text;v jsonb;
+BEGIN
+ CASE k
+ WHEN 'source_artifact' THEN op:=ARRAY['$.sha256'];
+ WHEN 'authorization' THEN op:=ARRAY['$.bound'];
+ WHEN 'pack_version' THEN op:=ARRAY['$.digest','$.manifest.files[*].sha256'];
+ WHEN 'personal_pack_version' THEN op:=ARRAY['$.digest','$.manifest.files[*].sha256'];ap:=ARRAY['$.files.*'];
+ WHEN 'knowledge_space_version' THEN op:=ARRAY['$.tree'];
+ WHEN 'tree_root' THEN op:=ARRAY['$.sources[*].sha256','$.rows[*].sha256'];ap:=ARRAY['$.sources[*].artifact','$.rows[*].artifact'];
+ WHEN 'submission' THEN op:=ARRAY['$.received.object'];
+ WHEN 'run' THEN op:=ARRAY['$.policy','$.executors'];ap:=ARRAY['$.sources[*].artifact','$.sources[*].meta_artifact'];
+ WHEN 'claim' THEN op:=ARRAY['$.statement.data.feeding.object'];ap:=ARRAY['$.statement.data.feeding.source.artifact'];
+ WHEN 'action' THEN op:=ARRAY['$.detail.output.sha256','$.detail.sha256','$.detail.lists[*].externals',
+ '$.detail.binding.executor_digest','$.detail.binding.executor_source_digest','$.detail.admin_release_sha256',
+ '$.detail.operation_definition_sha256','$.detail.source_definition_sha256','$.detail.reading_definition_sha256'];
+ ELSE RETURN;
+ END CASE;
+ d:=replace(b,chr(92)||'u0000',chr(92)||'u0001')::jsonb;
+ FOREACH path IN ARRAY op LOOP
+ IF path='$.detail.sha256' AND COALESCE(d->>'component','') NOT IN ('hub.feeding@2','knowledge.sync@1') THEN CONTINUE;END IF;
+ FOR v IN SELECT jsonb_path_query(d,path::jsonpath) LOOP
+ sha256:=v#>>'{}';IF sha256 ~ '^[0-9a-f]{64}$' THEN artifact:=false;members:=k='run' AND path='$.executors';RETURN NEXT;END IF;
+ END LOOP;
+ END LOOP;
+ FOREACH path IN ARRAY ap LOOP
+ FOR v IN SELECT jsonb_path_query(d,path::jsonpath) LOOP
+ sha256:=v#>>'{}';IF sha256 ~ '^[0-9a-f]{64}$' THEN artifact:=true;members:=false;RETURN NEXT;END IF;
+ END LOOP;
+ END LOOP;
+END $fn$;
+CREATE FUNCTION hub_track_object_holds() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE r public.records%ROWTYPE;
+BEGIN
+ IF TG_TABLE_NAME='records' THEN r:=NEW;
+ ELSIF NEW.key='knowledge.feeding.object' THEN SELECT * INTO r FROM public.records WHERE digest=NEW.digest;
+ ELSE RETURN NULL;END IF;
+ IF r.kind='claim' AND NOT EXISTS(SELECT 1 FROM public.record_index i WHERE i.digest=r.digest AND i.key='knowledge.feeding.object') THEN RETURN NULL;END IF;
+ INSERT INTO public.object_holds SELECT DISTINCT r.digest,x.* FROM public.hub_object_refs(r.kind,r.body) x ON CONFLICT DO NOTHING;
+ RETURN NULL;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_track_object_holds() FROM PUBLIC;
+INSERT INTO object_holds SELECT DISTINCT r.digest,x.* FROM records r CROSS JOIN LATERAL hub_object_refs(r.kind,r.body) x
+ WHERE r.kind<>'claim' OR EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='knowledge.feeding.object');
+CREATE TRIGGER records_object_holds AFTER INSERT ON records FOR EACH ROW EXECUTE FUNCTION hub_track_object_holds();
+CREATE TRIGGER record_index_object_holds AFTER INSERT ON record_index FOR EACH ROW EXECUTE FUNCTION hub_track_object_holds();
+
 CREATE FUNCTION hub_personal_migrate_inline() RETURNS void LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $fn$
 DECLARE r records%ROWTYPE; b json; o text; h text; e text:='00000000-0000-4000-8000-000000000001'; proof text; marker text; original_digest text;
 BEGIN
@@ -359,6 +417,7 @@ BEGIN
  WHERE x.kind='knowledge_space_source' AND (replace(x.body,chr(92)||'u0000',chr(92)||'u0001')::json)->>'artifact'=r.digest
  AND (replace(x.body,chr(92)||'u0000',chr(92)||'u0001')::json)->>'space' = b->'author'->>'user' LIMIT 1;
  END IF;
+ IF r.kind='source_artifact' AND EXISTS(SELECT 1 FROM object_holds h WHERE h.artifact AND h.sha256=r.digest) THEN CONTINUE;END IF;
  IF r.kind='source_artifact' AND (b->'origin'->'upload' IS NULL OR b->'visibility'->>'admins'<>'false' OR b->'author'->>'user' IS DISTINCT FROM o) THEN CONTINUE; END IF;
  IF o IS NULL OR o !~ '^usr_[0-9a-z]{26}$' THEN CONTINUE; END IF;
  original_digest:=encode(sha256(convert_to('{"body":'||r.body||',"created_at":'||
@@ -549,6 +608,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   personal_sync_retained:'SELECT, INSERT',
   personal_sync_operations:'SELECT, INSERT',
   personal_sync_aborts:'SELECT, INSERT',
+  object_holds:'SELECT',
   personal_spaces:'SELECT, INSERT',
   personal_payloads:'SELECT, INSERT',
   personal_record_bindings:'SELECT, INSERT',

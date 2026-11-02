@@ -390,6 +390,8 @@ export interface CredentialScan {
 
 /** Body of a `source_artifact@1` record. */
 export interface SourceArtifactBody {
+  /** Present on personal knowledge captures; separates their storage scope from independent pack captures. */
+  personal_scope?:{owner:string;epoch:string};
   sha256: string;
   size: number;
   media_type: string;

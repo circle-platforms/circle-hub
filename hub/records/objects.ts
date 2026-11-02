@@ -107,6 +107,7 @@ export class FileObjectStore implements ObjectStore {
       }
     }
     const retired=await this.#db.query('SELECT sha256 FROM personal_legacy_retire q WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_retired d WHERE d.sha256=q.sha256)');
+    if(!retired.rows.length)return;
     const protectedNodes=new Set<string>();
     const protect=async(hash:string,mounts:ReadonlySet<string>,depth=0):Promise<void>=>{
       if(mounts.has(hash)||protectedNodes.has(hash))return;
@@ -122,9 +123,13 @@ export class FileObjectStore implements ObjectStore {
         if(version.tree)await protect(version.tree,mounts);
       }
     }
+    const memberHolds=await this.#db.query('SELECT DISTINCT h.sha256 FROM object_holds h WHERE h.members');
+    for(const held of memberHolds.rows){const bytes=await this.get(String(held.sha256));if(!bytes)throw new IntegrityError('执行器快照原件缺失');
+      for(const hash of Object.values(JSON.parse(Buffer.from(bytes).toString())))if(typeof hash==='string'&&isSha256(hash))protectedNodes.add(hash);
+    }
     for(const row of retired.rows){const hash=String(row.sha256);
       // Keep separately held team/product/run originals; audit mentions alone do not own content.
-      const independent=await this.#db.query("SELECT 1 FROM records r WHERE kind IN ('source_artifact','knowledge_space_version','tree_node') AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest) AND position($1 in body)>0 LIMIT 1",[hash]);
+      const independent=await this.#db.query("SELECT 1 FROM object_holds h WHERE h.sha256=$1 AND NOT h.artifact AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=h.record) LIMIT 1",[hash]);
       if(!protectedNodes.has(hash)&&!independent.rows.length)await unlink(this.path(hash)).catch((error:NodeJS.ErrnoException)=>{if(error.code!=='ENOENT')throw error;});
       await this.#db.query('INSERT INTO personal_legacy_retired(sha256) VALUES($1) ON CONFLICT DO NOTHING',[hash]);
     }

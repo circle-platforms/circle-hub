@@ -1,3 +1,4 @@
+import {PgPersonalPayloads,type PersonalScope} from './personal-payloads.ts';
 import {SpaceSourceBody} from '../../contracts/src/spaces.ts';
 // Source artifacts (B02): content-addressed bytes plus a `source_artifact@1` record with provenance, author, capture time,
 // provenance type, read tier, visibility and the credential scan conclusion. An upload with a credential hit is refused
@@ -214,6 +215,7 @@ export interface ArtifactsOptions {
 
 export class RecordArtifacts implements Artifacts {
   readonly #db: Database;
+  readonly #personal:PgPersonalPayloads;
   readonly #store: RecordStore;
   readonly #objects: ObjectStore;
   readonly #authorizations: Authorizations;
@@ -222,6 +224,7 @@ export class RecordArtifacts implements Artifacts {
 
   constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, options: ArtifactsOptions) {
     this.#db = db;
+    this.#personal=new PgPersonalPayloads(db,(key,tx)=>store.lock(key,tx));
     this.#store = store;
     this.#objects = objects;
     this.#authorizations = authorizations;
@@ -237,7 +240,7 @@ export class RecordArtifacts implements Artifacts {
     return this.#store.withTransaction(async tx=>{
       // Personal writes always acquire the space lock before the ingest deduplication lock.
       await this.#store.lock('knowledge-space:'+input.personalOwner,tx);
-      return this.#ingest(snapshot,true,tx);
+      return this.#ingest(snapshot,true,tx,await this.#personal.scope(input.personalOwner!,tx));
     },outer);
   }
 
@@ -250,7 +253,7 @@ export class RecordArtifacts implements Artifacts {
 
   ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return input.personalOwner?this.#personalIngest(input,true):this.#ingest(input, true); }
 
-  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction): Promise<SourceArtifact> {
+  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction,personalScope?:PersonalScope): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
@@ -304,6 +307,7 @@ export class RecordArtifacts implements Artifacts {
       origin,
       author,
       captured_at: capturedAt,
+      ...(personalScope?{personal_scope:personalScope}:{}),
       // An upload says whether its client declared the capture time. Any other artifact has no client capture to declare
       // and keeps exactly the record it had before the field existed, so its identity and every view built on it do not move.
       ...('upload' in origin ? { captured_at_declared: input.capturedAt !== undefined } : {}),
@@ -319,6 +323,7 @@ export class RecordArtifacts implements Artifacts {
     // the same answer again reuses its record (round-four review, item 7).
     const dedupe = digestOf({
       sha256,
+      ...(personalScope?{personal_scope:personalScope}:{}),
       ...('upload' in origin && input.capturedAt !== undefined ? { captured_at: capturedAt } : {}),
       media_type: input.mediaType,
       name,

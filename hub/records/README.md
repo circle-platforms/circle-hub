@@ -777,3 +777,11 @@ on personal_spaces (Claude 2026-11-03); that mode API remains step 5.
 Decision 89 review item 1: startup retirement treats each team version's products[].root as a knowledge-record mount,
 not a directory object file. It skips those mount boundaries while preserving ordinary team directory objects. The
 upgrade regression covers first and repeated startup; a real synthetic produced product also stays readable after recovery.
+
+Decision 89 review item 2: object_holds indexes exact storage fields, with SELECT-only runtime access and owner trigger
+maintenance. Authorization bound objects cover resource, variable and executor definitions; pack manifests/files,
+verbatim submissions, frozen executor maps, producer outputs/lists and registered feeding objects have explicit paths.
+Generator inputs, arbitrary strings and ordinary grounds are not storage ownership. A non-space artifact holder keeps
+that artifact outside the personal conversion. Executor-map members also keep their global bytes. Personal captures
+include their trusted account/epoch in both body and deduplication identity, so a fixed-clock knowledge import cannot
+reuse an independent personal-pack capture. This edit is to undeployed migration 14 under Claude's explicit permission.

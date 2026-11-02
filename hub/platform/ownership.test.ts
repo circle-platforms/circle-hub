@@ -26,6 +26,7 @@ const libpq = await libpqAvailable();
 const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   records: 'body',
+  object_holds:'record',
   personal_sync_heads:'owner',
   personal_sync_identities:'identity',
   personal_sync_clients:'name_payload',

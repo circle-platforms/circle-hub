@@ -461,3 +461,25 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 ```
 
 本项未运行全量回归、全部工作流／引擎、Linux CI 或来源检查；没有修改运行或依据读取逻辑。文档检查在本轮收尾执行。
+
+### 第 2 步安全审查修正 2：独立持有者与采集范围
+
+来源：kw-sync-review.md 第 2 项及 Claude 提供的合成探针。迁移 14 尚未部署，依明确许可修改该未部署迁移；迁移 1～13、15 的 SQL 不改。
+
+- 在转换前建立精确字段引用索引 object_holds，并由所有者触发器维护。记录运行角色只有 SELECT，不能自行插入“持有者”。索引识别实际存储字段：原件 sha256、资源／变量／执行器授权 bound、包清单与文件、原始提交对象、冻结执行器映射、生产列表与缓存、已登记投喂对象及其原件记录。生成输入、任意文字和一般依据提及不算独立存储所有权。
+- 非个人知识记录已持有的原件记录不转换；独立持有同字节对象时保留全局文件，只清除个人知识的载荷和关联。执行器快照映射的子对象同样保留。退役查询改为精确索引，不再对每个摘要全表做子串匹配；低风险第 3 项的否定回归另作提交。
+- 个人知识采集的去重与原件记录均带受信任的账户／代次范围；普通采集身份不改。即使名字、字节、作者、时刻完全相同，也不会复用独立个人包的采集记录；清除知识不移除个人包原件。本项内部可选元数据不新增词表或记录种类。
+- 改写审查探针为 9 类旧库持有者升级回归，并增加固定时钟的采集隔离回归。首轮 10 项中 9 通过，隔离夹具误把 importFile 返回的原件当成来源关联，修正为实际原件摘要后 10 项通过。一次 SQL 编辑脚本误用字符串替换元字符，检查差异发现后立即从本项起点重建该文件，未运行或提交错误迁移。
+
+验证：npm run typecheck、git diff --check 通过；新增持有者／隔离组 10 项通过。下列受影响组 292 项通过、0 失败、0 跳过，包含全部 records、运行角色／升级／锁、PG 18 ownership、个人技能引用及验收 46～49；macOS 沙箱项实际运行。复核未部署 SQL 后，迁移源固定摘要更新为 ffb0e57ef8637a6fe98696e588a332de4e9bc7040831138d1a5336c48eed6644。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+  'hub/records/**/*.test.ts' hub/knowledge/personal-import-scope.test.ts hub/knowledge/personal-mount-recovery.test.ts \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+  'hub/refs/*personal*.test.ts' packs/workflow/case-review/packs.test.ts \
+  tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts \
+  tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+```
+
+本项未运行全量 unit／acceptance、Linux CI 或来源检查；全部工作流／引擎及本轮文档检查将在涉及依据读取的修复完成后统一记录，未运行不算通过。
