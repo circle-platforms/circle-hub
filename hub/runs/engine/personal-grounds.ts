@@ -7,7 +7,8 @@ import type { Principal } from '../../records/api.ts';
 import type { EngineContext } from './deps.ts';
 
 export async function personalGroundProblem(ctx: EngineContext, by: Principal, value: unknown, bindings: readonly SourceBinding[] = []): Promise<ProtocolError | null> {
-  const spaces = ctx.deps.knowledge.spaces;
+  // Engines built without the knowledge port (some package tests) have no personal spaces to guard.
+  const spaces = ctx.deps.knowledge?.spaces;
   if (!spaces) return null;
   const pins = new Map<string, string>();
   for (const binding of bindings) {
