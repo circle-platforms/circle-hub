@@ -24,6 +24,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
   captures, and recovers stale locks atomically so concurrent captures retain their upload/event chain.
   Already normalized Unicode text avoids whole-file replacement buffers; capture records and view continuations retain
   their exact scanner-version provenance while tree content remains unchanged.
+  The client-script gate pins the stale-owner quarantine call to its reviewed function, preserving checks on every other
+  filesystem rename.
 
 - Memory space limits count enabled titles, paths and bodies and default to 20 enabled documents per space. Session
   lists and reads enforce the same limits, and upgrades preserve existing memory versions and historical usage.

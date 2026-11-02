@@ -260,6 +260,7 @@
 
 - #132 冷读视图 CI 已定位到 `bcb4c741` 的扫描器版本变化：完整输出仅有四处组成／来源清单／游标引用变化，树根和内容相同。补齐来源观察与分页绑定回归，再按下文“冷读视图字节复核”说明更新已复核的固定摘要；字节数、条目数及全部性能限制不变。
 - #132 个人技能依赖 CI：更新旧夹具的授权顺序，明确检查“依赖尚未授权时拒绝父技能授权”，并增加合法授权后收回依赖、冻结立即拒绝的回归；没有放宽 L1 的授权前检查或运行时依赖读取规则。
+- #132 客户端脚本门禁 CI：按 Claude 本次明确要求，逐调用点复核并登记锁恢复的原子隔离移动，保留已复现竞争的修正；技能升至 1.3.17，整函数片段、精确调用和原有 Jev 记录均受门禁保护。
 
 - 独立安全复核的 8 项及 3 条设计说明均已修正，整理为 8 个本机签署提交；原审查意见保留。每项做法、复现、检查结果及未运行项见末尾“安全审查修正记录”和“安全复核收口”。
 
@@ -629,3 +630,32 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
   hub/refs/diagnostics.test.ts hub/records/lock-namespaces.test.ts
 node --test --test-reporter=tap hub/refs/skills-personal.test.ts
 ```
+
+### 独立采集脚本门禁 CI 补查（#132，Claude 2026-11-02）
+
+#### 做了的
+
+- 不能撤回 `clearStaleLock` 的原子移动：此前已经确定性复现复制后删除会删掉刚建立的新锁所有者，进而破坏互斥和上传事件链。本次不另改锁实现，只补遗漏的逐调用点审查；不是把 `rename` 或整个包加入免检名单。
+- 按 Claude 本次明确授权，由 Codex 于 2026-11-02 复核 `tools/operation-capture/lib/state.ts` 的 `rename(join(path, owner.name), quarantine)`。源来自 `staleLock` 对私有 `.lock` 目录的观察：目录不能为链接，子项仅固定所有者文件或十六进制隔离名，文件需为普通单链接文件，原始内容需符合陈旧所有者。目标为同一锁目录内的随机 `.stale-<UUID>` 名，不接收外部路径或移动锁目录。移动后核对原始内容，变化或缺失即停止本轮清理并重试；符合快照的隔离项才删除，新的活跃所有者不会被按旧路径删除。
+- 审查记录固定文件、精确调用及整个 `clearStaleLock` 函数字节摘要 `6ca827ad47560d51bd91ce0a26cf31973accf5220c881b349012caf1b1ad43e3`，复核人如实记为 Codex，没有冒用原 Jev 条目的“集成者”。原 Jev 审查内容不变。新增真实函数回归，修改隔离路径、替换所有者集合或复制额外调用均重新触发门禁；完整发布清单仍要求两条登记各恰好命中一次。
+- `knowledge-contribution` 升至 1.3.17，重生成两份客户端版本快照及发布清单；当前安装说明同步版本。扫描镜像为前项的 1.3.16 缓冲区优化，扫描器仍为 `credential-scan@3`。未新增依赖、链接能力或目录移动入口。
+
+#### 验证
+
+- 三个原 CI 失败文件、独立采集／分发、包静态约束及四个必跑文件合并复查 **88 项通过、0 失败、0 跳过**。PG 18 ownership 实际运行；原子锁竞争、上传事件链、旧事件扫描和安装清单断言保留。门禁实际扫描 case-compile 的 45 份及 knowledge-contribution 的 30 份脚本／辅助文件／钩子，恰好命中两个已登记调用。
+- 本组冷读用例再通过：约 6.664 秒、RSS 507,056 KiB、95 次查询，视图摘要 `955e3658…`、15,665,029 字节及全部原计数符合；未放宽 RSS 568,616 KiB、查询 140 次或时长 30 秒上限。前项独立冷读及 197 项组同样通过，各组重叠不相加。类型、独立采集生成清单核对、`git diff --check` 通过；最后 `npm run test:docs` 289 项通过、0 跳过。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  hub/knowledge/view-perf.test.ts hub/refs/skills-personal.test.ts \
+  scripts/real/skill-script-safety.test.ts \
+  packs/workflow/knowledge-contribution/testing/operation-capture.test.ts \
+  packs/workflow/knowledge-contribution/testing/operation-distribution.test.ts \
+  packs/workflow/case-review/packs.test.ts \
+  hub/platform/environment.test.ts hub/platform/ownership.test.ts \
+  hub/refs/diagnostics.test.ts hub/records/lock-namespaces.test.ts
+npm run typecheck
+node packs/workflow/knowledge-contribution/pack-files.ts --check
+```
+
+- 所有操作使用合成数据和临时资源，不接触持久部署、真实来源或个人环境配置。没有运行完整 unit／acceptance、完整工作流／引擎组、Linux CI、来源归档检查或新布局截图；本轮没有改生产运行／依据、迁移、合约、来源工具或界面布局。没有把未运行算作通过，没有新增业务正文 SHA 验真。新增的片段摘要是 Claude 明确要求的逐调用点审查，清单重签沿用原发布机制。三个 CI 项分别本机签署提交，不推送、不建 PR。
