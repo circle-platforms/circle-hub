@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Check cleared team grounds through the existing exact source index.
+
 - Bound repeated legacy personal-tree traversal and keep retirement holder lookups indexed.
 
 The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](docs/hub-r4-brief.md). Nothing below has been released.

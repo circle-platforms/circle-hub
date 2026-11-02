@@ -1296,3 +1296,5 @@ Decision 89 step 3 adds the optional records `personalSync` port to the knowledg
 isolated staging: they do not enter knowledge search, memory auto-load or pack publication. The real-Hub acceptance
 scenario checks two clients, privacy and purge through this internal port alongside ordinary MCP reads. Native export,
 revision mapping, verified CAS and conflict projection are implemented in step 4; HTTP authentication stays in step 5.
+
+Cleared team src grounds use the existing source-hash index and metadata-only purge checks; no full team-source body scan or cross-request negative cache is used. A 400-source regression covers bounded matching loads and immediate invalidation.

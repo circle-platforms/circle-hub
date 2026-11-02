@@ -446,13 +446,13 @@ export class KnowledgeSpaces {
     const payloads=this.#ctx.records.personalPayloads;if(!payloads)return false;
     if(depth>64)fail('SPACE_ENTRY_INVALID','依据链超过可核对的深度上限');
     for(const reference of references){const ref=parseReference(reference);
-      if(ref.scheme==='src')for(const id of version.body.sources){
-        const source=await this.#ctx.records.store.get(id);if(source?.kind!=='knowledge_space_source')continue;
+      if(ref.scheme==='src')for(const source of await this.#ctx.records.store.findMany({key:'knowledge.space.source_hash',values:[ref.sha256],kind:'knowledge_space_source'})){
+        if(!version.body.sources.includes(source.digest))continue;
         const original=SpaceSourceBody.parse(source.body);
-        if(original.sha256===ref.sha256&&(await payloads.inspect(original.artifact))?.cleared)return true;
+        if(original.sha256===ref.sha256&&await payloads.cleared(original.artifact))return true;
       }
       if(ref.scheme!=='tree')continue;
-      if((await payloads.inspect(ref.root))?.cleared)return true;
+      if(await payloads.cleared(ref.root))return true;
       if(!ref.entry)continue;
       if(visiting.has(reference))fail('SPACE_ENTRY_INVALID','依据链存在循环，核对未完成');
       const nextVersion=await this.version(ref.root);if(!nextVersion)continue;
