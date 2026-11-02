@@ -105,7 +105,6 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
       }
     }
   }
-  if(run.knowledge_spaces&&ctx.deps.knowledge.spaces)for(const root of [run.knowledge_spaces.team,run.knowledge_spaces.personal])for(const hash of await ctx.deps.knowledge.spaces.basisSources(reader,root))if(!sources.has(hash))sources.set(hash,'expected');
   // A projection may place items in another slot than the subject (FragmentRef.slot): their sources are judged too.
   for (const item of run.items) {
     try {
@@ -140,7 +139,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
       (candidates ??= (async () => {
         const out: QuoteCandidate[] = [];
         for (const [sha, role] of sources) {
-          const source = await readScope(`src:${sha}`, async () => ctx.deps.knowledge.spaces && await ctx.deps.knowledge.spaces.hasSource(sha) ? ctx.deps.knowledge.spaces.source(reader,sha,identity.run) : artifacts.source(reader, sha, { consumer }));
+          const source = await readScope(`src:${sha}`, async () => ctx.deps.knowledge.spaces ? ctx.deps.knowledge.spaces.source(reader,sha,identity.run,consumer) : artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
           const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
           const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
@@ -243,7 +242,7 @@ export async function buildRootScope(ctx: EngineContext, root: string, reader: P
       (candidates ??= (async () => {
         const out: QuoteCandidate[] = [];
         for (const [sha, role] of sources) {
-          const source = await readScope(`src:${sha}`, async () => ctx.deps.knowledge.spaces && await ctx.deps.knowledge.spaces.hasSource(sha) ? ctx.deps.knowledge.spaces.source(reader,sha,identity.run) : artifacts.source(reader, sha, { consumer }));
+          const source = await readScope(`src:${sha}`, async () => ctx.deps.knowledge.spaces ? ctx.deps.knowledge.spaces.source(reader,sha,identity.run,consumer) : artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
           const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
           const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
@@ -319,7 +318,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   // Reading is an authorization decision, not immutable document content: recheck it on every use.
   const legacySources = sourceReader(artifacts, consumer);
   const spaces=ctx.deps.knowledge.spaces;
-  const sources:typeof legacySources=spaces?{read:async(hash,reader)=>await spaces.hasSource(hash)?spaces.source({id:reader.user!,role:reader.role,name:''},hash,reader.run):legacySources.read(hash,reader)}:legacySources;
+  const sources:typeof legacySources=spaces?{read:async(hash,reader)=>spaces.source({id:reader.user!,role:reader.role,name:''},hash,reader.run,consumer)}:legacySources;
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
@@ -349,7 +348,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
         const spaceRoot=ref.scheme==='tree'&&spaces?await spaces.version(ref.root):null;
         let problem = scopeProblem(ref, scope);
         if(spaceRoot&&scope.reader.run&&ref.scheme==='tree')problem=await spaces!.runAllows({id:scope.reader.user!,role:scope.reader.role,name:''},ref.root,ref.path,scope.reader.run)?null:(scopeProblem(ref,scope)??'引用的知识树根不是本次运行锁定的根');
-        if(ref.scheme==='src'&&spaces&&scope.reader.run&&await spaces.hasSource(ref.sha256)&&await spaces.source({id:scope.reader.user!,role:scope.reader.role,name:''},ref.sha256,scope.reader.run))problem=null;
+        if(ref.scheme==='src'&&spaces&&scope.reader.run&&await spaces.spaceSource({id:scope.reader.user!,role:scope.reader.role,name:''},ref.sha256,scope.reader.run))problem=null;
         if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       let result: Awaited<ReturnType<typeof resolveReference>>;

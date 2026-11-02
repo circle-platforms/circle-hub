@@ -549,7 +549,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     now:deps.now?.bind(deps),
     reader,
     parsers: deps.parsers,
-    sources:deps.knowledge.spaces?{read:async(hash,identity)=>await deps.knowledge.spaces!.hasSource(hash)?deps.knowledge.spaces!.source(call.principal,hash,identity?.run):sources.read(hash,identity)}:sources,
+    sources:deps.knowledge.spaces?{read:async(hash,identity)=>deps.knowledge.spaces!.source(call.principal,hash,identity?.run)}:sources,
     trees: deps.knowledge.treeReader(),
     records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',

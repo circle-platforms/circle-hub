@@ -719,7 +719,24 @@ export class KnowledgeSpaces {
       return artifact;
     }));
   }
-  async source(by: Principal, sha256: string, runId?: string): Promise<ArtifactSource | null> {
+  /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
+  async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model'): Promise<ArtifactSource | null> {
+    const artifacts=this.#ctx.records.artifacts;
+    const records=await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({key:'knowledge.space.source_hash',values:[sha256],kind:'knowledge_space_source'});
+    const captures=new Set(records.filter(row=>row.body.space!=='team').map(row=>row.body.artifact));
+    const run=runId?(await this.#ctx.records.store.find<any>({key:'runs.id',value:runId,kind:'run',limit:1})).items[0]?.body:null;
+    const pins=(run?.sources??[]).filter((binding:any)=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact;}).map((binding:any)=>String(binding.artifact));
+    if(pins.length){for(const record of pins){const source=await artifacts.source(by,sha256,{consumer,record})??await artifacts.sourceForRun(by,sha256,runId!,{consumer,record});if(source)return source;}}
+    else {
+      const direct=await artifacts.source(by,sha256,{consumer});
+      if(direct&&!captures.has(direct.artifact.digest))return direct;
+      if(captures.size)for(const artifact of [...await artifacts.records(sha256)].reverse()){if(captures.has(artifact.digest))continue;const source=await artifacts.source(by,sha256,{consumer,record:artifact.digest});if(source)return source;}
+      if(runId){const generated=await artifacts.sourceForRun(by,sha256,runId,{consumer});if(generated)return generated;}
+    }
+    return this.spaceSource(by,sha256,runId,consumer);
+  }
+  /** Space authorization alone, for exact-reference scope checks; never falls back to an unrelated capture. */
+  async spaceSource(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model'): Promise<ArtifactSource | null> {
     const records = await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({ key: 'knowledge.space.source_hash', values: [sha256], kind: 'knowledge_space_source' });
     for (const record of records) {
       const body = SpaceSourceBody.parse(record.body);
@@ -739,19 +756,9 @@ export class KnowledgeSpaces {
         if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
           continue;
       }
-      return this.#ctx.records.artifacts.source(owner, sha256, { record: body.artifact, consumer: 'model' });
+      return this.#ctx.records.artifacts.source(owner, sha256, { record: body.artifact, consumer });
     }
-    if (runId && records.length) {
-      const run = (await this.#ctx.records.store.find<any>({ key: 'runs.id', value: runId, kind: 'run', limit: 1 })).items[0];
-      // An independently bound capture keeps its own authority even if equal bytes also occur in a private space.
-      for (const binding of run?.body.sources ?? []) {
-        const ref = parseReference(binding.reference);
-        if (ref.scheme === 'src' && ref.sha256 === sha256)
-          return this.#ctx.records.artifacts.source(by, sha256, { record: binding.artifact, consumer: 'model' });
-      }
-      return null;
-    }
-    return this.#ctx.records.artifacts.source(by, sha256, { consumer: 'model' });
+    return null;
   }
   async hasSource(sha256: string): Promise<boolean> { return (await this.#ctx.records.store.find({ key: 'knowledge.space.source_hash', value: sha256, kind: 'knowledge_space_source', limit: 1 })).items.length > 0; }
   treeReader(): TreeReader {

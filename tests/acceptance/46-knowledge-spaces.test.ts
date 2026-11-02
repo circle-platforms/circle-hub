@@ -81,6 +81,10 @@ test('private source imports verify exact quotations and capacity errors keep th
 test('run space locks survive later writes and administrator reads remain limited to the initiator', async () => {
   await hub.assignPack(owner.principal, REVIEW_PACK);
   const spaces = hub.hub.knowledge.spaces!;
+  const independentText='合成独立来源原有读取权';
+  const independent=await client.upload(Buffer.from(independentText),'independent.txt','text/plain');
+  const privateText='合成目录原文不参与运行内文本查找';
+  await spaces.importFile(owner.principal,Buffer.from(privateText),'text/plain','private-candidate.txt');
   const locked = await spaces.write(owner.principal, { kind: 'observation', statement: '合成锁定的笔记', path: '/run-notes' });
   const node = (id: string, text: string, children: unknown[] = [], data: Record<string, unknown> = {}) => ({ data: { id, text, ...data }, children });
   const map = { root: node('r1', '合成脑图', [node('c1', '合成用例', [node('e1', '合成期望')], { resource: ['合成功能'] })]), template: 'default', theme: 'fresh-blue', version: '1.4.43' };
@@ -89,6 +93,20 @@ test('run space locks survive later writes and administrator reads remain limite
   const started = await client.call('start_run', { pack: REVIEW_PACK, inputs: { map: { reference: uploaded.out.reference } } });
   assert.equal(started.isError, false, started.text);
   const run = started.out.run!;
+  const beforeCopy=await client.call('get_nodes',{run:run.run,reference:independent});
+  assert.equal(beforeCopy.isError,false,beforeCopy.text);
+  const scopedBefore=await client.call('resolve_reference',{run:run.run,text:independent});
+  await spaces.importFile(other.principal,Buffer.from(independentText),'text/plain','unrelated-private-copy.txt');
+  const afterCopy=await client.call('get_nodes',{run:run.run,reference:independent});
+  assert.equal(afterCopy.isError,false,afterCopy.text);
+  assert.equal(afterCopy.out.content?.text,beforeCopy.out.content?.text,'another personal copy cannot change the source read');
+  const scopedAfter=await client.call('resolve_reference',{run:run.run,text:independent});
+  assert.equal(scopedAfter.out.resolution,scopedBefore.out.resolution,'private-copy existence cannot change exact-reference scope');
+  const privateCandidate=await client.call('resolve_reference',{run:run.run,text:privateText,expect:'quotation'});
+  assert.equal(privateCandidate.out.resolution,'unresolved',privateCandidate.text);
+  assert.deepEqual(privateCandidate.out.references,[]);
+  const declared=await client.call('resolve_reference',{run:run.run,text:'合成用例',expect:'quotation'});
+  assert.equal(declared.out.resolution,'resolved',declared.text);
   assert.equal(run.knowledge_spaces?.personal, locked.root);
   assert.equal(run.knowledge_spaces?.owner, owner.user.id);
   assert.ok(run.knowledge_spaces?.team);
