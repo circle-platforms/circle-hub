@@ -52,7 +52,7 @@ export class PersonalPacks {
     by=await this.#own(by);if(!(await this.versions(by.id,pack)).length)throw new AccessError('对象不存在或无权读取');
     if(input.member&&!(await this.#options.records.principals.get(input.member)))throw new AccessError('对象不存在或无权读取');
     const body=PersonalPackGrantBody.parse({space:by.id,pack,audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now()});
-    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'}]},tx);});
+    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
   }
   async retire(by:Principal,pack:string,version:string){
     by=await this.#own(by);const info=(await this.versions(by.id,pack)).find(info=>info.version===version);if(!info)throw new AccessError('对象不存在或无权读取');

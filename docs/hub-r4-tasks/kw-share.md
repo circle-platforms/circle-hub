@@ -139,3 +139,13 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 
 
 决定 88 第 1、2 项验证：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 contracts/src/sharing.test.ts hub/knowledge/sharing.test.ts hub/knowledge/spaces-review.test.ts` 17 项通过，0 失败、0 跳过。新增 MCP 与密码会话表单的目标目录／修订，以及被拒原始引文读取回归后，场景 47 的 9 项通过，0 失败、0 跳过；集成回归随下一步提交保留。未增加全量回归或数据 SHA 校验。
+
+
+### 决定 88 的记录页与拒收原始参数回归
+
+第 3 条增加最小的个人知识／个人工作流授权记录与共享回执表：普通成员只查询本人发出／收到的索引，管理员只查询全体管理员授权索引；每条再核对正文受众，不能把派生索引当作披露依据。个人包新增同阶段的授权人索引，无新迁移。成员只见本人的共享回执，管理员见全部安全回执；原文及原始授权记录的读取口仍不由列表放开。分页按已授权来源独立保留游标，成员、时间过滤不会扩大范围。
+
+新增场景 47 首先复现记录页没有授权历史；实现后覆盖本人、接收人、无关成员、管理员、成员过滤与伪造成员过滤、错误受众索引和时间过滤。另明确完成第二轮第 4 项专项：团队运行本身对管理员及被分享者可读，但带私有依据的被拒原始提交 `rec:` 与记录输入都同不存在的记录同形；本人仍可读取保留的原始引文。该专项确认现有完整读者包装生效，没有放宽原始记录访问或删除原始参数。
+
+
+记录页及专项验证：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 tests/acceptance/47-knowledge-sharing.test.ts hub/server/console-search.test.ts hub/runs/packs/personal.test.ts hub/server/readers-sharing.test.ts` 23 项通过，0 失败、0 跳过。含被拒原始提交的本人／管理员／被分享者三方直接读取与记录输入、目标目录与修订的 MCP／密码表单、命名授权与全体管理员授权、无关成员、伪造筛选及错误索引受众、时间过滤。第二阶段 CI 又发现平台未转发两个新索引限额变量，协调者已在 `kw-spaces-pr` 的 `6cbd17ca` 修复；本步骤保存后再变基纳入，并追加平台环境变量检查。

@@ -186,3 +186,81 @@ test('a private workflow with identical team bytes keeps its owner and hides req
   const fixed={...spec,version:'1.0.1'},updated=await writePack(join(dir,'private-unknown-fixed'),fixed);
   const refused=await hub.hub.registry.publish(hub.admin.principal,updated.dir,{answerRequests:[ownRequests[0].record]});assert.equal(refused.ok,false);assert.ok(!refused.ok&&refused.problems.some(row=>row.rule==='publish.answer_request'),'team publication cannot answer a private repair request with the same digest');
 });
+
+
+test('shared revisions use the selected team directory through MCP and password-console forms',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,source=await hub.records.artifacts.ingest({bytes:Buffer.from('合成修订依据：每次三项。'),mediaType:'text/plain',origin:{read:{object:'synthetic:document:revision'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:false}});
+  const body={kind:'observation',statement:'合成共享修订第一版',path:'/revision-personal',grounds:[{reference:'src:'+source.body.sha256,quotation:'每次三项'}]};
+  const first=(await client.call('upload_file',{personal_entry:body})).out.personal_entry!;
+  const shared=await client.call('upload_file',{share_entry:{root:first.root,path:body.path,entry:first.entry,team_path:'/revision-team/first'}});
+  assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.target_path,'/revision-team/first');assert.ok(shared.text.includes('/revision-team/first'));
+  const changed=(await client.call('upload_file',{personal_entry:{...body,statement:'合成共享修订第二版',replaces:first.entry}})).out.personal_entry!;
+  const browser=await openConsole(hub,owner.token);
+  const page=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:changed.root,path:body.path,entry:changed.entry}));
+  assert.equal(page.status,200,page.body);assert.match(page.body,/name="team_path"/);
+  const csrf=/name="csrf" value="([^"]+)"/.exec(page.body)?.[1];assert.ok(csrf);
+  const merged=await browser.post('/console/knowledge/do/share',{csrf,root:changed.root,path:body.path,entry:changed.entry,team_path:'/revision-team/second'});
+  assert.equal(merged.status,303,merged.body);
+  const team=(await spaces.current('team'))!,current=await spaces.entry(other.principal,team.root,'/revision-team/second',changed.entry);
+  assert.equal(current?.body.replaces,first.entry);assert.equal(current?.body.shared_from?.path,body.path);
+  assert.match((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).text,/被取代/);
+  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队目录/);assert.ok(history.body.includes('/revision-team/second'));
+});
+
+test('rejected raw submissions never disclose copied private quotations through direct records or record inputs',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,privateQuote='合成仅本人可读的拒收原始引文甲';
+  const privateSource=await spaces.importFile(owner.principal,Buffer.from(privateQuote),'text/plain','synthetic-rejected-quote.txt','/rejected-private');
+  const personal=await spaces.write(owner.principal,{kind:'observation',statement:'合成被拒提交依据',path:'/rejected-private',grounds:[{reference:'src:'+privateSource.body.sha256,quotation:privateQuote}]});
+  const input=await hub.records.artifacts.ingest({bytes:Buffer.from('{"synthetic":"public-input-for-rejected-submission"}'),mediaType:'application/json',origin:{read:{object:'synthetic:document:submission-input'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id,other.user.id],admins:true,packs:[],shareable:false}});
+  const started=await client.call('start_run',{pack:packId,inputs:{target:{reference:'src:'+input.body.sha256}}});assert.equal(started.isError,false,started.text);const run=started.out.run!;
+  for(const by of [other.principal,hub.admin.principal])assert.ok(await hub.hub.runs.getRun(by,run.run),'the counterexample readers otherwise have access to this team run');
+  const reference=`tree:${run.knowledge_spaces!.personal}/rejected-private@${personal.entry}`;
+  const refused=await client.call('submit_result',{run:run.run,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',code:'level',rank:'a',statement:privateQuote,grounds:[reference]}]});
+  assert.equal(refused.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE',refused.text);
+  const detail=await hub.hub.runs.getRun(owner.principal,run.run);assert.ok(detail?.submissions.length);const raw='rec:'+detail.submissions[0].record;
+  const own=await client.call('get_nodes',{reference:raw});assert.equal(own.isError,false,own.text);assert.ok(own.text.includes(privateQuote),'the received raw submission is preserved for its submitter');
+  for(const actor of [reader,admin]){
+    const denied=await actor.call('get_nodes',{reference:raw}),missing=await actor.call('get_nodes',{reference:'rec:'+'e'.repeat(64)});
+    assert.equal(denied.isError,true,denied.text);assert.deepEqual(denied.out.errors,missing.out.errors);assert.ok(!denied.text.includes(privateQuote));
+    const rebound=await actor.call('start_run',{pack:packId,inputs:{target:{reference:raw}}});assert.equal(rebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rebound.text);assert.equal(rebound.out.run,undefined);assert.ok(!rebound.text.includes(privateQuote));
+  }
+});
+
+
+test('records disclose member grants only to participants and give administrators all-admin grants and all share receipts',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,personal=hub.hub.registry.personal!;
+  const namedPath='/synthetic-named-grant-audit',adminPath='/synthetic-admin-grant-audit';
+  await spaces.directory(owner.principal,namedPath);await spaces.directory(owner.principal,adminPath);
+  await spaces.grant(owner.principal,{path:namedPath,audience:'member',member:other.user.id});
+  await spaces.grant(owner.principal,{path:adminPath,audience:'administrators'});
+  for(const [id,audience] of [['synthetic-named-audit-workflow','member'],['synthetic-admin-audit-workflow','administrators']] as const){
+    const spec=workflowPack({id,product:{catalogs:[]}}),written=await writePack(join(dir,id),spec);
+    const published=await personal.publish(owner.principal,written.dir);assert.ok(published.ok,JSON.stringify(published));
+    await personal.grant(owner.principal,id,{audience,...(audience==='member'?{member:other.user.id}:{})});
+  }
+  const first=await spaces.write(owner.principal,{kind:'observation',statement:'合成审计甲未核验条目',path:'/audit-owner-source'});
+  const second=await spaces.write(other.principal,{kind:'observation',statement:'合成审计乙未核验条目',path:'/audit-other-source'});
+  await spaces.share(owner.principal,{root:first.root,path:'/audit-owner-source',entry:first.entry,team_path:'/audit-owner-target'});
+  await spaces.share(other.principal,{root:second.root,path:'/audit-other-source',entry:second.entry,team_path:'/audit-other-target'});
+  // A stale or wrong projection must not turn a member grant into an administrator-visible event.
+  for(const [kind,schema,object] of [['knowledge_space_grant','knowledge-space-grant@1',{path:'/synthetic-misindexed-private-grant'}],['personal_pack_grant','personal-pack-grant@1',{pack:'synthetic-misindexed-private-pack'}]] as const){
+    const key=kind==='knowledge_space_grant'?'knowledge.space.grantee':'personal.pack.grantee';
+    await hub.records.store.put({kind,schema,provenance:'declared',body:{space:owner.user.id,...object,audience:'member',member:other.user.id,action:'grant',by:owner.user.id,at:new Date().toISOString()},index:[{key,value:'administrators'}]});
+  }
+  const stranger=await hub.createUser('合成无关记录成员');
+  const ownerPage=await (await openConsole(hub,owner.token)).get('/console/records');
+  const otherPage=await (await openConsole(hub,other.token)).get('/console/records');
+  const adminBrowser=await openConsole(hub,hub.admin.token),adminPage=await adminBrowser.get('/console/records');
+  const absentPage=await (await openConsole(hub,stranger.token)).get('/console/records');
+  for(const page of [ownerPage,otherPage,adminPage,absentPage])assert.equal(page.status,200,page.body);
+  for(const page of [ownerPage,otherPage]){assert.ok(page.body.includes('synthetic-named-grant-audit'));assert.ok(page.body.includes('synthetic-named-audit-workflow'));}
+  assert.ok(adminPage.body.includes('synthetic-admin-grant-audit'));assert.ok(adminPage.body.includes('synthetic-admin-audit-workflow'));
+  for(const page of [adminPage,absentPage]){assert.ok(!page.body.includes('synthetic-named-grant-audit'));assert.ok(!page.body.includes('synthetic-named-audit-workflow'));}
+  assert.ok(!adminPage.body.includes('synthetic-misindexed-private-grant'));assert.ok(!adminPage.body.includes('synthetic-misindexed-private-pack'));
+  assert.ok(adminPage.body.includes('audit-owner-target'));assert.ok(adminPage.body.includes('audit-other-target'));
+  assert.ok(ownerPage.body.includes('audit-owner-target'));assert.ok(!ownerPage.body.includes('audit-other-target'));
+  assert.ok(otherPage.body.includes('audit-other-target'));assert.ok(!otherPage.body.includes('audit-owner-target'));
+  const filtered=await adminBrowser.get('/console/records?'+new URLSearchParams({user:owner.user.id}));assert.equal(filtered.status,200,filtered.body);assert.ok(filtered.body.includes('audit-owner-target'));assert.ok(!filtered.body.includes('audit-other-target'));assert.ok(!filtered.body.includes('synthetic-named-grant-audit'));assert.ok(!filtered.body.includes('synthetic-named-audit-workflow'));
+  const dated=await adminBrowser.get('/console/records?'+new URLSearchParams({from:'2000-01-01',to:'2000-01-02'}));assert.equal(dated.status,200);assert.ok(!dated.body.includes('audit-owner-target'));assert.ok(!dated.body.includes('synthetic-admin-grant-audit'));
+  const forgedFilter=await (await openConsole(hub,stranger.token)).get('/console/records?'+new URLSearchParams({user:owner.user.id}));assert.equal(forgedFilter.status,200);assert.ok(!forgedFilter.body.includes('synthetic-named-grant-audit'));assert.ok(!forgedFilter.body.includes('audit-owner-target'));
+});

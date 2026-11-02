@@ -296,3 +296,9 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
 已有变量声明来自本包时，部署定义随后引用这个名字不妨碍本包发布新版；仍核对历版模式一致。部署名字可用性只核对首次声明，其他包的既有归属始终拒绝。归属查询和核对仍在发布事务的名字锁内完成。
 
 集成者于 2026-10-24 授权一项仅限静态审读的例外：包内相对路径 `functions/adoc/vendor/core.mjs`，完整 SHA-256 为 `5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d` 的上游浏览器文件，可含未执行的字面动态导入 `node:fs`、`node:fs/promises`、`node:async_hooks`。只放过这三个指定导入；路径或任一字节改变即失效，静态导入、getBuiltinModule 和其他模块不在例外内。全局内置模块表、运行时导入守卫与 OS 权限均不改变；同路径实际执行这些导入仍被拒绝，回归测试逐项核对。
+
+
+Decision 88 audit summaries add `personal.pack.grant_owner` alongside the existing grantee index when appending a personal
+use grant/revocation. The console queries only the participant's indexes, or the all-administrators index for administrators,
+and verifies the body audience before rendering. This first phase-3 index adds no migration or permission and never exposes
+another member's named grant through administrative audit views.
