@@ -317,10 +317,6 @@ const LEGACY_CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .avatars .avatar:nth-child(2){background:var(--think-bg);color:var(--t-unknown)}
 .avatars .avatar:nth-child(3){background:var(--write-bg);color:var(--t-pass)}
 .stages{display:flex;flex-wrap:wrap;gap:12px 26px}
-.knowledge-space .card-h{flex-wrap:wrap}
-.knowledge-space .card-h h3,.space-owner{min-width:0;overflow-wrap:anywhere}
-.knowledge-space .card-h .meta{max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-all}
-.knowledge-space h2{overflow-wrap:anywhere}
 .knowledge-flow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px;align-items:center}
 .knowledge-column{display:grid;gap:12px;min-width:0}
 .knowledge-column h3{font-size:var(--ui);margin:0}
@@ -576,14 +572,39 @@ table.calls td:nth-child(n+9){white-space:normal}
 .live-module{display:contents}
 .live-state{margin-top:4px;color:var(--t-incomplete);font-size:var(--ui-small)}
 
-.knowledge-selection .batch-submit{display:none;margin-top:12px}.knowledge-selection:has(input[name="selected_entry"]:checked) .batch-submit{display:inline-flex}.knowledge-selection input[type="checkbox"]{width:16px;height:16px;accent-color:var(--accent)}
-.knowledge-directory>.card-h{align-items:center;flex-wrap:wrap;gap:12px}.knowledge-directory>.card-h h3{flex:1;min-width:100px}.knowledge-directory>.card-h .actions{margin-left:auto}
-.knowledge-history{border:1px solid var(--border);border-radius:8px;padding:12px 16px}.knowledge-history>summary{font-weight:600}.grant-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px}.grant-controls label{display:grid;gap:4px;min-width:0}.grant-controls input{width:180px}.grant-controls:has(option[value="administrators"]:checked) .member-input{display:none}
 .modal .tablewrap{max-width:100%;min-width:0}.modal td:has(>time),[data-page-content] td:has(>.nowrap){white-space:nowrap}.fields>.grant-controls,.fields>.tablewrap{grid-column:1/-1}
 `;
 
 // Composition rules adapt the shared components without introducing a second palette.
 const SHELL_CSS = `
+.ch-app[data-without-inspector] { grid-template-columns: var(--nav-width) minmax(0, 1fr); }
+.ch-table-wrap { min-width: 0; width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.ch-table-wrap:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ch-table { width: max-content; min-width: 100%; }
+.ch-table td { max-width: 32rem; overflow-wrap: anywhere; }
+.ch-table th { background: var(--surface-1); }
+[data-area-content], [data-area-content] .ch-section { min-width: 0; }
+[data-area-content] .ch-section { margin: 0; }
+[data-area-content] > .ch-section + .ch-section { margin-top: var(--space-6); }
+[data-area-content] pre { max-width: 100%; box-sizing: border-box; overflow: auto; }
+[data-area-content] [data-fields] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+[data-area-content] [data-wide-field] { grid-column: 1 / -1; }
+[data-area-content] .ch-input input, [data-area-content] .ch-input select, [data-area-content] .ch-input textarea { width: 100%; }
+[data-area-content] .ch-dialog-body { min-width: 0; }
+[data-knowledge-selection] { min-width: 0; }
+[data-knowledge-selection]:not(:has(input[name="selected_entry"]:checked)) > .ch-bulkbar { display: none; }
+[data-grant-controls] { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+[data-grant-controls]:has(option[value="administrators"]:checked) [data-member-input] { display: none; }
+.ch-table-wrap .ch-table [data-technical] { min-width: 4em; }
+.ch-table-wrap .ch-table [data-technical][open] { max-width: 24rem; }
+.ch-seg a { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--space-3); border-radius: var(--radius-sm); font: 500 12px/1 var(--font-sans); color: var(--text-secondary); white-space: nowrap; }
+.ch-seg a[aria-current] { background: var(--surface-2); color: var(--text-primary); box-shadow: 0 0 0 1px var(--line-hairline); }
+.ch-row[data-row-href], .ch-table tr[data-row-href] { cursor: pointer; }
+.ch-row-title { overflow-wrap: anywhere; }
+.ch-inspector [data-area-content] .ch-section + .ch-section { margin-top: var(--space-5); }
+.ch-inspector [data-fields] { grid-template-columns: minmax(0, 1fr); }
+[data-technical] > summary { color: var(--text-link); font: 400 12px/18px var(--font-sans); cursor: pointer; }
+.ch-dialog [data-fields] { display: grid; gap: var(--space-3); }
 .ch-app { min-width: 0; }
 .ch-app > .ch-nav, .ch-app > .ch-inspector { position: sticky; top: 0; height: 100dvh; min-height: 0; box-sizing: border-box; overflow: auto; align-self: start; }
 .ch-pane > *, .ch-inspector > *, [data-page-content] > * { min-width: 0; max-width: 100%; }
@@ -621,6 +642,8 @@ body:has(> [data-sign-in]) { display: flex; min-height: 100vh; padding: var(--sp
 [data-sign-in] footer { justify-content: flex-end; margin-top: var(--space-2); }
 [data-sign-in] .ch-field-error, [data-sign-in] .error { overflow-wrap: anywhere; }
 @media (max-width: 760px) {
+ .ch-app[data-without-inspector] { grid-template-columns: minmax(0, 1fr); }
+ [data-area-content] [data-fields] { grid-template-columns: minmax(0, 1fr); }
  .ch-app { grid-template-rows: auto minmax(0, 1fr); }
  .ch-app > .ch-nav { position: static; height: auto; min-height: 0; overflow: visible; display: block; }
  .ch-app > .ch-inspector { position: static; height: auto; }

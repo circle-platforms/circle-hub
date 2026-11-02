@@ -1,6 +1,10 @@
 // Decision 88: real console and six-tool flows with synthetic passwords, temporary storage and the OS pack sandbox.
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
+import {parse,type DefaultTreeAdapterMap} from 'parse5';
+type HtmlNode=DefaultTreeAdapterMap['node'];
+const textOf=(node:HtmlNode):string=>'value' in node?node.value:'childNodes' in node?node.childNodes.map(textOf).join(''):'';
+const rowTexts=(node:HtmlNode):string[]=>[...('tagName' in node&&node.tagName==='tr'?[textOf(node)]:[]),...('childNodes' in node?node.childNodes.flatMap(rowTexts):[])];
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -45,9 +49,9 @@ test('space panels show all four readable scopes and only verified own knowledge
  const own=await browser.get(space({space:owner.user.id,path:verified.path}));assert.equal(own.status,200,own.body);
  assert.match(own.body,/方法 › 认证/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
- assert.match(own.body,/<span class="chip c-pass">已核验<\/span>/);assert.match(own.body,/<span class="chip plain">未核验<\/span>/);
+ assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已核验<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>未核验<\/span>/);
  assert.match(own.body,/\/ 1 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
- assert.match(own.body,/<details class="knowledge-history">/);assert.doesNotMatch(own.body,/<details class="knowledge-history" open/);
+ assert.match(own.body,/<details class="ch-section"><summary[^>]*>知识版本历史<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本历史/);
  assert.match(own.body,/版本 2 · \d{4}-\d{2}-\d{2} \d{2}:\d{2} ·/);
  assert.equal((own.body.match(/href="#grant-knowledge"/g)??[]).length,1);
  const checked=await browser.post('/console/knowledge/do/grant',{csrf:csrf(own.body),path:verified.path,audience:'administrators',member:reader.user.name,preview_grant:'1'});
@@ -67,7 +71,7 @@ test('a duplicate stops the preview before credential scanning and team rows ret
  assert.match(home.body,/<a href="\/console\/knowledge\/space\?space=team[^\"]+">合成重复预检观察<\/a>/);
  assert.doesNotMatch(home.body,new RegExp('>'+saved.entry.slice(0,12)+'</a>'));
  const preview=await browser.get(space({space:owner.user.id,root:saved.root,path:verified.path,entry:saved.entry,team_path:input.team_path,share:'1'}));assert.equal(preview.status,200,preview.body);
- assert.match(preview.body,/<td>与团队条目不重复<\/td><td>未通过<\/td>/);assert.match(preview.body,/<td>凭据扫描<\/td><td>未检查<\/td>/);assert.match(preview.body,/已有团队条目/);
+ const checks=rowTexts(parse(preview.body));assert.ok(checks.some(row=>row.startsWith('与团队条目不重复未通过')));assert.ok(checks.some(row=>row.startsWith('凭据扫描未检查')));assert.match(preview.body,/已有团队条目/);
  const team=await received.get(space({space:'team',path:input.team_path}));assert.equal(team.status,200,team.body);for(const field of ['提交人','来源','合并时间'])assert.ok(team.body.includes(field));assert.doesNotMatch(team.body,/<input[^>]+name="selected_entry"/);
 });
 
@@ -91,7 +95,7 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
 
 test('workflow grants reuse the dialog, hide unavailable team publication and expose no personal external actions', {skip},async()=>{
  const detail=await browser.get('/console/packs/'+pack+'?space='+owner.user.id);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);
- const listing=await browser.get('/console/packs?scope=personal');assert.match(listing.body,/#grant-pack/);
+ const listing=await browser.get('/console/packs?scope=personal');assert.match(listing.body,new RegExp('href="/console/packs/'+pack+'\\?space='+owner.user.id));
  const team=await browser.get('/console/packs?scope=team');assert.match(team.body,/使用范围：团队/);assert.doesNotMatch(team.body,/使用范围：本人及|使用范围：合成控制台作者/);
  const adminTeam=await adminBrowser.get('/console/packs?scope=team');assert.match(adminTeam.body,/使用范围：合成控制台作者/);
  assert.match(detail.body,/<button[^>]+disabled[^>]+title="没有发布权/);assert.doesNotMatch(detail.body,/name="(?:leases|dispatch|system|named_document)"|cmd-pack-assign/);

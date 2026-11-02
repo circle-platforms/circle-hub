@@ -12,7 +12,7 @@ export function selectedScope(ctx:PageContext):KnowledgeSearchScope{
 export const inScope=(scope:KnowledgeSearchScope,space:string,viewer:string)=>scope==='all'||(scope==='team'?space==='team':scope==='personal'?space===viewer:space!=='team'&&space!==viewer);
 export function knowledgeTabs(ctx:PageContext):Html{
  const scope=selectedScope(ctx),current=ctx.url.searchParams.get('view')==='memory'?'memory':'knowledge';
- return html`<div class="tabs">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='memory'?{view}:{})})}" class="${current===view?'on':''}" aria-current="${current===view?'page':'false'}">${uiLabelOf('knowledge_view',view)}</a>`)}</div>`;
+ return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='memory'?{view}:{})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}</nav>`;
 }
 export async function currentAudience(ctx:PageContext,space:string,path='/',product=false,pack?:string,memory=false){
  const own=space===ctx.principal.id;
@@ -64,9 +64,10 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:{})});
   return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)}<span class="ch-count">${(subset?count('workflow')+count('skill'):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
- const count= packs?new Set(packs.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:
+ const recentPacks=packs?.filter(p=>(p.kind==='workflow'||p.kind==='skill')&&inScope(scope,p.space??'team',ctx.principal.id));
+ const count= recentPacks?new Set(recentPacks.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:
   memory?memories.filter(item=>inScope(scope,item.space,ctx.principal.id)).length:
   visible.filter(v=>inScope(scope,v.space,ctx.principal.id)).reduce((n,v)=>n+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
- const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${packs?uiLabelOf('pack_kind','workflow'):memory?uiLabelOf('knowledge_view','memory'):'知识库'}</h2><p class="ch-meta">${uiLabelOf('knowledge_search_scope',scope)}</p></section><div class="ch-stat"><span class="ch-stat-label">${packs?'工作流与通用技能':memory?'记忆':'知识'}</span><span class="ch-stat-value">${count.toLocaleString('en-US')}</span></div>`;
- return pageLayout(html`<div class="ch-section" data-page-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector??overview});
+ const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${packs?uiLabelOf('pack_kind','workflow'):memory?uiLabelOf('knowledge_view','memory'):'知识库'}</h2><p class="ch-meta">${uiLabelOf('knowledge_search_scope',scope)}</p></section><div class="ch-stat"><span class="ch-stat-label">${packs?'工作流与通用技能':memory?'记忆':'知识'}</span><span class="ch-stat-value">${count.toLocaleString('en-US')}</span></div>${recentPacks?.length?html`<section class="ch-section"><h2 class="ch-section-label">最近发布</h2><ul class="ch-feed">${[...recentPacks].sort((a,b)=>b.published_at.localeCompare(a.published_at)).slice(0,5).map(pack=>html`<li>${link('/console/packs/'+pack.id,pack.title,{space:pack.space,scope})}<span class="ch-meta">${pack.published_at.slice(0,10)}</span></li>`)}</ul></section>`:''}`;
+ return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector===undefined?overview:content.layout.inspector});
 }

@@ -33,7 +33,7 @@ test('the memory panel derives directories from memory permissions without query
  const items=[{space:'owner',path:'/偏好/排版'}];
  const ctx={principal:{id:'reader'},url:new URL('http://127.0.0.1/console/knowledge?scope=shared&view=memory'),userName:async()=> '合成记忆作者',deps:{knowledge:{spaces:{visible:async()=>{throw Error('knowledge must not authorize memory');}},memory:{items:async()=>items}}}} as unknown as PageContext;
  const body=render(await spaceLayout(ctx,html``));assert.match(body,/合成记忆作者/);assert.match(body,/>偏好</);assert.match(body,/>排版</);assert.doesNotMatch(body,/>\/偏好/);
- assert.match(String(knowledgeTabs(ctx)),/view=memory" class="on" aria-current="page"/);
+ assert.match(String(knowledgeTabs(ctx)),/view=memory" aria-current="page"/);
  const own=render(await spaceLayout({...ctx,principal:{...ctx.principal,id:'owner'},url:new URL('http://127.0.0.1/console/knowledge?scope=personal&view=memory')},html``));assert.doesNotMatch(own,/<summary>个人<\/summary>/);
  items.length=0;assert.doesNotMatch(render(await spaceLayout(ctx,html``)),/共享给我的/);
 });

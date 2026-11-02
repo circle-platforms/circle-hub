@@ -401,7 +401,7 @@ describe('pages', () => {
     const bare = await createTestServer({ postgres, withoutProducts: true });
     try {
       const admin = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(bare.admin.token, bare.port) } });
-      assert.ok(admin.body.includes('（line-a）'), 'the product pack id of the catalog');
+      assert.ok(admin.body.includes('/console/packs/line-a'), 'the product pack id of the catalog');
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
@@ -415,13 +415,13 @@ describe('pages', () => {
     const user = await person(['local-review']);
     const session = await signIn(user.token);
     const packs = await get('/console/packs', session);
-    assert.ok(packs.body.includes('>local-review@1.0.0<'));
-    assert.ok(!packs.body.includes('>review@1.0.0<'), 'an unassigned pack is not listed');
+    assert.ok(packs.body.includes('href="/console/packs/local-review?scope='));
+    assert.ok(!packs.body.includes('href="/console/packs/review?scope='), 'an unassigned pack is not listed');
     assert.ok(!packs.body.includes('分配给'));
     const admin = await signIn(server.admin.token);
     const all = await get('/console/packs', admin);
-    for (const id of ['review@1.0.0', 'local-review@1.0.0']) assert.ok(all.body.includes(id), id);
-    for (const id of ['line-a@1.0.0', 'tracker-system@1.0.0']) assert.ok(!all.body.includes(id), id);
+    for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope='), id);
+    for (const id of ['line-a', 'tracker-system']) assert.ok(!all.body.includes('href="/console/packs/'+id+'?scope='), id);
     assert.ok((await get('/console/knowledge', admin)).body.includes('line-a'));
     assert.ok((await get('/console/connections', admin)).body.includes('tracker-system'));
     assert.ok(all.body.includes(user.user.name), 'assignments are shown to admins');

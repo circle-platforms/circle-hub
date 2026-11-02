@@ -14,6 +14,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Knowledge, memory and workflow views use shared lists and tables with contextual inspectors. Readable names replace
+  inline hashes; technical references remain available through explicit view entries. Wide tables scroll within their
+  containers on narrow screens, and knowledge selection exposes the existing batch sharing preview.
+
 - The console shares a three-column shell and responsive navigation across all areas, with a segmented theme control
   beside the account. Sign-in and setup pages use a centred panel with the same form components and a footer theme control.
 

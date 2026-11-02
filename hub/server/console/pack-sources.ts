@@ -4,7 +4,8 @@ import type { ResourceListing } from '../../ports.ts';
 import { code, html, link, liveModule, table, type Html } from './html.ts';
 import type { PageContext } from './pages.ts';
 import { byId, shownVersion, stateOf } from './packs.ts';
-import { card, chip, sectionHead } from './ui.ts';
+import {sectionHead} from './ui.ts';
+import {panel as card,badge as chip,technical} from './presentation.ts';
 
 /** The catalog remains the permission boundary; declarations and connections only enrich already-visible rows. */
 export async function packSources(ctx: PageContext, kind: Extract<PackKind, 'product' | 'system'>, resources: readonly ResourceListing[] = []): Promise<Html> {
@@ -14,9 +15,9 @@ export async function packSources(ctx: PageContext, kind: Extract<PackKind, 'pro
     const state = stateOf(pack);
     const product = products.find(handle => handle.id === pack.id && handle.version === pack.version)?.product;
     const systems = resources.filter(resource => resource.system_pack.split('@')[0] === pack.id);
-    const scope = kind === 'product' ? (product === undefined ? '—' : `${product.title}（${product.id}）`)
-      : systems.length === 0 ? '—' : html`${systems.map(resource => html`<div>${resource.name}（${code(resource.system_pack)}）</div>`)}`;
-    return [link(`/console/packs/${pack.id}`, pack.title), code(pack.version), chip(state.text, state.tone), scope];
+    const scope = kind === 'product' ? (product === undefined ? '—' : product.title)
+      : systems.length === 0 ? '—' : html`${systems.map(resource => html`<div>${resource.name}${technical(code(resource.system_pack),'查看')}</div>`)}`;
+    return [link(`/console/packs/${pack.id}`, pack.title), technical(code(pack.version),'查看'), chip(state.text, state.tone), scope];
   });
   const id = kind === 'product' ? 'product-sources' : 'system-sources';
   return liveModule(id, ['pack.published'], html`${sectionHead(uiLabelOf('pack_kind', kind), `${packs.length} 个`, undefined, id,

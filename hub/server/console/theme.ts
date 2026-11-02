@@ -30,7 +30,18 @@ export const THEME_SCRIPT = `(() => {
   document.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest('[data-theme-switch] [data-theme-choice]');
-    if (button && valid(button.dataset.themeChoice)) choose(button.dataset.themeChoice);
+    if (button && valid(button.dataset.themeChoice)) { choose(button.dataset.themeChoice); return; }
+    if (event.target.closest('a, button, input, select, textarea, label, summary')) return;
+    const row=event.target.closest('[data-row-href]');
+    if(row) window.location.assign(row.dataset.rowHref);
+  });
+  document.addEventListener('change',(event)=>{
+    if(!(event.target instanceof Element))return;
+    const form=event.target.closest('[data-knowledge-selection]');
+    if(!form)return;
+    const count=form.querySelectorAll('input[name="selected_entry"]:checked').length;
+    const label=form.querySelector('[data-bulk-count]');
+    if(label)label.textContent='已选 '+count+' 条';
   });
   document.addEventListener('keydown', (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) {
@@ -47,7 +58,16 @@ export const THEME_SCRIPT = `(() => {
     }
     if (!(event.target instanceof Element)) return;
     const button = event.target.closest('[data-theme-switch] [data-theme-choice]');
-    if (!button || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    if (!button) {
+      if(event.target.closest('input, select, textarea, button, summary'))return;
+      const row=event.target.closest('[data-row-href]');
+      if(!row||!['ArrowUp','ArrowDown'].includes(event.key))return;
+      const rows=[...row.parentElement.querySelectorAll(':scope > [data-row-href]')],at=rows.indexOf(row);
+      const next=rows[at+(event.key==='ArrowUp'?-1:1)];
+      if(next){event.preventDefault();window.location.assign(next.dataset.rowHref);}
+      return;
+    }
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
     const buttons = [...button.parentElement.querySelectorAll('[data-theme-choice]')];
     const at = buttons.indexOf(button);
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1

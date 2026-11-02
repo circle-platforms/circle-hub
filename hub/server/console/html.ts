@@ -26,10 +26,11 @@ export class Html {
 /** Page producers supply authorized content, never a path-driven lookup in the shell. */
 export interface PageLayout {
   sidebar?: Html;
-  inspector?: Html;
+  inspector?: Html | null;
   /** A selected object's inspector becomes the main view below 1180px. */
   detail?: boolean;
   back?: Html;
+  actions?: Html;
 }
 
 export function pageLayout(content: Html, layout: PageLayout): Html {
@@ -68,10 +69,10 @@ export function link(path: string, text: unknown, params: Record<string, string 
   return html`<a href="${href(path, params)}">${text}</a>`;
 }
 
-export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty = '没有记录', cls?: string): Html {
-  if (rows.length === 0) return html`<p class="empty">${empty}</p>`;
-  return html`<div class="tablewrap"><table${cls === undefined ? '' : html` class="${cls}"`}><thead><tr>${headers.map((h) => html`<th>${h}</th>`)}</tr></thead><tbody>${rows.map(
-    (row) => html`<tr>${row.map((cell) => html`<td>${cell}</td>`)}</tr>`,
+export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty = '没有记录', cls?: string, selection?: {selected?:number;hrefs?:readonly string[]}): Html {
+  if (rows.length === 0) return html`<div class="ch-empty"><p class="ch-empty-title">${empty}</p></div>`;
+  return html`<div class="ch-table-wrap" tabindex="0" role="region" aria-label="表格"><table class="ch-table"${cls === undefined ? '' : html` data-view="${cls}"`}><thead><tr>${headers.map((h,i) => html`<th scope="col"${rows.some(row=>typeof row[i]==='number')?html` class="num"`:''}>${h}</th>`)}</tr></thead><tbody>${rows.map(
+    (row,i) => html`<tr${selection?.selected===i?html` class="is-selected" aria-selected="true"`:''}${selection?.hrefs?.[i]?html` data-row-href="${selection.hrefs[i]}"`:''}>${row.map((cell) => html`<td${typeof cell==='number'?html` class="num"`:''}>${typeof cell==='number'?cell.toLocaleString('en-US'):cell}</td>`)}</tr>`,
   )}</tbody></table></div>`;
 }
 
@@ -213,12 +214,13 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const current = NAV.find(([key]) => key === chrome.active);
   const crumbs = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? link(current[2], current[1]) : undefined);
   const title = chrome.hint === undefined ? chrome.title : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${chrome.title}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
-  const top = html`${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${chrome.actions === undefined ? '' : html`<div class="ch-actions">${chrome.actions}</div>`}</header>`;
+  const actions=layout.actions??chrome.actions;
+  const top = html`${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
   const area = areaClass(chrome.active);
   const nav = NAV.map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
-  const overview = html`<section class="ch-section"><h2 class="ch-panel-title">${current?.[1] ?? chrome.title}</h2>${chrome.sub === undefined ? '' : html`<p class="ch-meta">${chrome.sub}</p>`}</section><section class="ch-section"><h3 class="ch-section-label">当前页面</h3><p>${chrome.title}</p></section><section class="ch-section"><h3 class="ch-section-label">当前账号</h3><p>${user.name}</p><p class="ch-meta">${user.role}</p></section>`;
-  return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail ? ' is-detail' : ''}">
+  const inspector = layout.inspector;
+  return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
 <nav class="ch-nav" aria-label="主导航">
 <input class="ch-visually-hidden" type="checkbox" id="console-navigation-toggle" data-navigation-toggle aria-controls="console-navigation-links" aria-label="展开导航">
 <div class="ch-brand">${logo()}<span>circle-hub</span><label class="ch-icon-btn" for="console-navigation-toggle" title="展开导航" aria-label="展开导航">${icon('menu')}</label></div>
@@ -227,7 +229,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
 <main class="ch-pane" id="console-main">${top}${content}</main>
-<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? state : ''}${layout.inspector ?? overview}</aside>
+${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? state : ''}${inspector}</aside>` : ''}
 </div>`, updates);
 }
 

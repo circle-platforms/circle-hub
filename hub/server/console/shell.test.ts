@@ -20,7 +20,7 @@ const bodyOf = (source: string) => elements(parse(source), 'body')[0];
 test('all eight areas use one three-column shell, the ordered navigation and a footer theme selector', () => {
   const areas: NavKey[] = ['overview', 'tasks', 'knowledge', 'packs', 'connections', 'records', 'team', 'settings'];
   for (const active of areas) {
-    const source = page({ title: '合成页面', active, user: member, csrf: 'synthetic-csrf', actions: html`${button('/secondary', '查看')}${button('/primary', '新建', { primary: true })}` }, html`<p>合成内容</p>`).text;
+    const source = page({ title: '合成页面', active, user: member, csrf: 'synthetic-csrf', actions: html`${button('/secondary', '查看')}${button('/primary', '新建', { primary: true })}` }, pageLayout(html`<p>合成内容</p>`, { inspector: html`<h2 class="ch-panel-title">合成概况</h2><p>知识 3 条</p>` })).text;
     const body = bodyOf(source), all = elements(body);
     const shell = all.find((el) => has(el, 'ch-app'))!;
     assert.equal(elements(shell).filter((el) => has(el, 'ch-nav')).length, 1);
@@ -89,4 +89,13 @@ test('folder navigation stops at three levels without hiding the link that opens
   assert.deepEqual(anchors.map(text), ['a', 'b', 'c']);
   assert.match(attr(anchors[2], 'href')!, /path=%2Fa%2Fb%2Fc/);
   assert.equal(attr(anchors[2], 'aria-current'), 'page');
+});
+
+
+test('areas without a meaningful overview omit the inspector and all placeholder account facts', () => {
+  const source=page({title:'合成区域',active:'records',user:member,csrf:null},html`合成记录`).text;
+  const all=elements(bodyOf(source));
+  assert.ok(all.some(el=>attr(el,'data-without-inspector')!==undefined));
+  assert.ok(!all.some(el=>has(el,'ch-inspector')));
+  assert.doesNotMatch(source,/当前页面|当前账号/);
 });

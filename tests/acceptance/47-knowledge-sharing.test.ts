@@ -119,7 +119,7 @@ test('console owner stages and publishes a generic skill, controls grants and ca
   assert.equal(staged.status,303,staged.body);const waiting=await ownConsole.get('/console/packs/-/publish'),stage=/name="stage" value="([^"]+)"/.exec(waiting.body)?.[1];assert.ok(stage,waiting.body);
   const outsider=await otherConsole.get('/console/packs/-/publish');assert.equal((await otherConsole.post('/console/packs/do/publish',{csrf:csrf(outsider.body),stage})).status,400);
   assert.equal((await ownConsole.post('/console/packs/do/publish',{csrf:nonce,stage})).status,303);
-  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>授权…<\/a>/);assert.match(detail.body,/发布到团队/);
+  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>分享…<\/a>/);assert.match(detail.body,/发布到团队/);
   assert.equal((await otherConsole.get(detailUrl)).status,404);
   assert.equal((await ownConsole.post('/console/packs/do/grant',{csrf:'invalid',pack:spec.id,audience:'member',member:other.user.name})).status,403);
   assert.equal((await ownConsole.send('/console/packs/do/grant',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'member',member:other.user.name}).toString()})).status,403);

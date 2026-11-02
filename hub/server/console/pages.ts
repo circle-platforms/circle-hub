@@ -1,3 +1,4 @@
+import {panel as knowledgePanel,facts as knowledgeFacts,section as knowledgeSection,areaPage as knowledgeShell,technicalCode,technical,stat} from './presentation.ts';
 import { digestOf } from '../../records/api.ts';
 // The console pages that read: tasks, one task, knowledge and task packs. Every enumeration value is shown through its
 // interface term (uiLabelOf, display rule 20), every claim in DISPLAY_ORDER, unknown with its own symbol and colour; absent
@@ -5,7 +6,7 @@ import { digestOf } from '../../records/api.ts';
 // waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { DISPLAY_ORDER } from '../../../contracts/generated/protocol.ts';
-import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
+import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isEntryKind, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
@@ -469,12 +470,12 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  if(ctx.deps.knowledge.spaces)return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge',hint:'个人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获授权者可读；记忆仅作会话偏好，不作为运行依据'}),await knowledgeHome(ctx))};
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'个人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获授权者可读；记忆仅作会话偏好，不作为运行依据'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
   const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
-  const pending = todos.length === 0 ? html`` : section('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [code(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? code(JSON.stringify(row.detail)) : '—'])));
+  const pending = todos.length === 0 ? html`` : knowledgeSection('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [technicalCode(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? technicalCode(JSON.stringify(row.detail)) : '—'])));
   const blocks: Html[] = [];
   for (const line of lines) {
     const builds = await ctx.deps.knowledge.builds(line.id);
@@ -496,19 +497,19 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         entry.total,
         entry.released,
         entry.produced,
-        current === null ? '—' : html`${link('/console/knowledge/tree', current.root.slice(0, 16), { root: current.root, path: '/' })}（${current.build.name}）`,
+        current === null ? '—' : html`${link('/console/knowledge/tree', current.build.name, { root: current.root, path: '/' })}`,
       ]);
     }
     const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
     rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
-      unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
+      unversioned === null ? '—' : link('/console/knowledge/root', '查看', {root:unversioned.root})]);
     const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
     if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
     const options = versions;
     const diff = options.length === 0 ? html`` : html`<form class="filters" method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">${ctx.deps.knowledge.spaces?'产品版本差异':'版本差异'}</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button type="submit">比较</button></form>`;
     blocks.push(
-      card(
-        { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
+      knowledgePanel(
+        { title: line.title, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
         html`${table([ctx.deps.knowledge.spaces?'产品版本':'版本', '名称族', '构建', '已发布', '已产出版本', ctx.deps.knowledge.spaces?'当前知识版本':'当前版本'], rows, '还没有构建')}<div class="card-f">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
@@ -517,8 +518,8 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品目录沿用产品线读权，仅管理员可用' })}` : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'个人、团队与共享给本账户的知识；已核验与未核验内容分别标示':'统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
-${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: ctx.deps.knowledge.spaces?'产品目录':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品目录':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
+    body: knowledgeShell(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'个人、团队与共享给本账户的知识；已核验与未核验内容分别标示':'统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品目录':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品目录':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">团队知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link('/console/knowledge/product',line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {
@@ -535,7 +536,7 @@ function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:strin
   }
   return {items:values.slice(start,start+size),start,next:start+size<values.length?Buffer.from(`${hash}:${start+size}`).toString('base64url'):null};
 }
-function invalidArrayCursor(ctx:PageContext):PageResult{return{status:400,body:page(ctx.chrome('分页参数无效'),html`<p>列表已变化或游标无效，请从第一页重新打开。</p>`) };}
+function invalidArrayCursor(ctx:PageContext):PageResult{return{status:400,body:knowledgeShell(ctx.chrome('分页参数无效'),html`<p>列表已变化或游标无效，请从第一页重新打开。</p>`) };}
 
 export async function productPage(ctx: PageContext): Promise<PageResult> {
   const id = param(ctx, 'id');
@@ -554,12 +555,12 @@ export async function productPage(ctx: PageContext): Promise<PageResult> {
     b.platform ?? '主平台',
     b.built_at ?? '—',
     b.released_at ?? '未发布',
-    b.root === null ? '—' : link('/console/knowledge/root', b.root.slice(0, 16), { root: b.root }),
+    b.root === null ? '—' : link('/console/knowledge/root', '查看', { root: b.root }),
   ]);
   const more = html`<p>分页：本页 ${shown.length?listing.start+1:0} 至 ${listing.start+shown.length}，共 ${builds.length} 个${listing.next?html`；${link('/console/knowledge/product','下一页',{id:line.id,line:versionLine,cursor:listing.next})}`:''}</p>`;
   return {
     status: 200,
-    body: page(
+    body: knowledgeShell(
       ctx.chrome(`${line.title}${versionLine ? ` ${versionLine}` : ''}`, { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · 构建` }),
       html`<p>名称：${line.names.join('、') || '—'}</p>${table(['构建', '名称族', '版本线', '别名', '平台', '构建时间', '发布时间', '根'], rows, '没有构建')}${more}`,
     ),
@@ -572,12 +573,12 @@ export async function rootPage(ctx: PageContext): Promise<PageResult> {
   const infos = await ctx.deps.knowledge.rootInfo(root);
   return {
     status: 200,
-    body: page(
-      ctx.chrome('知识版本', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · 内容哈希 ${code(root.slice(0, 16))}` }),
-      html`<p>${code(root)} ${link('/console/knowledge/tree', '浏览条目', { root, path: '/' })}</p>
+    body: knowledgeShell(
+      ctx.chrome('知识版本', { active: 'knowledge', crumbs: link('/console/knowledge','知识库') }),
+      html`<p>${link('/console/knowledge/tree', '浏览条目', { root, path: '/' })}</p>${technicalCode(root)}
 ${table(
   ['组成记录', '产品线', '构建', '名称族', '版本线', '产出时间'],
-  infos.map((info) => [code(info.composition), info.product, info.build?.name ?? '构建未声明', info.build?.family ?? '—', info.build?.line ?? '不分版本', info.produced_at]),
+  infos.map((info) => [technicalCode(info.composition), info.product, info.build?.name ?? '构建未声明', info.build?.family ?? '—', info.build?.line ?? '不分版本', info.produced_at]),
 )}`,
     ),
   };
@@ -600,28 +601,28 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
       const found = byEntry.get(entry);
       if (found === undefined || found.grounds === null) return '—';
       if (found.grounds.length === 0) return '未记录出处';
-      return html`${found.grounds.map((ground) => html`<div>${code(ground)}</div>`)}${found.grounds_truncated ? html`<div class="sub">仅列出前 ${found.grounds.length} 条</div>` : ''}`;
+      return html`${found.grounds.map((ground) => html`<div>${technicalCode(ground)}</div>`)}${found.grounds_truncated ? html`<div class="sub">仅列出前 ${found.grounds.length} 条</div>` : ''}`;
     };
-    return section(
+    return knowledgeSection(
       `${node.path}（${isNodeLevel(node.level) ? uiLabelOf('node_level', node.level) : node.level}）`,
-      html`${definitions([
+      html`${knowledgeFacts([
         ['名称', node.name],
-        ['引用', code(node.reference)],
-        ['内容哈希', code(node.digest)],
+        ['引用', technicalCode(node.reference)],
+        ['内容哈希', technicalCode(node.digest)],
         ...(cited === null ? [] : [['被引用', citationsLine(cited)] as [string, string]]),
       ])}
-${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), code(child.path)]), '没有下级')}
+${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), technicalCode(child.path)]), '没有下级')}
 ${cited === null
   ? table(
     ['种类', '陈述', '适用', '引用', '数据'],
-    node.entries.map((entry) => [entry.kind, entry.statement, entry.applicability, code(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
+    node.entries.map((entry) => [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, entry.applicability, technicalCode(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
     '没有条目',
   )
   : table(
     ['种类', '陈述', '适用', '引用', '出处', `近 ${cited.days} 天被引用`, '数据'],
     node.entries.map((entry) => {
       const counted = byEntry.get(entry.entry);
-      return [entry.kind, entry.statement, entry.applicability, code(entry.reference), grounds(entry.entry), counted === undefined ? '—' : countText(cited, counted.count, counted.capped), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))];
+      return [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, entry.applicability, technicalCode(entry.reference), grounds(entry.entry), counted === undefined ? '—' : countText(cited, counted.count, counted.capped), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))];
     }),
     '没有条目',
   )}${cited?.entries_truncated ? html`<p class="sub">条目较多，仅前 ${cited.entries.length} 条给出出处与被引用次数。</p>` : ''}`,
@@ -631,9 +632,9 @@ ${cited === null
   const next = nodes.next === null ? html`` : html`<p>${link('/console/knowledge/tree', '下一页', { root, path, cursor: nodes.next })}</p>`;
   return {
     status: 200,
-    body: page(
+    body: knowledgeShell(
       ctx.chrome('知识条目', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · ${path}` }),
-      html`<p class="sub">版本 ${code(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</p>
+      html`<div class="ch-actions">版本 ${technicalCode(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</div>
 <p>覆盖：${coverageText(nodes.coverage) ?? '—'}</p>${parts}${next}`,
     ),
   };
@@ -657,12 +658,12 @@ export async function diffPage(ctx: PageContext): Promise<PageResult> {
   };
   return {
     status: 200,
-    body: page(
+    body: knowledgeShell(
       ctx.chrome('版本差异', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')}` }),
-      html`<p>从 ${code(from)} 到 ${code(to)}</p>
-${section(`只在新根里（${diff.added.length}）`, listOf(0))}
-${section(`只在旧根里（${diff.removed.length}）`, listOf(1))}
-${section(`内容变了（${diff.modified.length}）`, listOf(2))}`,
+      html`<div class="ch-actions">从 ${technicalCode(from)} 到 ${technicalCode(to)}</div>
+${knowledgeSection(`只在新根里（${diff.added.length}）`, listOf(0))}
+${knowledgeSection(`只在旧根里（${diff.removed.length}）`, listOf(1))}
+${knowledgeSection(`内容变了（${diff.modified.length}）`, listOf(2))}`,
     ),
   };
 }

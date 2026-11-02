@@ -4,8 +4,9 @@ import {MemoryShareBody} from '../../../contracts/src/memory.ts';
 import {Sha256} from '../../../contracts/src/common.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {newId,AccessError} from '../../records/api.ts';
-import {html,link,page,pre,table,type Html} from './html.ts';
-import {button,card} from './ui.ts';
+import {html,link,page,pageLayout,pre,table,type Html} from './html.ts';
+import {button} from './ui.ts';
+import {panel as card,field as inputField} from './presentation.ts';
 import {memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
 import {type PageContext,type PageResult,neutralPage} from './pages.ts';
 import {currentAudience,inScope,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
@@ -13,8 +14,8 @@ import {containsDirectory,directoryName} from './audience.ts';
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 
 const location=(parameters:Record<string,string|undefined>={})=>'/console/knowledge?'+new URLSearchParams({view:'memory',...Object.fromEntries(Object.entries(parameters).filter((pair):pair is [string,string]=>pair[1]!==undefined))});
-const form=(ctx:PageContext,action:string,fields:Html,label:string,disabled=false)=>html`<form method="post" action="/console/knowledge/do/memory-${action}"><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<button class="btn ${action==='revoke'?'danger':'primary'} mt12" type="submit"${disabled?html` disabled`:''}>${label}</button></form>`;
-const field=(name:string,input:Html)=>html`<label>${name}${input}</label>`;
+const form=(ctx:PageContext,action:string,fields:Html,label:string,disabled=false)=>html`<form method="post" action="/console/knowledge/do/memory-${action}"><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<button class="ch-btn ch-btn--secondary" type="submit"${disabled?html` disabled`:''}>${label}</button></form>`;
+const field=inputField;
 const memoryLabel=()=>uiLabelOf('knowledge_view','memory');
 const actionLabel=(action:MemoryAction)=>uiLabelOf('memory_action',action);
 
@@ -36,7 +37,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
  if(document){
   const doc=await memory.read(ctx.principal,document,version??undefined),own=doc.space===ctx.principal.id,editable=(own||doc.space==='team'&&ctx.admin)&&doc.version===doc.current_version;
   const audience=await currentAudience(ctx,doc.space,doc.path,false,undefined,true);
-  const manage=editable?html`<div class="actions">${link(location({scope,document,edit:'1'}),actionLabel('edit'))}${form(ctx,'write',html`<input type="hidden" name="space" value="${doc.space==='team'?'team':'personal'}"><input type="hidden" name="document" value="${document}"><input type="hidden" name="expected_version" value="${doc.current_version}"><input type="hidden" name="enabled" value="${doc.state==='enabled'?'false':'true'}"><input type="hidden" name="client_key" value="${newId('evt')}">`,actionLabel(doc.state==='enabled'?'disable_memory':'enable_memory'))}${own?link(location({scope,document,share:'1'}),actionLabel('share')):''}</div>`:html``;
+  const manage=editable?html`<div class="ch-actions">${link(location({scope,document,edit:'1'}),actionLabel('edit'))}${form(ctx,'write',html`<input type="hidden" name="space" value="${doc.space==='team'?'team':'personal'}"><input type="hidden" name="document" value="${document}"><input type="hidden" name="expected_version" value="${doc.current_version}"><input type="hidden" name="enabled" value="${doc.state==='enabled'?'false':'true'}"><input type="hidden" name="client_key" value="${newId('evt')}">`,actionLabel(doc.state==='enabled'?'disable_memory':'enable_memory'))}${own?link(location({scope,document,share:'1'}),actionLabel('share')):''}</div>`:html``;
   const history=own||doc.space==='team'&&ctx.admin?await memory.history(ctx.principal,document,ctx.url.searchParams.get('history_cursor')??undefined):null;
   const versions=history?card({title:actionLabel('history'),hint:'仅本人或团队管理员可浏览历史；切换版本不修改正文'},html`${table(['版本','标题','状态','大小','更新时间','记录人'],await Promise.all(history.items.map(async (row,index)=>[link(location({scope,document,version:row.version}),versionLabel(row.at,undefined,history.next?undefined:history.items.length-index)),row.title,memoryState(row.state as typeof doc.state),html`${number(row.bytes)} 字节`,timestamp(row.at),await ctx.userName(row.by)])))}${history.next?link(location({scope,document,history_cursor:history.next}),'更早的版本'):''}`):html``;
   let sharing=html``;
@@ -46,26 +47,29 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
    sharing=card({title:actionLabel('share_preview'),hint:'个人原文和授权保留；团队副本独立。预检不写记录，确认时重查管理员停用、大小、凭据和团队修改'},html`${plan.effect?html`<p>${uiLabelOf('memory_share_effect',plan.effect).replace('{title}',plan.title)}</p>`:''}<p>个人：保留不变 · ${audience.text}</p><p>团队：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge"><input type="hidden" name="view" value="memory"><input type="hidden" name="document" value="${document}"><input type="hidden" name="share" value="1"><input type="hidden" name="client_key" value="${key}">${field('团队目录',html`<input name="team_path" value="${plan.target_path??''}" maxlength="2000">`)}<button type="submit">重新预检</button></form>${checkTable(plan.checks)}${form(ctx,'share',html`<input type="hidden" name="document" value="${document}"><input type="hidden" name="version" value="${doc.current_version}"><input type="hidden" name="team_path" value="${plan.target_path??''}"><input type="hidden" name="client_key" value="${key}">`,'确认提交共享',!plan.ok)}`);
   }
   const editor=editable&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,doc.space==='team'?'team':'personal',doc):html``;
-  content=html`${tabs}${result}${card({title:doc.title,hint:'客户端会话偏好，不经事实核验，不作为运行输入或依据'},html`<p>可见范围：${audience.text}${audience.inherited.map(path=>html` · 继承自 ${directoryName(path)} 的授权`)}</p><p>${memoryState(doc.state)} · ${number(doc.bytes)} 字节 · ${timestamp(doc.updated_at)} · ${directoryName(doc.path)}</p>${manage}${pre(doc.markdown)}`)}${editor}${sharing}${versions}`;
+  content=html`${result}${card({title:doc.title,hint:'客户端会话偏好，不经事实核验，不作为运行输入或依据'},html`<p>可见范围：${audience.text}${audience.inherited.map(path=>html` · 继承自 ${directoryName(path)} 的授权`)}</p><p>${memoryState(doc.state)} · ${number(doc.bytes)} 字节 · ${timestamp(doc.updated_at)} · ${directoryName(doc.path)}</p>${manage}${pre(doc.markdown)}`)}${editor}${sharing}${versions}`;
+  const docs=await memory.items(ctx.principal,scope);
+  const rows=await Promise.all(docs.map(async item=>[link(location({scope,document:item.document}),item.title),(await currentAudience(ctx,item.space,item.path,false,undefined,true)).text,memoryState(item.state),number(item.bytes),timestamp(item.updated_at)]));
+  content=pageLayout(html`${tabs}${table(['标题','分享','状态','大小','更新'],rows,'没有可读的记忆',undefined,{selected:docs.findIndex(item=>item.document===document),hrefs:docs.map(item=>location({scope,document:item.document}))})}`,{inspector:html`<div class="ch-section" data-area-content>${content}</div>`,detail:true,back:link(location({scope}),'返回列表')});
  }else{
   const owner=ctx.url.searchParams.get('space'),path=ctx.url.searchParams.get('path')??'/';
   const documents=(await memory.items(ctx.principal,scope)).filter(doc=>(!owner||doc.space===owner)&&containsDirectory(path,doc.path));
   const rows=await Promise.all(documents.map(async doc=>[link(location({scope,document:doc.document}),doc.title),(await currentAudience(ctx,doc.space,doc.path,false,undefined,true)).text,memoryState(doc.state),html`<span class="nowrap">${number(doc.bytes)} 字节</span>`,timestamp(doc.updated_at),directoryName(doc.path)]));
   const team=scope==='team',canWrite=scope==='personal'||scope==='all'||team&&ctx.admin;
   const usage=scope==='personal'||team&&ctx.admin?await memory.usage(ctx.principal,team?'team':ctx.principal.id):null;
-  const controls=canWrite?button(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create')):html``;
+  const controls=canWrite?button(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'),{primary:true}):html``;
   let grant=html``;
   if(scope==='personal'){
    const audience=await currentAudience(ctx,ctx.principal.id,path,false,undefined,true);
-   grant=await grantDialog(ctx,{id:'memory-grants',current:audience.text,content:directoryName(path)+' · 只读，含全部下级目录',checks:await memory.precheckGrant(ctx.principal,path),grants:(await memory.grants(ctx.principal)).filter(g=>containsDirectory(g.path,path)),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,disabled)});
+   grant=await grantDialog(ctx,{id:'memory-grants',trigger:false,current:audience.text,content:directoryName(path)+' · 只读，含全部下级目录',checks:await memory.precheckGrant(ctx.principal,path),grants:(await memory.grants(ctx.principal)).filter(g=>containsDirectory(g.path,path)),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,disabled)});
   }
-  content=html`${tabs}${result}<div class="actions">${controls}${grant}</div>${usage?html`<p title="标题、目录与正文计入启用内容；旧版本及停用文档不占启用额度，历史占用计入个人容量">${uiLabelOf('memory_field','active_content')} ${number(usage.active)} / ${number(usage.limits.spaceBytes)} 字节 · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${number(usage.limits.documentBytes)} 字节</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'授权给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','可见范围','状态','大小','更新时间','位置'],rows,'没有可读的记忆'))}`;
+  content=pageLayout(html`${tabs}${result}${grant}${usage?html`<p title="标题、目录与正文计入启用内容；旧版本及停用文档不占启用额度，历史占用计入个人容量">${uiLabelOf('memory_field','active_content')} ${number(usage.active)} / ${number(usage.limits.spaceBytes)} 字节 · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${number(usage.limits.documentBytes)} 字节</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'授权给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','可见范围','状态','大小','更新时间','位置'],rows,'没有可读的记忆'))}`,{actions:html`${scope==='personal'?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
  }
  return {status:200,body:page(ctx.chrome(memoryLabel(),{active:'knowledge',hint:'记忆只用于客户端会话；知识与记忆的授权分别管理'}),await spaceLayout(ctx,content))};
 }
 
 function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:string;current_version:string;title:string;path:string;markdown:string;state:string}):Html{
- return card({title:actionLabel(doc?'edit':'create'),hint:'纯文本保存，不执行 Markdown；保存检查大小与疑似凭据，版本变化时拒绝覆盖'},form(ctx,'write',html`<div class="fields"><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('目录',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div class="full">${field('Markdown 正文',html`<textarea name="markdown" rows="14" required>${doc?.markdown??''}</textarea>`)}</div></div>`,actionLabel('save')));
+ return card({title:actionLabel(doc?'edit':'create'),hint:'纯文本保存，不执行 Markdown；保存检查大小与疑似凭据，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('目录',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div data-wide-field>${field('Markdown 正文',html`<textarea name="markdown" rows="14" required>${doc?.markdown??''}</textarea>`)}</div></div>`,actionLabel('save')));
 }
 
 export async function performMemoryAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined}):Promise<string>{
