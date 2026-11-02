@@ -75,6 +75,7 @@
 
 - 已按协调者补充变基到 `workflow-rename-local` 的 `36d691d`（含动态技能版本读取和生成 `PackKind` 修正）。测试中的仓库技能版本用 `repositorySkillVersion`，不固定发布版本。
 - 团队管理员手动导入可不带产品包，但依据须为团队连接的业务读取原文；上传署名留待后续阶段。管理员没有个人空间的默认读权。
+- 全文索引只读已保存的陈述、数据与逐字引文，不触发业务系统读取；旧产品记录没有引文文本时不补造。单页节点／字节上限沿用知识服务设置，单个目录超限时拒绝整页，按具体条目或已知下级目录地址读取。
 - 容量按空间受理的内容与历史快照逻辑字节计量，不冒充磁盘占用；撤回保留历史。既有迁移的来源文件冻结断言随追加迁移更新，未增加数据 SHA 校验。
 
 ## 做了的
@@ -103,3 +104,17 @@
 - 人工布局检查：用合成页面和独立临时 Chrome 配置检查 1440 像素桌面、420 像素窄屏；修复目录长摘要导致的横向溢出。目录与编辑页的视口／文档宽度分别为 420／420 和 1440／1440。截图只验证页面布局，不作为实时连接的证明；内置浏览器宿主不可用，改用临时无头 Chrome 完成。
 - 第二步 `npm run typecheck`、`npm run verify:contracts`、`npm run test:docs` 通过；文档 287 项、控制台壳层／CSP 与页面 22 项通过，均 0 跳过。
 - 未运行：全量单元／验收回归、Linux 隔离作业、备份／恢复／部署套件、`verify:references`／`test:references`。本任务没有改隔离、备份恢复、部署或来源归档工具；迁移已跑冻结升级回放与运行角色检查，未把这些未运行项目记为通过。
+
+
+定向命令与文件清单（所有命令均在任务工作树、本机 Node 24 下执行；分组之间不累计重复测试）：
+
+- 合约：`npm run gen:contracts`、`npm run verify:contracts`；`node --test --test-concurrency=2`，文件为 `contracts/src/{spaces,annotations,vocabulary,vocab-axes,model-w04-w10-v07,tools,tool-shapes,published,shapes,run-history}.test.ts`（205 通过）。
+- 技能：`node --test --test-concurrency=1`，`packs/skill/html-format/functions/{html,migration}.test.ts`、`mindmap-format/functions/{kityminder,migration}.test.ts`、`xml-format/functions/{xml,resource,migration}.test.ts`、`workbook-format/functions/{xlsx,migration}.test.ts`（119 通过）。
+- 存储／升级：`node --test --test-concurrency=1`，`hub/records/{space-index,migrations.snapshot,roles,store}.test.ts`、`hub/knowledge/operation-records-upgrade.test.ts`、`hub/runs/engine/citations.test.ts`（初组 28 通过）；新增核心与计数检查在其后通过，见上。
+- 既有后端：`node --test --test-concurrency=1`，`hub/knowledge/{read,unversioned-read,rows-read,view-scope}.test.ts`、`hub/runs/engine/{start,legacy-summary,exact-retry,exact-prefetch-submission,scope-retry,maintenance-citations}.test.ts`、`hub/server/{mcp,text,readers-sharing,read-diagnostics}.test.ts`（162 通过）。
+- 控制台：`node --test --test-concurrency=1`，`hub/server/{console-knowledge,console-search,console-manage,console-places,console-password,console-api,console-api-write}.test.ts`（55 通过）；`hub/server/{console,console-page}.test.ts`（22 通过）。
+- 新空间与文本：`node --test --test-concurrency=1 hub/knowledge/spaces.test.ts hub/server/mcp.test.ts hub/server/text.test.ts tests/acceptance/46-knowledge-spaces.test.ts`（126 通过）；`node --test --test-concurrency=1 tests/acceptance/46-knowledge-spaces.test.ts hub/server/readers-sharing.test.ts hub/runs/engine/exact-retry.test.ts`（11 通过）。
+- 既有验收：`node --test --test-concurrency=1 tests/acceptance/06-user-without-pack.test.ts tests/acceptance/12-console-security.test.ts tests/acceptance/13-idempotence.test.ts tests/acceptance/14-knowledge-sync.test.ts tests/acceptance/15-aliasing-end-to-end.test.ts tests/acceptance/17-hub-restart.test.ts tests/acceptance/19-concurrency.test.ts tests/acceptance/30-shared-results.test.ts tests/acceptance/33-r5-t1t3-knowledge-qa.test.ts tests/acceptance/35-r5-t1t3-build-diff.test.ts tests/acceptance/39-r5-t9-2-skill-packs.test.ts`（29 通过）。加新增场景 46 的 5 项，定向验收共 34 项通过，0 跳过。
+- 收尾：`npm run typecheck`、`npm run verify:contracts`、`npm run test:docs`；检查 Git 差异与签署提交。所有已执行分组均 0 跳过；没有把未选入的套件计入通过。
+
+本机实现分步提交：`cab0033`（合约、存储与知识／运行核心）、`3e8ee67`（控制台与模型文本、跨包验收及范围复查）；本页与决定 86 随收尾提交补齐验证。第三阶段 `kw-share.md` 和 Circle 仓库均未改；没有推送或创建 PR。
