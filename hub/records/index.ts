@@ -1,3 +1,4 @@
+import {PgPersonalSync} from './personal-sync.ts';
 // Entry point of the records package: everything in api.ts plus openRecords, which connects, migrates and wires the kit, and
 // migrateRecords, which applies migrations as the owner role and grants the runtime role (README decision 16).
 import { mkdir } from 'node:fs/promises';
@@ -64,6 +65,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   let closed: Promise<void> | undefined;
   return {
+    personalSync:new PgPersonalSync(db,store,store.personalPayloads,config.limits,now),
     personalPayloads:store.personalPayloads,
     memoryIndex:new PgMemoryIndex(db,{documentBytes:config.limits.maxMemoryDocumentBytes,spaceBytes:config.limits.maxMemorySpaceBytes,spaceDocuments:config.limits.maxMemorySpaceDocuments}),
     spaceIndex: new PgSpaceSearchIndex(db,{entryBytes:config.limits.maxEntryIndexBytes,spaceBytes:config.limits.maxSpaceIndexBytes}),

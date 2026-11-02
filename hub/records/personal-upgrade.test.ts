@@ -77,7 +77,7 @@ for(const independent of [false,true])test(`version 13 personal bodies and origi
   }),e=>e===rollback);
  }
  const previous=(await db.query('SELECT version,name,sha256 FROM schema_migrations ORDER BY version')).rows;
- assert.deepEqual(await migrate(db),[14]);
+ assert.deepEqual(await migrate(db),MIGRATIONS.slice(13).map(m=>m.version));
  assert.deepEqual((await db.query('SELECT version,name,sha256 FROM schema_migrations WHERE version<14 ORDER BY version')).rows,previous);
  await assert.rejects(db.query('SELECT hub_purge_personal($1,$2)',[user.id,INITIAL_PERSONAL_EPOCH]),/materialization incomplete/);
  if(independent){

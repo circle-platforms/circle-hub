@@ -680,3 +680,8 @@ no extra key or unlisted filesystem area. Restoring a backup from before persona
 content back; the restore command prints this fact. Old backups and independently held team copies are not erased.
 The ownership regression backs up private payloads, purges them, restores the older snapshot and verifies both restored
 content and a subsequent purge under the application role. It also checks the unchanged table ownership and grants.
+
+Decision 89 step 3 registers CIRCLE_HUB_SYNC_MAX_BATCH_BYTES in the platform service environment allow-list. Migration 15
+adds ten scoped transport tables; ownership covers every table and preserves the restricted personal_spaces grants.
+The backup regression also restores a staged sync object with its session and idempotent receipt. Runtime collection
+uses an owner-defined function with a pinned search path, without direct DELETE grants on payloads or the object catalog.

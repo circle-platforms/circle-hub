@@ -444,10 +444,111 @@ CREATE TABLE personal_legacy_retired (sha256 text PRIMARY KEY REFERENCES persona
 CREATE TRIGGER personal_legacy_retired_append_only BEFORE UPDATE OR DELETE ON personal_legacy_retired FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_legacy_retired_no_truncate BEFORE TRUNCATE ON personal_legacy_retired FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 `},
+  {version:15,name:'personal_sync_transport',sql:`CREATE TABLE personal_sync_heads (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,snapshot text,last_synced_at timestamptz,
+ PRIMARY KEY(owner,epoch)
+);
+CREATE TABLE personal_sync_identities (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,kind text NOT NULL,identity text NOT NULL,item_id uuid NOT NULL,
+ PRIMARY KEY(owner,epoch,kind,identity)
+);
+CREATE TABLE personal_sync_clients (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,client_id uuid NOT NULL,name_payload text NOT NULL,
+ PRIMARY KEY(owner,epoch,client_id)
+);
+CREATE TABLE personal_sync_sessions (
+ id uuid PRIMARY KEY,owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,client_id uuid NOT NULL,
+ snapshot text NOT NULL,state_version text NOT NULL,expires_at timestamptz NOT NULL,
+ FOREIGN KEY(owner,epoch,client_id) REFERENCES personal_sync_clients(owner,epoch,client_id)
+);
+CREATE INDEX personal_sync_sessions_scope ON personal_sync_sessions(owner,epoch,expires_at);
+CREATE TABLE personal_sync_objects (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,id text NOT NULL,kind text NOT NULL,bytes integer NOT NULL CHECK(bytes>0),charge_bytes integer NOT NULL CHECK(charge_bytes>0 AND charge_bytes<=bytes),
+ PRIMARY KEY(owner,epoch,id)
+);
+CREATE TRIGGER personal_sync_objects_immutable BEFORE UPDATE ON personal_sync_objects FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TABLE personal_sync_edges (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,parent text NOT NULL,child text NOT NULL,
+ PRIMARY KEY(owner,epoch,parent,child)
+);
+CREATE TABLE personal_sync_session_objects (
+ session_id uuid NOT NULL REFERENCES personal_sync_sessions(id),object_id text NOT NULL,frozen boolean NOT NULL DEFAULT false,
+ PRIMARY KEY(session_id,object_id)
+);
+CREATE INDEX personal_sync_session_objects_object ON personal_sync_session_objects(object_id,session_id);
+CREATE TABLE personal_sync_retained (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,object_id text NOT NULL,
+ PRIMARY KEY(owner,epoch,object_id)
+);
+CREATE TABLE personal_sync_operations (
+ owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,operation_id text NOT NULL,request text NOT NULL,receipt text NOT NULL,
+ PRIMARY KEY(owner,epoch,operation_id)
+);
+CREATE TABLE personal_sync_aborts (
+ session_id uuid PRIMARY KEY REFERENCES personal_sync_sessions(id),at timestamptz NOT NULL
+);
+CREATE FUNCTION hub_collect_personal_sync(o text,e text,t timestamptz) RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public AS $fn$
+DECLARE removed text[];total integer;
+BEGIN
+ -- Only unretained transport objects with no live session may be collected; ordinary personal objects stay intact.
+ WITH RECURSIVE roots(id) AS (
+ SELECT snapshot FROM public.personal_sync_heads WHERE owner=o AND epoch=e AND snapshot IS NOT NULL UNION
+ SELECT object_id FROM public.personal_sync_retained WHERE owner=o AND epoch=e),
+ protected(id) AS (SELECT id FROM roots UNION SELECT x.child FROM public.personal_sync_edges x JOIN protected p ON x.parent=p.id WHERE x.owner=o AND x.epoch=e),
+ gone AS (
+ DELETE FROM public.personal_sync_objects x WHERE x.owner=o AND x.epoch=e
+ AND NOT EXISTS(SELECT 1 FROM protected p WHERE p.id=x.id)
+ AND NOT EXISTS(SELECT 1 FROM public.personal_sync_session_objects r JOIN public.personal_sync_sessions s ON s.id=r.session_id
+ WHERE r.object_id=x.id AND s.owner=o AND s.epoch=e AND s.expires_at>t
+ AND NOT EXISTS(SELECT 1 FROM public.personal_sync_aborts a WHERE a.session_id=s.id)) RETURNING id)
+ SELECT array_agg(id),count(*)::integer INTO removed,total FROM gone;
+ DELETE FROM public.personal_payloads p WHERE p.owner=o AND p.epoch=e AND p.sha256=ANY(removed)
+ AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE (b.owner,b.epoch,b.sha256)=(p.owner,p.epoch,p.sha256))
+ AND NOT EXISTS(SELECT 1 FROM public.personal_objects x WHERE (x.owner,x.epoch,x.sha256)=(p.owner,p.epoch,p.sha256))
+ AND NOT EXISTS(SELECT 1 FROM public.personal_sync_clients c WHERE (c.owner,c.epoch,c.name_payload)=(p.owner,p.epoch,p.sha256));
+ RETURN total;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_collect_personal_sync(text,text,timestamptz) FROM PUBLIC;
+
+CREATE TRIGGER personal_sync_identities_append_only BEFORE UPDATE OR DELETE ON personal_sync_identities FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_identities_no_truncate BEFORE TRUNCATE ON personal_sync_identities FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_clients_append_only BEFORE UPDATE OR DELETE ON personal_sync_clients FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_clients_no_truncate BEFORE TRUNCATE ON personal_sync_clients FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_sessions_append_only BEFORE UPDATE OR DELETE ON personal_sync_sessions FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_sessions_no_truncate BEFORE TRUNCATE ON personal_sync_sessions FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_edges_append_only BEFORE UPDATE OR DELETE ON personal_sync_edges FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_edges_no_truncate BEFORE TRUNCATE ON personal_sync_edges FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_session_objects_append_only BEFORE UPDATE OR DELETE ON personal_sync_session_objects FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_session_objects_no_truncate BEFORE TRUNCATE ON personal_sync_session_objects FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_retained_append_only BEFORE UPDATE OR DELETE ON personal_sync_retained FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_retained_no_truncate BEFORE TRUNCATE ON personal_sync_retained FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_operations_append_only BEFORE UPDATE OR DELETE ON personal_sync_operations FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_operations_no_truncate BEFORE TRUNCATE ON personal_sync_operations FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+
+CREATE TRIGGER personal_sync_aborts_append_only BEFORE UPDATE OR DELETE ON personal_sync_aborts FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_aborts_no_truncate BEFORE TRUNCATE ON personal_sync_aborts FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at)',
+  personal_sync_identities:'SELECT, INSERT',
+  personal_sync_clients:'SELECT, INSERT',
+  personal_sync_sessions:'SELECT, INSERT',
+  personal_sync_objects:'SELECT, INSERT',
+  personal_sync_edges:'SELECT, INSERT',
+  personal_sync_session_objects:'SELECT, INSERT',
+  personal_sync_retained:'SELECT, INSERT',
+  personal_sync_operations:'SELECT, INSERT',
+  personal_sync_aborts:'SELECT, INSERT',
   personal_spaces:'SELECT, INSERT',
   personal_payloads:'SELECT, INSERT',
   personal_record_bindings:'SELECT, INSERT',
@@ -505,6 +606,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     if (owner === undefined) throw new MigrationError('还没有应用迁移，不能授权运行角色');
     if (owner.owns) throw new MigrationError(`运行角色 ${role} 拥有这些表，能关掉只追加的触发器；请让另一个角色执行迁移`);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text) TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz) TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);
       await db.query(`GRANT ${privileges} ON TABLE ${table} TO "${role}"`, [], t);

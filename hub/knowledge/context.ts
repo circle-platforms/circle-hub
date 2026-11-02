@@ -10,6 +10,7 @@ import type { KnowledgeStore } from './store.ts';
 
 /** The parts of the records kit the knowledge package uses. */
 export interface KnowledgeRecords {
+  personalSync?:import('../records/api.ts').RecordsKit['personalSync'];
   personalPayloads?:import('../records/api.ts').RecordsKit['personalPayloads'];
   memoryIndex?:import('../records/api.ts').MemoryIndex;
   spaceIndex?: import('../records/api.ts').RecordsKit['spaceIndex'];

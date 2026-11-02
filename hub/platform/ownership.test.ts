@@ -1,3 +1,4 @@
+import {encodePersonalSyncObject} from '../../contracts/src/sync-canonical.ts';
 // Integration: the real records schema in a cluster the platform created. hub/records is imported by this test only (the
 // platform's code may import nothing but contracts). As `serve --migrate-only` does, the superuser role that owns the Hub
 // database migrates and grants the application role (migrateRecords with runtimeRole); as `serve` does, the kit runs as
@@ -25,6 +26,16 @@ const libpq = await libpqAvailable();
 const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   records: 'body',
+  personal_sync_heads:'owner',
+  personal_sync_identities:'identity',
+  personal_sync_clients:'name_payload',
+  personal_sync_sessions:'snapshot',
+  personal_sync_objects:'bytes',
+  personal_sync_edges:'child',
+  personal_sync_session_objects:'object_id',
+  personal_sync_retained:'object_id',
+  personal_sync_operations:'receipt',
+  personal_sync_aborts:'at',
   personal_spaces:'owner',
   personal_payloads:'owner',
   personal_record_bindings:'owner',
@@ -109,6 +120,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
   const appended: { id: string; digest: string }[] = [];
   let privateOwner:import('../records/api.ts').Principal;
   let privateDigest:string;
+  let syncEpoch:string,syncSession:string,syncObject:{id:string;bytes_base64:string};
 
   const database = (user: string): DatabaseConfig => ({ host: layout.run, port, database: control.target.database, user });
   const kitConfig = (): RecordsConfig => ({ dataDir: layout.root, logDir: layout.logs, database: database(control.application.user), limits: { ...DEFAULT_LIMITS } });
@@ -176,6 +188,12 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
       privateOwner=user;
+      const api=kit.personalSync!,state=await api.state(user);syncEpoch=state.epoch;
+      const client_id='33333333-3333-4333-8333-333333333333';await api.registerClient(user,{client_id,name:'synthetic-backup-client'});
+      syncSession=(await api.openSession(user,{client_id,epoch:syncEpoch,known_state:null,base_snapshot:null})).session_id;
+      const bytes=encodePersonalSyncObject({schema:'personal-sync-object@1',kind:'bytes',body:{bytes_base64:Buffer.from('synthetic backup transport').toString('base64')}});
+      syncObject={id:sha256Hex(bytes),bytes_base64:Buffer.from(bytes).toString('base64')};
+      await api.upload(user,syncSession,{schema:'personal-sync-upload@1',epoch:syncEpoch,operation_id:'synthetic-backup-operation',objects:[syncObject]});
       privateDigest=(await kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:user.id,markdown:'synthetic-private-backup'}})).digest;
       for (let n = 0; n < 5; n++) {
         const record = await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n, text: `合成 ${n}` }, unique_key: `synthetic.${n}`, index: [{ key: 'synthetic.n', value: String(n) }] });
@@ -232,6 +250,8 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       for (const record of appended) assert.equal((await kit.store.get(record.digest))?.id, record.id);
       assert.equal(await kit.vault.getText('synthetic.entry'), '合成');
       assert.equal((await kit.store.get<{markdown:string}>(privateDigest))?.body.markdown,'synthetic-private-backup','the earlier backup restores content cleared after it was taken');
+      assert.deepEqual((await kit.personalSync!.download(privateOwner,syncSession,{epoch:syncEpoch,objects:[syncObject.id]})).objects,[syncObject]);
+      assert.equal((await kit.personalSync!.operation(privateOwner,syncEpoch,'synthetic-backup-operation'))?.counts.accepted,1);
       const restored=await kit.personalPayloads!.inspect(privateDigest);assert.equal(restored?.cleared,false);
       await kit.personalPayloads!.purge(privateOwner,restored!.epoch);assert.equal(await kit.store.get(privateDigest),null);
       assert.equal((await kit.store.getByKey('claim', 'synthetic.0'))?.digest, appended[0].digest, 'unique business identities survive the restore');

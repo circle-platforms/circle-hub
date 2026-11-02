@@ -50,3 +50,8 @@ not read. `CIRCLE_HUB_HOME` is not among them (the platform reads the data root 
 the retired-name guard, the platform-only names or the keychain defaults stop agreeing.
 
 Memory limits use decimal UTF-8 bytes: CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES defaults to 24,000 body bytes (1–16 MiB), CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES to 48,000 title/path/body bytes (1–64 MiB), and CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS to 20 active documents (1–10,000). Space limits apply separately to team and each personal space and count only enabled current versions. Session lists and body reads check the same limits. Historical personal memory also counts toward personal capacity; every appended version checks that capacity. An unchanged write returns its current version without consuming history.
+
+Personal sync transport: `CIRCLE_HUB_SYNC_MAX_BATCH_BYTES` defaults to 8 MiB (1 KiB–64 MiB) of canonical object bytes.
+The internal transport negotiates a lower batch/object count and size when the existing HTTP wire budget requires it.
+Object/page counts and the 24-hour continuation lifetime use the approved protocol constants. This step adds no rate
+limit variable or HTTP route; request-rate configuration and admission belong to the HTTP step.

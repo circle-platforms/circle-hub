@@ -740,3 +740,36 @@ restoring a backup taken before a purge restores that old content. The restore c
 
 No sync HTTP handler or client is provided by this step. Current mode defaults to Hub. Clearing is an internal service
 operation until the checked, authenticated mode-switch routes are wired in subsequent steps.
+
+### Personal sync transport (decision 89, step 3)
+
+`personalSync` is an account-scoped internal port, not an MCP tool or an HTTP handler. It rechecks the account and epoch
+inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings
+store a digest of the native identity, never its path. The state token includes the native knowledge root and memory
+heads but excludes transfer timestamps and activity. Projection and personal-pack adapters, verified CAS and conflict
+handling are the next step; uploading alone cannot promote an object.
+
+Migration 15 appends transport tables without changing migration 14 or its exemption. Only derived sync heads have
+column-scoped UPDATE privileges. Clients, sessions, graph edges, leases, retained-history markers and operation receipts
+are append-only. Client names live in removable personal payloads. Every catalog lookup includes owner and epoch;
+knowing another account's object hash confers no read or deduplication right. A session freezes committed graph inventory
+in indexed rows; later uploads only extend its staging leases, not that frozen inventory. Cursors bind the account,
+epoch, session and frozen snapshot. Found own objects gain a session lease so concurrent expiry cannot collect them.
+
+Upload validates the entire bounded canonical batch and scans decoded text fields before storing any part. Original
+byte objects are preserved and scanned as bytes; an uninspected binary chunk remains staged, not verified or admitted
+as a model-readable source. Full original reconstruction, cross-chunk scanning and evidence re-verification are checked
+at commit in the next step. One operation key binds the route, session and complete request; exact replay returns its
+original safe receipt, including after a process restart. A failed receipt insert rolls back payloads and catalog rows.
+
+Logical usage preserves native knowledge history and memory history, adding unique sync objects and private client
+metadata per account/epoch. Byte objects count original bytes plus metadata, not base64 inflation. Concurrent admission
+uses the same space lock. Session creation, registration and staging all check capacity; transferring an owned object
+again does not charge twice. The next step integrates this quota with native writers and projected sync records.
+
+The owner-defined `hub_collect_personal_sync` removes only unretained objects after their last live session ends; it
+preserves independent native originals and record payloads. Runtime cannot DELETE payloads or catalog rows directly.
+Purge already deletes all epoch payloads, including client names and staged sync bodies; hashes/receipts remain safe
+metadata. PG 18 ownership now backs up, purges and restores a real staged batch, session and operation receipt as well
+as private record bodies. Returning from local to Hub will use a new owner-defined mode function, not an UPDATE grant
+on personal_spaces (Claude 2026-11-03); that mode API remains step 5.

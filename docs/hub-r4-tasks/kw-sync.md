@@ -389,3 +389,56 @@ node --test --test-concurrency=1 --test-reporter=tap \
 - `npm run typecheck` 通过；`npm run verify:contracts` 通过，175 个生成文件一致，本步没有改合约或技能镜像；`npm run test:docs` **290 项通过、0 失败、0 跳过**；`git diff --check` 通过。
 - HTTP 同步、版本头／CAS／冲突、同步容量计量与验收 49 尚未实现，未运行，不计通过。未运行全量 unit／acceptance、Linux CI、来源归档检查；本步未改来源工具，不添加无关 SHA 数据核对。所有实际运行的测试均无跳过；首次失败及修正如上，不将跳过或未运行项算作通过。
 - 本步只在 kw-sync-local 签署本机提交，没有推送、PR 或部署；按要求报告第 2 步后再进入第 3 步。
+
+### 实施第 3 步：版本头、稳定 ID 与续传存储
+
+来源：Claude 2026-11-03 审阅 e2d6c98c 后要求先实施第 3 步，独立安全审查的发现须在第 4 步之前单独修复。本步不修改迁移 14；新增迁移 15。
+
+- 新增 records 的内部 personalSync 端口，接入 RecordsKit 和知识上下文；还没有 HTTP 路由、MCP 工具、知识／记忆投影或包发布入口。上传只进入本人暂存域，不能被原件引用、搜索或记忆自动加载读取。
+- 版本头和原生身份到 UUID 的稳定映射持久化；身份键只存摘要，不存目录名称。状态身份包含本代次、方式、同步快照及原生知识／记忆头，不把上传、心跳或续传时间算成内容变化。原生内容导出、包清单映射和原子推进由第 4 步联通，不把当前内部空头说成已有内容已同步。
+- 客户端名称存可清除的本人载荷；账户、代次、会话、对象和操作全部限定到同一作用域。每次操作在既有个人空间锁内复查账户与方式，停用账户、旧代次和清除后的旧会话停止传输。运行角色不能直接改 personal_spaces，不能直接删除载荷或传输目录。
+- 会话用索引行冻结已提交快照的完整对象图，不把一次 500 项分页当作全量清单；509 个对象的回归覆盖分页、后来上传及当前头变化。上传和 missing 命中的本人对象只延长该会话的暂存引用，不改变冻结清单；游标绑定账户、代次、会话和冻结快照。
+- 整批先检查规范字节、身份、类型、大小、凭据，再原子保存。按解码后的字段扫描记忆／结构文字，字节块按原样扫描；未能检查的二进制仍只是本人暂存，不声明其可作模型依据。完整原件的拼接、跨块扫描和重新核验属于第 4 步提交检查。
+- 同操作键绑定路由、会话及请求摘要；原回执跨重启可重取，同键异请求拒收。回执不含正文、标题、路径或客户端说明。注入回执写入失败，证明同批载荷和对象登记一起回滚，不留部分成功；上传不推进当前快照或上次同步。
+- 保留既有知识与记忆历史用量，叠加本账户本代次的唯一同步对象与客户端元数据；原文字节块计原始字节加封套元数据，不计 base64 膨胀。同对象多次接收只计一次，并发两批不能共同越过容量上限。第 4 步将这一计量联通所有原生写入和同步投影，避免投影重复计费。
+- 新增所有者定义的 hub_collect_personal_sync，仅在最后一个活会话结束／过期且无当前头／保留历史对象图引用时回收暂存载荷。保留快照会保护其全部后代，而不是仅保留根；独立原件和个人记录载荷不误删。清除仍删除该代次全部载荷，安全摘要与回执保留。真实 PG 18 备份恢复增加暂存对象、会话及操作回执。
+- 按第 13 节只新增 CIRCLE_HUB_SYNC_MAX_BATCH_BYTES，默认 8 MiB，并登记平台转发清单；对象数、分页和 24 小时期限取已批准常量，实际批量／对象大小还受 HTTP 请求预算限制。请求频率变量留第 5 步。
+- 已记下 Claude 对第 5 步的要求：local → hub 用所有者定义的方式切换函数建立新代次，不给运行角色增加 personal_spaces UPDATE 权限；本步不提前开放方式切换。
+- 首轮新增组 9 项中 7 通过、2 失败：历史记忆计量夹具缺少被外键引用的记录，凭据夹具只有字母、不符合既有检测规则；分别补齐合成记录和符合检测规则的合成值。记忆／结构扫描同时明确按解码字段执行，沿用现有记忆扫描语义。补验收后 26 项通过；增加已应用迁移 14 的升级、保留快照完整图及较小请求预算等回归后，新增文件 11 项通过。一次编辑脚本方法名写错未更改文件，修正后继续。
+
+本步不开始第 4 步。
+
+#### 第 3 步最终验证
+
+- 本机 Node 24.22.1；所有账户、原件和设备说明均为合成数据，使用临时 PostgreSQL／钥匙串和测试 Hub。没有读取个人环境配置、凭据库或操作持久部署。
+- 追加迁移 15 后，迁移 1～14 的定义与 e2d6c98c 逐字一致；13 → 当前、已应用 14 → 15 和密码迁移升级均有真实数据库回归。复核新增 SQL 后，迁移整源固定摘要为 `e2965cff407a0bb35cf2bb5b43475dcb23cade2faa2332099a47e17069ffd9bf`。没有新增无关 SHA 数据核对。
+- 首轮新增 9 项中 7 通过、2 失败；随后带配置组的 25 项中 24 通过、1 个凭据夹具仍失败；补上合成值中的数字后，含新增验收的 26 项全部通过。最终新增文件增加到 11 项并全部通过，0 跳过。
+- 以下定向组 **329 项中 327 通过、2 失败、0 跳过**。两项失败都在 ownership：探针误选了同步头获准更新的 snapshot 列；改为检查不可更新的 owner 列，权限不变。没有放宽测试期待，没有把初跑整组记为通过。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 \
+node --test --test-concurrency=1 --test-reporter=tap \
+  'hub/records/**/*.test.ts' 'hub/config/*.test.ts' \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+  hub/knowledge/personal-purge.test.ts hub/knowledge/memory.test.ts \
+  hub/knowledge/spaces.test.ts hub/knowledge/sharing.test.ts \
+  packs/workflow/case-review/packs.test.ts \
+  tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts \
+  tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+```
+
+- ownership 探针修正后，以下最终复查组 **36 项通过、0 失败、0 跳过**。ownership 的 3 项都使用 PostgreSQL 18 客户端实际运行，暂存载荷、续传会话及幂等回执均从旧备份恢复成功；不是跳过后算通过。未重复已通过的其余定向文件。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 \
+node --test --test-concurrency=1 --test-reporter=tap \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+  hub/records/lock-namespaces.test.ts hub/records/migrations.snapshot.test.ts \
+  hub/records/password.test.ts hub/records/roles.test.ts \
+  hub/records/personal-upgrade.test.ts hub/records/personal-sync.test.ts
+```
+
+- `npm run typecheck` 通过；`npm run verify:contracts` 通过，175 个生成文件一致，本步未改模型、协议 Schema 或技能镜像；`npm run test:docs` **291 项通过、0 失败、0 跳过**；`git diff --check` 通过。
+- 验收 46／47／48／49 均通过；49 本步证明真实 Hub 的内部端口、两个客户端、六工具边界、暂存不发布和清除，不冒称 HTTP／CAS 已完成。48 需要的 macOS 沙箱实际运行，0 跳过。
+- CAS／冲突、原生内容映射、完整原件／引文重新核验、同步 HTTP、令牌撤销／限流和方式切换仍属后续步骤，相应验收尚未实现、未运行，不计通过。未运行全量 unit／acceptance、全部工作流／引擎、知识视图性能、Linux CI 或来源归档检查；本步未改生产运行、依据读取、知识视图或来源工具。
+- 仅在 kw-sync-local 签署本机提交，无推送、PR 或部署。收尾时发现 Claude 新增的未暂存附录 kw-sync-review.md，已读到产品挂载升级、独立持有者与运行角色等审查意见；该文件保持原样，不并入本步提交。审查修复须在第 4 步之前另作提交。本次先报告第 3 步，不开始第 4 步。

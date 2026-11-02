@@ -1,3 +1,4 @@
+import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
 export { knowledgeTokens } from './space-index.ts';
@@ -831,7 +832,9 @@ export interface CallLog {
 // ---------------------------------------------------------------- the kit
 
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
+export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'>;
 export interface RecordsKit {
+  personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'purge'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;

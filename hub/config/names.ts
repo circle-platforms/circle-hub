@@ -6,6 +6,7 @@ export const RETIRED_PREFIX = 'CIRCLE_SERVER_';
 
 /** Variable name -> Chinese description shown in configuration errors and generated documentation. */
 export const HUB_ENVIRONMENT = {
+  CIRCLE_HUB_SYNC_MAX_BATCH_BYTES:'单批同步对象规范字节上限，默认 8 MiB；实际值同时受 HTTP 请求预算约束',
   CIRCLE_HUB_DATA_DIR: '数据目录，绝对路径，必填；对象、密钥库和日志默认都在它下面',
   CIRCLE_HUB_LOG_DIR: '日志目录，绝对路径，默认是 <数据目录>/logs',
   CIRCLE_HUB_HOST: '监听地址，默认回环；指定内网地址时须同时声明允许主机',

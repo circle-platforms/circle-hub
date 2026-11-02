@@ -19,6 +19,7 @@ export interface DatabaseConfig {
 }
 
 export interface Limits {
+  maxSyncBatchBytes:number;
   maxMemoryDocumentBytes:number;
   maxMemorySpaceBytes:number;
   maxMemorySpaceDocuments:number;
@@ -56,6 +57,7 @@ export interface LoadConfigOptions {
 
 const MIB = 1024 * 1024;
 export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
+  maxSyncBatchBytes:8*MIB,
   maxUploadBytes: 32 * MIB,
   maxRecordBytes: 16 * MIB,
   maxRequestBytes: requestBytesFor(32 * MIB),
@@ -211,6 +213,7 @@ export function loadConfig(
     account: named('CIRCLE_HUB_KEYCHAIN_ACCOUNT', DEFAULT_KEYCHAIN_ACCOUNT, KEYCHAIN_NAME),
   };
 
+  const maxSyncBatchBytes=integer('CIRCLE_HUB_SYNC_MAX_BATCH_BYTES',DEFAULT_LIMITS.maxSyncBatchBytes,1024,64*MIB)??DEFAULT_LIMITS.maxSyncBatchBytes;
   const maxUploadBytes = integer('CIRCLE_HUB_MAX_UPLOAD_BYTES', DEFAULT_LIMITS.maxUploadBytes, ...UPLOAD_RANGE) ?? DEFAULT_LIMITS.maxUploadBytes;
   const maxRecordBytes = integer('CIRCLE_HUB_MAX_RECORD_BYTES', DEFAULT_LIMITS.maxRecordBytes, ...RECORD_RANGE) ?? DEFAULT_LIMITS.maxRecordBytes;
   const maxEntryIndexBytes=integer('CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES',DEFAULT_LIMITS.maxEntryIndexBytes,1024,16*MIB)??DEFAULT_LIMITS.maxEntryIndexBytes;
@@ -239,6 +242,6 @@ export function loadConfig(
     ...(https ? { https } : {}),
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,
-    limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes,maxMemorySpaceDocuments },
+    limits: { maxSyncBatchBytes,maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes,maxMemorySpaceDocuments },
   };
 }

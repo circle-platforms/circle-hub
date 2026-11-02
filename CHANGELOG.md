@@ -36,6 +36,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - The console uses the shared Circle design tokens and local system fonts, with a persistent system/light/dark theme
   switch on signed-in and sign-in pages. Fixed scripts and styles remain allowed only by their content hashes.
 
+- Personal sync now has scoped internal heads, stable item identities, atomic batch staging, frozen inventories and durable replay receipts.
+  Staging and private device metadata count toward personal capacity; expired unreferenced objects can be collected safely.
+  Native projection, verified commits and the HTTP API remain pending.
+
 - Personal knowledge and memory payloads can be cleared by account and epoch while immutable digest capsules remain.
   A scoped upgrade preserves logical record identities; team copies survive and dependent legacy grounds become unverified.
   Restoring an older backup can restore cleared content, which the restore command now states. Sync HTTP handlers are still pending.

@@ -1291,3 +1291,8 @@ Decision 89 step 2 stores private bodies and directory objects through the recor
 an epoch makes its historical roots, originals, memory versions and directory grants unavailable, without deleting
 team knowledge or team memory. A legacy team entry whose direct or indirect ground still needs a cleared personal root/capture
 is displayed as unverified; its historical record bytes are unchanged. Missing optional knowledge ports remain valid.
+
+Decision 89 step 3 adds the optional records `personalSync` port to the knowledge context. Transport objects are still
+isolated staging: they do not enter knowledge search, memory auto-load or pack publication. The real-Hub acceptance
+scenario checks two clients, privacy and purge through this internal port alongside ordinary MCP reads. Native export,
+revision mapping, verified CAS and conflict projection are implemented in step 4; HTTP authentication stays in step 5.
