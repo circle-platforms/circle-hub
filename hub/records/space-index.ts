@@ -6,6 +6,8 @@ import { RecordsError } from './errors.ts';
 export const MAX_SPACE_INDEX_BYTES=64*1024*1024;
 export const MAX_ENTRY_INDEX_BYTES=1024*1024;
 const limit=()=>new RecordsError(PROTOCOL_CODES.SPACE_INDEX_LIMIT.when,{code:'SPACE_INDEX_LIMIT',fix:PROTOCOL_CODES.SPACE_INDEX_LIMIT.fix});
+/** Advisory lock namespace serializing index writes per space; distinct from every other records lock namespace. */
+const SPACE_INDEX_LOCK_SPACE = 730_163;
 export interface SpaceSearchRow {
   space: string;
   version: string;
@@ -53,7 +55,7 @@ export class PgSpaceSearchIndex implements SpaceSearchIndex {
     if(!rows.length)return;
     await this.#db.transaction(async transaction=>{
       const spaces=[...new Set(rows.map(row=>row.space))].sort();
-      for(const space of spaces)await this.#db.query("SELECT pg_advisory_xact_lock(hashtextextended('knowledge-space-index:'||$1,0))",[space],transaction);
+      for(const space of spaces)await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))',[SPACE_INDEX_LOCK_SPACE,space],transaction);
       const missing=new Set(await this.missing(rows.map(row=>row.record),transaction));
       for(const row of rows){if(!missing.has(row.record))continue;if(row.text===undefined)throw new RecordsError('缺少待重建的知识搜索内容');
         const tokens=knowledgeTokens(row.text,this.#entryBytes),bytes=64+tokens.reduce((sum,token)=>sum+Buffer.byteLength(token)+4,0);

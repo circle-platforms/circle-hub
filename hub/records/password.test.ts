@@ -65,7 +65,7 @@ test('the password migration preserves version-7 accounts and Circle credentials
   const id=newId('usr'),tokenId=newId('tok'),token='s'.repeat(43),at='2026-11-02T00:00:00.000Z';
   await db.query('INSERT INTO users (id,name,role,disabled,created_at,updated_at) VALUES ($1,$2,$3,false,$4,$4)',[id,'合成旧管理员','admin',at]);
   await db.query('INSERT INTO tokens (id,user_id,sha256,label,created_at) VALUES ($1,$2,$3,$4,$5)',[tokenId,id,sha256Hex(token),'合成旧 Circle',at]);
-  assert.deepEqual(await migrate(db),[8]);
+  assert.deepEqual(await migrate(db),MIGRATIONS.slice(7).map(migration=>migration.version),'the password migration and every later one apply on top of version 7');
   assert.deepEqual(await migrate(db),[]);
   const principals=new PgPrincipals(db,()=>new Date(at));
   const user=await principals.authenticate('Bearer '+token);assert.ok(user);assert.equal(user.id,id);

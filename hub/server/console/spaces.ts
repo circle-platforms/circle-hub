@@ -1,6 +1,6 @@
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
 import { z } from 'zod';
-import { ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeSearchScope, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, isKnowledgeSearchScope, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { Sha256 } from '../../../contracts/src/common.ts';
 import { KnowledgeError, type SpaceEntryView } from '../../knowledge/api.ts';
 import { code, html, link, page, pre, table, type Html } from './html.ts';
@@ -173,7 +173,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   }
   else if (action === 'directory')
     await spaces.directory(ctx.principal, path, space);
-  else if (action === 'grant' || action === 'revoke') {
+  else if (isKnowledgeGrantAction(action)) {
     const audience = KnowledgeGranteeSchema.parse(get('audience'));
     const member = get('member_id') || (get('member') ? (await ctx.deps.records.principals.findByName(get('member')))?.id : null);
     await spaces.grant(ctx.principal, { path, audience, member: member ?? null, revoke: action === 'revoke' });
@@ -195,7 +195,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   }
   else
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
-  return '/console/knowledge/space?' + new URLSearchParams({ space: action === 'grant' || action === 'revoke' || action === 'import' ? ctx.principal.id : space, path });
+  return '/console/knowledge/space?' + new URLSearchParams({ space: isKnowledgeGrantAction(action) || action === 'import' ? ctx.principal.id : space, path });
 }
 export function spaceActionFailure(ctx: PageContext, error: unknown): PageResult {
   if (error instanceof KnowledgeError && error.code === 'SOURCE_UNAVAILABLE')
