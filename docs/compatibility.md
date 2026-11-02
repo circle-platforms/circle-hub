@@ -12,6 +12,7 @@
 | 合约 | 通用模型第 5 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
 | MCP | `@modelcontextprotocol/sdk` 1.32.1 | 根 `package.json` | 六个工具，streamable HTTP（JSON 模式；调用超过 20 秒时先发响应头并每 30 秒补一个空格，客户端不会因为长时间没有数据而断开），Bearer 令牌 |
 | Circle | **1.13.0 或更高**，作为普通 MCP 客户端连接，没有 hub 扩展 | MCP 协议与工具的 schema；使用者上手见 [把 Circle 接到 Hub](hub-client-setup.md) | D06 R[1] 的六项通用改进随 Circle PR #309 发行于 1.13.0：请求头 `${secret:名字}`、每个请求带 `Circle-Session-Id` 与 `traceparent`、按服务器注解决定审批、服务器 instructions 进系统提示、文件参数按字节上传、after_tool 钩子带工具输出；旧的 hub 扩展同时删除。更早的 Circle 不发会话编号，Hub 无法判定独立复核。浏览器截图 `save_only`（T5-1 在没有视觉模型时需要）还没有进上游 |
+| DeepSeek Harness | **0.2.1-rc.5**（当前桌面版），经 `circle-hub-dsh` 0.1.0 插件连接 | MCP 协议与工具的 schema；使用者上手见 [把 DeepSeek Harness 接到 Hub](hub-dsh-setup.md) | 与 Circle 平级的普通 MCP 客户端：插件在运行时发现六个工具（`mcp__circle-hub__*`），不加 Hub 专用协议；DSH 侧做了与 D06 R[1] 对应的通用改进（文件参数按字节上传、令牌走 secret/环境变量、按工具超时、结果引用读取、按注解审批）。对 2026-11-02 的 main `8dbbef2` 验证：上传引用与直连客户端相同、67/67 交付、拒收可见；插件测试 15/15。对照实验的 Circle 臂待所有者提供构建与连接 |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | circle-packs | 见其 CHANGELOG | circle-packs 仓库 | 存放已退役服务器用的包（`modules.json`、`product-line/1`、`hub-*/1`），重建后的 Hub 不读取它们；第一个里程碑不改这个仓库 |
 
