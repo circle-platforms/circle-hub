@@ -33,6 +33,6 @@ test('production replay refuses a legacy private capture while preserving an ind
   const ctx=createEngineContext({records:hub.records,workflows:hub.hub.workflows,packs:hub.hub.packs,knowledge:hub.hub.knowledge,external:hub.hub.runsExternal,parsers:hub.hub.parsers,sandbox:{requireOsIsolation:true}});
   assert.equal(await recheckProduction(ctx,legacy,owner.principal,traceId),null);
   assert.equal((await resultsOf(hub.records.store,legacy.body.run)).length,0);
-  const action=(await actionsOf(hub.records.store,legacy.body.run)).at(-1)!;assert.deepEqual(action.body.codes,['SPACE_RESULT_GROUNDS_PRIVATE']);assert.equal(action.body.acceptance,'not_accepted');
+  const action=(await actionsOf(hub.records.store,legacy.body.run)).at(-1)!;assert.deepEqual(action.body.codes,['RESULT_GROUNDS_UNREADABLE']);assert.equal(action.body.acceptance,'not_accepted');
   assert.ok(await recheckProduction(ctx,original,owner.principal,traceId),'the original capture is not classified by a private copy of equal bytes');
 });

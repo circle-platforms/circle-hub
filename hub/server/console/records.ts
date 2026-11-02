@@ -10,6 +10,7 @@ import { html, link, page, table, type Html } from './html.ts';
 import { callTable, names, neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { TOOL_LABELS, toolName } from './tasks.ts';
 import { card, count, dayBars, duration, hbar, kpi, plannedCard, sectionHead, stackBar } from './ui.ts';
+import { spaceRecords } from './space-records.ts';
 
 /** Trial actions are administrator-only and separate from the MCP call log and the real reads' statistics. */
 async function trials(ctx: PageContext, path: string, user: string | undefined, from: string | undefined, to: string | undefined): Promise<Html> {
@@ -147,7 +148,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   const list = card({ title: '调用记录', meta: `本页 ${lines.items.length} 条 · 新的在前` }, html`${filters}${callTable(lines.items, ctx.admin, await names(ctx, lines.items))}${next}`);
   return {
     status: 200,
-    body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div><div class="mt16">${await trials(ctx, path, userId, from, to)}</div>
+    body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div><div class="mt16">${await trials(ctx, path, userId, from, to)}</div>${await spaceRecords(ctx, path, userId, from, to)}
 ${sectionHead('知识流向', undefined, undefined, undefined, '按成员、工作流追踪知识的来源、去向及所用流程')}
 ${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`),
   };

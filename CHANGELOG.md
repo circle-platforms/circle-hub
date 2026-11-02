@@ -14,7 +14,32 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Personal workflow and skill methods cannot use named documents, business-system reads, leases or external effects;
+  retained publications and dynamic outputs pass the same start boundary. Accepted raw submissions recheck current
+  ground access. Team knowledge verification uses team parsers, and withdrawal warnings hide unreadable ancestor
+  identities behind counts. Sharing destinations are scanned without persisting credential-bearing paths in receipts.
+
+- Own ordinary uploads bound as run inputs now declare that exact capture to the run's current readers, with visible
+  provenance and no global read grant. Administrator imports likewise declare their own ordinary uploads. Source/root
+  permission checks preserve exact-validator outcomes and bounded byte-read retries; absent and forbidden references
+  remain indistinguishable. Personal-space originals and personal-credential sources keep independent authorization.
+
+- Personal grant audit summaries are limited to participants, or all-administrator grants for administrator views; administrators see safe sharing receipts without private input content. Frozen source capture checks prevent an authorized equal-byte copy from lending another capture's private metadata, and standalone binding/reader components tolerate missing knowledge services.
+
+- Sharing revisions now supersede only the submitter's own prior team entry from the same personal lineage, preserving withdrawal history. MCP and the console accept a team directory, default to the personal path, and show the target in merged/refused receipts while retaining the private origin.
+
 - Second knowledge-space review: reject private input metadata before run creation, retain exactly one safe import-refusal audit after rollback, protect production rechecks, and serialize writes per space. Migration 11 counts current-version index references incrementally, isolates product quotas and adds configurable limits. Model 19 search warnings preserve usable matches without treating skipped scopes as a complete search; the four generic skills only update protocol mirrors and patch manifests.
+
+- Verified personal knowledge can be submitted to the team through MCP or the console. Ordered checks resolve grounds,
+  verify quotations, reject private-credential/unsigned-upload sources, deduplicate team content and scan credentials.
+  Merges preserve the original and record submitter/source; owners see safe merged/rejected receipts and can withdraw
+  their team submissions. Dependent entries/results show current withdrawal qualifiers without rewriting history.
+- Members can publish personal workflows and generic skills using the existing validators and sandbox. Owner-managed
+  use grants include specific members or all administrators; administrators have no default access. Pack ids, immutable
+  files and frozen skill closures keep their personal namespace. Team promotion requires the existing publish right;
+  new team runs follow assignments, while old personal results keep their audience. Result admission/read checks every
+  actual reader's underlying grounds and rechecks grants on cached retries. Console sign-in remains password-only.
+
 
 - Knowledge-space security review: preserve independent source captures, restrict run quotation lookup to declared inputs, hide personal audit history and citation counts from grantees, inspect shared-path imports, and register team directories as Hub actions. A temporary registered refusal prevents personal grounds from entering shared results until decision 84 phase 3.
 - Search migration 10 stores one bounded token document per immutable entry record and lightweight version references. Reads bypass write queues, and imports check the complete next snapshot before saving original bytes. Model 18 and four protocol-only skill patch releases accompany these changes.

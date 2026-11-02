@@ -1,4 +1,6 @@
-import {personalGroundProblem} from './personal-grounds.ts';
+import {groundsAudience,guardedRecords} from './grounds.ts';
+import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
+import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -32,7 +34,7 @@ import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
 import { bindExpected, projectItems } from './projection.ts';
-import { canSeeRun, canViewRun, identityOf, recordReader, runOfRecord, sourceReader } from './readers.ts';
+import { canSeeRun, canViewRun, identityOf, runOfRecord, sourceReader } from './readers.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
 import { actionsOf, keyOwner, putAction, putResult, putRun, resultFor, runByClientKey, runById, runRecordDigest } from './store.ts';
@@ -386,7 +388,7 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        const answer=okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest))??undefined),notices=await criterionNotices(ctx,existing.body);
+        const answer=okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest,existing.body.pack_space))??undefined),notices=await criterionNotices(ctx,existing.body);
         if(notices.length)answer.run!.criterion_changes=notices;
         return {answer,production,runRecord:existing.digest,...await gapsOf(ctx,existing.body)};
       }
@@ -401,7 +403,7 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
 }
 
 async function packRefusal(ctx:EngineContext,workflow:LoadedWorkflow,at:Date,errors:ProtocolError[],adminNote:string|null=null):Promise<Refusal>{
-  const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest);
+  const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest,workflow.pack.space);
   if(!owner)return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；管理员须补齐包 ownerOf 身份接线后重试`})),adminNote);
   const request=await putRequest(ctx,{pack_digest:workflow.pack.digest,kind:'repair',audience:owner,due:new Date(at.getTime()+86400000).toISOString(),missing:errors.map(e=>e.message).join('；'),source:workflow.pack.digest,code:'check_error',next_action:'包作者发布修复版本，运行者以原运行为 predecessor 用 start_run 重跑；本次未开始的运行直接重新开始'});
   return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`})),adminNote);
@@ -417,11 +419,12 @@ async function authorizedStart(
   requestDigest: string,
   variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
-  const workflow = await ctx.deps.workflows.forUser(user, input.pack);
+  const workflow = await ctx.deps.workflows.forUser(user, input.pack,input.pack_space);
   if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
+  if(isPersonalSpace(workflow.pack.space)&&personalWorkflowProblems(workflow.workflow,workflow.effects).length)throw new Refusal([personalCapabilityError()]);
   const declaration=PublishableRequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
   if(!declaration.success){
-    const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest);
+    const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest,workflow.pack.space);
     if(!owner)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包声明有误，且没有包作者身份读取接线',{path:'/pack',fix:'管理员补齐 ownerOf 接线并修复包声明后重新开始'})]);
     const request=await putRequest(ctx,{pack_digest:workflow.pack.digest,kind:'repair',audience:owner,due:new Date(at.getTime()+86400000).toISOString(),missing:`任务包 ${workflow.pack.id}@${workflow.pack.version} 缺少已声明层的检查或观察：${declaration.error.issues.map(i=>i.path.join('/')+': '+i.message).join('；')}`,source:workflow.pack.digest,code:'check_error',next_action:'包作者发布带完整检查和观察声明的修复版本，运行者用 start_run 重新开始；已有运行以它为 predecessor 重跑'});
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',request.body.missing,{path:'/pack',fix:`请求 rec:${request.digest}：${request.body.next_action}`})]);
@@ -445,7 +448,7 @@ async function authorizedStart(
  */
 async function checkLineage(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, input: z.infer<typeof StartRunInput>, predecessor: RunRecord): Promise<void> {
   if (!workflow.requirements.some((r) => r.independent_of !== undefined)) return;
-  const reader = recordReader(ctx.deps.records.store);
+  const reader = guardedRecords(ctx);
   const records: { record: string; run: string | null }[] = [];
   for (const slot of workflow.workflow.inputs.filter((s) => s.role === 'artifact_under_verification')) {
     const given = input.inputs[slot.slot];
@@ -489,9 +492,10 @@ async function startFresh(
   const dependencies=workflow.manifest?.dependencies??[];
   let skills:import('../../../contracts/src/skills.ts').SkillLock[]=[];
   if(ctx.parsers.freeze){
-    try{const frozen=await ctx.parsers.freeze(dependencies);skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
+    try{const frozen=await ctx.parsers.freeze(dependencies,{principal:user,space:workflow.pack.space});skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
     catch(error){throw new Refusal([protocolError('SOURCE_UNAVAILABLE',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
   }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_UNAVAILABLE','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
+  if(!isPersonalSpace(workflow.pack.space)&&skills.some(skill=>skill.space))throw new Refusal([protocolError('TEAM_PARSER_REQUIRED',PROTOCOL_CODES.TEAM_PARSER_REQUIRED.when,{path:'/pack'})]);
   const startedAt = at.toISOString();
   let predecessor: StoredRecord<RunRecord> | null = null;
   if (input.predecessor !== undefined) {
@@ -572,6 +576,7 @@ async function startFresh(
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
+  if(isPersonalSpace(workflow.pack.space)&&projection.leaseRequests.length)throw new Refusal([personalCapabilityError()]);
   const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
@@ -635,6 +640,8 @@ async function startFresh(
     run: runId,
     ...(feedingOffset?{feeding_offset:feedingOffset}:{}),
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
+    ...(workflow.pack.space?{pack_space:workflow.pack.space}:{}),
+    ...(workflow.pack.team_shared?{team_shared:true}:{}),
     pack_digest: workflow.pack.digest,
     ...(target.product !== null ? { product: target.product.product.id } : {}),
     ...(target.line !== null ? { version: target.line } : {}),
@@ -673,7 +680,7 @@ async function startFresh(
   const runDigest = runRecordDigest(record, startedAt);
   const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user) : null;
   if (production !== null) {
-    const privateGround=await personalGroundProblem(ctx,user,production.evaluation.result,record.sources);if(privateGround)throw new Refusal([privateGround]);
+    const refusal=await groundsAudience(ctx,record,production.evaluation.result,{pending:true,submitter:user});if(refusal)throw new Refusal([refusal]);
     const resultTooLarge = tooLarge(ctx, production.evaluation.result, `这个被判对象的校验结果（${items.length} 个条目）`, subjectPath);
     if (resultTooLarge !== null) throw resultTooLarge;
   }
@@ -799,10 +806,10 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
 
 /** Re-evaluate only deterministic production, with the existing frozen run and current authorized source availability. */
 export async function recheckProduction(ctx:EngineContext,stored:StoredRecord<RunRecord>,user:Principal,traceId:string):Promise<ProductionResult|null>{
-  const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest);
+  const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest,stored.body.pack_space);
   if(!workflow||!isProduction(workflow))return null;
   const produced=await evaluateProduction(ctx,stored.body,stored.digest,workflow,traceId,user);
-  const refusal=await personalGroundProblem(ctx,user,produced.evaluation.result,stored.body.sources);
+  const refusal=await groundsAudience(ctx,stored.body,produced.evaluation.result,{submitter:user});
   if(refusal){
     await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(stored.digest)],startedAt:produced.startedAt,endedAt:ctx.now().toISOString(),acceptance:'not_accepted',codes:[refusal.code],detail:{production:true,refusal:refusal.code,result:null,repair:[]}});
     return null;

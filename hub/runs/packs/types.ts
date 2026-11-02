@@ -183,6 +183,8 @@ export interface PackVersionBody {
 }
 
 export interface PackVersionInfo {
+  space?: import('../../../contracts/src/spaces.ts').SpaceId;
+  team_shared?: true;
   id: string;
   version: string;
   kind: PackKind;

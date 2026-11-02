@@ -28,6 +28,7 @@ export interface RunsEngineDeps {
   };
   workflows: WorkflowStore;
   packs: PacksPort;
+  personalPacks?: import('../api.ts').PersonalPacks;
   knowledge: KnowledgePort & { layers?: { contributions: ContributionLayer } };
   external: ExternalReaderPort;
   /** Core parsers; default the six of hub/refs. */

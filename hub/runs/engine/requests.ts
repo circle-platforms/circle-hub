@@ -8,6 +8,7 @@ import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { ConflictError, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun } from './readers.ts';
+import {requestReadable} from './grounds.ts';
 import { runById, keyOwner } from './store.ts';
 import { createRequestService, type RequestBody, type RequestView } from '../../requests/api.ts';
 export { createRequestService, RequestBodySchema } from '../../requests/api.ts';
@@ -16,7 +17,11 @@ function service(ctx:EngineContext){return createRequestService(ctx.deps.records
 export const putRequest=(ctx:EngineContext,input:RequestBody)=>service(ctx).write(input);
 export const answerRequest=(ctx:EngineContext,request:string,source:string)=>service(ctx).answer(request,source);
 export const requestRecords=(ctx:EngineContext,run?:string):Promise<RequestView[]>=>service(ctx).all(run);
-export const requestsOf=(ctx:EngineContext,by:Principal,run?:string):Promise<RequestView[]>=>service(ctx).list(by,run);
+export async function requestsOf(ctx:EngineContext,by:Principal,run?:string):Promise<RequestView[]>{
+  const out:RequestView[]=[];
+  for(const request of await service(ctx).list(by,run))if(await requestReadable(ctx,by,request))out.push(request);
+  return out;
+}
 export async function recordResultRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,roundsUsed:ReadonlyMap<string,number>=new Map(),input?:unknown):Promise<void>{
   if(isAbandonedResult(result))return;
   for(const error of result.errors){
@@ -28,7 +33,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
     error.fix=`${error.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`;
   }
   if(result.acceptance!=='accepted')return;
-  const workflow=await ctx.deps.workflows.byDigest(run.pack_digest);
+  const workflow=await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space);
   for(const error of [...result.errors]) {
     const template=workflow?.requirements.find(t=>t.key===error.requirement);
     const row=routeOf(template?.error_handling??[],error.code,isReason(error.code)?error.code:undefined);
@@ -44,7 +49,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
   }
   for(const claim of result.cross_item){
     if(claim.qualifier.nature!=='unknown'||!claim.requirement)continue;
-    const owner=await ctx.deps.workflows.ownerOf?.(run.pack_digest);
+    const owner=await ctx.deps.workflows.ownerOf?.(run.pack_digest,run.pack_space);
     const administrator=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled)?.id;
     const runner=run.runner??run.configurer;
     if(!owner||!administrator||!runner)throw new Error('整份检查未知缺少具名出口身份');

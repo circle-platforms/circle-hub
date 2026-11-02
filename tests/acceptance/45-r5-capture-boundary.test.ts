@@ -64,7 +64,12 @@ test('a persisted ordinary run with a captured input keeps the declaration-grade
   for (const artifact of [captured.out.artifact, undefined]) {
     const old = RunRecord.parse({
       ...historical, run: newId('run'), started_at: '2026-01-01T00:00:00.000Z',
-      sources: persisted.run.sources.map(source => source.slot === 'subject' ? { ...source, artifact } : source),
+      sources: persisted.run.sources.map(source => {
+        if(source.slot!=='subject')return source;
+        // The historical fixture predates upload declarations, including its unpinned capture variant.
+        const {upload_declaration:_declaration,...historicalSource}=source;
+        return {...historicalSource,artifact};
+      }),
     });
     assert.equal(old.sources.find(source => source.slot === 'subject')?.artifact, artifact);
     await putRun(bed.hub.records.store, old, '2026-01-01T00:00:00.000Z');

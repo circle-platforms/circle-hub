@@ -1,5 +1,33 @@
 # hub/server
 
+## Sharing and personal publication (decision 87)
+
+The console has a share action on the owner's verified entry and `/console/knowledge/submissions` for the owner's merged
+or rejected receipts, with generated status text, registered codes and safe reasons. Team entries disclose submitter,
+time and original entry address. A submitter can withdraw their own team copy; administrators can withdraw any team
+entry. Entry and result views derive current withdrawn-ground notices without changing historical record bodies.
+
+Workflows and generic skills each separate personal and team listings. Personal detail URLs keep `/console/packs/<id>`
+and add `?space=<owner>` so equal ids remain independent; catalogs, task titles, search and JSON views keep that namespace.
+`/console/packs/-/publish` stages and checks a personal zip, then confirms publication within 30 minutes and rechecks it.
+The reserved `-/` path does not hide an existing pack whose id is `publish`. `/console/packs/do/` actions manage the owner's
+stage, grants, revocation, retirement and team promotion. They reuse password sessions, first-change restrictions,
+same-origin, CSRF, multipart/size limits and owner-bound stages; no administrator command bridge is used for member writes.
+Promotion still checks team publish rights. Hover explanations disclose server backups and current grant boundaries.
+
+The six-tool MCP interface remains unchanged in count. `upload_file.share_entry` returns a safe receipt with team version
+and address, or registered refusal code/reason; `withdraw_entry` appends withdrawal state. `start_run.pack_space` selects a
+personal workflow, and `get_nodes` reads an authorized pack or declared file using `pack`, `pack_space` and optional `file`.
+Pure generic skills expose their SKILL.md without inventing acceptance requirements. Actual result readers must have every
+underlying ground read right. Binding an ordinary own upload declares it to that run's readers only; personal-space
+originals and personal-credential sources keep their independent restrictions. Per-result state is rechecked for raw `rec:` reads,
+and text/structured replies expose live withdrawal qualifiers. Username/password remains the only console sign-in for
+all roles; bearer tokens only authenticate MCP/Circle connections. No Circle repository or synchronization code changes.
+
+Personal workflow runs cannot unlock named documents, including retained runs with an old input declaration. Their
+publication/start gates exclude business-system inputs, leases and external effects; administrators use the same
+personal capability boundary. Team workflows retain assignment-based access.
+
 ## Console spaces (decision 86)
 
 Knowledge shows personal, team and shared-with-me columns. `/console/knowledge/space` browses a selected immutable root,
@@ -14,11 +42,11 @@ Owner form actions under `/console/knowledge/do/` use the signed-in password ses
 first-password-change restrictions apply before every route. Only administrators adjust capacity from Team, which
 reveals the quota without opening the member's content. Forms and imports have byte limits; personal originals create
 no drafted entries. Hover text states visibility, non-recoverable prior reads after revocation and inclusion in server
-backups. Sharing-to-team and synchronization remain later phases, without new commands or a seventh MCP tool.
+backups. Synchronization and signing remain later phases, without a seventh MCP tool.
 
 ## Space tools (decision 86)
 
-The server still publishes six MCP tools. `upload_file` takes exactly one of `file_path` (base64 bytes) or `personal_entry`.
+The server still publishes six MCP tools. `upload_file` takes exactly one of `file_path` (base64 bytes), `personal_entry`, `share_entry` or `withdraw_entry`.
 The latter carries caller-authored kind, statement, data, optional applicability/path, and reference/quotation grounds;
 missing grounds remain unverified. `replaces`, `expected_version` and `reason` support append-only edits. Its receipt
 returns the space root, content id, status and exact tree address. File imports with `space=personal` store a private
@@ -954,7 +982,17 @@ establish target-server, real-user or production-network behavior.
 
 个人知识的目录或整个空间授权不包含版本审计历史；本人可以列出历史，被授权者页面明确说明历史仅本人可见。个人引用统计同样只给本人，HTML 与 `/console/api/knowledge/node` 共用所有者检查和个人索引；授权读取内容不授予读取统计的权限。
 
-第二阶段安全修正：个人条目和原文可按当前授权读取，当前不受理将它们作为运行结果依据的提交；仅事实工作流的自动结果同样检查。拒收码为 `SPACE_RESULT_GROUNDS_PRIVATE`，第三阶段会用覆盖全部实际读者的规则替代。共享目录拒收无法完整检查的原文，使用 `SPACE_CONTENT_UNINSPECTABLE`，不误报为命中凭据。团队产品目录由 Hub 登记，版本记录不再署为随机读取成员。
+第三阶段以全部实际读者检查替代第二阶段的临时个人依据拒收：个人条目和原文可按当前授权读取，结果的每个依据及底层来源须对全部结果读者可读，否则返回 `RESULT_GROUNDS_UNREADABLE`。仅事实工作流与缓存回执同样检查；撤回使用读取包装中的 `grounds_withdrawn`，旧结果保持原字节。共享目录仍拒收无法完整检查的原文，使用 `SPACE_CONTENT_UNINSPECTABLE`，不误报为命中凭据。团队产品目录由 Hub 登记，版本记录不署为随机读取成员。
 
+个人／团队知识库和工作流的页面目前只保留必要功能，后续另立任务重做展示；本阶段不打磨布局，保留“知识入库流程”卡片。来源：所有者对当前知识库展示的否定意见及 Claude 2026-11-02 的协调补充；后端共享、个人工作流、依据可见范围及验收继续实施。
 
 第二阶段第二轮索引修正：`get_nodes` 搜索可返回 `warnings`（注册错误码、未检索范围、说明与处理办法），正文和控制台同时显示；可用匹配继续返回，不宣称全部范围已检索。单条索引及当前版本限额由 Hub 配置，产品与团队条目分别计量。超限或索引未完成不会让 `/console/search` 整页返回 500。团队页容量提示区分个人原文／历史容量、当前版本索引额度与仍保留的历史磁盘占用。
+
+
+决定 88 第三阶段：“记录”页增加按授权人／接收人索引读取的个人知识与个人包授权历史。普通成员只看本人参与的授权；管理员仅看全体管理员授权，看不到成员间的授权。每次还核对记录正文的受众，错误索引不构成披露依据。提交共享只呈现安全元数据，管理员可见全部，成员只见本人；成员／时间过滤和各来源分页沿用当前页面，工具／运行过滤时不混入无关事件。团队目录显示为层级名称，拒收回执也显示目标；不展示提交原文、个人文件字节或未经处理的参数。
+Run source information identifies uploader declarations: binding an own ordinary upload makes it readable to the run's
+current actual readers in that run only. The console and MCP text show this scope; a bare source read gains no permission.
+References the submitter could not read remain absent diagnostics. Reader checks do not rerun fragment parsers, and an
+unreadable-reference observation in a stored result never authorizes reading the referenced body or a raw submission.
+
+知识条目、节点、运行及结果的撤回提示仅列当前可读的引用；其他上级依据只给数量。控制台和 MCP 的文本、结构化返回均保留这项提示，不暴露其他目录或摘要。

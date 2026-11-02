@@ -1,3 +1,4 @@
+import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
 import { LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
 // 设置) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
@@ -27,7 +28,7 @@ import { operationsPage, systemForgetPage, systemTrialPage } from './operations.
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
-import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure } from './spaces.ts';
+import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage } from './spaces.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
@@ -542,10 +543,10 @@ const ROUTES: Record<string, Route> = {
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);
     if (rest.length > 1) return Promise.resolve(neutralPage(ctx));
-    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, 'space-diff':spaceDiffPage, source:spaceSourcePage };
+    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage };
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
-  packs: (ctx, rest) => (rest.length === 0 ? packsPage(ctx) : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
+  packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/')==='-/publish'?personalPublishPage(ctx,options.staging):rest.length===1?packPage(ctx,rest[0]):Promise.resolve(neutralPage(ctx))),
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
@@ -819,7 +820,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);
   if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';
-  const isKnowledgeAction=segments.length===3&&segments[0]==='knowledge'&&segments[1]==='do';
+  const isKnowledgeAction=segments.length===3&&(segments[0]==='knowledge'||segments[0]==='packs')&&segments[1]==='do';
   if (isAction||isKnowledgeAction ? request.method !== 'POST' : request.method !== 'GET') {
     request.resume();
     return isAction||isKnowledgeAction
@@ -842,7 +843,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   let result: PageResult | null;
   try {
     if(isKnowledgeAction){
-      if(!sameOrigin(request,options.ownOrigins())){request.resume();return forbidden(response,'知识表单只能从本控制台提交');}
+      if(!sameOrigin(request,options.ownOrigins())){request.resume();return forbidden(response,'表单只能从本控制台提交');}
       let values:URLSearchParams|Map<string,string>;
       let upload:{bytes:Buffer;name:string;mediaType:string}|undefined;
       if(mediaTypeOf(request)==='multipart/form-data'){
@@ -851,9 +852,9 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
         const multipart=parseMultipart(read.bytes,boundary);values=multipart.fields;const file=multipart.files.find(file=>file.field==='archive');
         if(file&&file.bytes.length>options.deps.config.limits.maxUploadBytes)return sendHtml(response,413,page(ctx.chrome('原文超出大小上限'),html`<p>原文超出上传大小上限</p>`));
         if(file)upload={bytes:file.bytes,name:file.filename,mediaType:mediaTypeFor(file.bytes,undefined,file.filename)};
-      }else{const parsed=await formOf(request,ACTION_FORM_LIMIT);if(parsed==='aborted')return void response.destroy();if(parsed==='too_large')return sendHtml(response,413,page(ctx.chrome('表单超出大小上限'),html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`));if(typeof parsed==='string')return forbidden(response,'知识表单格式不正确');values=parsed;}
+      }else{const parsed=await formOf(request,ACTION_FORM_LIMIT);if(parsed==='aborted')return void response.destroy();if(parsed==='too_large')return sendHtml(response,413,page(ctx.chrome('表单超出大小上限'),html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`));if(typeof parsed==='string')return forbidden(response,'表单格式不正确');values=parsed;}
       if(values.get('csrf')!==session!.csrf)return forbidden(response,'表单已过期或不是本控制台发出的');
-      try{const target=await performSpaceAction(ctx,segments[2],values,upload);return redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
+      try{const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):await performSpaceAction(ctx,segments[2],values,upload);return redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
     }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;

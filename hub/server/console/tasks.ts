@@ -40,7 +40,10 @@ export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]
 export async function packTitles(ctx: PageContext): Promise<Map<string, string>> {
   const titles = new Map<string, string>();
   try {
-    for (const pack of await ctx.deps.packs.list(ctx.principal)) titles.set(`${pack.id}@${pack.version}`, pack.title);
+    for (const pack of await ctx.deps.packs.list(ctx.principal)){
+      titles.set(`${pack.space??'team'}/${pack.id}@${pack.version}`,pack.title);
+      if(!pack.space||pack.space==='team')titles.set(`${pack.id}@${pack.version}`,pack.title);
+    }
   } catch {
     // Titles are a convenience: without them the pack id is shown.
   }
@@ -49,8 +52,8 @@ export async function packTitles(ctx: PageContext): Promise<Map<string, string>>
 
 export const packIdOf = (ref: string): string => (ref.includes('@') ? ref.slice(0, ref.lastIndexOf('@')) : ref);
 
-export function taskTitle(run: Pick<RunRecordView, 'pack'>, titles: ReadonlyMap<string, string>): string {
-  return titles.get(run.pack) ?? packIdOf(run.pack);
+export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles: ReadonlyMap<string, string>): string {
+  return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? packIdOf(run.pack);
 }
 
 export function resultCell(row: Pick<TaskRow, 'result' | 'pending'>): Html {

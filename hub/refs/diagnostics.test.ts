@@ -85,3 +85,17 @@ test('guessed text and JSON limit refusals retain their definite reason and reco
     assert.doesNotMatch(String(structure.note), /media_type|application\/xml|text\/html/);
   }
 });
+
+
+test('an unavailable input remains a controlled refusal when no knowledge port is installed',async()=>{
+  const ctx={parsers:createDefaultRegistry(),deps:{records:{artifacts:{source:async()=>null},store:{}}}} as unknown as EngineContext;
+  const workflow={workflow:{inputs:[{slot:'file',role:'subject',required:true,accepts:['application/json']}]}} as unknown as LoadedWorkflow;
+  await assert.rejects(bindInputs(ctx,{id:'synthetic',name:'合成',role:'user'},workflow,{file:{reference:'src:'+'a'.repeat(64)}},'synthetic-run','synthetic-trace'),error=>error instanceof Refusal&&error.errors[0].code==='SOURCE_UNAVAILABLE');
+});
+
+test('a valid input can bind without an optional knowledge or feeding service',async()=>{
+  const ctx={parsers:createDefaultRegistry(),deps:{records:{artifacts:{source:async()=>({bytes:Buffer.from('{}'),mediaType:'application/json',artifact:{digest:'b'.repeat(64),body:{name:'synthetic.json'}}})},store:{}}}} as unknown as EngineContext;
+  const workflow={workflow:{inputs:[{slot:'file',role:'subject',required:true,accepts:['application/json']}]}} as unknown as LoadedWorkflow;
+  const bound=await bindInputs(ctx,{id:'synthetic',name:'合成',role:'user'},workflow,{file:{reference:'src:'+'a'.repeat(64)}},'synthetic-run','synthetic-trace');
+  assert.equal(bound.length,1);assert.equal(bound[0].binding.artifact,'b'.repeat(64));assert.equal(bound[0].input.parser,'json@1');
+});

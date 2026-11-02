@@ -35,7 +35,8 @@ import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts'
 import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
-import { identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
+import { identityOf, principalOf, sourceReader } from './readers.ts';
+import {guardedRecords} from './grounds.ts';
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
@@ -359,7 +360,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
-      records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
+      records: guardedRecords(ctx),
       consumer: 'function',
       documents: ctx.documents,
       onDiagnostic: diagnostic => ctx.log({traceId:input.traceId,run:run.run,what:'check source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
@@ -373,7 +374,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       parsers: ctx.parsers,
       sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
-      records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
+      records: guardedRecords(ctx),
       consumer: 'function',
       documents: ctx.documents,
       onDiagnostic: diagnostic => ctx.log({traceId:input.traceId,run:run.run,what:'check source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
@@ -931,7 +932,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       const layers = [] as typeof unresolved;
       for (const layer of unresolved) {
         if (layer.terminal === 'unchecked' || layer.terminal === 'incomplete' || layer.terminal === 'not_run' || layer.terminal === 'no_verdict' || outcomes.some(o=>o.outcome.verdict==='unknown')) {
-          const owner = await ctx.deps.workflows.ownerOf?.(run.pack_digest) ?? workflow.owner;
+          const owner = await ctx.deps.workflows.ownerOf?.(run.pack_digest,run.pack_space) ?? workflow.owner;
           const administrator = administrators[0]?.id;
           const runner = run.runner ?? run.configurer;
           if (!owner || !administrator || !runner) throw new Error('无法绑定未知出口：缺少包 ownerOf、具名管理员或运行者；请管理员补齐身份读取接线后重验');

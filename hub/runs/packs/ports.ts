@@ -32,6 +32,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
   const names: string[] = [];
   for (const b of bound) for (const name of b.product.names) if (!names.includes(name)) names.push(name);
   return {
+    ...(info.space?{space:info.space}:{}),
     pack: `${info.id}@${info.version}`,
     id: info.id,
     version: info.version,
@@ -117,14 +118,14 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
 export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
   const load = async (info: PackVersionInfo): Promise<LoadedWorkflow | null> => {
     if (info.kind !== 'workflow' && info.kind !== 'skill') return null;
-    const opened = await registry.open(info.digest);
-    if (opened === null) return null;
+    const opened = info.space&&info.space!=='team'?await registry.personal?.open(info.space,info.digest):await registry.open(info.digest);
+    if (opened == null) return null;
     const method=opened.declarations.kind==='skill'?opened.declarations.method:opened.declarations;
     if(method?.kind!=='workflow')return null;
     // Copies: the declarations are shared by every caller of this version.
     const d = structuredClone(method);
     return {
-      pack: opened.handle,
+      pack: {...opened.handle,...(!info.space&&await registry.personal?.transferred(info.digest)?{team_shared:true as const}:{})},
       owner: info.owner,
       manifest: structuredClone(info.manifest),
       workflow: d.workflow,
@@ -140,14 +141,16 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
     };
   };
   return {
-    async forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null> {
+    async forUser(user: Principal, ref: string, space?:string): Promise<LoadedWorkflow | null> {
+      if(space&&space!=='team'){const info=await registry.personal?.resolve(user,space,ref);return info?load(info):null;}
       const account = await registry.account(user);
       const parsed = parsePackRef(ref);
       if (account === null || parsed === null || !(await registry.canUse(account.id, parsed.id))) return null;
       const info = await registry.resolve(ref);
       return info === null || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest) ? null : load(info);
     },
-    async absence(user: Principal, ref: string): Promise<WorkflowAbsence | null> {
+    async absence(user: Principal, ref: string, space?:string): Promise<WorkflowAbsence | null> {
+      if(space&&space!=='team'){const parsed=parsePackRef(ref);if(!parsed||!await registry.personal?.mayUse(user,space,parsed.id))return 'unassigned';const rows=await registry.personal!.versions(space,parsed.id);const hit=rows.find(v=>!parsed.version||v.version===parsed.version);return !hit?'unknown':hit.withdrawn?'withdrawn':null;}
       const account = await registry.account(user);
       if (account === null) return 'disabled';
       const parsed = parsePackRef(ref);
@@ -158,12 +161,12 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       if (!(await registry.canUse(account.id, parsed.id)) || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'unassigned';
       return null;
     },
-    async publicationOf(digest: string): Promise<string | null> {return (await registry.byDigest(digest))?.record??null;},
-    async ownerOf(digest: string): Promise<string | null> {
-      return (await registry.byDigest(digest))?.owner ?? null;
+    async publicationOf(digest: string,space?:string): Promise<string | null> {return (space&&space!=='team'?await registry.personal?.byDigest(space,digest):await registry.byDigest(digest))?.record??null;},
+    async ownerOf(digest: string,space?:string): Promise<string | null> {
+      return (space&&space!=='team'?await registry.personal?.byDigest(space,digest):await registry.byDigest(digest))?.owner ?? null;
     },
-    async byDigest(digest: string): Promise<LoadedWorkflow | null> {
-      const info = await registry.byDigest(digest);
+    async byDigest(digest: string,space?:string): Promise<LoadedWorkflow | null> {
+      const info = (space&&space!=='team'?await registry.personal?.byDigest(space,digest):await registry.byDigest(digest))??null;
       return info === null ? null : load(info);
     },
     async summaries(user: Principal): Promise<PackSummary[]> {
@@ -171,22 +174,28 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       if (account === null) return [];
       const active = await registry.activeProducts();
       const out: PackSummary[] = [];
-      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).filter(p=>p.declarations.kind==='skill'&&p.declarations.method!==null).map(p=>p.info.id)])]) {
+      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).map(p=>p.info.id)])]) {
         const installed=(await registry.installedSkills()).find(p=>p.info.id===id);
         const info = installed?.info ?? await registry.latestVersion(id);
         if (info === null || info.kind !== 'workflow' && info.kind !== 'skill') continue;
         const raw = await registry.declarations(info.digest);
         const declarations=raw?.kind==='skill'?raw.method:raw;
-        if (declarations?.kind !== 'workflow') continue;
+        if (declarations?.kind !== 'workflow') {if(info.kind==='skill')out.push(skillSummary(info));continue;}
         out.push(packSummary(info, declarations, boundProducts(declarations, active)));
       }
+      const readable=await createPacksPort(registry).readableProducts(account);
+      const personalActive=active.filter(product=>readable.has(product.product.id));
+      const personalIds=new Set<string>();for(const info of await registry.personal?.list(account)??[]){const key=info.owner+'/'+info.id;if(info.withdrawn||personalIds.has(key))continue;personalIds.add(key);const opened=await registry.personal!.open(info.space!,info.digest);const method=opened?.declarations.kind==='skill'?opened.declarations.method:opened?.declarations;if(method?.kind==='workflow')out.push(packSummary(info,method,boundProducts(method,personalActive)));else if(info.kind==='skill')out.push(skillSummary(info));}
       return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     },
   };
 }
 
+function skillSummary(info:PackVersionInfo):PackSummary{return {...(info.space?{space:info.space}:{}),pack:info.id+'@'+info.version,id:info.id,version:info.version,kind:info.kind,title:info.title,description:info.description,products:[],inputs:[],parameters:[],requirements:[]};}
+
 function listing(info: PackVersionInfo, active: boolean, assigned?: string[]): PackListing {
   const out: PackListing = {
+    ...(info.space?{space:info.space}:{}),
     id: info.id,
     version: info.version,
     kind: info.kind,
@@ -214,14 +223,16 @@ export function createPackCatalog(registry: PackRegistry): PackCatalogPort {
           // A product pack is active in the version it is used in: the latest that is not withdrawn.
           for (const version of pack.versions) out.push(listing(version, pack.kind==='skill'?(await registry.installedSkills()).some(p=>p.info.digest===version.digest):pack.active && version.version === pack.latest, assigned));
         }
+        for(const info of await registry.personal?.list(account)??[])out.push(listing(info,!info.withdrawn));
         return out;
       }
       const out: PackListing[] = [];
-      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).filter(p=>p.declarations.kind==='skill'&&p.declarations.method!==null).map(p=>p.info.id)])]) {
+      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).map(p=>p.info.id)])]) {
         const installed=(await registry.installedSkills()).find(p=>p.info.id===id);
         const info = installed?.info ?? await registry.latestVersion(id);
         if (info !== null && (info.kind === 'workflow'||info.kind==='skill')) out.push(listing(info, info.kind==='skill'));
       }
+      for(const info of await registry.personal?.list(account)??[])out.push(listing(info,!info.withdrawn));
       return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     },
   };

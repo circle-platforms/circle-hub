@@ -24,7 +24,7 @@ const RUN_ID = /^run_[0-9a-z]{26}$/;
 const USER_ID = /^usr_[0-9a-z]{26}$/;
 
 export interface TaskHit { run: string; title: string; pack: string; product: string | null; started_at: string; runner: string | null }
-export interface PackHit { id: string; title: string; kind: string; kind_label: string }
+export interface PackHit { space?:string;id: string; title: string; kind: string; kind_label: string }
 export type KnowledgeHit =
   | { kind: 'line'; product: string; title: string; names: string[] }
   | { kind: 'build'; product: string; build: string; line: string; root: string | null }
@@ -83,7 +83,7 @@ export async function searchHub(ctx: PageContext, raw: string): Promise<SearchRe
   for (const versions of byId(await ctx.deps.packs.list(ctx.principal)).values()) {
     const pack = shownVersion(versions);
     if (results.packs.length < SEARCH_MAX_HITS && matches(needle, pack.id, pack.title)) {
-      results.packs.push({ id: pack.id, title: pack.title, kind: pack.kind, kind_label: uiLabelOf('pack_kind', pack.kind) });
+      results.packs.push({ ...(pack.space?{space:pack.space}:{}),id: pack.id, title: pack.title, kind: pack.kind, kind_label: uiLabelOf('pack_kind', pack.kind) });
     }
   }
 
@@ -170,7 +170,7 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
 ${sectionHead('任务', `${results.tasks.length} 个`)}
 ${card(null, html`${table(['任务', uiLabelOf('pack_kind', 'workflow'), '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), code(hit.pack), hit.runner ?? '—', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}
 ${sectionHead('发布内容', `${results.packs.length} 个`)}
-${card(null, table(['标识', '名称', '类型'], results.packs.map((hit) => [link(`/console/packs/${hit.id}`, hit.id), hit.title, hit.kind_label]), '没有匹配的发布内容'))}
+${card(null, table(['标识', '名称', '类型'], results.packs.map((hit) => [link(`/console/packs/${hit.id}`, hit.id,hit.space?{space:hit.space}:{}), hit.title, hit.kind_label]), '没有匹配的发布内容'))}
 ${ctx.deps.knowledge.spaces ? '' : html`${sectionHead('知识库', `${results.knowledge.length} 项`)}
 ${card(null, html`${table(['类型', '名称', '所在'], results.knowledge.map(knowledgeRow), '没有匹配的知识')}${partial(results.partial.knowledge, `仅查找了前 ${MAX_LINES} 条产品线或前 ${MAX_ROOTS} 个当前版本，或匹配多于 ${SEARCH_MAX_HITS} 项；可能还有其他匹配。`)}`)}`}
 ${sectionHead('记录', `${results.records.length} 条`)}

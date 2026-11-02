@@ -1,4 +1,5 @@
 import {defaultParsers} from '../../refs/api.ts';
+import { PersonalPacks } from './personal.ts';
 import { createRequestService } from '../../requests/api.ts';
 // The pack registry (T01 T02 B04 R01): publication by the owner of a pack id holding a publish right, the publish check,
 // content-addressed storage of every file, assignment of workflow packs to users, activation of product packs for the whole
@@ -57,7 +58,7 @@ import { compareVersions, packVersionKey, parsePackRef } from './versions.ts';
 
 export const PACK_VERSION_SCHEMA = 'pack_version@1';
 
-export type RegistryRecords = Pick<RecordsKit, 'store' | 'objects' | 'authorizations' | 'principals'>;
+export type RegistryRecords = Pick<RecordsKit, 'store' | 'objects' | 'authorizations' | 'principals'> & Partial<Pick<RecordsKit,'artifacts'>>;
 
 export interface PackRegistryOptions {
   records: RegistryRecords;
@@ -95,6 +96,7 @@ export interface ActiveProduct {
 }
 
 export interface PackRegistry {
+  readonly personal?: PersonalPacks;
   readonly extractDir: string;
   /** Publishes the pack in `directory` for its owner (T02); every refusal comes back as problems, never half a publication. */
   publish(owner: Principal, directory: string, options?:{answerRequests?:readonly string[]}): Promise<PublishOutcome>;
@@ -213,6 +215,7 @@ interface Claim {
 type CollisionAt = 'activate' | 'publish' | 'retire';
 
 class Registry implements PackRegistry {
+  readonly personal: PersonalPacks;
   readonly extractDir: string;
   readonly #records: RegistryRecords;
   readonly #now: () => Date;
@@ -228,6 +231,7 @@ class Registry implements PackRegistry {
     this.#now = options.now ?? (() => new Date());
     this.#extractor = new Extractor({ root: options.extractDir, onTamper: options.onTamper });
     this.extractDir = this.#extractor.root;
+    this.personal = new PersonalPacks(options,this);
   }
 
   // ---------------------------------------------------------------- accounts and locks
@@ -743,6 +747,8 @@ class Registry implements PackRegistry {
       for(const id of answers){
         const request=await requests.inspect(id);
         const previous=request?.pack_digest?await this.byDigest(request.pack_digest):null;
+        const linked=request?.run?(await this.#records.store.find<{pack_space?:string}>({kind:'run',key:'runs.id',value:request.run,limit:1})).items[0]:null;
+        if(linked?.body.pack_space&&linked.body.pack_space!=='team')return refuse([problem('publish.answer_request','pack.json','团队发布不能回答个人空间的修复请求','在原个人空间发布修复版本，并保持原请求的空间范围')]);
         if(!request||request.kind!=='repair'||request.audience!==account.id||!previous||previous.id!==manifest.id||previous.owner!==account.id||request.pack_digest===digest||request.answered_by!==null&&request.answered_by!==earlier?.record)return refuse([problem('publish.answer_request','pack.json','指定请求对发布人不可用，或不属于这个包的待修复版本','给出发给本包作者的修复请求摘要；重试已有作答时使用相同版本')]);
       }
 
@@ -761,6 +767,7 @@ class Registry implements PackRegistry {
       }
       const validation = await validatePack(read.pack, { policy: this.#options.policy });
       if (!validation.ok) return refuse(validation.problems);
+      if(manifest.dependencies?.some(dep=>dep.space))return refuse([problem('publish.personal_dependency','pack.json','团队发布不能依赖个人空间中的通用技能','先将依赖发布并安装到团队，再移除依赖的个人空间限定')]);
       // validatePack refuses these too; nothing below may run for a version no reference can name.
       const unnamable = versionProblems(manifest);
       if (unnamable.length > 0) return refuse(unnamable);

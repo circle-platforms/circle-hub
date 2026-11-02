@@ -24,6 +24,7 @@ import { ReferenceSyntaxError, prefetchReferences, resolveReference, srcFragment
 import { callPackFunction } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError } from './errors.ts';
+import {isPersonalSpace,personalExternalAllowed,personalCapabilityError} from '../packs/personal-capabilities.ts';
 import { withRevision, type BoundSource } from './inputs.ts';
 import { identityOf, sourceReader } from './readers.ts';
 import { isObject } from './util.ts';
@@ -192,6 +193,7 @@ export async function bindExpected(
     return { ...empty, warnings: [...parsed.data.warnings, { code: parsed.data.error.code, message: parsed.data.error.message }] };
   }
   const out: ExpectedBinding = { sources: [], unavailable: [], warnings: parsed.data.warnings };
+  if(isPersonalSpace(workflow.pack.space)&&parsed.data.sources.some(source=>!personalExternalAllowed(source.external)))throw new Refusal([personalCapabilityError()]);
   const seen = new Set<string>();
   for (const wanted of parsed.data.sources) {
     if (seen.has(wanted.external)) continue;

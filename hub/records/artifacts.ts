@@ -1,3 +1,4 @@
+import {SpaceSourceBody} from '../../contracts/src/spaces.ts';
 // Source artifacts (B02): content-addressed bytes plus a `source_artifact@1` record with provenance, author, capture time,
 // provenance type, read tier, visibility and the credential scan conclusion. An upload with a credential hit is refused
 // whole (B02 R[4]); a read or generated artifact with a hit is kept at read tier retain_only, unless an admin accepted
@@ -372,29 +373,55 @@ export class RecordArtifacts implements Artifacts {
     return this.#sourceChoice(choice, consumer);
   }
 
-  async sourceForRun(principal: Principal, sha256: string, run: string, options: {consumer?: ProducerKind;record?:string} = {}): Promise<ArtifactSource | null> {
+  async mayDeclareUpload(principal:Principal,artifact:string):Promise<boolean>{
+    const viewer=await this.#viewer(principal);if(!viewer)return false;
+    const row=await this.#store.get<SourceArtifactBody>(artifact);
+    if(row?.kind!=='source_artifact'||row.schema!==RECORD_SCHEMAS.source_artifact||!('upload' in row.body.origin)||row.body.author.user!==viewer.id||row.body.provenance_type!=='declared')return false;
+    const matches=await this.#store.findMany({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[row.body.sha256]});
+    for(const record of matches){const body=SpaceSourceBody.parse(record.body);if(body.space!=='team'&&body.artifact===artifact)return false;}
+    return true;
+  }
+  async #runSources(principal: Principal, sha256: string, run: string, options: {consumer?: ProducerKind;record?:string;pending?:import('../../contracts/src/run.ts').RunRecord} = {}): Promise<SourceArtifact[] | null> {
     const consumer = options.consumer ?? MODEL;
     if (!isProducerKind(consumer)) throw new TypeError('consumer must be a producer kind');
     if (!RunId.safeParse(run).success || !isSha256(sha256)) return null;
     const viewer = await this.#viewer(principal);
     if (viewer === null) return null;
     const record = (await this.#store.find({kind:'run',key:'runs.id',value:run,limit:1})).items[0];
-    if (!record || record.schema !== 'run@1') return null;
-    const parsed = RunRecord.safeParse(record.body);
+    if(record&&record.schema!=='run@1')return null;
+    // Only the engine supplies a prospective snapshot, before an automatic result and its run commit together.
+    const parsed = RunRecord.safeParse(record?.body??options.pending);
     if (!parsed.success || parsed.data.run !== run) return null;
     const snapshot = parsed.data;
-    const visible = viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now());
+    const visible = (!snapshot.pack_space||snapshot.pack_space==='team')&&viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now(),viewer.role);
     if (!visible || ![...snapshot.sources.map(binding=>binding.reference),...snapshot.items.map(item=>item.location)].some(reference => /^src:([0-9a-f]{64})(?:\/|$)/.exec(reference)?.[1] === sha256)) return null;
     const captures=[...new Set(snapshot.sources.filter(binding=>binding.artifact!==undefined&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256).map(binding=>binding.artifact!))];
     const requested=pinned(options.record);if(requested&&!captures.includes(requested))return null;
     if(captures.length){
-      for(const digest of requested?[requested]:captures){const stored=await this.#store.get<SourceArtifactBody>(digest);if(stored?.kind!=='source_artifact'||stored.schema!=='source_artifact@1'||stored.body.sha256!==sha256)continue;const direct=await this.source(principal,sha256,{consumer,record:digest});if(direct)return direct;if('generated'in stored.body.origin)return this.#sourceChoice(await this.#effectiveChoice(stored as SourceArtifact,await this.records(sha256)),consumer);}
-      return null;
+      const sources:SourceArtifact[]=[];
+      for(const digest of requested?[requested]:captures){
+        const stored=await this.#store.get<SourceArtifactBody>(digest);if(stored?.kind!=='source_artifact'||stored.schema!==RECORD_SCHEMAS.source_artifact||stored.body.sha256!==sha256)return null;
+        if(await this.canRead(principal,stored as SourceArtifact)){sources.push(stored as SourceArtifact);continue;}
+        const binding=snapshot.sources.find(binding=>binding.artifact===digest&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256);
+        const declaration=binding?.upload_declaration;
+        const declared=!!declaration&&declaration.by===(snapshot.runner??snapshot.configurer)&&stored.body.author.user===declaration.by&&await this.mayDeclareUpload({id:declaration.by,role:'user',name:''},digest);
+        const teamRead='read' in stored.body.origin&&stored.body.visibility.admins&&stored.body.provenance_type==='observed';
+        if(!declared&&!teamRead&&!('generated'in stored.body.origin))return null;
+        sources.push(stored as SourceArtifact);
+      }
+      return sources;
     }
     const all = await this.records(sha256);
     const generated = [...all].reverse().find(artifact => 'generated' in artifact.body.origin);
     if (!generated) return null;
-    return this.#sourceChoice(await this.#effectiveChoice(generated,all),consumer);
+    return [generated];
+  }
+
+  async canReadForRun(principal:Principal,sha256:string,run:string,options:{record?:string;pending?:import('../../contracts/src/run.ts').RunRecord}={}):Promise<boolean>{return (await this.#runSources(principal,sha256,run,options))!==null;}
+  async sourceForRun(principal:Principal,sha256:string,run:string,options:{consumer?:ProducerKind;record?:string;pending?:import('../../contracts/src/run.ts').RunRecord}={}):Promise<ArtifactSource|null>{
+    const sources=await this.#runSources(principal,sha256,run,options);if(!sources?.length)return null;
+    if(await this.canRead(principal,sources[0]))return this.source(principal,sha256,{consumer:options.consumer??MODEL,record:sources[0].digest});
+    return this.#sourceChoice(await this.#effectiveChoice(sources[0],await this.records(sha256)),options.consumer??MODEL);
   }
 
   async #sourceChoice(choice: Choice, consumer: ProducerKind): Promise<ArtifactSource> {

@@ -8,7 +8,8 @@ import type {Principal,Transaction,StoredRecord,Page} from '../../records/api.ts
 import {authorAccountsOf,lineageOf} from './lineage.ts';
 import {runById} from './store.ts';
 import {authorAccount} from './independence.ts';
-import {canViewRun,recordReader,identityOf} from './readers.ts';
+import {canViewRun,identityOf} from './readers.ts';
+import {guardedRecords} from './grounds.ts';
 import {parseReference,formatReference} from '../../refs/api.ts';
 import {isObject} from './util.ts';
 import {protocolError,Refusal} from './errors.ts';
@@ -69,7 +70,7 @@ export async function prepareCriterionReview(ctx:EngineContext,user:Principal,wo
  if(!requests.length)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','这份提交没有等待复核的判据变更声明',{path:'/inputs',fix:'核对请求是否已回答或被后续提交取代，绑定仍待复核的声明提交'})]);
  return {marker:{submission:record.digest,requests:requests.map(request=>request.record)},context:{submission:'rec:'+record.digest,declarations:requests.map(request=>({pointer:request.declaration!,request:'rec:'+request.record}))}};
 }
-export async function criterionReviewVisible(ctx:EngineContext,user:Principal,run:RunRecord):Promise<boolean>{return !run.criterion_review||await recordReader(ctx.deps.records.store).read(run.criterion_review.submission,identityOf(user,run.run))!==null;}
+export async function criterionReviewVisible(ctx:EngineContext,user:Principal,run:RunRecord):Promise<boolean>{return !run.criterion_review||await guardedRecords(ctx).read(run.criterion_review.submission,identityOf(user,run.run))!==null;}
 export async function answerCriterionReview(ctx:EngineContext,run:RunRecord,result:StoredRecord<ValidationResult>,tx:Transaction):Promise<void>{
  if(!run.criterion_review||result.body.acceptance!=='accepted'||!run.predecessor)return;
  const account=authorAccount(run),authors=await authorAccountsOf(ctx,run.predecessor);if(!account||!authors?.complete||authors.accounts.has(account))return;

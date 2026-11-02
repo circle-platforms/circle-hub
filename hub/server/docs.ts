@@ -10,6 +10,7 @@
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { RunId } from '../../contracts/src/common.ts';
+import type { RunRecord } from '../../contracts/src/run.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, WorkflowStore } from '../ports.ts';
 import {
   RECORD_SCHEMAS,
@@ -178,17 +179,18 @@ export function createDocs(deps: DocsDeps): Docs {
     // The caller always gets the engine's neutral SOURCE_UNAVAILABLE; the reason here is for the admin note.
     const neutral = `账号 ${context.principal.id} 不能读命名文档 ${parsed.name}（没有这个文档，或者不能经这次运行读它）`;
     const principal = context.principal;
+    const storedRun=context.run&&RunId.safeParse(context.run).success?(await records.store.find<Pick<RunRecord,'runner'|'pack_digest'|'pack_space'>>({key:'runs.id',value:context.run,kind:'run',limit:1})).items[0]:undefined;
+    if(storedRun?.body.pack_space&&storedRun.body.pack_space!=='team')return {ok:false,id:bare,reason:`个人工作流不能读取命名文档；${neutral}`};
     if (principal.role !== 'admin') {
       // Through a run only: the run must exist and be this user's, and its pack must declare the doc input type.
       // A run that is not stored yet is being started: bindInputs has already checked the assignment and the slot.
       if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) {
         return { ok: false, id: bare, reason: `命名文档只经运行读取；${neutral}` };
       }
-      const page = await records.store.find<{ runner?: string; pack_digest?: string }>({ key: 'runs.id', value: context.run, kind: 'run', limit: 1 });
-      const record = page.items[0];
+      const record = storedRun;
       if (record !== undefined) {
         if (record.body.runner !== principal.id) return { ok: false, id: bare, reason: `运行 ${context.run} 不是这个账号的；${neutral}` };
-        const workflow = typeof record.body.pack_digest === 'string' ? await deps.workflows.byDigest(record.body.pack_digest) : null;
+        const workflow = typeof record.body.pack_digest === 'string' ? await deps.workflows.byDigest(record.body.pack_digest,record.body.pack_space) : null;
         const declares = workflow?.workflow.inputs.some((slot) => slot.accepts.includes(DOC_EXTERNAL_TYPE)) ?? false;
         if (!declares) return { ok: false, id: bare, reason: `运行 ${context.run} 的工作流没有声明命名文档输入；${neutral}` };
       }

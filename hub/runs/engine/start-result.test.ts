@@ -13,6 +13,10 @@ import { partitionCountsOf } from '../../../contracts/src/validation.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openHarness, sandboxSkip, type Harness } from './testing/harness.ts';
 import { standardDocument, toyMap } from './testing/mindmap.ts';
+import {createEngineContext} from './deps.ts';
+import {recheckProduction} from './start.ts';
+import {runById,resultsOf,actionsOf} from './store.ts';
+import {createTestParserRegistry} from '../../testing/parsers.ts';
 
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const trace = (answer: object) => ({ ...answer, trace: TRACE });
@@ -45,6 +49,22 @@ function skeleton(run: { run: string; items: { id: string }[]; slots?: { schema:
 }
 
 describe('start_run answers carry the production result and the evidence gaps', () => {
+  test('an uploader declaration remains scoped to the run when a result reader is added', {skip}, async()=>{
+    const current=await openHarness(postgres);
+    try{
+      const input=await current.upload(current.alice,toyMap(standardDocument()));
+      const first=await current.service.startRun(current.alice,{pack:'toy-locate',inputs:{map:{reference:input}}},current.call());assert.ok(first.run);assert.ok(first.result);
+      await current.kit.authorizations.share(current.admin,first.run.run,[current.bob.id]);
+      const stored=await runById(current.kit.store,first.run.run);assert.ok(stored);
+      const ctx=createEngineContext({records:current.kit,workflows:current.workflows,packs:current.packs,knowledge:current.knowledge,external:current.external,parsers:createTestParserRegistry()});
+      const before=(await resultsOf(current.kit.store,first.run.run)).length;
+      assert.ok(await recheckProduction(ctx,stored,current.alice,current.call().traceId));
+      assert.ok((await current.service.getRun(current.bob,first.run.run))?.latest);
+      assert.equal(await current.kit.artifacts.source(current.bob,input.slice(4)),null,'a run declaration does not change global source access');
+      const action=(await actionsOf(current.kit.store,first.run.run)).at(-1)!;
+      assert.deepEqual(action.body.codes,[]);assert.notEqual(action.body.acceptance,'not_accepted');
+    }finally{await current.close();}
+  });
   test('startRun of a fact-only pack answers result {reference, counts}; startRunDetailed gives the same with the whole result and the run record', { skip }, async () => {
     const answer = await h.service.startRun(h.alice, { pack: 'toy-locate', inputs: { map: { reference: map } } }, h.call('sess-result'));
     assert.ok(StartRunOutput.safeParse(trace(answer)).success, 'the answer matches the tool output schema');

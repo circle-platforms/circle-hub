@@ -1,4 +1,4 @@
-import { SpaceLocks } from './spaces.ts';
+import { SpaceId, SpaceLocks } from './spaces.ts';
 import {CommandPolicy} from './product.ts';
 import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
@@ -35,6 +35,7 @@ export type InputBinding = z.infer<typeof InputBinding>;
 
 /** A source bound to the run (P02), with the role it plays (A03). Inputs carry their slot; sources the pack bound itself carry none. */
 export const SourceBinding = z.strictObject({
+  upload_declaration:z.strictObject({by:UserId}).optional().describe('The uploader bound this exact ordinary upload as input and declared it to the actual readers of this run only; never a personal-space original'),
   artifact:Sha256.optional().describe('Exact source_artifact record returned by this read, independent of equal-byte captures'),
   read_manifest:Sha256.optional().describe('Observed read action that returned this exact capture'),
   meta_artifact:Sha256.optional().describe('Exact metadata source_artifact returned by the same read'),
@@ -45,7 +46,7 @@ export const SourceBinding = z.strictObject({
   external: ExternalObjectId.optional().describe('external object identity with the revision the Hub read'),
   media_type: z.string().optional(),
   label: z.string().optional().describe('display name, for example the title of a linked record'),
-});
+}).refine(source=>!source.upload_declaration||source.artifact!==undefined&&source.slot!==undefined,'an upload declaration pins an exact capture in an input slot');
 export type SourceBinding = z.infer<typeof SourceBinding>;
 
 /** An item the pack's projection function produced from the judged source. The Hub core never interprets `fields`. */
@@ -104,6 +105,7 @@ export const InputSlotSummary = z.strictObject({
 export type InputSlotSummary = z.infer<typeof InputSlotSummary>;
 
 export const PackSummary = z.strictObject({
+  space: SpaceId.optional().describe("Namespace of this publication; absence means the legacy team catalog"),
   pack: z.string().describe('id@version'),
   id: PackId,
   version: PackVersion,
@@ -140,6 +142,8 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
+  pack_space:SpaceId.optional().describe("Personal workflow owner or team; absent on historical runs"),
+  team_shared:z.literal(true).optional().describe("Team publication from a personal workflow shares new results with its assigned readers"),
   knowledge_spaces: SpaceLocks.optional().describe('Team and initiator personal knowledge versions frozen at start; absent on historical runs'),
   skills: SkillLocks.optional().describe('Skill package digests frozen at start; absent only on historical runs'),
   feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),

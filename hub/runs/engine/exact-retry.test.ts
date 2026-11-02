@@ -75,5 +75,8 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     saved = await actions(); const count = saved.length; const readCount = reads;
     assert.deepEqual(await h.service.submitResult(h.alice, repaired, h.call()), accepted);
     assert.equal((await actions()).length, count); assert.equal(reads, readCount);
+    broken=true;
+    assert.deepEqual(await h.service.submitResult(h.alice,repaired,h.call()),accepted,'cached receipts recheck permission metadata without reading or reparsing bytes');
+    assert.equal(reads,readCount);assert.equal((await actions()).length,count);
   } finally { await h.close(); }
 });

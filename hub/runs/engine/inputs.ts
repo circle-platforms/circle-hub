@@ -17,8 +17,9 @@ import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type R
 import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
-import { identityOf, recordReader, runOfRecord } from './readers.ts';
-import {personalGroundProblem} from './personal-grounds.ts';
+import { identityOf, runOfRecord } from './readers.ts';
+import {isPersonalSpace,personalExternalAllowed,personalCapabilityError} from '../packs/personal-capabilities.ts';
+import {guardedRecords} from './grounds.ts';
 import { essence, isObject } from './util.ts';
 
 export interface BoundSource {
@@ -109,13 +110,14 @@ export async function bindInputs(
           return null;
         }
       }
-      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) });
+      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) })??await ctx.deps.knowledge?.spaces?.spaceSource(user,ref.sha256,undefined,'function',artifact)??null;
       if (source === null || source.bytes === null) {
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;
       }
-      const privateInput=await personalGroundProblem(ctx,user,null,[{reference:`src:${ref.sha256}`,artifact:source.artifact.digest,role:slot.role}]);
-      if(privateInput){errors.push({...privateInput,path});return null;}
+      if(isPersonalSpace(workflow.pack?.space)&&'read' in source.artifact.body.origin&&!await ctx.deps.knowledge?.spaces?.mayReadSource(user,ref.sha256,undefined,'function',source.artifact.digest)){
+        errors.push(personalCapabilityError(path));return null;
+      }
       if (!mediaAccepted(slot, source.mediaType)) {
         schemaError(path, `输入槽 ${slot.slot} 不接受媒体类型 ${source.mediaType}（接受：${slot.accepts.join('、')}）`);
         return null;
@@ -129,7 +131,7 @@ export async function bindInputs(
         mediaType: source.mediaType,
         sha256: ref.sha256,
         sourceRecord:source.artifact.digest,
-        binding: { reference: `src:${ref.sha256}`,artifact:source.artifact.digest,media_type: source.mediaType, ...(source.artifact.body.name ? { label: source.artifact.body.name } : {}) },
+        binding: { reference: `src:${ref.sha256}`,artifact:source.artifact.digest,...(await artifacts.mayDeclareUpload?.(user,source.artifact.digest)?{upload_declaration:{by:user.id}}:{}),media_type: source.mediaType, ...(source.artifact.body.name ? { label: source.artifact.body.name } : {}) },
         external: null,
         meta: null,
         record: null,
@@ -140,7 +142,7 @@ export async function bindInputs(
       return null;
     }
     if (ref.scheme === 'rec') {
-      const record = await recordReader(store, ctx.deps.knowledge.layers?.contributions).read(ref.record, identityOf(user));
+      const record = await guardedRecords(ctx).read(ref.record, identityOf(user));
       if (record === null) {
         gone(path, 'record absent or not visible to the caller');
         return null;
@@ -148,9 +150,6 @@ export async function bindInputs(
       if(record.kind==='source_artifact'){
         const artifact=await store.get(ref.record);
         if(!artifact||!await artifacts.canRead(user,artifact as import('../../records/api.ts').SourceArtifact)){gone(path,'source metadata absent or not readable by the caller');return null;}
-        const source=artifact as import('../../records/api.ts').SourceArtifact;
-        const privateInput=await personalGroundProblem(ctx,user,null,[{reference:'src:'+source.body.sha256,artifact:source.digest,role:slot.role}]);
-        if(privateInput){errors.push({...privateInput,path});return null;}
       }
       if (record.provenance === 'client_captured' && workflow.pack.id !== 'knowledge-contribution') {
         schemaError(path, '客户端捕获的原件只能随操作记录进入回注层，不能作其他工作流的输入或核验根据（决定 73）');
@@ -192,6 +191,7 @@ export async function bindInputs(
   };
 
   const readExternal = async (slot: WorkflowInput, path: string, id: string): Promise<Read | null> => {
+    if(isPersonalSpace(workflow.pack?.space)&&!personalExternalAllowed(id)){errors.push(personalCapabilityError(path));return null;}
     if (!slot.accepts.includes(externalType(id))) {
       schemaError(path, `输入槽 ${slot.slot} 不接受 ${externalType(id)} 类型的外部对象（接受：${slot.accepts.join('、')}）`);
       return null;
@@ -298,7 +298,7 @@ export async function bindInputs(
         errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));
         continue;
       }
-      if(ctx.deps.knowledge.feeding)await ctx.deps.knowledge.feeding.observeSourceBounded(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,metaRecord:read.metaRecord,readManifest:read.readManifest,requested:read.requested});
+      if(ctx.deps.knowledge?.feeding)await ctx.deps.knowledge?.feeding.observeSourceBounded(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,metaRecord:read.metaRecord,readManifest:read.readManifest,requested:read.requested});
       out.push({
         slot: slot.slot,
         role: slot.role,

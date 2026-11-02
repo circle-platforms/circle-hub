@@ -94,6 +94,8 @@ export interface ResolveContext {
   /** The clock validity re-reads judge against (B01 R[3]); absent, the wall clock. */
   now?: () => Date;
   parsers: ParserRegistry;
+  /** Team verification cannot depend on a reader's personal parser namespace or run lock. */
+  teamParsersOnly?:boolean;
   sources?: SourceReader;
   trees?: TreeReader;
   records?: RecordReader;
@@ -134,7 +136,7 @@ export type Unresolved = {
   parser_missing?:string;
   resolved: false;
   reference: string;
-  code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED' | 'SOURCE_RETRYABLE' | 'SOURCE_INTEGRITY_UNPROVEN'>;
+  code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED' | 'SOURCE_RETRYABLE' | 'SOURCE_INTEGRITY_UNPROVEN'|'TEAM_PARSER_REQUIRED'>;
   message: string;
   fix: string;
   /**
@@ -357,8 +359,13 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
   }
   if(ref.scheme==='src'&&ref.parser){
     try{
-      if(ctx.reader.run&&ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(ctx.reader.run)};
-      else if(ctx.parsers.forReference)ctx={...ctx,parsers:await ctx.parsers.forReference(ref.parser)};
+      if(ctx.teamParsersOnly){
+        if(ctx.parsers.forReference)ctx={...ctx,parsers:await ctx.parsers.forReference(ref.parser,ctx.reader,{teamOnly:true})};
+        else await ctx.parsers.refresh?.();
+        if(!ctx.parsers.get(ref.parser)||ctx.parsers.skills?.some(skill=>skill.space))return {resolved:false,reference:canonical,code:'TEAM_PARSER_REQUIRED',message:PROTOCOL_CODES.TEAM_PARSER_REQUIRED.when,fix:PROTOCOL_CODES.TEAM_PARSER_REQUIRED.fix};
+      }
+      else if(ctx.reader.run&&ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(ctx.reader.run,ctx.reader)};
+      else if(ctx.parsers.forReference)ctx={...ctx,parsers:await ctx.parsers.forReference(ref.parser,ctx.reader)};
       else await ctx.parsers.refresh?.();
     }catch(error){
       ctx.onDiagnostic?.({reference:canonical,scheme:ref.scheme,message:'locked parser package could not be loaded'});

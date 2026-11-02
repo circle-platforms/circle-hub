@@ -40,9 +40,9 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 19 and the generated vocabulary covers every declared axis', () => {
-  assert.equal(model.version, 19);
-  assert.equal(MODEL_VERSION, 19);
+test('model version is 21 and the generated vocabulary covers every declared axis', () => {
+  assert.equal(model.version, 22);
+  assert.equal(MODEL_VERSION, 22);
   assert.equal(model.vocabulary.length, Object.keys(AXES).length);
 });
 

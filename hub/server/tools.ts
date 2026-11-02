@@ -1,3 +1,4 @@
+import {join} from 'node:path';
 import { KnowledgeError } from '../knowledge/api.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
 // The six tools (D06) over the ports: input parsing, the semantics the server owns (list_task_packs, upload_file, get_nodes)
@@ -228,7 +229,7 @@ export async function startRunReadsExternal(deps: ServerDeps, principal: Princip
   for (const summary of summaries) {
     let loaded;
     try {
-      loaded = await deps.workflows.forUser(principal, summary.pack);
+      loaded = await deps.workflows.forUser(principal, summary.pack,summary.space);
     } catch (error) {
       note(`pack ${summary.pack} could not be loaded to derive the start_run annotation: ${describeError(error)}`);
       return true;
@@ -272,6 +273,15 @@ const uploadFile: Handler = async (deps, call, args) => ({ answer: await upload(
 async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unknown>): Promise<Answer> {
   const parsed = UploadFileInput.safeParse(args);
   if (!parsed.success) return errorAnswer('upload_file', schemaErrors('upload_file', parsed.error));
+  if(parsed.data.share_entry||parsed.data.withdraw_entry){
+    const spaces=deps.knowledge.spaces;if(!spaces)return errorAnswer('upload_file',[unavailable()]);
+    try{
+      if(parsed.data.share_entry){const share=await spaces.share(call.principal,parsed.data.share_entry,call.context.sessionId);return share.status==='merged'?{call_result:'ok',errors:[],acceptance:'accepted',share}:{...errorAnswer('upload_file',[{code:share.code!,message:share.message,fix:PROTOCOL_CODES[share.code as ProtocolCode]?.fix}]),share};}
+      const input=parsed.data.withdraw_entry!,version=await spaces.version(input.root);if(!version||!(await spaces.mayRead(call.principal,version.body.space,input.path)))return errorAnswer('upload_file',[unavailable()]);
+      await spaces.withdraw(call.principal,input.entry,version.body.space);
+      return {call_result:'ok',errors:[],acceptance:'accepted',withdrawn_reference:`tree:${input.root}${input.path}@${input.entry}`};
+    }catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);throw error;}
+  }
   if(parsed.data.personal_entry){
     if(!deps.knowledge.spaces)return errorAnswer('upload_file',[unavailable()]);
     try{return {call_result:'ok',errors:[],acceptance:'accepted',personal_entry:await deps.knowledge.spaces.write(call.principal,parsed.data.personal_entry,call.context.sessionId)}}
@@ -414,7 +424,7 @@ async function storedResult(deps: ServerDeps, call: ToolCall, answer: Answer): P
   for(let attempt=1;attempt<=2;attempt++) {
     try {
       const stored=await deps.runsDetail.getResult(call.principal,result.run,result.submission);
-      if(stored!==null)return recordReference(stored.record);
+      if(stored!==null){if(stored.grounds_withdrawn?.length)answer.withdrawn_grounds=stored.grounds_withdrawn;if(stored.grounds_withdrawn_hidden_count)answer.withdrawn_grounds_hidden_count=stored.grounds_withdrawn_hidden_count;return recordReference(stored.record);}
       call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission} has no returned result record`);
     } catch(error) {
       call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission}: ${describeError(error)}`);
@@ -434,6 +444,20 @@ const getNodes: Handler = async (deps, call, args) => {
   if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
   const input = parsed.data;
   const note = call.context.adminNote;
+  if(input.pack!==undefined){
+    if(!deps.registry||input.run!==undefined||input.search!==undefined||input.reference!==undefined||input.root!==undefined||input.paths!==undefined||input.depth!==undefined||input.space!==undefined||input.scope!==undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/pack','读取工作流或通用技能文件时只给 pack、pack_space、file 与 cursor')])};
+    const space=input.pack_space??'team';
+    const info=space==='team'?await deps.registry.resolve(input.pack):await deps.registry.personal?.resolve(call.principal,space,input.pack);
+    const visible=(await deps.packs.list(call.principal)).some(row=>(row.space??'team')===space&&row.id===info?.id&&row.version===info?.version&&!row.withdrawn);
+    if(!info||!visible||info.kind!=='workflow'&&info.kind!=='skill')return {answer:errorAnswer('get_nodes',[unavailable()])};
+    const file=info.manifest.files.find(row=>row.path===(input.file??'SKILL.md'));if(!file)return {answer:errorAnswer('get_nodes',[unavailable()])};
+    if(space==='team'){
+      const opened=await deps.registry.open(info.digest);if(!opened)return {answer:errorAnswer('get_nodes',[unavailable()])};
+      await deps.records.artifacts.ingest({bytes:readFileSync(join(opened.handle.directory,file.path)),mediaType:mediaTypeFor(readFileSync(join(opened.handle.directory,file.path)),undefined,file.path),origin:{generated:{generator:'pack-file@1',inputs:['rec:'+info.record]}},author:{user:null},provenanceType:'projected',visibility:{readers:[call.principal.id],admins:true,packs:info.kind==='workflow'?[info.id]:[],shareable:false}});
+    }
+    return readReference(deps,call,'src:'+file.sha256,undefined,input.cursor??null);
+  }
+  if(input.pack_space!==undefined||input.file!==undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/pack','pack_space 与 file 需要 pack')])};
   if(input.run!==undefined)call.state.runId=input.run;
   if(input.scope!==undefined&&input.search===undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/scope','搜索范围只与 search 一起使用')])};
   if(input.search!==undefined){
@@ -549,7 +573,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     now:deps.now?.bind(deps),
     reader,
     parsers: deps.parsers,
-    sources:deps.knowledge.spaces?{read:async(hash,identity)=>deps.knowledge.spaces!.source(call.principal,hash,identity?.run,'function')}:sources,
+    sources:{read:async(hash,identity)=>{const original=deps.knowledge.spaces?await deps.knowledge.spaces.source(call.principal,hash,identity?.run,'function'):await sources.read(hash,identity);return original??await deps.registry?.personal?.source(call.principal,hash,identity?.run)??null;}},
     trees: deps.knowledge.treeReader(),
     records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
@@ -570,15 +594,18 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   const spaceVersion=parsed.scheme==='tree'&&parsed.entry&&deps.knowledge.spaces?await deps.knowledge.spaces.version(parsed.root):null;
   const spaceEntry=spaceVersion&&parsed.scheme==='tree'&&parsed.entry?await deps.knowledge.spaces!.entry(call.principal,parsed.root,parsed.path,parsed.entry):null;
   if(spaceVersion&&parsed.scheme==='tree'&&!spaceEntry&&!spaceVersion.body.products.some(m=>parsed.path===m.path||parsed.path.startsWith(m.path+'/')))return {answer:errorAnswer('get_nodes',[unavailable()])};
-  const spaceNote=spaceEntry?'状态 '+labelOf('knowledge_entry_status',spaceEntry.row.status)+(spaceEntry.body.grounds.length?'；已逐条核对引文与路径':'；未提供依据，内容未核验'):null;
-  const derivedNote=[result.note,contributionNote,spaceNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
+  const spaceNote=spaceEntry?'状态 '+labelOf('knowledge_entry_status',spaceEntry.row.status)+(spaceEntry.grounds_withdrawn.length||spaceEntry.grounds_withdrawn_hidden_count?'；'+labelOf('validity_status','grounds_withdrawn'):'')+(spaceEntry.grounds_withdrawn_hidden_count?`；另有 ${spaceEntry.grounds_withdrawn_hidden_count} 项依据不可读取`:'')+(spaceEntry.body.grounds.length?'；已逐条核对引文与路径':'；未提供依据，内容未核验'):null;
+  const recordView=parsed.scheme==='rec'?await deps.records.store.get(parsed.record):null;
+  const resultView=recordView?.kind==='validation_result'&&deps.runs.resultState?await deps.runs.resultState(call.principal,recordView.body as import('../../contracts/src/validation.ts').ValidationResult):null;
+  const groundsNote=resultView?.grounds_withdrawn?.length||resultView?.grounds_withdrawn_hidden_count?labelOf('validity_status','grounds_withdrawn')+(resultView?.grounds_withdrawn_hidden_count?`；另有 ${resultView.grounds_withdrawn_hidden_count} 项依据不可读取`:''):null;
+  const derivedNote=[groundsNote,result.note,contributionNote,spaceNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
   const content = {
     reference: result.reference,
     read_tier: result.readTier,
     readable: result.readable,
     ...(result.readable && result.text !== null && result.readTier === 'model_readable' ? { text: result.text } : {}),
     ...(parsed.scheme === 'src' ? { sha256: parsed.sha256 } : {}),
-    ...(result.summary!==null||feedingState||spaceEntry?{structure:{...result.summary,...(feedingState?{feeding_state:feedingState}:{}),...(spaceEntry?{entry_status:spaceEntry.row.status,grounds:spaceEntry.body.grounds,data:spaceEntry.body.content.data,applicability:spaceEntry.body.content.applicability,...(spaceEntry.cited_count!==null?{cited_count:spaceEntry.cited_count}:{})}:{})}}:{}),
+    ...(result.summary!==null||feedingState||spaceEntry||groundsNote?{structure:{...result.summary,...(groundsNote?{grounds_withdrawn:resultView?.grounds_withdrawn,...(resultView?.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:resultView.grounds_withdrawn_hidden_count}:{})}:{}),...(feedingState?{feeding_state:feedingState}:{}),...(spaceEntry?{entry_status:spaceEntry.row.status,grounds:spaceEntry.body.grounds,grounds_withdrawn:spaceEntry.grounds_withdrawn,...(spaceEntry.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:spaceEntry.grounds_withdrawn_hidden_count}:{}),data:spaceEntry.body.content.data,applicability:spaceEntry.body.content.applicability,...(spaceEntry.cited_count!==null?{cited_count:spaceEntry.cited_count}:{})}:{})}}:{}),
     ...(derivedNote?{note:derivedNote}:{}),
   };
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };

@@ -28,6 +28,7 @@ test('an author account never closes its own judgment request',async t=>{
 });
 test('a shared non-author can start read-only review without inheriting mutation rights and loses read admission on unshare',async t=>{
  const f=await setup(t);await f.h.kit.authorizations.share(f.h.admin,f.draft.run,[f.h.bob.id]);
+ assert.ok(await f.h.service.getRun(f.h.bob,f.draft.run),'a declared upload is readable within the shared run');
  const sources=await f.h.kit.store.list<any>({kind:'source_artifact',limit:100});const expected=sources.items.find(record=>record.body.sha256===f.h.expected.slice(4))!;assert.ok(expected);await f.h.kit.authorizations.share(f.h.admin,artifactShareKey(expected),[f.h.bob.id]);
  const r=await review(f,f.h.bob),record=await runById(f.h.kit.store,r.run);assert.equal(record!.body.predecessor_access,'view');assert.equal(record!.body.client_key,undefined);assert.equal(record!.body.leases,undefined);assert.ok(r.items.every(item=>item.reuse===undefined));
  const forbidden=await f.h.submit(f.draft.run,[],f.h.bob);assert.notEqual(forbidden.acceptance,'accepted');

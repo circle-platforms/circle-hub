@@ -1,7 +1,22 @@
 # hub/refs: references and parsers
 
+## Personal skill namespaces (decision 87)
+
+`freeze(dependencies, {principal, space})` resolves declared personal dependencies and their closure with current grants.
+An implicit dependency first uses that personal namespace, then an installed team skill; an explicit owner never falls
+back to a different namespace. Locks include the owner and exact digest, reject conflicting versions and retain the
+64-skill bound. Team and personal copies of the same id never resolve by an unscoped digest. Private parsers execute
+through the same sandbox, limits, extraction and lazy lookup code as team parsers.
+
+`forRun(run, reader)` reopens frozen versions and rechecks personal-skill grants for both the initiator and reader.
+Revocation prevents subsequent use without editing the historical lock. Team history continues to load its frozen
+published version after uninstall/retirement. Standalone `forReference` prefers the existing team or explicit legacy
+binding; otherwise it uses a currently granted personal parser and its authorized dependency closure. Ambiguous personal
+parser names require a frozen run. This cannot replace another reader's existing public parser through a private copy.
+
+
 Model elements: **B03** (references), **T04** (resolution, the verbatim quote check), and the read tiers of **B02**.
-Other packages import only from `hub/refs/api.ts`. refs imports only `contracts/`.
+Other packages import only from `hub/refs/api.ts`. Core parsing depends on contracts; the skill adapter uses the records, runs and rules public APIs.
 
 ## What is here
 
@@ -538,3 +553,5 @@ KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 
 `circle-hub skill bind-legacy <parser@version> <pack@version>` 为每个引用该解析器、缺少其技能摘要的历史运行单独追加绑定；全局迁移声明不再作为运行的隐式补锁。判断只使用完整结构引用（包括关联提交、核验结果和动作中的引用），不会从说明文字中捞片段。原运行、原结果和已有技能锁保持原字节。空技能集合或仅锁其他解析器的运行仍可补足目标解析器，已锁定该解析器的摘要不覆盖。
 
 每条运行绑定引用原运行记录和发布记录，标明迁移时点事后声明、管理员、时间和迁移验证测试名；复核的结果锁与有效条件包含追加摘要及声明记录。未补绑时明确返回“运行未锁定技能包摘要”和 `skill bind-legacy` 出口。同一摘要重复执行只补缺失记录，不重复追加；改变映射拒绝。扫描按页处理，整批事务失败不留下半批绑定。
+
+Team verification uses `ResolveContext.teamParsersOnly`: the current team parser set is used without personal run locks or personal-namespace fallback. Missing team capability returns `TEAM_PARSER_REQUIRED`. Personal reference reads keep their current grant and frozen-skill checks.

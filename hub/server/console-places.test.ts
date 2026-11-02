@@ -246,8 +246,8 @@ describe('operations and commands', () => {
     t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
     const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
     assert.equal(list.status,200);assert.match(list.body,/class="grid g2 section"/);
-    const workflow=/<section class="stack" aria-label="工作流" id="workflow">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    const skills=/<section class="stack" aria-label="通用技能" id="skill">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    const workflow=/<section class="stack" aria-label="工作流" id="team-workflow">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    const skills=/<section class="stack" aria-label="通用技能" id="team-skill">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
     assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review"/);
     assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
     assert.match(workflow,/title="规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果"/);

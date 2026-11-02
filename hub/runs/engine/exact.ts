@@ -1,3 +1,4 @@
+import {guardedRecords} from './grounds.ts';
 // Exact values (T04): every reference a submission cites must resolve for this reader inside the run's scope (the sources
 // bound to the run, the locked root and the Hub records bound as inputs, T04 R[4]); every quotation must be verbatim in the
 // fragment its reference resolves to; every command resolves against the locked catalogs or, taken verbatim from a bound
@@ -39,7 +40,7 @@ import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
 import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
-import { recordReader, sourceReader } from './readers.ts';
+import { sourceReader } from './readers.ts';
 import { resultsOf } from './store.ts';
 import { pointerOf, valueAt } from './util.ts';
 
@@ -318,13 +319,13 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   // Reading is an authorization decision, not immutable document content: recheck it on every use.
   const legacySources = sourceReader(artifacts, consumer);
   const spaces=ctx.deps.knowledge.spaces;
-  const sources:typeof legacySources=spaces?{read:async(hash,reader)=>{const source=await spaces.source({id:reader.user!,role:reader.role,name:''},hash,reader.run,consumer);return source&&consumer==='model'&&source.bytes===null&&source.readTier!=='retain_only'?null:source;}}:legacySources;
+  const sources:typeof legacySources={read:async(hash,reader)=>{const by={id:reader.user!,role:reader.role,name:''};const source=spaces?await spaces.source(by,hash,reader.run,consumer):await legacySources.read(hash,reader);if(source)return consumer==='model'&&source.bytes===null&&source.readTier!=='retain_only'?null:source;return await ctx.deps.personalPacks?.source(by,hash,reader.run)??null;}};
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
     sources,
     trees: ctx.deps.knowledge.treeReader({ compositions: scope.compositions }),
-    records: recordReader(store, ctx.deps.knowledge.layers?.contributions),
+    records: guardedRecords(ctx),
     consumer,
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
@@ -349,6 +350,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
         let problem = scopeProblem(ref, scope);
         if(spaceRoot&&scope.reader.run&&ref.scheme==='tree')problem=await spaces!.runAllows({id:scope.reader.user!,role:scope.reader.role,name:''},ref.root,ref.path,scope.reader.run)?null:(scopeProblem(ref,scope)??'引用的知识树根不是本次运行锁定的根');
         if(ref.scheme==='src'&&spaces&&scope.reader.run&&await spaces.spaceSource({id:scope.reader.user!,role:scope.reader.role,name:''},ref.sha256,scope.reader.run))problem=null;
+        if(problem!==null&&ref.scheme==='src'&&scope.reader.run&&await ctx.deps.personalPacks?.source({id:scope.reader.user!,role:scope.reader.role,name:''},ref.sha256,scope.reader.run))problem=null;
         if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       let result: Awaited<ReturnType<typeof resolveReference>>;

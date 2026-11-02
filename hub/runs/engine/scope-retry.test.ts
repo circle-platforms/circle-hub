@@ -23,9 +23,11 @@ for (const exhaust of [false,true]) test(`command candidate read retries and rec
     const sha=bound.reference.slice(4).split('/')[0];const original=h.kit.artifacts.source.bind(h.kit.artifacts);let reads=0;
     h.kit.artifacts.source=async(...args)=>{if(args[1]===sha){reads++;if(exhaust||reads<3)throw new Error('SyntheticCandidateReadFailure');}return original(...args);};
     const answer=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic-model',items:[{item:run.items[0].id,handling:'handled',slots:{findings:[{text:'合成发现',code:'edge_case_gap',rank:'major',grounds:[run.items[0].location],commands:[{command:'分区编号 1 到 8',present:true}]}]}}],cross_item:[{nature:'judgment',statement:'一般',grounds:[],code:'draft_level',rank:'P4'}]},h.call());
-    assert.equal(reads,3);assert.equal(answer.acceptance,exhaust?'not_accepted':'accepted',JSON.stringify(answer.errors));
+    if(exhaust)assert.equal(reads,3);else assert.ok(reads>=3,'bounded recovery is followed by current ground permission checks');assert.equal(answer.acceptance,exhaust?'not_accepted':'accepted',JSON.stringify(answer.errors));
     const actions=(await h.kit.store.find({key:INDEX.actionRun,value:run.run,kind:'action'})).items;
     assert.ok(actions.some(row=>(row.body as {action:string}).action==='validate'));
+    const attempts=actions.flatMap(row=>((row.body as {detail?:{retry_attempts?:Array<{operation:string;reference:string;attempt:number}>}}).detail?.retry_attempts??[])).filter(attempt=>attempt.operation==='read'&&attempt.reference==='src:'+sha);
+    assert.deepEqual(attempts.map(attempt=>attempt.attempt),[1,2,3]);
     if(exhaust){assert.equal(answer.result,undefined);assert.match(answer.errors[0].fix??'',/管理员/);}
     assert.ok(!JSON.stringify(answer).includes('SyntheticCandidateReadFailure'));
   } finally {await h.close();}

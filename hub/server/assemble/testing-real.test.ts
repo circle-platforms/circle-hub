@@ -1,3 +1,4 @@
+import {repositorySkillVersion} from '../../testing/skills.ts';
 // The real Hub in-process (createTestHub of hub/server/testing-real.ts): a smoke test over the official MCP client that lists
 // the packs, starts a run on a synthetic mind map the agile stub serves (read through a real resource with the password kept
 // as its digest) and submits a result that is accepted, with the call-log lines; a user without the pack gets the neutral
@@ -80,7 +81,7 @@ describe('createTestHub', () => {
     const client = await hub.client(alice.token, { sessionId: 'smoke-session-1' });
     const listed = await client.call('list_task_packs');
     assert.equal(listed.isError, false);
-    assert.deepEqual((listed.structuredContent.packs as { pack: string }[]).map((p) => p.pack), [`${REVIEW_PACK}@1.0.0`]);
+    assert.deepEqual((listed.structuredContent.packs as { pack: string }[]).map((p) => p.pack).sort(), [`${REVIEW_PACK}@1.0.0`,...await Promise.all(['html-format','mindmap-format','workbook-format','xml-format'].map(async id=>id+'@'+await repositorySkillVersion(id)))].sort());
     assert.equal(listed.content.length, 1, 'one plain-text block');
 
     const started = await client.call('start_run', { pack: REVIEW_PACK, inputs: { map: { external: `agile:mindmap:${AGILE_DOCUMENT}` } } });

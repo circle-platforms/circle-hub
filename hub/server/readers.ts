@@ -68,14 +68,16 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
     const account = await records.principals.get(principal.id);
     if (account === null || account.disabled) return false;
     // Space manifests may contain directories outside a partial grant; use the path-filtered space API instead.
-    if (record.kind.startsWith('knowledge_space_')) return false;
+    if (record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_')) return false;
     if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) return (await contributions?.read(record.digest, account)) != null;
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
-    if (account.role === 'admin') return true;
     const run = runOfRecord(record.kind, record.body, record.schema);
-    if (run === null) return false;
+    if (run === null) return account.role==='admin';
     const detail = await runs.getRun(account, run);
     if (detail === null) return false;
+    if(record.kind==='request'&&runs.requestReadable&&!await runs.requestReadable(account,record.body as import('../requests/api.ts').RequestBody))return false;
+    if(record.kind==='validation_result'&&runs.resultState&&!(await runs.resultState(account,record.body as import('../../contracts/src/validation.ts').ValidationResult)).readable)return false;
+    if(record.kind==='submission'&&detail.run.runner!==account.id&&!detail.submissions.some(row=>row.record===record.digest&&row.result!==null))return false;
     if(!canSeeRun(account,detail.run)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return false;
     return canSeeRun(account, detail.run) || record.kind !== 'validation_result' || isObject(record.body) && record.body.acceptance === 'accepted';
   };

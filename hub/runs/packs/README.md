@@ -1,5 +1,25 @@
 # runs-packs: the pack registry
 
+## Personal publication (decision 87)
+
+`registry.personal` publishes workflows and generic skills in an account namespace. `check` and `publish` reuse the
+team publisher's directory, structural, import, reference, credential and sandbox/sample checks, without requiring a
+team publication right. Product and system packs remain team-only. The immutable manifest, semantic version and digest
+are unchanged; version ownership, grants, retirement and lookup keys additionally name the personal owner. Files have
+private artifact captures and are extracted read-only under the personal extractor. Concurrent publishers lock the
+owner/id; file ingestion does not nest database transactions inside that publication lock.
+
+The owner grants use to a member or all administrators and can revoke it. Administrators have no default personal-pack
+access. Catalogs, summaries, source-file reads and frozen dependency locks preserve the namespace; personal workflow
+publication does not grant product-line read rights. Generic skills without acceptance requirements are listed/readable
+but do not become runnable workflows. Retirement prevents new use while authorized history retains its original digest.
+
+`promote` requires the existing team publish right and repeats team publication checks, then appends a transfer record.
+Team publication cannot depend on a personal skill namespace; publish/install dependencies in the team first. New runs
+from the promoted team version carry the team-sharing flag and follow assignments. Existing personal runs keep their
+personal namespace and are never widened. Synchronization, signing and account-deletion cleanup remain later phases.
+
+
 Publish, validate, assign, activate, withdraw and load task packs. Model elements: T01 (task pack), T02 (publish record and
 publish check), W02 (requirement templates), W03 (workflow and product binding), W05 (slots), C05 (rules with samples), C07
 (catalogs a workflow requires), B04 (authorizations), A03 (source roles of checks). This is the first half of the runs
@@ -276,3 +296,9 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
 已有变量声明来自本包时，部署定义随后引用这个名字不妨碍本包发布新版；仍核对历版模式一致。部署名字可用性只核对首次声明，其他包的既有归属始终拒绝。归属查询和核对仍在发布事务的名字锁内完成。
 
 集成者于 2026-10-24 授权一项仅限静态审读的例外：包内相对路径 `functions/adoc/vendor/core.mjs`，完整 SHA-256 为 `5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d` 的上游浏览器文件，可含未执行的字面动态导入 `node:fs`、`node:fs/promises`、`node:async_hooks`。只放过这三个指定导入；路径或任一字节改变即失效，静态导入、getBuiltinModule 和其他模块不在例外内。全局内置模块表、运行时导入守卫与 OS 权限均不改变；同路径实际执行这些导入仍被拒绝，回归测试逐项核对。
+
+
+Decision 88 audit summaries add `personal.pack.grant_owner` alongside the existing grantee index when appending a personal
+use grant/revocation. The console queries only the participant's indexes, or the all-administrators index for administrators,
+and verifies the body audience before rendering. This first phase-3 index adds no migration or permission and never exposes
+another member's named grant through administrative audit views.

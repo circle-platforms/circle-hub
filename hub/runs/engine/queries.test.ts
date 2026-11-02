@@ -243,7 +243,10 @@ test('production policy covers current future and Hub runs but not judgment runs
   assert.equal(await h.service.getRun(h.bob,first.run),null);
   await a.assign(h.admin,h.bob.id,'toy-locate'); h.workflows.assign(h.bob.id,'toy-locate');
   assert.ok(await h.service.getRun(h.bob,first.run));
-  const future = (await h.service.startHubRun(h.admin,{pack:'toy-locate',inputs:{map:{reference:map}}},h.call())).answer.run!;
+  const foreign=await h.service.startHubRun(h.admin,{pack:'toy-locate',inputs:{map:{reference:map}}},h.call());
+  assert.equal(foreign.answer.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE','an administrator cannot declare another account upload to a different run');
+  const ownHubInput=await h.upload(h.admin,toyMap(standardDocument()));
+  const future = (await h.service.startHubRun(h.admin,{pack:'toy-locate',inputs:{map:{reference:ownHubInput}}},h.call())).answer.run!;
   assert.ok(await h.service.getRun(h.bob,future.run));
   assert.equal(await h.service.getRun(h.bob,run.run),null);
   const collected: string[] = []; let cursor: string|null = null;

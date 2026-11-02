@@ -21,7 +21,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, IsoTime, UserId, ItemId, ProtocolError, RunId, Sha256, TraceId } from './common.ts';
-import { ReferenceUri, referenceUriOf } from './reference.ts';
+import { Ground, ReferenceUri, referenceUriOf } from './reference.ts';
 
 export {MissingFact,MappedIdentity,ExitAudience,UnknownExit,RecoveryGap,recoveryCondition} from './recovery.ts';
 import {MissingFact,UnknownExit,RecoveryGap,recoveryCondition} from './recovery.ts';
@@ -222,6 +222,7 @@ export const Rounds = z.strictObject({ used: count, max: count }).refine((r) => 
 export const ValidationResult = z
   .strictObject({
     schema: z.literal('validation@1'),
+    unavailable_references:z.array(Ground).optional().describe('Hub-observed references unavailable to the submitter at validation time; diagnostic identities, not reads or evidence. Never supplied by clients.'),
   contributions: z.strictObject({ submitted: z.number().int().nonnegative(),
     stored: z.array(z.strictObject({ item: z.string(), record: Sha256 })),
     not_stored: z.array(z.strictObject({ item: z.string(), reason: z.string() })),

@@ -2,6 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "space": {
+      "description": "Namespace of this publication; absence means the legacy team catalog",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "team"
+        },
+        {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        }
+      ]
+    },
     "pack": {
       "type": "string",
       "description": "id@version"

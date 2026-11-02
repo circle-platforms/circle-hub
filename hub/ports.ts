@@ -23,6 +23,8 @@ import type { CatalogView } from './rules/api.ts';
 
 /** A published pack version, extracted into a read-only directory that pack functions run in. */
 export interface PackHandle {
+  space?: import('../contracts/src/spaces.ts').SpaceId;
+  team_shared?: true;
   id: string;
   version: string;
   /** SHA-256 of the pack content: the digest its publication is bound to. */
@@ -79,18 +81,18 @@ export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled
 /** What the engine needs of the pack registry (provided by runs/packs, consumed by runs/engine and the server). */
 export interface WorkflowStore {
   /** Owner of a published workflow version, for named B07 repair requests. */
-  ownerOf?(digest: string): Promise<string | null>;
-  publicationOf?(digest: string): Promise<string | null>;
+  ownerOf?(digest: string, space?: string): Promise<string | null>;
+  publicationOf?(digest: string, space?: string): Promise<string | null>;
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
-  forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null>;
+  forUser(user: Principal, ref: string, space?: string): Promise<LoadedWorkflow | null>;
   /**
    * Admin-log reason when forUser returned null. Does not extract the pack. null means the version is published, assigned
    * and not withdrawn, so the caller has another reason (for example the manifest has no tools/).
    * Optional so a store that only implements forUser keeps the combined note.
    */
-  absence?(user: Principal, ref: string): Promise<WorkflowAbsence | null>;
+  absence?(user: Principal, ref: string, space?: string): Promise<WorkflowAbsence | null>;
   /** The exact version a run froze, by pack digest. Answers even after a withdrawal, so that existing runs can be read and finished. */
-  byDigest(digest: string): Promise<LoadedWorkflow | null>;
+  byDigest(digest: string, space?: string): Promise<LoadedWorkflow | null>;
   /** list_task_packs: the packs the user may use, with their requirements and inputs. Product and system packs never appear. */
   summaries(user: Principal): Promise<PackSummary[]>;
 }
@@ -178,6 +180,8 @@ export interface RunRequestView {
 export interface RunDetail {
   /** Live read qualifier, outside immutable run/result records and their digests. */
   rule_withdrawn?: true;
+  grounds_withdrawn?: string[];
+  grounds_withdrawn_hidden_count?:number;
   management?:{record:string;disposition:'abandon';result:string|null};
   run: RunRecordView;
   submissions: RunSubmissionView[];
@@ -200,6 +204,9 @@ export interface RunsService {
   resolveReference(user: Principal, input: z.infer<typeof ResolveReferenceInput>, context: CallContext): Promise<Untraced<z.infer<typeof ResolveReferenceOutput>>>;
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
+  /** Recheck an individual immutable result against current run and ground permissions. */
+  resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
+  requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
   /** Own runs for a user, every run for an admin, newest first. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
 }
@@ -207,6 +214,7 @@ export interface RunsService {
 // ---------------------------------------------------------------- read-only listings for the console
 
 export interface PackListing {
+  space?: import('../contracts/src/spaces.ts').SpaceId;
   id: string;
   version: string;
   kind: PackKind;
