@@ -1237,3 +1237,9 @@ An already withdrawn predecessor keeps its withdrawal and its dependants' qualif
 records the relationship. Optional `team_path` selects a normal team directory (created with the version); otherwise the
 personal path is used. Every new merged/refused receipt records `target_path`, and the personal origin remains unchanged.
 No directory/version is created on refusal, and product mount paths remain reserved.
+
+
+Frozen input captures retain their identity as well as their byte hash. Space-source reads with a frozen capture do not
+substitute another authorized copy's artifact metadata. Every capture is checked when several inputs share bytes. Explicit
+space grants can supplement original read rights at input binding, with the requested capture retained; independent ordinary
+captures still use their own original authority. Current grant revocation applies to frozen capture reads.

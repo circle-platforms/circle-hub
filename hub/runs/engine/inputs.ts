@@ -109,7 +109,7 @@ export async function bindInputs(
           return null;
         }
       }
-      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) });
+      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) })??await ctx.deps.knowledge.spaces?.spaceSource(user,ref.sha256,undefined,'function',artifact)??null;
       if (source === null || source.bytes === null) {
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;

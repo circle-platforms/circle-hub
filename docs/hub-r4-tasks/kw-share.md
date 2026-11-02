@@ -149,3 +149,15 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 
 
 记录页及专项验证：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 tests/acceptance/47-knowledge-sharing.test.ts hub/server/console-search.test.ts hub/runs/packs/personal.test.ts hub/server/readers-sharing.test.ts` 23 项通过，0 失败、0 跳过。含被拒原始提交的本人／管理员／被分享者三方直接读取与记录输入、目标目录与修订的 MCP／密码表单、命名授权与全体管理员授权、无关成员、伪造筛选及错误索引受众、时间过滤。第二阶段 CI 又发现平台未转发两个新索引限额变量，协调者已在 `kw-spaces-pr` 的 `6cbd17ca` 修复；本步骤保存后再变基纳入，并追加平台环境变量检查。
+
+
+### 冻结采集身份的补充安全回归
+
+补充回归实际复现：甲的个人文件被绑定进团队判断运行，乙导入同字节副本并授权给甲和全体管理员后，读取运行可能借用副本权限显示甲原采集的私有文件名。已改为按运行冻结的采集记录核对，每份同字节输入都要有权；个人包文件的补充读取也匹配实际采集，不借相同字节的其他文件名。新启动绑定可按本人已获的空间授权读原采集，仍保存精确的采集摘要；撤销后重新检查，独立普通原文不受私有副本影响。没有改记录字节、原文 ACL 或采用新的按字节全局拒读规则。
+
+`npm run typecheck` 及 `node --test --test-concurrency=1 tests/acceptance/47-knowledge-sharing.test.ts hub/runs/engine/production-guard.test.ts hub/refs/skills-personal.test.ts` 14 项通过，0 失败、0 跳过。包含可读副本／不可读原采集、可读输入放前面的双采集旧运行、原采集授权后的绑定成功与再次撤销，以及既有个人技能锁与生产重查。首次正向夹具沿用了前例已撤回的工作流授权，补齐显式工作流授权后通过，未放宽服务权限。`hub/platform/environment.test.ts` 5 项通过，已变基纳入协调者 `6cbd17ca` 的限额环境变量转发修正；以后新增配置变量时定向检查一并包含该文件。
+
+
+第二轮变基后的相关包检查命令为 `npm run typecheck`、`npm run verify:contracts`，以及 `node --test --test-concurrency=1`：`contracts/src/**/*.test.ts`；`hub/knowledge/{sharing,spaces,spaces-review,operation-records-upgrade}.test.ts`；`hub/runs/engine/{grounds,start,start-result,production-guard,submit,queries,request-readers,requests,predecessor-default,criterion-privacy,criterion-review,exact-retry,scope-retry}.test.ts`；`hub/runs/packs/{personal,registry}.test.ts`；`hub/refs/skills-personal.test.ts`；`hub/server/{docs,mcp,text,readers-sharing,console-sharing}.test.ts`；`hub/platform/{ownership,environment}.test.ts`、`hub/records/{lock-namespaces,password}.test.ts`、`packs/workflow/case-review/packs.test.ts`。
+
+该组首跑 655 个叶测试，654 通过、1 失败：模型升到 20 后 `vocab-axes` 留下一处 `MODEL_VERSION` 仍断言 19。已同步正确版本，单独 `node --test --test-concurrency=1 contracts/src/vocab-axes.test.ts` 8 项通过，0 失败、0 跳过；其余 654 项首轮通过，没有重跑或扩大无关测试。类型及 151 文件生成核对通过。`ownership` 的真实平台整组仍因缺少 PG 18 的 `pg_dump`／`pg_restore` 跳过，不受叶测试 skipped=0 误导，不能算其运行角色备份恢复路径已验证。

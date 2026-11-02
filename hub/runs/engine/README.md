@@ -999,3 +999,9 @@ verifies access and quotation facts; it makes no judgment about the truth of cli
 
 Production rechecks use the same full audience guard before writing a replacement result. Source-artifact inputs retain
 original metadata read checks; removing the phase-2 temporary ban never gives an administrator private input labels.
+
+
+Phase-3 capture-identity regression: an authorized equal-byte copy cannot lend a different frozen capture's filename or
+other input metadata. Audience checks verify each frozen capture, even if two bindings have the same byte hash and the first
+one is readable. Scoped personal-pack aliases also retain the requested capture. The resolver keeps existing I/O retries and
+unknown-check behavior. Input binding can use a current explicit space grant without mutating the original artifact's ACL.

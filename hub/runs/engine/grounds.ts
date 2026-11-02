@@ -78,6 +78,17 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     if(!pending&&ref.scheme==='src'&&ref.parser&&ctx.parsers.forRun){let loading=parsers.get(atRun.run);if(!loading){loading=ctx.parsers.forRun(atRun.run,identity);parsers.set(atRun.run,loading);}try{parser=await loading;}catch{return false;}}
     const attempts:Array<Record<string,unknown>>=[];
     const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge.treeReader(),records:recordReader(ctx.deps.records.store,ctx.deps.knowledge.layers?.contributions),sources:{read:async(hash,reader)=>{
+      const pins=[...new Set(atRun.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===hash&&binding.artifact;}).map(binding=>binding.artifact!))];
+      if(pins.length){
+        let selected:Awaited<ReturnType<typeof ctx.deps.records.artifacts.source>>=null;
+        for(const capture of pins){
+          const original=spaces?await spaces.source(by,hash,pending?undefined:atRun.run,'function',capture):await ctx.deps.records.artifacts.source(by,hash,{consumer:'function',record:capture})??(pending?null:await ctx.deps.records.artifacts.sourceForRun(by,hash,atRun.run,{consumer:'function',record:capture}));
+          const source=original??await ctx.deps.personalPacks?.source(by,hash,pending?undefined:atRun.run,capture);
+          if(!source)return null;
+          selected??=source;
+        }
+        return selected;
+      }
       const original=spaces?await spaces.source(by,hash,pending?undefined:atRun.run,'function'):await legacy.read(hash,reader);
       return original??await ctx.deps.personalPacks?.source(by,hash,pending?undefined:atRun.run)??null;
     }},consumer:'function'});

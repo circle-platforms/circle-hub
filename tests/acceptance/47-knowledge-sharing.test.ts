@@ -1,3 +1,5 @@
+import {newId} from '../../hub/records/api.ts';
+import {RunRecord} from '../../contracts/src/run.ts';
 // Decision 84 phase 3 uses the real assembly, official MCP client and synthetic password accounts only.
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
@@ -263,4 +265,29 @@ test('records disclose member grants only to participants and give administrator
   const filtered=await adminBrowser.get('/console/records?'+new URLSearchParams({user:owner.user.id}));assert.equal(filtered.status,200,filtered.body);assert.ok(filtered.body.includes('audit-owner-target'));assert.ok(!filtered.body.includes('audit-other-target'));assert.ok(!filtered.body.includes('synthetic-named-grant-audit'));assert.ok(!filtered.body.includes('synthetic-named-audit-workflow'));
   const dated=await adminBrowser.get('/console/records?'+new URLSearchParams({from:'2000-01-01',to:'2000-01-02'}));assert.equal(dated.status,200);assert.ok(!dated.body.includes('audit-owner-target'));assert.ok(!dated.body.includes('synthetic-admin-grant-audit'));
   const forgedFilter=await (await openConsole(hub,stranger.token)).get('/console/records?'+new URLSearchParams({user:owner.user.id}));assert.equal(forgedFilter.status,200);assert.ok(!forgedFilter.body.includes('synthetic-named-grant-audit'));assert.ok(!forgedFilter.body.includes('audit-owner-target'));
+});
+
+
+test('a readable copy of equal bytes never grants a frozen capture label and an explicit original grant permits input binding',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,bytes=Buffer.from('{"synthetic":"capture-identity-control"}');
+  const original=await spaces.importFile(owner.principal,bytes,'application/json','synthetic-original-private-label.json','/capture-original');
+  const started=await client.call('start_run',{pack:packId,inputs:{target:{reference:'src:'+original.body.sha256,artifact:original.digest}}});assert.equal(started.isError,false,started.text);const run=started.out.run!;
+  assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.run),null);
+  const copy=await spaces.importFile(other.principal,bytes,'application/json','synthetic-authorized-copy.json','/capture-copy');assert.notEqual(copy.digest,original.digest);
+  await spaces.grant(other.principal,{path:'/capture-copy',audience:'member',member:owner.user.id});
+  await spaces.grant(other.principal,{path:'/capture-copy',audience:'administrators'});
+  const detail=await hub.hub.runs.getRun(owner.principal,run.run);assert.ok(detail);
+  const {feeding_offset:_offset,...snapshot}=detail.run,legacyId=newId('run');
+  const legacy=RunRecord.parse({...snapshot,run:legacyId,sources:[{...snapshot.sources[0],artifact:copy.digest,label:'synthetic-authorized-copy.json',slot:'same-byte-copy'},...snapshot.sources]});
+  await hub.records.store.put({kind:'run',schema:'run@1',provenance:'observed',body:legacy,index:[{key:'runs.id',value:legacyId}]});
+  for(const by of [other.principal,hub.admin.principal])for(const id of [run.run,legacyId])assert.equal(await hub.hub.runs.getRun(by,id),null,'every frozen capture is checked, even when a readable equal-byte capture is first');
+
+  await spaces.grant(owner.principal,{path:'/capture-original',audience:'member',member:other.user.id});
+  await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'member',member:other.user.id});
+  const bound=await reader.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:'src:'+original.body.sha256,artifact:original.digest}}});assert.equal(bound.isError,false,bound.text);assert.equal(bound.out.run?.sources[0].artifact,original.digest);
+  assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.run),null);
+  await spaces.grant(owner.principal,{path:'/capture-original',audience:'administrators'});
+  assert.ok(await hub.hub.runs.getRun(hub.admin.principal,run.run),'the actual capture grant permits its metadata');
+  await spaces.grant(owner.principal,{path:'/capture-original',audience:'administrators',revoke:true});
+  assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.run),null,'revocation is not bypassed by the equal copy');
 });
