@@ -57,3 +57,25 @@ test('failed reads can retry inside the same scope instead of caching a transien
  let attempts=0;const store={getMany:async()=>{throw new Error('synthetic batch failure');},get:async()=>{if(++attempts===1)throw new Error('synthetic fallback failure');return null;}} as unknown as RecordStore;
  await withReadScope(async()=>{const scoped=scopedRecordStore(store);await assert.rejects(scoped.get('a'.repeat(64)));assert.equal(await scoped.get('a'.repeat(64)),null);});assert.equal(attempts,2);
 });
+test('batched citation counters equal independent capped, dated, duplicate and empty counts',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+ for(let n=0;n<5;n++)await kit.store.put({kind:n===4?'claim':'submission',schema:'synthetic-count@1',provenance:'declared',created_at:`2026-11-0${n+1}T00:00:00.000Z`,body:{n},index:[{key:'synthetic.count',value:'all'},{key:'synthetic.parity',value:n%2?'odd':'even'}]});
+ const queries=[{index:[{key:'synthetic.count',value:'all'},{key:'synthetic.parity',value:'odd'}],kind:'submission' as const},{index:[{key:'synthetic.count',value:'all'}],since:'2026-11-03T00:00:00.000Z',cap:2},{index:[]},{index:[{key:'synthetic.count',value:'missing'}]},{index:[{key:'synthetic.count',value:'\0'}],since:'invalid'}];
+ assert.deepEqual(await kit.store.countIndexedBatch!(queries),await Promise.all(queries.map(q=>kit.store.countIndexed!(q))));
+ let batches=0;const count=kit.store.countIndexedBatch!.bind(kit.store);kit.store.countIndexedBatch=async(...args)=>{batches++;return count(...args);};
+ await withReadScope(async()=>{const scoped=scopedRecordStore(kit.store);assert.deepEqual(await Promise.all(queries.map(q=>scoped.countIndexed!(q))),await count(queries));});assert.equal(batches,1);
+ await assert.rejects(kit.store.countIndexedBatch!([{index:[],cap:0}]),TypeError);
+});
+
+test('candidate entry times read only the canonical header, tolerate unrelated escaped NUL and leave full verification to hydration',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+ const at='2026-11-03T02:00:00.000Z',record=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{at,content:'synthetic\0text'}});
+ const other=await kit.store.put({kind:'claim',schema:'synthetic-header@1',provenance:'declared',body:{at}});
+ assert.deepEqual(await kit.store.entryTimes!([record.digest,record.digest,other.digest,'f'.repeat(64)]),new Map([[record.digest,at]]));
+ assert.equal((await kit.store.get<{content:string}>(record.digest))?.body.content,'synthetic\0text');
+ const candidates=[other.digest,record.digest,record.digest,'f'.repeat(64)];
+ assert.deepEqual(await kit.store.entryCandidates!({digests:candidates,offset:0,limit:1}),{items:[{index:1,at}],total:2});
+ assert.deepEqual(await kit.store.entryCandidates!({digests:candidates,offset:1,limit:1}),{items:[{index:2,at}],total:2});
+ assert.deepEqual(await kit.store.entryCandidates!({digests:candidates,offset:2,limit:1}),{items:[],total:2});
+ const invalid=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{at:'invalid'}});await assert.rejects(kit.store.entryTimes!([invalid.digest]),IntegrityError);
+});

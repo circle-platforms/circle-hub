@@ -201,6 +201,60 @@ export class PgRecordStore implements RecordStore {
     return { count, capped: count >= cap };
   }
 
+  async countIndexedBatch(queries:readonly {index:readonly IndexEntry[];kind?:import('./api.ts').RecordKind;since?:string;cap?:number}[],tx?:Transaction):Promise<{count:number;capped:boolean}[]>{
+    const input=queries.map((q,n)=>{
+      if(!Array.isArray(q.index)||q.index.length>1000)throw new TypeError('countIndexed takes at most 1000 index entries');
+      for(const entry of q.index)if(typeof entry?.key!=='string'||!INDEX_KEY.test(entry.key))throw new TypeError('invalid index key');
+      if(q.kind!==undefined&&!RecordKindSchema.safeParse(q.kind).success)throw new TypeError('unknown record kind');
+      const cap=q.cap??10000;if(!Number.isInteger(cap)||cap<1||cap>100000)throw new TypeError('cap is an integer from 1 to 100000');
+      const pairs=q.index.filter(entry=>isIndexValue(entry.value));
+      return {n,pairs,kind:q.kind??null,since:pairs.length&&q.since!==undefined?normalizeTime(q.since,'since'):null,cap};
+    });
+    if(!input.length)return [];
+    const result=await this.#db.query<{n:number;count:number}>(`SELECT q.n,(SELECT count(*)::int FROM (
+      SELECT DISTINCT r.digest FROM jsonb_to_recordset(q.pairs) AS wanted(key text,value text)
+      JOIN record_index i ON i.key=wanted.key AND i.value=wanted.value JOIN hub_read_records() r ON r.digest=i.digest
+      WHERE (q.kind IS NULL OR r.kind=q.kind) AND (q.since IS NULL OR r.created_at>=q.since) LIMIT q.cap
+    ) found) AS count FROM jsonb_to_recordset($1::jsonb) AS q(n int,pairs jsonb,kind text,since timestamptz,cap int)`,[JSON.stringify(input)],tx);
+    const counts=new Map(result.rows.map(row=>[Number(row.n),Number(row.count)]));
+    return input.map(q=>{const count=counts.get(q.n)??0;return {count,capped:count>=q.cap};});
+  }
+
+  async entryCandidates(query:{digests:readonly string[];offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>{
+    const limit=pageLimit(query.limit);if(!Number.isSafeInteger(query.offset)||query.offset<0)throw new TypeError('entry offset must be a nonnegative safe integer');
+    if(!query.digests.length)return {items:[],total:0};
+    const result=await this.#db.query<{items:{index:number;at:string}[];total:string;legacy:string[]}>(`WITH headers AS MATERIALIZED (
+      SELECT (wanted.n-1)::int AS n,r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
+      FROM unnest($1::text[]) WITH ORDINALITY AS wanted(digest,n) JOIN hub_read_records() r ON r.digest=wanted.digest
+      WHERE r.kind='knowledge_space_entry'
+    ), selected AS (SELECT n,at FROM headers ORDER BY at COLLATE "C" DESC NULLS FIRST,n OFFSET $2 LIMIT $3)
+    SELECT (SELECT count(*) FROM headers)::text AS total,
+      COALESCE((SELECT json_agg(json_build_object('index',n,'at',at) ORDER BY at COLLATE "C" DESC NULLS FIRST,n) FROM selected),'[]'::json) AS items,
+      ARRAY(SELECT digest FROM headers WHERE at IS NULL) AS legacy`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit],tx);
+    const row=result.rows[0];
+    if(row.legacy.length){
+      const times=await this.entryTimes(query.digests,tx);
+      const ordered=query.digests.flatMap((digest,index)=>times.has(digest)?[{index,at:times.get(digest)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
+      return {items:ordered.slice(query.offset,query.offset+limit),total:ordered.length};
+    }
+    for(const item of row.items)if(!IsoTime.safeParse(item.at).success)throw new IntegrityError('知识条目时间字段不完整');
+    return {items:row.items,total:Number(row.total)};
+  }
+
+  async entryTimes(digests:readonly string[],tx?:Transaction):Promise<Map<string,string>>{
+    const wanted=[...new Set(digests.filter(isSha256))];if(!wanted.length)return new Map();
+    // JCS puts the strict entry body's ASCII `at` header first. Read only that header, including bodies with escaped NUL.
+    const rows=await this.#db.query<{digest:string;at:string}>(`SELECT digest,substring(body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
+      FROM hub_read_records() WHERE kind='knowledge_space_entry' AND digest=ANY($1::text[])`,[wanted],tx);
+    const times=new Map<string,string>(),legacy:string[]=[];
+    for(const row of rows.rows)if(IsoTime.safeParse(row.at).success)times.set(row.digest,row.at);else legacy.push(row.digest);
+    // Equivalent noncanonical JSON has always been readable. Fall back to its original verified parse, never rewrite it.
+    if(legacy.length)for(const [digest,record]of await this.getMany<{at:string}>(legacy,tx)){
+      if(!IsoTime.safeParse(record.body?.at).success)throw new IntegrityError('知识条目时间字段不完整');times.set(digest,record.body.at);
+    }
+    return times;
+  }
+
   async findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: import('./api.ts').RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
     if (!INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
     if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');

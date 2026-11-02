@@ -1324,3 +1324,12 @@ The step-5 HTTP and console mode adapters delegate to the same personal-sync ser
 boundary, so it does not first export a private snapshot merely to remove it. The accepted purge is atomic with its
 receipt/audit; re-enable starts empty in a new epoch through the owner-defined storage function. Team copies and
 independently run-held originals keep their existing read rules. The HTTP transport is not a seventh model tool.
+
+Console recent-change pages read timestamp candidates only after resolving the currently authorized space/path snapshots,
+use database order/limit with equal-time snapshot order, and hydrate at most the displayed 100 entry bodies. Every displayed body still goes
+through strict parsing, content hashing, current state, withdrawal visibility and the existing citation cap. Folder/node
+reads hydrate their selected entries in one batch; source citation counts reuse that folder batch. `entries` preserves
+positional nulls, while a recent page fills past unavailable candidates. Current roots and grants are scoped to the read,
+never stored as cross-request authorization. The SQL timestamp projection uses the first ASCII `at` member of a canonical
+strict entry body and returns no statement or grounds; it is a candidate projection, never a permission decision. Equivalent noncanonical bodies fall back to the original verified parse without rewriting them. Mock
+stores without it retain verified full-record reads for sorting. Snapshot and displayed-byte limits remain unchanged.

@@ -1,4 +1,5 @@
 // Both knowledge views and workflows derive navigation solely from currently readable content.
+import {memoReadPort} from '../../records/api.ts';
 import {KnowledgeSearchScopeSchema,KnowledgeViewSchema,isKnowledgeSearchScope,uiLabelOf,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import type {PackListing} from '../../ports.ts';
 import type {PageContext} from './pages.ts';
@@ -16,8 +17,8 @@ export function knowledgeTabs(ctx:PageContext):Html{
 }
 export async function currentAudience(ctx:PageContext,space:string,path='/',product=false,pack?:string,memory=false){
  const own=space===ctx.principal.id;
- const grants=own?(memory?await ctx.deps.knowledge.memory?.grants(ctx.principal)??[]:pack?await ctx.deps.registry?.personal?.grants(ctx.principal,pack)??[]:await ctx.deps.knowledge.spaces?.grants(ctx.principal)??[]):[];
- return describeAudience({owner:space,viewer:ctx.principal.id,ownerName:await ctx.userName(space),path,product,grants,users:own?await ctx.deps.records.principals.list():[]});
+ const grants=own?(memory?await ctx.deps.knowledge.memory?.grants(ctx.principal)??[]:pack?await ctx.deps.registry?.personal?.grants(ctx.principal,pack)??[]:await (ctx.deps.knowledge.spaces?memoReadPort(ctx.deps.knowledge.spaces,['grants']).grants(ctx.principal):[])??[]):[];
+ return describeAudience({owner:space,viewer:ctx.principal.id,ownerName:await ctx.userName(space),path,product,grants,users:own?await memoReadPort(ctx.deps.records.principals,['get','list']).list():[]});
 }
 export function directoryTree(directories:readonly string[],url:(path:string)=>string,path='/',label=(path:string)=>directoryName(path).split(' › ').at(-1)!,levels=3,selected?:string):Html{
  if(levels<=0)return html``;

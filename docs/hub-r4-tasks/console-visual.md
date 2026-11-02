@@ -329,3 +329,10 @@ Claude 于 2026-11-03 批准实施体检中的两个 P0 和一个 P1。工作树
 - `runCandidates` 只对 SQL 排序投影中的非标题转义 NUL 作替代，避免 PostgreSQL 拒绝其他合法参数；返回的原始记录字节仍完整校验。非可信游标即使含 NUL，也保留原来对合法 ASCII 排序字段的词法继续语义；原生/回退等价回归通过。没有迁移、模型、协议或 CSP 变化。
 - 已执行 `node --test --test-concurrency=2 hub/records/read-scope.test.ts hub/runs/engine/query-pagination.test.ts`：10 通过，0 失败、0 跳过；覆盖部分可见读者的连续分页、同时间排序、身份/筛选绑定、精确采集授权/撤权、页外请求与回答、数据增长后相同可读页的 SQL 数不增长、批次完整性隔离和失败后重试。另执行 requests/legacy-summary 引擎测试：5 通过。`node node_modules/typescript/bin/tsc --noEmit` 退出 0，`git diff --check` 通过。
 - 完整引擎/工作流、records/requests 和受影响验收已启动；实际总数及完整性能前后表在本节末尾统一记录，不将尚在执行的检查计为通过。
+
+### P0：知识列表先分页后批量读取
+
+- 先解析当前可读空间、目录和版本，由数据库按原正文时间降序及相同时间的快照迭代顺序选出 100 个候选短头，再成批校验/读取显示页正文；不为页外条目重读整棵树或逐条建立 Inspector。候选端口不作授权、不返回正文；等价的非规范 JSON 正文回退到原有校验读取，保留旧记录可读性且不改写字节。选中条目仍严格解析、核对内容摘要、当前状态、撤回与引用计数。旧适配器没有短头端口时保留已校验记录排序回退。
+- 新 `entries` 只读端口一次解析版本、当前目录权和状态映射，保留输入位置与不可读项的 null；目录节点及原文被引用次数复用该批次。引用计数用原 distinct/时间/类型/上限规则批量查询，达到上限继续为未知；分享范围只在本次请求内复用。原有链接、目录/字节分页、撤回与未知文案没有变化。
+- 已执行 `node --test --test-concurrency=2 hub/records/read-scope.test.ts hub/knowledge/space-pages.test.ts`：11 通过、0 失败、0 跳过；固定 125 条候选只读取显示的 100 条正文、稳定排序、受限共享读者与撤权、批量/单项详情等价、历史版本的当前撤回、页外增长后 SQL 不增长、未知引用计数、短头转义 NUL 和计数批量等价。`hub/knowledge/spaces.test.ts` 与 scope 初测合计 16 通过；类型检查退出 0。
+- 控制台整组初测发现 product-source 保留回归的模拟 spaces 对象尚未提供新 recent 端口，已补齐该空列表夹具并单独复跑 `hub/server/console-knowledge.test.ts` 退出 0，原产品来源/待入库断言保留。真实空间/共享/记忆验收与完整控制台仍在执行，末尾记录最终复跑结果。

@@ -870,3 +870,9 @@ so one corrupt sibling cannot hide healthy records. No authorization value survi
 `runCandidates` orders contract ASCII headers by `(started_at, run)` before engine checks; the original text is still
 verified. Its SQL-only projection masks escaped NUL outside those headers because PostgreSQL JSON extraction otherwise
 rejects valid unrelated parameter strings. This is not a visibility port. No migration or record format changes.
+
+
+Knowledge list candidates can read only the canonical entry timestamp header, before the service hydrates the visible
+page. The header query neither grants access nor returns content; equivalent noncanonical text falls back to the existing verified parser without rewriting it. Citation counter batches retain distinct-record union,
+kind/time filters, caps and unknown-at-cap semantics. Request-scoped counter reads coalesce; transactions still bypass
+memoization. Header NUL handling and counter equivalence have real-database regressions. No migration is required.
