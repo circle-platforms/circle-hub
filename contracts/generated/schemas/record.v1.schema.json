@@ -27,7 +27,12 @@
         "knowledge_space_entry",
         "knowledge_space_grant",
         "knowledge_space_source",
-        "knowledge_space_quota"
+        "knowledge_space_quota",
+        "knowledge_share",
+        "personal_pack_version",
+        "personal_pack_grant",
+        "personal_pack_retirement",
+        "personal_pack_transfer"
       ]
     },
     "schema": {

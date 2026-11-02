@@ -38,6 +38,18 @@ export const PROTOCOL_CODES = {
   SPACE_RESULT_GROUNDS_PRIVATE: { when: '当前阶段不受理以个人空间条目或原文为依据的运行结果', fix: '先使用对全部结果读者可读的团队依据；个人依据的完整读者核对在第三阶段开放' },
   SPACE_CONTENT_UNINSPECTABLE: { when: '来源不是可完整检查的文本，当前不能开放给其他账户', fix: '改用可完整检查的文本原文；ZIP、PDF、图片等文件仍可仅保存在个人空间' },
   SPACE_INDEX_LIMIT: { when: '知识搜索索引达到单条内容或当前版本的大小上限', fix: '缩短或拆分单条内容；当前版本超限时撤回或替换条目，或联系管理员调整索引限额；历史引用仍保留' },
+  SHARE_UNVERIFIED: { when: '个人条目尚未核验，或已被撤回、取代', fix: '核对依据与逐字引文后保存为已核验条目，再提交共享' },
+  SHARE_GROUND_UNRESOLVED: { when: '提交共享的依据暂不可解析', fix: '修复依据引用或恢复可读原文后重试' },
+  SHARE_QUOTE_MISMATCH: { when: '提交共享的引文与依据不一致', fix: '按依据原文修正逐字引文后重新保存条目' },
+  SHARE_PERSONAL_SOURCE: { when: '个人凭据读取的来源不能提交共享', fix: '先通过团队连接重新读取并核对引文' },
+  SHARE_UPLOAD_UNSIGNED: { when: '上传文件尚无团队依据所需的署名', fix: '等待上传署名能力，或改用团队连接读取的原文' },
+  SHARE_GROUND_UNREADABLE: { when: '依据条目尚不能被团队全部读者读取', fix: '先将依据条目提交共享，或改用可共享的原文引用' },
+  SHARE_DUPLICATE: { when: '团队空间已包含相同内容', fix: '使用已有团队条目，或修改陈述后重新核对依据' },
+  SHARE_CREDENTIALS: { when: '提交共享的内容或依据命中凭据扫描', fix: '清理凭据并重新采集、核对依据后重试' },
+  RESULT_GROUNDS_UNREADABLE: { when: '结果依据不能被结果的全部读者读取', fix: '先将依据提交共享或补齐只读授权，再提交结果' },
+  GROUNDS_WITHDRAWN: { when: '结果或条目的依据已撤回', fix: '补充仍有效的依据后重新提交；历史记录保留原样' },
+  PACK_SPACE_DENIED: { when: '包空间或使用权限不可用', fix: '选择本人或当前获授权的工作流或通用技能' },
+  PACK_PERSONAL_PUBLICATION_DENIED: { when: '个人包发布未通过校验或空间规则', fix: '核对结构、引用、样例与凭据；个人空间只接受工作流和通用技能' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;
@@ -78,11 +90,11 @@ export const REFERENCE_FORMS = {
   rec: 'rec:<记录摘要>[#<JSON Pointer>]'
 } as const;
 
-export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer', 'knowledge_space_version', 'knowledge_space_entry', 'knowledge_space_grant', 'knowledge_space_source', 'knowledge_space_quota'] as const;
+export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer', 'knowledge_space_version', 'knowledge_space_entry', 'knowledge_space_grant', 'knowledge_space_source', 'knowledge_space_quota', 'knowledge_share', 'personal_pack_version', 'personal_pack_grant', 'personal_pack_retirement', 'personal_pack_transfer'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json', 'skill.json'] as const;
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 19;
+export const MODEL_VERSION = 20;

@@ -95,6 +95,7 @@ export const AXES = {
   knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的' }, { code: 'all', label: '全部' }] },
   knowledge_grantee: { label: '授权对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
   knowledge_grant_action: { label: '授权操作', owner: 'R01', values: [{ code: 'grant', label: '授权' }, { code: 'revoke', label: '收回授权' }] },
+  knowledge_share_status: { label: '提交共享状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1019,6 +1020,16 @@ export function isKnowledgeGrantAction(value: unknown): value is KnowledgeGrantA
   return (KNOWLEDGE_GRANT_ACTION as readonly unknown[]).includes(value);
 }
 
+/** 提交共享状态 (K02) */
+export const KNOWLEDGE_SHARE_STATUS = ['merged', 'rejected'] as const;
+export type KnowledgeShareStatus = (typeof KNOWLEDGE_SHARE_STATUS)[number];
+export const KNOWLEDGE_SHARE_STATUS_LABEL = { 'merged': '已合并', 'rejected': '已拒收' } as const satisfies { readonly [K in KnowledgeShareStatus]: string };
+export const KNOWLEDGE_SHARE_STATUS_UI = { 'merged': '已合并', 'rejected': '已拒收' } as const satisfies { readonly [K in KnowledgeShareStatus]: string };
+export const KnowledgeShareStatusSchema = z.enum(KNOWLEDGE_SHARE_STATUS);
+export function isKnowledgeShareStatus(value: unknown): value is KnowledgeShareStatus {
+  return (KNOWLEDGE_SHARE_STATUS as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1112,6 +1123,7 @@ export interface AxisValues {
   knowledge_search_scope: KnowledgeSearchScope;
   knowledge_grantee: KnowledgeGrantee;
   knowledge_grant_action: KnowledgeGrantAction;
+  knowledge_share_status: KnowledgeShareStatus;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1207,6 +1219,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   knowledge_search_scope: KNOWLEDGE_SEARCH_SCOPE_LABEL,
   knowledge_grantee: KNOWLEDGE_GRANTEE_LABEL,
   knowledge_grant_action: KNOWLEDGE_GRANT_ACTION_LABEL,
+  knowledge_share_status: KNOWLEDGE_SHARE_STATUS_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1302,6 +1315,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   knowledge_search_scope: KNOWLEDGE_SEARCH_SCOPE_UI,
   knowledge_grantee: KNOWLEDGE_GRANTEE_UI,
   knowledge_grant_action: KNOWLEDGE_GRANT_ACTION_UI,
+  knowledge_share_status: KNOWLEDGE_SHARE_STATUS_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

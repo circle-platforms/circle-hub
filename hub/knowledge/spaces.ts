@@ -1,6 +1,7 @@
 // Personal/team knowledge uses immutable versions and shared content-addressed objects. Every read rechecks current grants.
 import { z } from 'zod';
 import type {ProtocolError} from '../../contracts/src/common.ts';
+import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
 import { KnowledgeEntryStatusSchema, labelOf, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
@@ -49,6 +50,7 @@ export interface SpaceEntryView {
   root: string;
   reference: string;
   cited_count: number | null;
+  grounds_withdrawn: string[];
 }
 type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise<{
   version: string;
@@ -384,8 +386,7 @@ export class KnowledgeSpaces {
   }
   async withdraw(by: Principal, entry: string, space = by.id): Promise<void> {
     by = await this.#user(by);
-    if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
-      fail('SOURCE_UNAVAILABLE');
+    if (space !== by.id && space !== 'team') fail('SOURCE_UNAVAILABLE');
     await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
@@ -395,6 +396,7 @@ export class KnowledgeSpaces {
       const row = rows.find(r => r.entry === entry && active(r));
       if (!row)
         fail('SOURCE_UNAVAILABLE');
+      if(space==='team'&&by.role!=='admin'){const body=await this.#entry(row,tx);if(!body?.shared_from||body.by!==by.id)fail('SOURCE_UNAVAILABLE');}
       row.status = 'withdrawn';
       await this.#save(space, previous, rows, previous.body.directories, by, space === 'team' ? '撤回团队条目' : '撤回个人条目', 0, tx);
     }));
@@ -418,7 +420,102 @@ export class KnowledgeSpaces {
       return null;
     const current = await this.current(version.body.space);
     const state = current?.body.entries.find(r => r.entry === digest)?.status ?? row.status;
-    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
+    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest), grounds_withdrawn: await this.withdrawnGrounds(body.grounds.map(g=>g.reference)), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
+  }
+  /** Follow immutable grounds while checking the current withdrawal projection; no historic body is changed. */
+  async withdrawnGrounds(references: readonly string[], visiting=new Set<string>(),depth=0):Promise<string[]> {
+    if(depth>64)fail('SPACE_ENTRY_INVALID','依据链超过可核对的深度上限');
+    const withdrawn=new Set<string>();
+    for(const reference of references){
+      let ref;try{ref=parseReference(reference);}catch{continue;}
+      if(ref.scheme!=='tree'||!ref.entry)continue;
+      if(visiting.has(reference))fail('SPACE_ENTRY_INVALID','依据链存在循环，核对未完成');
+      const version=await this.version(ref.root);if(!version)continue;
+      const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);if(!row)continue;
+      const current=await this.current(version.body.space),state=current?.body.entries.find(row=>row.entry===ref.entry)?.status??row.status;
+      if(state==='withdrawn')withdrawn.add(reference);
+      const entry=await this.#entry(row);if(entry){const next=new Set(visiting);next.add(reference);for(const ground of await this.withdrawnGrounds(entry.grounds.map(g=>g.reference),next,depth+1))withdrawn.add(ground);}
+    }
+    return [...withdrawn];
+  }
+  async shareHistory(by:Principal,cursor:string|null=null){
+    by=await this.#user(by);
+    const page=await this.#ctx.records.store.find({kind:'knowledge_share',key:'knowledge.share.by',value:by.id,newestFirst:true,limit:50,cursor});
+    return {items:page.items.map(record=>({record:record.digest,...KnowledgeShareBody.parse(record.body)})),next:page.next};
+  }
+  async #shareSource(by:Principal,reference:string,sources:Map<string,{sha256:string;artifact:string;size:number}>,seen=new Set<string>(),depth=0):Promise<void>{
+    if(depth>64||seen.has(reference))fail('SHARE_GROUND_UNRESOLVED');
+    seen=new Set(seen);seen.add(reference);const ref=parseReference(reference);
+    if(ref.scheme==='src'){
+      const artifact=(await this.source(by,ref.sha256))?.artifact;
+      if(!artifact)fail('SHARE_GROUND_UNRESOLVED');
+      if('upload' in artifact.body.origin)fail('SHARE_UPLOAD_UNSIGNED');
+      if('read' in artifact.body.origin&&!artifact.body.visibility.admins)fail('SHARE_PERSONAL_SOURCE');
+      if(!('read' in artifact.body.origin)||artifact.provenance!=='observed')fail('SHARE_GROUND_UNRESOLVED');
+      sources.set(ref.sha256,{sha256:ref.sha256,artifact:artifact.digest,size:artifact.body.size});
+      return;
+    }
+    if(ref.scheme!=='tree'||!ref.entry)fail('SHARE_GROUND_UNRESOLVED');
+    const version=await this.version(ref.root);
+    if(version){const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);const body=row?await this.#entry(row):null;if(!body||!body.grounds.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of body.grounds)await this.#shareSource(by,ground.reference,sources,seen,depth+1);}
+    else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(!read?.grounds?.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of read.grounds)await this.#shareSource(by,ground,sources,seen,depth+1);}
+  }
+  async share(by:Principal,raw:unknown,session:string|null=null):Promise<KnowledgeShareReceipt>{
+    by=await this.#user(by);const input=KnowledgeShareInput.parse(raw);
+    const origin=await this.version(input.root);if(!origin||origin.body.space!==by.id)fail('SOURCE_UNAVAILABLE');
+    const view=await this.entry(by,input.root,input.path,input.entry);if(!view)fail('SOURCE_UNAVAILABLE');
+    await this.ensure(by,'team');
+    return this.#write('team',()=>this.#ctx.records.store.withTransaction(async tx=>{
+      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await this.#ctx.records.store.lock('knowledge-space:team',tx);
+      const previous=await this.current('team',tx);if(!previous)fail('SHARE_GROUND_UNRESOLVED');
+      const personal=await this.current(by.id,tx),row=personal?.body.entries.find(row=>row.entry===input.entry&&row.path===input.path);
+      const source={space:by.id,...input},at=this.#ctx.now().toISOString();
+      const receipt=async(status:KnowledgeShareBody['status'],code:ProtocolCode|null,message:string,team:SpaceVersion|null):Promise<KnowledgeShareReceipt>=>{
+        const body=KnowledgeShareBody.parse({source,by:by.id,at,session,status,code,message,team_root:team?.root??null,reference:team?refOf(team.root,input.path,input.entry):null});
+        const record=await this.#ctx.records.store.put({kind:'knowledge_share',schema:'knowledge-share@1',provenance:'declared',body,index:[{key:'knowledge.share.by',value:by.id},{key:'knowledge.share.entry',value:by.id+'/'+input.entry}]},tx);
+        return {record:record.digest,...body};
+      };
+      const sources=new Map<string,{sha256:string;artifact:string;size:number}>(),grounds:SpaceEntryBody['grounds']=[];
+      try{
+        if(!row||row.status!=='verified'||!view.body.grounds.length)fail('SHARE_UNVERIFIED');
+        if((await this.withdrawnGrounds(view.body.grounds.map(g=>g.reference))).length)fail('GROUNDS_WITHDRAWN');
+        const resolved=[];
+        for(const ground of view.body.grounds){
+          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+          if(!result.resolved||!result.readable)fail('SHARE_GROUND_UNRESOLVED');resolved.push(result);
+        }
+        for(const [index,ground] of view.body.grounds.entries())if(verifyQuote(resolved[index],ground.quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
+        for(const ground of view.body.grounds){
+          await this.#shareSource(by,ground.reference,sources);
+          let reference=ground.reference;const ref=parseReference(reference);
+          if(ref.scheme==='tree'){
+            const version=await this.version(ref.root);
+            if(version&&version.body.space!=='team'){
+              const team=previous.body.entries.find(row=>row.entry===ref.entry&&active(row));
+              if(!team)fail('SHARE_GROUND_UNREADABLE');reference=refOf(previous.root,team.path,team.entry);
+            }else{
+              for(const reader of (await this.#ctx.records.principals.list?.()??fail('SHARE_GROUND_UNREADABLE')).filter(user=>!user.disabled)){
+                const read=await this.treeReader().read(ref.root,ref.path,ref.entry??null,{user:reader.id,role:reader.role});if(!read||read.readTier!=='model_readable')fail('SHARE_GROUND_UNREADABLE');
+              }
+            }
+          }
+          grounds.push({...ground,reference});
+        }
+        if(previous.body.entries.some(row=>row.entry===input.entry&&active(row)))fail('SHARE_DUPLICATE');
+        const readable=await this.#ctx.packs.readableProducts(by);
+        for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
+        try{this.#scan(view.body);for(const source of sources.values()){const bytes=await this.#ctx.records.artifacts.source(by,source.sha256,{record:source.artifact,consumer:'model'});if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
+      }catch(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'))return receipt('rejected',error.code,error.message,null);throw error;}
+      if(withinSpacePath(input.path,PRODUCTS_PATH))return receipt('rejected','SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；先把个人条目移到普通目录',null);
+      const body=SpaceEntryBody.parse({...view.body,space:'team',grounds,by:by.id,at,session,replaces:null,shared_from:source});
+      const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:body.entry},{key:'knowledge.space.entry_owner',value:'team'}]},tx);
+      const sourceRecords=[...previous.body.sources];
+      for(const source of sources.values()){
+        const stored=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:SpaceSourceBody.parse({...source,space:'team',path:input.path,by:by.id,at}),index:[{key:SOURCE_KEY,value:'team'},{key:'knowledge.space.source_hash',value:source.sha256}]},tx);sourceRecords.push(stored.digest);
+      }
+      const team=await this.#save('team',previous,[...previous.body.entries,{path:input.path,entry:input.entry,record:record.digest,status:'verified'}],previous.body.directories,by,'提交共享',Buffer.byteLength(canonicalize(body)),tx,sourceRecords);
+      return receipt('merged',null,'',team);
+    }));
   }
   async #citations(space: string, entry: string): Promise<number | null> {
     if (!this.#ctx.records.store.countIndexed) return null;
@@ -676,7 +773,7 @@ export class KnowledgeSpaces {
       for (const row of version.body.entries.filter(r => r.path === path && active(r)).sort((a, b) => a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0)) {
         const view = await this.entry(by, query.root, path, row.entry);
         if (view)
-          entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, applicability: view.body.content.applicability ? canonicalize(view.body.content.applicability) : '未声明', data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, cited_count: view.cited_count });
+          entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, applicability: view.body.content.applicability ? canonicalize(view.body.content.applicability) : '未声明', data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, grounds_withdrawn:view.grounds_withdrawn, cited_count: view.cited_count });
       }
       const children = stored.node.children.map(child => ({ ...child, path: pathOf([...pathSegments(path), child.name]) })).filter(child => (!withinSpacePath(child.path, PRODUCTS_PATH) || child.path === PRODUCTS_PATH && visibleProducts.length > 0 || visibleProducts.some(m => withinSpacePath(m.path, child.path))) && allowed.some(a => withinSpacePath(child.path, a)));
       const node = { path, reference: refOf(query.root, path), name: stored.node.name, level: stored.level, digest: stored.digest, children, entries };
@@ -836,7 +933,7 @@ export class KnowledgeSpaces {
         }
         if (entry) {
           const found = await this.entry(by, root, path, entry);
-          return found ? { text: found.body.content.statement, mediaType: 'text/plain', readTier: 'model_readable', data: found.body.content.data as any, grounds: found.body.grounds.map(g => g.reference), validity: { status: found.row.status } } : null;
+          return found ? { text: found.body.content.statement, mediaType: 'text/plain', readTier: 'model_readable', data: found.body.content.data as any, grounds: found.body.grounds.map(g => g.reference), validity: { status: found.row.status,grounds_withdrawn:found.grounds_withdrawn } } : null;
         }
         const page = await this.getNodes({ root, paths: [path], depth: 0 }, by);
         return page?.nodes.length ? { text: canonicalize(page.nodes[0]), mediaType: 'application/json', readTier: 'model_readable' } : null;

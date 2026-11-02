@@ -4,6 +4,8 @@ import { EntryKindSchema, KnowledgeEntryStatusSchema, KnowledgeGranteeSchema, Kn
 import { IsoTime, Sha256, UserId } from './common.ts';
 import { Ground, TreePath } from './reference.ts';
 export const SpaceId = z.union([z.literal('team'), UserId]);
+export type SpaceId=z.infer<typeof SpaceId>;
+export const SpaceEntryOrigin = z.strictObject({space: UserId, root: Sha256, path: TreePath, entry: Sha256});
 export const SpaceGround = z.strictObject({ reference: Ground, quotation: z.string().min(1).max(65536) });
 export const SpaceEntryContent = z.strictObject({
   kind: EntryKindSchema,
@@ -23,6 +25,7 @@ export const SpaceEntryBody = z.strictObject({
   space: SpaceId, entry: Sha256, content: SpaceEntryContent, grounds: z.array(SpaceGround).max(100),
   status: KnowledgeEntryStatusSchema.extract(['verified', 'unverified']),
   by: UserId, at: IsoTime, session: z.string().nullable(), replaces: Sha256.nullable(),
+  shared_from: SpaceEntryOrigin.optional(),
 });
 export type SpaceEntryBody = z.infer<typeof SpaceEntryBody>;
 export const SpaceRow = z.strictObject({ path: TreePath, entry: Sha256, record: Sha256, status: KnowledgeEntryStatusSchema });

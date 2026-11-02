@@ -1,4 +1,4 @@
-import { SpaceLocks } from './spaces.ts';
+import { SpaceId, SpaceLocks } from './spaces.ts';
 import {CommandPolicy} from './product.ts';
 import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
@@ -104,6 +104,7 @@ export const InputSlotSummary = z.strictObject({
 export type InputSlotSummary = z.infer<typeof InputSlotSummary>;
 
 export const PackSummary = z.strictObject({
+  space: SpaceId.optional().describe("Namespace of this publication; absence means the legacy team catalog"),
   pack: z.string().describe('id@version'),
   id: PackId,
   version: PackVersion,
@@ -140,6 +141,8 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
+  pack_space:SpaceId.optional().describe("Personal workflow owner or team; absent on historical runs"),
+  team_shared:z.literal(true).optional().describe("Team publication from a personal workflow shares new results with its assigned readers"),
   knowledge_spaces: SpaceLocks.optional().describe('Team and initiator personal knowledge versions frozen at start; absent on historical runs'),
   skills: SkillLocks.optional().describe('Skill package digests frozen at start; absent only on historical runs'),
   feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),

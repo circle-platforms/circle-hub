@@ -282,7 +282,19 @@
                 "SPACE_VERSION_CONFLICT",
                 "SPACE_RESULT_GROUNDS_PRIVATE",
                 "SPACE_CONTENT_UNINSPECTABLE",
-                "SPACE_INDEX_LIMIT"
+                "SPACE_INDEX_LIMIT",
+                "SHARE_UNVERIFIED",
+                "SHARE_GROUND_UNRESOLVED",
+                "SHARE_QUOTE_MISMATCH",
+                "SHARE_PERSONAL_SOURCE",
+                "SHARE_UPLOAD_UNSIGNED",
+                "SHARE_GROUND_UNREADABLE",
+                "SHARE_DUPLICATE",
+                "SHARE_CREDENTIALS",
+                "RESULT_GROUNDS_UNREADABLE",
+                "GROUNDS_WITHDRAWN",
+                "PACK_SPACE_DENIED",
+                "PACK_PERSONAL_PUBLICATION_DENIED"
               ]
             },
             "row": {

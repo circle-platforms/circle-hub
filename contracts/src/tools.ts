@@ -3,6 +3,7 @@ import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
+import { KnowledgeShareInput, KnowledgeShareReceipt } from './sharing.ts';
 import { SpaceEntryInput, SpaceEntryReceipt, SpaceId, SpaceSearchHit } from './spaces.ts';
 import { KnowledgeSpaceKindSchema, KnowledgeSearchScopeSchema, KnowledgeEntryStatusSchema } from '../generated/vocabulary.ts';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
@@ -39,6 +40,8 @@ export const SERVER_INSTRUCTIONS = `This server verifies results; it does not ge
 3. start_run - freeze the work: requirements, items to judge, locked version and the pack procedure.
 4. get_nodes / resolve_reference - read the expected sources and check exact values before you rely on them.
 5. submit_result - hand in your results item by item. If the receipt is not accepted, read the errors, fix exactly those points and submit again.
+Personal packs: list_task_packs includes space for personal workflows and generic skills. Use pack_space on start_run and get_nodes with pack, pack_space and file (default SKILL.md) to read their declared files. Pure generic skills have no acceptance and are read through get_nodes, not started as runs. Owners publish and grant personal packs through the console.
+Sharing: upload_file with share_entry submits a verified personal entry; a receipt carries a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
 Personal knowledge: upload_file with personal_entry writes only to the caller's space; space=personal imports an original without drafting entries. get_nodes with search and scope searches current readable knowledge only without run. During a run, copy exact tree addresses from the frozen team/personal roots and the initiator's currently authorized content.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
 
@@ -76,16 +79,20 @@ export const UploadFileInput = z.strictObject({
     .refine((text) => text.length % 4 === 0, 'base64 text has a length divisible by four (RFC 4648 padding)')
     .meta({ contentEncoding: 'base64', contentMediaType: 'application/octet-stream' })
     .describe('The file to upload. Give the local path; the client sends the file bytes.').optional(),
+  share_entry: KnowledgeShareInput.optional().describe('Submit one caller-owned verified entry to team knowledge; returns a merged/rejected receipt without an approval queue'),
+  withdraw_entry: KnowledgeShareInput.optional().describe('Withdraw a caller-owned personal entry or a permitted team submission; old references keep their immutable content'),
   personal_entry: SpaceEntryInput.optional().describe('Store a personal knowledge entry instead of a file; quotes are verified by the Hub; a note without grounds is unverified'),
   space: KnowledgeSpaceKindSchema.extract(['personal']).optional().describe('Import a file into the caller personal knowledge space; the Hub never drafts an entry'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
   provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
   captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
-}).refine(input => (input.file_path !== undefined) !== (input.personal_entry !== undefined), 'provide exactly one of file_path or personal_entry');
+}).refine(input => [input.file_path,input.personal_entry,input.share_entry,input.withdraw_entry].filter(value=>value!==undefined).length===1, 'provide exactly one payload mode');
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
 export const UploadFileOutput = Envelope.safeExtend({
   personal_entry: SpaceEntryReceipt.optional(),
+  share: KnowledgeShareReceipt.optional(),
+  withdrawn_reference: referenceUriOf('tree').optional(),
   acceptance: AcceptanceSchema,
   reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
   artifact: Sha256.optional().describe('Exact source_artifact record, so equal-byte captures can be bound independently; only when accepted'),
@@ -98,6 +105,8 @@ export const UploadFileOutput = Envelope.safeExtend({
     if (o.reference !== undefined) issue(ctx, ['reference'], 'an upload that is not accepted has no reference');
     if (o.artifact !== undefined) issue(ctx, ['artifact'], 'an upload that is not accepted has no exact artifact record');
     if (o.personal_entry !== undefined) issue(ctx, ['personal_entry'], 'a refused entry has no receipt');
+  } else if(o.share!==undefined||o.withdrawn_reference!==undefined){
+    if(o.reference!==undefined)issue(ctx,['reference'],'an entry operation has no file receipt');
   } else if (o.personal_entry !== undefined) {
     if (o.reference !== undefined) issue(ctx, ['reference'], 'an entry receipt is separate from a file receipt');
   } else if (o.reference === undefined || o.sha256 === undefined || o.size === undefined) {
@@ -109,6 +118,7 @@ export const UploadFileOutput = Envelope.safeExtend({
 
 export const StartRunInput = z.strictObject({
   pack: z.string().min(1).describe('Pack id from list_task_packs, optionally followed by @version'),
+  pack_space: SpaceId.optional().describe('Personal owner id for a personal workflow; omitted or team selects the team catalog'),
   product: z.string().optional().describe('Product name; every name of a product line is accepted'),
   version: z.string().optional().describe('Version line of the product'),
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
@@ -135,6 +145,9 @@ export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), resu
 });
 
 export const GetNodesInput = z.strictObject({
+  pack: z.string().min(1).max(100).optional().describe('Read a visible pack file without starting a run; especially SKILL.md for a generic skill'),
+  pack_space: SpaceId.optional(),
+  file: z.string().min(1).max(1000).optional().describe('Declared relative pack file; defaults to SKILL.md'),
   space: SpaceId.optional().describe('team or the personal space owner user id; defaults to the caller personal space when no root is provided'),
   search: z.string().min(1).max(200).optional().describe('Full-text knowledge search without run only; results are leads, never task evidence'),
   scope: KnowledgeSearchScopeSchema.optional().describe('Search personal, team, shared with the caller, or all visible spaces'),
@@ -152,6 +165,7 @@ export const GetNodesInput = z.strictObject({
 
 const NodeEntry = z.strictObject({
   status: KnowledgeEntryStatusSchema.optional(),
+  grounds_withdrawn:z.array(Ground).optional(),
   grounds: z.array(z.strictObject({ reference: Ground, quotation: z.string() })).optional(),
   cited_count: z.number().int().nonnegative().nullable().optional(),
   entry: Sha256,
@@ -243,6 +257,7 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
+  withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
   acceptance: AcceptanceSchema,
   result: ValidationResult.optional().describe(
     'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',
@@ -298,7 +313,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'get_nodes',
     label: '读取知识',
     title: 'Read knowledge nodes',
-    description: 'Read personal or team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry.',
+    description: 'Read a permitted pack file with pack, pack_space and file, or personal/team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry.',
     input: GetNodesInput,
     output: GetNodesOutput,
     effect: 'none',

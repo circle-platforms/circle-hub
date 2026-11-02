@@ -2,6 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "pack_space": {
+      "description": "Personal workflow owner or team; absent on historical runs",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "team"
+        },
+        {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        }
+      ]
+    },
+    "team_shared": {
+      "description": "Team publication from a personal workflow shares new results with its assigned readers",
+      "type": "boolean",
+      "const": true
+    },
     "knowledge_spaces": {
       "description": "Team and initiator personal knowledge versions frozen at start; absent on historical runs",
       "type": "object",
@@ -36,6 +54,10 @@
           "pack": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{1,40}$"
+          },
+          "space": {
+            "type": "string",
+            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
           },
           "version": {
             "type": "string",
