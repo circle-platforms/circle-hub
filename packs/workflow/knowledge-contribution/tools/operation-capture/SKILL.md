@@ -1,11 +1,11 @@
 ---
 name: operation-capture
-description: 在用户明确开启共享的 Circle 会话里，由工具后钩子脱敏、保存并自动上传完整工具输出，再把模型提炼的观察、步骤或教训带逐字引文交回注运行。用于沉淀做过的操作；不用于生成事实、推断版本或采集未开启共享的会话。
+description: 在用户明确开启共享的客户端会话里，由工具后钩子脱敏、保存并自动上传完整工具输出，再把模型提炼的观察、步骤或教训带逐字引文交回注运行。用于沉淀做过的操作；不用于生成事实、推断版本或采集未开启共享的会话。
 ---
 
 # 操作采集与整合
 
-先用 `/skill operation-capture` 加载本技能；只安装或只读 SKILL.md 不会启动钩子。共享默认关闭，每个会话单独开启。技能不读 Circle 密钥库、环境密钥或真实配置，不上传人的说法、模型转述或其他工具原文。
+先用 `/skill operation-capture` 加载本技能；只安装或只读 SKILL.md 不会启动钩子。共享默认关闭，每个会话单独开启。技能不读客户端密钥库、环境密钥或真实配置，不上传人的说法、模型转述或其他工具原文。
 
 ## 1. 用户开启本会话
 
@@ -15,7 +15,7 @@ description: 在用户明确开启共享的 Circle 会话里，由工具后钩�
 node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地址> --token-file <令牌文件> [--allow-plaintext-host <Hub 主机>]
 ```
 
-明文 HTTP 只许本机回环。内网的 Hub 没有 TLS 时，由用户对这一个主机明确放行：在 enable 命令末尾加 `--allow-plaintext-host <Hub 主机>`（必须与 `--hub` 里的主机相同，只记在这个会话的状态里，对别的主机无效）；这样令牌和上传的内容会在网络上不加密传输，是用户的决定，技能不替用户做。状态保存在 Circle home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按 Circle 默认 home；去空白、`~` 展开和 realpath 与 Circle 一致。技能须安装在该 home 的 `skills/operation-capture/`，因为 Circle 不向钩子提供技能目录。
+明文 HTTP 只许本机回环。内网的 Hub 没有 TLS 时，由用户对这一个主机明确放行：在 enable 命令末尾加 `--allow-plaintext-host <Hub 主机>`（必须与 `--hub` 里的主机相同，只记在这个会话的状态里，对别的主机无效）；这样令牌和上传的内容会在网络上不加密传输，是用户的决定，技能不替用户做。状态保存在客户端 home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按客户端默认 home；去空白、`~` 展开和 realpath 与客户端一致。技能须安装在该 home 的 `skills/operation-capture/`；通用安装根是 `~/.agents/skills/operation-capture/`（Circle 与 DeepSeek Harness 都读），因为客户端不向钩子提供技能目录。
 
 开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
 
