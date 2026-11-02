@@ -210,7 +210,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
     const api=ctx.deps.knowledge.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
     try{await api.changeMode(ctx.principal,{epoch:values.get('epoch')??'',expected_state:values.get('expected_state')??'',mode:action==='sync-resume'?SyncModeSchema.enum.hub:values.get('mode'),operation_id:values.get('operation_id')||randomUUID(),check:values.get('check')||null,confirm_purge:values.get('confirm_purge')==='true'});}
     catch(error){if(error instanceof RecordsError&&error.code)throw new KnowledgeError(error.message,{code:error.code});throw error;}
-    return '/console/knowledge?scope=personal';
+    return '/console/knowledge?scope=personal&sync=settings';
   }
   if((values.get('space')||ctx.principal.id)!=='team')await checkPersonalFormEpoch(ctx,values.get('personal_epoch'));
   if(action==='share-batch')return shareBatch(ctx,values);

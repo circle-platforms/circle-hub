@@ -108,7 +108,7 @@ export const AXES = {
   sync_mode: { label: '同步方式', owner: 'K01', values: [{ code: 'local', label: '仅保存在本机' }, { code: 'hub', label: '同步到 Hub' }] },
   sync_status: { label: '同步状态', owner: 'K01', values: [{ code: 'idle', label: '尚未同步' }, { code: 'syncing', label: '等待同步中' }, { code: 'conflicted', label: '有冲突' }, { code: 'purging', label: '等待清除中' }, { code: 'complete', label: '同步完成' }] },
   sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
-  sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹' }] },
+  sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1167,7 +1167,7 @@ export function isSyncObjectKind(value: unknown): value is SyncObjectKind {
 export const SYNC_FIELD = ['last_synced_at', 'cleared_personal_folder'] as const;
 export type SyncField = (typeof SYNC_FIELD)[number];
 export const SYNC_FIELD_LABEL = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的个人文件夹' } as const satisfies { readonly [K in SyncField]: string };
-export const SYNC_FIELD_UI = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的个人文件夹' } as const satisfies { readonly [K in SyncField]: string };
+export const SYNC_FIELD_UI = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的私人文件夹' } as const satisfies { readonly [K in SyncField]: string };
 export const SyncFieldSchema = z.enum(SYNC_FIELD);
 export function isSyncField(value: unknown): value is SyncField {
   return (SYNC_FIELD as readonly unknown[]).includes(value);

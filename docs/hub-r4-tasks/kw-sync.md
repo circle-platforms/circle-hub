@@ -1001,3 +1001,60 @@ git diff --check
 ```
 
 提交前收尾：176 文件合约核对通过，文档检查 291 项通过、0 失败、0 跳过，git diff --check 通过。第四轮附录的原文已包含在本项提交；低项仅按 v1 协调决定作说明，没有偷偷增加令牌作用范围实现。
+
+### 集成：变基到控制台视觉分支（Claude 2026-11-03）
+
+来源：Claude 本轮要求按 #132 → #136 → sync 的顺序集成，保留旧分支、重新生成合约、采用 AppShell／Inspector／Dialog，并核对两主题及 1440／390 px。只在 kw-sync-local 本机处理，未推送、建 PR 或部署；主检出与 console-visual-local 的检出分支没有切换。
+
+做了的：
+
+- 将变基前 d25d2281 保留为 kw-sync-pre-visual；把原 4d2056c6 之后的 23 个提交重放到 console-visual-local 69c68216。变基后原第 6 步为 9f11afc6，审计准入修正为 8afd14bb。解决文档、知识首页、记忆表单、成员元数据和来源显示冲突时保留双方功能：新版框架、产品知识来源与待处理内容，以及本机方式的空视图、代次校验、原生表单与清除后的来源遮蔽。
+- 从合并的 model 26 运行 gen:contracts；生成文件冲突不手工拼接。视觉分支已有 ui 字段与同步词表一并保留，已有清除来源标签仅补 ui 为“已清除的私人文件夹”，协议 label／代码不改。同步 HTTP、六工具、共享样例和技能镜像不变。migrations.ts 与 kw-sync-pre-visual 没有差异，14／15 的序号、名称与 SQL 原字节均保留，由原迁移快照回归核对，没有额外增加数据 SHA 扫描。
+- 知识和记忆使用相同同步 Section、Badge、事实行与真实冲突 Stat；选择设置后由 AppShell 交给 Inspector，手机显示同一详情并保留返回入口。方式、状态与字段使用生成的词表；没有上次同步时间显示“—”，不把已提交一次与仍有活动会话混为同步结束。状态“等待同步中／等待清除中”仍按服务器返回；界面自身动作沿用交互脚本的“正在…”说明，不制造不存在的异步清除进度。
+- 清除和重新启用使用 Dialog；预检、CSRF、代次、期望状态、幂等键、必选清除确认与原控制台 POST 保留。清除框正文说明本机副本、团队副本、运行独立持有原文与恢复备份的后果。成功后跳到同步设置，服务器会话给出一次性当前方式反馈；重放旧清除回执而当前已恢复 Hub 时，反馈当前方式，不声称又执行一次清除。
+- 管理员成员详情在原 Inspector 中显示同步方式与格式化的上次同步时间，空间大小使用统一格式；不新增读取私人内容或冲突数量的权限。新版来源块在清除标记存在时隐藏旧私人树路径及技术引用，保留团队实际正文与引文。
+- 新增 console-sync-design 回归，使用真实合成 Hub、密码会话与冻结双端样例：设置布局与用语、只读预检、未确认拒收、一次性清除反馈、重放旧回执时的当前方式、管理员元数据隐私，以及真实冲突计数和未解决记忆不加载。
+
+验证过程（原始失败保留）：
+
+- 初轮同步／用语组 17 项中 16 通过、1 失败：改写确认说明时遗漏原“本机副本不受影响”的明确表述；补回该后果说明，原 HTTP 断言不变。
+- 新 UI 回归首轮与同步组 16 项中 15 通过、1 失败：测试用全文查找判断成功提示是否存在，把固定脚本内的选择器当成了实际提示；改为只匹配实际渲染的提示元素。单独复现同一失败 1 项；没有把失败记成通过。
+- 控制台组首轮 176 项，173 通过、3 失败、0 跳过。知识首页夹具未提供新增读取所需的 records 端口，补齐空端口；容量与清除来源的两个文本断言同步到统一格式／生成 ui 用语。原产品来源与待处理内容、私密信息不披露、清除后不出现旧路径等断言保留，不修改生产权限规则。
+
+定向最终结果、验收 46～49、截图与跳过项目在以下收尾记录补齐。
+
+#### 定向检查与截图
+
+- 最终定向组 **119 项通过、0 失败、0 跳过**。覆盖同步合约与规范形式、原生 CAS／双端冲突及原文重新验证、全部 personal 存储／清除／所有者函数／运行独立持有者回归、索引读取计划、HTTP 准入审计、三处失败文件及新 UI 回归；包括 environment、diagnostics、PG 18 ownership 的真实备份／恢复、锁命名空间和迁移固定值。类型检查与 176 文件合约核对通过。没有改变迁移 SQL，也没有给运行角色增加权限。
+- 隔离 Chromium、临时 loopback 合成 Hub、临时 PostgreSQL 和独立浏览器资料，最终留存 **9 个状态 × 两主题 × 1440／390 px = 36 张截图**：同步设置、等待同步、已发生的上次同步（会话仍活动）、知识库冲突、记忆冲突、管理员成员详情、清除前确认、清除后当前方式、重新启用确认。最终集的每张原图均逐张打开核对，未只看缩略图；界面没有页面横向溢出，Dialog 与手机详情可读。清除框初轮复选项在按钮旁，移到正文后补拍；当前方式反馈调整后补拍清除结果和重新启用框，旧图不充当最终证据。
+- 浏览器逐页检查渲染用语、页面宽度及脚本异常，最终 0 项用语问题、0 页面横向溢出、0 脚本异常。Dialog 的当前目标和焦点保持检查通过；额外实际验证必选确认未勾选时原生校验不通过，勾选后 FormData 带上确认值，点击按钮经增强的原控制台 POST 成功清除并回到当前方式。未调用 Bearer 同步 API 代替浏览器操作，也未接触运行中的 Hub 或个人浏览器资料。
+- 截图及 JSON 报告、HTML 索引只留本机临时产物；最终截图目录的标识是 kw-sync-visual-final-nntinF（本地报告提供完整链接），不在 Git 写入本机绝对路径。临时 Hub、数据库、浏览器进程与资料已关闭／清理；截图保留供 Claude 审查。共享设计目录、设定、组件源文件及其摘要不改。
+
+```sh
+npm run gen:contracts
+npm run typecheck
+npm run verify:contracts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+ 'contracts/src/sync*.test.ts' 'hub/records/personal*.test.ts' hub/records/read-plan.test.ts hub/records/migrations.snapshot.test.ts \
+ hub/knowledge/personal-sync/commit.test.ts hub/server/personal-sync.test.ts \
+ hub/server/console-sync-design.test.ts hub/server/console-sync-local.test.ts hub/server/console-sync-privacy.test.ts \
+ hub/server/console-knowledge.test.ts hub/server/console/member-space-metadata.test.ts hub/server/console/space-records.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+ 'hub/server/console*.test.ts' 'hub/server/console/**/*.test.ts'
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+ tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts \
+ tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+npm run test:docs
+git diff --check
+```
+
+未运行项：本轮依要求只做定向集成检查，不重新跑全量 unit／acceptance；前述完整首跑结果仍是变基前的证据，不冒充变基后的全量结果。没有修改来源工具或批准导入，不额外执行 verify:references／test:references。Linux 隔离／systemd 验证不在本机运行，不能算通过。此次实际运行组内的跳过数量以收尾汇总为准。
+
+#### 集成收尾结果
+
+- 最终控制台组 **176 项通过、0 失败、0 跳过**，含新同步 Inspector／Dialog 回归、原 console.test.ts、只读页面／写表单、会话、CSP、SSE、用语、两主题设定与对比度，以及三处首跑失败的复查。首跑 173／3 保留在上文，不把两轮相加。
+- 随后串行执行验收 46～49，**36 项通过、0 失败、0 跳过**，约 63.1 秒。macOS 沙箱相关用例实际运行；未改验收断言。没有与另一套重型测试组并行。
+- 最终类型检查、176 文件合约核对、文档检查 **314 项通过、0 失败、0 跳过**，git diff --check 通过。PG 18 ownership 及锁检查已包含在前述 119 项定向组，不重复累计。
+- 最后对照组件规范补齐同步 Inspector 的类型／状态、标题、事实和底部操作结构；知识和记忆仍共用同一设置。完整矩阵补拍后再次逐张查看 36 张，确认操作栏沿用既有底部规则。Dialog 采用实际视口截图，避免整页截图把固定遮罩之外的虚拟扩展区误当作页面缺陷；没有改共享 CSS、设定或组件。最终目录标识与上文一致，JSON 报告和 HTML 索引已更新。
+- 本轮所有实际运行组均 **0 跳过**；全量 unit／acceptance、未变更的 reference 工具组与 Linux 专属作业依本轮范围未运行，不计作通过。变基前的 236 项完整 acceptance 证据仍仅对应旧分支。

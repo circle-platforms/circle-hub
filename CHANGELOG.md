@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Integrate personal sync with the shared console shell, Inspector, confirmation dialogs and current-state feedback.
+
 - Admit sync requests before appending audit records so unknown routes and rate refusals cannot grow the log.
 
 - Freeze portable v1 personal-sync exchange examples and verify two-client conflicts and knowledge grounds over HTTP.

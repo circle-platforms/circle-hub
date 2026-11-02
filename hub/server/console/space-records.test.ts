@@ -48,7 +48,7 @@ test('cleared personal folders disappear from administrator and owner receipt vi
  const before=String(await spaceRecords(w.ctx(w.admin),'/console/records'));assert.match(before,/synthetic-private-folder/);
  const epoch=(await w.kit.personalPayloads!.inspect(root.digest))!.epoch;await w.kit.personalPayloads!.purge(w.owner,epoch);
  for(const by of [w.admin,w.owner]){
-  const page=String(await spaceRecords(w.ctx(by),'/console/records'));assert.doesNotMatch(page,/synthetic-private-folder/);assert.match(page,/synthetic-public/);assert.match(page,/已清除的个人文件夹/);assert.match(page,/SHARE_UNVERIFIED/);
+  const page=String(await spaceRecords(w.ctx(by),'/console/records'));assert.doesNotMatch(page,/synthetic-private-folder/);assert.match(page,/synthetic-public/);assert.match(page,/已清除的私人文件夹/);assert.match(page,/SHARE_UNVERIFIED/);
  }
  for(const record of records)assert.deepEqual((await w.kit.store.get(record.digest))?.body,record.body,'immutable receipt bodies stay intact');
  assert.equal(await w.kit.personalPayloads!.cleared(root.digest),true);assert.equal(await w.kit.personalPayloads!.cleared('f'.repeat(64)),false);

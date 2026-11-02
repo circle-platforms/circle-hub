@@ -467,3 +467,7 @@ Canonical object IDs are protocol identities; no additional repository/data SHA 
 Bearer HTTP transport, checks CAS/conflict resolution and MCP session loading, and independently observes source bytes
 and verified/unverified knowledge. A source cannot become verified merely because a client supplies a canonical object.
 The model remains 26, generated schemas 176 and MCP tools six. Circle client implementation is a separate task.
+
+Decision 89 visual integration regenerates the model-26 contracts over decision 92's UI labels. Only the existing
+cleared-personal-folder value gains a UI label for the current console wording; its code, protocol label, HTTP shapes,
+shared v1 fixtures and pack protocol mirrors stay unchanged. No model version or migration is renumbered.

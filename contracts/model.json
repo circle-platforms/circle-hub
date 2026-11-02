@@ -10994,7 +10994,8 @@
     },
     {
      "code": "cleared_personal_folder",
-     "label": "已清除的个人文件夹"
+     "label": "已清除的个人文件夹",
+     "ui": "已清除的私人文件夹"
     }
    ]
   }
