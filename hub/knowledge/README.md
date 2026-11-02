@@ -1202,3 +1202,7 @@ before saving bytes; file registration and the version share a transaction. See 
 Second phase-2 review: personal import rejection audits are appended only after the import transaction is released.
 Credential refusals and uninspectable shared-path originals leave one safe audit; source bytes, source records and the
 space version remain absent/unchanged. The original registered refusal and its remedy remain distinct from audit storage.
+
+Writes and grant revocations are queued per space, with a database business-key lock retaining cross-process ordering.
+An unrelated member's write or revoke no longer waits for a blocked index append in another space. Read paths retain their
+existing behavior. Token-volume accounting is tracked separately from this process queue and is covered by the index review.

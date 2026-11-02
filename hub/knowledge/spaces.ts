@@ -57,7 +57,7 @@ type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise
 } | null>;
 export class KnowledgeSpaces {
   #ctx: KnowledgeContext;
-  #writes=new WriteQueue();
+  #writes=new Map<string,WriteQueue>();
   #legacy: TreeReader;
   #mounts: () => Promise<SpaceVersionBody['products']>;
   #legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null>;
@@ -70,6 +70,10 @@ export class KnowledgeSpaces {
     path: string;
     entry: string;
   }>> = async () => []) { this.#ctx = ctx; this.#legacy = legacy; this.#mounts = mounts; this.#legacyNodes = legacyNodes; this.#legacyIndex = legacyIndex; this.#legacyPaths = legacyPaths; }
+  #write<T>(space:string,work:()=>Promise<T>):Promise<T>{
+    let queue=this.#writes.get(space);if(!queue){queue=new WriteQueue();this.#writes.set(space,queue);}
+    return queue.run(work);
+  }
   async #user(by: Principal): Promise<Principal> {
     const user = await this.#ctx.records.principals.get(by.id);
     if (!user || user.disabled)
@@ -152,7 +156,7 @@ export class KnowledgeSpaces {
     if (by.role !== 'admin' || !(await this.#ctx.records.principals.get(space)))
       fail('SOURCE_UNAVAILABLE');
     const body = SpaceQuotaBody.parse({ space, bytes, by: by.id, at: this.#ctx.now().toISOString() });
-    await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
+    await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
   }
   async grants(by: Principal): Promise<SpaceGrantBody[]> {
     by = await this.#user(by);
@@ -214,7 +218,7 @@ export class KnowledgeSpaces {
     const body = SpaceGrantBody.parse({ space: by.id, path, audience: input.audience, member: input.member ?? null, action: input.revoke ? 'revoke' : 'grant', by: by.id, at: this.#ctx.now().toISOString() });
     if (body.member && !(await this.#ctx.records.principals.get(body.member)))
       fail('SOURCE_UNAVAILABLE');
-    await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       const version = await this.current(by.id, tx);
       if (!input.revoke) {
@@ -327,7 +331,7 @@ export class KnowledgeSpaces {
       if (verifyQuote(result, ground.quotation) !== true)
         fail('SPACE_ENTRY_INVALID', '依据不可读或引文与来源不一致');
     }
-    return this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       const grants = space === 'team' ? [] : this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY, by.id, 'knowledge_space_grant', tx));
@@ -367,7 +371,7 @@ export class KnowledgeSpaces {
       fail('SPACE_ENTRY_INVALID', '产品目录由产品知识来源维护');
     if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
       fail('SOURCE_UNAVAILABLE');
-    return this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       if (previous?.body.directories.includes(path))
@@ -379,7 +383,7 @@ export class KnowledgeSpaces {
     by = await this.#user(by);
     if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
       fail('SOURCE_UNAVAILABLE');
-    await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       const previous = await this.current(space, tx);
       if (!previous)
@@ -712,7 +716,7 @@ export class KnowledgeSpaces {
     const upload:IngestInput={bytes,mediaType,name,origin:{upload:{session,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'};
     try{
     this.#scan({path,name});
-    return await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       const previous = await this.current(by.id, tx);
       const planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)]);

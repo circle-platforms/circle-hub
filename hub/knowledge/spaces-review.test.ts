@@ -76,3 +76,21 @@ test('ordinary and personal upload refusals each leave one safe audit after roll
   await assert.rejects(spaces.importFile(w.user,bytes,'application/zip','synthetic.zip','/shared'),(error:any)=>error.code==='SPACE_CONTENT_UNINSPECTABLE');
   const actions=await w.kit.store.find<any>({key:'artifact.refused',value:hash,kind:'action'});assert.equal(actions.items.length,1);assert.deepEqual(actions.items[0].body.codes,['SPACE_CONTENT_UNINSPECTABLE']);assert.equal(await w.kit.objects.has(hash),false);
 });
+
+test('writes and grant revocation queue by space without waiting for another member',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,index=w.kit.spaceIndex!;
+  for(const by of [w.user,w.outsider]){await spaces.ensure(by);await spaces.grant(by,{path:'/',audience:'administrators'});}
+  let release!:()=>void,entered!:()=>void,revoked=false;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),waiting=new Promise<void>(resolve=>{entered=resolve;});
+  const add=index.add.bind(index);let blocked=false;
+  index.add=async(...args)=>{if(!blocked&&args[1].some(row=>row.space===w.user.id)){blocked=true;entered();await gate;}return add(...args);};
+  const write=spaces.write(w.user,{kind:'observation',statement:'合成排队写入'});await waiting;
+  const same=spaces.grant(w.user,{path:'/',audience:'administrators',revoke:true}).then(()=>{revoked=true;});
+  const independent=(async()=>{await spaces.directory(w.outsider,'/independent');await spaces.grant(w.outsider,{path:'/',audience:'administrators',revoke:true});})();
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try{
+    await Promise.race([independent,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('another member write/revoke waited on the blocked space')),5000);})]);
+    assert.equal(revoked,false,'the same space retains ordered mutation');
+  }finally{if(timer)clearTimeout(timer);release();await Promise.all([write,same,independent]);index.add=add;}
+  assert.equal(revoked,true);assert.equal((await spaces.grants(w.outsider)).length,0);
+});

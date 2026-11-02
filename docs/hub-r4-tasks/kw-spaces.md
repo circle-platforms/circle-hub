@@ -186,3 +186,4 @@
 - 第 1 项验证：`npm run typecheck` 通过；`hub/runs/engine/start.test.ts` 和 `tests/acceptance/46-knowledge-spaces.test.ts` 的 22 项通过，0 跳过。加入的回归覆盖普通／钉住采集／记录形式、管理员无默认读权、拒收不保存运行及同字节普通来源正例。同期第 6 项的新夹具因复制了旧运行的喂入边界而失败，正在修正；没有把该失败计为通过。
 - 第 6 项：`recheckProduction` 在追加重新评估结果前执行同一临时防护，拒收只追加带代码的验证动作，保留原运行与旧结果。真实装配的旧运行夹具明确绑定个人采集，重验不能追加结果；相同字节的独立普通采集可以重验。去掉新运行不应继承的旧喂入边界后，`npm run typecheck` 和 `hub/runs/engine/{production-guard,start-result}.test.ts` 6 项通过，0 失败、0 跳过。
 - 第 3 项：导入事务回滚后，经 records 公共 API 追加实际保留的拒收动作，错误中的动作摘要指向该记录。普通上传保留原路径；个人未授权目录导入、共享目录预查拒收均留下恰好一条，包含无法检查的容器拒收；不保存原文，不改变空间版本。`npm run typecheck` 及 `hub/records/artifacts.test.ts hub/knowledge/spaces-review.test.ts` 最终 19 项通过，0 失败、0 跳过。首轮回归夹具使用扫描器视为占位符的词，改用明确的合成命中模式后重跑，没有放宽扫描或删除测试。
+- 第 5 项的写入队列：进程内按空间分队列，数据库业务锁继续保证同一空间跨进程串行。回归明确阻塞甲的索引追加，乙仍可写目录、收回授权，甲的收回则须按序等待。`npm run typecheck` 和 `hub/knowledge/spaces-review.test.ts tests/acceptance/46-knowledge-spaces.test.ts` 12 项通过，0 失败、0 跳过。累计索引量与引用行说明随第 2 项的计量修改一并收尾。
