@@ -150,7 +150,9 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     const { deps, fakes } = fakeDeps(config, records, options);
     const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}) });
     const info = await app.listen();
-    const boot = await records.principals.bootstrapAdmin('管理员');
+    // Administrators sign in to the console with a password too (owner, 2026-11-02); the synthetic one never needs changing.
+    const boot = await records.principals.bootstrapAdmin('管理员', { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });
+    consoleAccounts.set(boot.token.token, boot.user.name);
     const admin: TestUser = { user: boot.user, principal: principalOf(boot.user), token: boot.token.token };
     const clients = new Set<TestMcpClient>();
 
@@ -167,12 +169,12 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       async createUser(name, role = 'user') {
         const user = await records.principals.createUser(admin.principal, name, role, {password:SYNTHETIC_CONSOLE_PASSWORD,mustChange:false});
         const token = await records.principals.issueToken(admin.principal, user.id, 'test');
-        if (role === 'user') consoleAccounts.set(token.token,name);
+        consoleAccounts.set(token.token,name);
         return { user, principal: principalOf(user), token: token.token };
       },
       async issueToken(user) {
         const token=(await records.principals.issueToken(admin.principal, user.id, 'test')).token;
-        if (user.role === 'user') consoleAccounts.set(token,user.name);
+        consoleAccounts.set(token,user.name);
         return token;
       },
       async assign(user, packId) {

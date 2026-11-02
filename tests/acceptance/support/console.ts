@@ -84,7 +84,7 @@ export async function openConsole(hub: TestHub, token?: string): Promise<Console
         origin,
         referer: `${origin}/console/login`,
       },
-      // Members sign in with their synthetic password; only administrators may use a token (decision 83).
+      // Every account, administrators included, signs in with its synthetic password; a token only connects a Circle.
       body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: nonce }).toString(),
     });
     sessionCookie = cookieValue(cookieHeader(loginRes, 'circle_hub_session'));

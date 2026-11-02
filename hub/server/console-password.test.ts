@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { once } from 'node:events';
 import { after, before, test } from 'node:test';
-import { createTestServer, type TestServer } from './testing.ts';
+import { SYNTHETIC_CONSOLE_PASSWORD, createTestServer, testConsoleCredentials, type TestServer } from './testing.ts';
 import { createCommandBridge } from './command-bridge.ts';
 import { handleConsole, type ConsoleOptions } from './console/index.ts';
 import { SessionStore } from './console/session.ts';
@@ -52,7 +52,7 @@ test('only administrators reset a member password and the generated value is ret
   const logged=await login({username:user.name,password:initial}), memberSession=cookie(logged,'circle_hub_session');
   const mine=await send('/console/password','GET',undefined,memberSession);
   assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(mine.body),user:server.admin.user.id},memberSession)).status,404);
-  const loggedAdmin=await login({token:server.admin.token}), adminSession=cookie(loggedAdmin,'circle_hub_session');
+  const loggedAdmin=await login(testConsoleCredentials(server.admin.token)), adminSession=cookie(loggedAdmin,'circle_hub_session');
   const team=await send(`/console/team/${user.id}`,'GET',undefined,adminSession);assert.match(team.body,/重置密码/);
   assert.match(team.body,/action="\/console\/admin\/do\/password-reset"/);
   const before=await server.records.principals.history(user.id);
@@ -77,11 +77,25 @@ test('the failure limit also applies to unknown accounts and cannot be bypassed 
   for(let i=0;i<5;i++) assert.equal((await login({username:'合成不存在账户',password:'synthetic-wrong-password'})).status,401);
   assert.equal((await login({username:'合成不存在账户',password:'synthetic-wrong-password'})).status,429);
 });
-test('an administrator backup token cannot bypass a mandatory password change or reset other accounts first',async()=>{
+test('a valid administrator token and a valid member token are both refused by the console sign-in, with no session',async()=>{
+  assert.doesNotMatch((await send('/console/login')).body,/name="token"/,'the sign-in has no token field');
+  const admin=await server.createUser('合成令牌管理员','admin'), member=await server.createUser('合成令牌成员');
+  for(const user of [admin,member]){
+    assert.equal((await server.records.principals.authenticate('Bearer '+user.token))?.id,user.user.id,'the token is valid: it connects a Circle');
+    for(const fields of [{token:user.token},{username:user.user.name,password:user.token}] as Record<string,string>[]){
+      const refused=await login(fields), what=`${user.user.role}: ${Object.keys(fields).join(' and ')}`;
+      assert.equal(refused.status,401,what);
+      assert.match(refused.body,/用户名或密码无效，或账号不可用/,what);
+      assert.equal(cookie(refused,'circle_hub_session'),'',`${what}: no session`);
+    }
+    const signed=await login(testConsoleCredentials(user.token));
+    assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/overview','the account signs in with its password');
+  }
+});
+test('an administrator who must change the password signs in with it and can neither read nor reset other accounts first',async()=>{
   const initial='synthetic-admin-initial';
   const admin=await server.records.principals.createUser(server.admin.principal,'合成初始管理员','admin',{password:initial,mustChange:true});
-  const backup=await server.records.principals.issueToken(server.admin.principal,admin.id,'合成备用令牌');
-  const signed=await login({token:backup.token});assert.match(String(signed.headers.location),/^\/console\/password/);
+  const signed=await login({username:admin.name,password:initial});assert.match(String(signed.headers.location),/^\/console\/password/);
   const session=cookie(signed,'circle_hub_session');
   assert.equal((await send('/console/api/me','GET',undefined,session)).status,403);
   const form=await send('/console/password','GET',undefined,session);
@@ -95,7 +109,7 @@ test('login preserves passwords as typed and accepts the same Unicode username l
   assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/overview');
 });
 
-test('backup failures are isolated by source while username failures follow the account across sources',async t=>{
+test('username failures lock a source for every account and an account from every source, and neither lock reaches the other',async t=>{
   const sessions=new SessionStore();
   let origin='';
   const options:ConsoleOptions={deps:server.deps,sessions,ownOrigins:()=>new Set([origin]),secureRequest:()=>false,
@@ -117,10 +131,17 @@ test('backup failures are isolated by source while username failures follow the 
   const loginPeer=async(peer:string,fields:Record<string,string>)=>{
     const form=await sendPeer(peer);return sendPeer(peer,{...fields,csrf:csrf(form.body)},cookie(form,'circle_hub_login'));
   };
-  for(let i=0;i<5;i++)assert.equal((await loginPeer('192.0.2.10',{token:'invalid'})).status,401);
-  assert.equal((await loginPeer('192.0.2.10',{token:server.admin.token})).status,429);
-  assert.equal((await loginPeer('192.0.2.11',{token:server.admin.token})).status,303,'another source can still use the administrator backup');
+  const admin={username:server.admin.user.name,password:SYNTHETIC_CONSOLE_PASSWORD};
+  // Fifty failures from one source, each for another account, lock that source even for a correct password.
+  for(let batch=0;batch<5;batch++){
+    const failed=await Promise.all(Array.from({length:10},(_,i)=>loginPeer('192.0.2.10',{username:`合成来源失败账户${batch*10+i}`,password:'invalid'})));
+    assert.deepEqual(failed.map(reply=>reply.status),Array(10).fill(401));
+  }
+  assert.equal((await loginPeer('192.0.2.10',admin)).status,429,'a locked source signs no account in');
+  assert.equal((await loginPeer('192.0.2.11',admin)).status,303,'another source still signs the administrator in');
+  // Five failures for one account lock it from every source; its source and the other accounts are not locked.
   for(let i=0;i<5;i++)assert.equal((await loginPeer('192.0.2.12',{username:'合成跨来源失败账户',password:'invalid'})).status,401);
   assert.equal((await loginPeer('192.0.2.13',{username:'合成跨来源失败账户',password:'invalid'})).status,429,'switching sources does not bypass an account lock');
-  assert.equal((await loginPeer('192.0.2.13',{token:server.admin.token})).status,303,'an account lock does not lock backup login');
+  assert.equal((await loginPeer('192.0.2.12',admin)).status,303,'an account lock does not lock its source for another account');
+  assert.equal((await loginPeer('192.0.2.13',admin)).status,303,'nor another account on any source');
 });
