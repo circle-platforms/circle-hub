@@ -36,7 +36,7 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
 
 export async function packsPage(ctx: PageContext): Promise<PageResult> {
   const groups = byId(await ctx.deps.packs.list(ctx.principal));
-  const columns = async (kind: 'workflow' | 'skill', hint: string): Promise<Html> => {
+  const columns = async (kind: PackKind, hint: string): Promise<Html> => {
     const cards: Html[] = [];
     for (const [id, versions] of groups) {
       const pack = shownVersion(versions);

@@ -70,6 +70,11 @@
 
 ## 验证
 
+- PR #125 的完整 CI 发现两处问题，由 Claude 修复：
+  - 通用技能包随模型 16 升了补丁版本，而沙箱传输、旧版迁移声明与知识同步的测试仍写死旧版本号。改为经 `hub/testing/skills.ts` 的 `repositorySkillVersion` 读取仓库里 `pack.json` 的当前版本，以后升版不再牵连这些测试。
+  - 工作流页的分栏函数手写了 `'workflow' | 'skill'`，被词表扫描拦下，改用生成的 `PackKind`。
+  - 本机复跑：`hub/refs/skills.test.ts` 与 `cli-skill-migration.test.ts` 共 17 项，`cli-admin` 的知识同步与词表扫描 2 项，均通过、0 跳过；完整单元由 CI 复跑。
+
 - 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=2 contracts/src/vocabulary.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/tools.test.ts tools/gen-contracts.pack-vocabulary.test.ts` 118 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。
 - 第 2 项：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/server/console-places.test.ts` 12 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。页面检查覆盖导航、两栏、悬停说明、验收要求顺序与不显示节点图。
 - 第 3 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-knowledge.test.ts hub/server/console-pagination.test.ts` 23 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。覆盖归属与面包屑、成员权限保持、退役和未启用状态及缺少元数据；新增边界用例首次用了不支持状态覆盖的基础夹具，改为显式目录夹具后重跑通过。
