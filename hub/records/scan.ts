@@ -398,7 +398,14 @@ function escapedLiterals(text: string, visit: (literal: Literal) => boolean): vo
 
 /** A scan-only replacement view. Mapping streams the edits only if findings need original positions. */
 function replaced(view:View,pattern:RegExp,replacement:(value:string)=>string):View{
- const text=view.text.replace(pattern,replacement);if(text===view.text)return view;
+ // Most Unicode text is already normalized. Do not allocate a whole replacement string for unchanged matches.
+ let parts:string[]|null=null,from=0;
+ for(const match of view.text.matchAll(pattern)){
+  const value=replacement(match[0]);if(value===match[0])continue;
+  (parts??=[]).push(view.text.slice(from,match.index),value);from=match.index+match[0].length;
+ }
+ if(parts===null)return view;
+ parts.push(view.text.slice(from));const text=parts.join('');
  return {text,offsets(indices){
   const mapped:number[]=[];let source=0,target=0,next=0;
   for(const match of view.text.matchAll(pattern)){

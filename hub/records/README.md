@@ -701,8 +701,10 @@ space. The reviewed source snapshot is updated together with an upgrade regressi
 Credential-scan@3 adds scan-only NFKC/invisible-character folding, numeric/named HTML entities, joined path segments
 and adjacent key/value segments, and canonical base64/base64url text views. These share the existing bounded recursive
 expansion and detectors; compressed containers remain uninspected. Findings map to original positions (encoded literals
-anchor at their opening), and internal matched values never enter public scan metadata. Stored bytes and reference
-identity do not change. Source acceptance is still bound to scanner version and findings; tests derive a simulated newer
+anchor at their opening), and internal matched values never enter public scan metadata. Stored bytes, source-byte
+references and fragment identities do not change. A newly created capture includes the scanner version in its record,
+so its record identity and any composition, scope list or cursor that binds it can change (see the console task's CI
+view-byte review). Source acceptance is still bound to scanner version and findings; tests derive a simulated newer
 scanner from the current version rather than pinning it. Existing encodings, placeholders, negatives and large-input
 time/memory bounds remain covered.
 

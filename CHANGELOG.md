@@ -22,6 +22,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
   writes preserve versions, and administrator-disabled team memories cannot be bypassed through another share.
   The standalone capture skill mirrors the same scanner without runtime dependencies, rechecks pending historical
   captures, and recovers stale locks atomically so concurrent captures retain their upload/event chain.
+  Already normalized Unicode text avoids whole-file replacement buffers; capture records and view continuations retain
+  their exact scanner-version provenance while tree content remains unchanged.
 
 - Memory space limits count enabled titles, paths and bodies and default to 20 enabled documents per space. Session
   lists and reads enforce the same limits, and upgrades preserve existing memory versions and historical usage.
