@@ -95,7 +95,7 @@ function assertPage(reply: Reply, path: string): void {
   assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="side" aria-label="主导航">/, path);
-  for (const place of ['总览', '任务', '知识库', '任务包', '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
+  for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
   assert.doesNotMatch(reply.body, /你/, `${path}: interface text states facts without a subject`);
 }
 
@@ -106,9 +106,9 @@ describe('the eight places', () => {
     const admin = await signIn(server.admin.token);
     const pages: Record<string, string> = {
       '/console/overview': '总览', '/console/runs': '任务', [`/console/runs/${run}`]: '任务', '/console/knowledge': '知识库',
-      '/console/packs': '任务包', '/console/packs/review': '任务包', '/console/connections': '连接', '/console/records': '记录',
+      '/console/packs': uiLabelOf('pack_kind', 'workflow'), '/console/packs/review': uiLabelOf('pack_kind', 'workflow'), '/console/connections': '连接', '/console/records': '记录',
       '/console/settings': '设置', '/console/team': '团队', '/console/operations': '设置', '/console/operations/member': '团队', '/console/operations/system': '连接',
-      '/console/operations/pack': '任务包', '/console/operations/knowledge': '知识库', '/console/overview?days=30': '总览',
+      '/console/operations/pack': uiLabelOf('pack_kind', 'workflow'), '/console/operations/knowledge': '知识库', '/console/overview?days=30': '总览',
     };
     for (const [path, place] of Object.entries(pages)) {
       const reply = await get(path, admin);
@@ -183,6 +183,26 @@ describe('tasks', () => {
 });
 
 describe('operations and commands', () => {
+  test('workflows and generic skills have separate columns and acceptance stays above detail controls without a node graph', async t => {
+    const skill={id:'synthetic-skill',version:'1.0.0',kind:'skill' as const,title:'合成通用技能',description:'合成说明',digest:'f'.repeat(64),owner:null,summary:null};
+    server.fakes.workflows.packs.push(skill);
+    t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
+    const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
+    assert.equal(list.status,200);assert.match(list.body,/class="grid g2 section"/);
+    const workflow=/<section class="stack" aria-label="工作流" id="workflow">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    const skills=/<section class="stack" aria-label="通用技能" id="skill">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review"/);
+    assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
+    assert.match(workflow,/title="规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果"/);
+    assert.match(skills,/title="只规定做法，没有验收要求"/);
+    assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
+    const detail=await get('/console/packs/review',admin);
+    assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本与权限'));
+    assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);
+    const memberSession=await signIn((await member()).token), mine=await get('/console/packs',memberSession);
+    assert.ok(!mine.body.includes(skill.title));
+  });
+
   test('Circle tables show registered device names or direct-token labels without token identifiers', async () => {
     const user=await member();
     const client=await server.records.principals.registerClient('合成 MacBook Circle',['http://127.0.0.1/callback']);

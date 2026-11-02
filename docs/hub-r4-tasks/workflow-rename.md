@@ -60,8 +60,10 @@
 ## 做了的
 
 - 第 1 项：模型 16 与四种界面用语已生成；同步查询工作流、工作流分配、`SOURCE_UNAVAILABLE.fix`、`PACK_POLICY_DENIED.when` 及闭集校验提示。增加仅供显示的 `pack_status`，同步版本断言与四个技能的生成镜像及发布清单，技术名称、既有代码和协议未变。授权来源见“做法”的范围补充。
+- 第 2 项：保留 `/console/packs`，避免已有链接失效；导航改名，工作流与通用技能分栏并使用约定的标题悬停说明。详情上方单列验收要求，未能读取要求时明确显示暂不可读，版本与权限仍可见；不画节点图。状态由既有字段推导并取 `pack_status` 生成标签。
 
 ## 验证
 
 - 第 1 项：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=2 contracts/src/vocabulary.test.ts contracts/src/vocab-axes.test.ts contracts/src/model-w04-w10-v07.test.ts contracts/src/tools.test.ts tools/gen-contracts.pack-vocabulary.test.ts` 118 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。
+- 第 2 项：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/server/console-places.test.ts` 12 通过、0 跳过；`npm run test:docs` 285 通过、0 跳过。页面检查覆盖导航、两栏、悬停说明、验收要求顺序与不显示节点图。
 - 技能镜像的版本检查最初失败（同版内容改变），按协调授权升版并刷新清单后，上述文档检查重跑通过；首次失败不记为通过。未运行全量回归或来源相关检查。

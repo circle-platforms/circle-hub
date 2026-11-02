@@ -706,6 +706,7 @@ nav_order: 3
 85. **工作流改名的实施**（来源：所有者 2026-11-02，决定 84；任务页 [`workflow-rename.md`](hub-r4-tasks/workflow-rename.md)，设计页 [`knowledge-workflows.md`](design/knowledge-workflows.md) 第一阶段）：
     - 第 1 项：模型升为 16，`pack_kind` 的界面用语改为工作流、通用技能、产品知识来源、业务系统接入；同步查询工作流、工作流分配与相关错误提示，代码、协议、记录种类及目录名不变。
     - 范围补充（来源：Claude 2026-11-02 作为协调者，依据所有者对决定 84 的持续授权）：增加仅供显示的 `pack_status`，按既有发布、退役和启用字段推导，不改记录与权限规则；允许同步四个通用技能的生成协议镜像和发布清单，html-format／mindmap-format 升为 1.0.3，xml-format／workbook-format 升为 1.0.4，业务代码不变。
+    - 第 2 项：导航与页面改称工作流，保留 `/console/packs` 以维持原有链接；工作流与通用技能分两栏，标题承载约定的悬停说明；工作流详情在上方单列验收要求，移除节点图。依据决定 84 与任务页第 2 项。
 
 ## 待所有者定
 
