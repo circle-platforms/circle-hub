@@ -170,7 +170,7 @@ export class KnowledgeSpaces {
     return row ? SpaceQuotaBody.parse(row.body).bytes : DEFAULT_PERSONAL_CAPACITY;
   }
   /** Internal accounting port for committing writers; callers hold the space transaction lock. */
-  async capacityFacts(space:string,tx?:Transaction):Promise<CapacityUsage>{return capacityUsage(await historyUsage(this.#ctx.records.store,space,tx),await this.capacity(space,tx));}
+  async capacityFacts(space:string,tx?:Transaction):Promise<CapacityUsage>{return this.#ctx.records.personalSync?this.#ctx.records.personalSync.usageForSpace(space,tx):capacityUsage(await historyUsage(this.#ctx.records.store,space,tx),await this.capacity(space,tx));}
   async usage(by:Principal,space=by.id):Promise<CapacityUsage>{
     by=await this.#user(by);if(space==='team'||space!==by.id&&by.role!=='admin'||!await this.#ctx.records.principals.get(space))fail('SOURCE_UNAVAILABLE');
     return this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await lockActive(this.#ctx,by,tx);if(space!==by.id&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');return this.capacityFacts(space,tx);});
@@ -634,9 +634,9 @@ export class KnowledgeSpaces {
     return {status:'unsigned',canAttribute:!!registration,source:registration?.digest};
   }
   async attributeSource(by:Principal,source:string,artifact:string){
-    by=await this.#user(by);if(!isSha256(source)||!isSha256(artifact))fail('SOURCE_UNAVAILABLE');
+    by=await this.#user(by);if(!isSha256(source)||!isSha256(artifact))fail('SOURCE_UNAVAILABLE');const epoch=await personalEpoch(this.#ctx,by.id);
     return this.#write(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{
-      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);by=await lockActive(this.#ctx,by,tx);
+      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await lockActive(this.#ctx,by,tx);
       const registration=await this.#ctx.records.store.get(source,tx),parsed=registration?.kind==='knowledge_space_source'?SpaceSourceBody.safeParse(registration.body):null;
       if(!parsed?.success||parsed.data.space!==by.id||parsed.data.by!==by.id||parsed.data.artifact!==artifact)fail('SOURCE_UNAVAILABLE');
       const row=parsed.data,version=await this.current(by.id,tx);if(!version?.body.sources.includes(source))fail('SOURCE_UNAVAILABLE');
@@ -1123,10 +1123,10 @@ export class KnowledgeSpaces {
   }
   /** Explicit save only. A private copy of a run upload never changes that old capture's declaration eligibility. */
   async archiveSource(by:Principal,input:{artifact:string;space:string;path:string;message:string}){
-    by=await this.#user(by);const space=SpaceId.parse(input.space),path=pathCheck(input.path);
+    by=await this.#user(by);const space=SpaceId.parse(input.space),path=pathCheck(input.path),epoch=space===by.id?await personalEpoch(this.#ctx,by.id):undefined;
     if(!isSha256(input.artifact)||input.message!=='archive:'+input.artifact||space!==by.id&&space!=='team')fail('SOURCE_UNAVAILABLE');
     return this.#write(space,()=>this.#ctx.records.store.withTransaction(async tx=>{
-      await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await lockActive(this.#ctx,by,tx);
+      await this.#ctx.records.store.lock('knowledge-space:'+space,tx);if(space===by.id)await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await lockActive(this.#ctx,by,tx);
       const eligible=await this.archiveEligibility(by,input.artifact);if(space==='team'?!eligible.team:!eligible.personal)fail('SOURCE_UNAVAILABLE');
       if(space==='team'&&withinSpacePath(path,PRODUCTS_PATH))fail('SPACE_ENTRY_INVALID','此文件夹用于产品知识，请选择其他文件夹');
       const record=await this.#ctx.records.store.get<import('../records/api.ts').SourceArtifactBody>(input.artifact,tx);if(record?.kind!=='source_artifact')fail('SOURCE_UNAVAILABLE');
@@ -1150,11 +1150,11 @@ export class KnowledgeSpaces {
         if('read'in source.artifact.body.origin&&!source.artifact.body.visibility.admins)fail('SPACE_ENTRY_INVALID','私人连接读取的原文不能放入已分享的文件夹');
         this.#inspectSource(source.bytes);
       }
-      const facts=space==='team'?null:await this.capacityFacts(space,tx),planned=this.#draft(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',source.size,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts?.knowledge??previous?.body.used_bytes??0);
+      const facts=space==='team'?null:await this.capacityFacts(space,tx),planned=this.#draft(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',source.size,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts?.knowledge??previous?.body.used_bytes??0,space==='team'?undefined:await personalEpoch(this.#ctx,space,tx));
       if(facts)requireCapacity(facts,planned.used_bytes-facts.knowledge);
       let artifact=input.artifact;
-      if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
-      const body=SpaceSourceBody.parse({space,path,sha256:source.sha256,artifact,size:source.size,by:by.id,at:this.#ctx.now().toISOString()});
+      if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({...(space===by.id?{personalOwner:by.id}:{}),bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
+      const body=SpaceSourceBody.parse({personal_epoch:epoch,space,path,sha256:source.sha256,artifact,size:source.size,by:by.id,at:this.#ctx.now().toISOString()});
       const saved=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body,index:[{key:SOURCE_KEY,value:space},{key:'knowledge.space.source_hash',value:body.sha256}]},tx);
       const version=await this.#save(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',body.size,tx,[...previous?.body.sources??[],saved.digest]);
       return {record:saved.digest,root:version.root,...body};
@@ -1173,7 +1173,7 @@ export class KnowledgeSpaces {
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       by=await lockActive(this.#ctx,by,tx);
       const previous = await this.current(by.id, tx);
-      const facts=await this.capacityFacts(by.id,tx),planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts.knowledge);
+      const facts=await this.capacityFacts(by.id,tx),planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts.knowledge,await personalEpoch(this.#ctx,by.id,tx));
       requireCapacity(facts,planned.used_bytes-facts.knowledge);
       if(previous)await this.#index(previous,tx);
       const grants=this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY,by.id,'knowledge_space_grant',tx));

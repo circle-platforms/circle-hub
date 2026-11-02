@@ -749,3 +749,26 @@ try{
 本次只提交提案和旧基线备份；未执行变基、模型修改、迁移或成员删除，也未运行功能测试。文档检查与差异检查在提交前记录；所有实现及本机合成验证仍待上述决定。
 
 本提案检查：`node --test --test-concurrency=2 ".github/checks/*.test.ts"`，313 通过、0 失败、0 跳过，退出 0；`git diff --check` 通过。只改本任务页，未运行类型、功能、迁移、清除或截图验证，不将前四块或同步分支的既有通过结果冒充本块结果。
+
+## 第五块批准与实施记录（Codex 2026-11-03）
+
+来源：Claude 在本轮回复中批准 d437875f 的 B 节 1～5、D 节全部合约及 E 节顺序；要求第 2 步后报告，再继续第 3～6 步。批准内容采用永久删除私人版本、保留明确团队发布及既有合法冻结副本、同一清除器的规则；无需另等私人包归属或本节合约批准。迁移从 19 起，14、15 冻结；不增加运行角色 UPDATE／DELETE 授权。此处记录转达来源，不把协调者的话改记成所有者原话。
+
+### 第 1 步：同步集成
+
+做了的：
+
+- kw-finish-pre-sync 保留旧基线 8ee33550，kw-finish-proposal-pre-sync 另保留含原提案的 d437875f；将前四块及提案重放到 kw-sync-local eef4ca12。主检出与同步工作树均未切换。四次合约语义重放后模型为 30，重新运行生成器，不手工合并生成物；通用技能只同步协议镜像与清单，html/mindmap 1.0.14、xml/workbook 1.0.15，无技能业务变更。
+- 保留同步代次边界、清除后的依据投影、原文定位／归档及停用提交锁。精确逻辑账本移至 records 的公共端口；同步准入与容量页复用同一核算，包含暂存、客户名称、操作说明等原有同步费用，不再使用旧累计值。没有增加私人包费用。
+- 原文准入在估算时包含代次字段；归档及署名也冻结入场代次，排队请求不能越过清除／重新开启进入新空间。个人归档上传副本使用可清除载荷。同步投影保留实际账户提交检查。
+- 旧容量夹具的树改用临时私人载荷；归档损坏验收改为在临时数据库中模拟所有者离线损坏并恢复约束，继续核对真实 HTTP 500，不把移除全局文件后的 ENOENT 当作产品故障。先提交写入、后降低容量的并发测试改在实际提交锁上等待，区别于入场时短事务。
+- 迁移文件与 eef4ca12 一致，没有改任何 SQL／序号。一次重放解决冲突时发现模型数组合并不完整，已中止该次变基并重新执行；最终历史不含该次中间结果。保留原失败与修正结果如下。
+
+验证：
+
+- 首轮烟测 43 项：36 通过、7 失败、0 跳过；失败为旧全局树夹具、原文估算漏字段、并发夹具停在入场锁及损坏测试仍改全局文件。随后一轮 29 项：28 通过、1 失败，损坏夹具被数据库摘要约束正确拦截；改为临时所有者离线损坏后恢复约束。
+- 最终容量、同步提交、归档烟测：`node --test --test-concurrency=1 hub/knowledge/capacity.test.ts hub/knowledge/personal-sync/commit.test.ts tests/acceptance/51-source-archive.test.ts`，30 通过、0 失败、0 跳过，退出 0；含 3 项新集成回归。
+- `node node_modules/typescript/bin/tsc --noEmit`、`node tools/gen-contracts.ts --check`、`git diff --check` 通过。生成器确认 177 个文件一致。
+- 同步基线已批准的显示值为“已清除的私人文件夹”，继承测试仍断言“个人文件夹”；只同步该断言，`node --test contracts/src/vocab-axes.test.ts`，9 通过、0 失败、0 跳过，退出 0。
+- 其余变基受影响组：全部 `hub/runs/engine/**/*.test.ts`、`packs/workflow/**/*.test.ts`、`contracts/src/*.test.ts`，以及 environment、PG 18 ownership、lock-namespaces、diagnostics、migrations.snapshot、member-freeze、console-sync-local、console-sync-design 和验收 12、46～50、52～53，统一 `node --test --test-concurrency=1`，并设 `CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin`。3230 项，3228 通过、2 失败、0 跳过，退出 1；两处为上述旧显示断言及原容量错误处理的字段数组触发词表静态检查。字段改为受 `CapacityUsage` 约束的结构键表，不手写知识视图轴，也不改测试规则。原词表检查以 `--test-name-pattern='uses generated axes'` 重跑，1 通过、0 失败、0 跳过；容量展示测试 2 通过、0 失败、0 跳过。未重复整个大组，不把首轮记为全绿。
+- `node --test --test-concurrency=2 ".github/checks/*.test.ts"`：315 通过、0 失败、0 跳过，退出 0。所有列出的通过均为本工作树本轮实际执行；没有运行全量 unit／acceptance、来源工具检查、生产部署或真实系统验证。来源工具没有变动，因而未运行 verify:references／test:references；删除、私人包清除与新迁移测试属于后续步骤，尚未运行。

@@ -503,3 +503,9 @@ adjustment and owner/admin rejection facts, plus the UI-only `capacity_unit` axi
 `SPACE_CAPACITY_EXCEEDED` changes; record shapes, fields, codes, protocol modes and migrations do not. Static copy stays
 in the console. Regeneration also updates the four skill protocol mirrors, with manifest-only patch bumps to html/mindmap
 1.0.13 and xml/workbook 1.0.14. No skill behavior or source provenance changes.
+
+### Decision 91 integration with decision 89
+
+Replaying the four approved finishing blocks onto sync model 26 yields models 27–30. Model 30 contains all sync and
+finishing rules; it introduces no additional decision. The generated protocol mirrors and manifest-only skill patches
+are html/mindmap 1.0.14 and xml/workbook 1.0.15. Earlier phase paragraphs retain their original model/version history.

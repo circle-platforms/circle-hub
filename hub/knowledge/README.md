@@ -1462,3 +1462,11 @@ Capacity refusals are re-evaluated on a memory retry with the same client key, s
 writes still replay their immutable receipt. Other cached refusals retain their previous idempotency semantics. Active
 memory/context limits remain separate. Personal workflow/skill bytes, sync staging, indexes and physical storage blocks
 are outside this ledger's approved scope. Synchronization admission and purge wait for the sync rebase/block 5.
+
+### Native capacity and sync integration
+
+Capacity projections and native admission use the records package's shared verified ledger, including existing staged
+sync metadata. Sync projections use the same committing account guard as native writes. Archive and attribution
+admission freeze the personal epoch before asynchronous work and recheck it inside the space transaction; an old
+request cannot recreate private state after purge/resume. A saved personal upload copy is scoped storage, preserving
+the original upload's independent run declaration and access.

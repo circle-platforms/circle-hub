@@ -184,7 +184,7 @@ export class MemoryDocuments{
  }
  /** Internal aggregate replacement; no intermediate memory head becomes visible outside this transaction. */
  async syncProjection(by:Principal,epoch:string,rows:Array<{item_id:string;object:string;document?:string;version?:string;title:string;path:string;markdown:string;state:MemoryVersionBody['state']}>,reserved:{bytes:number;documents:number},tx:Transaction){
-  await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await this.#user(by);const index=this.#index(),heads:MemoryHead[]=[],bindings:Array<{kind:import('../../contracts/generated/vocabulary.ts').SyncObjectKind;item_id:string;object_id:string;native:string;locator:string}>=[];
+  await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await lockActive(this.#ctx,by,tx);const index=this.#index(),heads:MemoryHead[]=[],bindings:Array<{kind:import('../../contracts/generated/vocabulary.ts').SyncObjectKind;item_id:string;object_id:string;native:string;locator:string}>=[];
   let active=reserved.bytes,documents=reserved.documents;if(active>index.limits.spaceBytes||documents>index.limits.spaceDocuments)return fail('MEMORY_SPACE_LIMIT');
   const old=await index.heads(by.id,tx);
   for(const row of rows){
@@ -205,7 +205,7 @@ export class MemoryDocuments{
  }
 
  async grant(by:Principal,input:{path:string;audience:KnowledgeGrantee;member?:string|null;revoke?:boolean}){
-  by=await lockActive(this.#ctx,by,tx);const epoch=await personalEpoch(this.#ctx,by.id);const body=MemoryGrantBody.parse({personal_epoch:epoch,space:by.id,path:pathCheck(input.path),audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now(),intent:digest(newId('evt'))});
+  by=await this.#user(by);const epoch=await personalEpoch(this.#ctx,by.id);const body=MemoryGrantBody.parse({personal_epoch:epoch,space:by.id,path:pathCheck(input.path),audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now(),intent:digest(newId('evt'))});
   return this.#queue(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);by=await lockActive(this.#ctx,by,tx);if(body.member){const user=await this.#ctx.records.principals.get(body.member);if(!user||!input.revoke&&user.disabled)return fail('SOURCE_UNAVAILABLE');}
    if(!input.revoke)for(const head of await this.#index().heads(by.id,tx))if(withinSpacePath(head.path,body.path)){const {body:version}=await this.#version(head,head.version,tx);this.#scan(version.title,version.path,await this.#text(version,tx));}
    return this.#ctx.records.store.put({kind:'memory_grant',schema:'memory-grant@1',provenance:'declared',body,index:[{key:'memory.grant.owner',value:by.id},{key:'memory.grant.grantee',value:body.member??'administrators'}]},tx);

@@ -24,7 +24,8 @@ export function capacityInput(bytes:number){
 export function capacityFailure(error:unknown):(CapacityUsage&{requested:number})|null{
  if(!(error instanceof KnowledgeError)||error.code!=='SPACE_CAPACITY_EXCEEDED')return null;const facts=error.detail.capacity;
  if(!facts||typeof facts!=='object')return null;const data=facts as Record<string,unknown>;
- for(const key of ['used','limit','remaining','over','requested','knowledge','memory'])if(typeof data[key]!=='number'||!Number.isSafeInteger(data[key])||Number(data[key])<0)return null;
+ const required:Record<keyof(CapacityUsage&{requested:number}),0>={used:0,limit:0,remaining:0,over:0,requested:0,knowledge:0,memory:0};
+ for(const key of Object.keys(required))if(typeof data[key]!=='number'||!Number.isSafeInteger(data[key])||Number(data[key])<0)return null;
  return data as unknown as CapacityUsage&{requested:number};
 }
 export function knowledgeMessage(error:KnowledgeError):string{

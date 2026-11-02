@@ -942,3 +942,12 @@ re-enables only still-live tokens and current grants. Closed console sessions an
 `sourceForRun` also refuses grant-based access through a disabled personal workflow owner; the run's own reader authority
 and the engine's frozen internal evaluation remain separate. Synthetic concurrency tests observe the waiting PostgreSQL
 row lock rather than inferring lock order from a delay. No personal purge or sync path is implemented here.
+
+### Capacity ledger across personal sync and native writes
+
+`historyUsage`, `chargedBytes`, `safeBytes` and their aggregate types are exported through `api.ts`. The ledger reads
+verified logical record bodies and exact source sizes, never their historical cumulative counters. Knowledge and sync
+admission share this implementation; `personalSync.usageForSpace` adds the existing scoped transport ledger without
+creating a personal root or exporting a snapshot. It is an internal metadata port: callers enforce owner/admin access.
+The epoch is part of native version metadata before its fixed-point charge is calculated. No migration or additional
+pack charge is introduced by this integration.

@@ -1,8 +1,7 @@
 // Decision 91 block 2: real loopback Hub, synthetic originals, sessions and current access checks.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {chmod,writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import pg from 'pg';
 import {createTestHub} from '../../hub/server/testing-real.ts';
 import {openConsole,type ConsoleClient} from './support/console.ts';
 import {wordingProblems} from '../../hub/server/console/testing-wording.ts';
@@ -83,6 +82,12 @@ test('attachments preserve exact bytes, remain non-executable and refuse revoked
   await spaces.grant(member.principal,{path:'/共享下载',audience:'member',member:peer.user.id,revoke:true});const denied=await reader.get(download(plain.body.sha256,plain.digest)),missing=await reader.get(download('f'.repeat(64),'e'.repeat(64)));assert.equal(denied.status,404);assert.equal(denied.body,missing.body);assert.equal(denied.headers['content-disposition'],undefined);
   for(const tier of ['retain_only','function_bytes_only']as const){const held=await hub.records.artifacts.ingest({bytes:Buffer.from('合成限制档位 '+tier),mediaType:'text/plain',origin:{upload:{session:'synthetic-held-'+tier}},author:{user:member.user.id},provenanceType:'declared',readTier:tier,visibility:{readers:[member.user.id],admins:true,packs:[],shareable:false}});assert.equal((await web.get(download(held.body.sha256,held.digest))).status,404);}
   const source=spaces.source.bind(spaces);spaces.source=async(...args)=>{const result=await source(...args);return result?.bytes?{...result,bytes:Buffer.from('synthetic-invalid-reader-bytes')}:result;};const inconsistent=await web.get(download(file.body.sha256,file.digest));assert.equal(inconsistent.status,500);assert.ok(!inconsistent.body.includes('synthetic-invalid-reader-bytes'));spaces.source=source;
-  const path=join(hub.records.dataDir,'objects',file.body.sha256.slice(0,2),file.body.sha256);await chmod(path,0o600);await writeFile(path,Buffer.from('synthetic-corruption'));const corrupt=await web.get(download(file.body.sha256,file.digest));assert.equal(corrupt.status,500);assert.ok(!corrupt.body.includes('synthetic-corruption'));await writeFile(path,bytes);await chmod(path,0o444);
+  // Simulate offline corruption as the temporary database owner, never as the runtime role.
+  const db=new pg.Client({...hub.records.database,ssl:false});await db.connect();try{
+   await db.query('ALTER TABLE personal_payloads DISABLE TRIGGER USER');await db.query('ALTER TABLE personal_payloads DROP CONSTRAINT personal_payloads_check');
+   await db.query('UPDATE personal_payloads SET data=$1 WHERE owner=$2 AND sha256=$3',[Buffer.from('synthetic-corruption'),member.user.id,file.body.sha256]);
+   const corrupt=await web.get(download(file.body.sha256,file.digest));assert.equal(corrupt.status,500);assert.ok(!corrupt.body.includes('synthetic-corruption'));
+   await db.query('UPDATE personal_payloads SET data=$1 WHERE owner=$2 AND sha256=$3',[bytes,member.user.id,file.body.sha256]);
+  }finally{await db.query("ALTER TABLE personal_payloads ADD CONSTRAINT personal_payloads_check CHECK (encode(sha256(data),'hex')=sha256)");await db.query('ALTER TABLE personal_payloads ENABLE TRIGGER USER');await db.end();}
  }finally{await hub.close();}
 });
