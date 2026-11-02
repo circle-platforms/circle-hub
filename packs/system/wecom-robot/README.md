@@ -89,3 +89,60 @@ registers: endpoints and fixed CA per environment class; the `credential` as `${
 tools and the submit call with its write declaration (effect class, retry safety, parameter roles per D01 R[11]);
 JSON pointers into the answer; the premise certifications; and what happens outside the Hub, disclosed. The values
 are deployment data; nothing of them belongs in this repository.
+
+## Candidate write declarations for the delivery channel (D2)
+
+Each block is a `write-declaration@1` for the submit call of the option; every one parses against
+`WriteDeclaration.safeParse` (`node --experimental-strip-types` on the contracts schema, 2026-11-02). They are shape
+examples with synthetic keys, not registrable resources: the endpoints, tools and calls around them stay deployment
+data (executor@1), and the retry-safety values below are declarations of intent — every premise behind them is false
+until certified on the target and its version (D02 R[0]) and is treated at its weakest before that.
+
+A. group robot webhook (simplest active push; a sent message cannot be recalled or read back):
+
+```json
+{ "interaction": "submit_then_read", "effect_class": "notification", "retry_safety": "duplicate_tolerant",
+  "signing": "service_on_behalf", "reversible": false,
+  "target_key": { "group": "syn_review_group", "request": "rec:<64hex>" },
+  "audience": "group:syn_review_group",
+  "evidence": { "call": "send", "pointer": "/errcode" },
+  "refusal": { "stage": "/errcode", "reached_device": "/errmsg" }, "writes_hub_records": false }
+```
+
+`retry_safety: duplicate_tolerant` matches the current protocol (the webhook accepts no client dedup key): a lost
+reply is resent once and marked 可能重复 (D03 R[3]); satisfaction is 已生效 because a notification cannot be read
+back (B06). `target_key` binds the Hub request digest so the resend is the same intent.
+
+B. app message push (reaches private chat; the answer carries a msgid, and recall exists, so a pre-send check and a
+possible compensation become expressible):
+
+```json
+{ "interaction": "submit_then_read", "effect_class": "notification", "retry_safety": "unsafe",
+  "signing": "service_on_behalf", "reversible": true,
+  "target_key": { "msgid_template": "/msgid", "request": "rec:<64hex>" },
+  "audience": "user:syn_u_001",
+  "evidence": { "call": "send", "pointer": "/msgid" },
+  "before_state": { "call": { "tool": "recall_check", "arguments": { "msgid": "{msgid}" }, "timeout_ms": 15000 },
+                    "pointer": "/list", "expected": "unknown", "conditional_write": false },
+  "refusal": { "stage": "/errcode", "reached_device": "/invaliduser" }, "writes_hub_records": false }
+```
+
+Declared `unsafe` on purpose: resend without a server-side key duplicates the message, so a lost reply goes to the
+six dispositions (核对 first: read the target's own request records / `invaliduser`, per B07 R[3]). `reversible: true`
+only if the recall route is certified; `/invaliduser` is where a partial audience refusal appears.
+
+C. in-session reply only (no Hub-initiated push at all; the host answers within the frame it was asked in):
+
+```json
+{ "interaction": "submit_then_read", "effect_class": "notification", "retry_safety": "same_key_safe",
+  "signing": "service_on_behalf", "reversible": false,
+  "target_key": { "req_id": "frame.headers.req_id", "stream_id": "uuid-v4" },
+  "audience": "user:syn_u_001",
+  "evidence": { "call": "reply_stream", "pointer": "/errcode" },
+  "refusal": { "stage": "/errcode", "reached_device": "/errcode" }, "writes_hub_records": false }
+```
+
+Under C nothing is registered at all today: the stream retry (846608 -> new stream_id) stays a disclosed host-side
+resend and B07 delivery remains console + tool results. Recording C as an effect would require the deployed Hub to
+call back into the host (the executor would be the bot itself); that is the honest meaning of "reply only" — the
+review loop can then never be Hub-initiated.
