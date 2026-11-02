@@ -400,8 +400,9 @@ clients cannot set it as a permission exception. Old records and applied migrati
 
 Model 22 registers the phase-three security restrictions and `PACK_PERSONAL_CAPABILITY_DENIED`. Personal workflow and
 skill methods cannot declare team resource inputs, leases or external effects; both publication and start enforce it.
-The four generic skill protocol mirrors are regenerated, with only patch manifests advancing HTML/mindmap to 1.0.8 and
-XML/workbook to 1.0.9. Their parsing business code is unchanged.
+The four generic skill protocol mirrors are regenerated, with only patch manifests advancing HTML/mindmap to 1.0.9 and
+XML/workbook to 1.0.10. Their parsing business code is unchanged. A later protocol change requires another patch even
+within the same unmerged model revision; a manifest version cannot name two committed sets of bytes.
 
 The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team verification cannot use personal parser capabilities, including through indirect personal grounds. Protocol mirrors and the four patch manifests are regenerated without parser business changes.
 

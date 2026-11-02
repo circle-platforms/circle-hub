@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "xml-format",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "kind": "skill",
   "title": "XML 格式",
   "description": "按原件结构读取通用有序 XML 元素树与命令树，不承担工作角色判断",

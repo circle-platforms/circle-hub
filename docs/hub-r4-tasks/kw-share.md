@@ -66,7 +66,7 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 
 ## 做了的
 
-- 本轮 CI 与安全复核：普通本人上传的逐运行声明、管理员本人上传的团队导入声明与缺失同形规则已落实；撤销了扩大合成夹具 ACL 的绕行。安全附页高 1／高 2／中 2 的个人能力限制、高 3 的受理原始提交、中 1 的团队解析器、低 1 的受众限定撤回提示、低 2 的目标目录扫描均有回归和本机提交。当前模型 22，四个通用技能仅同步协议镜像与补丁清单（HTML／思维导图 1.0.8，XML／工作簿 1.0.9）。做法、初次失败与复查见末尾各节；本轮完整验证按协调者的明确要求运行。
+- 本轮 CI 与安全复核：普通本人上传的逐运行声明、管理员本人上传的团队导入声明与缺失同形规则已落实；撤销了扩大合成夹具 ACL 的绕行。安全附页高 1／高 2／中 2 的个人能力限制、高 3 的受理原始提交、中 1 的团队解析器、低 1 的受众限定撤回提示、低 2 的目标目录扫描均有回归和本机提交。当前模型 22，四个通用技能仅同步协议镜像与补丁清单（HTML／思维导图 1.0.9，XML／工作簿 1.0.10）。做法、初次失败与复查见末尾各节；本轮完整验证按协调者的明确要求运行。
 
 - 第三阶段收尾：已承接第二阶段 `kw-spaces-pr` 的 `8e513d2e`，决定 88 的三条后端要求与最小页面已实现；提交共享、个人工作流／技能、全部实际读者、被拒原始参数及冻结采集身份均有定向回归。临时防护文件保持删除，缺省知识端口由完整实现保护。仍只作本机提交，未推送、未建 PR；第四／第五阶段及页面重做不在本阶段启动。
 
@@ -81,6 +81,8 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 ## 验证
 
 以下保留初次阶段及各次变基的历史验证。CI 与安全修正的结果以末尾最新复查为准；本轮完整工作流／引擎与完整验收由 Claude 明确要求，不沿用初次阶段的通过或未运行状态。
+
+- 本轮最新结果：完整工作流／引擎 2761 项通过；完整验收首跑 220／222，通过修正的两个旧夹具文件另跑 9 项通过；补充组修正后 236 项通过，`ownership` 配置现有 PG 18 工具后另跑 3 项通过；技能版本收尾 238 项通过。各轮及命令详见末尾“本轮最终验证与收尾”，不合并重叠计数或把首跑失败记为通过。
 
 - 初次阶段收尾记录：受影响验收 15 文件 55 项通过，0 失败、0 跳过；缺省端口修正后 36 项定向复查通过。相关包首轮 655 项中 654 通过，1 个残留版本断言修正后该文件 8 项通过；所有权真实平台整组缺 PG 18 客户端而跳过。类型与 151 文件生成核对通过，文档 288 项通过。分组有重叠，不合计为总数；本轮 CI／安全修正的完整复查另记在末尾，不沿用这些旧计数。
 
@@ -301,3 +303,33 @@ CI 修复提交前的定向收尾：`node --test --test-concurrency=1 --test-rep
 - 输入绑定的补充检查首轮 236 项中 233 通过、3 失败；均为 `hub/refs/diagnostics.test.ts` 使用不含包元数据的旧低层夹具时发生 TypeError。能力检查容忍这个缺省值；真实 `start_run` 仍先取得并校验包，个人包的发布／启动限制不变。随后 `node --test --test-concurrency=1 --test-reporter=tap hub/refs/diagnostics.test.ts hub/runs/engine/personal-capabilities.test.ts hub/runs/engine/quote-fragments.test.ts` 31 项通过、0 失败、0 跳过，包括另一成员私有来源与不存在 sha 的同形回归。
 
 安全附页的七项均已处理：高 1／高 2／中 2 共用个人能力入口检查且各有独立回归，高 3 复查受理原始提交，中 1 限定团队解析器，低 1 按当前读者过滤撤回引用，低 2 扫描目标目录并省略敏感回执路径。没有降低私有来源、个人凭据或他人上传的拒收规则，没有增加原文全局授权。
+
+补充组在缺省元数据兼容修正后重新运行，236 项通过、0 失败。命令为 `node --test --test-concurrency=1 --test-reporter=tap`，文件集如下（与首跑相同）：
+
+- `hub/server/{assemble/testing-real,console-places,submit-load,readers-sharing,console-sharing,docs,text}.test.ts`
+- `hub/records/{artifacts,lock-namespaces,password}.test.ts`
+- `hub/knowledge/{spaces,spaces-review,sharing}.test.ts`、`hub/runs/packs/personal.test.ts`
+- `hub/refs/{skills-personal,resolve,diagnostics}.test.ts`
+- `hub/platform/{ownership,environment}.test.ts`
+- `contracts/src/{tool-shapes,published,codes,sharing,model-w04-w10-v07,vocab-axes}.test.ts`
+
+跳过及补跑单列：`hub/platform/ownership.test.ts` 的真实平台整组首轮未配置可用的 PostgreSQL 18 工具目录而跳过，不能因 Node 叶测试 skipped=0 计为通过。Claude 随后指出本机已有工具，设置 `CIRCLE_HUB_LIBPQ_BIN` 指向该目录后，运行 `node --test --test-concurrency=1 --test-reporter=tap hub/platform/ownership.test.ts`，3 项通过、0 失败、0 跳过：运行角色迁移及不可改写、备份恢复后的归属与权限、部署角色命名均实际执行。其余上述组及验收无跳过，本轮要求范围没有遗留跳过。未另跑全量 `test:unit`、Linux 隔离、除 ownership 所含场景之外的完整备份／恢复／部署套件或 `verify:references`／`test:references`；没有改来源归档工具或批准导入，不扩大这些检查范围。
+
+本轮本机签署提交：
+
+| 提交 | 内容 |
+| --- | --- |
+| `5ec2aa27` | 逐运行上传声明、精确核验结果和缺失同形；恢复夹具原权限 |
+| `4bd39057` | 高 1、高 2、中 2：个人工作流／技能的能力限制与独立回归 |
+| `9043ee58` | 高 3：受理原始提交的当前依据读权 |
+| `246820a1` | 中 1：团队核验只使用团队解析器 |
+| `dd41d560` | 低 2：目标目录扫描及安全回执 |
+| `ebdf5f6f` | 低 1：撤回引用按读者过滤、隐藏部分只给数量 |
+| `f5b54737` | 缓存重放与并发收回时的提交者同形和成功引文边界 |
+| `78bf91f4` | 低层输入兼容与两个旧验收夹具；原有安全断言保留 |
+
+只在 `kw-share-local` 提交，未推送、未创建 PR。控制台分支四步提交保留，第五步保存在专用暂存中，工作树干净；先报告本轮，再承接修正继续控制台任务。
+
+文档检查首轮 289 项中 288 通过、1 失败：模型 22 的第二次协议变更更新了四个技能的镜像和文件清单，却漏升补丁版本，违反已提交版本不得换字节的规则。保持镜像及技能业务代码原样，将 HTML／思维导图升到 1.0.9、XML／工作簿升到 1.0.10；只改已获授权的四份 `pack.json`，不改版本检查或放宽断言。随后复查当前版本读取、发布／安装、个人解析器与相关沙箱验收，具体结果续记如下。
+
+版本收尾复查：类型检查通过；`node --test --test-concurrency=1 --test-reporter=tap` 运行 `hub/refs/{skills,skills-personal}.test.ts`、`hub/runs/packs/{registry,personal}.test.ts`、`packs/workflow/case-review/packs.test.ts`、`hub/server/assemble/testing-real.test.ts`、`packs/workflow/template-gap/engine.test.ts`、`tests/acceptance/{01-normal-review,28-device-run,28-jev-skill,47-knowledge-sharing}.test.ts` 与 `packs/skill/**/*.test.ts`，238 项通过、0 失败、0 跳过。完整工作流／引擎轮之后只有低层兼容、旧夹具与技能版本清单收尾，分别执行上述受影响检查，没有重复运行整个工作流／引擎或完整验收集。

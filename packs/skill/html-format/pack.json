@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "html-format",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "kind": "skill",
   "title": "HTML 格式",
   "description": "按原件结构读取通用 HTML 块盒与链接，不承担工作角色判断",
