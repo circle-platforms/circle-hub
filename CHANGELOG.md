@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Prevent temporary type shadowing in every owner-defined personal storage function.
+
 - Apply personal sync snapshots atomically with state comparison, deterministic conflicts and fresh evidence checks.
   Console and MCP writes share the epoch and capacity boundary; manifest sync does not install workflows.
 

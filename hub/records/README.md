@@ -818,3 +818,8 @@ Commit receipts bind the operation to its session and request, including failed-
 staged objects and return the caller's latest state. Observations and receipts are private removable payloads; action
 audits contain metadata only. Native logical history and staged objects share quota accounting, with projection credits
 preventing double billing. Frozen receipt size is included in usage. Result pages respect item and wire-byte budgets.
+
+The follow-up security review hardens every owner-defined function with `search_path=pg_catalog,public,pg_temp` and
+qualified parameter, return and local types. A synthetic runtime-domain exploit first reproduced history rewriting;
+the regression now checks unchanged bytes and every definer's catalog configuration. Undeployed migrations 14–16
+were reviewed under the coordinator's explicit correction; no conversion exemption or runtime write grant was added.

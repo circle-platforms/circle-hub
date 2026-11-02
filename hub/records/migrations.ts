@@ -384,7 +384,7 @@ BEGIN
  END LOOP;
  END LOOP;
 END $fn$;
-CREATE FUNCTION hub_track_object_holds() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+CREATE FUNCTION hub_track_object_holds() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER
  SET search_path=pg_catalog,public,pg_temp AS $fn$
 DECLARE r public.records%ROWTYPE;
 BEGIN
@@ -457,8 +457,8 @@ CREATE FUNCTION hub_read_records() RETURNS TABLE(seq bigint,id text,digest text,
  LEFT JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(b.owner,b.epoch,b.sha256)
  WHERE NOT EXISTS(SELECT 1 FROM public.personal_purges x WHERE (x.owner,x.epoch)=(b.owner,b.epoch))
 $fn$;
-CREATE FUNCTION hub_purge_personal(o text,e text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
- SET search_path=pg_catalog,public AS $fn$
+CREATE FUNCTION hub_purge_personal(o pg_catalog.text,e pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
 BEGIN
  PERFORM 1 FROM public.personal_spaces WHERE owner=o AND epoch=e FOR UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='P0002'; END IF;
@@ -483,8 +483,8 @@ CREATE TABLE personal_legacy_ready (record text PRIMARY KEY REFERENCES records(d
 CREATE TRIGGER personal_legacy_ready_append_only BEFORE UPDATE OR DELETE ON personal_legacy_ready FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_legacy_ready_no_truncate BEFORE TRUNCATE ON personal_legacy_ready FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 -- A runtime INSERT cannot shadow a team record or manufacture a cleared capsule.
-CREATE FUNCTION hub_check_personal_binding() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
-DECLARE r records%ROWTYPE; p bytea; b json; h text;
+CREATE FUNCTION hub_check_personal_binding() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE r public.records%ROWTYPE; p pg_catalog.bytea; b pg_catalog.json; h pg_catalog.text;
 BEGIN
  SELECT * INTO r FROM records WHERE digest=NEW.record;
  SELECT data INTO p FROM personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256;
@@ -527,9 +527,9 @@ BEGIN
  IF FOUND THEN RETURN QUERY SELECT child->>'digest' FROM json_array_elements(COALESCE(replace(convert_from(data,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::json->'children','[]'::json)) child;END IF;
 END $fn$;
 REVOKE ALL ON FUNCTION hub_personal_tree_children(text,text,text) FROM PUBLIC;
-CREATE FUNCTION hub_finish_personal_record(d text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+CREATE FUNCTION hub_finish_personal_record(d pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
  SET search_path=pg_catalog,public,pg_temp AS $fn$
-DECLARE x record;b json;missing boolean;hashes text[];
+DECLARE x pg_catalog.record;b pg_catalog.json;missing pg_catalog.bool;hashes pg_catalog.text[];
 BEGIN
  SELECT r.kind,r.body AS stored_marker,q.*,p.data INTO x FROM public.records r JOIN public.personal_record_bindings q ON q.record=r.digest
  JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(q.owner,q.epoch,q.sha256) WHERE r.digest=d;
@@ -556,7 +556,7 @@ BEGIN
  INSERT INTO public.personal_legacy_ready(record) VALUES(d) ON CONFLICT DO NOTHING;
 END $fn$;
 REVOKE ALL ON FUNCTION hub_finish_personal_record(text) FROM PUBLIC;
-CREATE FUNCTION hub_finish_personal_retirement(h text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+CREATE FUNCTION hub_finish_personal_retirement(h pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
  SET search_path=pg_catalog,public,pg_temp AS $fn$
 BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.personal_legacy_retire WHERE sha256=h)
@@ -568,7 +568,7 @@ BEGIN
  INSERT INTO public.personal_legacy_retired(sha256) VALUES(h) ON CONFLICT DO NOTHING;
 END $fn$;
 REVOKE ALL ON FUNCTION hub_finish_personal_retirement(text) FROM PUBLIC;
-CREATE FUNCTION hub_active_personal_insert() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+CREATE FUNCTION hub_active_personal_insert() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER
  SET search_path=pg_catalog,public,pg_temp AS $fn$
 BEGIN
  PERFORM 1 FROM public.personal_spaces WHERE owner=NEW.owner AND epoch=NEW.epoch AND mode='hub' FOR SHARE;
@@ -582,7 +582,7 @@ REVOKE ALL ON FUNCTION hub_active_personal_insert() FROM PUBLIC;
 CREATE TRIGGER personal_payloads_active BEFORE INSERT ON personal_payloads FOR EACH ROW EXECUTE FUNCTION hub_active_personal_insert();
 CREATE TRIGGER personal_objects_active BEFORE INSERT ON personal_objects FOR EACH ROW EXECUTE FUNCTION hub_active_personal_insert();
 CREATE INDEX personal_record_bindings_scope ON personal_record_bindings(owner,epoch,record);
-CREATE FUNCTION hub_resume_personal(o text,e text,n text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+CREATE FUNCTION hub_resume_personal(o pg_catalog.text,e pg_catalog.text,n pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
  SET search_path=pg_catalog,public,pg_temp AS $fn$
 BEGIN
  PERFORM 1 FROM public.personal_spaces WHERE owner=o AND epoch=e AND mode='local' FOR UPDATE;
@@ -638,9 +638,9 @@ CREATE TABLE personal_sync_operations (
 CREATE TABLE personal_sync_aborts (
  session_id uuid PRIMARY KEY REFERENCES personal_sync_sessions(id),at timestamptz NOT NULL
 );
-CREATE FUNCTION hub_collect_personal_sync(o text,e text,t timestamptz) RETURNS integer LANGUAGE plpgsql SECURITY DEFINER
- SET search_path=pg_catalog,public AS $fn$
-DECLARE removed text[];total integer;
+CREATE FUNCTION hub_collect_personal_sync(o pg_catalog.text,e pg_catalog.text,t pg_catalog.timestamptz) RETURNS pg_catalog.int4 LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE removed pg_catalog.text[];total pg_catalog.int4;
 BEGIN
  -- Only unretained transport objects with no live session may be collected; ordinary personal objects stay intact.
  WITH RECURSIVE roots(id) AS (
@@ -689,7 +689,7 @@ CREATE TRIGGER personal_sync_aborts_no_truncate BEFORE TRUNCATE ON personal_sync
  {version:16,name:'personal_sync_commit',sql:`ALTER TABLE personal_sync_heads ADD COLUMN native_state text, ADD COLUMN memory_projection text, ADD COLUMN conflicts integer NOT NULL DEFAULT 0;
 CREATE FUNCTION hub_lock_personal_scope(o pg_catalog.text) RETURNS TABLE(epoch pg_catalog.text,mode pg_catalog.text) LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$ SELECT p.epoch,p.mode FROM public.personal_spaces p WHERE p.owner=o FOR SHARE $fn$;
 REVOKE ALL ON FUNCTION hub_lock_personal_scope(pg_catalog.text) FROM PUBLIC;
-CREATE FUNCTION hub_replace_personal_memory(o text,e text,h jsonb) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+CREATE FUNCTION hub_replace_personal_memory(o pg_catalog.text,e pg_catalog.text,h pg_catalog.jsonb) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
  SET search_path=pg_catalog,public,pg_temp AS $fn$
 DECLARE x pg_catalog.jsonb;b pg_catalog.jsonb;d pg_catalog.text;v pg_catalog.text;history pg_catalog.int8;
 BEGIN
