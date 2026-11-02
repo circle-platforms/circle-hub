@@ -259,6 +259,7 @@
 ## 做了的
 
 - #132 冷读视图 CI 已定位到 `bcb4c741` 的扫描器版本变化：完整输出仅有四处组成／来源清单／游标引用变化，树根和内容相同。补齐来源观察与分页绑定回归，再按下文“冷读视图字节复核”说明更新已复核的固定摘要；字节数、条目数及全部性能限制不变。
+- #132 个人技能依赖 CI：更新旧夹具的授权顺序，明确检查“依赖尚未授权时拒绝父技能授权”，并增加合法授权后收回依赖、冻结立即拒绝的回归；没有放宽 L1 的授权前检查或运行时依赖读取规则。
 
 - 独立安全复核的 8 项及 3 条设计说明均已修正，整理为 8 个本机签署提交；原审查意见保留。每项做法、复现、检查结果及未运行项见末尾“安全审查修正记录”和“安全复核收口”。
 
@@ -606,4 +607,25 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
   'packs/workflow/knowledge-contribution/**/*.test.ts' \
   hub/platform/environment.test.ts hub/platform/ownership.test.ts \
   hub/refs/diagnostics.test.ts hub/records/lock-namespaces.test.ts
+```
+
+### 个人技能依赖 CI 补查（#132，Claude 2026-11-02）
+
+#### 做了的
+
+- 原 `hub/refs/skills-personal.test.ts` 第 40 行用例先给 Bob 授权 Carol 的父技能，再授权其个人依赖。L1 的授权前检查已经要求同一受众能读取本人每个个人依赖，因而第一笔授权应拒收。失败来自旧夹具试图建立现在禁止的不完整授权，不是冻结解析器丢失命名空间；不撤回已修复的依赖检查。
+- 将旧第一笔授权改为明确的拒收断言，保留 Bob 无法冻结的原断言；先给依赖授权时仍不能冻结父技能，补上父技能授权后才冻结两项。再收回依赖而保留父技能授权，冻结仍立即失败，恢复后才能冻结。本人锁定的两个空间断言及团队发布拒绝显式个人依赖的原断言不变。
+- 这是对确实必须拒收的旧期待的修正；只改测试，不改生产权限、解析、输入或依据代码，也没有把失败测试删掉或标为跳过。
+
+#### 验证
+
+- 原个人技能和脚本门禁两文件先运行 21 项，19 通过、2 失败、0 跳过，与 Claude 报告一致。修正后定向组 42 项中 41 通过、1 个新断言失败、0 跳过：父技能本身未授权时应报“个人通用技能不可读取”，而旧用例的“缺少可读取”用于父技能已授权、依赖不可读。把前两种状态的断言分别对应实际缺失层级后，重跑原文件 2 项通过、0 失败、0 跳过；保留依赖被收回后的原缺失断言。组中其他 40 项已通过，包含场景 47、L1 发布／预检和四个必跑文件（PG 18 ownership 实际执行）。类型检查通过，没有修改生产错误行为来迎合测试。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  hub/refs/skills-personal.test.ts hub/runs/packs/personal.test.ts \
+  tests/acceptance/47-knowledge-sharing.test.ts \
+  hub/platform/environment.test.ts hub/platform/ownership.test.ts \
+  hub/refs/diagnostics.test.ts hub/records/lock-namespaces.test.ts
+node --test --test-reporter=tap hub/refs/skills-personal.test.ts
 ```

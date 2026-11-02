@@ -48,7 +48,14 @@ test('personal dependency closures freeze their owner namespace and require gran
   const dependencies=[{pack:parent.manifest.id,space:bed.carol.id}];
   const frozen=await parsers.freeze!(dependencies,{principal:bed.carol,space:bed.carol.id});
   assert.deepEqual(frozen.skills.map(lock=>[lock.space,lock.pack]),[[bed.carol.id,parent.manifest.id],[bed.carol.id,child.manifest.id]]);
+  await assert.rejects(bed.registry.personal!.grant(bed.carol,parent.manifest.id,{audience:'member',member:bed.bob.id}),/授权前检查未通过/);
+  await assert.rejects(parsers.freeze!(dependencies,{principal:bed.bob}),/个人通用技能不可读取/);
+  await bed.registry.personal!.grant(bed.carol,child.manifest.id,{audience:'member',member:bed.bob.id});
+  await assert.rejects(parsers.freeze!(dependencies,{principal:bed.bob}),/个人通用技能不可读取/);
   await bed.registry.personal!.grant(bed.carol,parent.manifest.id,{audience:'member',member:bed.bob.id});
+  assert.equal((await parsers.freeze!(dependencies,{principal:bed.bob})).skills.length,2);
+  // Revocation after a valid parent grant must still be checked at freeze time.
+  await bed.registry.personal!.grant(bed.carol,child.manifest.id,{audience:'member',member:bed.bob.id,revoke:true});
   await assert.rejects(parsers.freeze!(dependencies,{principal:bed.bob}),/缺少可读取/);
   await bed.registry.personal!.grant(bed.carol,child.manifest.id,{audience:'member',member:bed.bob.id});
   assert.equal((await parsers.freeze!(dependencies,{principal:bed.bob})).skills.length,2);
