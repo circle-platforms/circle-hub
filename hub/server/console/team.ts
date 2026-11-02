@@ -31,7 +31,7 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
       if (ctx.admin) dialogs.push(publish);
       permissions.push(['角色', uiLabelOf('permission_role', user.role)], ['具有发布权', canPublish ? '是' : '否']);
       if (ctx.admin) permissions.push(['调整发布权', commandLink(publish, '调整')]);
-      if(ctx.admin&&ctx.deps.knowledge.spaces)permissions.push(['个人空间容量',html`<form method="post" action="/console/knowledge/do/quota"><input type="hidden" name="csrf" value="${ctx.csrf??''}"><input type="hidden" name="space" value="${user.id}"><label title="个人空间默认 1 GiB；包括原文、条目与历史版本。调整上限不授予读取个人内容的权限。">容量上限（字节）<input type="number" name="bytes" min="0" max="9007199254740991" step="1" required value="${await ctx.deps.knowledge.spaces.capacity(user.id)}"></label><button type="submit" class="btn">保存容量上限</button></form>`]);
+      if(ctx.admin&&ctx.deps.knowledge.spaces)permissions.push(['个人空间容量',html`<form method="post" action="/console/knowledge/do/quota"><input type="hidden" name="csrf" value="${ctx.csrf??''}"><input type="hidden" name="space" value="${user.id}"><label title="个人内容与历史默认 1 GiB，按逻辑字节计；当前版本搜索索引另受 Hub 的单条与空间限额约束，历史引用仍占磁盘。调整容量不授予读取个人内容的权限。">容量上限（字节）<input type="number" name="bytes" min="0" max="9007199254740991" step="1" required value="${await ctx.deps.knowledge.spaces.capacity(user.id)}"></label><button type="submit" class="btn">保存容量上限</button></form>`]);
       for (const pack of packs) {
         const has = assigned.includes(pack.id);
         const change = commands.memberPack(user.id, pack.id, has);

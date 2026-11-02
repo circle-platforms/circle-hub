@@ -7,7 +7,7 @@ import { SpaceEntryInput, SpaceEntryReceipt, SpaceId, SpaceSearchHit } from './s
 import { KnowledgeSpaceKindSchema, KnowledgeSearchScopeSchema, KnowledgeEntryStatusSchema } from '../generated/vocabulary.ts';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
+import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256,ProtocolError } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
@@ -180,6 +180,7 @@ const KnowledgeNode = z.strictObject({
 });
 
 export const GetNodesOutput = Envelope.extend({
+  warnings:z.array(ProtocolError).max(100).optional().describe('Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present'),
   matches: z.array(SpaceSearchHit).optional(),
   root: Sha256.optional().describe('Knowledge root the nodes belong to'),
   nodes: z.array(KnowledgeNode).optional(),

@@ -25,6 +25,8 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_MAX_UPLOAD_BYTES: '单个上传或对象的字节上限，默认 33554432（32 MiB），最大 268435456（256 MiB）',
   CIRCLE_HUB_MAX_RECORD_BYTES: '单条记录正文（规范化 JSON）的字节上限，默认 16777216（16 MiB）',
   CIRCLE_HUB_MAX_REQUEST_BYTES: '单个 HTTP 请求体的字节上限，默认按上传上限的 base64 长度再加 1 MiB，至少 48 MiB，最大 512 MiB',
+  CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES:'单条知识的索引词项逻辑字节上限，默认 1 MiB，可设 1 KiB 到 16 MiB',
+  CIRCLE_HUB_MAX_SPACE_INDEX_BYTES:'个人、团队或每个产品挂载的当前版本索引逻辑字节上限，分别计量，默认 64 MiB，可设 1 KiB 到 4 GiB；历史引用仍占磁盘',
 } as const;
 
 export type HubEnvironmentName = keyof typeof HUB_ENVIRONMENT;

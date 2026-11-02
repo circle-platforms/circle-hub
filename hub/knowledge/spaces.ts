@@ -1,7 +1,8 @@
 // Personal/team knowledge uses immutable versions and shared content-addressed objects. Every read rechecks current grants.
 import { z } from 'zod';
+import type {ProtocolError} from '../../contracts/src/common.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
-import { KnowledgeEntryStatusSchema, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
+import { KnowledgeEntryStatusSchema, labelOf, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
@@ -182,7 +183,7 @@ export class KnowledgeSpaces {
     return grants.filter(g => g.audience === 'member' ? g.member === by.id : by.role === 'admin').map(g => g.path);
   }
   async mayRead(by: Principal, space: string, path = '/'): Promise<boolean> { return (await this.paths(by, space)).some(parent => withinSpacePath(path, parent)); }
-  async visible(by: Principal, scope: KnowledgeSearchScope = 'all'): Promise<VisibleSpace[]> {
+  async visible(by: Principal, scope: KnowledgeSearchScope = 'all',onUnavailable?:(space:string,error:unknown)=>void): Promise<VisibleSpace[]> {
     by = await this.#user(by);
     const ids = new Set<string>();
     if (scope === 'personal' || scope === 'all')
@@ -198,12 +199,14 @@ export class KnowledgeSpaces {
     }
     const out: VisibleSpace[] = [];
     for (const space of ids) {
+      try{
       const paths = await this.paths(by, space);
       if (!paths.length)
         continue;
       const version = space === by.id || space === 'team' ? await this.ensure(by, space) : await this.current(space);
       if (version)
         out.push({ space, version, paths });
+      }catch(error){if(!onUnavailable)throw error;onUnavailable(space,error);}
     }
     return out;
   }
@@ -483,37 +486,52 @@ export class KnowledgeSpaces {
       const body=await this.#entry(row,tx);if(body)rows.push({...metadata,text:canonicalize([body.content.statement,body.content.data,body.grounds.map(g=>g.quotation)])});
     }
     try{await index.add(version.root,rows,tx);await index.complete(version.root,'/',tx);}
-    catch(error){if(error instanceof RecordsError&&error.code==='SPACE_INDEX_LIMIT')fail('SPACE_INDEX_LIMIT');throw error;}
+    catch(error){if(error instanceof RecordsError&&error.code==='SPACE_INDEX_LIMIT')throw new KnowledgeError(error.message,{code:error.code,fix:error.fix??undefined,detail:error.detail});throw error;}
   }
   async search(by: Principal, text: string, scope: KnowledgeSearchScope = 'all', cursor: string | null = null, limit = 30) {
     if (!text.trim() || text.length > 200 || !Number.isInteger(limit) || limit < 1 || limit > 100)
       fail('SPACE_ENTRY_INVALID');
-    const spaces = await this.visible(by, scope);
-    for (const space of spaces)
+    const warnings:ProtocolError[]=[];
+    const unavailable=(space:string|null,error:unknown,path='/')=>{
+      const limited=(error instanceof RecordsError||error instanceof KnowledgeError)&&error.code==='SPACE_INDEX_LIMIT';
+      const code=limited?'SPACE_INDEX_LIMIT':'SOURCE_UNAVAILABLE';
+      const label=space===null?'当前可读':space==='team'?labelOf('knowledge_space_kind','team'):labelOf('knowledge_space_kind','personal')+(space===by.id?'':' '+space);
+      warnings.push({code,path,message:`${label}知识索引：${limited?error.message:'当前索引未完成或暂不可用'}；未检索该范围`,fix:limited&&error.fix?error.fix:'稍后从第一页重试；仍不可用时请管理员核对索引'});
+    };
+    const visible=await this.visible(by,scope,(space,error)=>unavailable(space,error));
+    const spaces:VisibleSpace[]=[];
+    for(const space of visible)try{
+      if(!this.#ctx.records.spaceIndex)throw new KnowledgeError('知识搜索索引暂不可用');
       await this.#index(space.version);
+      if(!await this.#ctx.records.spaceIndex.ready(space.version.root,'/'))throw new KnowledgeError('知识搜索索引尚未完成');
+      spaces.push(space);
+    }catch(error){unavailable(space.space,error);}
     const products: Array<{
       version: string;
       path: string;
       team: string;
     }> = [];
-    for (const space of spaces.filter(s => s.space === 'team')) {
+    for (const space of visible.filter(s => s.space === 'team')) {
       const readable = await this.#ctx.packs.readableProducts(by);
       for (const mount of space.version.body.products.filter(m => readable.has(m.product))) {
+        try{
         const indexed = await this.#legacyIndex(mount);
         if (!indexed)
-          continue;
-        products.push({ version: indexed.version, path: mount.path, team: space.version.root });
+          throw new KnowledgeError('产品知识索引暂不可用');
         if (!await this.#ctx.records.spaceIndex?.ready(indexed.version, mount.path)) {
-          await this.#ctx.records.spaceIndex?.add(indexed.version, indexed.rows);
+          await this.#ctx.records.spaceIndex?.add(indexed.version, indexed.rows,undefined,'product:'+mount.path);
           await this.#ctx.records.spaceIndex?.complete(indexed.version, mount.path);
         }
+        if(!await this.#ctx.records.spaceIndex?.ready(indexed.version,mount.path))throw new KnowledgeError('产品知识索引尚未完成');
+        products.push({ version: indexed.version, path: mount.path, team: space.version.root });
+        }catch(error){unavailable('team',error,mount.path);}
       }
     }
     const binding = sha256Hex(canonicalize([by.id, text, scope, spaces.map(s => [s.version.root, s.paths]), products, limit]));
     const offset = this.#cursor(cursor, binding);
-    if (!this.#ctx.records.spaceIndex)
-      throw new KnowledgeError('知识搜索索引暂不可用');
-    const rows = await this.#ctx.records.spaceIndex.search(text, [...spaces.map(s => ({ version: s.version.root, paths: s.paths })), ...products.map(p => ({ version: p.version, paths: [p.path] }))], offset, limit + 1);
+    let rows:SpaceSearchRow[]=[];
+    try{rows=await this.#ctx.records.spaceIndex?.search(text, [...spaces.map(s => ({ version: s.version.root, paths: s.paths })), ...products.map(p => ({ version: p.version, paths: [p.path] }))], offset, limit + 1)??[];}
+    catch(error){unavailable(null,error);}
     const matches = [];
     let consumed = 0, size = 0;
     for (const row of rows.slice(0, limit)) {
@@ -543,7 +561,7 @@ export class KnowledgeSpaces {
       }
       consumed++;
     }
-    return { matches, next: rows.length > consumed ? this.#next(binding, offset + consumed) : null };
+    return { matches, next: rows.length > consumed ? this.#next(binding, offset + consumed) : null,...(warnings.length?{warnings:warnings.slice(0,99).concat(warnings.length>99?[{code:'SOURCE_UNAVAILABLE',message:`另有 ${warnings.length-99} 个索引范围未检索`,fix:'稍后从第一页重试；仍不可用时请管理员核对索引'}]:[])}:{}) };
   }
   #cursor(cursor: string | null | undefined, binding: string): number {
     if (!cursor)

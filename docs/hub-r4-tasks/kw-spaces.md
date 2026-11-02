@@ -82,6 +82,8 @@
 
 ## 做了的
 
+- 第二轮复核第 1、2、3、5、6 项：启动前拒收个人导入输入、生产重查防护、事务后保留拒收审计、按空间排队、当前版本累计索引额度与产品独立计量、可配置的两级上限，以及带明确警告的搜索降级。迁移 11 和模型 19 只增加派生计量与搜索警告；旧记录及既有迁移 SQL 不改。实现与逐项回归见页末“第二轮实施与验证”。
+
 - 安全审查第 2 项：在复用旧回执之前检查个人 `tree:` 与 `src:` 依据，包含运行冻结的原件采集；使用注册的 `SPACE_RESULT_GROUNDS_PRIVATE` 拒收，不增加模型修复轮数。仅事实工作流的自动结果也在存运行和共享结果前检查；第三阶段将替换此临时规则。
 - 安全审查第 4 项：追加迁移 10，词项按不可变条目记录保存一次，版本只留引用关系，未变条目不重新读取或分词。单条索引上限 1 MiB、每个空间历史索引上限 64 MiB，按词项逻辑字节计量，不冒充 PostgreSQL 磁盘占用。`ensure` 与搜索／启动运行的读取不排在生产或空间写队列后。导入按完整下一版本预查容量，再用同一连接登记文件、来源和版本；容量不足时不落原文。
 - 安全审查第 7 项：向已授权目录导入原文时做与授权相同的完整字节检查；凭据命中拒收，无法检查的 ZIP、PDF、图片使用 `SPACE_CONTENT_UNINSPECTABLE`。这类文件仍可导入未授权的个人目录，随后授权也会被拒收。
@@ -100,6 +102,8 @@
 - 表单写入统一沿用密码会话、首次改密、同源与 CSRF 检查；管理员无法读取未授权的个人原文或条目，成员不能伪造他人空间写入或额度调整。
 
 ## 验证
+
+- 第二轮复核的逐项命令、通过数与未运行项见页末“第二轮实施与验证”；只执行受影响检查，不运行全量回归。所有权／备份恢复整组因 PG 18 客户端缺失跳过，不算通过。
 
 安全审查收尾（2026-11-02；按分组记录，不累加重复执行的测试）：
 
@@ -187,3 +191,14 @@
 - 第 6 项：`recheckProduction` 在追加重新评估结果前执行同一临时防护，拒收只追加带代码的验证动作，保留原运行与旧结果。真实装配的旧运行夹具明确绑定个人采集，重验不能追加结果；相同字节的独立普通采集可以重验。去掉新运行不应继承的旧喂入边界后，`npm run typecheck` 和 `hub/runs/engine/{production-guard,start-result}.test.ts` 6 项通过，0 失败、0 跳过。
 - 第 3 项：导入事务回滚后，经 records 公共 API 追加实际保留的拒收动作，错误中的动作摘要指向该记录。普通上传保留原路径；个人未授权目录导入、共享目录预查拒收均留下恰好一条，包含无法检查的容器拒收；不保存原文，不改变空间版本。`npm run typecheck` 及 `hub/records/artifacts.test.ts hub/knowledge/spaces-review.test.ts` 最终 19 项通过，0 失败、0 跳过。首轮回归夹具使用扫描器视为占位符的词，改用明确的合成命中模式后重跑，没有放宽扫描或删除测试。
 - 第 5 项的写入队列：进程内按空间分队列，数据库业务锁继续保证同一空间跨进程串行。回归明确阻塞甲的索引追加，乙仍可写目录、收回授权，甲的收回则须按序等待。`npm run typecheck` 和 `hub/knowledge/spaces-review.test.ts tests/acceptance/46-knowledge-spaces.test.ts` 12 项通过，0 失败、0 跳过。累计索引量与引用行说明随第 2 项的计量修改一并收尾。
+
+第 2 项及第 5 项剩余部分的实施方案：追加迁移 11，为派生索引的每个版本／计量范围保存累计值，只累加实际新写入的当前版本引用，不再遍历空间历史。产品挂载使用独立的计量范围；旧索引在迁移时一次回填累计值，旧记录、来源、版本和既有迁移 SQL 不改。单条与当前版本上限进入 Hub 限额配置，拒收说明与处理办法分别给出。搜索只纳入完整可用的范围，其他范围给出注册代码的警告，保留可用匹配，控制台不返回通用 500。为明确返回部分范围的事实，模型升为 19，`get_nodes` 增加可选警告，生成合约及四个必需协议镜像／补丁清单，业务代码不改；第三阶段变基时再顺延模型版本。个人内容历史配额与当前索引配额、历史引用的实际磁盘占用分别说明。
+
+- 第 2 项及第 5 项累计计量：迁移 11 回填每个版本与计量范围的累计值，追加只计实际新引用；相同追加重试不重复计费。当前条目撤回／替代后新版本释放额度，历史引用仍可读；产品独立计量。单条默认 1 MiB、当前版本默认 64 MiB，分别由 `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES`（1 KiB～16 MiB）、`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES`（1 KiB～4 GiB）配置。超限分别给出缩短／拆分与撤回／替代或调额的办法，未完成范围不进入检索。缺失引用重建仅校正该版本累计值，不逐次汇总全部历史。README 与团队页容量提示区分内容历史额度、当前索引额度及仍保留的数据库磁盘；注明独立合成复核中引用行约 2.7 倍的观测，并不当作部署空间预测。
+- 第 2 项搜索：可用个人／团队匹配与不可用产品范围并存，`get_nodes.warnings`、MCP 正文及控制台说明未检索的范围；没有把部分搜索说成完整结果或让索引超限导致整页 500。生成物／版本断言与四个技能清单同步模型 19，html-format／mindmap-format 1.0.6、xml-format／workbook-format 1.0.7，业务代码未动。
+- 索引相关 `hub/records/space-index.test.ts hub/knowledge/spaces.test.ts hub/knowledge/spaces-review.test.ts hub/server/console-search.test.ts hub/server/text.test.ts hub/server/console-page.test.ts`：93 项通过，0 失败、0 跳过。覆盖真实 PostgreSQL 的历史／当前额度、撤回／替代、产品与团队分额、拒收回滚、缺失索引重建、未完成索引排除，以及页面和模型可见文案。
+- 跨包 `tests/acceptance/46-knowledge-spaces.test.ts`：8 项通过，0 失败、0 跳过。新增 MCP 与控制台降级回归（可用匹配保留，跳过范围明确，已知超限异常防护返回 200），保留普通与事实运行私有输入拒收、目录授权、历史与统计等边界。
+- 合约包 `node --test --test-concurrency=1 "contracts/src/**/*.test.ts" hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts hub/records/password.test.ts packs/workflow/case-review/packs.test.ts`：378 个叶测试通过，0 失败；`ownership` 整组因没有 PostgreSQL 18 的 `pg_dump` 和 `pg_restore` 跳过，不能按叶测试摘要的 skipped=0 称作该组通过。锁命名空间、动态迁移列表、生成词表与技能清单检查已执行。可用 `CIRCLE_HUB_LIBPQ_BIN` 指定匹配的 PG 18 工具后补跑所有权／备份恢复集成。
+- 首次迁移回归发现 `roles.test.ts` 仍固定列出迁移到 10，改为 `MIGRATIONS.map`；新增测试的数字查询补齐类型后重跑。旧 SQL 快照保留，只刷新既有迁移源文件冻结断言；没有新增数据 SHA 校验。
+
+- 索引收尾：`npm run typecheck`、`npm run verify:contracts` 通过；`node --test --test-concurrency=1 hub/records/space-index.test.ts hub/records/roles.test.ts hub/config/config.test.ts hub/records/migrations.snapshot.test.ts` 20 项通过，0 失败、0 跳过。运行角色实测能追加索引并更新同一版本累计值，不能删除计量行或改计量身份；提高限额后此前拒收的追加可继续完成。`npm run test:docs` 287 项通过，0 失败、0 跳过。

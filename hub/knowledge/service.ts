@@ -173,7 +173,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
         const body = KnowledgeEntryBody.parse(record.body);
         return { space: 'team', path: mount.path + (row.path === '/' ? '' : row.path), entry: row.entry, record: record.digest, text: canonicalize([body.statement, body.data]) };
       });
-      await index.add(composition.record, rows);
+      await index.add(composition.record, rows,undefined,'product:'+mount.path);
       batch.length = 0;
     };
     for await (const row of composition.rows()) { batch.push(row); if (batch.length === 256) await flush(); }

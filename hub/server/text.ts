@@ -1069,7 +1069,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
-  if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索）`],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
+  if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索${v.warnings?.length?'；部分范围未检索':''}）`,...(v.warnings??[]).map(warning=>`${warning.code}：${oneLine(warning.message)}；${oneLine(warning.fix??'')}`)],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];
   const root = v.root ?? '';

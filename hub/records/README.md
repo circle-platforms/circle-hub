@@ -6,14 +6,27 @@ Migration 9 adds the projection; migration 10 consolidates its token copies into
 keyed by the immutable entry record. `knowledge_space_search` retains only version/path/entry references. Unchanged versions
 reuse token documents without rereading or tokenizing entry bodies. Existing projection rows migrate without altering any
 record, root or reference. GIN lives on document tokens; scopes filter reference rows before paging. Completion counts detect
-missing references. Runtime grants remain SELECT and INSERT, including the new document table.
+missing references. Runtime grants for documents and references remain SELECT and INSERT.
 
-New token documents have a 1 MiB limit; each space's distinct documents across history have a 64 MiB limit. These count
-UTF-8 token bytes plus 4 bytes per token and 64 per document, not measured PostgreSQL disk usage. Legacy token documents
-remain readable; an over-limit space refuses new projection writes with `SPACE_INDEX_LIMIT`. Metadata references are small
-and the corresponding version snapshots already count toward the knowledge history quota. Index admission is transactional.
-Search and `ensure` do not wait on the production or space write queues. Existing migrations retain their SQL bytes; only
-the pre-existing whole-source freeze assertion is refreshed. No new data SHA check is added.
+Migration 11 maintains an incremental token-byte counter for each version and quota scope. Only newly inserted references
+increase its counter; an idempotent retry adds nothing and writes never sum a space's historical references. Current active
+entries alone feed new space versions, so withdrawals and replacements free current quota while old references remain readable.
+Product mounts use independent quota scopes, even though their visible space is team. A damaged completed projection reconciles
+only that version's counter before rebuilding missing rows.
+
+The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 1 KiB–16 MiB) and
+`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64
+per referenced document in the current version, independently of personal content/history capacity. Entry overflow asks for
+shorter or split content; current-version overflow asks for withdrawal/replacement or an increased configured limit. Both use
+`SPACE_INDEX_LIMIT` and transactional admission. Search skips an over-limit or incomplete scope and reports warnings alongside
+available matches. Raising the limit permits unfinished product projection work to resume; failed batches are not marked ready.
+
+Historical token documents, version/path references, counters, GIN and B-tree indexes still occupy PostgreSQL disk. They are not
+reclaimed by withdrawal and their physical bytes are not the logical token quota or content quota: the independent synthetic
+review measured reference rows at about 2.7 times their charged snapshot metadata. That observation is not a deployment size
+estimate. Administrators must provision and monitor database/backup disk separately. Runtime grants allow updating only the
+counter's `token_bytes`; its quota/version identity and history remain protected. Existing migrations retain their SQL bytes;
+only the pre-existing whole-source freeze assertion is refreshed. No new data SHA check is added.
 
 `objects.put/stat` accept the caller transaction; upload-only `artifacts.ingest` does too. Space import registers the object,
 artifact and version through the same connection after a complete snapshot capacity preflight, avoiding a nested pool wait.

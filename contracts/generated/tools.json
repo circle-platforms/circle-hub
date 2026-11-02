@@ -2725,6 +2725,59 @@
             "additionalProperties": false
           }
         },
+        "warnings": {
+          "description": "Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present",
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "path": {
+                "description": "JSON Pointer into the call arguments; for submit_result, into the submission",
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+              },
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "requirement": {
+                "type": "string"
+              },
+              "rounds_left": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
         "matches": {
           "type": "array",
           "items": {

@@ -372,3 +372,9 @@ R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.nativ
 knowledge-structure@1（方向 2）：模型定义 fed-case/fed-defect/fed-spec/fed-build/fed-note、version-binding、usage、feeding-offset、retraction 的封闭形状，生成于 shared-interfaces.ts，由 src/feeding.ts 注册。来源、运行目标、采集时间、派生命令解析和回注均不偷偷加入对象身份。具体身份投影见模型 knowledgeStructure.identity。source_structure 是生成的组成依据；binding_status/binding_basis 与 covers 关系也只从模型生成。模型判版本禁止，运行目标只形成 usage；来源结构和人的直接声明保留各自依据，冲突不覆盖。该步只建立合约，不表示已实现喂入存储或真实资源接入。
 
 验收恢复接线：submission@1 增加可选 model_identity，直接使用已审定 model-identity@1。model 仍是显示文字；没有新字段的旧提交保持可读，族独立性保持未知。生成器重生 submission schema 与工具输入形状，不手改生成物。
+
+
+Model 19 (decision 86, second review): `get_nodes` knowledge-search answers optionally include bounded `warnings` using the
+existing `ProtocolError` shape. Matches from available scopes remain usable, and omitted incomplete/over-limit scopes are
+explicit. `SPACE_INDEX_LIMIT` distinguishes entry versus current-version limits in its actual message/fix. This does not
+change immutable knowledge records, six-tool routing, permissions or stored references.

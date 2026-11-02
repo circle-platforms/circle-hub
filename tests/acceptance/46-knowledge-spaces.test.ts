@@ -1,3 +1,4 @@
+import { RecordsError } from '../../hub/records/api.ts';
 // Decision 84 phase 2 over the real assembly and official MCP client, with no products or business systems.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -308,4 +309,28 @@ test('phase 2 refuses private originals before either judgment or fact-only runs
   const ordinary=await hub.records.artifacts.ingest({bytes,mediaType:'application/json',name:'synthetic-common-map.json',origin:{upload:{session:null,message:null}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:true}});
   const allowed=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}});
   assert.equal(allowed.isError,false,allowed.text);
+});
+
+
+test('MCP and console search report skipped over-limit scopes while retaining available matches',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,index=hub.records.spaceIndex!;
+  const input={kind:'observation',statement:'合成降级检索可用观察',path:'/degraded-search'};
+  await spaces.write(other.principal,input);
+  await spaces.grant(other.principal,{path:input.path,audience:'member',member:owner.user.id});
+  const own=await spaces.ensure(owner.principal,owner.user.id);
+  const ready=index.ready.bind(index),add=index.add.bind(index),search=spaces.search.bind(spaces);
+  const failure=new RecordsError('当前版本知识索引超过合成限额',{code:'SPACE_INDEX_LIMIT',fix:'联系管理员调整空间索引限额'});
+  index.ready=async(version,path,tx)=>version===own.root?false:ready(version,path,tx);
+  index.add=async(version,rows,tx,quota)=>{if(version===own.root)throw failure;await add(version,rows,tx,quota);};
+  const browser=await openConsole(hub,owner.token);
+  try{
+    const found=await client.call('get_nodes',{search:'降级检索',scope:'all'});
+    assert.equal(found.isError,false,found.text);assert.ok(found.out.matches?.some(hit=>hit.statement===input.statement));
+    assert.equal(found.out.warnings?.[0].code,'SPACE_INDEX_LIMIT');assert.match(found.text,/部分范围未检索/);
+    const response=await browser.get('/console/search?'+new URLSearchParams({q:'降级检索',scope:'all'}));
+    assert.equal(response.status,200,response.body);assert.match(response.body,/未检索该范围/);assert.ok(response.body.includes(input.statement));
+    spaces.search=async()=>{throw failure;};
+    const fallback=await browser.get('/console/search?'+new URLSearchParams({q:'降级检索',scope:'all'}));
+    assert.equal(fallback.status,200,fallback.body);assert.ok(fallback.body.includes(failure.fix!));assert.match(fallback.body,/当前知识范围未检索/);
+  }finally{index.ready=ready;index.add=add;spaces.search=search;await spaces.grant(other.principal,{path:input.path,audience:'member',member:owner.user.id,revoke:true});}
 });

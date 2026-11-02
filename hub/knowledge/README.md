@@ -1194,9 +1194,9 @@ snapshots use `by: null` for Hub registration and the console uses the generated
 retain the actual administrator. Shared-directory imports run the same full byte scan as grants; uninspectable ZIP/PDF/image
 originals return `SPACE_CONTENT_UNINSPECTABLE` and stay private if imported outside shared paths.
 
-Search tokens are stored once per immutable entry record, with bounded per-document and per-space history totals (records
+Search tokens are stored once per immutable entry record, with configurable per-document and current-version totals (records
 README). `ensure` returns current versions directly; initialization and mount refresh use the space lock without joining
-production or space write queues. Space mutations have their own write queue. Import calculates the full prospective version
+production or space write queues. Each space has its own mutation queue; another member’s writes cannot delay revocation. Import calculates the full prospective version
 before saving bytes; file registration and the version share a transaction. See the eight review cases in `kw-spaces.md`.
 
 Second phase-2 review: personal import rejection audits are appended only after the import transaction is released.
@@ -1206,3 +1206,10 @@ space version remain absent/unchanged. The original registered refusal and its r
 Writes and grant revocations are queued per space, with a database business-key lock retaining cross-process ordering.
 An unrelated member's write or revoke no longer waits for a blocked index append in another space. Read paths retain their
 existing behavior. Token-volume accounting is tracked separately from this process queue and is covered by the index review.
+
+
+Second review index accounting (model 19): withdrawals/replacements free current-version index quota, while original content
+and history still count toward the separate personal capacity. Product mounts have their own quota scopes. Search does not
+label an incomplete/over-limit index as empty or complete: it excludes that scope and returns registered-code `warnings` with
+available matches. Console and MCP show the omitted scope; cursors bind the set of available scopes and require a fresh first
+page when that set changes. `records` documents configurable limits and the additional historical database disk usage.

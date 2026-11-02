@@ -1,3 +1,4 @@
+import { DEFAULT_LIMITS } from '../config/index.ts';
 // The lease service (D04 R[0], C2): acquire is atomic per key set (unique constraint, all or nothing, one order so
 // opposite orders cannot deadlock), an expired or released row is taken over in place with the fencing token
 // incremented, one clock (the service's own, the database clock by default, injectable in tests) decides expiry —
@@ -23,7 +24,7 @@ before(async () => {
   const config = await postgres.createDatabase('leases');
   db = new Database(createPool(config, 8));
   await migrate(db);
-  kit = await openRecords({ dataDir: `${postgres.root}/kit`, logDir: `${postgres.root}/kit/logs`, database: config, limits: { maxUploadBytes: 1 << 20, maxRecordBytes: 1 << 20, maxRequestBytes: 2 << 20 } });
+  kit = await openRecords({ dataDir: `${postgres.root}/kit`, logDir: `${postgres.root}/kit/logs`, database: config, limits: { ...DEFAULT_LIMITS, maxUploadBytes: 1 << 20, maxRecordBytes: 1 << 20, maxRequestBytes: 2 << 20 } });
 });
 
 after(async () => {

@@ -25,6 +25,10 @@ export interface Limits {
   maxRecordBytes: number;
   /** Largest HTTP request body, in bytes; at least the base64 size of the largest upload. */
   maxRequestBytes: number;
+  /** Largest token document for one knowledge entry, in logical bytes. */
+  maxEntryIndexBytes:number;
+  /** Largest sum of token documents referenced by one current space/product version. */
+  maxSpaceIndexBytes:number;
 }
 
 export interface HubConfig {
@@ -52,6 +56,8 @@ export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
   maxUploadBytes: 32 * MIB,
   maxRecordBytes: 16 * MIB,
   maxRequestBytes: requestBytesFor(32 * MIB),
+  maxEntryIndexBytes:MIB,
+  maxSpaceIndexBytes:64*MIB,
 });
 
 /** The credential scan decodes an upload to one string; 256 MiB stays far below V8's string limit (about 512 Mi characters). */
@@ -201,6 +207,8 @@ export function loadConfig(
 
   const maxUploadBytes = integer('CIRCLE_HUB_MAX_UPLOAD_BYTES', DEFAULT_LIMITS.maxUploadBytes, ...UPLOAD_RANGE) ?? DEFAULT_LIMITS.maxUploadBytes;
   const maxRecordBytes = integer('CIRCLE_HUB_MAX_RECORD_BYTES', DEFAULT_LIMITS.maxRecordBytes, ...RECORD_RANGE) ?? DEFAULT_LIMITS.maxRecordBytes;
+  const maxEntryIndexBytes=integer('CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES',DEFAULT_LIMITS.maxEntryIndexBytes,1024,16*MIB)??DEFAULT_LIMITS.maxEntryIndexBytes;
+  const maxSpaceIndexBytes=integer('CIRCLE_HUB_MAX_SPACE_INDEX_BYTES',DEFAULT_LIMITS.maxSpaceIndexBytes,1024,4096*MIB)??DEFAULT_LIMITS.maxSpaceIndexBytes;
   const minimumRequest = Math.ceil(maxUploadBytes / 3) * 4;
   const maxRequestBytes =
     integer('CIRCLE_HUB_MAX_REQUEST_BYTES', requestBytesFor(maxUploadBytes), 1024, REQUEST_MAX) ?? requestBytesFor(maxUploadBytes);
@@ -222,6 +230,6 @@ export function loadConfig(
     ...(https ? { https } : {}),
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,
-    limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes },
+    limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes },
   };
 }

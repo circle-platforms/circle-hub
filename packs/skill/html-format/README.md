@@ -1,12 +1,12 @@
 # HTML 格式通用技能包
 
-当前版本 1.0.4 同步模型 17 的生成合约镜像及发布清单；解析业务代码未变。
+当前版本 1.0.6 同步模型 19 的生成合约镜像及发布清单；解析业务代码未变。
 
 本包按决定 72 独立发布，由管理员显式安装，不随 Hub 发布，不按用户分配。它解释通用 HTML 文档块盒结构与链接，不识别产品、不判断哪些元素属于何种业务角色，不承担编译、评审或计划执行规则。
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/html-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install html-format@1.0.4` 安装；`pack uninstall html-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/html-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install html-format@1.0.6` 安装；`pack uninstall html-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"html-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
 
@@ -25,3 +25,5 @@
 合成列表页一次沙箱测量：190 块、47303 字节，解析输出 427969 字节，沙箱内 116 毫秒；1200 块、921793 字节，解析输出 7706587 字节，沙箱内 150 毫秒。两份都没有随解析输出 fragments。
 
 本次 1.0.5 仅同步第二阶段安全修正的模型 18 生成协议与发布清单，技能业务代码不变。仓库测试通过 `repositorySkillVersion` 读取当前版本。
+
+本次 1.0.6 仅同步第二轮索引修正的模型 19 生成协议与发布清单，业务代码不变。

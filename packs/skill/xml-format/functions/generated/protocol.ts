@@ -145,8 +145,8 @@ export const PROTOCOL_CODES = {
     "fix": "改用可完整检查的文本原文；ZIP、PDF、图片等文件仍可仅保存在个人空间"
   },
   "SPACE_INDEX_LIMIT": {
-    "when": "知识搜索索引达到单条内容或空间的大小上限",
-    "fix": "缩小条目的陈述与结构化数据；空间历史索引达到上限时联系管理员"
+    "when": "知识搜索索引达到单条内容或当前版本的大小上限",
+    "fix": "缩短或拆分单条内容；当前版本超限时撤回或替换条目，或联系管理员调整索引限额；历史引用仍保留"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

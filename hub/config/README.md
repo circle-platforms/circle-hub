@@ -17,6 +17,12 @@ Secrets never come from the environment; they enter through the vault. `CIRCLE_H
 (the credential scan decodes an upload into strings, which V8 caps near 512 Mi characters) and
 `CIRCLE_HUB_MAX_REQUEST_BYTES` at most 512 MiB.
 
+Knowledge search limits: `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` defaults to 1 MiB (1 KiB–16 MiB), and
+`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` to 64 MiB (1 KiB–4 GiB). They bound one token document and the references in one current
+space/product version, respectively. Product mounts do not consume team-entry quota. These limits are separate from the
+administrator-set personal content/history capacity; retained index history still uses database disk (records README).
+An administrator changes these startup configuration values and restarts the Hub; no secret or environment file is read here.
+
 The default listener remains loopback. An explicit non-loopback internal IP requires `CIRCLE_HUB_ALLOWED_HOSTS`, an exact
 comma-separated list of lower-case hostnames or IP literals without a port or wildcard. The listener port applies to
 each entry. Wildcard and public-IP listeners are refused; callers must separately restrict network access.
