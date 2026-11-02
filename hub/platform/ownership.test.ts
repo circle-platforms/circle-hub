@@ -28,6 +28,7 @@ const COLUMN: Record<string, string> = {
   records: 'body',
   object_holds:'record',
   run_originals:'artifact',
+  personal_sync_mode_operations:'owner',
   personal_sync_heads:'owner',
   personal_sync_bindings:'owner',personal_sync_notes:'owner',personal_sync_native_credits:'owner',personal_sync_exports:'owner',personal_sync_memory_reservations:'owner',
   personal_sync_identities:'identity',

@@ -711,3 +711,51 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node -
  'tests/acceptance/46-*.test.ts' 'tests/acceptance/47-*.test.ts' 'tests/acceptance/48-*.test.ts' 'tests/acceptance/49-*.test.ts'
 npm run test:docs
 ```
+
+### 第 5 步：HTTP 同步、同步方式与安全审计
+
+来源：Claude 收到 a266c5e9 与三项复核修正后要求按第 13 节继续；本步进行中收到第三轮可用性复核，先暂停并单独提交 10f92a91 的索引修复，再恢复本步。未修改已冻结的迁移 14、15。
+
+做了的：
+
+- 在原 HTTP／HTTPS 监听上接入独立的 /api/sync/v1 合约路由：状态、客户端、会话、冻结清单、缺件查询、上传／下载、原子提交、操作回执、终止，以及同步方式检查／切换。不增加 MCP 工具或模型可调用的代理。沿用 Host／HTTPS／代理权限，Origin 限本服务来源，不开放 CORS，答复 no-store。
+- records 认证端口区分访问 Bearer 和控制台会话令牌；访问令牌及 OAuth 令牌沿用当前撤销、期限与停用检查。同步 HTTP 不接受 Cookie、控制台会话 Bearer 或设置码。审计中的 OAuth 客户端绑定从服务器令牌记录取得，设备 UUID 单独记为客户端声明；不记录令牌原文或设备名称。处理前、读完正文及发送答复前再次检查认证；会话所属检查在大正文解析前进行，私有答复发送前再检查代次／方式。
+- 按账户限流，同一账户换令牌或设备不能绕过，HTTP／HTTPS 共用。只增加已批准的 CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE，默认 120、范围 1～10,000，同时登记 config 与平台清单；同时最多两次写请求。请求与成功答复共用既有全局字节预算，保持批量／对象及线路大小上限；重复 JSON 键、无效 UTF-8、压缩正文、未知字段／查询参数均拒收。429 返回既有 SYNC_RATE_LIMITED 与 Retry-After。
+- 本人切换方式由控制台自己的口令会话、同源与 CSRF 路由调用同一服务；同步 HTTP 方式路由仅用 Bearer。仅保存在本机前必须重新检查影响并明确确认。检查证明绑定当前状态、暂存批次／会话／操作及目录授权／共享观察，未改变内容头的暂存和授权也会使旧检查失效。清除、方式、回执和审计在同一事务，失败整体回滚；团队副本保留、本机副本不受影响，页面说明旧备份恢复边界。
+- 恢复同步调用既有所有者函数 hub_resume_personal 创建新代次，不给运行角色 personal_spaces UPDATE。新增迁移 18 只存按本人／代次／操作标识绑定的无正文方式回执；旧清除请求可重复取原回执，不会删除新代次内容。新表运行权限只有 SELECT／INSERT，登记 ownership 列；迁移 1～17 SQL 保持索引修复后的原样，复核追加 SQL 后同步源固定值。
+- 个人知识／记忆视图显示生成的同步方式／状态、冲突数量与上次同步；成员详情给管理员显示同步方式与上次同步，不显示设备或私人标题。没有布局打磨或 Circle 端实现。现有只读共享检查没有持久化计数，因此合约的 pending_shares 允许 null，页面据实说明确认时重新核验，不把未知写成 0。没有新增显示轴，模型仍为 26；生成新增方式结果 Schema，176 个生成文件，四技能镜像／版本不变。
+- 每个已认证请求追加开始／结束安全元数据：操作人、服务器令牌标识与 OAuth 客户端、声明设备 UUID、路由模板、时间、对象计数、状态身份、实际 HTTP 状态／拒收码。标题、目录、原文、引文、设备名称与异常原文不入审计／日志。开始审计失败则不做操作，结束审计失败返回可重试错误，已提交的操作经幂等回执恢复；预算拒收记实际的 503／413，不能记成成功。
+- 更新 config、records、knowledge、server README 和 CHANGELOG。第 6 步、决定 89 的完成记录、Circle 仓库、推送、PR 与部署均未开始。
+
+验证记录：HTTP／配置首组 24 项通过；新增方式／HTTP 组首轮 9 项中 8 通过、1 失败，原因是夹具把同步抛出的结构错误直接传给 assert.rejects，改为异步调用包装，保留原拒收断言；扩大新回归 11 项随后通过。最初配置类型检查遗漏 names.ts 的变量登记，补齐 config 与平台登记及配置回归后通过。暂存恢复时迁移源固定值有冲突，保留第三轮固定的 14／15 快照并按追加 18 的实际源重新复核。上述中间失败不算通过，最终结果另记。
+
+补充验证记录：最初 HTTP 接线的三个新回归曾因读取了错误的请求频率配置路径而返回 503，补齐 limits 正式字段、config 名称与平台登记后，原 4 项组复查通过，再执行上述 24 项组。没有把早期失败记作通过。HTTP 审计使用单独的 personal-sync-http-audit@1，避免与已有 HTTP 路由清单的 personal-sync-http@1 同名。收尾检查发现普通提交回执也可能含私人路径，已将清除后的跨代次例外严格限于无正文的方式回执，并补真实清除竞争回归；下载中撤销令牌同样拒绝交付。
+
+#### 第 5 步最终验证与停止点
+
+- 扩大定向组 **810 项通过、0 失败、0 跳过**：合约、全部 records（包含 14／15 固定 SQL、源快照、索引计划、密码、运行角色、升级、锁命名）、配置、个人同步服务、知识／记忆、environment、diagnostics、PG 18 ownership、控制台与 HTTP、工作流包静态约束、验收 46～49。PG 18 备份／恢复与 macOS 沙箱项实际执行。该命令还误带了不存在的 hub/server/shutdown.test.ts，Node 没有执行这个文件，不计为通过；关闭边界实际在已执行的 hub/server/http.test.ts 中，收尾命令仅列现有文件。
+- 最终适配器与清除／撤销竞争回归组 **107 项通过、0 失败、0 跳过**，含所有新增 HTTP／方式回归、MCP、标准授权、HTTP 关闭边界、真实 Hub 验收 49；与扩大组有交集，不把两组相加当作独立用例数。
+- 最终 npm run typecheck 通过；npm run gen:contracts 与 npm run verify:contracts 通过，176 个生成文件一致。没有模型或四技能业务代码／镜像变化。
+- 文档检查及填入结果后的收尾复查均为 291 项通过、0 失败、0 跳过；差异检查通过。
+- 已执行用例无遗留跳过。未运行全量 unit／acceptance、完整工作流／引擎、Linux CI、来源归档检查；本步未改运行／依据规则或来源工具，没有增加全库 SHA 校验。Circle 端未实现，不把 Hub 本机合成验收当作客户端已接通。
+- 只作本机签署提交，不推送、建 PR 或部署；第 6 步和决定 89 的完成记录均留待下一步。
+
+```sh
+npm run typecheck
+npm run gen:contracts
+npm run verify:contracts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'contracts/src/*.test.ts' 'hub/records/**/*.test.ts' 'hub/config/*.test.ts' \
+ 'hub/knowledge/personal-sync/*.test.ts' hub/knowledge/personal-purge.test.ts hub/knowledge/memory.test.ts hub/knowledge/spaces.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+ hub/server/personal-sync.test.ts hub/server/console-sync-local.test.ts hub/server/console.test.ts \
+ hub/server/console-knowledge.test.ts hub/server/console-memory.test.ts hub/server/console-password.test.ts \
+ hub/server/console/member-space-metadata.test.ts hub/server/http.test.ts hub/server/shutdown.test.ts \
+ packs/workflow/case-review/packs.test.ts \
+ 'tests/acceptance/46-*.test.ts' 'tests/acceptance/47-*.test.ts' 'tests/acceptance/48-*.test.ts' 'tests/acceptance/49-*.test.ts'
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ hub/server/personal-sync.test.ts hub/server/mcp.test.ts hub/server/standard-authorization.test.ts hub/server/http.test.ts \
+ hub/records/personal-sync-mode.test.ts tests/acceptance/49-personal-sync.test.ts
+npm run test:docs
+git diff --check
+```

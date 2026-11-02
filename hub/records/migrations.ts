@@ -779,6 +779,10 @@ CREATE OR REPLACE FUNCTION hub_read_records() RETURNS TABLE(seq pg_catalog.int8,
  WHERE h.artifact IS NOT NULL OR NOT EXISTS(SELECT 1 FROM public.personal_purges x WHERE (x.owner,x.epoch)=(b.owner,b.epoch))
 $fn$;
 `},
+ {version:18,name:'personal_sync_mode',sql:`CREATE TABLE personal_sync_mode_operations(owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,operation_id text NOT NULL,request text NOT NULL,result text NOT NULL,PRIMARY KEY(owner,epoch,operation_id));
+CREATE TRIGGER personal_sync_mode_operations_append_only BEFORE UPDATE OR DELETE ON personal_sync_mode_operations FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_sync_mode_operations_no_truncate BEFORE TRUNCATE ON personal_sync_mode_operations FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -798,6 +802,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   personal_sync_retained:'SELECT, INSERT',
   personal_sync_operations:'SELECT, INSERT',
   personal_sync_aborts:'SELECT, INSERT',
+  personal_sync_mode_operations:'SELECT, INSERT',
   run_originals:'SELECT',
   object_holds:'SELECT',
   personal_spaces:'SELECT, INSERT',

@@ -55,9 +55,12 @@ export const PERSONAL_SYNC_SCHEMAS={'personal-sync-object@1':PersonalSyncObject,
 
 export const PersonalSyncAbort=z.strictObject({...Operation});
 export const PersonalSyncSessionReply=z.strictObject({session_id:Id,expires_at:IsoTime,state:PersonalSyncState,inventory_cursor:Text.max(4000).nullable()});
-export const PersonalSyncModeImpact=z.strictObject({check:Sha256,expected_state:Sha256,mode:SyncModeSchema,personal_bytes:z.number().int().nonnegative(),directory_grants:z.number().int().nonnegative(),pending_shares:z.number().int().nonnegative(),team_copies_preserved:z.number().int().nonnegative()});
+export const PersonalSyncModeImpact=z.strictObject({check:Sha256,expected_state:Sha256,mode:SyncModeSchema,personal_bytes:z.number().int().nonnegative(),directory_grants:z.number().int().nonnegative(),pending_shares:z.number().int().nonnegative().nullable(),team_copies_preserved:z.number().int().nonnegative()});
 Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-abort@1':PersonalSyncAbort,'personal-sync-session-reply@1':PersonalSyncSessionReply,'personal-sync-mode-impact@1':PersonalSyncModeImpact});
 export const PersonalSyncHttpProtocol=z.strictObject({schema:z.literal('personal-sync-http@1'),routes:z.strictObject(Object.fromEntries(Object.entries(PERSONAL_SYNC_HTTP_ROUTES).map(([key,route])=>[key,z.strictObject({method:z.literal(route.method),path:z.literal(route.path)})])))});
 Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-http@1':PersonalSyncHttpProtocol});
 
 export const PERSONAL_SYNC_DEFAULT_MODE=SyncModeSchema.enum.hub;
+
+export const PersonalSyncModeResult=z.strictObject({state:PersonalSyncState,receipt:PersonalSyncReceipt});
+Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-mode-result@1':PersonalSyncModeResult});

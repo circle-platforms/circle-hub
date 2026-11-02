@@ -4,6 +4,9 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Expose personal knowledge and memory sync over a scoped Bearer-only HTTP API with bounded batches and audit receipts.
+  Add password-console mode controls that atomically purge personal payloads or resume with a fresh epoch.
+
 - Keep logical record digest reads indexed when reconstructing run-held personal uploads.
 
 - Preserve exact run-held personal uploads across personal-space purge while removing their personal links.

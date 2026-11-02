@@ -848,3 +848,17 @@ predicates reach `records_digest_key` before reconstructing private or run-held 
 checks present and absent digest reads as both migration owner and runtime role, without a timing threshold or forced
 planner settings. Every SECURITY DEFINER retains its fixed search path. Migrations 14 and 15 are now frozen separately
 in the reviewed SQL snapshots; this correction changes migration 17 only.
+
+### Sync mode receipts and access-token authentication (decision 89, step 5)
+
+Migration 18 adds append-only, content-free personal_sync_mode_operations, keyed by account/epoch/operation. The
+full request identity binds replay to the same intent; a cached old purge result cannot purge a later epoch. Mode
+pre-check proofs include native state, staged object/session/operation metadata and current grant/share observations.
+A grant or staged batch invalidates a proof even when no native content head moved. Unpersisted read-only share checks
+are reported as unknown, not zero. Purge, receipt and mode audit commit in one transaction. Re-enable uses the existing
+owner-defined hub_resume_personal with a new UUID; runtime still has no UPDATE on personal_spaces, and receives only
+SELECT/INSERT on mode receipts. Migrations 14 and 15 remain frozen, and migration 17 keeps its inlineable reader.
+
+The principals port now distinguishes access Bearers from password-console session credentials and returns the
+server's token/OAuth-client IDs for auditing, without exposing token values. Existing internal console authentication
+is unchanged. Member sync metadata rechecks the current actor's enabled/admin role and exposes mode/time only.

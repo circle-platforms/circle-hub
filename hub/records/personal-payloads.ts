@@ -79,13 +79,13 @@ export class PgPersonalPayloads {
   if(!row.cleared){const bytes=await this.get({owner:String(row.owner),epoch:String(row.epoch)},String(row.sha256),tx);if(!bytes||bytes.length!==Number(row.bytes)||envelopeDigest(meta,Buffer.from(bytes).toString())!==digest)throw new IntegrityError('个人记录载荷不完整');}
   return {digest,owner:String(row.owner),epoch:String(row.epoch),sha256:String(row.sha256),cleared:row.cleared===true};
  }
- async purge(by:Principal,epoch:string):Promise<void>{
+ async purge(by:Principal,epoch:string,outer?:Transaction):Promise<void>{
   await this.db.transaction(async tx=>{
    const user=(await this.db.query('SELECT disabled FROM users WHERE id=$1',[by.id],tx)).rows[0];
    if(!user||user.disabled)throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE'});
    // Same namespace and lock order as knowledge and memory writes.
    await this.lock('knowledge-space:'+by.id,tx);
    await this.db.query('SELECT hub_purge_personal($1,$2)',[by.id,epoch],tx);
-  });
+  },outer);
  }
 }

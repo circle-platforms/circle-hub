@@ -2,10 +2,12 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
-import {ActionKindSchema,SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
-import {PERSONAL_SYNC_LIMITS,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncCommit,PersonalSyncResult,PersonalSyncClient,PersonalSyncSession,PersonalSyncUpload,PersonalSyncMissing,PersonalSyncAbort,PersonalSyncReceipt,PersonalSyncState,PersonalSyncDescriptor,PersonalSyncItem,type PersonalSyncObject} from '../../contracts/src/sync.ts';
+import {PermissionRoleSchema,KnowledgeGrantActionSchema,KnowledgeShareStatusSchema,ActionKindSchema,SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
+import {PERSONAL_SYNC_LIMITS,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncModeCheck,PersonalSyncModeChange,PersonalSyncModeImpact,PersonalSyncModeResult,PersonalSyncCommit,PersonalSyncResult,PersonalSyncClient,PersonalSyncSession,PersonalSyncUpload,PersonalSyncMissing,PersonalSyncAbort,PersonalSyncReceipt,PersonalSyncState,PersonalSyncDescriptor,PersonalSyncItem,type PersonalSyncObject} from '../../contracts/src/sync.ts';
 import {decodePersonalSyncObject,encodePersonalSyncObject,normalizePersonalSyncText} from '../../contracts/src/sync-canonical.ts';
-import {SpaceQuotaBody} from '../../contracts/src/spaces.ts';
+import {MemoryGrantBody,MemoryShareBody} from '../../contracts/src/memory.ts';
+import {KnowledgeShareBody} from '../../contracts/src/sharing.ts';
+import {SpaceGrantBody,SpaceQuotaBody} from '../../contracts/src/spaces.ts';
 import type {Limits} from '../config/index.ts';
 import type {Principal,Transaction,RecordStore} from './api.ts';
 import type {Database,Row} from './db.ts';
@@ -99,6 +101,47 @@ export class PgPersonalSync {
    await this.#db.query('INSERT INTO personal_sync_heads(owner,epoch) VALUES($1,$2)',[by.id,next.epoch],tx);
    await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now().toISOString(),previous_mode:scope.mode,mode:next.mode,previous_epoch:scope.epoch,epoch:next.epoch},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
    return this.#state(next,tx);
+  },undefined,true);
+ }
+ /** Only bounded synchronization metadata is exposed on a member detail page. */
+ async memberMetadata(by:Principal,owner:string){
+  const actor=(await this.#db.query('SELECT role,disabled FROM users WHERE id=$1',[by.id])).rows[0];
+  if(!actor||actor.disabled||(owner!==by.id&&actor.role!==PermissionRoleSchema.enum.admin))return null;
+  const row=(await this.#db.query('SELECT p.mode,h.last_synced_at FROM users u LEFT JOIN personal_spaces p ON p.owner=u.id LEFT JOIN personal_sync_heads h ON h.owner=p.owner AND h.epoch=p.epoch WHERE u.id=$1',[owner])).rows[0];
+  return row?{mode:row.mode?SyncModeSchema.parse(row.mode):SyncModeSchema.enum.hub,last_synced_at:row.mode!==SyncModeSchema.enum.local&&row.last_synced_at?iso(row.last_synced_at):null}:null;
+ }
+ async sessionClient(by:Principal,session:string,epoch:string){return this.#scope(by,epoch,async(scope,tx)=>String((await this.#session(scope,session,tx,true)).client_id));}
+ async #impact(scope:Scope,mode:z.infer<typeof SyncModeSchema>,tx:Transaction){
+  const state=await this.#state(scope,tx),grants=new Map<string,{active:boolean;record:string}>(),shares=new Set<string>(),observations:string[]=[];
+  for(const q of [{kind:'knowledge_space_grant',key:'knowledge.space.grant'},{kind:'memory_grant',key:'memory.grant.owner'}] as const){
+   for(const record of await this.#store.findMany({kind:q.kind,key:q.key,values:[scope.owner]},tx)){const body=q.kind==='memory_grant'?MemoryGrantBody.parse(record.body):SpaceGrantBody.parse(record.body);if(body.space!==scope.owner)continue;grants.set(hash([q.kind,body.path,body.audience,body.member]),{active:body.action===KnowledgeGrantActionSchema.enum.grant,record:record.digest});}
+  }
+  for(const q of [{kind:'knowledge_share',key:'knowledge.share.by'},{kind:'memory_share',key:'memory.share.by'}] as const){
+   for(const record of await this.#store.findMany({kind:q.kind,key:q.key,values:[scope.owner]},tx)){const body=q.kind==='memory_share'?MemoryShareBody.parse(record.body):KnowledgeShareBody.parse(record.body);observations.push(record.digest);if(body.status===KnowledgeShareStatusSchema.enum.merged){const ref='team_document'in body?body.team_document:body.reference;if(ref)shares.add(ref);}}
+  }
+  const ledger=(await this.#db.query('SELECT (SELECT count(*) FROM personal_sync_operations WHERE owner=$1 AND epoch=$2)::text AS operations,(SELECT count(*) FROM personal_sync_objects WHERE owner=$1 AND epoch=$2)::text AS objects,(SELECT count(*) FROM personal_sync_sessions WHERE owner=$1 AND epoch=$2)::text AS sessions',[scope.owner,scope.epoch],tx)).rows[0];
+  const impact={expected_state:state.state_version,mode,personal_bytes:state.used_bytes,directory_grants:[...grants.values()].filter(g=>g.active).length,pending_shares:null,team_copies_preserved:shares.size};
+  return PersonalSyncModeImpact.parse({...impact,check:hash({owner:scope.owner,epoch:scope.epoch,impact,ledger,grants:[...grants.values()].map(g=>g.record).sort(),shares:observations.sort()})});
+ }
+ modeCheck(by:Principal,input:unknown){const parsed=PersonalSyncModeCheck.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');return this.#scope(by,undefined,(scope,tx)=>this.#impact(scope,parsed.data.mode,tx),undefined,true);}
+ modeOperation(by:Principal,epoch:string,id:string){if(!uuid.safeParse(epoch).success||!operationId.safeParse(id).success)return fail('SOURCE_UNAVAILABLE');return this.#scope(by,undefined,async(_scope,tx)=>{const row=(await this.#db.query('SELECT result FROM personal_sync_mode_operations WHERE owner=$1 AND epoch=$2 AND operation_id=$3',[by.id,epoch,id],tx)).rows[0];return row?PersonalSyncModeResult.parse(JSON.parse(String(row.result))):null;},undefined,true);}
+ changeMode(by:Principal,input:unknown){
+  const parsed=PersonalSyncModeChange.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');const request=parsed.data;
+  return this.#scope(by,undefined,async(scope,tx)=>{
+   const identity=hash({path:PERSONAL_SYNC_HTTP_ROUTES.mode.path,request}),cached=(await this.#db.query('SELECT request,result FROM personal_sync_mode_operations WHERE owner=$1 AND epoch=$2 AND operation_id=$3',[by.id,request.epoch,request.operation_id],tx)).rows[0];
+   if(cached){if(cached.request!==identity)return fail('IDEMPOTENCY_MISMATCH');return PersonalSyncModeResult.parse(JSON.parse(String(cached.result)));}
+   if(request.epoch!==scope.epoch)return fail('SYNC_EPOCH_CHANGED');const before=await this.#state(scope,tx);
+   if(before.state_version!==request.expected_state)throw new RecordsError(PROTOCOL_CODES.SYNC_VERSION_CONFLICT.when,{code:'SYNC_VERSION_CONFLICT',detail:{state:before}});
+   const impact=await this.#impact(scope,request.mode,tx);
+   if(request.mode===SyncModeSchema.enum.local&&request.check!==impact.check)throw new RecordsError(PROTOCOL_CODES.SYNC_VERSION_CONFLICT.when,{code:'SYNC_VERSION_CONFLICT',detail:{state:before}});
+   let after:State;
+   if(request.mode===scope.mode)after=before;
+   else if(request.mode===SyncModeSchema.enum.local){await this.#payloads.purge(by,scope.epoch,tx);after=await this.#state({...scope,mode:request.mode},tx);}
+   else {const next={...scope,epoch:randomUUID(),mode:SyncModeSchema.enum.hub};await this.#db.query('SELECT hub_resume_personal($1,$2,$3)',[by.id,scope.epoch,next.epoch],tx);await this.#db.query('INSERT INTO personal_sync_heads(owner,epoch) VALUES($1,$2)',[by.id,next.epoch],tx);after=await this.#state(next,tx);}
+   const result=PersonalSyncModeResult.parse({state:after,receipt:{operation_id:request.operation_id,epoch:request.epoch,request:identity,previous_state:before.state_version,state_version:after.state_version,counts:{accepted:0,existing:0,downloaded:0,bytes:0},at:this.#now().toISOString()}});
+   await this.#db.query('INSERT INTO personal_sync_mode_operations VALUES($1,$2,$3,$4,$5)',[by.id,request.epoch,request.operation_id,identity,canonicalize(result)],tx);
+   await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:result.receipt.at,previous_mode:scope.mode,mode:request.mode,previous_epoch:scope.epoch,epoch:after.epoch,operation:hash(request.operation_id),previous_state:before.state_version,state:after.state_version,personal_bytes:impact.personal_bytes,directory_grants:impact.directory_grants,team_copies_preserved:impact.team_copies_preserved},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
+   return result;
   },undefined,true);
  }
  async stableItem(by:Principal,kind:z.infer<typeof PersonalSyncItem>['kind'],identity:string,outer?:Transaction):Promise<string>{

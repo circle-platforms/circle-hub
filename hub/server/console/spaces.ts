@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {personalLocal,personalSyncNotice,checkPersonalFormEpoch} from './personal-sync.ts';
 import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
@@ -7,7 +8,7 @@ import {directoryName} from './audience.ts';
 import {knowledgeDirectory,batchSharePage,shareBatch,existingTeamLink} from './knowledge-directory.ts';
 export {batchSharePage};
 import { z } from 'zod';
-import { ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, isKnowledgeSearchScope, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { SyncModeSchema, ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, isKnowledgeSearchScope, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { Sha256 } from '../../../contracts/src/common.ts';
 import { KnowledgeError, type SpaceEntryView } from '../../knowledge/api.ts';
 import { RecordsError } from '../../records/api.ts';
@@ -205,9 +206,9 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   const spaces = ctx.deps.knowledge.spaces;
   if (!spaces)
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
-  if(action==='sync-resume'){
-    const api=ctx.deps.records.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
-    try{await api.resume(ctx.principal,values.get('epoch')??'',values.get('expected_state')??'');}
+  if(action==='sync-resume'||action==='sync-mode'){
+    const api=ctx.deps.knowledge.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
+    try{await api.changeMode(ctx.principal,{epoch:values.get('epoch')??'',expected_state:values.get('expected_state')??'',mode:action==='sync-resume'?SyncModeSchema.enum.hub:values.get('mode'),operation_id:values.get('operation_id')||randomUUID(),check:values.get('check')||null,confirm_purge:values.get('confirm_purge')==='true'});}
     catch(error){if(error instanceof RecordsError&&error.code)throw new KnowledgeError(error.message,{code:error.code});throw error;}
     return '/console/knowledge?scope=personal';
   }

@@ -70,7 +70,7 @@ test('every variable is read and validated', () => {
   assert.equal(config.port, 0);
   assert.deepEqual(config.database, { host: '127.0.0.2', port: 6543, database: 'hub_main', user: 'hub_owner' });
   assert.deepEqual(config.keychain, { service: 'org.example.hub', account: 'vault-key' });
-  assert.deepEqual(config.limits, { maxSyncBatchBytes:2097152,maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000, maxEntryIndexBytes:2097152,maxSpaceIndexBytes:134217728,maxMemoryDocumentBytes:24000,maxMemorySpaceBytes:48000,maxMemorySpaceDocuments:20 });
+  assert.deepEqual(config.limits, { syncRequestsPerMinute:120,maxSyncBatchBytes:2097152,maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000, maxEntryIndexBytes:2097152,maxSpaceIndexBytes:134217728,maxMemoryDocumentBytes:24000,maxMemorySpaceBytes:48000,maxMemorySpaceDocuments:20 });
   // The request limit follows a raised upload limit unless set explicitly.
   const raised = loadConfig({ ...BASE, CIRCLE_HUB_MAX_UPLOAD_BYTES: String(96 * 1024 * 1024) });
   assert.ok(raised.limits.maxRequestBytes >= Math.ceil((96 * 1024 * 1024) / 3) * 4);
@@ -231,3 +231,9 @@ test('memory document and active-space caps default to decimal bytes and are con
   for(const value of ['0','1023','67108865','NaN'])assert.throws(()=>loadConfig({...BASE,CIRCLE_HUB_SYNC_MAX_BATCH_BYTES:value}));
   assert.equal(loadConfig({...BASE,CIRCLE_HUB_SYNC_MAX_BATCH_BYTES:'1024'}).limits.maxSyncBatchBytes,1024);
  });
+
+test('sync request limits use the approved variable and reject invalid values', () => {
+  assert.equal(loadConfig(BASE).limits.syncRequestsPerMinute,120);
+  for(const value of ['1','10000'])assert.equal(loadConfig({...BASE,CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE:value}).limits.syncRequestsPerMinute,Number(value));
+  for(const value of ['0','10001','1.5','-1','NaN'])assert.throws(()=>loadConfig({...BASE,CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE:value}));
+});

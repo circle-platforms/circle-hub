@@ -21,6 +21,7 @@ import { LoginLinkStore, SessionStore } from './console/session.ts';
 import { PackStaging } from './console/staging.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
+import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { describeError } from './notes.ts';
@@ -88,6 +89,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const registrations = new RegistrationWindow(() => clock().getTime());
   const loginLinks = new LoginLinkStore(() => clock().getTime());
   const staging = new PackStaging(() => clock().getTime());
+  const syncAdmission=new SyncAdmission();
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
   let hosts = allowedHosts(host, deps.config.port, declared);
   let secureHosts = https ? allowedHosts(https.host, https.port, declared, 443) : new Set<string>();
@@ -131,6 +133,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       request.resume();
       const message = hostOk ? refusedOrigin : refusedHost;
       if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
+      else if(target&&personalSyncTarget(target.url.pathname))sendJson(response,403,{code:'SOURCE_UNAVAILABLE'},{connection:'close'});
       else sendText(response, 403, message, { connection: 'close' });
       return;
     }
@@ -145,6 +148,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       if (request.method !== 'GET' && request.method !== 'HEAD') return sendText(response, 405, '只接受 GET', { allow: 'GET, HEAD' });
       return sendJson(response, 200, { status: 'ok', release });
     }
+    if(personalSyncTarget(url.pathname))return handlePersonalSync(request,response,url,{deps,budget,admission:syncAdmission,origins,log});
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
     if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
     if (url.pathname === '/console' || url.pathname.startsWith('/console/')) return handleConsole(request, response, url, consoleOptions);
@@ -169,7 +173,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
 
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     const target = parseTarget(request.url);
-    const label = target === null ? printable(request.url) : printable(target.url.pathname);
+    const label = target&&personalSyncTarget(target.url.pathname)?'/api/sync':target === null ? printable(request.url) : printable(target.url.pathname);
     // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles.
     const task: Promise<void> = route(request, response, target).catch((error: unknown) => fail(request, response, label, error));
     inflight.add(task);

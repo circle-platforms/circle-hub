@@ -1037,7 +1037,7 @@ not rewritten. The marker comes from model 26 display metadata. Console contexts
 request, and both members and administrators retain the normal raw-record refusals. The real-Hub regression uses
 synthetic console passwords through testConsoleCredentials and verifies team content remains available after purge.
 
-Decision 89 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms never restore purged personal content. Originals independently held by runs retain their existing reader restrictions and read-tier checks; personal knowledge links and grants are removed. No sync HTTP route or extra MCP tool is exposed here.
+Decision 89 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms never restore purged personal content. Originals independently held by runs retain their existing reader restrictions and read-tier checks; personal knowledge links and grants are removed. The HTTP transport is described below; MCP still exposes only six tools.
 
 ### Personal sync commit integration (decision 89, step 4)
 
@@ -1045,4 +1045,33 @@ Console and MCP personal knowledge/memory writes participate in the same state a
 commits. A rendered personal write form carries its epoch and refuses stale content after purge and resume; the service
 also rechecks the epoch after asynchronous admission. Existing MCP inputs remain unchanged, and only six tools are
 exposed. Memory answers report the generated conflict status and count instead of silently selecting a candidate.
-The dedicated HTTP commit route and full mode-switch UI remain the next implementation step.
+The dedicated HTTP route and own-account mode controls are described below.
+
+### Personal sync HTTP and mode controls (decision 89, step 5)
+
+The dedicated `/api/sync/v1` routes implement the versioned contracts in contracts/src/sync.ts: state, clients,
+sessions, frozen inventory, missing objects, batch upload/download, CAS commit, operation receipts, abort, mode check
+and mode change. They accept live access Bearers only, including registered OAuth clients; cookies, console-session
+Bearers and setup/invitation codes do not authenticate. There is no model tool or proxy to this API. Host, exact own
+Origin, HTTPS/proxy authority, no-store, body limits and shutdown use the existing listeners. JSON must be unambiguous
+UTF-8 with no duplicate keys; compressed request bodies and unknown fields/query keys are refused.
+
+Admission is shared across listeners/tokens/devices by account. Responses are bounded along with request bodies by
+one global budget. Session ownership is checked before body parsing; current account/token and epoch are checked again
+before sending a private result. Unknown and foreign sessions/operations return the same refusal. Logs use the fixed
+sync route prefix and never print exceptions, tokens or client content.
+
+Each authenticated request has append-only started/finished action metadata: actor, server token ID/OAuth client,
+separately declared device UUID, route template, times, counts, state identities and actual HTTP outcome. Titles,
+paths, device names, original/quote bytes and body arguments are excluded. A failed start audit prevents work. A failed
+finish audit returns a retryable response; upload/commit/mode receipts let the caller recover a committed operation.
+
+The console uses its own password-session routes with CSRF and same-origin checks. Local mode requires a fresh
+pre-check and explicit purge confirmation. The same service transaction changes mode, purges the scoped payloads,
+and stores a content-free receipt and audit; failure rolls everything back. Restoring Hub mode calls the existing
+owner-defined function and creates a new epoch, without UPDATE privilege on personal_spaces. Old purge receipts remain
+replayable but never clear the new epoch. These receipts contain no personal bodies. Personal views show generated
+mode/status labels and last successful sync; administrator member details expose mode and sync time only, without
+device IDs or personal titles. The pre-check cannot count unpersisted read-only share checks: it reports that count as
+unknown and explains their re-verification instead. Team copies and local copies remain; an older backup can restore
+older personal content.

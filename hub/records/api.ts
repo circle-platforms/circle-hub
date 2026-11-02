@@ -151,7 +151,9 @@ export interface Principals {
   /** Registers a client; refused (LimitError) while too many registered in the last minutes. */
   registerClient(name: string, redirectUris: readonly string[]): Promise<OAuthClient>;
   client(clientId: string): Promise<OAuthClient | null>;
-  /** `Authorization` header value (`Bearer <token>`). Null for anything that is not a live token of an enabled user. */
+  /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
+  authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
+  /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
 }
 
@@ -835,7 +837,7 @@ export interface CallLog {
 // ---------------------------------------------------------------- the kit
 
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
-export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'>;
+export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
   personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;

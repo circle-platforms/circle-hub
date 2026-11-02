@@ -1319,3 +1319,8 @@ the existing native address cannot distinguish them; no candidate is silently di
 The coordinator's follow-up policy keeps a personal upload independently held by a run when its personal link is
 purged. This does not retain the knowledge entry, directory grants or memory, and does not qualify a personal original
 for ordinary team import. Run readers continue through the existing declaration and credential-tier checks.
+
+The step-5 HTTP and console mode adapters delegate to the same personal-sync service. Purging uses the raw mode
+boundary, so it does not first export a private snapshot merely to remove it. The accepted purge is atomic with its
+receipt/audit; re-enable starts empty in a new epoch through the owner-defined storage function. Team copies and
+independently run-held originals keep their existing read rules. The HTTP transport is not a seventh model tool.

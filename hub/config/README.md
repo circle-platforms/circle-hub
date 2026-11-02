@@ -53,5 +53,7 @@ Memory limits use decimal UTF-8 bytes: CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES defa
 
 Personal sync transport: `CIRCLE_HUB_SYNC_MAX_BATCH_BYTES` defaults to 8 MiB (1 KiB–64 MiB) of canonical object bytes.
 The internal transport negotiates a lower batch/object count and size when the existing HTTP wire budget requires it.
-Object/page counts and the 24-hour continuation lifetime use the approved protocol constants. This step adds no rate
-limit variable or HTTP route; request-rate configuration and admission belong to the HTTP step.
+Object/page counts and the 24-hour continuation lifetime use the approved protocol constants. `CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE` defaults to 120 requests per account per minute (1–10,000).
+Both listeners share the limiter across access tokens and declared device IDs, with at most two in-flight writes per
+account. Refusals return SYNC_RATE_LIMITED and Retry-After; global request/response bytes also use the existing HTTP
+budget. Both approved variables are registered for platform forwarding.

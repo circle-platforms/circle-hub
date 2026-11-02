@@ -25,6 +25,8 @@ type MemoryRevision=Extract<PersonalSyncObject,{kind:'memory_revision'}>;
 export class PersonalKnowledgeSync{
  readonly #ctx:KnowledgeContext;readonly #spaces:KnowledgeSpaces;readonly #memory:MemoryDocuments;readonly transport:PersonalSyncStore;
  constructor(ctx:KnowledgeContext,spaces:KnowledgeSpaces,memory:MemoryDocuments,transport:PersonalSyncStore){this.#ctx=ctx;this.#spaces=spaces;this.#memory=memory;this.transport=transport;}
+ modeCheck(by:Principal,input:unknown){return this.transport.modeCheck(by,input);}
+ changeMode(by:Principal,input:unknown){return this.transport.changeMode(by,input);}
  #graph(by:Principal,epoch:string,tx:Transaction){return new SyncGraph(id=>this.transport.object(by,epoch,id,tx));}
  async state(by:Principal){const state=await this.transport.state(by);if(state.mode===SyncModeSchema.enum.local)return state;return this.transport.transact(by,state.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);return this.transport.state(by,tx);});}
  async openSession(by:Principal,input:unknown){const request=z.object({epoch:z.uuid()}).parse(input);return this.transport.transact(by,request.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);return this.transport.openSession(by,input,tx);});}

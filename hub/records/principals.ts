@@ -374,15 +374,17 @@ export class PgPrincipals implements Principals {
     return row === undefined ? null : clientOf(row);
   }
 
-  async authenticate(authorization: string | null | undefined): Promise<Principal | null> {
+  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}
+  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,true);}
+  async #authenticate(authorization:string|null|undefined,accessOnly:boolean):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);
     if (match === null) return null;
     const row = (
       await this.#db.query(
-        `SELECT t.id AS token_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
-          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2)`,
-        [sha256Hex(match[1]),this.#now().toISOString()],
+        `SELECT t.id AS token_id, t.client_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
+          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2) AND (NOT $3 OR NOT t.console_session)`,
+        [sha256Hex(match[1]),this.#now().toISOString(),accessOnly],
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;
@@ -392,7 +394,7 @@ export class PgPrincipals implements Principals {
       now.toISOString(),
       new Date(now.getTime() - LAST_USED_STEP_MS).toISOString(),
     ]);
-    return { id: String(row.id), name: String(row.name), role: row.role };
+    return {principal:{id:String(row.id),name:String(row.name),role:row.role},token_id:String(row.token_id),client_id:row.client_id===null?null:String(row.client_id)};
   }
 
   /** The acting account as stored now: it must exist and be enabled, and be an admin when `adminOnly`. */
