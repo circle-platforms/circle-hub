@@ -78,7 +78,7 @@ export interface DispatchOptions {
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus {report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus {report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
 interface Heartbeat {stop:()=>Promise<void>;held:()=>boolean;lastConfirmedAt:()=>number|null;}
 interface LeaseClock {at:number;mono:number;ttl:number;}
@@ -95,6 +95,26 @@ function precheckIssues(events:readonly Event[]):NonNullable<JobStatus['failed_c
   return events.filter(e=>e.body.detail.phase==='device_probe' || e.body.detail.phase==='precheck.failure' || e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase))).flatMap(e=>{
     const d=e.body.detail;if(typeof d.missing_fact!=='string')return [];
     return [{step:typeof d.step==='string'?d.step:String(d.phase),...(typeof d.seat==='string'?{seat:d.seat}:{}),...(typeof d.check==='string'?{check:d.check}:{}),missing_fact:d.missing_fact,next_action:typeof d.next_action==='string'?d.next_action:'管理员核对附加只读来源及期望条件声明，补齐来源与期望事实后再采证'}];
+  });
+}
+/** Values only a run supplies (decision 120): the executor describes how to reach the bed, not which build it should run, so
+ * a definition's precheck context never stands in for them (one registered before the rule keeps parsing; its build is not read). */
+const RUN_LOCKED = new Set(['build', 'build_base']);
+function environmentOf(context: Readonly<Record<string, unknown>>): Record<string, unknown> { return Object.fromEntries(Object.entries(context).filter(([key]) => !RUN_LOCKED.has(key))); }
+/** The values only a run supplies that a declared value is bound to. */
+function runBound(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(runBound);
+  if (value === null || typeof value !== 'object') return [];
+  const o = value as Record<string, unknown>;
+  return Object.keys(o).length === 1 && typeof o.$value === 'string' ? (RUN_LOCKED.has(o.$value) ? [o.$value] : []) : Object.values(o).flatMap(runBound);
+}
+/** What a precheck without a run's locked build only recorded: each seat's version report and the conditions bound to the build. */
+function precheckUnjudged(events:readonly Event[]):NonNullable<JobStatus['unjudged']> {
+  return events.flatMap((e):NonNullable<JobStatus['unjudged']>=>{
+    const d=e.body.detail;
+    if(d.phase==='device_probe' && d.judged===false)return [{step:'device_probe',...(typeof d.seat==='string'?{seat:d.seat}:{}),...(typeof d.check==='string'?{check:d.check}:{})}];
+    if((d.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(d.phase))) && Array.isArray(d.conditions))return (d.conditions as Array<Record<string,unknown>|null>).filter(c=>c?.judged===false && typeof c.pointer==='string').map(c=>({step:String(d.phase),pointer:String(c!.pointer)}));
+    return [];
   });
 }
 /** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them (CES reports a
@@ -153,7 +173,7 @@ export class DispatchService {
     const failedConditions=events.flatMap(e=>Array.isArray(e.body.detail.conditions)?e.body.detail.conditions.filter(object).filter(c=>c.matched===false && typeof c.pointer==='string' && typeof c.operator==='string').map(c=>({pointer:String(c.pointer),operator:String(c.operator)})):[]);
     const lastCredential=[...events].reverse().find(e=>e.body.detail.phase==='session_unavailable'||e.body.detail.phase==='credential_used');
     const gap=!riskDisposed&&lastCredential?.body.detail.phase==='session_unavailable'?lastCredential.body.detail:undefined;
-    const failedChecks=precheckIssues(events);
+    const failedChecks=precheckIssues(events),unjudged=precheckUnjudged(events);
     // Manifest devices that are not declared dispatch targets: listed by manifest position and declared type, never probed
     // and never dispatched to (P07 R[1], C07 R[4]).
     const unprobed=[...events].reverse().find(e=>Array.isArray(e.body.detail.unprobed_non_targets))?.body.detail.unprobed_non_targets as Array<{index:number;type:string|null}>|undefined;
@@ -163,7 +183,7 @@ export class DispatchService {
     if(typeof note==='string'){try{const bytes=await this.options.records.objects.get(note);if(!bytes||sha256Hex(bytes)!==note)throw new Error('missing');adminRelease=JSON.parse(new TextDecoder().decode(bytes)).checks;}catch{adminReleaseMissing=true;}}
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=roundRecords(events).filter(e=>typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
-    return { job,...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
+    return { job,...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:pendingReport&&!unknown&&!missingReceipt?{next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:`circle-hub job resume ${job}；只读补报告，不重交`}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
@@ -219,7 +239,7 @@ export class DispatchService {
     const booked = booking ? await this.options.runs.getRun(by, booking) : null;
     if (booking && !booked) throw new Error('预订运行对你不可用');
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()), input: null,
-      user: booked?.run.runner ?? by.id, resources: [], context: { ...d.precheck_context, ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
+      user: booked?.run.runner ?? by.id, resources: [], context: { ...environmentOf(d.precheck_context), ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
     await this.assertNoSecrets(binding);
     await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, read_only: true });
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
@@ -249,7 +269,7 @@ export class DispatchService {
     await this.assertNoSecrets(d);
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
-    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:d.precheck_context};
+    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:environmentOf(d.precheck_context)};
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
@@ -942,11 +962,14 @@ export class DispatchService {
   private async assessConditions(binding:JobBinding,conditions:ExecutorDefinition['conditions'],response:Exchange,context:Record<string,unknown>,phase:string):Promise<boolean> {
     const checks=conditions.map(c=>{
       const operator=Object.hasOwn(c,'equals')?'equals':c.at_least!==undefined?'at_least':'sha256';
+      const declared=operator==='equals'?c.equals:operator==='at_least'?c.at_least:c.sha256;
+      // Bound to a value only a run supplies while none is locked (a precheck without a run): recorded, not judged (decision 120).
+      if(runBound(declared).some(key=>context[key]===undefined))return {pointer:c.pointer,operator,expected_sha256:null,matched:null,judged:false};
       let expected:unknown;let matched=false;
-      try{expected=bind(operator==='equals'?c.equals:operator==='at_least'?c.at_least:c.sha256,context);matched=this.conditions([c],response.value,context);}catch{}
+      try{expected=bind(declared,context);matched=this.conditions([c],response.value,context);}catch{}
       return {pointer:c.pointer,operator,expected_sha256:expected===undefined?null:digestOfValue(expected),matched};
     });
-    const matched=checks.length>0 && checks.every(c=>c.matched);
+    const matched=checks.length>0 && checks.every(c=>c.matched===true || 'judged' in c);
     await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
     return matched;
   }
@@ -1027,7 +1050,7 @@ export class DispatchService {
     const binding: JobBinding = {
       job: newJob(), initiated_by: by.id, executor: registered.id, executor_digest: registered.resolved_digest, executor_source_digest: registered.digest, variables: registered.variables,
       scope: { target: d.target, origin: new URL(d.endpoint).origin }, target_key: digestOfValue([...d.resources].sort()), input: null, user: by.id, resources: [],
-      context: { ...d.precheck_context, target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), manifest_sha256: d.manifest_sha256 },
+      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), manifest_sha256: d.manifest_sha256 },
     };
     await this.assertNoSecrets(binding);
     const material = await this.secret(binding, d);
@@ -1083,7 +1106,7 @@ export class DispatchService {
       input: null,
       user: by.id,
       resources: [],
-      context: { ...d.precheck_context, target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) },
+      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) },
     };
     await this.assertNoSecrets(binding);
     const material = await this.secret(binding, d);

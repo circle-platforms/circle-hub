@@ -92,7 +92,7 @@ before(async () => {
   const raw = definition(endpoint.endpoint);
   const devices = MANIFEST_DOC.beds[0].devices;
   const configured = ExecutorDefinition.parse({ ...raw, target: 'bed-a', manifest_sha256: sha256Hex(bytes(MANIFEST_DOC)),
-    resources: devices.map((device) => `bed/bed-a/${device.name}`), precheck_context: { build: bed.site.RELEASED, product: bed.product.line },
+    resources: devices.map((device) => `bed/bed-a/${device.name}`), precheck_context: { product: bed.product.line },
     allowed_tools: [...raw.allowed_tools, 'inspect_seat'], refused_tools: ['synthetic_admin_reset'], conditions: raw.conditions.map((condition) => condition.pointer === '/seats' ? { ...condition, at_least: devices.length } : condition),
     probes: { devices: '/beds/0/devices', command_pattern: '^inspect (?:version|interfaces)$', call: { tool: 'inspect_seat', arguments: { seat: { $value: 'seat_index' }, command: { $value: 'command' }, ticket: { $value: 'lease_id' } } }, output: '/output',
       seats: devices.map((device, index) => ({ seat: device.name, index, manifest: { device: `/beds/0/devices/${index}`, addresses: '/interfaces', address: '' }, version: { command: 'inspect version', pattern: '^version: (?<value>.+)$' }, interfaces: { command: 'inspect interfaces', pattern: '^address: (?<value>.+)$' } })) },

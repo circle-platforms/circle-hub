@@ -51,11 +51,13 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   if(targets.length!==selected.length || new Set(selected).size!==targets.length || targets.some(device=>!selected.includes(device)))throw new PrecheckFactError(`缺少覆盖全部 ${targets.length} 个派发目标设备的一一对应探测座位`,'管理员核对设备集合指针、派发目标的类型闭集与各座位声明，为每个派发目标补一个座位、去掉非派发目标的座位后再采证');
   // Listed for the precheck answer: manifest devices that are not dispatch targets, by manifest position and declared type.
   const unprobed=devices.map((device,index)=>({device,index})).filter(row=>!targets.includes(row.device)).map(row=>({index:row.index,type:typeOf(row.device)}));
-  if(typeof context.build!=='string')throw new PrecheckFactError('缺少锁定构建','管理员提供含锁定构建的预订运行，或在预检上下文登记已核实的构建身份后再采证');
-  const names=new Set([context.build]);
-  if(knowledge) {
+  // The build the devices run is what they report (decision 120; the gateway's env_prepare and CES do the same): only a run's
+  // locked build is compared against it. Without one the version probe records each seat's own report and judges nothing.
+  const locked=typeof context.build==='string'?context.build:null;
+  const names=new Set<string>(locked===null?[]:[locked]);
+  if(locked!==null && knowledge) {
     if(typeof context.product!=='string')throw new PrecheckFactError('缺少产品绑定，不能核对知识库构建别名','管理员核对预订所属产品并绑定产品身份后再采证');
-    const current=await knowledge.resolveBuild(context.product,context.build);
+    const current=await knowledge.resolveBuild(context.product,locked);
     const base=typeof context.build_base==='string' ? context.build_base : current?.base;
     if(!base)throw new PrecheckFactError('知识库没有锁定构建的身份记录','管理员核对构建出处并同步构建名字与基础名的身份记录后再采证');
     names.add(base);
@@ -73,15 +75,16 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
     try {
       const text=response && at(response.value,spec.output);
       if(typeof text==='string') actual=probeValues(text,check.pattern);
-      if(key==='version') {expected=[...names].sort();matched=actual.length===1 && names.has(actual[0]);if(response&&observed)await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}
+      if(key==='version') {expected=[...names].sort();matched=actual.length===1 && (locked===null || names.has(actual[0]));if(response&&observed)await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}
       else { const entries=at(at(manifest,seat.manifest.device),seat.manifest.addresses); if(!Array.isArray(entries) || !entries.length)throw new Error('清单里没有座位接口地址'); expected=addresses(entries.map(e=>at(e,seat.manifest.address))); actual=addresses(actual); matched=JSON.stringify(actual)===JSON.stringify(expected); }
-      if(actual.length)reason='回显值与锁定构建或绑定清单不符';
+      if(actual.length)reason=key==='version' && locked===null?'回显里不止一个构建值；请核对版本提取规则':'回显值与锁定构建或绑定清单不符';
     }catch{reason='清单或回显中缺少有效接口地址；请核对提取规则和清单';}
     if(!response)reason=refused?'目标明确拒绝或原件无法保存；停止后续设备登录，请负责人核对受限原件和读取配置':'只读应答连续三次不可用；恢复读取后重跑预检';
     const refs=response?[response.source]:failedSource?[failedSource]:[];
-    const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
+    const unjudged=key==='version' && locked===null;
+    const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason,...(unjudged?{judged:false}:{})}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
     assessments.push(`src:${artifact.body.sha256}`);
-    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:key==='version'?'管理员读取该座位受限原件，按锁定构建及已核实别名核对设备版本，恢复正确构建或修正提取声明后再采证':'管理员读取该座位受限原件，逐一核对清单接口全集与实际接口，恢复缺少的接口事实或修正提取声明后再采证'}:{})},[`src:${artifact.body.sha256}`,...refs]);
+    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,...(unjudged?{judged:false}:{}),lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:key==='version'?(unjudged?'管理员读取该座位受限原件，核对版本提取声明只取出一个构建值后再采证':'管理员读取该座位受限原件，按锁定构建及已核实别名核对设备版本，恢复正确构建或修正提取声明后再采证'):'管理员读取该座位受限原件，逐一核对清单接口全集与实际接口，恢复缺少的接口事实或修正提取声明后再采证'}:{})},[`src:${artifact.body.sha256}`,...refs]);
     verified=verified && matched;
     if(refused)break probeLoop;
   }
