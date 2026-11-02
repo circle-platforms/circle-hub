@@ -70,21 +70,35 @@ test('personal workflow runs freeze the namespace and require grounds readable b
   await spaces.grant(owner.principal,{path:'/basis',audience:'member',member:other.user.id});
   const accepted=await client.call('submit_result',submission);assert.equal(accepted.out.acceptance,'accepted',accepted.text);
   const detail=await hub.hub.runs.getRun(owner.principal,privateRun);assert.ok(detail?.latest);resultReference='rec:'+detail.latest.record;
+  const acceptedRaw='rec:'+detail.submissions[0].record;
+  assert.equal((await reader.call('get_nodes',{reference:acceptedRaw})).isError,false,'accepted raw submissions remain readable while every ground is granted');
   assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,false);
   assert.equal((await admin.call('get_nodes',{reference:resultReference})).isError,true);
   await spaces.grant(owner.principal,{path:'/basis',audience:'member',member:other.user.id,revoke:true});
   const revoked=await hub.hub.runs.getRun(other.principal,privateRun);assert.ok(revoked);assert.equal(revoked.latest,null);assert.ok(revoked.submissions.every(row=>row.result===null));
   const cachedRefusal=await client.call('submit_result',submission);assert.equal(cachedRefusal.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE');assert.equal(cachedRefusal.out.result,undefined);
   assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,true,'revoking the input grant also blocks the immutable record endpoint');
+  const rawDenied=await reader.call('get_nodes',{reference:acceptedRaw}),rawMissing=await reader.call('get_nodes',{reference:'rec:'+'e'.repeat(64)});
+  assert.equal(rawDenied.isError,true,rawDenied.text);assert.deepEqual(rawDenied.out.errors,rawMissing.out.errors);
+  const rawRebound=await reader.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:acceptedRaw}}});
+  assert.equal(rawRebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rawRebound.text);assert.equal(rawRebound.out.run,undefined,'the accepted raw submission cannot copy withdrawn private ground access into a new source');
+  assert.equal((await client.call('get_nodes',{reference:acceptedRaw})).isError,false,'its submitter retains the received raw record');
   const rebound=await reader.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:resultReference}}});
   assert.equal(rebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rebound.text);assert.equal(rebound.out.run,undefined,'a record input cannot copy a result whose basis is no longer readable');
   await spaces.grant(owner.principal,{path:'/basis',audience:'member',member:other.user.id});
   const repaired=await client.call('submit_result',submission);assert.equal(repaired.out.acceptance,'accepted',repaired.text);assert.equal(repaired.out.result?.trace,accepted.out.result?.trace,'the unchanged accepted receipt survives a temporary grant revocation');assert.ok(repaired.text.includes(resultReference));
   assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,false);
+  assert.equal((await reader.call('get_nodes',{reference:acceptedRaw})).isError,false,'restoring the grant restores the same immutable raw record');
   await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'member',member:other.user.id,revoke:true});
   assert.equal(await hub.hub.runs.getRun(other.principal,privateRun),null);assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,true);
   assert.equal((await client.call('get_nodes',{reference:resultReference})).isError,false);
   for(const denied of [client,admin])assert.equal((await denied.call('get_nodes',{reference:'rec:'+published.version.record})).isError,true);
+  await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'administrators'});
+  await spaces.grant(owner.principal,{path:'/inputs',audience:'administrators'});
+  assert.ok(await hub.hub.runs.getRun(hub.admin.principal,privateRun),'the new reader may read the inputs but was never granted the separate result ground');
+  assert.equal((await admin.call('get_nodes',{reference:acceptedRaw})).isError,true);
+  const newReaderRebound=await admin.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:acceptedRaw}}});
+  assert.equal(newReaderRebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',newReaderRebound.text);assert.equal(newReaderRebound.out.run,undefined);
 });
 
 test('withdrawal qualifies an immutable accepted result and rejects a new submission using that ground',async()=>{

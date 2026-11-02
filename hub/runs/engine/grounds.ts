@@ -76,7 +76,7 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
   return null;
 }
 
-export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string}={}):Promise<boolean>{
+export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string;unavailableReferences?:readonly string[]}={}):Promise<boolean>{
   const documents=createDocumentCache(8);
   const check=async(reference:string,seen:Set<string>,depth:number,atRun=run,pending=options.pending===true,inheritedInput=false):Promise<boolean>=>{
     if(depth>64||seen.has(reference))return false;seen.add(reference);
@@ -178,7 +178,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     }
     return true;
   };
-  const diagnostic=options.trustedResult?new Set((value as ValidationResult).unavailable_references??[]):new Set<string>();
+  const diagnostic=new Set(options.trustedResult?(value as ValidationResult).unavailable_references??[]:options.unavailableReferences??[]);
   try{for(const reference of resultGrounds(value,run).filter(reference=>!diagnostic.has(reference)))if(!await check(reference,new Set(),0))return false;return true;}finally{documents.dispose?.();}
 }
 
@@ -192,10 +192,8 @@ export async function runReadableBy(ctx:EngineContext,by:Principal,run:RunRecord
 export async function resultReadableBy(ctx:EngineContext,run:RunRecord,result:ValidationResult,by:Principal):Promise<boolean>{
   if(run.runner===by.id)return true;
   if(!canSeeRun(by,run)&&result.acceptance!=='accepted'||!await groundsReadableBy(ctx,run,result,by,{trustedResult:true}))return false;
-  if(result.acceptance!=='accepted'){
-    const raw=await submissionByDigest(ctx.deps.records.store,run.run,result.submission);
-    if(raw&&!await groundsReadableBy(ctx,run,raw.body,by))return false;
-  }
+  const raw=await submissionByDigest(ctx.deps.records.store,run.run,result.submission);
+  if(raw&&!await groundsReadableBy(ctx,run,raw.body,by,{unavailableReferences:result.unavailable_references}))return false;
   return true;
 }
 
@@ -213,7 +211,7 @@ export async function requestReadable(ctx:EngineContext,by:Principal,request:Req
 /** Every record-to-input and exact-value path uses the same current views as direct record reads. */
 export function guardedRecords(ctx:EngineContext):RecordReader{
   const {store,artifacts}=ctx.deps.records;
-  const base=recordReader(store,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody));
+  const base=recordReader(store,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody),(by,run,digest)=>groundsReadableBy(ctx,run,'rec:'+digest,by));
   return {read:async(digest,reader)=>{
     const record=await store.get(digest);
     if(record?.kind==='source_artifact'&&!await artifacts.canRead(principalOf(reader),record as import('../../records/api.ts').SourceArtifact))return null;

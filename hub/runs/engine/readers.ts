@@ -61,7 +61,7 @@ export function runOfRecord(record: { kind: string; schema: string; body: unknow
 }
 
 /** Records for reference resolution: run, submission, validation result and action records through their run; contributions through their product. */
-export function recordReader(store: RecordStore, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>): RecordReader {
+export function recordReader(store: RecordStore, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>,readSubmission?:(by:Principal,run:RunRecord,digest:string)=>Promise<boolean>): RecordReader {
   return {
     async read(digest, reader) {
       const record = await store.get(digest);
@@ -77,6 +77,7 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
         if(record.kind==='validation_result'&&readResult&&!await readResult(principalOf(reader),owner,record.body))return null;
         if(record.kind==='request'&&readRequest&&!await readRequest(principalOf(reader),record.body))return null;
         if(record.kind==='submission'&&owner.runner!==reader.user&&(await actionOfSubmission(store,record.digest))?.body.acceptance!=='accepted')return null;
+        if(record.kind==='submission'&&owner.runner!==reader.user&&readSubmission&&!await readSubmission(principalOf(reader),owner,record.digest))return null;
         if (!canSeeRun(principalOf(reader),owner)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return null;
         if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
       }

@@ -24,6 +24,11 @@ Hub-generated files. Publication and start admission reject named documents, oth
 and effect rows. Dynamic expected sources are inspected before routing any read; projections cannot request leases.
 Retained personal publications therefore cannot bypass team assignment by changing an input or function output.
 
+Accepted raw submissions recheck current underlying grounds for every non-submitter, through the same current view as
+validation results. Direct record reads and record-to-input binding therefore both close when a grant is revoked or a
+new result reader lacks it. Restoring the grant restores the same immutable record; unavailable-reference diagnostics
+come only from its stored Hub validation result.
+
 
 Starting runs, boundary validation, terminal states and partitions: model elements W01 W02 W03 W05 W06 W07 W08, V01 V03 V04
 V05 V06 V07, T03 T04, A01-A04, B01 B05 and C08 R[4]. The server and the console import only `api.ts`.

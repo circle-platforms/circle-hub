@@ -253,3 +253,11 @@ CI 修复提交前的定向收尾：`node --test --test-concurrency=1 --test-rep
 协议镜像变化只同步四个通用技能的 `functions/generated/protocol.ts` 与 `pack.json`：HTML／思维导图 1.0.8，XML／工作簿 1.0.9，没有业务代码变化。授权来源是 Claude 转达的本次安全修正要求与既有协议镜像授权。
 
 验证：类型及 151 文件合约核对通过；`node --test --test-concurrency=1 --test-reporter=tap hub/runs/packs/personal.test.ts hub/runs/engine/personal-capabilities.test.ts hub/server/docs.test.ts` 22 项通过、0 跳过。首轮三项及第二轮两项夹具错误（缺产品选择、无效运行号、缺期望来源 reason）均已修正，原攻击断言保留。版本断言与读取共享专项 16 项通过、0 跳过。`readers-sharing` 原来允许个人工作流直接绑定私有连接采集，按本次新规则改为明确拒收；其原有个人运行不向被分享者开放的断言，用普通本人上传继续验证。完整工作流／引擎及验收集留到附页其余修正之后。
+
+### 第三阶段安全附页：受理后的原始提交（高 3）
+
+已受理的原始提交也通过当前依据读权检查，不再只看不可变的受理动作。记录输入与直接读取使用同一检查；结果本身对受理及未受理的原始参数都重查，既有 Hub 不可读取观察继续作为诊断元数据，客户端不能自授豁免。收回依据授权后，原始提交、结果及新的记录输入同时隐藏；授回后同一不可变记录恢复可读。新增读者只有输入权限、没有结果依据权限时仍拒读，本人保留收到的原始记录。
+
+`node --test --test-concurrency=1 --test-reporter=tap tests/acceptance/47-knowledge-sharing.test.ts hub/server/readers-sharing.test.ts packs/workflow/case-compile/recompose/end-to-end.test.ts`：15 项通过、0 失败、0 跳过。场景 47 在已有受理步骤直接验证收回、恢复、新增管理员读者、MCP 原始记录和新运行绑定，并核对无权限与缺失回应同形。重组交接仍实际通过。
+
+提交前类型检查通过；`hub/runs/engine/queries.test.ts` 的 10 项通过、0 跳过，保留管理员对合法未受理结果的既有查看范围，没有把未受理的原始提交开放给其他账户。
