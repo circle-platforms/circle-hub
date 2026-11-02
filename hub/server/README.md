@@ -510,7 +510,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
 
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
-  the nonce in both and a username/password, or an administrator backup token. The session cookie `circle_hub_session` is a random id,
+  the nonce in both and a username and password. Every account, administrators included, signs in this way; the console
+  never accepts a token (owner, 2026-11-02), and a one-time link from Circle only leads to this form at its page. The session cookie `circle_hub_session` is a random id,
   `Path=/console; HttpOnly; SameSite=Strict` (no `Secure`: plain HTTP on loopback); the token stays in server memory and
   every page re-authenticates it, so a revoked token or a disabled account ends the session at the next page. Sessions
   end after 2 hours idle or 12 hours. Password changes/resets revoke password sessions; Circle disconnects do not.
@@ -558,7 +559,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   Only the runner and admins can read results; a missing, hidden, malformed or non-production run gives the same neutral
   404. All existing authentication, Host/Origin checks, read-only methods, CSP and escaping apply unchanged.
 
-- **Integrator probe**: `node scripts/real/console-page.ts --token-file <file> --path <console path> [--url <Hub origin>]`
+- **Integrator probe**: `node scripts/real/console-page.ts --username <name> --password-file <file> --path <console path> [--url <Hub origin>]`
   signs in through the CSRF form, reads one page and signs out in a `finally` block. It only accepts a loopback HTTP
   origin and console paths, and follows no redirects. Output contains only status codes, CSP presence,
   script/external-address counts, table body row counts and the first 12 hex characters of the body hash. CSRF input
@@ -611,8 +612,9 @@ with the process, their records stay). A token issued here is shown once on the 
 The first administrator: `circle-hub setup-code` (refused once an administrator exists) prints a one-time code and
 keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code, a username and an optional password
 while no administrator exists (its own nonce cookie, own origin), creates the administrator with `bootstrapAdmin`,
-removes the code, opens a session and shows the backup token once. A generated initial password is also shown once and
-requires a password change before any data page, management action or stream can be used. The sign-in
+removes the code and shows the administrator's access token once; that token only connects a Circle. No session is
+opened: the administrator signs in with the username and password like every account. A generated initial password is
+also shown once and requires a password change before any data page, management action or stream can be used. The sign-in
 page links there while no administrator exists.
 
 ## CLI
