@@ -1420,3 +1420,22 @@ The sync rebase retains local-mode paths, epoch admission and cleared-ground dow
 Readonly mode/cleared answers are reused only inside the request; raw sync writes must remain outside that scope.
 The native candidate/count/batch ports use hub_read_records(), never physical capsule bodies. Purged roots and former
 grants stay absent after resume, and private-only sync entries are excluded from grantee counts before pagination.
+## Decision 91 member freeze and restore
+
+Space initialization, knowledge/directory/withdrawal writes, source imports/explicit saves/attribution, grants and team
+sharing recheck the committing actor using records' transaction-scoped `lockActive` after the space business locks.
+Team-only writers recheck the locked actor's current role. Memory writes/grants/shares/rebuild use the same boundary.
+A deactivation completed before it refuses the write; after it, deactivation waits for that transaction. The records port
+is required, not an optional fallback. Access failures retain the existing neutral `SOURCE_UNAVAILABLE`.
+
+Current private owner checks pause member and all-administrator grants without appending revocations. Final entry,
+original and memory reads recheck after asynchronous loads. Restoring an account exposes the same stored versions under
+still-current grants, while expressly revoked grants remain revoked. Team copies use their own authority, so deactivating
+the original submitter neither hides nor purges them. Source signer identity remains real with its existing account status.
+`ownsSource` checks exact-capture registration in the reader's current personal version for the console's save-action rule;
+equal bytes in another capture do not establish ownership. Explicit save retries remain idempotent.
+
+`member-freeze.test.ts` deterministically gates knowledge, source import, explicit archive save and memory writes in both
+orders, observes the database lock wait and checks no admitted records on refusal and unchanged versions after restore.
+The integration test additionally checks stale sessions/principals, private grants, byte preservation and team copies.
+Sync HTTP and personal purge remain deferred to the coordinator's later rebase and block five.

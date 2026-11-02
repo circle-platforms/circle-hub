@@ -18,7 +18,7 @@ export interface KnowledgeRecords {
   store: RecordStore;
   artifacts: Artifacts;
   pointers: Pointers;
-  principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'tokens'>>;
+  principals: Pick<Principals, 'get'|'lockActive'> & Partial<Pick<Principals, 'list'|'tokens'>>;
   /** Content-addressed bytes: the stored outputs of producer calls (memoized batches) and the bytes of computed views. */
   objects: Pick<ObjectStore, 'put' | 'get'>;
 }

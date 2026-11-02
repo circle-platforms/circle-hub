@@ -317,3 +317,16 @@ loaded once per catalog call. Publication, owner, withdrawal, expiry and account
 no new cross-request authorization cache is introduced. Real-registry regressions grow from 3 to 8 workflows for admin
 and member readers and recheck grants, withdrawals and disabled accounts on subsequent calls. Missing optional native
 batch ports retain the existing single-operation fallback.
+## Decision 91 personal publication freeze
+
+Personal workflow and skill publication takes the personal-pack business lock, then locks the current actor and resolved
+personal dependency owners through `principals.lockActive` in its committing transaction. Captures, file indexes, manifest
+registration and the personal version now share that transaction; an account rejected at this boundary creates none of
+them. Grants and retirement use the same account boundary. Promotion holds the actor's account lock across the existing
+team publisher and its personal transfer receipt, so deactivation cannot split that operation. Team publishing still uses
+its own existing transaction and validation; this does not promise a distributed rollback of arbitrary publisher faults.
+
+Resolution/source reads recheck current owner access after asynchronous loads. Deactivation pauses personal use grants
+without rewriting them; restore honors explicit revocations. Independent team publications remain available. Synthetic
+workflow and skill tests exercise both row-lock orders, no new captures on refusal, restoration and team preservation.
+No personal executable purge, sync integration or new record/schema/code is included.

@@ -23,7 +23,7 @@ import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } 
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, RecordsError, AccessError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -686,7 +686,13 @@ async function startFresh(
   }
   let stored: StoredRecord<RunRecord>;
   try {
-    stored = await putRun(store, record, startedAt);
+    const principals=ctx.deps.records.principals;
+    if(principals?.lockActive){stored=await store.withTransaction(async tx=>{
+      const owners=[workflow.pack.space,...(record.skills??[]).map(skill=>skill.space)].filter((space):space is string=>typeof space==='string'&&isPersonalSpace(space));
+      try{user=await principals.lockActive!(user,tx,owners);}catch(error){if(error instanceof AccessError)throw unavailable('/pack','the actor or a personal owner is disabled');throw error;}
+      if(owners.length&&!await ctx.deps.workflows.forUser(user,record.pack,record.pack_space))throw unavailable('/pack','the personal workflow is no longer available');
+      return putRun(store,record,startedAt,tx);
+    });}else{if(isPersonalSpace(workflow.pack.space))throw unavailable('/pack','the personal commit account boundary is unavailable');stored = await putRun(store, record, startedAt);}
   } catch (error) {
     if (!(error instanceof LimitError)) throw error;
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `这个被判对象投影出 ${items.length} 个条目，运行记录超过 Hub 一条记录的上限，运行没有开始`, { path: subjectPath, fix: SPLIT_FIX })], describe(error));

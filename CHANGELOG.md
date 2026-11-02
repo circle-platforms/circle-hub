@@ -32,6 +32,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 - Bound repeated legacy personal-tree traversal and keep retirement holder lookups indexed.
 
+- 成员停用与恢复使用事务内账号检查，冻结私人写入和分享，保留原件与团队副本；已归档原文隐藏重复保存入口。
+
 The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](docs/hub-r4-brief.md). Nothing below has been released.
 
 ### Removed

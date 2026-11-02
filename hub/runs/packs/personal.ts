@@ -26,7 +26,7 @@ export class PersonalPacks {
   #now(){return (this.#options.now?.()??new Date()).toISOString();}
   async #account(by:Principal){const account=await this.#team.account(by);if(!account)throw new AccessError('对象不存在或无权读取');return account;}
   async #own(by:Principal,space=by.id){by=await this.#account(by);if(by.id!==space)throw new AccessError('对象不存在或无权读取');return by;}
-  async #dependencyProblems(by:Principal,dependencies:readonly SkillDependency[],grant=false,targets?:readonly Principal[]):Promise<PackProblem[]>{
+  async #dependencyProblems(by:Principal,dependencies:readonly SkillDependency[],grant=false,targets?:readonly Principal[],owners?:Set<string>):Promise<PackProblem[]>{
     if(!dependencies.length)return [];
     const unavailable=()=>[problem('personal.dependency','pack.json','所依赖的通用技能不存在或无权使用','先发布本人技能、取得授权或安装团队技能，再核对依赖版本')];
     const foreign=()=>[problem('personal.dependency','pack.json','依赖他人的个人通用技能，不能向其他账户授权','改用本人的通用技能或团队通用技能后发布修订版本')];
@@ -39,6 +39,7 @@ export class PersonalPacks {
       if(info?.kind!=='skill')info=null;
       if(!info&&!dep.space)info=team.find(pack=>pack.info.id===dep.pack&&(dep.version===undefined||pack.info.version===dep.version))?.info??null;
       if(!info)return unavailable();
+      if(info.space&&info.space!=='team')owners?.add(info.space);
       if(grant&&info.space&&info.space!=='team'){
         if(info.space!==by.id)return foreign();
         owned.add(info.id);
@@ -60,7 +61,7 @@ export class PersonalPacks {
     return {space:body.space,id:body.pack,version:body.version,kind:body.kind,digest:body.digest,title:body.title,description:body.description,owner:body.space,publisher:body.publisher,published_at:body.at,withdrawn:!!retired,withdrawn_at:retired?PersonalPackRetirementBody.parse(retired.body).at:null,record:record.digest,publication:record.digest,samples:report.samples.sources,report,manifest:body.manifest};
   }
   async versions(space:string,pack:string,tx?:Transaction){if(!UserId.safeParse(space).success||!PackId.safeParse(pack).success)return [];const records=await this.#all('personal_pack_version','personal.pack.id',personalPackKey(space,pack),tx);return (await Promise.all(records.map(record=>this.#info(record,tx)))).sort((a,b)=>compareVersions(b.version,a.version));}
-  async resolve(by:Principal,space:string,ref:string){const parsed=parsePackRef(ref);if(!parsed||!await this.mayUse(by,space,parsed.id))return null;return (await this.versions(space,parsed.id)).find(info=>!info.withdrawn&&(parsed.version===null||info.version===parsed.version))??null;}
+  async resolve(by:Principal,space:string,ref:string){const parsed=parsePackRef(ref);if(!parsed||!await this.mayUse(by,space,parsed.id))return null;const info=(await this.versions(space,parsed.id)).find(info=>!info.withdrawn&&(parsed.version===null||info.version===parsed.version))??null;return info&&await this.mayUse(by,space,parsed.id)?info:null;}
   async byDigest(space:string,digest:string){const record=(await this.#options.records.store.find({kind:'personal_pack_version',key:'personal.pack.digest',value:space+'/'+digest,limit:1})).items[0];return record?this.#info(record):null;}
   async open(space:string,digest:string):Promise<OpenedPack|null>{
     const info=await this.byDigest(space,digest);if(!info)return null;
@@ -82,12 +83,12 @@ export class PersonalPacks {
     by=await this.#own(by);if(!(await this.versions(by.id,pack)).length)throw new AccessError('对象不存在或无权读取');
     if(input.member&&!(await this.#options.records.principals.get(input.member)))throw new AccessError('对象不存在或无权读取');
     const body=PersonalPackGrantBody.parse({space:by.id,pack,audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now()});
-    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);if(!input.revoke){const targets=body.member?[await this.#options.records.principals.get(body.member)]:await this.#options.records.principals.list();const checks=await this.precheckGrant(by,pack,targets.filter((u):u is NonNullable<typeof u>=>!!u&&!u.disabled&&(body.member!==null||u.role==='admin')));if(checks.some(check=>check.state!=='pass'))throw new AccessError('授权前检查未通过');}return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
+    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);by=await this.#options.records.principals.lockActive(by,tx);if(!input.revoke){const targets=body.member?[await this.#options.records.principals.get(body.member)]:await this.#options.records.principals.list();const checks=await this.precheckGrant(by,pack,targets.filter((u):u is NonNullable<typeof u>=>!!u&&!u.disabled&&(body.member!==null||u.role==='admin')));if(checks.some(check=>check.state!=='pass'))throw new AccessError('授权前检查未通过');}return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
   }
   async retire(by:Principal,pack:string,version:string){
     by=await this.#own(by);const info=(await this.versions(by.id,pack)).find(info=>info.version===version);if(!info)throw new AccessError('对象不存在或无权读取');
     const body=PersonalPackRetirementBody.parse({space:by.id,pack,version,digest:info.digest,by:by.id,at:this.#now()});
-    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('knowledge-space:'+by.id,tx);await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);return this.#options.records.store.put({kind:'personal_pack_retirement',schema:'personal-pack-retirement@1',provenance:'declared',body,index:[{key:'personal.pack.retired',value:personalPackKey(by.id,pack)+'@'+version}]},tx);});
+    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('knowledge-space:'+by.id,tx);await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);by=await this.#options.records.principals.lockActive(by,tx);return this.#options.records.store.put({kind:'personal_pack_retirement',schema:'personal-pack-retirement@1',provenance:'declared',body,index:[{key:'personal.pack.retired',value:personalPackKey(by.id,pack)+'@'+version}]},tx);});
   }
   async check(by:Principal,directory:string):Promise<PublishCheck>{return await this.#publish(by,directory,true) as PublishCheck;}
   async publish(by:Principal,directory:string):Promise<PublishOutcome>{return await this.#publish(by,directory,false) as PublishOutcome;}
@@ -102,21 +103,22 @@ export class PersonalPacks {
       if(needsSandbox(validation.pack))staged=await this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));
       const report=await runPublishCheck({pack:validation.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});report.warnings.unshift(...validation.pack.warnings);const errors=refusalsOf(report,validation.pack);if(errors.length)return refuse(errors,report);
       const checkExisting=async(tx?:Transaction)=>{
-        const dependencies=await this.#dependencyProblems(by,manifest.dependencies??[]);if(dependencies.length)return {failure:refuse(dependencies,report)};
+        const owners=new Set<string>(),dependencies=await this.#dependencyProblems(by,manifest.dependencies??[],false,undefined,owners);if(tx&&!dependencies.length){by=await this.#options.records.principals.lockActive(by,tx,[...owners]);dependencies.push(...await this.#dependencyProblems(by,manifest.dependencies??[]));}if(dependencies.length)return {failure:refuse(dependencies,report)};
         const versions=await this.versions(by.id,manifest.id,tx),existing=versions.find(info=>info.version===manifest.version)??null;
         if(versions.some(info=>info.kind!==manifest.kind))return {failure:refuse([problem('publish.kind_changed','pack.json','包种类与本空间已发布版本不一致','使用新的包号')],report)};
         if(existing&&(existing.digest!==digest||existing.withdrawn))return {failure:refuse([problem(existing.withdrawn?'publish.version_withdrawn':'publish.version_reused','pack.json','本空间中的该版本号已被使用','提高版本号后重新发布')],report)};
         return {existing,current:versions.find(info=>!info.withdrawn)??null};
       };
       const first=await checkExisting();if(first.failure)return first.failure;
-      if(dry)return {ok:true,manifest,digest,report,existing:first.existing,current:first.current};
-        const files:Record<string,string>={};const artifacts=this.#options.records.artifacts;
-        for(const file of read.pack.files){await this.#options.records.objects.put(file.bytes,'application/octet-stream');if(artifacts){const artifact=await artifacts.ingest({bytes:file.bytes,mediaType:extname(file.path)==='.json'?'application/json':'text/plain',name:file.path,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'});files[file.path]=artifact.digest;}}
+      if(dry){by=await this.#own(by);return {ok:true,manifest,digest,report,existing:first.existing,current:first.current};}
       const writing=this.#writes.then(async()=>{by=await this.#own(by);return this.#options.records.store.withTransaction(async tx=>{
         await this.#options.records.store.lock('knowledge-space:'+by.id,tx);
         await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,manifest.id),tx);
+        by=await this.#options.records.principals.lockActive(by,tx);
         const checked=await checkExisting(tx);if(checked.failure)return checked.failure;if(checked.existing)return {ok:true,created:false,version:checked.existing,report} as PublishOutcome;
-        await this.#options.records.objects.put(read.pack.manifestBytes,'application/json');
+        const files:Record<string,string>={};const artifacts=this.#options.records.artifacts;
+        for(const file of read.pack.files){await this.#options.records.objects.put(file.bytes,'application/octet-stream',tx);if(artifacts){const artifact=await artifacts.ingest({bytes:file.bytes,mediaType:extname(file.path)==='.json'?'application/json':'text/plain',name:file.path,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);files[file.path]=artifact.digest;}}
+        await this.#options.records.objects.put(read.pack.manifestBytes,'application/json',tx);
         const body=PersonalPackVersionBody.parse({space:by.id,pack:manifest.id,version:manifest.version,kind:manifest.kind,digest,title:manifest.title,description:manifest.description,manifest,publisher:by.id,at:this.#now(),report:JSON.parse(JSON.stringify(report)),files});
         const stored=await this.#options.records.store.put({kind:'personal_pack_version',schema:'personal-pack-version@1',provenance:'declared',body,index:[{key:'personal.pack.owner',value:by.id},{key:'personal.pack.id',value:personalPackKey(by.id,manifest.id)},{key:'personal.pack.digest',value:by.id+'/'+digest}]},tx);
         if(!this.#options.records.store.addIndex)throw new IntegrityError('个人包文件索引端口暂不可用');
@@ -156,16 +158,16 @@ export class PersonalPacks {
     }catch(error){if(error instanceof AccessError)throw error;checks[phase]={...checks[phase],state:'incomplete',message:'包文件暂不可读',fix:'恢复读取后重试'};return checks;}
   }
   async promote(by:Principal,ref:string):Promise<PublishOutcome>{
-    by=await this.#own(by);const info=await this.resolve(by,by.id,ref);if(!info)throw new AccessError('对象不存在或无权读取');const opened=await this.open(by.id,info.digest);if(!opened)throw new IntegrityError('个人包文件暂不可读');
+    by=await this.#own(by);return this.#options.records.store.withTransaction(async tx=>{by=await this.#options.records.principals.lockActive(by,tx);const info=await this.resolve(by,by.id,ref);if(!info)throw new AccessError('对象不存在或无权读取');const opened=await this.open(by.id,info.digest);if(!opened)throw new IntegrityError('个人包文件暂不可读');
     if(info.manifest.dependencies?.some(dep=>dep.space))return {ok:false,report:null,problems:[problem('personal.dependency','pack.json','团队发布不能依赖个人空间中的技能','先将依赖发布并安装到团队，修改依赖后重新发布')]};
     const outcome=await this.#team.publish(by,opened.handle.directory);if(!outcome.ok)return outcome;
-    await this.#options.records.store.put({kind:'personal_pack_transfer',schema:'personal-pack-transfer@1',provenance:'declared',body:PersonalPackTransferBody.parse({space:by.id,pack:info.id,version:info.version,digest:info.digest,source:info.record,target:outcome.version.record,by:by.id,at:this.#now()}),index:[{key:'personal.pack.transferred',value:info.digest}]});return outcome;
+    await this.#options.records.store.put({kind:'personal_pack_transfer',schema:'personal-pack-transfer@1',provenance:'declared',body:PersonalPackTransferBody.parse({space:by.id,pack:info.id,version:info.version,digest:info.digest,source:info.record,target:outcome.version.record,by:by.id,at:this.#now()}),index:[{key:'personal.pack.transferred',value:info.digest}]},tx);return outcome;});
   }
   async transferred(digest:string){return (await this.#options.records.store.find({kind:'personal_pack_transfer',key:'personal.pack.transferred',value:digest,limit:1})).items.length>0;}
   async source(by:Principal,sha256:string,runId?:string,capture?:string){
     const artifacts=this.#options.records.artifacts;if(!artifacts)return null;
     const records=await this.#options.records.store.findMany({kind:'personal_pack_version',key:'personal.pack.file',values:[sha256]});
-    for(const record of records){const body=PersonalPackVersionBody.parse(record.body);if(!await this.mayUse(by,body.space,body.pack))continue;if(runId){const run=(await this.#options.records.store.find<any>({kind:'run',key:'runs.id',value:runId,limit:1})).items[0]?.body;const owner=run?.runner?await this.#options.records.principals.get(run.runner):null;if(!owner||owner.disabled||!await this.mayUse(owner,body.space,body.pack)||!(run.pack_space===body.space&&run.pack_digest===body.digest||(run.skills??[]).some((skill:any)=>skill.space===body.space&&skill.digest===body.digest)))continue;}const owner=await this.#options.records.principals.get(body.space);if(!owner||owner.disabled)continue;const file=body.manifest.files.find(file=>file.sha256===sha256&&(!capture||body.files[file.path]===capture));const artifact=file?body.files[file.path]:undefined;if(artifact)return artifacts.source(owner,sha256,{record:artifact,consumer:'model'});}
+    for(const record of records){const body=PersonalPackVersionBody.parse(record.body);if(!await this.mayUse(by,body.space,body.pack))continue;if(runId){const run=(await this.#options.records.store.find<any>({kind:'run',key:'runs.id',value:runId,limit:1})).items[0]?.body;const owner=run?.runner?await this.#options.records.principals.get(run.runner):null;if(!owner||owner.disabled||!await this.mayUse(owner,body.space,body.pack)||!(run.pack_space===body.space&&run.pack_digest===body.digest||(run.skills??[]).some((skill:any)=>skill.space===body.space&&skill.digest===body.digest)))continue;}const owner=await this.#options.records.principals.get(body.space);if(!owner||owner.disabled)continue;const file=body.manifest.files.find(file=>file.sha256===sha256&&(!capture||body.files[file.path]===capture));const artifact=file?body.files[file.path]:undefined;if(artifact){const source=await artifacts.source(owner,sha256,{record:artifact,consumer:'model'});return await this.mayUse(by,body.space,body.pack)?source:null;}}
     return null;
   }
   async mayReadSource(by:Principal,sha256:string,runId?:string,capture?:string){

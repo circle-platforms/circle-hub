@@ -490,3 +490,8 @@ label fallback. B02/K01/B03 record explicit saving, unchanged old capture/run au
 and exact server-side quote locations. No record kind, stored field, rejection code, reference grammar or MCP mode changes.
 Generation changes only root `protocol.ts` (model version) and `vocabulary.ts`; the four protocol mirrors' bytes do not
 change, so their patch manifests do not advance. Static UI copy remains console code. No migration is introduced.
+
+Model 27 implements only R01's decision-91 member freeze/restore rules approved in `715b2e50`: current actor/owner checks,
+paused private grants, reversible restoration, independent team copies and an ordered committing account boundary.
+B03's frozen-run evaluation authority stays unchanged. Existing account statuses and all shapes/codes/vocabulary remain
+unchanged. Generation changes only the root protocol's model version; protocol mirrors and manifests do not advance.

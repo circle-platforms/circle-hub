@@ -928,3 +928,17 @@ queryRead already freezes its complete encoded input before supplying the loader
 Find keys cover the entire validated query, including future JSON fields. Known default aliases remain normalized;
 top-level field order is canonical for this field-based API. The batch and fallback receive exactly that normalized
 snapshot, so a new field cannot influence execution while being omitted from the cache identity.
+## Member deactivation and committing account locks
+
+`principals.lockActive(by, tx, owners)` re-reads the actor and any personal owners in the caller's transaction, takes
+`FOR SHARE` user-row locks in stable id order and returns the actor's current role. Missing/disabled accounts are the
+same `AccessError`. The locks persist through commit/rollback and conflict with `setDisabled`'s existing `FOR UPDATE`.
+Knowledge, source, memory and personal-pack writers take their business locks before the account boundary. Thus a
+completed deactivation defeats an older queued request; an already-authorized committing transaction finishes first.
+No new table, migration, advisory namespace or process-wide freeze queue is introduced. User history remains append-only.
+
+Deactivation preserves private records, grants, captures and tokens. Authentication refuses disabled accounts; restoration
+re-enables only still-live tokens and current grants. Closed console sessions and revoked tokens are not revived.
+`sourceForRun` also refuses grant-based access through a disabled personal workflow owner; the run's own reader authority
+and the engine's frozen internal evaluation remain separate. Synthetic concurrency tests observe the waiting PostgreSQL
+row lock rather than inferring lock order from a delay. No personal purge or sync path is implemented here.

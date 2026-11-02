@@ -331,7 +331,7 @@ Claude 指出 `ffb9a6cc` 首次画廊所有选中原文截图都显示中性错�
 
 本轮只补检查流程、回归和文档，没有修改模型、权限逻辑、迁移或界面设定，因此沿用此前对比度样本。未执行全量集成、Linux CI 或真实业务/模型核验。等待 Claude 复审，不进入第三块。
 
-### 第三块合约清单与实施边界（待 Claude 审查）
+### 第三块合约清单与实施边界（Claude 已批准 `715b2e50`）
 
 Claude 已批准第二块及修正 `94babcda`，并要求第三块一并修正已在本人空间的原文仍显示“保存到我的原文…”的问题。本节先列最小合约补充；**仅提交本任务页，批准前不改模型、生成物或实现。** 不更改同步分支，不开始成员删除或第四块容量工作。
 
@@ -365,3 +365,33 @@ Claude 已批准第二块及修正 `94babcda`，并要求第三块一并修正�
 在临时 loopback Hub/PostgreSQL、合成账号上，向 `knowledge-space` 锁等待处注入管理员停用：知识写入的入口检查已经完成，停用先成功返回，后续写入仍保存了新的私人版本。断言当前账号确实已停用及新版本已提交，复现脚本退出 0，证明当前提交边界存在缺口；恢复账号后同一版本仍在。此结果是缺陷复现，不是第三块验收通过。仅使用临时合成资源，未读真实系统或修改业务源码。
 
 本步执行 `node --test ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；`git diff --check` 通过。仅修改本任务页，未运行新实现的类型、功能或截图验收；模型及实现尚未修改，待上述合约审查后继续。
+
+
+### 第三块实现与验证（2026-11-03，待 Claude 审查）
+
+依照批准的 `715b2e50` 实现，没有扩大合约或接入同步/清除。本块未开始第四块容量调整与提示。
+
+- 模型 27 只在 R01 增加已批准规则。脚本逐字段比较基线和当前模型，确认只有版本及 R01 改变；B03、全部形状和词表不变。生成只有根 `protocol.ts` 的模型版本变更，四份技能镜像与清单字节未变，无迁移。
+- records 新内部端口 `principals.lockActive(by, tx, owners)` 在同一提交事务中按稳定账号顺序取得用户行 `FOR SHARE`，重读实际操作者及相关个人所有者状态，返回实际当前角色。停用的既有 `FOR UPDATE` 与它互斥：停用先完成则排队请求拒绝；写入先取得有效边界则停用等待该事务提交。知识侧把账号不可用映射到既有中性 `SOURCE_UNAVAILABLE`，不设置可跳过的生产回退。
+- 知识的初始化、条目/文件夹/撤回、原文导入/显式保存/署名、分享及配额管理在空间业务锁后取得账号边界；管理员权限使用重读后的角色。记忆写入、分享、撤回分享及重建使用同一边界。普通读取及异步加载后的条目、原文、记忆再次核对当前私人权限。
+- 个人工作流/技能发布在个人包锁后核对当前操作者和实际解析出的个人依赖所有者；文件采集、文件索引、清单登记及个人版本改在同一个事务里提交，停用拒收之前不存半份私人采集。授予/收回使用分享、退役及转到团队的个人凭据边界同样补齐。团队发布仍用既有事务和验证，不宣称任意团队发布故障均能跨事务回滚。
+- 新运行在存储快照的同一事务锁定运行者、个人工作流和技能所有者，再核对当前工作流使用权；停用后不能凭投影前状态创建运行。基于个人工作流分享的人类读取也核对当前所有者，发起者自己的已有运行权限与团队独立副本保持区分。未改 B03 冻结输入的内部评估、冻结来源读取器或维护策略。
+- 停用不追加撤回分享、不删除原件或内容；恢复沿用原版本和仍有效分享，明确收回的分享及已吊销令牌不恢复。旧 Principal、令牌和被关闭的控制台会话均有回归；被关闭的会话启用后仍需登录。团队知识、记忆和原文继续可读，署名显示真实账号及生成的“已停用”状态。成员停用/启用继续是管理员命令 Dialog，后果说明与恢复边界已补齐；停用成员不显示无法签发的邀请码或 Circle 访问令牌入口。
+- 原文 Inspector 以读者当前个人版本中精确采集的登记判断是否已保存：已保存时隐藏“保存到我的原文…”及 Dialog，下载和署名仍在；另一份同字节但独立的未归档任务上传仍可保存。没有引入“复制到另一文件夹”的动作，服务端重复保存的幂等边界保留。
+
+新增回归分布为 knowledge 8 项、个人包 5 项、运行引擎 3 项及真实 Hub 验收 2 项。知识、原文导入、原文保存、记忆、个人工作流及技能发布均用显式屏障检查两个顺序；写入先到的测试通过 `pg_stat_activity` 和 `pg_blocking_pids` 观察停用确在等待用户行锁，不用延时推断。拒收断言没有新版本、文件采集或原文对象；恢复断言同一内容/版本未被清除。屏障也会在操作提前结束时失败，不会把未到达的提交边界当成完成。新增新运行回归分别在投影后停用运行者和个人所有者，断言无运行存入；另一回归在运行冻结后停用所有者，原运行仍可按冻结内容受理并评估提交且记录不变。
+
+实际执行（Node 24、临时 loopback PostgreSQL/Hub、合成数据、隔离 Chrome，无安装依赖）：
+
+- `node node_modules/typescript/bin/tsc --noEmit`：退出 0，无诊断。`node tools/gen-contracts.ts --check`：156 个生成文件一致，退出 0。
+- `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts"`：381 通过，0 失败、0 跳过；`node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`：1 通过，0 失败、0 跳过。
+- `node --test --test-concurrency=2 hub/records/principals.test.ts hub/records/artifacts.test.ts hub/knowledge/member-freeze.test.ts hub/knowledge/spaces.test.ts hub/knowledge/sharing.test.ts hub/knowledge/memory.test.ts hub/knowledge/source-attribution.test.ts hub/knowledge/source-archive.test.ts hub/runs/packs/personal.test.ts hub/runs/packs/member-freeze.test.ts hub/runs/engine/member-freeze.test.ts hub/runs/engine/personal-capabilities.test.ts hub/server/console/source-archive.test.ts tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/50-upload-attribution.test.ts tests/acceptance/51-source-archive.test.ts tests/acceptance/52-member-freeze.test.ts`：137 通过，0 失败、0 跳过，退出 0。随后补齐物理原文对象缺失断言、屏障提前结束保护及冻结运行回归，最终执行 `node --test hub/knowledge/member-freeze.test.ts hub/runs/packs/member-freeze.test.ts hub/runs/engine/member-freeze.test.ts tests/acceptance/52-member-freeze.test.ts`：18 通过，0 失败、0 跳过，退出 0。
+- `node --test --test-concurrency=2 "hub/runs/engine/**/*.test.ts"`：558 通过，0 失败、0 跳过，退出 0；后加的冻结运行回归所在文件另跑 3 项均通过、0 跳过。
+- `node --test --test-concurrency=2 "hub/server/console/**/*.test.ts" "hub/server/console*.test.ts" hub/server/units.test.ts hub/server/readers-sharing.test.ts hub/server/contribution-readers.test.ts tests/acceptance/12-console-security.test.ts`：203 通过，0 失败、0 跳过，退出 0。对比度按实际 tokens 审计 546 项，0 失败，没有新增颜色或改共享设计目录。
+- `CIRCLE_HUB_LIBPQ_BIN=<PostgreSQL 18 客户端目录> node --test --test-concurrency=2 hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts tests/acceptance/27-check-reads-bound-sources.test.ts tests/acceptance/45-r5-capture-boundary.test.ts`：8 通过，0 失败、0 跳过，退出 0；原件测试已在 137 项组内，不重复计入此组。
+- `node hub/server/console/testing-source-archive-browser.ts`：退出 0，20 状态 × 深浅主题 × 1440/1024/390px，共 120 张矩阵及 2 张诊断图。新增成员已启用、停用 Dialog、已停用、启用 Dialog、分享暂停、分享恢复及成员恢复 7 状态。错误页 guard 及故意错误链接拒绝检查均通过，无横向页面溢出、行内按钮、用词问题或脚本异常。逐张查看 6 张已保存原文（按钮确实隐藏）和 12 张停用/启用 Dialog，另抽查成员状态与暂停/恢复的桌面和手机页面。
+- `node --test ".github/checks/*.test.ts"`：313 通过，0 失败、0 跳过，退出 0；最终 `git diff --check` 及暂存区检查通过。
+
+开发中夹具曾漏填记忆的 `expected_version`、分享的 `version` 及脚本工作流要求的跨条目声明，另有新测试把既有 MCP 拒收 `call_result=error` 写成不存在的返回值；均按既有合约修正夹具/断言后重跑，未删除并发、拒收或内容不变性检查。对比度命令首次误写导出名，改用实际 `auditContrast(tokens)` 后得到上述 546 项结果。
+
+以上是本机合成证据。未执行全套集成、Linux CI、真实模型或真实业务核验；未修改 foundation/references 或来源归档工具，未做无关的批准导入复核。同步 HTTP 与成员删除仍等待同步合入及 Claude 安排变基，第五块的个人工作流归属未提前决定。等待 Claude 审查本块。

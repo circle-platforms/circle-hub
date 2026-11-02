@@ -31,11 +31,11 @@ export const commands = {
   }),
   userDisable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-disable', user.id), title: `停用成员 ${user.name}`,
-    text: '停用后该成员的全部 Circle 与控制台会话立即失效；记录保留，可再启用。', command: command('user', 'disable', user.id),
+    text: '停用后，该成员无法访问 Hub，私人空间冻结，已分享的私人内容暂停访问。团队已取得的内容保留。重新启用后恢复仍有效的分享；不会清除内容或停止远程 Circle。', command: command('user', 'disable', user.id),
   }),
   userEnable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-enable', user.id), title: `启用成员 ${user.name}`,
-    text: '启用后该成员的有效令牌恢复可用。', command: command('user', 'enable', user.id),
+    text: '启用后，私人空间和仍有效的分享恢复可用，已收回的分享不会恢复。未吊销且未过期的 Circle 令牌恢复可用；已关闭的控制台会话需要重新登录。', command: command('user', 'enable', user.id),
   }),
   tokenRevoke: (token: { id: string; label: string }, owner: string): CommandDialog => ({
     id: dialogId('token-revoke', token.id), title: `断开 ${owner} 的 Circle`,

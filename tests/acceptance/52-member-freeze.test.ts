@@ -1,0 +1,40 @@
+// Decision 91: freeze is reversible access suspension, never a private purge or a team-content deletion.
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {createTestHub} from '../../hub/server/testing-real.ts';
+import {openConsole} from './support/console.ts';
+import {wordingProblems} from '../../hub/server/console/testing-wording.ts';
+const options={repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false};
+test('deactivation pauses personal knowledge, originals and memory for stale readers and sessions without purging or hiding team copies',async()=>{
+ const hub=await createTestHub(options);try{
+  const owner=await hub.createUser('合成冻结作者'),peer=await hub.createUser('合成冻结读者'),admin=hub.admin,spaces=hub.hub.knowledge.spaces!,memory=hub.hub.knowledge.memory,web=await openConsole(hub,owner.token),reader=await openConsole(hub,peer.token),manager=await openConsole(hub,admin.token);
+  const text=Buffer.from('合成冻结来源：原文保留。'),file=await spaces.importFile(owner.principal,text,'text/plain','合成冻结文件.txt','/分享'),entry=await spaces.write(owner.principal,{kind:'observation',path:'/分享',statement:'合成冻结知识',grounds:[{reference:'src:'+file.body.sha256,quotation:'原文保留'}]});
+  const source=(await spaces.archive(owner.principal,{scope:'personal'})).items[0];await spaces.attributeSource(owner.principal,source.record,file.digest);const shared=await spaces.share(owner.principal,{root:entry.root,path:'/分享',entry:entry.entry});assert.equal(shared.status,'merged');
+  const mem=await memory.write(owner.principal,{title:'合成冻结偏好',markdown:'合成记忆正文',path:'/分享',expected_version:null,client_key:'freeze-initial'}),teamMem=await memory.share(owner.principal,{document:mem.document,version:mem.version,client_key:'freeze-team'});assert.equal(teamMem.ok,true);
+  await spaces.grant(owner.principal,{path:'/分享',audience:'member',member:peer.user.id});await spaces.grant(owner.principal,{path:'/分享',audience:'administrators'});await memory.grant(owner.principal,{path:'/分享',audience:'member',member:peer.user.id});await memory.grant(owner.principal,{path:'/分享',audience:'administrators'});
+  const root=(await spaces.current(owner.user.id))!,body=await hub.records.store.get(file.digest),raw=await hub.records.objects.get(file.body.sha256),memBody=await memory.read(owner.principal,mem.document),proofs=await spaces.entryAttributions(peer.principal,shared.team_root!,'/分享',entry.entry),teamCapture=proofs[0].artifact;
+  const url='/console/knowledge/source?'+new URLSearchParams({sha256:file.body.sha256,artifact:file.digest}),download='/console/knowledge/download?'+new URLSearchParams({sha256:file.body.sha256,artifact:file.digest});
+  assert.equal((await reader.get(url)).status,200);assert.equal((await reader.get(download)).status,200);assert.ok(await spaces.entry(peer.principal,root.root,'/分享',entry.entry));assert.equal((await memory.read(admin.principal,mem.document)).markdown,'合成记忆正文');
+  const discarded=await hub.records.principals.issueToken(admin.principal,owner.user.id,'合成已收回令牌');await hub.records.principals.revokeToken(admin.principal,discarded.id);
+  await assert.rejects(hub.records.principals.setDisabled(peer.principal,owner.user.id,true),{name:'AccessError'});await assert.rejects(hub.records.principals.setDisabled(admin.principal,admin.user.id,true),{name:'ConflictError'});
+  await hub.records.principals.setDisabled(admin.principal,owner.user.id,true);
+  assert.equal(await hub.records.principals.authenticate('Bearer '+owner.token),null);const ended=await web.get('/console/knowledge?view=sources');assert.equal(ended.status,303);assert.match(String(ended.headers.location),/^\/console\/login/);
+  for(const actor of [owner.principal]){await assert.rejects(spaces.write(actor,{kind:'observation',statement:'合成停用后写入'}),{code:'SOURCE_UNAVAILABLE'});await assert.rejects(spaces.importFile(actor,text,'text/plain','合成停用上传'),{code:'SOURCE_UNAVAILABLE'});await assert.rejects(memory.write(actor,{title:'合成停用记忆',markdown:'合成正文',expected_version:null,client_key:'freeze-denied'}),{code:'SOURCE_UNAVAILABLE'});}
+  for(const actor of [peer.principal,admin.principal]){assert.equal(await spaces.entry(actor,root.root,'/分享',entry.entry),null);assert.equal((await spaces.archive(actor,{scope:'shared'})).total,0);assert.equal(await spaces.source(actor,file.body.sha256,undefined,'model',file.digest),null);await assert.rejects(memory.read(actor,mem.document),{code:'SOURCE_UNAVAILABLE'});assert.ok(await spaces.entry(actor,shared.team_root!,'/分享',entry.entry));assert.deepEqual(Buffer.from((await spaces.source(actor,file.body.sha256,undefined,'model',teamCapture))!.bytes!),text);assert.equal((await memory.read(actor,teamMem.share!.team_document!)).markdown,'合成记忆正文');}
+  assert.equal((await reader.get(url)).status,404);assert.equal((await reader.get(download)).status,404);const teamPage=await reader.get('/console/knowledge/source?'+new URLSearchParams({sha256:file.body.sha256,artifact:teamCapture}));assert.equal(teamPage.status,200);assert.match(teamPage.body,/已停用/);assert.deepEqual(wordingProblems(teamPage.body),[]);
+  const management=await manager.get('/console/team/'+owner.user.id);assert.match(management.body,/启用成员/);assert.match(management.body,/已收回的分享不会恢复/);assert.deepEqual(wordingProblems(management.body),[]);
+  assert.deepEqual(await spaces.current(owner.user.id),root);assert.deepEqual(await hub.records.store.get(file.digest),body);assert.deepEqual(await hub.records.objects.get(file.body.sha256),raw);
+  await hub.records.principals.setDisabled(admin.principal,owner.user.id,false);assert.ok(await hub.records.principals.authenticate('Bearer '+owner.token));assert.equal(await hub.records.principals.authenticate('Bearer '+discarded.token),null);assert.equal((await web.get('/console/knowledge?view=sources')).status,303,'a closed console session does not revive');
+  assert.equal((await reader.get(url)).status,200);assert.equal((await reader.get(download)).status,200);assert.deepEqual(await memory.read(owner.principal,mem.document),memBody);assert.deepEqual(await spaces.current(owner.user.id),root);
+  await hub.records.principals.setDisabled(admin.principal,peer.user.id,true);await spaces.grant(owner.principal,{path:'/分享',audience:'member',member:peer.user.id,revoke:true});await memory.grant(owner.principal,{path:'/分享',audience:'member',member:peer.user.id,revoke:true});await hub.records.principals.setDisabled(admin.principal,peer.user.id,false);
+  assert.equal(await spaces.entry(peer.principal,root.root,'/分享',entry.entry),null);await assert.rejects(memory.read(peer.principal,mem.document),{code:'SOURCE_UNAVAILABLE'});assert.ok(await spaces.entry(admin.principal,root.root,'/分享',entry.entry));
+ }finally{await hub.close();}
+});
+test('an already archived exact original hides its save action while an independent unsaved capture remains saveable',async()=>{
+ const hub=await createTestHub(options);try{
+  const owner=await hub.createUser('合成保存动作作者'),spaces=hub.hub.knowledge.spaces!,web=await openConsole(hub,owner.token),text=Buffer.from('合成保存动作原文'),file=await spaces.importFile(owner.principal,text,'text/plain','合成已归档原文.txt','/方法/认证');
+  const detail=await web.get('/console/knowledge/source?'+new URLSearchParams({sha256:file.body.sha256,artifact:file.digest}));assert.equal(detail.status,200);assert.doesNotMatch(detail.body,/保存到我的原文|id="save-original"/);assert.match(detail.body,/下载原文/);assert.match(detail.body,/署名为团队来源/);
+  const raw=await hub.records.artifacts.ingest({bytes:text,mediaType:'text/plain',name:'合成未归档任务原文.txt',origin:{upload:{session:'synthetic-unsaved-capture'}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:false,packs:[],shareable:false}});
+  const unsaved=await web.get('/console/knowledge/source?'+new URLSearchParams({sha256:raw.body.sha256,artifact:raw.digest}));assert.equal(unsaved.status,200);assert.match(unsaved.body,/保存到我的原文…/);assert.match(unsaved.body,/id="save-original"/);
+ }finally{await hub.close();}
+});

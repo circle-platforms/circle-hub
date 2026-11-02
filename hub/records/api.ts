@@ -131,6 +131,8 @@ export interface Principals {
   changePassword(by: Principal, current: string, next: string): Promise<boolean>;
   setRole(by: Principal, userId: string, role: PermissionRole): Promise<User>;
   setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User>;
+  /** Recheck the actor and personal owners, holding shared user-row locks until this transaction ends. */
+  lockActive(by: Principal, tx: Transaction, owners?: readonly string[]): Promise<Principal>;
   get(userId: string): Promise<User | null>;
   findByName(name: string): Promise<User | null>;
   list(): Promise<User[]>;

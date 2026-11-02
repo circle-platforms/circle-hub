@@ -76,7 +76,10 @@ try {
             if (name === 'archive-selected') {
                 assert.equal(await evaluate("document.querySelector('[data-inspector-content] h2')?.textContent"), 'synthetic-upload.txt');
                 assert.equal(await evaluate("document.querySelector('.ch-original-preview')?.textContent"), '合成浏览器导入原文：保留两份。');
+                assert.equal(await evaluate("document.querySelector('a[href=\"#save-original\"],#save-original')===null"), true, 'an archived own capture has no duplicate save action');
             }
+            if(name.startsWith('member-'))assert.equal(await evaluate("document.querySelector('[data-inspector-content] h2')?.textContent"),user.user.name);
+            if(name==='member-disabled'||name==='member-enable-dialog')assert.match(body,/已停用/);
             await evaluate("document.querySelector('[data-theme-choice=" + theme + "]').click()");
             await new Promise(r => setTimeout(r, 120));
             assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, name + ' overflow ' + width + ' ' + theme);
@@ -206,6 +209,23 @@ try {
     assert.ok((await spaces.archive(user.principal, { scope: 'personal', path: '/无脚本' })).items.length);
     checks.push('with page scripts disabled, the native quote anchor is visible and native POST/303 saves explicitly');
     await cdp('Emulation.setScriptExecutionDisabled', { value: false });
+    const manager=await openConsole(hub,hub.admin.token),memberUrl=hub.url+'/console/team/'+user.user.id;
+    await spaces.grant(user.principal,{path:'/方法/认证',audience:'member',member:peer.user.id});
+    await cdp('Network.setCookie',{name:'circle_hub_session',value:manager.sessionCookie,url:hub.url});
+    await capture('member-enabled',memberUrl);
+    await capture('member-disable-dialog',memberUrl+'#cmd-user-disable-'+user.user.id);
+    await hub.records.principals.setDisabled(hub.admin.principal,user.user.id,true);
+    await capture('member-disabled',memberUrl);
+    await capture('member-enable-dialog',memberUrl+'#cmd-user-enable-'+user.user.id);
+    await cdp('Network.setCookie',{name:'circle_hub_session',value:reader.sessionCookie,url:hub.url});
+    await capture('archive-paused',hub.url+'/console/knowledge?view=sources&scope=shared');
+    assert.ok(!(await evaluate('document.body.innerText')).includes('synthetic-upload.txt'));
+    await hub.records.principals.setDisabled(hub.admin.principal,user.user.id,false);
+    await capture('archive-restored',hub.url+'/console/knowledge?view=sources&scope=shared');
+    assert.ok((await evaluate('document.body.innerText')).includes('synthetic-upload.txt'));
+    await cdp('Network.setCookie',{name:'circle_hub_session',value:manager.sessionCookie,url:hub.url});
+    await capture('member-restored',memberUrl);
+    checks.push('member deactivation and restore dialogs, paused private shares and restored current grants use guarded HTTP 200 captures');
     assert.equal(errors.length, 0, JSON.stringify(errors));
     await writeFile(join(dir, 'capture-script.ts'), await readFile(new URL(import.meta.url)));
     await writeFile(join(dir, 'index.html'), '<!doctype html><meta charset="utf-8"><title>合成原文截图</title><style>body{font-family:sans-serif}img{max-width:100%;border:1px solid gray}section{margin:30px 0}</style>' + matrix.map(item => { const file = item.name + '-' + item.theme + '-' + item.width + '.png'; return '<section><h2>' + file + '</h2><a href="' + file + '"><img loading="lazy" src="' + file + '"></a></section>'; }).join(''));

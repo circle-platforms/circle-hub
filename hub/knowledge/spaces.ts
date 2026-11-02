@@ -1,6 +1,7 @@
 import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 // Personal/team knowledge uses immutable versions and shared content-addressed objects. Every read rechecks current grants.
 import { z } from 'zod';
+import {lockActive} from './active-account.ts';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, SourceAttributionBody, type SpaceRow, } from '../../contracts/src/spaces.ts';
@@ -152,6 +153,7 @@ export class KnowledgeSpaces {
     if(current&&(space!=='team'||canonicalize(products)===canonicalize(current.body.products)))return current;
     return this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
+      by=await lockActive(this.#ctx,by,tx);
       const previous = await this.current(space, tx);
       if (space === 'team') {
         if (previous && canonicalize(products) === canonicalize(previous.body.products))
@@ -171,7 +173,8 @@ export class KnowledgeSpaces {
     if (by.role !== 'admin' || !(await this.#ctx.records.principals.get(space)))
       fail('SOURCE_UNAVAILABLE');
     const body = SpaceQuotaBody.parse({ space, bytes, by: by.id, at: this.#ctx.now().toISOString() });
-    await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
+    await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
+      by=await lockActive(this.#ctx,by,tx);if(by.role!=='admin')fail('SOURCE_UNAVAILABLE'); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
   }
   async grants(by: Principal): Promise<SpaceGrantBody[]> {
     by = await this.#user(by);
@@ -258,6 +261,7 @@ export class KnowledgeSpaces {
     await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
+      by=await lockActive(this.#ctx,by,tx);
       const version = await this.current(by.id, tx);
       if (!input.revoke) {
         if (!version || !version.body.directories.includes(path))
@@ -377,6 +381,8 @@ export class KnowledgeSpaces {
     return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
+      by=await lockActive(this.#ctx,by,tx);
+      if(space==='team'&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');
       const previous = await this.current(space, tx);
       const grants = space === 'team' ? [] : this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY, by.id, 'knowledge_space_grant', tx));
       if (grants.some(g => withinSpacePath(input.path, g.path)))
@@ -445,6 +451,8 @@ export class KnowledgeSpaces {
     return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
+      by=await lockActive(this.#ctx,by,tx);
+      if(space==='team'&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');
       const previous = await this.current(space, tx);
       if (previous?.body.directories.includes(path))
         return previous;
@@ -458,6 +466,7 @@ export class KnowledgeSpaces {
     await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
+      by=await lockActive(this.#ctx,by,tx);
       const previous = await this.current(space, tx);
       if (!previous)
         fail('SOURCE_UNAVAILABLE');
@@ -496,8 +505,9 @@ export class KnowledgeSpaces {
         const body=await this.#entry(row);if(!body||body.space!==version.body.space||body.sync_private&&by.id!==body.space)return null;
         let state=states.get(row.entry)??row.status;
         if(body.space==='team'&&state===KnowledgeEntryStatusSchema.enum.verified&&await this.#clearedGrounds(body.grounds.map(g=>g.reference),version))state=KnowledgeEntryStatusSchema.enum.unverified;
-        return {row:{...row,status:state},body,root,reference:refOf(root,row.path,row.entry),
+        const result={row:{...row,status:state},body,root,reference:refOf(root,row.path,row.entry),
           ...await this.withdrawalState(body.grounds.map(g=>g.reference),by),cited_count:version.body.space==='team'||by.id===version.body.space?await this.#citations(version.body.space,row.entry):null};
+        return await this.mayRead(by,version.body.space,row.path)?result:null;
       }));
     });
   }
@@ -619,7 +629,7 @@ export class KnowledgeSpaces {
   async attributeSource(by:Principal,source:string,artifact:string){
     by=await this.#user(by);if(!isSha256(source)||!isSha256(artifact))fail('SOURCE_UNAVAILABLE');
     return this.#write(by.id,()=>this.#ctx.records.store.withTransaction(async tx=>{
-      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);by=await this.#user(by);
+      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);by=await lockActive(this.#ctx,by,tx);
       const registration=await this.#ctx.records.store.get(source,tx),parsed=registration?.kind==='knowledge_space_source'?SpaceSourceBody.safeParse(registration.body):null;
       if(!parsed?.success||parsed.data.space!==by.id||parsed.data.by!==by.id||parsed.data.artifact!==artifact)fail('SOURCE_UNAVAILABLE');
       const row=parsed.data,version=await this.current(by.id,tx);if(!version?.body.sources.includes(source))fail('SOURCE_UNAVAILABLE');
@@ -752,7 +762,7 @@ export class KnowledgeSpaces {
     const view=await this.entry(by,input.root,input.path,input.entry);if(!view)fail('SOURCE_UNAVAILABLE');
     await this.ensure(by,'team');
     return this.#write('team',()=>this.#ctx.records.store.withTransaction(async tx=>{
-      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await this.#ctx.records.store.lock('knowledge-space:team',tx);
+      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await this.#ctx.records.store.lock('knowledge-space:team',tx);by=await lockActive(this.#ctx,by,tx);
       const previous=await this.current('team',tx);if(!previous)fail('SHARE_GROUND_UNRESOLVED');
       const personal=await this.current(by.id,tx),row=personal?.body.entries.find(row=>row.entry===input.entry&&row.path===input.path);
       const source={space:by.id,root:input.root,path:input.path,entry:input.entry},at=this.#ctx.now().toISOString();
@@ -1093,6 +1103,10 @@ export class KnowledgeSpaces {
   }
   archive(by:Principal,query:ArchiveQuery={}){return archiveSources(this,this.#ctx,by,query);}
   original(by:Principal,query:OriginalQuery){return readOriginal(this,this.#ctx,by,query);}
+  async ownsSource(by:Principal,artifact:string){
+    by=await this.#user(by);const current=await this.current(by.id),rows=await this.#ctx.records.store.getMany<z.infer<typeof SpaceSourceBody>>(current?.body.sources??[]);
+    return [...rows.values()].some(row=>row.kind==='knowledge_space_source'&&row.body.space===by.id&&row.body.artifact===artifact);
+  }
   async archiveEligibility(by:Principal,artifact:string){
     by=await this.#user(by);const original=await this.#ctx.records.store.get<import('../records/api.ts').SourceArtifactBody>(artifact);
     if(original?.kind!=='source_artifact'||!await this.source(by,original.body.sha256,undefined,'model',artifact))return {personal:false,team:false};
@@ -1105,7 +1119,7 @@ export class KnowledgeSpaces {
     by=await this.#user(by);const space=SpaceId.parse(input.space),path=pathCheck(input.path);
     if(!isSha256(input.artifact)||input.message!=='archive:'+input.artifact||space!==by.id&&space!=='team')fail('SOURCE_UNAVAILABLE');
     return this.#write(space,()=>this.#ctx.records.store.withTransaction(async tx=>{
-      await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await this.#user(by);
+      await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await lockActive(this.#ctx,by,tx);
       const eligible=await this.archiveEligibility(by,input.artifact);if(space==='team'?!eligible.team:!eligible.personal)fail('SOURCE_UNAVAILABLE');
       if(space==='team'&&withinSpacePath(path,PRODUCTS_PATH))fail('SPACE_ENTRY_INVALID','此文件夹用于产品知识，请选择其他文件夹');
       const record=await this.#ctx.records.store.get<import('../records/api.ts').SourceArtifactBody>(input.artifact,tx);if(record?.kind!=='source_artifact')fail('SOURCE_UNAVAILABLE');
@@ -1150,6 +1164,7 @@ export class KnowledgeSpaces {
     return await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
+      by=await lockActive(this.#ctx,by,tx);
       const previous = await this.current(by.id, tx);
       const planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)]);
       if (planned.used_bytes > await this.capacity(by.id, tx))
@@ -1219,7 +1234,9 @@ export class KnowledgeSpaces {
         if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
           continue;
       }
-      return this.#ctx.records.artifacts.source(owner, sha256, { record: body.artifact, consumer });
+      const source=await this.#ctx.records.artifacts.source(owner, sha256, { record: body.artifact, consumer });
+      if(!await this.mayRead(by,body.space,body.path))continue;
+      return source;
     }
     return null;
   }

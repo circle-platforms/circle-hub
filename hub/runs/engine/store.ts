@@ -190,7 +190,7 @@ export function keyOwner(run: Pick<RunRecord, 'runner' | 'configurer'>): string 
   return run.runner ?? `hub:${run.configurer ?? ''}`;
 }
 
-export async function putRun(store: RecordStore, body: RunRecord, createdAt: string): Promise<StoredRecord<RunRecord>> {
+export async function putRun(store: RecordStore, body: RunRecord, createdAt: string, tx?:Transaction): Promise<StoredRecord<RunRecord>> {
   const record = RunRecord.parse(body);
   const index: IndexEntry[] = [
     { key: INDEX.runId, value: record.run },
@@ -203,7 +203,7 @@ export async function putRun(store: RecordStore, body: RunRecord, createdAt: str
   if (record.configurer !== undefined) index.push({ key: INDEX.runConfigurer, value: record.configurer });
   if (record.predecessor !== undefined) index.push({ key: INDEX.runPredecessor, value: record.predecessor });
   if (record.client_key !== undefined) index.push({ key: INDEX.runClientKey, value: `${keyOwner(record)}:${record.client_key}` });
-  return store.put<RunRecord>({ kind: 'run', schema: SCHEMAS.run, provenance: 'observed', body: record, created_at: createdAt, index });
+  return store.put<RunRecord>({ kind: 'run', schema: SCHEMAS.run, provenance: 'observed', body: record, created_at: createdAt, index },tx);
 }
 
 export async function runById(store: RecordStore, id: string): Promise<StoredRecord<RunRecord> | null> {

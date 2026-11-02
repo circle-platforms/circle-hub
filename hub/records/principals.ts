@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange } from './api.ts';
+import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange, Transaction } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
 import type { Database, PgTransaction, Row } from './db.ts';
 import { sha256Hex } from './digest.ts';
@@ -206,6 +206,16 @@ export class PgPrincipals implements Principals {
       if (disabled && current.role === ADMIN) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: current.role, disabled }, by.id);
     });
+  }
+
+  async lockActive(by: Principal, tx: Transaction, owners: readonly string[] = []): Promise<Principal> {
+    const ids = [...new Set([by?.id, ...owners])].sort();
+    if (ids.some(id => typeof id !== 'string' || !USER_ID.test(id))) throw new AccessError('对象不存在或无权读取');
+    // FOR SHARE conflicts with deactivation's FOR UPDATE, but lets independent active writes proceed concurrently.
+    const rows = (await this.#db.query('SELECT * FROM users WHERE id = ANY($1::text[]) ORDER BY id FOR SHARE', [ids], tx)).rows;
+    if (rows.length !== ids.length || rows.some(row => row.disabled)) throw new AccessError('对象不存在或无权读取');
+    const actor = userOf(rows.find(row => row.id === by.id)!);
+    return {id: actor.id, name: actor.name, role: actor.role};
   }
 
   async get(userId: string): Promise<User | null> {
