@@ -24,6 +24,7 @@ import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTit
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
 import { awaitingRequests } from './requests.ts';
+import { packSources } from './pack-sources.ts';
 
 export interface PageContext {
   deps: ServerDeps;
@@ -463,6 +464,7 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 }
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
+  const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
   const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
   const pending = todos.length === 0 ? html`` : section('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [code(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? code(JSON.stringify(row.detail)) : '—'])));
@@ -516,7 +518,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品包声明的来源导入到团队知识库（所有人可见）；仅管理员可用' }) : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${flow}${pending}
+    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${sources}${flow}${pending}
 ${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: '团队知识' }, html`<p class="empty">${ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品包后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的任务包所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
 }
 

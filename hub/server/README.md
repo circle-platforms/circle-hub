@@ -5,6 +5,11 @@ Decision 85, item 2: the 工作流 navigation entry retains `/console/packs` so 
 in a full-width section above checks and version controls; the old stage graph is removed. Publication states derive from
 the existing catalog fields through the generated `pack_status` display axis.
 
+Decision 85, item 3: knowledge lists 产品知识来源 and connections lists 业务系统接入, with details returning to the matching
+place. These lists use the existing permission-filtered pack catalog. Product lines come only from the active declaration
+for the displayed version; absent metadata stays unknown. System mappings show existing resource bindings and their actual
+versions without calling business systems. Members retain their existing knowledge access; the move grants no catalog rights.
+
 Decision 83, second round item 5: `user list --json` emits public account fields only (no password material or tokens). The installer uses it after deployment migrations to distinguish existing administrators from incomplete initialization.
 
 Decision 83, second round item 4: `circle-hub user password-reset <user>` uses the host operator’s administrator identity, generates a one-time initial password and requires its first-use change. It appends the existing password-change history and revokes console credentials; account-bound MCP tokens remain valid. This command also recovers the sole administrator before the initial password was changed. Team resets run that command through the management bridge at `POST /console/admin/do/password-reset`; the old direct page reset route is absent. Administrator backup failures have separate counters for each socket peer; username failures still share the account counter across sources.

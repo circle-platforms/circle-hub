@@ -183,6 +183,47 @@ describe('tasks', () => {
 });
 
 describe('operations and commands', () => {
+  test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
+    const admin=await signIn(server.admin.token);
+    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections',admin);
+    assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/packs\/line-a"/);
+    assert.ok(knowledge.body.includes(uiLabelOf('pack_kind','product')));assert.match(knowledge.body,/合成产品线（line-a）/);
+    assert.match(connections.body,/id="system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
+    assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
+    for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
+      const detail=await get('/console/packs/'+id,admin);
+      assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`>${place}</a> › <a[^>]*>${uiLabelOf('pack_kind',kind)}</a> ›`));
+      const user=await member(), session=await signIn(user.token);
+      assert.equal((await get('/console/packs/'+id,session)).status,404);
+    }
+    const user=await member(), session=await signIn(user.token), mine=await get('/console/knowledge',session);
+    assert.doesNotMatch(mine.body,/href="\/console\/packs\/line-a"/,'moving source configuration does not grant new catalog access');
+    assert.ok(mine.body.includes('合成产品线'),'existing product-line knowledge remains readable');
+  });
+
+  test('unavailable source metadata stays unknown while retired and inactive catalog states remain visible', async t => {
+    const sources = [
+      { id: 'synthetic-unknown-product', version: '1.0.0', kind: 'product' as const, title: '合成未启用来源', description: '合成说明', digest: 'c'.repeat(64), owner: null, summary: null, active: false },
+      { id: 'synthetic-unused-system', version: '1.0.0', kind: 'system' as const, title: '合成退役接入', description: '合成说明', digest: 'd'.repeat(64), owner: null, summary: null, withdrawn: true },
+    ];
+    const catalog = server.deps.packs, list = catalog.list;
+    catalog.list = async principal => (await list.call(catalog, principal)).map(pack => ({ ...pack,
+      ...(pack.id === sources[0].id ? { active: false } : {}),
+      ...(pack.id === sources[1].id ? { withdrawn: true } : {}),
+    }));
+    t.after(() => { catalog.list = list; });
+    server.fakes.workflows.packs.push(...sources);
+    t.after(() => { for (const source of sources) server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(source), 1); });
+    const admin = await signIn(server.admin.token);
+    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections', sources[1], 'retired']] as const) {
+      const body = (await get(path, admin)).body;
+      const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
+      assert.ok(row);
+      assert.ok(row.includes(uiLabelOf('pack_status', state)));
+      assert.match(row, /<td>—<\/td>/, 'no product line or business system is invented');
+    }
+  });
+
   test('workflows and generic skills have separate columns and acceptance stays above detail controls without a node graph', async t => {
     const skill={id:'synthetic-skill',version:'1.0.0',kind:'skill' as const,title:'合成通用技能',description:'合成说明',digest:'f'.repeat(64),owner:null,summary:null};
     server.fakes.workflows.packs.push(skill);

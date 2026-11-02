@@ -12,6 +12,7 @@ import { circleName } from './circles.ts';
 import { code, html, icon, link, liveModule, logo, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { readsText, systemReads } from './trial.ts';
+import { packSources } from './pack-sources.ts';
 import { button, callout, card, chip, commandLink, commandModal, duration, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 
 export interface Circle {
@@ -91,6 +92,7 @@ export async function connectionsPage(ctx: PageContext): Promise<PageResult> {
   const now = (ctx.deps.now?.() ?? new Date()).getTime();
   const circles = await circlesOf(ctx);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
+  const sources = await packSources(ctx, 'system', resources);
   let executors: ExecutorView[] | null = null;
   let executorsFailed = false;
   if (ctx.admin && ctx.deps.dispatch !== undefined) {
@@ -185,7 +187,7 @@ ${wires(rightNodes.length, false)}
       ];
     }), '尚无运行环境')}<p class="note">响应时间取近 24 小时内已有发送与应答时刻的执行器调用；耗时为 Hub 发出请求到收到应答的时间，中位与最慢按已完成的调用计算。扫描受限时次数为下限，耗时只涵盖已扫描调用。</p>`;
   }
-  const body = html`${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
+  const body = html`${sources}${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
 <div class="section">${topology}</div>`)}
 ${sectionHead('已连接的 Circle', undefined, undefined, 'circles', ctx.admin ? '按设备列出；断开生成命令，成员管理在团队页' : '仅列出本人的 Circle，断开由管理员执行')}
 ${liveModule('circles', ['member.connected'], circlesCard)}

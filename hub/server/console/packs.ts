@@ -115,5 +115,9 @@ ${permissionActions.length === 0 ? '' : html`<div class="card-f"><div class="row
 ${loadFailed ? html`<p class="notice">该版本的验收要求与检查项暂不可读；版本与权限照常显示。</p>` : ''}
 <section class="grid g-2-1 section"><div class="stack">${checks}</div>${permissions}</section>
 ${dialogs.map(commandModal)}`;
-  return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), { active: 'packs', sub: html`${link('/console/packs', uiLabelOf('pack_kind', 'workflow'))} · ${pack.title}` }), body) };
+  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',anchor:'product-sources'}
+    : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',anchor:'system-sources'}
+    : {active:'packs' as const,title:uiLabelOf('pack_kind','workflow'),path:'/console/packs',anchor:pack.kind};
+  const breadcrumb = html`${link(home.path,home.title)} › ${link(home.path+'#'+home.anchor,uiLabelOf('pack_kind',pack.kind))} › ${pack.title}`;
+  return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', pack.kind), { active: home.active, sub: breadcrumb }), body) };
 }
