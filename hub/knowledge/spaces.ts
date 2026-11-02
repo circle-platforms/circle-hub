@@ -439,11 +439,11 @@ export class KnowledgeSpaces {
     return await this.mayRead(owner, version.body.space, path) && await this.mayRead(by, version.body.space, path);
   }
   async history(by: Principal, space: string, cursor: string | null = null) {
-    if (!(await this.paths(by, space)).length)
+    by=await this.#user(by);
+    if (space!=='team'&&space!==by.id)
       return { items: [], next: null };
     const page = await this.#ctx.records.store.find({ key: VERSION_KEY, value: space, kind: 'knowledge_space_version', newestFirst: true, limit: 50, cursor });
-    const full = (await this.paths(by, space)).includes('/');
-    return { items: page.items.map(r => { const body = SpaceVersionBody.parse(r.body); return { root: r.digest, body: { space, parent: body.parent, by: body.by, at: body.at, reason: full ? body.reason : '授权目录更新' } }; }), next: page.next };
+    return { items: page.items.map(r => { const body = SpaceVersionBody.parse(r.body); return { root: r.digest, body: { space, parent: body.parent, by: body.by, at: body.at, reason: body.reason } }; }), next: page.next };
   }
   async diff(by: Principal, from: string, to: string) {
     const a = await this.version(from), b = await this.version(to);

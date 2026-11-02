@@ -951,3 +951,5 @@ Independent integration review: Antigravity reviewed fixed merge `2967a45b` with
 system. The reviewer found no static blocker in the procfs header fix, service ownership checks, or integration of the
 Linux unavailable-memory path. Synthetic Mac/Linux test results remain separate from this source review and do not
 establish target-server, real-user or production-network behavior.
+
+个人知识的目录或整个空间授权不包含版本审计历史；本人可以列出历史，被授权者页面明确说明历史仅本人可见。个人引用统计同样只给本人，HTML 与 `/console/api/knowledge/node` 共用所有者检查和个人索引；授权读取内容不授予读取统计的权限。

@@ -47,17 +47,20 @@ export interface Citations {
 
 /** The citations of `node` in `root`; null when the records offer no count. */
 export async function nodeCitations(ctx: PageContext, root: string, node: NodeView): Promise<Citations | null> {
+  const version=await ctx.deps.knowledge.spaces?.version(root);
+  const personalOwner=version?.body.space!=='team'?version?.body.space:undefined;
+  if(personalOwner&&personalOwner!==ctx.principal.id)return null;
   const store = ctx.deps.records.store;
   const now = (ctx.deps.now?.() ?? new Date()).getTime();
   const since = new Date(now - CITATION_DAYS * 86_400_000).toISOString();
   const shown = node.entries.slice(0, MAX_ENTRIES);
-  const total = await countCitations(store, { nodes: [{ root, path: node.path }], entries: shown.map((entry) => entry.entry), since, cap: CITATION_CAP });
+  const total = await countCitations(store, { nodes: [{ root, path: node.path }], entries: shown.map((entry) => entry.entry), since, cap: CITATION_CAP,personalOwner });
   if (total === null) return null;
   const reader = ctx.deps.knowledge.treeReader();
   const identity = { user: ctx.principal.id, role: ctx.principal.role };
   const entries: EntryCitation[] = [];
   for (const entry of shown) {
-    const counted = (await countCitations(store, { nodes: [], entries: [entry.entry], since, cap: CITATION_CAP }))!;
+    const counted = (await countCitations(store, { nodes: [], entries: [entry.entry], since, cap: CITATION_CAP,personalOwner }))!;
     let grounds: string[] | null = null;
     try {
       grounds = (await reader.read(root, node.path, entry.entry, identity))?.grounds ?? null;

@@ -80,6 +80,8 @@
 
 ## 做了的
 
+- 安全审查第 5、6 项：个人版本历史仅本人可列出，目录或整个空间的只读授权都不包含审计历史；页面据实说明。个人节点统计在 HTML 和 JSON 共用入口核对所有者，只有本人得到节点及条目的引用计数，且计数使用所属个人空间的索引。
+
 - 安全审查第 1、3 项：来源读取先保留独立采集的原有权限，空间来源仅补充；空间范围核对与普通来源读取分开，私有副本不改变既有来源或运行范围。运行内文本解析只在声明的输入中查找，不把整个冻结空间的原文列为候选。
 
 - 已完成模型 17 与五个显示／授权轴、五种空间记录、共用条目和目录对象格式、六工具参数扩展；同步四个技能生成镜像和补丁发布清单，业务代码未改。
@@ -90,6 +92,8 @@
 - 表单写入统一沿用密码会话、首次改密、同源与 CSRF 检查；管理员无法读取未授权的个人原文或条目，成员不能伪造他人空间写入或额度调整。
 
 ## 验证
+
+历史与计数权限：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/runs/engine/citations.test.ts hub/server/console-api.test.ts tests/acceptance/46-knowledge-spaces.test.ts` 17 项通过，0 跳过。覆盖目录／整空间授权不显示历史、本人引用计数为 1、被授权者的 HTML 不含计数且 JSON 不返回数值。
 
 安全审查复查：`npm run typecheck` 通过；`node --test --test-concurrency=1 hub/knowledge/spaces.test.ts hub/runs/engine/exact-retry.test.ts hub/server/readers-sharing.test.ts tests/acceptance/46-knowledge-spaces.test.ts` 19 项通过，0 跳过。新增跨包断言覆盖导入私有副本前后的读取、精确引用范围一致，以及运行内不能按文本查找未绑定的空间原文，仍可解析声明的输入。
 

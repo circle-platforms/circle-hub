@@ -145,12 +145,12 @@ export interface CitationCount {
 /** Accepted submissions created at or after `since` that cite any of `nodes` or `entries`, counted up to `cap`. */
 export async function countCitations(
   store: RecordStore,
-  query: { nodes: readonly { root: string; path: string }[]; entries: readonly string[]; since: string; cap?: number },
+  query: { nodes: readonly { root: string; path: string }[]; entries: readonly string[]; since: string; cap?: number; personalOwner?:string },
 ): Promise<CitationCount | null> {
   if (store.countIndexed === undefined) return null;
   const index = [
     ...query.nodes.map((node) => ({ key: INDEX.citesNode, value: citedNodeKey(node.root, node.path) })),
-    ...query.entries.map((entry) => ({ key: INDEX.citesEntry, value: entry })),
+    ...query.entries.map((entry) => query.personalOwner?({key:INDEX.citesPersonalEntry,value:personalCitedEntryKey(query.personalOwner,entry)}):({ key: INDEX.citesEntry, value: entry })),
   ];
   return store.countIndexed({ index, kind: 'submission', since: query.since, ...(query.cap === undefined ? {} : { cap: query.cap }) });
 }
