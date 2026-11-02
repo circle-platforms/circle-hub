@@ -7,7 +7,7 @@ description: 按运行器原始函数合约与 runtime-profile 核验单用例�
 
 客户端按受限结构填计划并生成工作簿，Hub 只核验及重算，不调用模型。两次运行不能合成一次：输入开始后冻结，不能在旧运行里补绑文件。
 
-本地工具由客户端装进技能目录（通用根 `~/.agents/skills/<包>/`；装好的目录即下文 `<技能目录>`，Base directory 由客户端在加载时给出）。有 `hub_skill_install`/`hub_skill_run` 时用它安装并按同一参数跑第 5、6 步，否则按下面 here-doc 跑 node。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Bearer 令牌：模型只写占位符名字，值由客户端执行时展开，不进参数、结果、日志或 Git。
+本地工具由客户端装进技能目录（通用根 `~/.agents/skills/<包>/`；装好的目录即下文 `<技能目录>`，Base directory 由客户端在加载时给出）。客户端有安装技能的工具时用它安装，并按同一参数跑第 5、6 步；没有时用 list_task_packs 回答里的安装命令，再按下面 here-doc 跑 node。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Bearer 令牌：模型只写占位符名字，值由客户端执行时展开，不进参数、结果、日志或 Git。
 
 1. 先用 test-bed 预订整个自动化测试环境（acquire 的 need.devices 写清单全部设备；已持有整台预订（如刚装过构建）就沿用）。第一次 start_run 用 case-compile，predecessor 写预订运行。对照某个构建时 product、build 和 version 写在 start_run 顶层，不写进 parameters。绑定 subject、contract、inventory、profile。整份脑图不填 parameters.autoid（Hub 选全部带文字 autoid、未声明不自动化的用例）；只编一条时从原文复制 autoid 字符串。后三项是发布的 doc:doc，profile 含 device_count 只读预检事实及可选 fold_newlines 名单。优先用敏捷文档号；只有本地导出时运行 `node <技能目录>/tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>`，上传中性文件名，在说明中原样给出两边摘要和“客户端规整”。不改写用例内容或编号。
 2. 用 get_nodes 读本次绑定的源，按分页读完。启用只说明对象/方法身份存在，不是派发授权。设备命令按锁定命令树放行，只拒合约声明的破坏性命令；不在本环境的地址：作者原文里的照留并披露，计划改出的拒。其余只读原合约结构，不从 help 散文推断。仍缺合约事实时按补证请求交具名维护者，告诉用户在等哪个请求，不让用户替维护者选；不得改冻结 profile、加本地角色或 reviewed 标志绕过。不复制默认值、内部项、认证候选或脱敏凭据。plan 槽见 slots.schema.json：bucket 为自动化测试环境，replacements 为 {case,bed} 一一对应地址。平面计划 blocks: []，steps 为 {object,method,args,keywords}；块计划 blocks 非空，steps/expects 均为 []，不可混写。args 为文字，keywords 为文字或安全非负整数。
