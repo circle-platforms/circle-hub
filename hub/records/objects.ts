@@ -108,15 +108,19 @@ export class FileObjectStore implements ObjectStore {
     }
     const retired=await this.#db.query('SELECT sha256 FROM personal_legacy_retire q WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_retired d WHERE d.sha256=q.sha256)');
     const protectedNodes=new Set<string>();
-    const protect=async(hash:string,depth=0):Promise<void>=>{
-      if(protectedNodes.has(hash))return;
+    const protect=async(hash:string,mounts:ReadonlySet<string>,depth=0):Promise<void>=>{
+      if(mounts.has(hash)||protectedNodes.has(hash))return;
       if(depth>64||!isSha256(hash))throw new IntegrityError('团队目录原件结构不完整');
       const bytes=await this.get(hash);if(!bytes)throw new IntegrityError('团队目录原件缺失');
-      protectedNodes.add(hash);for(const child of JSON.parse(Buffer.from(bytes).toString()).children??[])await protect(child.digest,depth+1);
+      protectedNodes.add(hash);for(const child of JSON.parse(Buffer.from(bytes).toString()).children??[])await protect(child.digest,mounts,depth+1);
     };
     if(retired.rows.length){
       const roots=await this.#db.query("SELECT r.body FROM records r WHERE kind='knowledge_space_version' AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest)");
-      for(const row of roots.rows){const tree=JSON.parse(String(row.body)).tree;if(tree)await protect(tree);}
+      for(const row of roots.rows){const version=JSON.parse(String(row.body));
+        // Product roots address tree_node records, not directory object files.
+        const mounts=new Set<string>((version.products??[]).map((p:{root:string})=>p.root));
+        if(version.tree)await protect(version.tree,mounts);
+      }
     }
     for(const row of retired.rows){const hash=String(row.sha256);
       // Keep separately held team/product/run originals; audit mentions alone do not own content.

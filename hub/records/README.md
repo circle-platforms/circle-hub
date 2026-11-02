@@ -773,3 +773,7 @@ Purge already deletes all epoch payloads, including client names and staged sync
 metadata. PG 18 ownership now backs up, purges and restores a real staged batch, session and operation receipt as well
 as private record bodies. Returning from local to Hub will use a new owner-defined mode function, not an UPDATE grant
 on personal_spaces (Claude 2026-11-03); that mode API remains step 5.
+
+Decision 89 review item 1: startup retirement treats each team version's products[].root as a knowledge-record mount,
+not a directory object file. It skips those mount boundaries while preserving ordinary team directory objects. The
+upgrade regression covers first and repeated startup; a real synthetic produced product also stays readable after recovery.

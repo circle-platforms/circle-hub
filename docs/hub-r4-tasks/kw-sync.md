@@ -442,3 +442,22 @@ node --test --test-concurrency=1 --test-reporter=tap \
 - 验收 46／47／48／49 均通过；49 本步证明真实 Hub 的内部端口、两个客户端、六工具边界、暂存不发布和清除，不冒称 HTTP／CAS 已完成。48 需要的 macOS 沙箱实际运行，0 跳过。
 - CAS／冲突、原生内容映射、完整原件／引文重新核验、同步 HTTP、令牌撤销／限流和方式切换仍属后续步骤，相应验收尚未实现、未运行，不计通过。未运行全量 unit／acceptance、全部工作流／引擎、知识视图性能、Linux CI 或来源归档检查；本步未改生产运行、依据读取、知识视图或来源工具。
 - 仅在 kw-sync-local 签署本机提交，无推送、PR 或部署。收尾时发现 Claude 新增的未暂存附录 kw-sync-review.md，已读到产品挂载升级、独立持有者与运行角色等审查意见；该文件保持原样，不并入本步提交。审查修复须在第 4 步之前另作提交。本次先报告第 3 步，不开始第 4 步。
+
+### 第 2 步安全审查修正 1：产品挂载与升级启动
+
+来源：Claude 2026-11-03 要求先处理 kw-sync-review.md 第 1 项。审查附录原样纳入本次修复提交；探针改写为仓库回归，不从临时审查目录导入。
+
+- 先新增带／不带产品挂载的旧库升级用例：修复前 2 项中 1 通过、挂载用例因“团队目录原件缺失”失败，确认复现。修复在每个历史团队版本的保护遍历中跳过其 products[].root；目录对象仍保留，产品知识根由知识记录读取，不作为对象文件打开。
+- 同时加入真实合成产品生产、挂载和待完成退役日志的重开回归；验证产品节点仍可读、团队目录文件保留、旧个人全局文件被退役，首次及再次启动成功。最初真实夹具漏填 build.root 且用记录摘要入口读取知识内容摘要，修正为 root:null 和知识节点端口；不改变产品生成规则。
+- 本项不改迁移 14 或 15，也不改变清除权限。其余审查项尚待各自提交；第 4 步未开始。
+
+验证：npm run typecheck、git diff --check 通过。以下定向组 22 项通过、0 失败、0 跳过；macOS 沙箱生产及 PG 18 ownership 的 3 项实际运行。首次复现的失败和真实夹具修正均如上记录，不算初跑通过。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  hub/records/personal-mount-upgrade.test.ts hub/records/personal-upgrade.test.ts \
+  hub/knowledge/personal-mount-recovery.test.ts hub/platform/environment.test.ts \
+  hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts
+```
+
+本项未运行全量回归、全部工作流／引擎、Linux CI 或来源检查；没有修改运行或依据读取逻辑。文档检查在本轮收尾执行。

@@ -177,6 +177,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Fixed
 
+- Personal-content upgrades now resume correctly when historical team trees mount product knowledge.
+
 - Console workflow cards distinguish received grants from personal ownership and show team member assignments.
   Sharing receipts display statements and team links. Knowledge/memory navigation, state chips, sizes, times,
   directory actions and grant forms follow decision 88; narrow tables scroll without splitting states or times.
