@@ -14,6 +14,11 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Personal workflow and skill methods cannot use named documents, business-system reads, leases or external effects;
+  retained publications and dynamic outputs pass the same start boundary. Accepted raw submissions recheck current
+  ground access. Team knowledge verification uses team parsers, and withdrawal warnings hide unreadable ancestor
+  identities behind counts. Sharing destinations are scanned without persisting credential-bearing paths in receipts.
+
 - Own ordinary uploads bound as run inputs now declare that exact capture to the run's current readers, with visible
   provenance and no global read grant. Administrator imports likewise declare their own ordinary uploads. Source/root
   permission checks preserve exact-validator outcomes and bounded byte-read retries; absent and forbidden references
