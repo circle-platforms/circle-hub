@@ -889,3 +889,18 @@ Source reads now reuse the same readonly record scope for distinct digest lookup
 memoizes source/readability decisions and the current viewer only during that scope; exact capture, producer and reader
 remain in the key. Every new proof retains scan/tier/provenance checks and object-byte integrity. Returned byte arrays
 are copied. Administrative and ingestion identity checks remain fresh, and later requests observe revocation/disable.
+
+Independent review hardening: memo arguments accept finite primitive/undefined values and plain JSON trees only. Keys
+explicitly distinguish null, undefined, omitted fields and -0. Sets, Maps, functions, symbols, bigint, nonfinite numbers,
+custom prototypes, proxies, accessors, symbol fields and cyclic/shared graphs bypass memoization and call the original
+method; key construction does not invoke getters or toJSON. Proxies are scoped by the port and its exact method set
+(order/duplicates do not matter); specialized record-store views have a separate namespace. Symbol methods retain identity.
+`memoReadValue(owner, key, loader)` caches a trusted read by an explicit JSON data key; its loader is control flow, never
+a port data argument. The engine's full input snapshots remain unchanged. This keeps the round-2 derivation cache without
+making an exception for functions passed as method arguments.
+
+Invalidation is guaranteed only for intercepted scopedRecordStore put/addIndex/withTransaction operations. Raw service
+handles (artifacts, principals, knowledge stores included) are not universally hooked; some writers happen to pass through
+an intercepted store, but callers must not assume that. Finish the outer read scope before a raw service write, then start
+a fresh read scope afterward. A nested withReadScope reuses its active outer scope and is not an invalidation barrier.
+POST actions stay outside the read scope; no cross-request authorization cache is introduced.

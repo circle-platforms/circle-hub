@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {startPostgres} from '../testing/postgres.ts';
 import {openTestRecords} from '../testing/records.ts';
-import {withReadScope,scopedRecordStore,memoReadPort,IntegrityError,type RecordStore} from './api.ts';
+import {withReadScope,scopedRecordStore,memoReadPort,memoReadValue,IntegrityError,type RecordStore} from './api.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 test('batched indexed pages preserve each independent order, limit and continuation including missing keys',async t=>{
@@ -91,4 +91,63 @@ test('queued reads on both sides of a write all settle and the later reads do no
   assert.deepEqual(old,[{digest:id,body:{n:0}},{items:[{digest:id,body:{n:0}}],next:null},{count:0,capped:false}]);
   assert.deepEqual(now,[{digest:id,body:{n:1}},{items:[{digest:id,body:{n:1}}],next:null},{count:1,capped:false}]);
  });
+});
+
+test('memo keys distinguish undefined from null and decline non-JSON argument values',async()=>{
+ let calls=0;const port={read:async(..._args:unknown[])=>++calls};
+ await withReadScope(async()=>{
+  const scoped=memoReadPort(port,['read']);
+  const missing=await scoped.read(undefined),nil=await scoped.read(null);assert.notEqual(missing,nil);assert.equal(await scoped.read(undefined),missing);assert.equal(await scoped.read(null),nil);
+  assert.notEqual(await scoped.read({value:undefined}),await scoped.read({value:null}));
+  assert.notEqual(await scoped.read(-0),await scoped.read(0));
+  const cyclic:any={};cyclic.self=cyclic;
+  let getterCalls=0;const getter=Object.defineProperty({},'value',{enumerable:true,get(){getterCalls++;return 1;}});
+  for(const unsupported of [new Proxy({},{}),{toJSON(){return {};}},new Set(['a']),new Map([['a',1]]),()=>1,()=>2,new Date(0),/a/,1n,Symbol('x'),NaN,Infinity,cyclic,getter]){
+   assert.notEqual(await scoped.read(unsupported),await scoped.read(unsupported),'unsupported arguments are passed through without memoization');
+  }
+  assert.equal(getterCalls,0,'key construction never invokes an argument getter');
+  const json={a:[true,'x',null],b:{value:undefined}};const first=await scoped.read(json);assert.equal(await scoped.read({a:[true,'x',null],b:{value:undefined}}),first);
+ });
+});
+test('memoized method sets are independent of call order and the specialized record view',async()=>{
+ let a=0,b=0;const port={a:async()=>++a,b:async()=>++b};
+ for(const reverse of [false,true])await withReadScope(async()=>{
+  const first=memoReadPort(port,reverse?['b']:['a']),second=memoReadPort(port,reverse?['a']:['b']);
+  assert.notEqual(first,second);assert.equal(await first[reverse?'b':'a'](),await first[reverse?'b':'a']());assert.equal(await second[reverse?'a':'b'](),await second[reverse?'a':'b']());
+  assert.notEqual(await first[reverse?'a':'b'](),await first[reverse?'a':'b'](),'an unlisted method is never memoized by a different proxy');
+  const both=memoReadPort(port,['a','b']);assert.equal(both,memoReadPort(port,['b','a','a']));
+ });
+ const store={getMany:async(ids:string[])=>new Map(ids.map(id=>[id,{digest:id,body:{}}]))} as unknown as RecordStore;
+ await withReadScope(async()=>{const generic=memoReadPort(store,['getMany']);assert.notEqual(scopedRecordStore(store),generic);});
+});
+test('generic store memo arguments retain null and undefined and bypass Sets and Maps',async()=>{
+ let calls=0;const store={list:async(..._args:unknown[])=>({items:[],next:String(++calls)})} as unknown as RecordStore;
+ await withReadScope(async()=>{
+  const scoped=scopedRecordStore(store),read=(arg:unknown)=>scoped.list(arg as never);
+  const nil=await read(null),missing=await read(undefined);assert.notDeepEqual(nil,missing);assert.deepEqual(await read(null),nil);assert.deepEqual(await read(undefined),missing);
+  for(const arg of [new Set(['a']),new Map([['a',1]]),()=>1])assert.notDeepEqual(await read(arg),await read(arg));
+ });
+});
+test('raw service writes are outside memo invalidation and a new outer read scope observes them',async()=>{
+ let value=0;const service={read:async()=>value,write:()=>{value++;}};
+ await withReadScope(async()=>{const scoped=memoReadPort(service,['read']);assert.equal(await scoped.read(),0);service.write();assert.equal(await scoped.read(),0,'raw writers are explicitly unsupported inside a read scope');});
+ await withReadScope(async()=>assert.equal(await memoReadPort(service,['read']).read(),1));
+});
+
+test('value memo uses explicit JSON keys, isolates owners and clears with intercepted writes',async()=>{
+ const owner={},other={};let calls=0;const load=async()=>({value:++calls});
+ const store={put:async()=>({})} as unknown as RecordStore;
+ await withReadScope(async()=>{
+  const first=await memoReadValue(owner,['key',undefined],load);first.value=99;
+  assert.deepEqual(await memoReadValue(owner,['key',undefined],load),{value:1});
+  assert.deepEqual(await memoReadValue(owner,['key',null],load),{value:2});
+  assert.deepEqual(await memoReadValue(other,['key',undefined],load),{value:3});
+  await scopedRecordStore(store).put({kind:'action',schema:'synthetic-value@1',provenance:'declared',body:{}});
+  assert.deepEqual(await memoReadValue(owner,['key',undefined],load),{value:4});
+  await assert.rejects(memoReadValue(owner,['failure'],async()=>{throw Error('synthetic');}));
+  assert.deepEqual(await memoReadValue(owner,['failure'],load),{value:5});
+ });
+ await withReadScope(async()=>assert.deepEqual(await memoReadValue(owner,['key',undefined],load),{value:6}));
+ const left=Symbol('read'),right=Symbol('read'),port={[left]:async()=>1,[right]:async()=>2};
+ await withReadScope(async()=>{const scoped=memoReadPort(port,[left,right]);assert.equal(await scoped[left](),1);assert.equal(await scoped[right](),2);});
 });
