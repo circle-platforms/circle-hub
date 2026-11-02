@@ -82,3 +82,29 @@ Circle 本机知识库与双向同步（第四阶段）；上传署名、原文�
 - `npm run test:docs`：287 项通过，0 失败、0 跳过。文档检查首次因索引中仍有已删除的临时防护文件而失败；显式暂存该删除后重跑通过，没有放宽文档检查。
 - Claude 2026-11-02 补充：第二阶段已变基主线并以 `kw-spaces-pr` 提交草稿 PR #128，`9716a3b` 修正生成轴值、索引锁命名空间、运行表权限列及迁移列表测试。第三阶段完成代码步骤后按指定方式变基到该分支，不重复修正第二阶段的四处代码；变基后增加运行表权限、锁命名空间与轴值规则检查，并复查受影响验收。
 - 未运行：全量单元／验收回归、Linux 隔离作业、完整备份／恢复／部署套件、`verify:references`／`test:references`、本阶段页面布局／截图检查。未改来源归档、隔离或部署工具；页面布局检查按所有者最新范围留给重新设计任务。没有新增任意 SHA 数据验证，没有推送或创建 PR。运行表权限文件中是否因缺少 PG 18 客户端跳过，在变基后的实际结果中另列，不计为通过。
+
+### 变基后的收尾检查
+
+已按协调者指定执行 `git rebase --onto kw-spaces-pr 1b14f5ed`，无冲突，继承 `9716a3b7` 的四处 CI 修复。本阶段的个人发布、授权与共享复用 `RecordStore.lock`，没有新增 advisory SQL、表或迁移；个人发布页面的授权动作使用生成的 `isKnowledgeGrantAction`。
+
+定向包命令为 `node --test --test-concurrency=1`，文件清单如下（分组之间有重复，不累计次数）：
+
+- `hub/knowledge/{sharing,operation-records-upgrade}.test.ts`
+- `hub/runs/engine/{grounds,start,start-result,submit,queries,request-readers,requests,predecessor-default,criterion-privacy,criterion-review,exact-retry,scope-retry}.test.ts`
+- `hub/runs/packs/{personal,registry}.test.ts`、`hub/refs/skills-personal.test.ts`
+- `hub/server/{docs,mcp,text,readers-sharing,console-sharing}.test.ts`
+- `hub/platform/ownership.test.ts`、`hub/records/{lock-namespaces,password}.test.ts`、`packs/workflow/case-review/packs.test.ts`
+
+受影响的验收命令为 `node --test --test-concurrency=1`，文件为 `tests/acceptance/{06-user-without-pack,11-no-judgment,12-console-security,13-idempotence,14-knowledge-sync,15-aliasing-end-to-end,16-agile-mindmap-review,17-hub-restart,19-concurrency,21-model-violations,30-shared-results,33-r5-t1t3-knowledge-qa,39-r5-t9-2-skill-packs,46-knowledge-spaces,47-knowledge-sharing}.test.ts`。
+
+变基后包检查结果：`npm run typecheck`、`npm run verify:contracts`（151 个文件）通过；上述 26 个文件的组为 276 项叶测试，275 通过、1 失败。失败为 `pages.ts` 的撤回视图用 `Pick` 直接列出两个轴值；改为从生成的 `ValidityStatus` 取 `Extract` 子集后，`node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts hub/server/console-page.test.ts` 28 项通过，0 失败、0 跳过，类型再次通过。没有调整扫描器或豁免规则，其余运行逻辑未改。
+
+跳过单列：`hub/platform/ownership.test.ts` 的 `the real records schema in a platform cluster` 整组因本机没有 PG 18 的 `pg_dump`、`pg_restore` 跳过；其中运行角色迁移／不可改写、备份恢复后权限、应用角色名配置三项没有执行，不计为通过。该跳过是 suite，Node 的叶测试汇总虽为 skipped 0，仍须与上述整组跳过一起阅读。锁命名空间、密码迁移及冻结升级回放已实际执行并通过。
+
+### 第二轮安全复核的衔接（Claude 2026-11-02）
+
+协调者追加优先级：先完成当前第三阶段步骤并提交，再到 `kw-spaces-pr` 修复第二阶段第二轮审查的第 1、2、3、5、6 项及验收 14 的间歇失败；第二阶段提交后先报告，再变基回来继续。本阶段当前类型／生成轴子集修正已检查通过并保存为本机提交。
+
+第二轮第 4 项归本阶段：被拒提交先存档，其中复制的私有引文不能通过 `rec:<提交>` 披露给管理员或被分享者。返回本阶段后核对直接记录读取与记录输入两条路径，并补被拒原始参数的明确回归测试；依据与原文权限不满足时，仍为缺失与无权同形。当前规则已隐藏部分被拒回执，不将其当作该专项检查已经完成。
+
+切换优先级时，变基后的验收组中 06／11／12／13／14／15／16／17／19 已完整通过，21 仍在运行，其余等待。暂不把这个整组计为通过；返回第三阶段时核对最终日志及未执行项。此次验证没有扩大到全量回归。

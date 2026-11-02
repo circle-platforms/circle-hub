@@ -5,7 +5,7 @@ import { digestOf } from '../../records/api.ts';
 // waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { DISPLAY_ORDER } from '../../../contracts/generated/protocol.ts';
-import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
@@ -79,7 +79,7 @@ function errorsTable(errors: readonly ProtocolError[]): Html {
 }
 
 /** Current rule status is a view qualifier, never a replacement for the immutable receipt. */
-export function ruleWithdrawalNotice(detail:Pick<RunDetail,'rule_withdrawn'|'grounds_withdrawn'>):Html{
+export function ruleWithdrawalNotice(detail:Pick<RunDetail,Extract<ValidityStatus,'rule_withdrawn'|'grounds_withdrawn'>>):Html{
   const grounds=detail.grounds_withdrawn?.length?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；依据当前已撤回，历史回执保留。</p>`:html``;
   return html`${grounds}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
 }
