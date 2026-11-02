@@ -25,6 +25,7 @@ import { button, callout, card, pills, planned, sectionHead, when } from './ui.t
 import { citationsLine, countText, nodeCitations } from './citations.ts';
 import { awaitingRequests } from './requests.ts';
 import { packSources } from './pack-sources.ts';
+import {knowledgeHome} from './knowledge-home.ts';
 import { spaceOverview } from './spaces.ts';
 
 export interface PageContext {
@@ -466,6 +467,7 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 }
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
+  if(ctx.deps.knowledge.spaces)return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge',hint:'个人、团队与当前授权的知识；记忆仅作会话偏好，不作为运行依据'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
@@ -509,15 +511,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
       ),
     );
   }
-  const flow = card({ title: '知识入库流程', hint: '个人知识保存在 Circle，不自动共享；团队知识由 Hub 校验出处，实际可读范围仍由工作流分配决定。' }, html`<div class="knowledge-flow">
-<section class="knowledge-column" aria-label="个人知识"><h3>个人（仅本人可见）</h3>
-<div class="stage planned-stage" title="Circle 读取的网页、文件、系统数据连同出处归档"><b>原文归档</b>${planned()}</div>
-<div class="stage circle" title="模型在 Circle 中归纳，结果保留在本机，不上传 Hub"><b>模型归纳</b></div></section>
-<div class="knowledge-bridge" title="确认为事实后连同出处提交；Hub 校验可追溯性和引文一致性">提交共享 → Hub 出处校验</div>
-<section class="knowledge-column" aria-label="团队知识"><h3>团队（所有人可见，Hub）</h3>
-<div class="stage on-hub" title="可追溯至原文且引文一致方可入库；Hub 不调用模型"><b>出处校验</b></div>
-<div class="stage" title="按产品线与版本组织；业务系统与文档导入同样经 Hub 校验，可读范围按工作流分配"><b>共享知识</b></div></section>
-</div>`);
+  const flow = html``;
   const actions = ctx.admin ? html`${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品目录沿用产品线读权，仅管理员可用' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}` : undefined;
   return {
     status: 200,

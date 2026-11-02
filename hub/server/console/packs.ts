@@ -1,3 +1,4 @@
+import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
 // 任务包 (the design canvas's Workflows board): the packs the reader may use (administrators: every pack, with who may use
 // it), and one pack's requirements, checks, versions and permissions. Publishing runs in the console (the publish
@@ -38,7 +39,9 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
 }
 
 export async function packsPage(ctx: PageContext): Promise<PageResult> {
-  const groups = byId(await ctx.deps.packs.list(ctx.principal));
+  const listings=await ctx.deps.packs.list(ctx.principal),scope=selectedScope(ctx);
+  const groups = byId(listings.filter(pack=>inScope(scope,pack.space??'team',ctx.principal.id)));
+  const canPublish=await ctx.deps.records.authorizations.canPublish(ctx.principal.id);
   const columns = async (kind: PackKind, hint: string,personal:boolean): Promise<Html> => {
     const cards: Html[] = [];
     for (const [id, versions] of groups) {
@@ -46,22 +49,23 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
       if (pack.kind !== kind||!!(pack.space&&pack.space!=='team')!==personal) continue;
       const state = stateOf(pack);
       const assigned = ctx.admin && kind === 'workflow' ? await assignedNames(ctx, pack) : null;
+      const audience=await currentAudience(ctx,pack.space??'team','/',false,pack.id);
       cards.push(html`<a class="pack" href="/console/packs/${pack.id}${pack.space?'?space='+encodeURIComponent(pack.space):''}">
 <span class="pack-h"><span class="${PACK_ICON[pack.kind]}">${icon('pack')}</span><span class="grow"><b>${pack.title}</b><br><span class="sub">${uiLabelOf('pack_kind', pack.kind)} · <code>${pack.id}@${pack.version}</code></span></span>${chip(state.text, state.tone)}</span>
 <span class="pack-m"><span>所有者 ${await ctx.userName(pack.owner)}</span><span>发布于 ${when(pack.published_at)}</span>${versions.length > 1 ? html`<span>${versions.length} 个版本</span>` : ''}</span>
-${assigned === null ? '' : html`<span class="pack-m"><span>使用范围：${assigned.length === 0 ? '尚未指定成员' : assigned.join('、')}</span></span>`}
+<span class="pack-m"><span>使用范围：${audience.text}</span><span>${uiLabelOf('knowledge_space_kind',pack.space&&pack.space!=='team'?'personal':'team')}</span></span>
 </a>`);
     }
-    return html`<section class="stack" aria-label="${uiLabelOf('pack_kind', kind)}" id="${personal?'personal-':'team-'}${kind}">${sectionHead(uiLabelOf('knowledge_space_kind',personal?'personal':'team')+' · '+uiLabelOf('pack_kind', kind), `${cards.length} 个`, undefined, undefined, hint)}
-${cards.length === 0 ? card(null, html`<p class="empty">尚无可用的${uiLabelOf('pack_kind', kind)}</p>`) : cards}</section>`;
+    return html`<div class="stack" id="${personal?'personal-':'team-'}${kind}">${sectionHead(uiLabelOf('knowledge_space_kind',personal?'personal':'team')+' · '+uiLabelOf('pack_kind', kind), `${cards.length} 个`, undefined, undefined, hint)}
+${cards.length === 0 ? card(null, html`<p class="empty">尚无可用的${uiLabelOf('pack_kind', kind)}</p>`) : cards}</div>`;
   };
-  const body = liveModule('packs', ['pack.published'], html`<div class="grid g2 section">
-${await columns('workflow', '仅列出本人或获授权使用的个人工作流',true)}${await columns('workflow', '规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果',false)}
-${await columns('skill', '仅列出本人或获授权使用的个人通用技能',true)}${await columns('skill', '只规定做法，没有验收要求',false)}
-</div>`);
+  const body = await spaceLayout(ctx,liveModule('packs', ['pack.published'], html`<div class="grid g2 section">
+<section class="stack" aria-label="${uiLabelOf('pack_kind','workflow')}" id="workflow">${await columns('workflow','规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果',true)}${await columns('workflow','团队工作流按分配使用',false)}</section>
+<section class="stack" aria-label="${uiLabelOf('pack_kind','skill')}" id="skill">${await columns('skill','只规定做法，没有验收要求',true)}${await columns('skill','只规定做法，没有验收要求',false)}</section>
+</div>`),listings);
   return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {
     active: 'packs', hint: '按当前读取权限列出工作流与通用技能',
-    actions:html`${button('/console/packs/-/publish','发布个人工作流或通用技能',{icon:'upload'})}${ctx.admin?button('/console/operations/pack', '发布团队工作流', {primary:true,icon:'upload'}):''}`,
+    actions:html`${button('/console/packs/-/publish','发布个人工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="btn" disabled title="没有发布权。可以先把个人工作流授权给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
 
