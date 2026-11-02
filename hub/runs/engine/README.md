@@ -971,3 +971,8 @@ and `src:` grounds with `SPACE_RESULT_GROUNDS_PRIVATE`. It also checks frozen in
 can be reused, and does not charge a model repair round. Source classification respects an independently authorized capture;
 a private duplicate cannot change it. Raw submissions still follow W07; refusal does not publish an accepted result.
 This guard is explicitly temporary: decision 84 phase 3 replaces it with complete checks against all actual result readers.
+
+Second phase-2 review: `bindInputs` now rejects a personal-space capture before its file name or projected text can enter
+any run, including judgment runs. The capture record decides this guard; an unrelated private copy of equal bytes never
+changes an independent original. Source-artifact record inputs also check original read rights before exposing metadata.
+Phase 3 replaces the temporary admission guard with actual result readers, rather than keeping a permanent private-input ban.

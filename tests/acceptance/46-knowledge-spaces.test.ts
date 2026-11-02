@@ -291,11 +291,21 @@ test('space ensure, search and starting another run do not wait behind an unrela
   }finally{if(timer)clearTimeout(timer);release();await write;index.add=original;}
 });
 
-test('fact-only runs cannot publish automatic results derived from a personal-space original during phase 2',async()=>{
+test('phase 2 refuses private originals before either judgment or fact-only runs can expose input labels',async()=>{
   await hub.assignPack(owner.principal,LOCATE_PACK);
   const map={root:{data:{id:'r1',text:'合成个人输入'},children:[{data:{id:'c1',text:'合成个人用例',resource:['合成功能']},children:[]}]},template:'default',theme:'fresh-blue',version:'1.4.43'};
-  const source=await hub.hub.knowledge.spaces!.importFile(owner.principal,Buffer.from(JSON.stringify(map)),'application/json','personal-map.json');
-  const refused=await client.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'src:'+source.body.sha256}}});
-  assert.equal(refused.out.errors[0]?.code,'SPACE_RESULT_GROUNDS_PRIVATE',refused.text);
-  assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
+  const bytes=Buffer.from(JSON.stringify(map)),source=await hub.hub.knowledge.spaces!.importFile(owner.principal,bytes,'application/json','synthetic-private-map.json');
+  const before=(await hub.records.store.list({kind:'run',limit:500})).items.length;
+  for(const pack of [REVIEW_PACK,LOCATE_PACK])for(const reference of [{reference:'src:'+source.body.sha256},{reference:'src:'+source.body.sha256,artifact:source.digest},{reference:'rec:'+source.digest}]){
+    const refused=await client.call('start_run',{pack,inputs:{map:reference}});
+    assert.equal(refused.out.errors[0]?.code,reference.reference.startsWith('rec:')?'SOURCE_UNAVAILABLE':'SPACE_RESULT_GROUNDS_PRIVATE',refused.text);
+    assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
+    assert.ok(!refused.text.includes('synthetic-private-map.json'));assert.ok(!refused.text.includes('合成个人用例'));
+  }
+  assert.equal((await hub.records.store.list({kind:'run',limit:500})).items.length,before,'no projected private label is persisted in a run');
+  const adminInput=await admin.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'rec:'+source.digest}}});
+  assert.equal(adminInput.out.errors[0]?.code,'SOURCE_UNAVAILABLE');
+  const ordinary=await hub.records.artifacts.ingest({bytes,mediaType:'application/json',name:'synthetic-common-map.json',origin:{upload:{session:null,message:null}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:true}});
+  const allowed=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}});
+  assert.equal(allowed.isError,false,allowed.text);
 });
