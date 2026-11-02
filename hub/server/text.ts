@@ -1008,7 +1008,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     const status=entry.status?`；状态 ${labelOf('knowledge_entry_status',entry.status)}`:'';
     const grounds=entry.grounds?.map(ground=>`；依据 ${ground.reference}，逐字引文 ${clip.field(ground.quotation,CLIP.field,'依据引文的超出部分','用 get_nodes 读取条目引用以取得完整依据')}`).join('')??'';
     const citations=typeof entry.cited_count==='number'?`；累计被引用 ${entry.cited_count} 次`:'';
-    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}${status}${grounds}${entry.grounds_withdrawn?.length?'；'+labelOf('validity_status','grounds_withdrawn'):''}${citations}`, omitted: clip.omitted };
+    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}${status}${grounds}${entry.grounds_withdrawn?.length||entry.grounds_withdrawn_hidden_count?'；'+labelOf('validity_status','grounds_withdrawn')+(entry.grounds_withdrawn_hidden_count?'；另有 '+entry.grounds_withdrawn_hidden_count+' 项依据不可读取':''):''}${citations}`, omitted: clip.omitted };
   });
   for (const view of node.contributions ?? []) {
     const clip = new Clip(`rec:${view.record}`);

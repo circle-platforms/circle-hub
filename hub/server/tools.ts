@@ -424,7 +424,7 @@ async function storedResult(deps: ServerDeps, call: ToolCall, answer: Answer): P
   for(let attempt=1;attempt<=2;attempt++) {
     try {
       const stored=await deps.runsDetail.getResult(call.principal,result.run,result.submission);
-      if(stored!==null){if(stored.grounds_withdrawn?.length)answer.withdrawn_grounds=stored.grounds_withdrawn;return recordReference(stored.record);}
+      if(stored!==null){if(stored.grounds_withdrawn?.length)answer.withdrawn_grounds=stored.grounds_withdrawn;if(stored.grounds_withdrawn_hidden_count)answer.withdrawn_grounds_hidden_count=stored.grounds_withdrawn_hidden_count;return recordReference(stored.record);}
       call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission} has no returned result record`);
     } catch(error) {
       call.context.adminNote(`defect.result_lookup_miss metric=1 attempt ${attempt}: submission ${result.submission}: ${describeError(error)}`);
@@ -594,10 +594,10 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   const spaceVersion=parsed.scheme==='tree'&&parsed.entry&&deps.knowledge.spaces?await deps.knowledge.spaces.version(parsed.root):null;
   const spaceEntry=spaceVersion&&parsed.scheme==='tree'&&parsed.entry?await deps.knowledge.spaces!.entry(call.principal,parsed.root,parsed.path,parsed.entry):null;
   if(spaceVersion&&parsed.scheme==='tree'&&!spaceEntry&&!spaceVersion.body.products.some(m=>parsed.path===m.path||parsed.path.startsWith(m.path+'/')))return {answer:errorAnswer('get_nodes',[unavailable()])};
-  const spaceNote=spaceEntry?'状态 '+labelOf('knowledge_entry_status',spaceEntry.row.status)+(spaceEntry.grounds_withdrawn.length?'；'+labelOf('validity_status','grounds_withdrawn'):'')+(spaceEntry.body.grounds.length?'；已逐条核对引文与路径':'；未提供依据，内容未核验'):null;
+  const spaceNote=spaceEntry?'状态 '+labelOf('knowledge_entry_status',spaceEntry.row.status)+(spaceEntry.grounds_withdrawn.length||spaceEntry.grounds_withdrawn_hidden_count?'；'+labelOf('validity_status','grounds_withdrawn'):'')+(spaceEntry.grounds_withdrawn_hidden_count?`；另有 ${spaceEntry.grounds_withdrawn_hidden_count} 项依据不可读取`:'')+(spaceEntry.body.grounds.length?'；已逐条核对引文与路径':'；未提供依据，内容未核验'):null;
   const recordView=parsed.scheme==='rec'?await deps.records.store.get(parsed.record):null;
   const resultView=recordView?.kind==='validation_result'&&deps.runs.resultState?await deps.runs.resultState(call.principal,recordView.body as import('../../contracts/src/validation.ts').ValidationResult):null;
-  const groundsNote=resultView?.grounds_withdrawn?.length?labelOf('validity_status','grounds_withdrawn'):null;
+  const groundsNote=resultView?.grounds_withdrawn?.length||resultView?.grounds_withdrawn_hidden_count?labelOf('validity_status','grounds_withdrawn')+(resultView?.grounds_withdrawn_hidden_count?`；另有 ${resultView.grounds_withdrawn_hidden_count} 项依据不可读取`:''):null;
   const derivedNote=[groundsNote,result.note,contributionNote,spaceNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
   const content = {
     reference: result.reference,
@@ -605,7 +605,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     readable: result.readable,
     ...(result.readable && result.text !== null && result.readTier === 'model_readable' ? { text: result.text } : {}),
     ...(parsed.scheme === 'src' ? { sha256: parsed.sha256 } : {}),
-    ...(result.summary!==null||feedingState||spaceEntry||groundsNote?{structure:{...result.summary,...(groundsNote?{grounds_withdrawn:resultView?.grounds_withdrawn}:{}),...(feedingState?{feeding_state:feedingState}:{}),...(spaceEntry?{entry_status:spaceEntry.row.status,grounds:spaceEntry.body.grounds,grounds_withdrawn:spaceEntry.grounds_withdrawn,data:spaceEntry.body.content.data,applicability:spaceEntry.body.content.applicability,...(spaceEntry.cited_count!==null?{cited_count:spaceEntry.cited_count}:{})}:{})}}:{}),
+    ...(result.summary!==null||feedingState||spaceEntry||groundsNote?{structure:{...result.summary,...(groundsNote?{grounds_withdrawn:resultView?.grounds_withdrawn,...(resultView?.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:resultView.grounds_withdrawn_hidden_count}:{})}:{}),...(feedingState?{feeding_state:feedingState}:{}),...(spaceEntry?{entry_status:spaceEntry.row.status,grounds:spaceEntry.body.grounds,grounds_withdrawn:spaceEntry.grounds_withdrawn,...(spaceEntry.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:spaceEntry.grounds_withdrawn_hidden_count}:{}),data:spaceEntry.body.content.data,applicability:spaceEntry.body.content.applicability,...(spaceEntry.cited_count!==null?{cited_count:spaceEntry.cited_count}:{})}:{})}}:{}),
     ...(derivedNote?{note:derivedNote}:{}),
   };
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };

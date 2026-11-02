@@ -181,6 +181,7 @@ export interface RunDetail {
   /** Live read qualifier, outside immutable run/result records and their digests. */
   rule_withdrawn?: true;
   grounds_withdrawn?: string[];
+  grounds_withdrawn_hidden_count?:number;
   management?:{record:string;disposition:'abandon';result:string|null};
   run: RunRecordView;
   submissions: RunSubmissionView[];
@@ -204,7 +205,7 @@ export interface RunsService {
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
-  resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[]}>;
+  resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
   /** Own runs for a user, every run for an admin, newest first. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;

@@ -1028,3 +1028,5 @@ Standalone input-binding and reader components tolerate an absent knowledge/feed
 unavailable refusal, malformed sources keep their parser-specific refusal, and valid standalone bindings skip optional
 feeding observation. The full audience/read wrappers use optional tree/contribution integrations while the production
 assembly continues to provide its complete knowledge port.
+
+Live withdrawal views use the current principal: readable ancestor references are listed, while other ancestors contribute only to a hidden count. Admission uses a boolean withdrawal check, so internal traversal never becomes an unfiltered public reference list.

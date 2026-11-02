@@ -404,3 +404,5 @@ The four generic skill protocol mirrors are regenerated, with only patch manifes
 XML/workbook to 1.0.9. Their parsing business code is unchanged.
 
 The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team verification cannot use personal parser capabilities, including through indirect personal grounds. Protocol mirrors and the four patch manifests are regenerated without parser business changes.
+
+Security model 22 adds optional live withdrawal counts (`grounds_withdrawn_hidden_count` in node views and `withdrawn_grounds_hidden_count` beside result receipts). They disclose no paths or digests and do not change stored records. The existing status label remains generated.

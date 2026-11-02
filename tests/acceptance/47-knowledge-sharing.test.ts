@@ -328,3 +328,16 @@ test('team verification rejects personal fabricated parsers and rechecks quotes 
   const shared=await spaces.share(owner.principal,{root:correct.root,path:'/parser-correct',entry:correct.entry});assert.equal(shared.status,'merged',JSON.stringify(shared));
   assert.equal((await reader.call('get_nodes',{reference:shared.reference!})).isError,false);
 });
+
+test('MCP withdrawal warnings count unreadable ancestors without revealing their references',async()=>{
+  const spaces=hub.hub.knowledge.spaces!,secretPath='/synthetic-hidden-ancestor',leafPath='/synthetic-visible-leaf';
+  const source=await hub.records.artifacts.ingest({bytes:Buffer.from('合成撤回链来源'),mediaType:'text/plain',origin:{read:{object:'synthetic:document:withdrawal-chain'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:false}});
+  const ancestor=await spaces.write(owner.principal,{path:secretPath,kind:'observation',statement:'合成隐藏链首',grounds:[{reference:'src:'+source.body.sha256,quotation:'合成撤回链来源'}]});
+  const ancestorRef=`tree:${ancestor.root}${secretPath}@${ancestor.entry}`;
+  const middle=await spaces.write(owner.principal,{path:'/synthetic-middle',kind:'observation',statement:'合成链中间',grounds:[{reference:ancestorRef,quotation:'合成隐藏链首'}]});
+  const leaf=await spaces.write(owner.principal,{path:leafPath,kind:'observation',statement:'合成公开链尾',grounds:[{reference:`tree:${middle.root}/synthetic-middle@${middle.entry}`,quotation:'合成链中间'}]});
+  await spaces.grant(owner.principal,{path:leafPath,audience:'member',member:other.user.id});await spaces.withdraw(owner.principal,ancestor.entry);
+  const page=await reader.call('get_nodes',{root:leaf.root,paths:[leafPath],depth:0});assert.equal(page.isError,false,page.text);
+  const entry=page.out.nodes?.flatMap(node=>node.entries).find(entry=>entry.entry===leaf.entry);assert.ok(entry);assert.equal(entry.grounds_withdrawn_hidden_count,1);assert.deepEqual(entry.grounds_withdrawn,[]);assert.ok(!JSON.stringify(page.out).includes(secretPath));assert.ok(!page.text.includes(secretPath));
+  const direct=await reader.call('get_nodes',{reference:`tree:${leaf.root}${leafPath}@${leaf.entry}`});assert.equal(direct.isError,false,direct.text);assert.equal(direct.out.content?.structure?.grounds_withdrawn_hidden_count,1);assert.ok(!JSON.stringify(direct.out).includes(ancestorRef));assert.ok(!direct.text.includes(secretPath));
+});

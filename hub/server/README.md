@@ -994,3 +994,5 @@ Run source information identifies uploader declarations: binding an own ordinary
 current actual readers in that run only. The console and MCP text show this scope; a bare source read gains no permission.
 References the submitter could not read remain absent diagnostics. Reader checks do not rerun fragment parsers, and an
 unreadable-reference observation in a stored result never authorizes reading the referenced body or a raw submission.
+
+知识条目、节点、运行及结果的撤回提示仅列当前可读的引用；其他上级依据只给数量。控制台和 MCP 的文本、结构化返回均保留这项提示，不暴露其他目录或摘要。

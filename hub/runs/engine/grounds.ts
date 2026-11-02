@@ -43,16 +43,18 @@ function resultGrounds(value:unknown,run:RunRecord):string[]{
   return [...found];
 }
 
-export async function withdrawnGrounds(ctx:EngineContext,value:unknown,trustedResult=false):Promise<string[]>{
+async function withdrawalReferences(ctx:EngineContext,value:unknown,trustedResult=false):Promise<string[]>{
   const diagnostics=trustedResult?new Set((Array.isArray(value)?value:[value]).flatMap(result=>(result as ValidationResult).unavailable_references??[])):new Set<string>();
   const references=new Set(groundsOf(value).filter(reference=>!diagnostics.has(reference))),work=[...references],seen=new Set<string>();
   while(work.length){const reference=work.pop()!;if(seen.has(reference))continue;seen.add(reference);
     const ref=parseReference(reference);if(ref.scheme!=='rec')continue;
     const record=await ctx.deps.records.store.get(ref.record);if(record?.kind!=='validation_result')continue;
-    for(const ground of groundsOf(record.body))if(!references.has(ground)){references.add(ground);work.push(ground);}
+    for(const ground of groundsOf(record.body).filter(ground=>!(record.body as ValidationResult).unavailable_references?.includes(ground)))if(!references.has(ground)){references.add(ground);work.push(ground);}
   }
-  return ctx.deps.knowledge?.spaces?.withdrawnGrounds([...references])??[];
+  return [...references];
 }
+export async function hasWithdrawnGrounds(ctx:EngineContext,value:unknown,trustedResult=false):Promise<boolean>{return ctx.deps.knowledge?.spaces?.hasWithdrawnGrounds(await withdrawalReferences(ctx,value,trustedResult))??false;}
+export async function withdrawalState(ctx:EngineContext,value:unknown,by:Principal,trustedResult=false):Promise<{grounds_withdrawn:string[];grounds_withdrawn_hidden_count:number}>{return ctx.deps.knowledge?.spaces?.withdrawalState(await withdrawalReferences(ctx,value,trustedResult),by)??{grounds_withdrawn:[],grounds_withdrawn_hidden_count:0};}
 
 export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:ValidationResult,options:{pending?:boolean;recorded?:boolean;submitter?:Principal}={}):Promise<ProtocolError|null>{
   const grounds=resultGrounds(value,run);if(!grounds.length)return null;
@@ -69,7 +71,7 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
     if(diagnostic.size)value.unavailable_references=[...diagnostic];
   }
   const evidence=grounds.filter(reference=>!diagnostic.has(reference));
-  if((await withdrawnGrounds(ctx,evidence)).length)return {code:'GROUNDS_WITHDRAWN',message:PROTOCOL_CODES.GROUNDS_WITHDRAWN.when,fix:PROTOCOL_CODES.GROUNDS_WITHDRAWN.fix};
+  if(await hasWithdrawnGrounds(ctx,evidence))return {code:'GROUNDS_WITHDRAWN',message:PROTOCOL_CODES.GROUNDS_WITHDRAWN.when,fix:PROTOCOL_CODES.GROUNDS_WITHDRAWN.fix};
   const people=await ctx.deps.records.principals.list();
   const readers:Principal[]=[];for(const person of people)if(!person.disabled&&await canViewRun(person,run,ctx.deps.records.store))readers.push(person);
   for(const by of readers)if(!await groundsReadableBy(ctx,run,evidence,by,permissionOptions))return {code:'RESULT_GROUNDS_UNREADABLE',message:PROTOCOL_CODES.RESULT_GROUNDS_UNREADABLE.when,fix:PROTOCOL_CODES.RESULT_GROUNDS_UNREADABLE.fix};

@@ -166,6 +166,7 @@ export const GetNodesInput = z.strictObject({
 const NodeEntry = z.strictObject({
   status: KnowledgeEntryStatusSchema.optional(),
   grounds_withdrawn:z.array(Ground).optional(),
+  grounds_withdrawn_hidden_count:z.number().int().nonnegative().optional().describe('Count of withdrawn ancestors whose references the current reader cannot read; no paths or digests'),
   grounds: z.array(z.strictObject({ reference: Ground, quotation: z.string() })).optional(),
   cited_count: z.number().int().nonnegative().nullable().optional(),
   entry: Sha256,
@@ -258,6 +259,7 @@ export const ResolveReferenceOutput = Envelope.extend({
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
+  withdrawn_grounds_hidden_count:z.number().int().nonnegative().optional().describe('Count of currently unreadable withdrawn grounds, without their identities'),
   acceptance: AcceptanceSchema,
   result: ValidationResult.optional().describe(
     'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',

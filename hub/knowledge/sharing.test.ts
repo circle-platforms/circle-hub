@@ -124,7 +124,7 @@ test('a new shared revision records a withdrawn predecessor without undoing its 
   const receipt=await share(w,next);assert.equal(receipt.status,'merged');assert.ok(receipt.team_root);
   assert.equal((await spaces.entry(w.user,receipt.team_root,'/notes',next.entry))?.body.replaces,first.entry);
   assert.equal((await spaces.entry(w.outsider,shared.team_root,'/notes',first.entry))?.row.status,'withdrawn');
-  assert.deepEqual(await spaces.withdrawnGrounds([shared.reference]),[shared.reference]);
+  assert.deepEqual(await spaces.withdrawnGrounds([shared.reference],w.outsider),[shared.reference]);
 });
 
 test('team destination paths are scanned and credential-bearing targets never enter refusal receipts',async t=>{
@@ -137,4 +137,24 @@ test('team destination paths are scanned and credential-bearing targets never en
   assert.equal((await share(w,entry)).status,'merged');
   const duplicate=await spaces.share(w.user,input);assert.equal(duplicate.code,'SHARE_DUPLICATE');assert.equal(duplicate.target_path,undefined,'an earlier refusal must not persist the unchecked destination either');
   const history=await spaces.shareHistory(w.user);assert.ok(!JSON.stringify(history).includes(secret));
+});
+
+test('withdrawal qualifiers hide unreadable ancestor identities and disclose only their count',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,source=await observed(w);
+  const ancestor=await spaces.write(w.user,{kind:'observation',statement:'合成隐蔽依据',path:'/private-ancestor',grounds:[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}]});
+  const ancestorRef=`tree:${ancestor.root}/private-ancestor@${ancestor.entry}`;
+  const middle=await spaces.write(w.user,{kind:'observation',statement:'合成中间条目',path:'/middle',grounds:[{reference:ancestorRef,quotation:'合成隐蔽依据'}]});
+  const middleRef=`tree:${middle.root}/middle@${middle.entry}`;
+  const leaf=await spaces.write(w.user,{kind:'observation',statement:'合成派生条目',path:'/leaf',grounds:[{reference:middleRef,quotation:'合成中间条目'}]});
+  await spaces.grant(w.user,{path:'/leaf',audience:'member',member:w.outsider.id});await spaces.withdraw(w.user,ancestor.entry);
+  const visible=await spaces.entry(w.outsider,leaf.root,'/leaf',leaf.entry);assert.ok(visible);assert.deepEqual(visible.grounds_withdrawn,[]);assert.equal(visible.grounds_withdrawn_hidden_count,1);
+  assert.ok(!JSON.stringify(visible).includes('/private-ancestor'));assert.ok(!JSON.stringify(visible).includes(ancestor.entry));
+  const ref=`tree:${leaf.root}/leaf@${leaf.entry}`;
+  assert.deepEqual(await spaces.withdrawnGrounds([ref],w.outsider),[]);assert.equal(await spaces.hasWithdrawnGrounds([ref]),true);
+  const tree=await spaces.treeReader().read(leaf.root,'/leaf',leaf.entry,{user:w.outsider.id,role:w.outsider.role}),validity=tree?.validity;assert.ok(validity&&typeof validity==='object'&&!Array.isArray(validity));assert.equal(validity.grounds_withdrawn_hidden_count,1);assert.ok(!JSON.stringify(validity).includes('/private-ancestor'));
+  assert.deepEqual((await spaces.entry(w.user,leaf.root,'/leaf',leaf.entry))?.grounds_withdrawn,[ancestorRef]);
+  await spaces.grant(w.user,{path:'/private-ancestor',audience:'member',member:w.outsider.id});
+  const granted=await spaces.entry(w.outsider,leaf.root,'/leaf',leaf.entry);assert.deepEqual(granted?.grounds_withdrawn,[ancestorRef]);assert.equal(granted?.grounds_withdrawn_hidden_count,0);
+  await spaces.grant(w.user,{path:'/private-ancestor',audience:'member',member:w.outsider.id,revoke:true});
+  assert.equal((await spaces.entry(w.outsider,leaf.root,'/leaf',leaf.entry))?.grounds_withdrawn_hidden_count,1);
 });

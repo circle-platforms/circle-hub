@@ -51,6 +51,7 @@ export interface SpaceEntryView {
   reference: string;
   cited_count: number | null;
   grounds_withdrawn: string[];
+  grounds_withdrawn_hidden_count:number;
 }
 type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise<{
   version: string;
@@ -421,10 +422,10 @@ export class KnowledgeSpaces {
       return null;
     const current = await this.current(version.body.space);
     const state = current?.body.entries.find(r => r.entry === digest)?.status ?? row.status;
-    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest), grounds_withdrawn: await this.withdrawnGrounds(body.grounds.map(g=>g.reference)), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
+    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest),...await this.withdrawalState(body.grounds.map(g=>g.reference),by), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
   }
   /** Follow immutable grounds while checking the current withdrawal projection; no historic body is changed. */
-  async withdrawnGrounds(references: readonly string[], visiting=new Set<string>(),depth=0):Promise<string[]> {
+  async #withdrawnGrounds(references: readonly string[], visiting=new Set<string>(),depth=0):Promise<string[]> {
     if(depth>64)fail('SPACE_ENTRY_INVALID','依据链超过可核对的深度上限');
     const withdrawn=new Set<string>();
     for(const reference of references){
@@ -435,9 +436,16 @@ export class KnowledgeSpaces {
       const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);if(!row)continue;
       const current=await this.current(version.body.space),state=current?.body.entries.find(row=>row.entry===ref.entry)?.status??row.status;
       if(state==='withdrawn')withdrawn.add(reference);
-      const entry=await this.#entry(row);if(entry){const next=new Set(visiting);next.add(reference);for(const ground of await this.withdrawnGrounds(entry.grounds.map(g=>g.reference),next,depth+1))withdrawn.add(ground);}
+      const entry=await this.#entry(row);if(entry){const next=new Set(visiting);next.add(reference);for(const ground of await this.#withdrawnGrounds(entry.grounds.map(g=>g.reference),next,depth+1))withdrawn.add(ground);}
     }
     return [...withdrawn];
+  }
+  async hasWithdrawnGrounds(references:readonly string[]):Promise<boolean>{return (await this.#withdrawnGrounds(references)).length>0;}
+  async withdrawnGrounds(references:readonly string[],by:Principal):Promise<string[]>{return (await this.withdrawalState(references,by)).grounds_withdrawn;}
+  async withdrawalState(references:readonly string[],by:Principal):Promise<{grounds_withdrawn:string[];grounds_withdrawn_hidden_count:number}>{
+    by=await this.#user(by);const all=await this.#withdrawnGrounds(references),visible:string[]=[];
+    for(const reference of all){const ref=parseReference(reference);if(ref.scheme!=='tree')continue;const version=await this.version(ref.root);if(version&&await this.mayRead(by,version.body.space,ref.path))visible.push(reference);}
+    return {grounds_withdrawn:visible,grounds_withdrawn_hidden_count:all.length-visible.length};
   }
   async shareHistory(by:Principal,cursor:string|null=null){
     by=await this.#user(by);
@@ -487,7 +495,7 @@ export class KnowledgeSpaces {
       let replacement:SpaceRow|undefined;
       try{
         if(!row||row.status!=='verified'||!view.body.grounds.length)fail('SHARE_UNVERIFIED');
-        if((await this.withdrawnGrounds(view.body.grounds.map(g=>g.reference))).length)fail('GROUNDS_WITHDRAWN');
+        if(await this.hasWithdrawnGrounds(view.body.grounds.map(g=>g.reference)))fail('GROUNDS_WITHDRAWN');
         const resolved=[];
         for(const ground of view.body.grounds){
           const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
@@ -799,7 +807,7 @@ export class KnowledgeSpaces {
       for (const row of version.body.entries.filter(r => r.path === path && active(r)).sort((a, b) => a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0)) {
         const view = await this.entry(by, query.root, path, row.entry);
         if (view)
-          entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, applicability: view.body.content.applicability ? canonicalize(view.body.content.applicability) : '未声明', data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, grounds_withdrawn:view.grounds_withdrawn, cited_count: view.cited_count });
+          entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, applicability: view.body.content.applicability ? canonicalize(view.body.content.applicability) : '未声明', data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, grounds_withdrawn:view.grounds_withdrawn,...(view.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:view.grounds_withdrawn_hidden_count}:{}), cited_count: view.cited_count });
       }
       const children = stored.node.children.map(child => ({ ...child, path: pathOf([...pathSegments(path), child.name]) })).filter(child => (!withinSpacePath(child.path, PRODUCTS_PATH) || child.path === PRODUCTS_PATH && visibleProducts.length > 0 || visibleProducts.some(m => withinSpacePath(m.path, child.path))) && allowed.some(a => withinSpacePath(child.path, a)));
       const node = { path, reference: refOf(query.root, path), name: stored.node.name, level: stored.level, digest: stored.digest, children, entries };
@@ -994,7 +1002,7 @@ export class KnowledgeSpaces {
         }
         if (entry) {
           const found = await this.entry(by, root, path, entry);
-          return found ? { text: found.body.content.statement, mediaType: 'text/plain', readTier: 'model_readable', data: found.body.content.data as any, grounds: found.body.grounds.map(g => g.reference), validity: { status: found.row.status,grounds_withdrawn:found.grounds_withdrawn } } : null;
+          return found ? { text: found.body.content.statement, mediaType: 'text/plain', readTier: 'model_readable', data: found.body.content.data as any, grounds: found.body.grounds.map(g => g.reference), validity: { status: found.row.status,grounds_withdrawn:found.grounds_withdrawn,...(found.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:found.grounds_withdrawn_hidden_count}:{}) } } : null;
         }
         const page = await this.getNodes({ root, paths: [path], depth: 0 }, by);
         return page?.nodes.length ? { text: canonicalize(page.nodes[0]), mediaType: 'application/json', readTier: 'model_readable' } : null;
