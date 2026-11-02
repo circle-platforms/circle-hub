@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
 import { KnowledgeEntryStatusSchema, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page } from '../records/api.ts';
+import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
@@ -709,8 +709,10 @@ export class KnowledgeSpaces {
     bytes=Uint8Array.from(bytes);
     by = await this.#user(by);
     path = pathCheck(path);
+    const upload:IngestInput={bytes,mediaType,name,origin:{upload:{session,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'};
+    try{
     this.#scan({path,name});
-    return this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
+    return await this.#writes.run(() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       const previous = await this.current(by.id, tx);
       const planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)]);
@@ -719,12 +721,21 @@ export class KnowledgeSpaces {
       if(previous)await this.#index(previous,tx);
       const grants=this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY,by.id,'knowledge_space_grant',tx));
       if(grants.some(grant=>withinSpacePath(path,grant.path)))this.#inspectSource(bytes);
-      const artifact = await this.#ctx.records.artifacts.ingest({ bytes, mediaType, name, origin: { upload: { session, message: null } }, author: { user: by.id, declared: null }, provenanceType: 'declared', visibility: { readers: [by.id], admins: false, packs: [], shareable: false }, readTier: 'model_readable' },tx);
+      const artifact = await this.#ctx.records.artifacts.ingest(upload,tx);
       const body = SpaceSourceBody.parse({ space: by.id, path, sha256: artifact.body.sha256, artifact: artifact.digest, size: artifact.body.size, by: by.id, at: this.#ctx.now().toISOString() });
       const source = await this.#ctx.records.store.put({ kind: 'knowledge_space_source', schema: 'knowledge-space-source@1', provenance: 'declared', body, index: [{ key: SOURCE_KEY, value: by.id }, { key: 'knowledge.space.source_hash', value: body.sha256 }] }, tx);
       await this.#save(by.id, previous, previous?.body.entries ?? [], [...previous?.body.directories ?? [], path], by, '导入个人知识原文', body.size, tx, [...previous?.body.sources ?? [], source.digest]);
       return artifact;
     }));
+    }catch(error){
+      if(error instanceof RecordsError&&error.code==='CREDENTIAL_IN_UPLOAD'||error instanceof KnowledgeError&&(error.code==='SPACE_CREDENTIALS_DETECTED'||error.code==='SPACE_CONTENT_UNINSPECTABLE')){
+        const action=await this.#ctx.records.artifacts.recordUploadRefusal(upload,error.code!);
+        const detail={...error.detail,action:action.digest};
+        if(error instanceof KnowledgeError)throw new KnowledgeError(error.message,{code:error.code,fix:error.fix??undefined,detail});
+        throw new RecordsError(error.message,{code:error.code,fix:error.fix,detail});
+      }
+      throw error;
+    }
   }
   /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
   async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model'): Promise<ArtifactSource | null> {

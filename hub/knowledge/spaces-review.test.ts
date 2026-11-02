@@ -53,3 +53,26 @@ test('an import whose complete next snapshot exceeds capacity leaves no source b
   assert.equal(await w.kit.objects.get(hash),null);
   assert.deepEqual(await w.kit.artifacts.records(hash),[]);
 });
+
+test('ordinary and personal upload refusals each leave one safe audit after rollback or shared-path preflight',async t=>{
+  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
+  await spaces.directory(w.user,'/shared');await spaces.grant(w.user,{path:'/shared',audience:'member',member:w.outsider.id});
+  for(const mode of ['ordinary','private','shared']){
+    const value='hunter22x-'+mode,bytes=Buffer.from('DB_PASSWORD='+value),hash=sha256Hex(bytes),before=(await spaces.current(w.user.id))!.root;
+    let refusal:unknown;
+    try{
+      if(mode==='ordinary')await w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session:null,message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true}});
+      else await spaces.importFile(w.user,bytes,'text/plain','synthetic.txt',mode==='shared'?'/shared':'/private');
+    }catch(error){refusal=error;}
+    assert.ok(refusal,mode);const expected=mode==='shared'?'SPACE_CREDENTIALS_DETECTED':'CREDENTIAL_IN_UPLOAD';
+    assert.equal((refusal as {code:string}).code,expected);
+    const actions=await w.kit.store.find<any>({key:'artifact.refused',value:hash,kind:'action'});assert.equal(actions.items.length,1,mode);
+    assert.equal((refusal as {detail:{action:string}}).detail.action,actions.items[0].digest);
+    assert.deepEqual(actions.items[0].body.codes,[expected]);assert.equal(actions.items[0].body.detail.uploader,w.user.id);
+    assert.ok(!JSON.stringify(actions.items[0]).includes(value));assert.equal(await w.kit.objects.has(hash),false);assert.deepEqual(await w.kit.artifacts.records(hash),[]);
+    assert.equal((await spaces.current(w.user.id))!.root,before);
+  }
+  const bytes=Buffer.from(zipSync({'synthetic.txt':strToU8('合成不可检查容器')})),hash=sha256Hex(bytes);
+  await assert.rejects(spaces.importFile(w.user,bytes,'application/zip','synthetic.zip','/shared'),(error:any)=>error.code==='SPACE_CONTENT_UNINSPECTABLE');
+  const actions=await w.kit.store.find<any>({key:'artifact.refused',value:hash,kind:'action'});assert.equal(actions.items.length,1);assert.deepEqual(actions.items[0].body.codes,['SPACE_CONTENT_UNINSPECTABLE']);assert.equal(await w.kit.objects.has(hash),false);
+});

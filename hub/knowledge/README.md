@@ -1198,3 +1198,7 @@ Search tokens are stored once per immutable entry record, with bounded per-docum
 README). `ensure` returns current versions directly; initialization and mount refresh use the space lock without joining
 production or space write queues. Space mutations have their own write queue. Import calculates the full prospective version
 before saving bytes; file registration and the version share a transaction. See the eight review cases in `kw-spaces.md`.
+
+Second phase-2 review: personal import rejection audits are appended only after the import transaction is released.
+Credential refusals and uninspectable shared-path originals leave one safe audit; source bytes, source records and the
+space version remain absent/unchanged. The original registered refusal and its remedy remain distinct from audit storage.

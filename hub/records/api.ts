@@ -475,6 +475,8 @@ export interface Artifacts {
    * written. An optional transaction is supported for uploads, including object registration.
    */
   ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact>;
+  /** Audit a rejected upload after its enclosing transaction rolls back. Stores safe metadata only, never bytes. */
+  recordUploadRefusal(input:Pick<IngestInput,'bytes'|'mediaType'|'origin'|'author'|'run'>,code:import('../../contracts/generated/protocol.ts').ProtocolCode):Promise<StoredRecord<ActionBody>>;
   /** Consumes whole transferable buffers by detaching every caller alias; other buffers are snapshotted. Do not reuse the input. */
   ingestTransferred(input: IngestInput): Promise<SourceArtifact>;
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */

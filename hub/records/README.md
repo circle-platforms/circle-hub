@@ -644,3 +644,8 @@ error. A source reference without the authorized run continues to use the reader
 `RecordStore.countIndexed`（决定 79）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
 
 `RecordStore.addIndex`（决定 80）：给一条已存的记录追加索引项。索引是派生的、只追加的（`record_index` 的触发器不许修改和删除），记录本身和摘要不变；已有的项保留、不重复，一条记录合计至多 200 项，不存在的记录不加，返回加了几项。运行引擎用它给索引之前受理的提交补上所引知识的索引。测试：`add-index.test.ts`。
+
+The second knowledge-space review adds `Artifacts.recordUploadRefusal` for a trusted caller after its enclosing transaction
+has rolled back. It appends safe scan/digest/uploader metadata only and never stores original bytes. Ordinary upload
+refusals keep their existing path; a transactional importer persists exactly one surviving audit, including a shared-path
+preflight refusal. The final error names that surviving audit rather than an action rolled back with the import.
