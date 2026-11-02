@@ -8,7 +8,8 @@ import type {NodesPage} from '../../ports.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {parseReference} from '../../refs/api.ts';
 import {html,link,page,table,type Html} from './html.ts';
-import {card,sectionHead,when} from './ui.ts';
+import {card,sectionHead} from './ui.ts';
+import {knowledgeState,number,timestamp} from './knowledge-display.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 import {currentAudience,spaceLayout} from './space-layout.ts';
 import {checkTable} from './grant-dialog.ts';
@@ -19,7 +20,7 @@ export function existingTeamLink(reference:string):Html{
  return ref.scheme==='tree'?link('/console/knowledge/space','已有团队条目',{space:'team',root:ref.root,path:ref.path,entry:ref.entry}):html``;
 }
 
-export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version:SpaceVersion,space:string,own:boolean,showCitations:boolean):Promise<Html>{
+export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version:SpaceVersion,space:string,own:boolean,showCitations:boolean,actions:Html=html``):Promise<Html>{
  const blocks:Html[]=[];
  for(const node of nodes.nodes){
   const headers:Array<string|Html>=[...(own?['选择']:[]),'陈述',html`<span title="${ENTRY_KIND.map(kind=>uiLabelOf('entry_kind',kind)).join('、')}">种类</span>`,'可见范围','状态',...(showCitations?['被引用']:[]),...(space==='team'?['提交人','来源','合并时间']:[])];
@@ -29,13 +30,13 @@ export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version
    const view=space==='team'?await ctx.deps.knowledge.spaces!.entry(ctx.principal,version.root,node.path,entry.entry):null;
    const shared=view?.body.shared_from;
    const source=shared?await ctx.deps.knowledge.spaces!.mayRead(ctx.principal,shared.space,shared.path)?link('/console/knowledge/space',uiLabelOf('knowledge_origin','personal_entry'),{space:shared.space,root:shared.root,path:shared.path,entry:shared.entry}):uiLabelOf('knowledge_origin','personal_entry'):view?uiLabelOf('knowledge_origin','team_import'):product?uiLabelOf('knowledge_origin','product_source'):'—';
-   rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择 ${entry.statement}">`:'—']:[]),link('/console/knowledge/space',entry.statement,{space,path:node.path,root:version.root,entry:entry.entry}),uiLabelOf('entry_kind',entry.kind),(await currentAudience(ctx,space,node.path,product)).text,entry.status?uiLabelOf('knowledge_entry_status',entry.status):'—',...(showCitations?[entry.cited_count??'—']:[]),...(space==='team'?[view?await ctx.userName(view.body.by):'—',source,view?when(view.body.at):'—']:[])]);
+   rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择 ${entry.statement}">`:'—']:[]),link('/console/knowledge/space',entry.statement,{space,path:node.path,root:version.root,entry:entry.entry}),uiLabelOf('entry_kind',entry.kind),(await currentAudience(ctx,space,node.path,product)).text,entry.status?knowledgeState(entry.status):'—',...(showCitations?[entry.cited_count==null?'—':number(entry.cited_count)]:[]),...(space==='team'?[view?await ctx.userName(view.body.by):'—',source,view?timestamp(view.body.at):'—']:[])]);
   }
   const listing=table(headers,rows,'没有条目');
   const selected=own?html`<form class="knowledge-selection" method="get" action="/console/knowledge/share-batch"><input type="hidden" name="root" value="${version.root}"><input type="hidden" name="path" value="${node.path}">${listing}<button class="btn primary batch-submit" type="submit">提交共享…</button></form>`:listing;
-  blocks.push(html`${sectionHead(directoryName(node.path))}${table(['下级目录'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})]),'没有下级目录')}${selected}`);
+  blocks.push(html`${node.path===(ctx.url.searchParams.get('path')??'/')?'':sectionHead(directoryName(node.path))}${node.children.length?table(['下级目录'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})])):''}${selected}`);
  }
- return card({title:'目录与条目',hint:own?'只有本人的已核验条目可以选择；每条独立预检并在确认时重新检查':'按当前权限显示目录、条目和合并来源'},html`${blocks}${nodes.next?link('/console/knowledge/space','下一页',{space,root:version.root,path:ctx.url.searchParams.get('path')??'/',node_cursor:nodes.next}):''}`);
+ return card({title:directoryName(ctx.url.searchParams.get('path')??'/'),tail:actions,hint:own?'只有本人的已核验条目可以选择；每条独立预检并在确认时重新检查':'按当前权限显示目录、条目和合并来源'},html`${blocks}${nodes.next?link('/console/knowledge/space','下一页',{space,root:version.root,path:ctx.url.searchParams.get('path')??'/',node_cursor:nodes.next}):''}`,'knowledge-directory');
 }
 
 const Batch=z.strictObject({root:Sha256,path:TreePath,entries:z.array(Sha256).min(1).max(100),team_path:TreePath.optional()});

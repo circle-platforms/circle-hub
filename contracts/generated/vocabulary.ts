@@ -96,7 +96,7 @@ export const AXES = {
   knowledge_grantee: { label: '授权对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
   knowledge_grant_action: { label: '授权操作', owner: 'R01', values: [{ code: 'grant', label: '授权' }, { code: 'revoke', label: '收回授权' }] },
   knowledge_share_status: { label: '提交共享状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
-  audience_scope: { label: '可见范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人' }, { code: 'members', label: '本人及 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）' }, { code: 'product', label: '该产品线的读者' }] },
+  audience_scope: { label: '可见范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人' }, { code: 'members', label: '本人及 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
   share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'personal_sources', label: '引用个人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读' }] },
   knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
@@ -1040,10 +1040,10 @@ export function isKnowledgeShareStatus(value: unknown): value is KnowledgeShareS
 }
 
 /** 可见范围 (R01) */
-export const AUDIENCE_SCOPE = ['owner', 'members', 'administrators', 'combined', 'received', 'team', 'product'] as const;
+export const AUDIENCE_SCOPE = ['owner', 'members', 'administrators', 'combined', 'received', 'team', 'team_unassigned', 'product'] as const;
 export type AudienceScope = (typeof AUDIENCE_SCOPE)[number];
-export const AUDIENCE_SCOPE_LABEL = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
-export const AUDIENCE_SCOPE_UI = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AUDIENCE_SCOPE_LABEL = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AUDIENCE_SCOPE_UI = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
 export const AudienceScopeSchema = z.enum(AUDIENCE_SCOPE);
 export function isAudienceScope(value: unknown): value is AudienceScope {
   return (AUDIENCE_SCOPE as readonly unknown[]).includes(value);

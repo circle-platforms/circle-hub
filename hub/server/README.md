@@ -1012,5 +1012,16 @@ Owners select only verified personal entries for batch sharing. Each entry has a
 again independently at confirmation; a failure stops later checks and duplicate entries link to their actual team address.
 Team rows show submitter, source and merge time. Administrator member metadata contains personal historical bytes and
 current all-administrator grant counts only, without titles, content counts or personal version activity. Workflow cards
-derive their use audience from current assignments and administrator roles, rather than treating every team workflow as
-available to every member. Credential refusals disclose field names and line numbers without matched values.
+show assigned enabled member names to administrators, or the generated unassigned label when none remain. Members see
+the team scope. Personal grant templates apply only to personal packs; administrator authority is unchanged.
+Credential refusals disclose field names and line numbers without matched values.
+
+Layout review of decision 88: received workflow/skill cards have their own group, and share history resolves readable
+statements with team links or refusal reasons. Personal and team trees omit repeated namespace roots; counts derive
+only from visible space rows or memory documents. Knowledge and memory use generated state chips, readable capacities,
+grouped byte counts and minute-level local times. Version history is collapsed by default and uses descriptive names;
+an ordinal appears only when the available history determines it. Source addresses remain unchanged.
+Directory actions sit beside the title. Each grant dialog has one POST form for preview and confirmation, preserving its
+selected audience and exact username through a same-origin/CSRF-protected redirect; confirmation rechecks authority.
+Revocation uses a secondary or danger control. Narrow tables scroll within their own boxes, while state/time/count and
+scope labels stay on one line. Synthetic layout captures are evidence for presentation only, not permission checks.

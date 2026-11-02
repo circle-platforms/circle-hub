@@ -132,7 +132,7 @@
 
 ### 状态与实施顺序
 
-本节已获 Claude 2026-11-02 审查通过，以下采用审查后的实施方案。分支最初从第三阶段 `301337ea` 开出；协议审查后依次实施，恢复时变基到 `412110e5`。第 1 至 6 步现已完成，按步骤签署本机提交。Claude 随后告知第 2、3 阶段均已合并，main 为 `0283d15`，当前基线已在 main 历史中，因此本任务不再变基，后续 PR 由协调者直接面向 main 处理。
+本节已获 Claude 2026-11-02 审查通过，以下采用审查后的实施方案。分支最初从第三阶段 `301337ea` 开出；协议审查后依次实施，恢复时变基到 `412110e5`。第 1 至 6 步现已完成，按步骤签署本机提交。Claude 随后告知第 2、3 阶段均已合并，main 为 `0283d15`，当前基线已在 main 历史中，因此本任务没有再次变基。Claude 已把 `knowledge-console` 推送为面向 main 的草稿 PR #132；本轮页面修正仍由代理只在本机提交，协调者负责推送。
 
 1. **合约与共享显示计算**：模型顺延为 23（变基前 21），登记范围措辞、预检项名称和记忆相关标签；复用 `knowledge_search_scope` 与 `static_terminal`，预检只用 `pass`／`violation`／`unchecked`／`incomplete`。增加共同的受众计算入口，按启用账户及当前授权并集计算，收回与角色变动立即生效。本人可见授权细节；被授权者只显示“来自 某成员”。四个技能只同步必要的生成协议与补丁清单，测试取 `repositorySkillVersion`。
 2. **两页空间栏及列表**：复用一个空间栏与目录显示组件，网址保存范围和目录，目录名称以“ › ”连接；窄屏改为页首标签。知识的全部／个人／团队／共享视图、原文区块、工作流两栏与数量按授权计算。最近变化用可读条目自身的更新时间，不暴露未授权目录的版本活动。成员详情只显示已批准的元数据。移除“知识入库流程”卡片，说明进入标题悬停。
@@ -248,7 +248,7 @@
 - 权限：本人／指定成员／全体管理员／无关成员、当前与继承授权、收回、角色变化、历史访问；同字节普通原件不受记忆影响。
 - 依据边界：`get_nodes.memory` 可按权限查看；普通 `rec:`、运行绑定、依据与结果引用都不能读入记忆，管理员同样受限；保留无知识端口的受控拒收。
 - 加载接口：只列团队及本人当前启用文档，受权但非本人的个人文档只能浏览；续读时版本／权限变化不能继续返回旧的加载结果。Circle 实际自动加载在第四阶段验证。
-- 必跑定向文件包含 `hub/platform/environment.test.ts`、`hub/refs/diagnostics.test.ts`；动迁移／锁时加 `hub/platform/ownership.test.ts`、`hub/records/lock-namespaces.test.ts`、`hub/records/password.test.ts`、`packs/workflow/case-review/packs.test.ts` 及迁移／冻结回放测试。每步均运行环境变量、缺省知识端口、运行角色所有权和锁命名空间检查；使用现有 PG 18 客户端设置 CIRCLE_HUB_LIBPQ_BIN。改动运行或依据代码时另跑 packs/workflow/** 和 hub/runs/engine/** 全部测试，重套件串行，跳过单列。
+- 必跑定向文件包含 `hub/platform/environment.test.ts`、`hub/refs/diagnostics.test.ts`；动迁移／锁时加 `hub/platform/ownership.test.ts`、`hub/records/lock-namespaces.test.ts`、`hub/records/password.test.ts`、`packs/workflow/case-review/packs.test.ts` 及迁移／冻结回放测试。修改 `hub/records/migrations.ts` 时必须加 `hub/records/migrations.snapshot.test.ts`（Claude 根据 #132 CI 于 2026-11-02 补充）。每步均运行环境变量、缺省知识端口、运行角色所有权和锁命名空间检查；使用现有 PG 18 客户端设置 CIRCLE_HUB_LIBPQ_BIN。改动运行或依据代码时另跑 packs/workflow/** 和 hub/runs/engine/** 全部测试，重套件串行，跳过单列。
 - 界面与新增验收覆盖本页第 37、38 项，包括真实预检中途停止、确认重查、授权撤回、范围不泄露、窄屏及记忆超限／凭据拒收。只用合成数据、临时 PostgreSQL 与临时钥匙串，不做全量回归。
 
 ### 审阅点
@@ -257,6 +257,25 @@
 
 
 ## 做了的
+
+- #132 CI 的迁移快照修正：复核迁移源相对 main 的 12 行追加，迁移 12 仅建立记忆头／累计量投影与索引，并授予限定字段更新权；迁移 1～11 的源文本不变。只更新经复核的整文件固定摘要，原有逐条 SQL 快照不变；没有修改迁移源或数据库。检查要求见上文，修正提交为 `1aab2f63`。
+
+- 页面核对意见（Claude 2026-11-02）逐项修正：
+
+| 项 | 修改 |
+| --- | --- |
+| 1 | 工作流两栏各按个人、共享给我的、团队分组；他人技能只进入共享分组，卡片所属同样标明共享给我的。 |
+| 2 | 按 Claude 随后的 CI 补充与本页第 8 项表格：团队工作流对管理员显示分配成员姓名，没有分配时显示尚未指定成员；对普通成员显示团队。个人授权措辞只用于个人包。未分配模板登记于模型 23 的显示轴，不改权限；原有 console.test.ts 的两项断言保持不变。 |
+| 3 | 首页与独立共享记录页读取本人可读来源的陈述；合并项链接到实际团队条目，拒收项列代码与原因，不把摘要用作标题。 |
+| 4 | 个人、团队分组标题下直接列顶层目录，知识与记忆均无重复根；共享给我的继续按授权人分组，深层授权不显示未授权上级名称。 |
+| 5 | 知识范围旁显示当前可读空间条目数，记忆显示当前可读文档数；只统计授权路径，隐藏的目录与条目不参与数量。 |
+| 6 | 知识四态采用绿、灰、红、橙标签，记忆启用为绿、停用为灰；颜色由生成状态码的完整类型映射决定，标签仍取生成词表。 |
+| 7 | 空间容量与原文大小采用 B／KB／MB／GB；记忆正文与限额保留字节，并加千位分隔符。 |
+| 8 | 知识、工作流、记忆及授权时间统一显示本机时区到分钟；原 ISO 仅留在机器可读时间属性。版本链接与比较选项使用时间、原因及可确定的序号，不显示摘要，也不为未完整列出的历史捏造序号。 |
+| 9 | 个人目录标题右侧放四项操作，窄屏自然换行；去掉第二处全宽授权入口；版本历史默认折叠，链接和比较选项使用同一版本名称。 |
+| 10 | 知识、包和记忆均使用一套授权表单，预检与授权提交同样的对象／用户名；预检经原有密码、Origin、CSRF 边界跳转回同一对话框，不创建授权；收回使用次要或危险样式。 |
+| 11 | 最近变化的位置列注明个人／团队；受权条目显示共享给我的 › 授权人 › 完整目录。 |
+| 12 | 窄屏宽表在各自容器内横向滚动，状态、时间和数量不拆行；空间标签不折行，超宽时仅标签行滚动。 |
 
 - 第 6 步：新增场景 48，把真实密码会话、六工具、临时数据库和 macOS 沙箱连在一起验证。补齐本人已核验条目的勾选与逐条共享预检，团队条目的提交人／来源／合并时间，重复条目链接和敏感目标目录省略；凭据提示仅显示生成的字段名称和行号。两页范围顺序固定为全部、个人、共享给我的、团队；目录与记忆页保留知识／记忆切换和当前项标识，产品树按当前读权过滤。个人卡片提供授权入口，团队工作流按实际可用账户显示使用范围；管理员成员页只增加容量与全体管理员授权数。正文编辑、导入和建目录表单从操作入口展开。桌面与窄屏隔离浏览器核对已完成，收尾记录见下文。
 
@@ -274,6 +293,10 @@
 
 ## 验证
 
+- 页面核对首轮 13 项中 12 通过、1 个新用户名断言写错；改为读取合成账户名称后修正。类型检查另发现引用次数可能未知，保留未知的“—”而不传入数量格式化。扩大检查运行全部 24 个控制台测试文件、验收 46／47／48、环境变量、缺省知识端口、PG 18 ownership、锁命名空间及包词表检查：205 项中 202 通过、3 失败、0 跳过。两项失败要求管理员保留分配姓名，一项要求独立共享页保留“团队目录”表头；恢复这些行为后，两个受影响文件加新增范围回归共 31 项通过、0 跳过。没有放宽原有权限或来源路径断言，分组重叠不相加；首轮 205 项不计整组一次通过。
+- 页面核对提交前：范围／空间栏／记忆表单、场景 48、四个必跑文件及包词表检查 52 项通过、0 失败、0 跳过。类型、155 文件合约核对及文档 289 项通过；PG 18 ownership 的 3 项实际运行，不算跳过。按原要求只做受影响检查，未运行完整 unit／acceptance、Linux 作业、来源归档或完整工作流／引擎组；本轮未改运行或依据代码。
+- 核对对应：第 1、2 项由新增 `console/packs.test.ts` 检查受权技能分组、管理员姓名／未分配及普通成员的团队措辞，既有 `console.test.ts` 保留管理员姓名检查；第 3 项由场景 48 核对陈述及团队链接，场景 47 核对选定目录和来源不变；第 4、5、11 项由空间栏和场景 48 核对当前权限、深层目录、数量与完整位置。第 6～9、12 项用场景 48 的标签／容量／折叠／版本断言及桌面窄屏截图核对；第 10 项以知识、包、记忆的真实密码表单验证单一输入、预检无授权写入、选项保留，并沿用 Origin／CSRF／确认重查测试。
+
 - 第 4 步：类型与合约生成校验通过；首轮定向组 47 通过、3 个记忆计数用例失败，修正负增量 upsert 后记忆 5 项通过；合约／运行角色／无知识端口诊断／知识容量再查 18 项通过。ownership 因未安装 PG 18 的 pg_dump 与 pg_restore 整组跳过，不计通过。锁命名空间、密码迁移、旧记录升级回放和包静态检查在首轮均通过。
 
 - 第 3 步：类型通过；知识／包／控制台定向组首次 27 通过、1 个新增合成用例失败；修正重复条目夹具并把不可读取的来源显示为检查未完成，最终知识共享与控制台重跑 22 项通过、0 跳过。新增覆盖预检无写入、顺序停止、确认时已撤回／发布权已收回。
@@ -284,7 +307,7 @@
 
 - 方案步骤：`npm run test:docs`，288 项通过，0 失败、0 跳过；`git diff --check` 通过。
 - 方案提交时只改任务页，没有运行新模型、迁移、界面或记忆运行路径的测试，当时尚未实现，不计通过。第三阶段已有验证与跳过项见 `kw-share.md`。
-- 方案提交时按第 36 项“经 Claude 审查后再实现”提交协议草案；之后遵照本页审查意见实现。整个任务没有推送、创建 PR 或修改运行中的服务。
+- 方案提交时按第 36 项“经 Claude 审查后再实现”提交协议草案；之后遵照本页审查意见实现。代理没有自行推送、创建 PR 或修改运行中的服务；报告后由 Claude 推送草稿 PR #132。
 
 ### 审查意见（Claude 2026-11-02）
 
@@ -379,3 +402,52 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
     - 空间栏的标签不折行，例如“共享给我的”，必要时让标签行横向滚动。
 
 修完后重拍桌面与窄屏截图，逐项核对；再跑受影响的控制台测试、验收场景 48、`hub/platform/environment.test.ts` 和 `hub/refs/diagnostics.test.ts`。在本页“做了的”“验证”里逐项写出修改情况，然后报告。独立安全审查也在进行，结果出来后补到本页。
+
+### 页面核对的检查与截图记录
+
+使用 Node 24、合成账户密码、临时 PostgreSQL／密钥库。首轮扩大检查的命令如下：205 项中 202 通过、3 失败、0 跳过，修正与复查已记入“验证”，不把该轮算作整组通过。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  'hub/server/console*.test.ts' 'hub/server/console/*.test.ts' \
+  tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts \
+  tests/acceptance/48-knowledge-console-memory.test.ts \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts \
+  hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts \
+  packs/workflow/case-review/packs.test.ts
+```
+
+修正后实际重跑 `hub/server/console.test.ts`、`hub/server/console/packs.test.ts`、`tests/acceptance/47-knowledge-sharing.test.ts`：31 项通过、0 跳过。提交前再次运行下列组：52 项通过、0 失败、0 跳过。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  hub/server/console/packs.test.ts hub/server/console/space-layout.test.ts \
+  hub/server/console-memory.test.ts tests/acceptance/48-knowledge-console-memory.test.ts \
+  hub/platform/environment.test.ts hub/refs/diagnostics.test.ts \
+  hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts \
+  packs/workflow/case-review/packs.test.ts
+```
+
+版本名称的日期与时间保持同一行后，类型检查通过；`hub/server/console-memory.test.ts` 与场景 48 的 9 项再次通过、0 跳过。`npm run verify:contracts` 核对 155 文件、`npm run test:docs` 的 289 项均通过；`git diff --check` 通过。各组重叠不相加，最终没有遗留失败或跳过；未运行的整套检查见“验证”。
+
+重新从临时 Hub 的真实页面取得合成 HTML，关闭 Hub／数据库后，用独立临时 Chrome 配置核对 1440×1000 和 390×844。知识库、目录、成员工作流、记忆列表、编辑、授权各两张，共 12 张；补管理员工作流两张，以及目录、记忆和授权表格横向滚动后的 3 张，共 17 张及一个布局报告，均在工作树外保存。本轮照片包含已撤回、被取代及启停记忆，已逐项观察颜色、无重复根、正确分组、陈述、单位、分钟时间、标题操作和单一授权表单。报告另实际检查整页没有横向溢出、窄屏标签不折行、时间／状态／数量不折行；表格容器宽约 310～322 像素，内部表格宽 640 像素，确实可以滚动到右侧。
+
+Claude 随后的 CI 补充明确第 2 项以本页第 8 项的受众表格为准：管理员显示分配姓名或尚未指定成员，普通成员只显示团队。已据此调整生成显示与回归，原 `hub/server/console.test.ts` 完全不改；检查结果随下节迁移 CI 修正一并记录。原“全体成员／N 名成员”的核对说法保留为历史意见，不作为最终团队工作流措辞。
+
+截图只作为布局证据，权限与写入由 HTTP／MCP 测试证明；未使用个人浏览器配置，未接触运行中的 Hub，没有新增 SHA 验真或全量回归。本轮先报告，协调者负责推送；独立安全审查结果另由协调者补充。
+
+### 后续 CI 补充与迁移快照
+
+来源：Claude 2026-11-02 转达 #132 的三项 CI 失败，并明确管理员／成员的团队工作流措辞。原 `hub/server/console.test.ts` 不改，显示逻辑按上述最终规则实现。迁移追加的外键指向不可变记录，计量保持非负约束，运行角色不能更新文档或空间身份列；没有删除、改写或替换旧 SQL。`migrations.ts` 的已复核摘要为 `eafff51af8541371ac17a55a62a90cd232f8f501a4ab396d3b1474da41d9ae62`，只同步整文件固定值，不改 `APPLIED`。这是本次明确要求的迁移源审查，不是对正文数据新增 SHA 验真。
+
+按最新措辞和快照修正再运行以下组，71 项通过、0 失败、0 跳过；包含原控制台文件的全部测试（上述两项原断言不变）、迁移快照 2 项、场景 48 和 PG 18 ownership。类型检查及 155 文件生成核对通过；各组重叠不相加。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap \
+  hub/server/console.test.ts hub/server/console/packs.test.ts \
+  hub/server/console/space-layout.test.ts hub/server/console-memory.test.ts \
+  tests/acceptance/48-knowledge-console-memory.test.ts \
+  hub/records/migrations.snapshot.test.ts hub/platform/environment.test.ts \
+  hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+  hub/records/lock-namespaces.test.ts packs/workflow/case-review/packs.test.ts
+```

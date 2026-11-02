@@ -1,6 +1,6 @@
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 // Member publication uses the same publisher as team packs, with an explicit personal namespace and owner-bound stages.
-import {grantDialog,checkTable} from './grant-dialog.ts';
+import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 import {currentAudience} from './space-layout.ts';
 import { rm } from 'node:fs/promises';
 import { KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
@@ -48,6 +48,7 @@ export async function performPersonalPackAction(ctx:PageContext,action:string,va
     return '/console/packs';
   }
   const pack=get('pack');
+  if(action==='grant'&&get('preview_grant')==='1')return grantPreviewLocation('/console/packs/'+encodeURIComponent(pack),{space:ctx.principal.id},'grant-pack',values);
   if(isKnowledgeGrantAction(action)){
     const audience=KnowledgeGranteeSchema.parse(get('audience'));
     const member=get('member_id')||(get('member')?(await ctx.deps.records.principals.findByName(get('member')))?.id:null);

@@ -416,3 +416,7 @@ get_nodes and upload_file; payload modes cannot mix with evidence or runs. Metad
 and body reads continue at UTF-8 boundaries. Sensitive sharing destinations are omitted from refused receipts.
 The same unmerged model 23 also generates knowledge-origin and memory-field display labels. They annotate directory
 rows and safe credential locations; they introduce no new record form, authority or evidence status.
+Claude's decision-88 layout/CI review adds a team-unassigned template to the same unmerged model 23 display axis.
+Administrators see assignment names or that label; members see the existing team-scope label. Personal-grant wording
+does not describe team workflows. Assignment and administrator permissions, protocol bytes and the four generic skill
+mirrors/manifests do not change.

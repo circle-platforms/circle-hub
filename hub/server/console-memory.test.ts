@@ -36,7 +36,10 @@ test('password console forms edit escaped text, manage independent grants and re
  assert.equal(saved.status,303,saved.body);const target=String(saved.headers.location),document=new URL(target,'http://127.0.0.1').searchParams.get('document')!;
  const detail=await own.get(target);assert.match(detail.body,/&lt;script&gt;合成纯文本&lt;\/script&gt;/);assert.doesNotMatch(detail.body,/<script>合成纯文本/);assert.match(detail.body,/版本历史/);
  assert.equal((await admin.get(target)).status,404);
- const grantPage=await own.get(url());assert.match(grantPage.body,/name="view" value="memory"/);
+ const grantPage=await own.get(url());assert.match(grantPage.body,/action="\/console\/knowledge\/do\/memory-grant"/);
+ const preview=await own.post('/console/knowledge/do/memory-grant',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member:w.reader.user.name,preview_grant:'1'});assert.equal(preview.status,303);
+ const checked=await own.get(String(preview.headers.location));assert.match(checked.body,new RegExp('name="member"[^>]*value="'+w.reader.user.name+'"'));assert.equal((checked.body.match(/name="member"/g)??[]).length,1);
+ assert.equal((await w.memory.grants(w.owner.principal)).length,0);
  const granted=await own.post('/console/knowledge/do/memory-grant',{csrf:csrf(grantPage.body),path:'/preferences',audience:'member',member:w.reader.user.name});assert.equal(granted.status,303,granted.body);
  const shared=await other.get(url(undefined,{scope:'shared'}));assert.match(shared.body,/来自 合成记忆作者/);assert.match(shared.body,/合成控制台记忆/);assert.doesNotMatch(shared.body,/memory-write/);
  assert.doesNotMatch((await other.get(url(document))).body,/版本历史|memory-write/);

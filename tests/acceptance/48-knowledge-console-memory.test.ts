@@ -41,9 +41,18 @@ test('space panels show all four readable scopes and only verified own knowledge
  const home=await browser.get('/console/knowledge');assert.equal(home.status,200,home.body);
  for(const scope of ['all','personal','shared','team'] as const)assert.ok(home.body.includes(uiLabelOf('knowledge_search_scope',scope)));
  assert.match(home.body,/最近变化/);assert.doesNotMatch(home.body,/知识入库流程/);
+ assert.match(home.body,/共享给我的 › 合成控制台接收人 › 共享经验/);
  const own=await browser.get(space({space:owner.user.id,path:verified.path}));assert.equal(own.status,200,own.body);
  assert.match(own.body,/方法 › 认证/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
+ assert.match(own.body,/<span class="chip c-pass">已核验<\/span>/);assert.match(own.body,/<span class="chip plain">未核验<\/span>/);
+ assert.match(own.body,/\/ 1 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
+ assert.match(own.body,/<details class="knowledge-history">/);assert.doesNotMatch(own.body,/<details class="knowledge-history" open/);
+ assert.match(own.body,/版本 2 · \d{4}-\d{2}-\d{2} \d{2}:\d{2} ·/);
+ assert.equal((own.body.match(/href="#grant-knowledge"/g)??[]).length,1);
+ const checked=await browser.post('/console/knowledge/do/grant',{csrf:csrf(own.body),path:verified.path,audience:'administrators',member:reader.user.name,preview_grant:'1'});
+ assert.equal(checked.status,303);const checkedPage=await browser.get(String(checked.headers.location));
+ assert.match(checkedPage.body,/<option value="administrators" selected>/);assert.equal((await hub.hub.knowledge.spaces!.grants(owner.principal)).length,0,'preview grants nothing');
  const shared=await browser.get(knowledge('shared'));assert.match(shared.body,/来自 合成控制台接收人/);assert.match(shared.body,/合成接收范围观察/);
  const outsider=await adminBrowser.get(knowledge('shared'));assert.doesNotMatch(outsider.body,/合成接收范围观察/);
  const metadata=await adminBrowser.get('/console/team/'+owner.user.id);assert.equal(metadata.status,200,metadata.body);assert.match(metadata.body,/个人空间已用（含历史）/);assert.doesNotMatch(metadata.body,/合成认证观察|合成未核验笔记|本目录条目/);
@@ -54,6 +63,9 @@ test('a duplicate stops the preview before credential scanning and team rows ret
  const saved=await spaces.write(owner.principal,{path:verified.path,kind:EntryKindSchema.enum.observation,statement:'合成重复预检观察',grounds:original.body.grounds});
  const input={root:saved.root,path:verified.path,entry:saved.entry,team_path:'/共享/重复'};
  const merged=await client.call('upload_file',{share_entry:input});assert.equal(merged.isError,false,merged.text);
+ const home=await browser.get('/console/knowledge');
+ assert.match(home.body,/<a href="\/console\/knowledge\/space\?space=team[^\"]+">合成重复预检观察<\/a>/);
+ assert.doesNotMatch(home.body,new RegExp('>'+saved.entry.slice(0,12)+'</a>'));
  const preview=await browser.get(space({space:owner.user.id,root:saved.root,path:verified.path,entry:saved.entry,team_path:input.team_path,share:'1'}));assert.equal(preview.status,200,preview.body);
  assert.match(preview.body,/<td>与团队条目不重复<\/td><td>未通过<\/td>/);assert.match(preview.body,/<td>凭据扫描<\/td><td>未检查<\/td>/);assert.match(preview.body,/已有团队条目/);
  const team=await received.get(space({space:'team',path:input.team_path}));assert.equal(team.status,200,team.body);for(const field of ['提交人','来源','合并时间'])assert.ok(team.body.includes(field));assert.doesNotMatch(team.body,/<input[^>]+name="selected_entry"/);
@@ -80,9 +92,14 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
 test('workflow grants reuse the dialog, hide unavailable team publication and expose no personal external actions', {skip},async()=>{
  const detail=await browser.get('/console/packs/'+pack+'?space='+owner.user.id);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);
  const listing=await browser.get('/console/packs?scope=personal');assert.match(listing.body,/#grant-pack/);
- const team=await browser.get('/console/packs?scope=team');assert.match(team.body,/使用范围：本人及全体管理员/);assert.doesNotMatch(team.body,/使用范围：全体成员（团队）/);
+ const team=await browser.get('/console/packs?scope=team');assert.match(team.body,/使用范围：团队/);assert.doesNotMatch(team.body,/使用范围：本人及|使用范围：合成控制台作者/);
+ const adminTeam=await adminBrowser.get('/console/packs?scope=team');assert.match(adminTeam.body,/使用范围：合成控制台作者/);
  assert.match(detail.body,/<button[^>]+disabled[^>]+title="没有发布权/);assert.doesNotMatch(detail.body,/name="(?:leases|dispatch|system|named_document)"|cmd-pack-assign/);
- const granted=await browser.post('/console/packs/do/grant',{csrf:csrf(detail.body),pack,audience:'member',member:reader.user.name});assert.equal(granted.status,303,granted.body);
+ const preview=await browser.post('/console/packs/do/grant',{csrf:csrf(detail.body),pack,audience:'member',member:reader.user.name,preview_grant:'1'});assert.equal(preview.status,303);
+ const checked=await browser.get(String(preview.headers.location));assert.equal(checked.status,200,checked.body);
+ assert.equal((checked.body.match(/name="member"/g)??[]).length,1);assert.match(checked.body,/name="member"[^>]*value="合成控制台接收人"/);
+ assert.equal((await hub.hub.registry.personal!.grants(owner.principal,pack)).length,0);
+ const granted=await browser.post('/console/packs/do/grant',{csrf:csrf(checked.body),pack,audience:'member',member:reader.user.name});assert.equal(granted.status,303,granted.body);
  const visible=await received.get('/console/packs?scope=shared');assert.match(visible.body,/来自 合成控制台作者/);assert.match(visible.body,new RegExp(pack));
  const revoke=await browser.post('/console/packs/do/revoke',{csrf:csrf(detail.body),pack,audience:'member',member_id:reader.user.id});assert.equal(revoke.status,303,revoke.body);
  assert.doesNotMatch((await received.get('/console/packs?scope=shared')).body,new RegExp(pack));

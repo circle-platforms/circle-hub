@@ -1,5 +1,5 @@
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
-import {grantDialog,checkTable} from './grant-dialog.ts';
+import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 import {spaceLayout,currentAudience,knowledgeTabs} from './space-layout.ts';
 import {directoryName} from './audience.ts';
 import {knowledgeDirectory,batchSharePage,shareBatch,existingTeamLink} from './knowledge-directory.ts';
@@ -11,14 +11,16 @@ import { KnowledgeError, type SpaceEntryView } from '../../knowledge/api.ts';
 import { RecordsError } from '../../records/api.ts';
 import { code, html, link, page, pre, table, type Html } from './html.ts';
 import { neutralPage, treePage, type PageContext, type PageResult } from './pages.ts';
-import { button, card, chip, kv, sectionHead, when } from './ui.ts';
+import { button, card, chip, kv, sectionHead } from './ui.ts';
+import {knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
+import {sharingRows} from './sharing-history.ts';
 const field = (name: string, control: Html, hint?: string) => html `<label${hint ? html ` title="${hint}"` : ''}>${name}${control}</label>`;
 function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false): Html {
-  return html `<form method="post" action="/console/knowledge/do/${action}"${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><div class="fields">${fields}</div><button type="submit" class="btn primary mt12"${disabled?html` disabled`:html``}>${label}</button></form>`;
+  return html `<form method="post" action="/console/knowledge/do/${action}"${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><div class="fields">${fields}</div><button type="submit" class="btn ${action==='revoke'?'danger':'primary'} mt12"${disabled?html` disabled`:html``}>${label}</button></form>`;
 }
 const spaceContent = (content: Html) => html `<div class="knowledge-space">${content}</div>`;
 const spaceLink = (space: string, root?: string, path = '/') => ({ space, ...(root ? { root } : {}), path });
-const bytes = (value: number) => `${value.toLocaleString('zh-CN')} 字节`;
+const bytes = size;
 export async function spaceOverview(ctx: PageContext): Promise<Html> {
   const spaces = ctx.deps.knowledge.spaces;
   if (!spaces)
@@ -93,7 +95,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
     const canEdit = (own || space === 'team' && ctx.admin) && (entry.row.status === 'verified' || entry.row.status === 'unverified');
     const canWithdraw=canEdit||space==='team'&&entry.body.by===ctx.principal.id&&entry.body.shared_from!==undefined;
     const shared=entry.body.shared_from;
-    const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',when(entry.body.at)],['来源',code('tree:'+shared.root+shared.path+'@'+shared.entry)]]):html``;
+    const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',code('tree:'+shared.root+shared.path+'@'+shared.entry)]]):html``;
     const withdrawNotice=entry.grounds_withdrawn.length||entry.grounds_withdrawn_hidden_count?html`<p class="notice">${uiLabelOf('validity_status','grounds_withdrawn')}${entry.grounds_withdrawn_hidden_count?`；另有 ${entry.grounds_withdrawn_hidden_count} 项依据不可读取`:''}</p>`:html``;
     let share=html``;
     if(own&&entry.row.status==='verified'){
@@ -102,29 +104,32 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
       const destination=preview?preview.target_path??'':target;
       share=preview?card({title:'提交共享预检',hint:'个人原条目与授权保留；团队条目由提交人署名，本人和管理员可撤回，撤回不能追回已读内容。确认时重新执行全部检查。'},html`<p>个人：保留不变 · ${audience.text}</p><p>团队：新写入一条 · ${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/space"><input type="hidden" name="space" value="${space}"><input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="share" value="1"><label>团队目录<input name="team_path" value="${destination}"></label><button type="submit">重新预检</button></form>${checkTable(preview.checks)}${preview.duplicate?existingTeamLink(preview.duplicate):''}${form(ctx,'share',html`<input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="team_path" value="${destination}">`,'确认提交共享',false,!preview.ok)}`):button('/console/knowledge/space','提交共享…',{params:{space,root:entry.root,path,entry:digest,share:'1'}});
     }
-    const body = html `${provenance}${withdrawNotice}${share}${card({ title: entry.body.content.statement, tail: chip(uiLabelOf('knowledge_entry_status', entry.row.status)), hint: '核验结果说明引文与路径是否一致，不把作者的陈述或判断变成已证实事实' }, html `${kv([['种类', uiLabelOf('entry_kind', entry.body.content.kind)], ['引用', code(entry.reference)], ['作者', await ctx.userName(entry.body.by)], ['记录时间', when(entry.body.at)], ...(showCitations?[['被引用次数',entry.cited_count??'—'] as const]:[]), ['适用条件', entry.body.content.applicability ? JSON.stringify(entry.body.content.applicability) : '未声明']])}${pre(JSON.stringify(entry.body.content.data, null, 2))}${sectionHead('依据与核验结果')}${table(['引用', '逐字引文'], entry.body.grounds.map(g => [code(g.reference), g.quotation]), '未提供依据，内容未核验')}${canEdit ? button('/console/knowledge/space', '修改条目', { params: { ...spaceLink(space, version.root, path), entry: digest, edit: '1' } }) : ''}${canWithdraw ? form(ctx, 'withdraw', html `<input type="hidden" name="entry" value="${digest}"><input type="hidden" name="space" value="${space}"><input type="hidden" name="path" value="${path}">`, '撤回条目') : ''}`)}${canEdit && ctx.url.searchParams.get('edit') === '1' ? editor(ctx, space, path, entry) : ''}<p class="mt12">${link('/console/knowledge/space', '返回目录', spaceLink(space, version.root, path))}</p>`;
+    const body = html `${provenance}${withdrawNotice}${share}${card({ title: entry.body.content.statement, tail: knowledgeState(entry.row.status), hint: '核验结果说明引文与路径是否一致，不把作者的陈述或判断变成已证实事实' }, html `${kv([['种类', uiLabelOf('entry_kind', entry.body.content.kind)], ['引用', code(entry.reference)], ['作者', await ctx.userName(entry.body.by)], ['记录时间', timestamp(entry.body.at)], ...(showCitations?[['被引用次数',entry.cited_count??'—'] as const]:[]), ['适用条件', entry.body.content.applicability ? JSON.stringify(entry.body.content.applicability) : '未声明']])}${pre(JSON.stringify(entry.body.content.data, null, 2))}${sectionHead('依据与核验结果')}${table(['引用', '逐字引文'], entry.body.grounds.map(g => [code(g.reference), g.quotation]), '未提供依据，内容未核验')}${canEdit ? button('/console/knowledge/space', '修改条目', { params: { ...spaceLink(space, version.root, path), entry: digest, edit: '1' } }) : ''}${canWithdraw ? form(ctx, 'withdraw', html `<input type="hidden" name="entry" value="${digest}"><input type="hidden" name="space" value="${space}"><input type="hidden" name="path" value="${path}">`, '撤回条目') : ''}`)}${canEdit && ctx.url.searchParams.get('edit') === '1' ? editor(ctx, space, path, entry) : ''}<p class="mt12">${link('/console/knowledge/space', '返回目录', spaceLink(space, version.root, path))}</p>`;
     return { status: 200, body: page(chrome, await spaceLayout(ctx,html `${knowledgeTabs(ctx)}<div class="knowledge-space">${audienceLine}${body}</div>`)) };
   }
   const nodes = await ctx.deps.knowledge.getNodes({ root: version.root, paths: [path], depth: 1, cursor: ctx.url.searchParams.get('node_cursor') }, ctx.principal);
   if (!nodes)
     return neutralPage(ctx);
-  const directory=await knowledgeDirectory(ctx,nodes,version,space,own,showCitations);
   const history = await spaces.history(ctx.principal, space, ctx.url.searchParams.get('history_cursor'));
-  const comparison = !own&&space!=='team'?card({title:'知识版本历史'},html`<p class="note">个人空间的版本历史仅本人可见；目录授权不包含历史记录、时间和原因。</p>`):card({ title: '知识版本历史', hint: '知识版本是空间的历史快照；产品版本是条目的适用条件，两者分别选择' }, html `${table(['时间', '记录人', '原因', '知识版本'], await Promise.all(history.items.map(async (item) => [when(item.body.at), item.body.by===null?uiLabelOf('execution_host','hub'):await ctx.userName(item.body.by), item.body.reason, link('/console/knowledge/space', item.root.slice(0, 16), spaceLink(space, item.root, path))])), '没有历史版本')}${history.next ? link('/console/knowledge/space', '更早的版本', { ...spaceLink(space, undefined, path), history_cursor: history.next }) : ''}
-<form class="filters" method="get" action="/console/knowledge/space-diff"><input type="hidden" name="space" value="${space}"><label>从<select name="from">${history.items.map((item, index) => html `<option value="${item.root}"${index === Math.min(1, history.items.length - 1) ? html ` selected` : ''}>${item.body.at} · ${item.root.slice(0, 12)}</option>`)}</select></label><label>到<select name="to">${history.items.map(item => html `<option value="${item.root}">${item.body.at} · ${item.root.slice(0, 12)}</option>`)}</select></label><button type="submit">比较知识版本</button></form>`);
-  let controls: Html = html ``;
-  if (own || space === 'team' && ctx.admin) {
-    controls = html `<div class="actions">${own?button('/console/knowledge/space','添加条目',{params:{space,path,edit:'1'}}):button('/console/operations/knowledge','导入团队知识')}${own?button('/console/knowledge/space','导入个人知识',{params:{space,path,import:'1'},hint:'上传本人原文到个人空间，条目单独写入'}):''}${own?html`<a class="btn" href="#grant-knowledge">授权…</a>`:''}${button('/console/knowledge/space','建立目录…',{params:{space,path,directory:'1'}})}</div>${ctx.url.searchParams.get('directory')==='1'?form(ctx, 'directory', html `<input type="hidden" name="space" value="${space}">${field('新目录路径', html `<input name="path" required value="${path === '/' ? '/notes' : path + '/notes'}">`)}`, '建立目录'):''}${ctx.url.searchParams.get('edit')==='1'?editor(ctx, space, path):''}`;
+  const names=new Map(history.items.map((item,index)=>[item.root,versionName(item.body.at,item.body.reason,history.next?undefined:history.items.length-index)]));
+  const comparison = !own&&space!=='team'?html`<p class="note">个人空间的版本历史仅本人可见；目录授权不包含历史记录、时间和原因。</p>`:html`${table(['版本','记录人'],await Promise.all(history.items.map(async (item,index)=>[link('/console/knowledge/space',versionLabel(item.body.at,item.body.reason,history.next?undefined:history.items.length-index),spaceLink(space,item.root,path)),item.body.by===null?uiLabelOf('execution_host','hub'):await ctx.userName(item.body.by)])),'没有历史版本')}${history.next?link('/console/knowledge/space','更早的版本',{...spaceLink(space,undefined,path),history_cursor:history.next}):''}
+<form class="filters" method="get" action="/console/knowledge/space-diff"><input type="hidden" name="space" value="${space}"><label>从<select name="from">${history.items.map((item,index)=>html`<option value="${item.root}"${index===Math.min(1,history.items.length-1)?html` selected`:''}>${names.get(item.root)}</option>`)}</select></label><label>到<select name="to">${history.items.map(item=>html`<option value="${item.root}">${names.get(item.root)}</option>`)}</select></label><button type="submit">比较知识版本</button></form>`;
+  const collapsedHistory=html`<details class="knowledge-history"><summary title="知识版本是空间的历史快照；产品版本是条目的适用条件，两者分别选择">知识版本历史</summary>${comparison}</details>`;
+  let controls:Html=html``,editors:Html=html``;
+  if(own||space==='team'&&ctx.admin){
+    controls=html`<div class="actions">${own?button('/console/knowledge/space','添加条目',{params:{space,path,edit:'1'}}):button('/console/operations/knowledge','导入团队知识')}${own?button('/console/knowledge/space','导入个人知识',{params:{space,path,import:'1'},hint:'上传本人原文到个人空间，条目单独写入'}):''}${own?html`<a class="btn" href="#grant-knowledge">授权…</a>`:''}${button('/console/knowledge/space','建立目录…',{params:{space,path,directory:'1'}})}</div>`;
+    editors=html`${ctx.url.searchParams.get('directory')==='1'?form(ctx,'directory',html`<input type="hidden" name="space" value="${space}">${field('新目录路径',html`<input name="path" required value="${path==='/'?'/notes':path+'/notes'}">`)}`,'建立目录'):''}${ctx.url.searchParams.get('edit')==='1'?editor(ctx,space,path):''}`;
   }
-  let authorization: Html = html ``;
-  if (own) {
-    const grants = await spaces.grants(ctx.principal);
-    authorization=await grantDialog(ctx,{id:'grant-knowledge',content:directoryName(path)+'（含全部下级目录）· 只读',current:audience.text,checks:await spaces.precheckGrant(ctx.principal,path),grants:grants.filter(grant=>grant.path===path),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,false,disabled)});
+  const directory=await knowledgeDirectory(ctx,nodes,version,space,own,showCitations,controls);
+  let authorization:Html=html``;
+  if(own){
+    const grants=await spaces.grants(ctx.principal);
+    authorization=await grantDialog(ctx,{id:'grant-knowledge',trigger:false,content:directoryName(path)+'（含全部下级目录）· 只读',current:audience.text,checks:await spaces.precheckGrant(ctx.principal,path),grants:grants.filter(grant=>grant.path===path),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,false,disabled)});
   }
   const sources = await spaces.sources(ctx.principal, space);
   const personalHistory=own?(await ctx.deps.knowledge.memory?.usage(ctx.principal))?.history??0:0;
   const originals = card({ title: '原文', hint: space === 'team' ? '经管理员导入、供团队条目引用的业务系统原文，全体成员可读' : '上传的原文保存在所属个人空间，不自动生成条目；可在 Circle 中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const refs=version.body.entries.filter(row=>row.path===s.path);let count=0;for(const row of refs){const entry=await spaces.entry(ctx.principal,version.root,row.path,row.entry);if(entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256))count++;}return [name,bytes(s.size),'被 '+count+' 条条目引用',link('/console/knowledge/source','查看',{sha256:s.sha256})];})), '没有可读的原文')}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在目录', html `<input name="path" value="${path}" required>`)}`, '导入个人知识', true) : ''}`);
-  return { status: 200, body: page(chrome, await spaceLayout(ctx,html `${knowledgeTabs(ctx)}<div class="knowledge-space stack">${audienceLine}${own?html`<p>个人空间已用 ${version.body.used_bytes+personalHistory} 字节 · 上限 ${await spaces.capacity(space)} 字节 · 本目录条目 ${version.body.entries.filter(r=>r.path===path).length} · 已核验 ${version.body.entries.filter(r=>r.path===path&&r.status==='verified').length} · 授权 ${(await spaces.grants(ctx.principal)).length}</p>`:''}${directory}${controls}${originals}${authorization}${comparison}</div>`)) };
+  return { status: 200, body: page(chrome, await spaceLayout(ctx,html `${knowledgeTabs(ctx)}<div class="knowledge-space stack">${audienceLine}${own?html`<p>个人空间已用 ${size(version.body.used_bytes+personalHistory)} / ${size(await spaces.capacity(space))} · 本目录条目 ${number(version.body.entries.filter(r=>r.path===path).length)} · 已核验 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 授权 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`)) };
 }
 export async function spaceDiffPage(ctx: PageContext): Promise<PageResult> {
   const spaces = ctx.deps.knowledge.spaces;
@@ -184,6 +189,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
   if(action==='share-batch')return shareBatch(ctx,values);
   const get = (name: string) => values.get(name) ?? '', space = get('space') || ctx.principal.id, path = get('path') || '/';
+  if(action==='grant'&&get('preview_grant')==='1')return grantPreviewLocation('/console/knowledge/space',{space:ctx.principal.id,path},'grant-knowledge',values);
   if (action === 'entry') {
     const grounds: Array<{
       reference: string;
@@ -236,5 +242,5 @@ export function spaceActionFailure(ctx: PageContext, error: unknown): PageResult
 
 export async function shareHistoryPage(ctx:PageContext):Promise<PageResult>{
  const spaces=ctx.deps.knowledge.spaces;if(!spaces)return neutralPage(ctx);const history=await spaces.shareHistory(ctx.principal,ctx.url.searchParams.get('cursor'));
- return {status:200,body:page(ctx.chrome('我的提交共享',{active:'knowledge',hint:'按提交时核验的结果列出；拒收后个人原条目保留，可修订后再次提交'}),card({title:'我的提交共享'},html`${table(['时间','来源条目','团队目录','状态','拒收码','说明','团队条目'],history.items.map(row=>[when(row.at),code('tree:'+row.source.root+row.source.path+'@'+row.source.entry),directoryName(row.target_path??row.source.path),uiLabelOf('knowledge_share_status',row.status),row.code??'—',row.message,row.reference?link('/console/knowledge/space','浏览团队条目',{space:'team',root:row.team_root!,path:row.target_path??row.source.path,entry:row.source.entry}):'—']),'没有提交共享记录')}${history.next?link('/console/knowledge/submissions','更早的记录',{cursor:history.next}):''}`))};
+ return {status:200,body:page(ctx.chrome('我的提交共享',{active:'knowledge',hint:'按提交时核验的结果列出；拒收后个人原条目保留，可修订后再次提交'}),card({title:'我的提交共享'},html`${table(['条目','提交时间','结果','团队目录或原因'],await sharingRows(ctx,history.items),'没有提交共享记录')}${history.next?link('/console/knowledge/submissions','更早的记录',{cursor:history.next}):''}`))};
 }

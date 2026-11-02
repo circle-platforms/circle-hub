@@ -10585,6 +10585,10 @@
      "label": "全体成员（团队）"
     },
     {
+     "code": "team_unassigned",
+     "label": "尚未指定成员"
+    },
+    {
      "code": "product",
      "label": "该产品线的读者"
     }

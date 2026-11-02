@@ -128,6 +128,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Fixed
 
+- Console workflow cards distinguish received grants from personal ownership and show team member assignments.
+  Sharing receipts display statements and team links. Knowledge/memory navigation, state chips, sizes, times,
+  directory actions and grant forms follow decision 88; narrow tables scroll without splitting states or times.
+
 - **A document too large for its skill parser is answered with what to do about it.** When a parse runs out of the sandbox's memory or output limit, the answer now says so and asks for the original to be split, or the parser to need less, as a document over the cache budget already did. It used to ask the administrator to check the skill pack and the sandbox, and a reread failed in the same way.
 - **A skill parse is no longer cut off after 5 s.** Each parse and locate call of a skill parser now has 30 s in the pack sandbox, so a document that parses on one machine is not refused on a slower one; a 2 MB document had taken up to 4.2 s on a busy macOS runner. Memory, not time, is what stops a large document: measured on CI runners and a development Mac, documents of 2 to 8.5 MB, depending on their shape, reach the sandbox's memory limit, so the declared 16 MiB is not reached for those shapes (`hub/refs/README.md`, Skill parser limits).
 - **Several hooks recovering a dead session lock at once no longer drop a capture.** operation-capture moves a dead owner's file aside before it removes the lock, and that quarantined file reads as a dead owner to the other waiters too, so one of them can move it aside again. In knowledge-contribution 1.3.1 and earlier, the first waiter then failed to remove its own quarantine (ENOENT), or met a lock file that was being removed (no links left) and took it for an invalid owner. Either way the hook returned silently with only an `errors.jsonl` entry, and that tool output was neither recorded nor uploaded. In 1.3.2 the waiter looks again instead. Mutual exclusion was never affected.

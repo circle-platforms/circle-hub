@@ -44,7 +44,8 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
   const memoryGroups=memory&&s!=='all'?memoryOwners.map(owner=>{
    const paths=ancestors(memories.filter(v=>v.space===owner).map(v=>v.path));
    const url=(path:string)=>base+'?'+new URLSearchParams({view:'memory',scope:s,space:owner,path});
-   return html`<details open><summary>${owner===ctx.principal.id||owner==='team'?uiLabelOf('knowledge_search_scope',owner==='team'?'team':'personal'):names.get(owner)}</summary>${directoryTree(paths,url)}</details>`;
+   const tree=directoryTree(paths,url);
+   return owner===ctx.principal.id||owner==='team'?tree:html`<details open><summary>${names.get(owner)}</summary>${tree}</details>`;
   }):[];
   const knowledgeGroups=packs||s==='all'||memory?[]:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).map(v=>{
    const mounts=v.version.body.products;
@@ -55,10 +56,11 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
    const label=(path:string)=>labels.get(path)??directoryName(path).split(' › ').at(-1)!;
    const roots=allowed.filter(path=>!allowed.some(parent=>parent!==path&&containsDirectory(parent,path)));
    const tree=allowed.includes('/')?directoryTree(allowed,url,'/',label):html`${roots.map(root=>html`<details open><summary><a href="${url(root)}">${label(root)}</a></summary>${directoryTree(allowed,url,root,label)}</details>`)}`;
-   return html`<details open><summary>${link('/console/knowledge/space',s==='shared'?names.get(v.space):uiLabelOf('knowledge_search_scope',s),{space:v.space,path:v.paths[0],scope:s})}</summary>${tree}</details>`;
+   return v.space===ctx.principal.id||v.space==='team'?tree:html`<details open><summary>${link('/console/knowledge/space',names.get(v.space),{space:v.space,path:v.paths[0],scope:s})}</summary>${tree}</details>`;
   });
+  const total=memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:{})});
-  return html`<section><a href="${href}" aria-current="${scope===s?'page':'false'}">${uiLabelOf('knowledge_search_scope',s)}</a>${subset?html`<div class="sub">${uiLabelOf('pack_kind','workflow')} ${count('workflow')} · ${uiLabelOf('pack_kind','skill')} ${count('skill')}</div>`:''}${memoryGroups}${knowledgeGroups}</section>`;
+  return html`<section><a href="${href}" aria-current="${scope===s?'page':'false'}">${uiLabelOf('knowledge_search_scope',s)}${packs?'':html`<span class="scope-count">${total.toLocaleString('en-US')}</span>`}</a>${subset?html`<div class="sub">${uiLabelOf('pack_kind','workflow')} ${count('workflow')} · ${uiLabelOf('pack_kind','skill')} ${count('skill')}</div>`:''}${memoryGroups}${knowledgeGroups}</section>`;
  })}</aside>`;
  return html`<div class="space-layout">${nav}<div class="space-main stack">${content}</div></div>`;
 }
