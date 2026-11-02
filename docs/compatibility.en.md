@@ -4,14 +4,14 @@ This page translates the [Chinese original](compatibility.md); where the two dif
 
 The three repositories are versioned separately: circle (the agent), circle-hub (the MCP server) and circle-packs (packs). Who depends on whom, and what is authoritative, is written here. Changing any row is a deliberate upgrade, not something done in passing.
 
-## Current state (2026-10-21)
+## Current state (2026-11-02)
 
 | Component | Version / commit | Authoritative source | Notes |
 |---|---|---|---|
-| circle-hub | hub-redesign branch, milestone 1 under construction; the last release, 0.2.0, is the retired server | [Hub r4 progress](hub-r4-progress.md) | Being rebuilt; there is no deployable version yet, and release metadata does not establish production availability |
-| Contracts | generic model version 5 (`MODEL_VERSION`) | `contracts/model.json`, `contracts/codes.json`; generated files in `contracts/generated` | `npm run verify:contracts` checks that the generated files match their sources |
-| MCP | `@modelcontextprotocol/sdk` 1.32.1 | the root `package.json` | Six tools, streamable HTTP, Bearer token; the server is planned |
-| Circle | connects as an ordinary MCP client and needs no hub extension | the MCP protocol and the tool schemas | Planned: the six generic MCP-client improvements of D06 R[1] and the removal of the old hub extension, as local commits on a separate Circle branch; changing Circle needs the owner's explicit authorization, with the scope in [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md#authorizations-and-limits) and the grant recorded in decision 8 of the [Hub r4 progress](hub-r4-progress.md#决定). The hub extension in released Circle versions calls the retired `/v1` client API and cannot connect to the redesigned Hub |
+| circle-hub | public main: the web console (administrators also manage the Hub there), built-in HTTPS, the one-click installer, personal and team knowledge spaces; release bundles start with 0.3.0, which is not published yet, and the last release, 0.2.0, is the retired server | [Hub r4 progress](hub-r4-progress.md) | The owner's persistent deployment is still deployed from the private integration branch; under the owner's decision of 2026-11-02 the two lines become one and deployments then come from main |
+| Contracts | generic model version 22 (`MODEL_VERSION`) | `contracts/model.json`, `contracts/codes.json`; generated files in `contracts/generated` | `npm run verify:contracts` checks that the generated files match their sources |
+| MCP | `@modelcontextprotocol/sdk` 1.32.2 | the root `package.json` | Six tools, streamable HTTP; the MCP authorization or a Bearer token |
+| Circle | connects as an ordinary MCP client and needs no hub extension | the MCP protocol and the tool schemas | Circle main has merged the six generic MCP-client improvements with the removal of the bundled Hub (circle#309, 2026-10-26) and the browser sign-in for the MCP authorization (circle#396, 2026-11-02); Circle shows no Hub-specific interface or label (D06 R[1]); changing Circle needs the owner's explicit authorization, scope in [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** source baseline, frozen | the source record in `references/README.md` | Source reference only: it is not installed, and its installer is not run; it is not a runtime dependency of hub |
 | circle-packs | see its CHANGELOG | the circle-packs repository | Holds the packs of the retired server (`modules.json`, `product-line/1`, `hub-*/1`), which the redesigned Hub does not read; milestone 1 does not change that repository |
 
