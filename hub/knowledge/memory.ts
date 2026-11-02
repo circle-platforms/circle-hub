@@ -1,7 +1,7 @@
 // Memory is a versioned client preference, with its own grants and no evidence reference.
-import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,type MemoryMetadata,type MemoryWriteReceipt} from '../../contracts/src/memory.ts';
+import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,MemoryWriteReceipt,type MemoryMetadata} from '../../contracts/src/memory.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
-import {ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
+import {ActionKindSchema,ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
 import {canonicalize,sha256Hex,scanForCredentials,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
 import {pathOf,pathSegments} from '../refs/api.ts';
 import {KnowledgeError} from './errors.ts';
@@ -103,11 +103,16 @@ export class MemoryDocuments{
   }
  }
  async #audit(by:Principal,intent:string,payload:string,error:KnowledgeError){
-  await this.#ctx.records.store.put({kind:'action',schema:'memory-refusal@1',provenance:'observed',unique_key:intent,body:{kind:'validate',by:by.id,at:this.#now(),intent,payload,code:error.code,positions:error.code==='MEMORY_CREDENTIALS_DETECTED'?error.detail.positions??[]:[]},index:[{key:'memory.refusal.by',value:by.id}]});
+  await this.#ctx.records.store.put({kind:'action',schema:'memory-refusal@1',provenance:'observed',unique_key:intent,body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now(),intent,payload,code:error.code,message:error.message,positions:error.code==='MEMORY_CREDENTIALS_DETECTED'?error.detail.positions??[]:[]},index:[{key:'memory.refusal.by',value:by.id}]});
  }
  #receipt(body:MemoryVersionBody,version:string,unchanged=false):MemoryWriteReceipt{return {document:body.document,version,previous_version:body.parent,space:body.space,state:body.state,bytes:body.bytes,updated_at:body.at,unchanged};}
  async #save(by:Principal,space:string,intent:string,payload:string,input:{title:string;path:string;markdown:string;state:MemoryVersionBody['state'];head?:MemoryHead;previous?:MemoryVersionBody},tx:Transaction){
   const sameText=input.previous&&input.markdown===await this.#text(input.previous,tx);
+  if(input.head&&input.previous&&sameText&&input.title===input.previous.title&&input.path===input.previous.path&&input.state===input.previous.state){
+   const receipt=this.#receipt(input.previous,input.head.version,true);
+   await this.#ctx.records.store.put({kind:'action',schema:'memory-unchanged@1',provenance:'observed',unique_key:intent,body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now(),intent,payload,receipt}},tx);
+   return receipt;
+  }
   const index=this.#index(),bytes=Buffer.byteLength(input.markdown),usage=await index.usage(space,tx),active=usage.active-(input.head?.state==='enabled'?input.head.bytes:0)+(input.state==='enabled'?bytes:0);
   if(bytes>index.limits.documentBytes&&!(input.state==='disabled'&&sameText))return fail('MEMORY_DOCUMENT_LIMIT');if(input.state==='enabled'&&active>index.limits.spaceBytes)return fail('MEMORY_SPACE_LIMIT');
   if(input.state==='enabled'||!sameText||input.title!==input.previous?.title||input.path!==input.previous?.path)this.#scan(input.title,input.path,input.markdown);
@@ -115,7 +120,7 @@ export class MemoryDocuments{
   if(!document){const body=MemoryDocumentBody.parse({space,by:by.id,at:this.#now(),intent});const doc=await this.#ctx.records.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body,index:[{key:'memory.document.space',value:space}]},tx);document=doc.digest;docBytes=Buffer.byteLength(canonicalize(body));}
   const body=MemoryVersionBody.parse({document,space,parent:input.head?.version??null,title:input.title,path:input.path,state:input.state,bytes,markdown:sameText?null:input.markdown,content_version:sameText?(input.previous!.content_version??input.head!.version):null,by:by.id,at:this.#now(),intent,payload});
   const history=docBytes+Buffer.byteLength(canonicalize(body));
-  if(space!=='team'&&!(input.state==='disabled'&&sameText)){
+  if(space!=='team'){
    const knowledge=(await this.#spaces.current(space,tx))?.body.used_bytes??0;
    if(knowledge+usage.history+history>await this.#spaces.capacity(space,tx))return fail('SPACE_CAPACITY_EXCEEDED');
   }
@@ -128,7 +133,13 @@ export class MemoryDocuments{
   try{return await this.#queue(space,()=>this.#ctx.records.store.withTransaction(async tx=>{
    await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await this.#user(by);if(space==='team'&&by.role!=='admin')return fail('SOURCE_UNAVAILABLE');
    const cached=await this.#ctx.records.store.getByKey('memory_version',intent,tx);if(cached){const body=MemoryVersionBody.parse(cached.body);if(body.payload!==payload)return fail('IDEMPOTENCY_MISMATCH');return this.#receipt(body,cached.digest,true);}
-   const refusal=await this.#ctx.records.store.getByKey<{payload:string;code:ProtocolCode}>('action',intent,tx);if(refusal){if(refusal.body.payload!==payload)return fail('IDEMPOTENCY_MISMATCH');return fail(refusal.body.code);}
+   const action=await this.#ctx.records.store.getByKey<{payload:string;code?:ProtocolCode;message?:string;positions?:unknown[];receipt?:unknown}>('action',intent,tx);
+   if(action){
+    if(action.body.payload!==payload)return fail('IDEMPOTENCY_MISMATCH');
+    if(action.schema==='memory-unchanged@1')return MemoryWriteReceipt.parse(action.body.receipt);
+    const code=action.body.code;if(action.schema!=='memory-refusal@1'||!code||!Object.hasOwn(PROTOCOL_CODES,code))return fail('SOURCE_UNAVAILABLE');
+    throw new KnowledgeError(action.body.message??PROTOCOL_CODES[code].when,{code,detail:{positions:action.body.positions??[]}});
+   }
    const head=input.document?(await this.#index().heads(space,tx)).find(h=>h.document===input.document):undefined;if(input.document&&!head)return fail('SOURCE_UNAVAILABLE');if(head&&head.version!==input.expected_version)return fail('MEMORY_VERSION_CONFLICT');
    const previous=head?(await this.#version(head,head.version,tx)).body:undefined;
    return this.#save(by,space,intent,payload,{title:input.title??previous!.title,path:pathCheck(input.path??previous?.path??'/'),markdown:input.markdown??await this.#text(previous!,tx),state:input.enabled===undefined?previous?.state??'enabled':input.enabled?'enabled':'disabled',head,previous},tx);

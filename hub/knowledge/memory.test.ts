@@ -20,6 +20,18 @@ test('disabled grantees can be revoked and disabled personal memories stay hidde
  for(const recipient of [w.outsider,w.admin]){assert.equal((await memory.items(recipient,'shared')).length,0);await assert.rejects(memory.read(recipient,saved.document),{code:'SOURCE_UNAVAILABLE'});}
  assert.equal((await memory.read(w.user,saved.document)).state,'disabled');
 });
+test('unchanged writes preserve the version and idempotency while every new revision checks historical capacity',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
+ const first=await memory.write(w.user,create()),saved=await memory.write(w.user,{document:first.document,expected_version:first.version,enabled:false,client_key:'initial-disable'});
+ const usage=await memory.usage(w.user);await w.knowledge.spaces!.setCapacity(w.admin,w.user.id,usage.history);
+ const versions=async()=>(await w.kit.store.find({kind:'memory_version',key:'memory.version.document',value:saved.document})).items.length;
+ const before=await versions();
+ for(let n=0;n<3;n++){const input={document:saved.document,expected_version:saved.version,enabled:false,client_key:'unchanged-'+n};const receipt=await memory.write(w.user,input);assert.equal(receipt.unchanged,true);assert.equal(receipt.version,saved.version);assert.deepEqual(await memory.write(w.user,input),receipt);}
+ assert.equal(await versions(),before);assert.deepEqual(await memory.usage(w.user),usage);
+ await assert.rejects(memory.write(w.user,{document:saved.document,expected_version:saved.version,title:'合成修改',enabled:false,client_key:'unchanged-0'}),{code:'IDEMPOTENCY_MISMATCH'});
+ for(const [key,changes] of [['title',{title:'合成修改'}],['path',{path:'/new'}],['state',{enabled:true}]] as const)await assert.rejects(memory.write(w.user,{document:saved.document,expected_version:saved.version,...changes,client_key:'capacity-'+key}),{code:'SPACE_CAPACITY_EXCEEDED'});
+ assert.equal(await versions(),before);
+});
 test('memory writes are versioned, optimistic and idempotent; pagination preserves Unicode and invalidates old sessions',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const text='合成偏好。'.repeat(1200),first=await memory.write(w.user,create(text));
@@ -37,7 +49,9 @@ test('memory writes are versioned, optimistic and idempotent; pagination preserv
 test('refused credentials and size limits retain one safe audit and no content or quota writes',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const secret='DB_PASSWORD=synthetic-secret-2498';
- for(let n=0;n<2;n++)await assert.rejects(memory.write(w.user,create(secret,'secret')),{code:'MEMORY_CREDENTIALS_DETECTED'});
+ const failures:Error[]=[];
+ for(let n=0;n<2;n++)await assert.rejects(memory.write(w.user,create(secret,'secret')),error=>{assert.equal((error as {code:string}).code,'MEMORY_CREDENTIALS_DETECTED');failures.push(error as Error);return true;});
+ assert.match(failures[0].message,/Markdown 正文第 1 行/);assert.equal(failures[1].message,failures[0].message);
  assert.equal((await w.kit.store.list({kind:'memory_document'})).items.length,0);assert.equal((await w.kit.store.list({kind:'memory_version'})).items.length,0);
  const audit=await w.kit.store.find({kind:'action',key:'memory.refusal.by',value:w.user.id});assert.equal(audit.items.length,1);assert.ok(!JSON.stringify(audit).includes(secret));assert.ok(!JSON.stringify(audit).includes('synthetic-secret-2498'));
  assert.equal((await memory.usage(w.user)).history,0);

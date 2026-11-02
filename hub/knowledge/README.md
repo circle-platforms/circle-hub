@@ -1269,3 +1269,6 @@ previews preserve that safe location information. Neither preview creates a docu
 Memory revocation accepts an existing disabled recipient, so re-enabling the account cannot revive a revoked grant.
 Disabled personal documents remain visible to their owner, but not to recipients, including all-administrator grantees;
 team administrators retain management access to disabled team documents.
+Every appended personal memory revision checks historical capacity, including title/path/state-only changes. An exact
+no-op returns the current version with unchanged=true and stores only a private idempotency receipt, without a revision
+or history increment. Refusal retries retain the original safe field/line message and positions.
