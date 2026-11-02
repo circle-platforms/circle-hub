@@ -109,7 +109,7 @@ for(const independent of [false,true])test(`version 13 personal bodies and origi
  await assert.rejects(db.query("UPDATE records SET body='{}' WHERE digest=$1",[document]),/append-only/);
  const runtime='synthetic_runtime_'+randomBytes(4).toString('hex');
  const password=randomBytes(16).toString('hex');
- await db.query(`CREATE ROLE ${runtime} LOGIN PASSWORD '${password}'`);await grantRuntime(db,runtime);
+ await db.query(`CREATE ROLE ${runtime} LOGIN PASSWORD '${password}'`);await db.query(`REVOKE TEMPORARY ON DATABASE "${database.database}" FROM PUBLIC`);await grantRuntime(db,runtime);
  const restricted=new Database(createPool({...database,user:runtime,password}));t.after(()=>restricted.end());
  await restricted.query("SELECT set_config('circle_hub.personal_layout_conversion','14',false)");
  await assert.rejects(restricted.query('SELECT hub_personal_migrate_inline()'),(e:unknown)=>(e as {code:string}).code==='42501');

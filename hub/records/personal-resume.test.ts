@@ -22,7 +22,7 @@ test('local resume rechecks status and state, rolls back failures, and uses a fr
  await db.query('CREATE TRIGGER synthetic_mode_failure BEFORE INSERT ON records FOR EACH ROW EXECUTE FUNCTION synthetic_mode_failure()');
  await assert.rejects(api.resume(owner,local.epoch,local.state_version),/synthetic audit failure/);assert.equal((await api.state(owner)).mode,'local');
  await db.query('DROP TRIGGER synthetic_mode_failure ON records');
- const role='synthetic_resume_'+randomBytes(4).toString('hex'),password=randomBytes(16).toString('hex');await db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await grantRuntime(db,role);
+ const role='synthetic_resume_'+randomBytes(4).toString('hex'),password=randomBytes(16).toString('hex');await db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await db.query(`REVOKE TEMPORARY ON DATABASE "${kit.database.database}" FROM PUBLIC`);await grantRuntime(db,role);
  const runtime=new Database(createPool({...kit.database,user:role,password}));t.after(()=>runtime.end());
  await assert.rejects(runtime.query("UPDATE personal_spaces SET mode='hub' WHERE owner=$1",[owner.id]),(e:unknown)=>(e as {code:string}).code==='42501');
  await assert.rejects(runtime.query('SELECT hub_resume_personal($1,$2,$3)',[owner.id,local.epoch,local.epoch]),/unavailable/);

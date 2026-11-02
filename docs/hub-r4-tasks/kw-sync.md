@@ -635,3 +635,9 @@ npm run test:docs
 做了的：按 Claude 对 b3b97cce 的复核要求，把所有 SECURITY DEFINER 的 search_path 固定为 pg_catalog,public,pg_temp；参数、返回与局部类型限定到 pg_catalog，表行类型限定到 public。迁移 14～16 均未部署，按本次修正指令复核修改与迁移源固定值；迁移 1～13 不动，转换豁免与运行权限不扩大。审查页未提交的“复核”附录原样加入本次提交。
 
 验证：把审查探针改写为仓库中的 personal-definer-security.test.ts，不从临时目录导入。修正前真实运行角色通过临时 text 域把合成只追加记录改成 rewritten，回归按预期失败（1 失败，不算通过）；修正后要求正文与逻辑摘要保持原值，并从 pg_proc 核对每个所有者函数的搜索路径。修正后 personal-definer-security、personal-runtime-guards、personal-resume、migrations.snapshot、lock-namespaces、environment、diagnostics 与 PG 18 ownership 定向组 25 项通过、0 失败、0 跳过。首次类型检查有两处探针查询返回值未声明类型；补齐后 npm run typecheck 通过，差异检查通过。文档检查留本轮收尾；工作流／引擎完整组留三项修正之后。
+
+### 复核修正 2：拒绝运行角色的临时对象权限
+
+做了的：grantRuntime 在授权任何表／函数前检查数据库 TEMPORARY 权限，verifyMigrations 在运行连接启动校验时再次检查；PUBLIC、直接授权与角色继承均按实际权限拒绝。不在授权函数里悄悄收回数据库权限。拥有表的迁移连接仍可离线校验；grantRuntime 原有的拒绝表所有者规则保留。四处真实运行角色夹具先显式收回合成数据库的 PUBLIC TEMPORARY，原产品断言不变。没有改配置或迁移 SQL，本项迁移文件摘要仅因权限自检代码改变而同步。
+
+验证：personal-runtime-temp 在修正前因缺少拒绝而失败（1 失败，不算通过），修正后覆盖 PUBLIC／直接／继承权限、无部分授权、运行角色不能建临时表、权限恢复后可校验。包含 runtime-temp、definer-security、runtime-guards、resume、sync、upgrade、迁移快照、password、lock-namespaces、environment、diagnostics 与 PG 18 ownership 的定向组 42 项通过、0 失败、0 跳过；最终 npm run typecheck 和差异检查通过。完整工作流／引擎与文档检查留下一项后统一运行。

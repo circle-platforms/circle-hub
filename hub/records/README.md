@@ -823,3 +823,8 @@ The follow-up security review hardens every owner-defined function with `search_
 qualified parameter, return and local types. A synthetic runtime-domain exploit first reproduced history rewriting;
 the regression now checks unchanged bytes and every definer's catalog configuration. Undeployed migrations 14–16
 were reviewed under the coordinator's explicit correction; no conversion exemption or runtime write grant was added.
+
+Runtime grants reject effective database TEMPORARY privilege before granting anything, including privilege from PUBLIC
+or inherited roles. Runtime migration verification repeats that check at startup. Migration-owner verification remains
+available; granting the table owner as a runtime role is still refused. External database owners must revoke unsafe
+privileges themselves; the grant helper does not silently change database policy.

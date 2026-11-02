@@ -11,7 +11,7 @@ import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 async function world(t:{after:(fn:()=>Promise<void>)=>void}){
  const kit=await openTestRecords();t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic-admin'),owner=await kit.principals.createUser(admin,'synthetic-owner');
  const db=new Database(createPool(kit.database));t.after(()=>db.end());const role='synthetic_scope_'+randomBytes(4).toString('hex'),password=randomBytes(16).toString('hex');
- await db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await grantRuntime(db,role);
+ await db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await db.query(`REVOKE TEMPORARY ON DATABASE "${kit.database.database}" FROM PUBLIC`);await grantRuntime(db,role);
  const runtime=new Database(createPool({...kit.database,user:role,password}));t.after(()=>runtime.end());
  await kit.personalPayloads!.scope(owner.id);return {kit,db,runtime,admin,owner};
 }

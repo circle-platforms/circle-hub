@@ -805,6 +805,8 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     const owner = (await db.query<{ owns: boolean }>(`SELECT pg_get_userbyid(relowner) = $1 AS owns FROM pg_class WHERE relname = 'records' AND relkind = 'r'`, [role], t)).rows[0];
     if (owner === undefined) throw new MigrationError('还没有应用迁移，不能授权运行角色');
     if (owner.owns) throw new MigrationError(`运行角色 ${role} 拥有这些表，能关掉只追加的触发器；请让另一个角色执行迁移`);
+    const temporary=(await db.query<{allowed:boolean}>("SELECT pg_catalog.has_database_privilege($1,pg_catalog.current_database(),'TEMPORARY') AS allowed",[role],t)).rows[0];
+    if(temporary?.allowed)throw new MigrationError(`运行角色 ${role} 有创建临时对象的权限；请先收回该权限，再授权运行角色`);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text),hub_resume_personal(text,text,text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz),hub_replace_personal_memory(text,text,jsonb),hub_lock_personal_scope(text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
@@ -818,6 +820,8 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
 /** For a process that does not migrate (the runtime role): refuses to start unless exactly this program's migrations are applied. */
 export async function verifyMigrations(db: Database, migrations: readonly Migration[] = MIGRATIONS): Promise<void> {
   checkList(migrations);
+  const privilege=(await db.query<{runtime:boolean;temporary:boolean}>("SELECT pg_catalog.pg_get_userbyid(c.relowner)<>current_user AS runtime,pg_catalog.has_database_privilege(current_user,pg_catalog.current_database(),'TEMPORARY') AS temporary FROM pg_catalog.pg_class c WHERE c.oid=pg_catalog.to_regclass('public.records')")).rows[0];
+  if(privilege?.runtime&&privilege.temporary)throw new MigrationError('运行角色有创建临时对象的权限；请先收回该权限，拒绝启动');
   const exists = (await db.query<{ t: string | null }>("SELECT to_regclass('schema_migrations')::text AS t")).rows[0];
   const applied =
     exists?.t === null || exists === undefined ? [] : (await db.query<{ version: number; name: string; sha256: string }>('SELECT version, name, sha256 FROM schema_migrations ORDER BY version')).rows;

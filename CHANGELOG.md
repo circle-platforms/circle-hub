@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Refuse runtime database roles with effective temporary-object privileges at authorization and startup.
+
 - Prevent temporary type shadowing in every owner-defined personal storage function.
 
 - Apply personal sync snapshots atomically with state comparison, deterministic conflicts and fresh evidence checks.

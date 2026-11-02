@@ -178,7 +178,7 @@ test('batch limits and memory credential scans refuse without retaining plaintex
 
 test('the runtime role uses transport and owner-defined collection without UPDATE on personal_spaces or DELETE on payloads',async t=>{
  const w=await world(t),role='synthetic_sync_'+randomBytes(4).toString('hex'),password=randomBytes(16).toString('hex');
- await w.db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await grantRuntime(w.db,role);
+ await w.db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await w.db.query(`REVOKE TEMPORARY ON DATABASE "${w.kit.database.database}" FROM PUBLIC`);await grantRuntime(w.db,role);
  const config={...w.kit.config,database:{...w.kit.database,user:role,password}},kit=await openRecords(config,{migrate:false,keyProvider:w.kit.keyProvider});t.after(()=>kit.close());
  const restricted=new Database(createPool(config.database));t.after(()=>restricted.end());
  const api=kit.personalSync!,state=await api.state(w.owner),client_id=randomUUID();await api.registerClient(w.owner,{client_id,name:'synthetic runtime'});
