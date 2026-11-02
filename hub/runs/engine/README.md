@@ -1,5 +1,18 @@
 # hub/runs/engine
 
+## Space locks and citations (decision 86)
+
+New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy
+run records and summaries remain valid without the field. Exact tree reads and private source aliases recheck both
+initiator and current-reader grants on every use, outside the immutable-content cache. Later owner/team roots are
+outside the locked scope; currently granted personal content remains addressable. An administrator's other personal
+permissions never enlarge the initiator's scope. Raw space records are not an alternative route around path grants.
+
+The citation index classifies space roots before indexing accepted submissions. Personal entries use an owner-scoped key;
+equal content cannot enter the team entry count through a private reference. The same classification applies during
+background backfill. Existing legacy node/entry counts and their limits stay compatible.
+
+
 Starting runs, boundary validation, terminal states and partitions: model elements W01 W02 W03 W05 W06 W07 W08, V01 V03 V04
 V05 V06 V07, T03 T04, A01-A04, B01 B05 and C08 R[4]. The server and the console import only `api.ts`.
 
@@ -950,3 +963,20 @@ getRun / getResult check the exact frozen pack version through the existing work
 ### Citations of knowledge (decision 79, 2026-11-01)
 
 `putSubmission` indexes the knowledge an accepted (parsed) submission cites, in the existing `record_index`, with no migration: each `tree:` reference among the body's strings as `runs.submission.cites.node` (SHA-256 of the root and the canonical path) and, when pinned to an entry, `runs.submission.cites.entry` (the entry digest), at most 100 nodes and 95 entries so a record stays within its 200 index entries, plus the marker `runs.submission.cites.indexed=1` on every accepted submission. Submissions accepted before this are indexed by `backfillCitations` (decision 80), which the engine's maintenance runs in the background: a pass at `startMaintenance` and at every tick until one reaches its end, aborted by `stopMaintenance` and resumed by the next. A pass walks the submissions oldest first up to the oldest one marked `indexed=1` (every later one was indexed as it was stored) and adds to each accepted one, through `RecordStore.addIndex`, the entries `putSubmission` gives it now, marked `runs.submission.cites.indexed=backfilled`; records and digests do not change and entries already held are kept. At its end it marks `runs.submission.cites.complete=1` on that boundary (before any, on the newest submission): `citationsComplete` is then true, later passes do nothing and the console's counts are exact for any window. Until then the console counts from the oldest submission indexed as it was stored on and says so. Tests: `citations.test.ts`, `maintenance-citations.test.ts`.
+
+## Temporary phase-2 personal-ground guard
+
+Before result admission (including an automatic fact-only result), `personalGroundProblem` refuses personal-space `tree:`
+and `src:` grounds with `SPACE_RESULT_GROUNDS_PRIVATE`. It also checks frozen input captures, before an idempotent receipt
+can be reused, and does not charge a model repair round. Source classification respects an independently authorized capture;
+a private duplicate cannot change it. Raw submissions still follow W07; refusal does not publish an accepted result.
+This guard is explicitly temporary: decision 84 phase 3 replaces it with complete checks against all actual result readers.
+
+Second phase-2 review: `bindInputs` now rejects a personal-space capture before its file name or projected text can enter
+any run, including judgment runs. The capture record decides this guard; an unrelated private copy of equal bytes never
+changes an independent original. Source-artifact record inputs also check original read rights before exposing metadata.
+Phase 3 replaces the temporary admission guard with actual result readers, rather than keeping a permanent private-input ban.
+
+Automatic production rechecks apply the same temporary phase-2 admission guard before appending a replacement result.
+Legacy runs cannot bypass it through maintenance; a refusal records its registered code and preserves every old result.
+The regression uses a real assembly and an explicitly persisted legacy private capture, with an independent-capture control.

@@ -3,9 +3,11 @@ import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
+import { SpaceEntryInput, SpaceEntryReceipt, SpaceId, SpaceSearchHit } from './spaces.ts';
+import { KnowledgeSpaceKindSchema, KnowledgeSearchScopeSchema, KnowledgeEntryStatusSchema } from '../generated/vocabulary.ts';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
 import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
+import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256,ProtocolError } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
@@ -37,6 +39,7 @@ export const SERVER_INSTRUCTIONS = `This server verifies results; it does not ge
 3. start_run - freeze the work: requirements, items to judge, locked version and the pack procedure.
 4. get_nodes / resolve_reference - read the expected sources and check exact values before you rely on them.
 5. submit_result - hand in your results item by item. If the receipt is not accepted, read the errors, fix exactly those points and submit again.
+Personal knowledge: upload_file with personal_entry writes only to the caller's space; space=personal imports an original without drafting entries. get_nodes with search and scope searches current readable knowledge only without run. During a run, copy exact tree addresses from the frozen team/personal roots and the initiator's currently authorized content.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
 
 const Fields = {
@@ -72,14 +75,17 @@ export const UploadFileInput = z.strictObject({
     .regex(BASE64, 'the file content in base64 (RFC 4648, padded, no line breaks), not a path')
     .refine((text) => text.length % 4 === 0, 'base64 text has a length divisible by four (RFC 4648 padding)')
     .meta({ contentEncoding: 'base64', contentMediaType: 'application/octet-stream' })
-    .describe('The file to upload. Give the local path; the client sends the file bytes.'),
+    .describe('The file to upload. Give the local path; the client sends the file bytes.').optional(),
+  personal_entry: SpaceEntryInput.optional().describe('Store a personal knowledge entry instead of a file; quotes are verified by the Hub; a note without grounds is unverified'),
+  space: KnowledgeSpaceKindSchema.extract(['personal']).optional().describe('Import a file into the caller personal knowledge space; the Hub never drafts an entry'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
   provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
   captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
-});
+}).refine(input => (input.file_path !== undefined) !== (input.personal_entry !== undefined), 'provide exactly one of file_path or personal_entry');
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
 export const UploadFileOutput = Envelope.safeExtend({
+  personal_entry: SpaceEntryReceipt.optional(),
   acceptance: AcceptanceSchema,
   reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
   artifact: Sha256.optional().describe('Exact source_artifact record, so equal-byte captures can be bound independently; only when accepted'),
@@ -91,6 +97,9 @@ export const UploadFileOutput = Envelope.safeExtend({
   if (o.acceptance !== 'accepted') {
     if (o.reference !== undefined) issue(ctx, ['reference'], 'an upload that is not accepted has no reference');
     if (o.artifact !== undefined) issue(ctx, ['artifact'], 'an upload that is not accepted has no exact artifact record');
+    if (o.personal_entry !== undefined) issue(ctx, ['personal_entry'], 'a refused entry has no receipt');
+  } else if (o.personal_entry !== undefined) {
+    if (o.reference !== undefined) issue(ctx, ['reference'], 'an entry receipt is separate from a file receipt');
   } else if (o.reference === undefined || o.sha256 === undefined || o.size === undefined) {
     issue(ctx, ['reference'], 'an accepted upload returns its reference, sha256 and size');
   } else if (o.reference !== `src:${o.sha256}`) {
@@ -126,6 +135,9 @@ export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), resu
 });
 
 export const GetNodesInput = z.strictObject({
+  space: SpaceId.optional().describe('team or the personal space owner user id; defaults to the caller personal space when no root is provided'),
+  search: z.string().min(1).max(200).optional().describe('Full-text knowledge search without run only; results are leads, never task evidence'),
+  scope: KnowledgeSearchScopeSchema.optional().describe('Search personal, team, shared with the caller, or all visible spaces'),
   run: RunId.optional().describe('Use the knowledge root locked by this run'),
   root: Sha256.optional().describe('Knowledge root digest; defaults to the run root'),
   paths: z
@@ -139,6 +151,9 @@ export const GetNodesInput = z.strictObject({
 });
 
 const NodeEntry = z.strictObject({
+  status: KnowledgeEntryStatusSchema.optional(),
+  grounds: z.array(z.strictObject({ reference: Ground, quotation: z.string() })).optional(),
+  cited_count: z.number().int().nonnegative().nullable().optional(),
   entry: Sha256,
   kind: EntryKindSchema,
   statement: z.string(),
@@ -165,6 +180,8 @@ const KnowledgeNode = z.strictObject({
 });
 
 export const GetNodesOutput = Envelope.extend({
+  warnings:z.array(ProtocolError).max(100).optional().describe('Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present'),
+  matches: z.array(SpaceSearchHit).optional(),
   root: Sha256.optional().describe('Knowledge root the nodes belong to'),
   nodes: z.array(KnowledgeNode).optional(),
   content: z
@@ -181,7 +198,7 @@ export const GetNodesOutput = Envelope.extend({
     .optional(),
 }).superRefine((o, ctx) => {
   if (o.call_result === 'error') {
-    if ((o.nodes ?? []).length > 0 || o.content !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
+    if ((o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
     return;
   }
   const nodes = o.nodes ?? [];
@@ -260,12 +277,11 @@ export const TOOLS: ToolDefinition[] = [
     name: 'upload_file',
     label: '上传文件',
     title: 'Upload a file',
-    description: 'Upload a local file as a source artifact. Returns a reference to use as a run input. Identical bytes give the same reference.',
+    description: 'Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference.',
     input: UploadFileInput,
     output: UploadFileOutput,
     effect: 'none',
     writesHubRecords: true,
-    idempotent: true,
   },
   {
     name: 'start_run',
@@ -282,7 +298,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'get_nodes',
     label: '读取知识',
     title: 'Read knowledge nodes',
-    description: 'Read subtrees of the knowledge tree locked by a run, or the content a reference points at.',
+    description: 'Read personal or team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry.',
     input: GetNodesInput,
     output: GetNodesOutput,
     effect: 'none',

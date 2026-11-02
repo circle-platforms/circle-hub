@@ -59,6 +59,8 @@ test('every variable is read and validated', () => {
     CIRCLE_HUB_MAX_UPLOAD_BYTES: '1048576',
     CIRCLE_HUB_MAX_RECORD_BYTES: '65536',
     CIRCLE_HUB_MAX_REQUEST_BYTES: '2000000',
+    CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES: '2097152',
+    CIRCLE_HUB_MAX_SPACE_INDEX_BYTES: '134217728',
     UNRELATED: 'ignored',
   });
   assert.equal(config.dataDir, '/srv/hub');
@@ -67,7 +69,7 @@ test('every variable is read and validated', () => {
   assert.equal(config.port, 0);
   assert.deepEqual(config.database, { host: '127.0.0.2', port: 6543, database: 'hub_main', user: 'hub_owner' });
   assert.deepEqual(config.keychain, { service: 'org.example.hub', account: 'vault-key' });
-  assert.deepEqual(config.limits, { maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000 });
+  assert.deepEqual(config.limits, { maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000, maxEntryIndexBytes:2097152,maxSpaceIndexBytes:134217728 });
   // The request limit follows a raised upload limit unless set explicitly.
   const raised = loadConfig({ ...BASE, CIRCLE_HUB_MAX_UPLOAD_BYTES: String(96 * 1024 * 1024) });
   assert.ok(raised.limits.maxRequestBytes >= Math.ceil((96 * 1024 * 1024) / 3) * 4);
@@ -204,4 +206,14 @@ test('the guard module stops a process that carries a retired name', () => {
   assert.notEqual(retired.status, 0);
   assert.doesNotMatch(retired.stdout, /started/);
   assert.match(retired.stderr, /HubEnvironmentError/);
+});
+
+
+test('knowledge index configuration bounds both byte limits independently of personal content capacity',()=>{
+  assert.equal(loadConfig(BASE).limits.maxEntryIndexBytes,1024*1024);
+  assert.equal(loadConfig(BASE).limits.maxSpaceIndexBytes,64*1024*1024);
+  for(const [key,maximum] of [['CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES',16*1024*1024],['CIRCLE_HUB_MAX_SPACE_INDEX_BYTES',4*1024*1024*1024]] as const){
+    for(const value of ['0','1023',String(maximum+1),'1.5','NaN'])assert.ok(problems({...BASE,[key]:value}).some(problem=>problem.includes(key)),key+':'+value);
+    for(const value of ['1024',String(maximum)])assert.doesNotThrow(()=>loadConfig({...BASE,[key]:value}));
+  }
 });

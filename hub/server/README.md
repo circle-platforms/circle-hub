@@ -1,5 +1,37 @@
 # hub/server
 
+## Console spaces (decision 86)
+
+Knowledge shows personal, team and shared-with-me columns. `/console/knowledge/space` browses a selected immutable root,
+its paths, entry grounds/current state and history. Owners add entries, replace or withdraw them, import originals and
+append/revoke read-only directory grants. Team administrators import only from team-observed sources and may withdraw
+team entries. Product browsing remains under virtual product mounts with its original permissions.
+`/console/knowledge/space-diff` selects two history roots, defaulting to previous/current; product versions are labeled
+separately. Search has four generated knowledge scopes, and every result marks its visibility. Private originals at
+`/console/knowledge/source` recheck path authorization; administrators have no implicit access.
+
+Owner form actions under `/console/knowledge/do/` use the signed-in password session, own-origin and CSRF checks;
+first-password-change restrictions apply before every route. Only administrators adjust capacity from Team, which
+reveals the quota without opening the member's content. Forms and imports have byte limits; personal originals create
+no drafted entries. Hover text states visibility, non-recoverable prior reads after revocation and inclusion in server
+backups. Sharing-to-team and synchronization remain later phases, without new commands or a seventh MCP tool.
+
+## Space tools (decision 86)
+
+The server still publishes six MCP tools. `upload_file` takes exactly one of `file_path` (base64 bytes) or `personal_entry`.
+The latter carries caller-authored kind, statement, data, optional applicability/path, and reference/quotation grounds;
+missing grounds remain unverified. `replaces`, `expected_version` and `reason` support append-only edits. Its receipt
+returns the space root, content id, status and exact tree address. File imports with `space=personal` store a private
+original only; the Hub drafts nothing. Ordinary run-file uploads retain their behavior. Personal writes have no blanket
+idempotent annotation, because a stale version or duplicate entry may be refused.
+
+`get_nodes` accepts `space=team` or a personal owner id and defaults standalone reads to the caller. `search` plus generated
+`scope` (personal/team/shared/all) is standalone only, with bounded cursor pages. With `run`, search is refused by the
+registered `SPACE_SEARCH_IN_RUN` code; address reads use the run's frozen roots and initiator permissions. `resolve_reference`
+reads space tree addresses and admitted constituent sources as well as legacy product roots. Node and exact-entry text disclose verification status, grounds and quotations because clients consume the text answer. Current grants are checked
+again when an old address is used, and a raw `rec:` space record cannot disclose an ungranted directory.
+
+
 Decision 85, item 2: the 工作流 navigation entry retains `/console/packs` so existing links stay valid. The page separates
 工作流 from 通用技能 using generated kind labels and title hover explanations. Workflow details show acceptance requirements
 in a full-width section above checks and version controls; the old stage graph is removed. Publication states derive from
@@ -919,3 +951,10 @@ Independent integration review: Antigravity reviewed fixed merge `2967a45b` with
 system. The reviewer found no static blocker in the procfs header fix, service ownership checks, or integration of the
 Linux unavailable-memory path. Synthetic Mac/Linux test results remain separate from this source review and do not
 establish target-server, real-user or production-network behavior.
+
+个人知识的目录或整个空间授权不包含版本审计历史；本人可以列出历史，被授权者页面明确说明历史仅本人可见。个人引用统计同样只给本人，HTML 与 `/console/api/knowledge/node` 共用所有者检查和个人索引；授权读取内容不授予读取统计的权限。
+
+第二阶段安全修正：个人条目和原文可按当前授权读取，当前不受理将它们作为运行结果依据的提交；仅事实工作流的自动结果同样检查。拒收码为 `SPACE_RESULT_GROUNDS_PRIVATE`，第三阶段会用覆盖全部实际读者的规则替代。共享目录拒收无法完整检查的原文，使用 `SPACE_CONTENT_UNINSPECTABLE`，不误报为命中凭据。团队产品目录由 Hub 登记，版本记录不再署为随机读取成员。
+
+
+第二阶段第二轮索引修正：`get_nodes` 搜索可返回 `warnings`（注册错误码、未检索范围、说明与处理办法），正文和控制台同时显示；可用匹配继续返回，不宣称全部范围已检索。单条索引及当前版本限额由 Hub 配置，产品与团队条目分别计量。超限或索引未完成不会让 `/console/search` 整页返回 500。团队页容量提示区分个人原文／历史容量、当前版本索引额度与仍保留的历史磁盘占用。

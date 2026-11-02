@@ -9,7 +9,7 @@ import { RunRecord } from '../../contracts/src/run.ts';
 import { runIsSharedWith } from './authorizations.ts';
 import { PackId, RunId, UserId, Versioned } from '../../contracts/src/common.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
-import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
+import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { isProducerKind, isProvenanceType, isReadTier, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionKind, PermissionRole, ProducerKind, ReadTier } from '../../contracts/generated/vocabulary.ts';
 import type {
@@ -39,6 +39,7 @@ import type {
   SourceArtifact,
   SourceArtifactBody,
   Visibility,
+  Transaction,
 } from './api.ts';
 import { validNote } from './authorizations.ts';
 import { RECORD_SCHEMAS, WHOLE_HUB, artifactShareKey, scanAcceptanceKey } from './constants.ts';
@@ -51,6 +52,8 @@ import { CREDENTIAL_DETECTORS,scanAllCredentials,scanDigest, scanForCredentials,
 import { CoverageContext } from './coverage.ts';
 import { MAX_INDEX_VALUE_BYTES, validateIndex } from './store.ts';
 import { textPreview } from './text.ts';
+
+interface RefusedUpload {sha256:string;size:number;mediaType:string;origin:ArtifactOrigin;author:ArtifactAuthor;run:string|null;scan:CredentialScan}
 
 const SHORT = /^[\x21-\x7e]{1,200}$/;
 const USER_ID = /^usr_[0-9a-z]{26}$/;
@@ -224,14 +227,22 @@ export class RecordArtifacts implements Artifacts {
     this.#options = options;
   }
 
-  ingest(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, false); }
+  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> { return this.#ingest(input, false,tx); }
+
+  async recordUploadRefusal(input:Pick<IngestInput,'bytes'|'mediaType'|'origin'|'author'|'run'>,code:ProtocolCode){
+    const origin=validOrigin(input.origin);if(!('upload'in origin))throw new TypeError('upload refusal requires an upload origin');
+    if(!(input.bytes instanceof Uint8Array)||!isMediaType(input.mediaType))throw new TypeError('upload refusal requires bytes and a media type');
+    const bytes=Uint8Array.from(input.bytes),author=validAuthor(input.author);
+    return this.#recordRefusedUpload({sha256:sha256Hex(bytes),size:bytes.length,mediaType:input.mediaType,origin,author,run:input.run??null,scan:this.#scan(bytes)},code);
+  }
 
   ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, true); }
 
-  async #ingest(input: IngestInput, consume: boolean): Promise<SourceArtifact> {
+  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
+    if(outer&&!('upload' in origin))throw new TypeError('transactional ingestion requires an upload');
     const author = validAuthor(input.author);
     if (!isProvenanceType(input.provenanceType)) throw new TypeError('unknown provenance type');
     const requestedTier = input.readTier ?? MODEL_READABLE;
@@ -258,7 +269,7 @@ export class RecordArtifacts implements Artifacts {
     let assessment = prepared?.assess(bytes);
     let scan = assessment?.scan ?? this.#scan(bytes);
     const hit = scan.findings.length > 0;
-    if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan});
+    if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan},outer);
     if (hit && coverage === undefined && input.derivedSources !== undefined && fromHub(origin,author)) {
       coverage = await this.prepareDerived({origin,author,derivedSources:input.derivedSources});
       prepared = this.#coverage.get(coverage)!;
@@ -317,7 +328,7 @@ export class RecordArtifacts implements Artifacts {
       ...('read' in origin ? [{ key: 'artifact.object', value: origin.read.object }] : []),
       ...(author.user === null ? [] : [{ key: 'artifact.author', value: author.user }]),
     ]);
-    await this.#objects.put(bytes, input.mediaType);
+    await this.#objects.put(bytes, input.mediaType,outer);
     return this.#store.withTransaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [INGEST_LOCK_SPACE, dedupe], tx);
       const existing = await this.#store.find<SourceArtifactBody>({ key: 'artifact.dedupe', value: dedupe, kind: 'source_artifact', limit: 1 }, tx);
@@ -326,7 +337,7 @@ export class RecordArtifacts implements Artifacts {
         { kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
         tx,
       );
-    });
+    },outer);
   }
 
   async records(sha256: string): Promise<SourceArtifact[]> {
@@ -638,15 +649,7 @@ export class RecordArtifacts implements Artifacts {
   }
 
   /** Keeps only the digest and the scan conclusion in a validate action, then refuses the upload (B02 R[4], B05 R[3]). */
-  async #refuseUpload(refused: {
-    sha256: string;
-    size: number;
-    mediaType: string;
-    origin: ArtifactOrigin;
-    author: ArtifactAuthor;
-    run: string | null;
-    scan: CredentialScan;
-  }): Promise<never> {
+  async #recordRefusedUpload(refused:RefusedUpload,code:ProtocolCode,tx?:Transaction) {
     const at = this.#options.now().toISOString();
     const upload = 'upload' in refused.origin ? refused.origin.upload : null;
     const body: ActionBody = {
@@ -661,7 +664,7 @@ export class RecordArtifacts implements Artifacts {
       result: 'completed',
       error_code: null,
       acceptance: 'not_accepted',
-      codes: ['CREDENTIAL_IN_UPLOAD'],
+      codes: [code],
       detail: {
         subject: { sha256: refused.sha256, size: refused.size, media_type: refused.mediaType },
         scan: refused.scan,
@@ -681,7 +684,11 @@ export class RecordArtifacts implements Artifacts {
         ...(refused.author.user === null ? [] : [{ key: 'action.user', value: refused.author.user }]),
         ...(refused.run === null ? [] : [{ key: 'action.run', value: refused.run }]),
       ],
-    });
+    },tx);
+    return action;
+  }
+  async #refuseUpload(refused:RefusedUpload,tx?:Transaction):Promise<never>{
+    const action=await this.#recordRefusedUpload(refused,'CREDENTIAL_IN_UPLOAD',tx);
     const places = refused.scan.findings
       .slice(0, 5)
       .map((finding) => `第 ${finding.line} 行第 ${finding.column} 列（${finding.detector}）`)

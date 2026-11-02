@@ -1,3 +1,4 @@
+import {personalGroundProblem} from './personal-grounds.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -624,6 +625,7 @@ async function startFresh(
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const frozenCommandPolicy=await commandPolicyForRoot(ctx.deps.records.store,target.root);
   const record: RunRecord = RunRecord.parse({
+    ...(ctx.deps.knowledge.spaces?{knowledge_spaces:await ctx.deps.knowledge.spaces.locks(user)}:{}),
     ...(target.product ? {product_pack_digest:target.product.digest}:{}),
     skills,
     ...(frozenCommandPolicy?{command_policy:frozenCommandPolicy}:{}),
@@ -671,6 +673,7 @@ async function startFresh(
   const runDigest = runRecordDigest(record, startedAt);
   const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user) : null;
   if (production !== null) {
+    const privateGround=await personalGroundProblem(ctx,user,production.evaluation.result,record.sources);if(privateGround)throw new Refusal([privateGround]);
     const resultTooLarge = tooLarge(ctx, production.evaluation.result, `这个被判对象的校验结果（${items.length} 个条目）`, subjectPath);
     if (resultTooLarge !== null) throw resultTooLarge;
   }
@@ -799,6 +802,11 @@ export async function recheckProduction(ctx:EngineContext,stored:StoredRecord<Ru
   const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest);
   if(!workflow||!isProduction(workflow))return null;
   const produced=await evaluateProduction(ctx,stored.body,stored.digest,workflow,traceId,user);
+  const refusal=await personalGroundProblem(ctx,user,produced.evaluation.result,stored.body.sources);
+  if(refusal){
+    await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(stored.digest)],startedAt:produced.startedAt,endedAt:ctx.now().toISOString(),acceptance:'not_accepted',codes:[refusal.code],detail:{production:true,refusal:refusal.code,result:null,repair:[]}});
+    return null;
+  }
   await recordResultRequests(ctx,stored.body,produced.evaluation.result);
   return keepProduction(ctx,stored,produced,{traceId,sessionId:stored.body.session??null});
 }

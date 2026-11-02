@@ -1,0 +1,38 @@
+// A legacy run may predate admission checks; deterministic maintenance must still enforce them before writing a result.
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createTestHub} from '../../server/testing-real.ts';
+import {writePack,workflowPack} from '../packs/testing/builder.ts';
+import {newId} from '../../records/api.ts';
+import {createEngineContext} from './deps.ts';
+import {recheckProduction} from './start.ts';
+import {runById,putRun,resultsOf,actionsOf} from './store.ts';
+import {sandboxSkip} from './testing/harness.ts';
+const skip=await sandboxSkip();
+test('production replay refuses a legacy private capture while preserving an independent original of the same bytes',{skip},async t=>{
+  const hub=await createTestHub({repositoryPacks:false,packs:[],stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false});t.after(()=>hub.close());
+  const dir=await mkdtemp(join(tmpdir(),'production-guard-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+  const spec=workflowPack({id:'synthetic-replay-facts',product:{catalogs:[]}});
+  spec.files['requirements.json']={schema:'requirements@1',requirements:[{key:'titles',name:'合成标题',description:'合成事实核验',target:'item',required:true,done_rule:'bookkeeping',layers:['static'],accepted_producer:'fact',checks:['titles'],error_handling:[]}]};
+  spec.files['checks.json']={schema:'checks@1',checks:[{id:'titles',interpreter:'structure@1',table:'tables/titles.json',applies:'run',judges:'subject',tier:'blocking'}]};
+  spec.files['slots.schema.json']={schema:'slots@1',item:{},run:{}};spec.files['knowledge.json']={schema:'knowledge@1',requires:[]};
+  spec.files['functions/project.ts']="export default input=>({items:[{id:'title',label:input.inputs[0].model.title,location:{parser:'json@1',selector:'p/title'},fields:{title:input.inputs[0].model.title}}],warnings:[]});";
+  delete spec.files['tables/codes.json'];delete spec.files['samples/positive/codes-good.json'];delete spec.files['samples/negative/codes-bad.json'];
+  await hub.publishPack((await writePack(dir,spec)).dir);
+  const owner=await hub.createUser('合成重验成员');await hub.assignPack(owner.principal,spec.id);
+  const bytes=Buffer.from('{"title":"合成重验标题"}'),ordinary=await hub.records.artifacts.ingest({bytes,mediaType:'application/json',origin:{upload:{session:null,message:null}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:true}});
+  const traceId='4bf92f3577b34da6a3ce929d0e0e4736';
+  const first=await hub.hub.runs.startRun(owner.principal,{pack:spec.id,inputs:{target:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}},{traceId,sessionId:'synthetic-replay'});assert.ok(first.run,JSON.stringify(first));assert.ok(first.result);
+  const original=await runById(hub.records.store,first.run.run);assert.ok(original);
+  const imported=await hub.hub.knowledge.spaces!.importFile(owner.principal,bytes,'application/json','synthetic-private-title.json');
+  const {feeding_offset:_feedingOffset,...legacyBody}=original.body;
+  const legacy=await putRun(hub.records.store,{...legacyBody,run:newId('run'),sources:original.body.sources.map(binding=>({...binding,artifact:imported.digest}))},original.created_at);
+  const ctx=createEngineContext({records:hub.records,workflows:hub.hub.workflows,packs:hub.hub.packs,knowledge:hub.hub.knowledge,external:hub.hub.runsExternal,parsers:hub.hub.parsers,sandbox:{requireOsIsolation:true}});
+  assert.equal(await recheckProduction(ctx,legacy,owner.principal,traceId),null);
+  assert.equal((await resultsOf(hub.records.store,legacy.body.run)).length,0);
+  const action=(await actionsOf(hub.records.store,legacy.body.run)).at(-1)!;assert.deepEqual(action.body.codes,['SPACE_RESULT_GROUNDS_PRIVATE']);assert.equal(action.body.acceptance,'not_accepted');
+  assert.ok(await recheckProduction(ctx,original,owner.principal,traceId),'the original capture is not classified by a private copy of equal bytes');
+});

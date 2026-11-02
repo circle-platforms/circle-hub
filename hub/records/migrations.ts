@@ -217,10 +217,51 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   ALTER TABLE tokens ADD COLUMN console_session boolean NOT NULL DEFAULT false,
     ADD COLUMN expires_at timestamptz;
   ALTER TABLE user_history ADD COLUMN password_changed boolean NOT NULL DEFAULT false;` },
+  { version: 9, name: 'knowledge_space_search', sql: `CREATE TABLE knowledge_space_search (
+    version text NOT NULL REFERENCES records(digest),
+    space text NOT NULL,
+    path text NOT NULL,
+    entry text NOT NULL,
+    record text NOT NULL REFERENCES records(digest),
+    tokens text[] NOT NULL,
+    PRIMARY KEY(version,path,entry)
+  );
+  CREATE INDEX knowledge_space_search_tokens ON knowledge_space_search USING GIN(tokens);
+  CREATE INDEX knowledge_space_search_space ON knowledge_space_search(space,version);
+  CREATE TABLE knowledge_space_search_ready (
+    version text NOT NULL REFERENCES records(digest), path text NOT NULL, row_count integer NOT NULL, PRIMARY KEY(version,path)
+  );` },
+  { version: 10, name: 'knowledge_search_documents', sql: `CREATE TABLE knowledge_space_search_documents (
+    record text PRIMARY KEY REFERENCES records(digest), tokens text[] NOT NULL,
+    token_bytes bigint NOT NULL CHECK(token_bytes>=0)
+  );
+  INSERT INTO knowledge_space_search_documents(record,tokens,token_bytes)
+    SELECT DISTINCT ON (record) record,tokens,64+COALESCE((SELECT sum(octet_length(token)+4) FROM unnest(tokens) token),0)
+    FROM knowledge_space_search ORDER BY record;
+  CREATE INDEX knowledge_space_search_documents_tokens ON knowledge_space_search_documents USING GIN(tokens);
+  ALTER TABLE knowledge_space_search DROP COLUMN tokens;
+  ALTER TABLE knowledge_space_search ADD CONSTRAINT knowledge_space_search_document
+    FOREIGN KEY(record) REFERENCES knowledge_space_search_documents(record);
+  CREATE INDEX knowledge_space_search_document_space ON knowledge_space_search(space,record);` },
+  { version:11,name:'knowledge_search_version_totals',sql:`ALTER TABLE knowledge_space_search ADD COLUMN quota_space text;
+  UPDATE knowledge_space_search s SET quota_space=CASE WHEN r.kind='knowledge_space_version' THEN s.space
+    ELSE 'product:'||array_to_string((string_to_array(s.path,'/'))[1:4],'/') END FROM records r WHERE r.digest=s.version;
+  ALTER TABLE knowledge_space_search ALTER COLUMN quota_space SET NOT NULL;
+  CREATE TABLE knowledge_space_search_totals (
+    quota_space text NOT NULL, version text NOT NULL REFERENCES records(digest),
+    token_bytes bigint NOT NULL CHECK(token_bytes>=0), PRIMARY KEY(quota_space,version)
+  );
+  INSERT INTO knowledge_space_search_totals(quota_space,version,token_bytes)
+    SELECT s.quota_space,s.version,sum(d.token_bytes) FROM knowledge_space_search s
+    JOIN knowledge_space_search_documents d ON d.record=s.record GROUP BY s.quota_space,s.version;` },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  knowledge_space_search: 'SELECT, INSERT',
+  knowledge_space_search_documents: 'SELECT, INSERT',
+  knowledge_space_search_ready: 'SELECT, INSERT',
+  knowledge_space_search_totals:'SELECT, INSERT, UPDATE (token_bytes)',
   schema_migrations: 'SELECT',
   records: 'SELECT, INSERT',
   record_index: 'SELECT, INSERT',

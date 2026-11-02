@@ -18,6 +18,7 @@ import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
 import { identityOf, recordReader, runOfRecord } from './readers.ts';
+import {personalGroundProblem} from './personal-grounds.ts';
 import { essence, isObject } from './util.ts';
 
 export interface BoundSource {
@@ -113,6 +114,8 @@ export async function bindInputs(
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;
       }
+      const privateInput=await personalGroundProblem(ctx,user,null,[{reference:`src:${ref.sha256}`,artifact:source.artifact.digest,role:slot.role}]);
+      if(privateInput){errors.push({...privateInput,path});return null;}
       if (!mediaAccepted(slot, source.mediaType)) {
         schemaError(path, `输入槽 ${slot.slot} 不接受媒体类型 ${source.mediaType}（接受：${slot.accepts.join('、')}）`);
         return null;
@@ -141,6 +144,13 @@ export async function bindInputs(
       if (record === null) {
         gone(path, 'record absent or not visible to the caller');
         return null;
+      }
+      if(record.kind==='source_artifact'){
+        const artifact=await store.get(ref.record);
+        if(!artifact||!await artifacts.canRead(user,artifact as import('../../records/api.ts').SourceArtifact)){gone(path,'source metadata absent or not readable by the caller');return null;}
+        const source=artifact as import('../../records/api.ts').SourceArtifact;
+        const privateInput=await personalGroundProblem(ctx,user,null,[{reference:'src:'+source.body.sha256,artifact:source.digest,role:slot.role}]);
+        if(privateInput){errors.push({...privateInput,path});return null;}
       }
       if (record.provenance === 'client_captured' && workflow.pack.id !== 'knowledge-contribution') {
         schemaError(path, '客户端捕获的原件只能随操作记录进入回注层，不能作其他工作流的输入或核验根据（决定 73）');

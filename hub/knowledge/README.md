@@ -1,5 +1,37 @@
 # hub/knowledge: the content-addressed knowledge tree
 
+## Personal and team spaces (decision 86)
+
+Decision 84 phase 2 adds `knowledge.spaces` (`KnowledgeSpaces` from `api.ts`). Both spaces use the same entry content,
+CAS directory objects, immutable `knowledge_space_version` snapshots and rebuildable full-text index. A new root is the
+version record digest, so equal content in different namespaces never implies equal permissions. Existing product nodes,
+entries, composition records and references are unchanged; team snapshots mount the current readable product pointers
+under `/产品/<product>/<line>` without copying their trees. Product-line applicability is optional for new entries.
+
+Owners write entries and import originals into their own space, replace/withdraw entries and append directory grants
+or revocations. Administrators may import verified team entries from team business-system captures and withdraw team
+entries; product sync stays unchanged. Uploaded files cannot be team evidence until the later signing phase. Every ground
+and quotation is verified at the boundary; no grounds means the generated unverified state. Credential scanning covers
+content, metadata and grantable originals; personal-credential sources cannot be granted. The Hub never drafts entries.
+
+Reads recheck the enabled account and current path grants, including old versions and search pages. Administrators have
+no default access to personal content. Grant path comparison is segment-based, and raw space records cannot bypass it.
+`getNodes` and the tree reader understand both space and legacy roots. Runs lock team and initiator roots; both the actual
+reader and initiator must remain authorized, and a later owner/team version is outside that run. Citation counts for
+personal entries are owner-only and use a separate owner-scoped index rather than the team content count.
+
+`search` uses records' GIN projection over normalized statement/data/quotation bigrams. ACL scopes filter SQL before paging;
+cursors bind identity, roots, grants and query. Legacy product entries use the same projection without changing their
+content hashes. Missing projection rows are rebuilt from immutable records. Search only finds leads outside a run.
+Histories and diffs include product mounts and filter inaccessible paths; directory pages and search have byte/node caps.
+
+Personal capacity defaults to 1 GiB and is adjustable only by administrators. The accounting includes admitted entry/source
+bytes and successive snapshot metadata, including history; withdrawals do not free history. This is logical space usage,
+not a report of filesystem blocks. Grants and capacity changes are append-only records. Writes serialize before opening
+the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
+Member-to-team sharing, local synchronization, upload signing and account-deletion lifecycle remain later phases.
+
+
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed
 judgment model), **K05** (pinned reads), with **B03** tree references, **B05** actions, **D01 R[8]** (one product, several
 names) and **W09** (the sync is a standing obligation the Hub executes). Milestone 2 (brief section 6a, capabilities 4 and
@@ -1150,3 +1182,34 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 ## Explicit source parsers
 
 `ProducerSource.parser` pins a registered core parser for a single source or every member of a list. The product pack owns that source interpretation; a system pack retains its observed Content-Type. SourceLoader executes the exact declaration without recognition fallback, while undeclared sources keep media recognition. Original artifacts, read manifests, composition rows and producer slots retain the observed media type; mismatch notes identify the declared parser in the production report. Parse caches include source digest, parser and media/charset options, and declaration-specific slot caches cannot grant recognition to an undeclared binary source. Read tiers, credential checks and size budgets still apply.
+
+## Space source authority after the security review
+
+`spaces.source` preserves independently authorized captures before adding a space grant. Private upload captures remain subject to their frozen space unless explicitly bound as run inputs; importing equal bytes does not revoke or enlarge an earlier capture. `spaceSource` checks only space authority and is used for exact-reference scope exceptions. Runtime text matching enumerates declared run inputs, never every original in a frozen space.
+
+## Phase-2 security review
+
+Space history is owner-only (team history remains readable); grants cover content, not audit timing or reasons. Team product
+snapshots use `by: null` for Hub registration and the console uses the generated Hub host label. Ordinary manual imports
+retain the actual administrator. Shared-directory imports run the same full byte scan as grants; uninspectable ZIP/PDF/image
+originals return `SPACE_CONTENT_UNINSPECTABLE` and stay private if imported outside shared paths.
+
+Search tokens are stored once per immutable entry record, with configurable per-document and current-version totals (records
+README). `ensure` returns current versions directly; initialization and mount refresh use the space lock without joining
+production or space write queues. Each space has its own mutation queue; another member’s writes cannot delay revocation. Import calculates the full prospective version
+before saving bytes; file registration and the version share a transaction. See the eight review cases in `kw-spaces.md`.
+
+Second phase-2 review: personal import rejection audits are appended only after the import transaction is released.
+Credential refusals and uninspectable shared-path originals leave one safe audit; source bytes, source records and the
+space version remain absent/unchanged. The original registered refusal and its remedy remain distinct from audit storage.
+
+Writes and grant revocations are queued per space, with a database business-key lock retaining cross-process ordering.
+An unrelated member's write or revoke no longer waits for a blocked index append in another space. Read paths retain their
+existing behavior. Token-volume accounting is tracked separately from this process queue and is covered by the index review.
+
+
+Second review index accounting (model 19): withdrawals/replacements free current-version index quota, while original content
+and history still count toward the separate personal capacity. Product mounts have their own quota scopes. Search does not
+label an incomplete/over-limit index as empty or complete: it excludes that scope and returns registered-code `warnings` with
+available matches. Console and MCP show the omitted scope; cursors bind the set of available scopes and require a fresh first
+page when that set changes. `records` documents configurable limits and the additional historical database disk usage.

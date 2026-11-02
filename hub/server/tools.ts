@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
-import type { Acceptance, CallResult } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type Acceptance, type CallResult } from '../../contracts/generated/vocabulary.ts';
 import { annotationsFor, type ToolAnnotations } from '../../contracts/src/annotations.ts';
 import { RunId, type ProtocolError } from '../../contracts/src/common.ts';
 import type { PackSummary } from '../../contracts/src/run.ts';
@@ -272,7 +272,14 @@ const uploadFile: Handler = async (deps, call, args) => ({ answer: await upload(
 async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unknown>): Promise<Answer> {
   const parsed = UploadFileInput.safeParse(args);
   if (!parsed.success) return errorAnswer('upload_file', schemaErrors('upload_file', parsed.error));
+  if(parsed.data.personal_entry){
+    if(!deps.knowledge.spaces)return errorAnswer('upload_file',[unavailable()]);
+    try{return {call_result:'ok',errors:[],acceptance:'accepted',personal_entry:await deps.knowledge.spaces.write(call.principal,parsed.data.personal_entry,call.context.sessionId)}}
+    catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);throw error;}
+  }
   const { file_path: text, media_type: given, name } = parsed.data;
+  if(parsed.data.space==='personal'&&!deps.knowledge.spaces)return errorAnswer('upload_file',[unavailable()]);
+  if(text===undefined)return errorAnswer('upload_file',[violation('upload_file','/file_path','缺少文件内容')]);
   const limit = Math.min(deps.config.limits.maxUploadBytes, MAX_UPLOAD_BYTES);
   const size = base64Size(text);
   if (size > limit) {
@@ -310,7 +317,9 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   }
   let artifact;
   try {
-    artifact = await deps.records.artifacts.ingest({
+    artifact = parsed.data.space==='personal'&&deps.knowledge.spaces
+      ? await deps.knowledge.spaces.importFile(call.principal,bytes,mediaType,name??null,'/',call.context.sessionId)
+      : await deps.records.artifacts.ingest({
       bytes,
       mediaType,
       origin: { upload: { session: call.context.sessionId, message: null } },
@@ -323,6 +332,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       name: name ?? null,
     });
   } catch (error) {
+    if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:error.message,fix:error.fix!}]);
     if (error instanceof RecordsError && error.code === 'CREDENTIAL_IN_UPLOAD') {
       const detail = error.detail as { sha256?: unknown };
       return errorAnswer('upload_file', [{ code: 'CREDENTIAL_IN_UPLOAD', message: error.message, fix: error.fix ?? PROTOCOL_CODES.CREDENTIAL_IN_UPLOAD.fix }], {
@@ -332,7 +342,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     }
     throw error;
   }
-  await deps.knowledge.feeding?.upload(call.principal,artifact);
+  if(parsed.data.space!=='personal')await deps.knowledge.feeding?.upload(call.principal,artifact);
   const sha256 = artifact.body.sha256;
   return {
     call_result: 'ok',
@@ -340,7 +350,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     acceptance: 'accepted',
     reference: `src:${sha256}`,
     artifact: artifact.digest,
-    feeding_objects:[sha256],
+    ...(parsed.data.space==='personal'?{}:{feeding_objects:[sha256]}),
     sha256,
     size: artifact.body.size,
     media_type: artifact.body.media_type,
@@ -424,6 +434,15 @@ const getNodes: Handler = async (deps, call, args) => {
   if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
   const input = parsed.data;
   const note = call.context.adminNote;
+  if(input.run!==undefined)call.state.runId=input.run;
+  if(input.scope!==undefined&&input.search===undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/scope','搜索范围只与 search 一起使用')])};
+  if(input.search!==undefined){
+    if(input.run!==undefined)return {answer:errorAnswer('get_nodes',[{code:'SPACE_SEARCH_IN_RUN',message:PROTOCOL_CODES.SPACE_SEARCH_IN_RUN.when,fix:PROTOCOL_CODES.SPACE_SEARCH_IN_RUN.fix}])};
+    if(input.reference!==undefined||input.root!==undefined||input.paths!==undefined||input.depth!==undefined||input.space!==undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/search','搜索只接受 search、scope 与 cursor')])};
+    if(!deps.knowledge.spaces)return {answer:errorAnswer('get_nodes',[unavailable()])};
+    try{return {answer:{call_result:'ok',errors:[],...await deps.knowledge.spaces.search(call.principal,input.search,input.scope??'all',input.cursor??null)}}}
+    catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:error.message,fix:error.fix!}])};throw error;}
+  }
   // An empty cursor is no cursor (a model may fill an optional string with ''), for a reference as for a subtree.
   const cursor = input.cursor === undefined || input.cursor === '' ? null : input.cursor;
   if (input.run !== undefined) call.state.runId = input.run;
@@ -434,18 +453,29 @@ const getNodes: Handler = async (deps, call, args) => {
   };
   if (input.reference !== undefined) {
     // A cursor goes with the reference it pages (TextContext.cursor); a subtree read never mixes in.
-    const mixed = (['root', 'paths', 'depth'] as const).filter((key) => input[key] !== undefined);
+    const mixed = (['root', 'paths', 'depth', 'space'] as const).filter((key) => input[key] !== undefined);
     if (mixed.length > 0) return { answer: errorAnswer('get_nodes', [violation('get_nodes', `/${mixed[0]}`, '按引用读取时不再给 root、paths 或 depth', READ_FIX)]) };
     if (input.run !== undefined && (await runDetail(input.run)) === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     return readReference(deps, call, input.reference, input.run, cursor);
   }
   let root = input.root;
+  if(root===undefined&&input.run===undefined&&input.reference===undefined&&deps.knowledge.spaces){
+    const space=input.space??call.principal.id;
+    const visible=await deps.knowledge.spaces.paths(call.principal,space);
+    if(!visible.length)return {answer:errorAnswer('get_nodes',[unavailable()])};
+    root=(space==='team'||space===call.principal.id?await deps.knowledge.spaces.ensure(call.principal,space):await deps.knowledge.spaces.current(space))?.root;
+  }
   let composition: string | null | undefined;
   let feedingOffset:import('../../contracts/src/feeding.ts').FeedingOffset|undefined;
   if (input.run !== undefined) {
     const detail = await runDetail(input.run);
     if (detail === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
-    root ??= detail.run.root;feedingOffset=detail.run.feeding_offset;
+    if(input.space!==undefined&&root===undefined&&deps.knowledge.spaces){
+      const locks=detail.run.knowledge_spaces;
+      root=input.space==='team'?locks?.team:input.space===locks?.owner?locks.personal:(await deps.knowledge.spaces.current(input.space))?.root;
+      if(!root)return {answer:errorAnswer('get_nodes',[unavailable()])};
+    }
+    root ??= detail.run.root??detail.run.knowledge_spaces?.team;feedingOffset=detail.run.feeding_offset;
     if(root===detail.run.root){composition=null;const ids=detail.run.target_basis.flatMap(claim=>{const data=claim.statement.data;return data&&data.root===root&&typeof data.composition==='string'?[data.composition]:[];});if(new Set(ids).size===1)composition=ids[0];}
     if (root === undefined) {
       note(`run ${input.run} locked no knowledge root`);
@@ -456,9 +486,10 @@ const getNodes: Handler = async (deps, call, args) => {
     return { answer: errorAnswer('get_nodes', [violation('get_nodes', '', '要给出 run、root 或 reference 之一', '给出 start_run 返回的 run，或一个知识根，或一个引用')]) };
   }
   let page;
+  if(input.space!==undefined&&deps.knowledge.spaces&&(await deps.knowledge.spaces.version(root))?.body.space!==input.space)return {answer:errorAnswer('get_nodes',[unavailable()])};
   for(let attempt=0;;attempt++) {
     try {
-      page=await deps.knowledge.getNodes({root,feeding_offset:feedingOffset,paths:input.paths??['/'],depth:input.depth??1,cursor,...(composition!==undefined?{composition}:{})},call.principal);
+      page=await deps.knowledge.getNodes({root,run:input.run,feeding_offset:feedingOffset,paths:input.paths??['/'],depth:input.depth??1,cursor,...(composition!==undefined?{composition}:{})},call.principal);
       break;
     } catch(error) {
       if(error instanceof IntegrityError) {
@@ -518,7 +549,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     now:deps.now?.bind(deps),
     reader,
     parsers: deps.parsers,
-    sources,
+    sources:deps.knowledge.spaces?{read:async(hash,identity)=>deps.knowledge.spaces!.source(call.principal,hash,identity?.run,'function')}:sources,
     trees: deps.knowledge.treeReader(),
     records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
@@ -536,14 +567,18 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   let feedingReceipt:import('../knowledge/feeding.ts').FeedingReceipt|undefined;
   if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;const captures=detail?.run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===parsed.sha256&&binding.artifact;})??[];for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await deps.records.store.get<any>(capture.meta_artifact):null;feedingReceipt=await deps.knowledge.feeding?.observeSourceBounded(call.principal,parsed.sha256,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:detail?.run.target_basis.find(claim=>claim.statement.data?.root===detail?.run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}}
   const feedingState=parsed.scheme==='rec'?await deps.knowledge.feeding?.recordState(parsed.record,call.principal):null;
-  const derivedNote=[result.note,contributionNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
+  const spaceVersion=parsed.scheme==='tree'&&parsed.entry&&deps.knowledge.spaces?await deps.knowledge.spaces.version(parsed.root):null;
+  const spaceEntry=spaceVersion&&parsed.scheme==='tree'&&parsed.entry?await deps.knowledge.spaces!.entry(call.principal,parsed.root,parsed.path,parsed.entry):null;
+  if(spaceVersion&&parsed.scheme==='tree'&&!spaceEntry&&!spaceVersion.body.products.some(m=>parsed.path===m.path||parsed.path.startsWith(m.path+'/')))return {answer:errorAnswer('get_nodes',[unavailable()])};
+  const spaceNote=spaceEntry?'状态 '+labelOf('knowledge_entry_status',spaceEntry.row.status)+(spaceEntry.body.grounds.length?'；已逐条核对引文与路径':'；未提供依据，内容未核验'):null;
+  const derivedNote=[result.note,contributionNote,spaceNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
   const content = {
     reference: result.reference,
     read_tier: result.readTier,
     readable: result.readable,
     ...(result.readable && result.text !== null && result.readTier === 'model_readable' ? { text: result.text } : {}),
     ...(parsed.scheme === 'src' ? { sha256: parsed.sha256 } : {}),
-    ...(result.summary!==null||feedingState?{structure:{...result.summary,...(feedingState?{feeding_state:feedingState}:{})}}:{}),
+    ...(result.summary!==null||feedingState||spaceEntry?{structure:{...result.summary,...(feedingState?{feeding_state:feedingState}:{}),...(spaceEntry?{entry_status:spaceEntry.row.status,grounds:spaceEntry.body.grounds,data:spaceEntry.body.content.data,applicability:spaceEntry.body.content.applicability,...(spaceEntry.cited_count!==null?{cited_count:spaceEntry.cited_count}:{})}:{})}}:{}),
     ...(derivedNote?{note:derivedNote}:{}),
   };
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };

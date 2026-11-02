@@ -274,7 +274,15 @@
                 "BOUNDARY_POLICY_DENIED",
                 "PACK_POLICY_DENIED",
                 "EFFECT_CONTENT_UNVERIFIED",
-                "AUDIENCE_VISIBILITY_EXCEEDED"
+                "AUDIENCE_VISIBILITY_EXCEEDED",
+                "SPACE_CAPACITY_EXCEEDED",
+                "SPACE_ENTRY_INVALID",
+                "SPACE_CREDENTIALS_DETECTED",
+                "SPACE_SEARCH_IN_RUN",
+                "SPACE_VERSION_CONFLICT",
+                "SPACE_RESULT_GROUNDS_PRIVATE",
+                "SPACE_CONTENT_UNINSPECTABLE",
+                "SPACE_INDEX_LIMIT"
               ]
             },
             "row": {

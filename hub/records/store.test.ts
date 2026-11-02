@@ -1,3 +1,4 @@
+import { DEFAULT_LIMITS } from '../config/index.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -330,7 +331,7 @@ test('an altered applied migration, an unknown applied version or a gap refuses 
   // The journal itself was tampered with: the program refuses to open the database.
   await sql(database, "UPDATE schema_migrations SET sha256 = repeat('0', 64) WHERE version = 1");
   const dataDir = postgres.root;
-  const config = { dataDir: `${dataDir}/kit`, logDir: `${dataDir}/kit/logs`, database, limits: { maxUploadBytes: 1 << 20, maxRecordBytes: 1 << 20, maxRequestBytes: 2 << 20 } };
+  const config = { dataDir: `${dataDir}/kit`, logDir: `${dataDir}/kit/logs`, database, limits: { ...DEFAULT_LIMITS, maxUploadBytes: 1 << 20, maxRecordBytes: 1 << 20, maxRequestBytes: 2 << 20 } };
   await assert.rejects(openRecords(config), MigrationError);
   await sql(database, `UPDATE schema_migrations SET sha256 = $1 WHERE version = 1`, [migrationChecksum(MIGRATIONS[0])]);
   await sql(database, "INSERT INTO schema_migrations (version, name, sha256) VALUES (99, 'from_the_future', repeat('a', 64))");

@@ -378,6 +378,7 @@ function listText(v: ListOut): string {
 // ---------------------------------------------------------------- upload_file
 
 function uploadText(v: UploadOut): string {
+  if(v.personal_entry)return `个人条目已保存；${uiLabelOf('knowledge_entry_status',v.personal_entry.status)}\n引用 ${v.personal_entry.reference}\n知识版本 ${v.personal_entry.root}\n${traceLine(v.trace)}`;
   const head = [`${axisLabel('acceptance')}：${labelOf('acceptance', v.acceptance)}${v.reference ? `，引用 ${v.reference}` : ''}`];
   if (v.size !== undefined) head.push(`大小 ${v.size} 字节${v.media_type ? `，媒体类型 ${oneLine(v.media_type)}` : ''}`);
   if (v.sha256 !== undefined) head.push(`sha256 ${v.sha256}`);
@@ -1000,7 +1001,10 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
     const data = entry.data === undefined ? '' : `；数据 ${clip.field(JSON.stringify(entry.data), CLIP.data, '条目数据的超出部分')}`;
     const fields=entry.applicability_fields;
     const state=fields?'；条件状态 '+Object.entries(fields).map(([field,value])=>`${labelOf('applicability_field',field as import('../../contracts/generated/vocabulary.ts').ApplicabilityField)}：声明 ${value.declaration_status===null?'出处未核验':labelOf('declaration_status',value.declaration_status)}，判断 ${value.judgment_status===null?'尚未核读完':labelOf('judgment_status',value.judgment_status)}，声明值 ${value.declaration_value===null?'null':clip.field(JSON.stringify(value.declaration_value),CLIP.data,'声明值超出部分')}${value.judgments.length?'；判断引用 '+value.judgments.map(ref=>'rec:'+ref).join(' '):''}${value.conflicted?'；存在冲突，需复核':''}`).join('；'):'';
-    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}`, omitted: clip.omitted };
+    const status=entry.status?`；状态 ${labelOf('knowledge_entry_status',entry.status)}`:'';
+    const grounds=entry.grounds?.map(ground=>`；依据 ${ground.reference}，逐字引文 ${clip.field(ground.quotation,CLIP.field,'依据引文的超出部分','用 get_nodes 读取条目引用以取得完整依据')}`).join('')??'';
+    const citations=typeof entry.cited_count==='number'?`；累计被引用 ${entry.cited_count} 次`:'';
+    return { text: `  · [${labelOf('entry_kind', entry.kind)}] ${statement}（适用 ${clip.field(entry.applicability, CLIP.name, '适用条件的超出部分')}）；引用 ${entry.reference}${data}${state}${status}${grounds}${citations}`, omitted: clip.omitted };
   });
   for (const view of node.contributions ?? []) {
     const clip = new Clip(`rec:${view.record}`);
@@ -1065,6 +1069,7 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
+  if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索${v.warnings?.length?'；部分范围未检索':''}）`,...(v.warnings??[]).map(warning=>`${warning.code}：${oneLine(warning.message)}；${oneLine(warning.fix??'')}`)],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];
   const root = v.root ?? '';

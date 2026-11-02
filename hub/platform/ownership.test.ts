@@ -39,6 +39,10 @@ const COLUMN: Record<string, string> = {
   pointers: 'name',
   leases: 'key',
   lease_registrations: 'owner',
+  knowledge_space_search: 'space',
+  knowledge_space_search_documents: 'token_bytes',
+  knowledge_space_search_ready: 'row_count',
+  knowledge_space_search_totals:'quota_space',
 };
 
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */

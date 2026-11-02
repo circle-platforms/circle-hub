@@ -40,13 +40,13 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 16 and the generated vocabulary covers every declared axis', () => {
-  assert.equal(model.version, 16);
-  assert.equal(MODEL_VERSION, 16);
+test('model version is 19 and the generated vocabulary covers every declared axis', () => {
+  assert.equal(model.version, 19);
+  assert.equal(MODEL_VERSION, 19);
   assert.equal(model.vocabulary.length, Object.keys(AXES).length);
 });
 
-test('model 16 changes pack display names and derives catalog states without changing kind codes', () => {
+test('model 17 changes pack display names and derives catalog states without changing kind codes', () => {
   assert.deepEqual(PACK_KIND, ['product', 'workflow', 'system', 'skill']);
   assert.deepEqual(PACK_KIND.map(kind => uiLabelOf('pack_kind', kind)), ['产品知识来源', '工作流', '业务系统接入', '通用技能']);
   assert.deepEqual(PACK_STATUS, ['published', 'retired', 'enabled', 'inactive']);

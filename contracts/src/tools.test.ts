@@ -110,7 +110,7 @@ test('upload_file takes the file as base64 content in file_path', () => {
   assert.equal(filePath.pattern, '^[A-Za-z0-9+/]*={0,2}$');
   assert.equal(filePath.maxLength, MAX_UPLOAD_BASE64_LENGTH);
   assert.equal(MAX_UPLOAD_BASE64_LENGTH, 4 * Math.ceil(MAX_UPLOAD_BYTES / 3));
-  assert.deepEqual(upload?.inputSchema.required, ['file_path']);
+  assert.equal(upload?.inputSchema.required, undefined, 'file and personal-entry input modes are checked by the contract');
 });
 
 test('start_run parameters tells the model where the pack parameters go', () => {
@@ -129,7 +129,7 @@ test('annotations in tools.json are exactly the D06 table, with start_run open-w
   // Literal values from D06 F[0]-F[5], not a second call of annotationsFor.
   const D06: Record<string, Record<string, boolean>> = {
     list_task_packs: { readOnlyHint: true, openWorldHint: false },
-    upload_file: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    upload_file: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     start_run: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     get_nodes: { readOnlyHint: true, openWorldHint: false },
     resolve_reference: { readOnlyHint: true, openWorldHint: false },

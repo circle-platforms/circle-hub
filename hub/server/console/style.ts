@@ -363,6 +363,10 @@ export const CSS = `@property --sweep{syntax:'<percentage>';inherits:false;initi
 .avatars .avatar:nth-child(2){background:var(--think-bg);color:var(--t-unknown)}
 .avatars .avatar:nth-child(3){background:var(--write-bg);color:var(--t-pass)}
 .stages{display:flex;flex-wrap:wrap;gap:12px 26px}
+.knowledge-space .card-h{flex-wrap:wrap}
+.knowledge-space .card-h h3,.space-owner{min-width:0;overflow-wrap:anywhere}
+.knowledge-space .card-h .meta{max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-all}
+.knowledge-space h2{overflow-wrap:anywhere}
 .knowledge-flow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px;align-items:center}
 .knowledge-column{display:grid;gap:12px;min-width:0}
 .knowledge-column h3{font-size:var(--ui);margin:0}

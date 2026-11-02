@@ -1,3 +1,4 @@
+import {personalGroundProblem} from './personal-grounds.ts';
 import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
 import {submissionOrigin} from './independence.ts';
 import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
@@ -204,6 +205,8 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       ? { record: existing, why: isVerbatimObject(existing) ? (received.canonical ? 'too_large' : 'canonical') : null }
       : await storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt);
   const record = kept.record;
+  const privateGround=await personalGroundProblem(ctx,user,args,run.sources);
+  if(privateGround){await putAction(store,{action:'validate',run:run.run,inputs:['rec:'+record.digest],submissionRecord:record.digest,startedAt,endedAt:ctx.now().toISOString(),acceptance:'not_accepted',codes:[privateGround.code],detail:{refusal:privateGround.code}});return {call_result:'error',acceptance:'not_accepted',errors:[privateGround]};}
   const management=await abandonDecision(ctx,run.run);
   const owner = keyOwner(run);
   const successors = (await successorsOf(store, run.run)).filter((s) => packIdOf(s.body.pack) === packIdOf(run.pack) && keyOwner(s.body) === owner);

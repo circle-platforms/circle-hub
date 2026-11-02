@@ -25,6 +25,7 @@ import { button, callout, card, pills, planned, sectionHead, when } from './ui.t
 import { citationsLine, countText, nodeCitations } from './citations.ts';
 import { awaitingRequests } from './requests.ts';
 import { packSources } from './pack-sources.ts';
+import { spaceOverview } from './spaces.ts';
 
 export interface PageContext {
   deps: ServerDeps;
@@ -464,6 +465,7 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
 }
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
+  const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
   const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
@@ -498,11 +500,11 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
     if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
     const options = versions;
-    const diff = options.length === 0 ? html`` : html`<form class="filters" method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">版本差异</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button type="submit">比较</button></form>`;
+    const diff = options.length === 0 ? html`` : html`<form class="filters" method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">${ctx.deps.knowledge.spaces?'产品版本差异':'版本差异'}</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button type="submit">比较</button></form>`;
     blocks.push(
       card(
         { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
-        html`${table(['版本', '名称族', '构建', '已发布', '已产出版本', '当前版本'], rows, '还没有构建')}<div class="card-f">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
+        html`${table([ctx.deps.knowledge.spaces?'产品版本':'版本', '名称族', '构建', '已发布', '已产出版本', ctx.deps.knowledge.spaces?'当前知识版本':'当前版本'], rows, '还没有构建')}<div class="card-f">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
   }
@@ -515,11 +517,11 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
 <div class="stage on-hub" title="可追溯至原文且引文一致方可入库；Hub 不调用模型"><b>出处校验</b></div>
 <div class="stage" title="按产品线与版本组织；业务系统与文档导入同样经 Hub 校验，可读范围按工作流分配"><b>共享知识</b></div></section>
 </div>`);
-  const actions = ctx.admin ? html`${button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库（所有人可见）；仅管理员可用' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}` : undefined;
+  const actions = ctx.admin ? html`${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品目录沿用产品线读权，仅管理员可用' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}` : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: '统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${sources}${flow}${pending}
-${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: '团队知识' }, html`<p class="empty">${ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
+    body: page(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'个人、团队与共享给本账户的知识；已核验与未核验内容分别标示':'统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? card({ title: ctx.deps.knowledge.spaces?'产品目录':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品目录':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="stack">${blocks}</div>`)}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {

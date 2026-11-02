@@ -1,12 +1,12 @@
 # 工作簿格式通用技能包
 
-当前版本 1.0.4 同步模型 16 的生成合约镜像及发布清单；解析业务代码未变。
+当前版本 1.0.7 同步模型 19 的生成合约镜像及发布清单；解析业务代码未变。
 
 本包按决定 72 独立发布，由管理员显式安装，不随 Hub 发布，不按用户分配。它解释 XLSX 工作簿与 SpreadsheetML 文件结构，不识别产品、不判断哪些单元格属于何种业务角色，不承担编译、评审或计划执行规则。
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/workbook-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install workbook-format@1.0.4` 安装；`pack uninstall workbook-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/workbook-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install workbook-format@1.0.7` 安装；`pack uninstall workbook-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"workbook-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
 
@@ -23,3 +23,7 @@
 fragments 的 JSON 估算超过 4 MiB 就不随解析输出，由 locate 按需给，一次最多 256 个。不超过就仍走急切路径。合成工作簿 20000 个单元格、文件 118353 字节，估算超过 4 MiB。一次沙箱测量：解析输出 2080616 字节，沙箱内 509 毫秒，fragments 未随解析输出。单元格地址 `c/` 与 `i/` 不变。
 
 选择器由工作簿解析器按结构生成：工作表名和单元格地址唯一时使用 `c/`，名称有歧义时使用 `i/` 回退。急切输出和按需定位使用同一语法，不为唯一的单元格额外补位置别名；位置序号也不接受前导零。引文候选与解析器返回的单元格及定义名一致。
+
+本次 1.0.6 仅同步第二阶段安全修正的模型 18 生成协议与发布清单，技能业务代码不变。仓库测试通过 `repositorySkillVersion` 读取当前版本。
+
+本次 1.0.7 仅同步第二轮索引修正的模型 19 生成协议与发布清单，业务代码不变。

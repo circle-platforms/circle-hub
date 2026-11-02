@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 87 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 92 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -57,6 +57,22 @@ Claude, coordinating under the owner's standing authorization for decision 84 (2
 `pack_status` axis in model 16: published, retired, enabled and inactive reuse the catalog's existing state labels.
 It changes neither records nor permissions. The same authorization covers updating the four generated skill protocol
 mirrors and their release manifests: html-format/mindmap-format 1.0.3, xml-format/workbook-format 1.0.4.
+
+Decision 84 phase 2 (task `kw-spaces.md`, 2026-11-02) sets model 17: product applicability is optional in K01;
+shared personal/team space shapes add immutable entry, tree, version, source, grant and quota records. Five generated axes
+cover space kind, verification state, search scope, grant audience and grant/revoke actions. The five `SPACE_*` refusal
+codes describe capacity, invalid entries, credentials, in-run search and version conflicts. Legacy product records and
+`tree:` addresses retain their format. New run summaries optionally lock team/personal roots; old runs need no added fields.
+The six tools stay unchanged: `upload_file` accepts a personal entry or a private original, and `get_nodes` adds space reads
+and standalone full-text search. Four protocol mirrors and release manifests advance to html-format/mindmap-format 1.0.4
+and xml-format/workbook-format 1.0.5, with no business-code changes. Tests read versions through `repositorySkillVersion`.
+
+The phase-2 security review (Claude, requested by the owner on 2026-11-02) sets model 18. It registers
+`SPACE_RESULT_GROUNDS_PRIVATE` as the temporary admission guard until phase 3 checks all actual readers,
+`SPACE_CONTENT_UNINSPECTABLE` for originals that cannot be completely scanned, and `SPACE_INDEX_LIMIT` for bounded search
+projections. A team space version may have `by: null` for Hub directory registration; a personal version must still name
+its owner. The four generated skill protocol mirrors advance with their manifests to html-format/mindmap-format 1.0.5
+and xml-format/workbook-format 1.0.6; business code is unchanged.
 
 ## Editing `contracts/codes.json`
 
@@ -356,3 +372,9 @@ R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.nativ
 knowledge-structure@1（方向 2）：模型定义 fed-case/fed-defect/fed-spec/fed-build/fed-note、version-binding、usage、feeding-offset、retraction 的封闭形状，生成于 shared-interfaces.ts，由 src/feeding.ts 注册。来源、运行目标、采集时间、派生命令解析和回注均不偷偷加入对象身份。具体身份投影见模型 knowledgeStructure.identity。source_structure 是生成的组成依据；binding_status/binding_basis 与 covers 关系也只从模型生成。模型判版本禁止，运行目标只形成 usage；来源结构和人的直接声明保留各自依据，冲突不覆盖。该步只建立合约，不表示已实现喂入存储或真实资源接入。
 
 验收恢复接线：submission@1 增加可选 model_identity，直接使用已审定 model-identity@1。model 仍是显示文字；没有新字段的旧提交保持可读，族独立性保持未知。生成器重生 submission schema 与工具输入形状，不手改生成物。
+
+
+Model 19 (decision 86, second review): `get_nodes` knowledge-search answers optionally include bounded `warnings` using the
+existing `ProtocolError` shape. Matches from available scopes remain usable, and omitted incomplete/over-limit scopes are
+explicit. `SPACE_INDEX_LIMIT` distinguishes entry versus current-version limits in its actual message/fix. This does not
+change immutable knowledge records, six-tool routing, permissions or stored references.

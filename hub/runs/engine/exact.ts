@@ -139,7 +139,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
       (candidates ??= (async () => {
         const out: QuoteCandidate[] = [];
         for (const [sha, role] of sources) {
-          const source = await readScope(`src:${sha}`, () => artifacts.source(reader, sha, { consumer }));
+          const source = await readScope(`src:${sha}`, async () => ctx.deps.knowledge.spaces ? ctx.deps.knowledge.spaces.source(reader,sha,identity.run,consumer) : artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
           const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
           const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
@@ -176,6 +176,8 @@ export async function buildRootScope(ctx: EngineContext, root: string, reader: P
 
   const rootInfos = await readScope(`root:${root}`, () => ctx.deps.knowledge.rootInfo(root));
   const compositions = [...new Set(rootInfos.map((i) => i.composition))];
+  const spaces=ctx.deps.knowledge.spaces;
+  if(spaces)for(const hash of await spaces.basisSources(reader,root))sources.set(hash,'expected');
 
   for (const info of rootInfos) {
     const compDigest = info.composition;
@@ -240,7 +242,7 @@ export async function buildRootScope(ctx: EngineContext, root: string, reader: P
       (candidates ??= (async () => {
         const out: QuoteCandidate[] = [];
         for (const [sha, role] of sources) {
-          const source = await readScope(`src:${sha}`, () => artifacts.source(reader, sha, { consumer }));
+          const source = await readScope(`src:${sha}`, async () => ctx.deps.knowledge.spaces ? ctx.deps.knowledge.spaces.source(reader,sha,identity.run,consumer) : artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
           const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
           const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
@@ -314,7 +316,9 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
   // Reading is an authorization decision, not immutable document content: recheck it on every use.
-  const sources = sourceReader(artifacts, consumer);
+  const legacySources = sourceReader(artifacts, consumer);
+  const spaces=ctx.deps.knowledge.spaces;
+  const sources:typeof legacySources=spaces?{read:async(hash,reader)=>{const source=await spaces.source({id:reader.user!,role:reader.role,name:''},hash,reader.run,consumer);return source&&consumer==='model'&&source.bytes===null&&source.readTier!=='retain_only'?null:source;}}:legacySources;
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
@@ -341,7 +345,10 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     if (ref.scheme !== 'src') resolving.add(canonical);
     try {
       if (scoped) {
-        const problem = scopeProblem(ref, scope);
+        const spaceRoot=ref.scheme==='tree'&&spaces?await spaces.version(ref.root):null;
+        let problem = scopeProblem(ref, scope);
+        if(spaceRoot&&scope.reader.run&&ref.scheme==='tree')problem=await spaces!.runAllows({id:scope.reader.user!,role:scope.reader.role,name:''},ref.root,ref.path,scope.reader.run)?null:(scopeProblem(ref,scope)??'引用的知识树根不是本次运行锁定的根');
+        if(ref.scheme==='src'&&spaces&&scope.reader.run&&await spaces.spaceSource({id:scope.reader.user!,role:scope.reader.role,name:''},ref.sha256,scope.reader.run))problem=null;
         if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       let result: Awaited<ReturnType<typeof resolveReference>>;
@@ -452,6 +459,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       }catch{/* The ordinary path reports read errors and deadline exhaustion. */}
       return run(reference, scoped, options.grounds === true);
       }
+      if(ref?.scheme==='tree'&&spaces&&await spaces.version(ref.root))return run(reference,scoped,options.grounds===true);
       const key = `${scoped ? 's' : 'u'}${options.grounds ? 'g' : 't'}\u0000${reference}`;
       let found = cache.get(key);
       if (!found) cache.set(key, (found = run(reference, scoped, options.grounds === true)));

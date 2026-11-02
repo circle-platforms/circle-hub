@@ -1,12 +1,12 @@
 # XML 格式通用技能包
 
-当前版本 1.0.4 同步模型 16 的生成合约镜像及发布清单；解析业务代码未变。
+当前版本 1.0.7 同步模型 19 的生成合约镜像及发布清单；解析业务代码未变。
 
 本包按决定 72 独立发布，由管理员显式安装，不随 Hub 发布，不按用户分配。它解释通用有序 XML 元素树与命令树结构，不识别产品、不判断哪些元素属于何种业务角色，不承担编译、评审或计划执行规则。
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/xml-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install xml-format@1.0.4` 安装；`pack uninstall xml-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/xml-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install xml-format@1.0.7` 安装；`pack uninstall xml-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"xml-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
 
@@ -29,3 +29,7 @@ XML 的新包产出可将相邻路径按共同前缀编码，引文的选择器�
 一次 macOS 合成测量中，三种形状的输出分别为 20,050,017、18,676,564、12,185,282 字节；沙箱 RSS 采样峰分别为 325,910,528、336,543,744、169,787,392 字节；完整流程分别为 1495、1131、712 毫秒。三项在同一测试进程顺序执行，父子 RSS 合计采样峰分别为 741,130,240、951,697,408、938,934,272 字节，后两项可能包含 V8 留存的前一项内存。结果只证明这些合成形状，不能外推到真实原件。
 
 运行 `node --test --test-concurrency=2 packs/skill/xml-format/functions/resource.test.ts` 复测。测试允许没有 OS 隔离的合成环境执行，因此设 `requireOsIsolation: false`；macOS 可用 `sandbox-exec` 时包装器仍启用它，测试记录 `osIsolation` 以便确认本机结果。旧地址 `x/` 与 `i/` 不变。
+
+本次 1.0.6 仅同步第二阶段安全修正的模型 18 生成协议与发布清单，技能业务代码不变。仓库测试通过 `repositorySkillVersion` 读取当前版本。
+
+本次 1.0.7 仅同步第二轮索引修正的模型 19 生成协议与发布清单，业务代码不变。

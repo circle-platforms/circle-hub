@@ -1,5 +1,38 @@
 # records
 
+## Space search projection (decision 86)
+
+Migration 9 adds the projection; migration 10 consolidates its token copies into `knowledge_space_search_documents`,
+keyed by the immutable entry record. `knowledge_space_search` retains only version/path/entry references. Unchanged versions
+reuse token documents without rereading or tokenizing entry bodies. Existing projection rows migrate without altering any
+record, root or reference. GIN lives on document tokens; scopes filter reference rows before paging. Completion counts detect
+missing references. Runtime grants for documents and references remain SELECT and INSERT.
+
+Migration 11 maintains an incremental token-byte counter for each version and quota scope. Only newly inserted references
+increase its counter; an idempotent retry adds nothing and writes never sum a space's historical references. Current active
+entries alone feed new space versions, so withdrawals and replacements free current quota while old references remain readable.
+Product mounts use independent quota scopes, even though their visible space is team. A damaged completed projection reconciles
+only that version's counter before rebuilding missing rows.
+
+The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 1 KiB–16 MiB) and
+`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64
+per referenced document in the current version, independently of personal content/history capacity. Entry overflow asks for
+shorter or split content; current-version overflow asks for withdrawal/replacement or an increased configured limit. Both use
+`SPACE_INDEX_LIMIT` and transactional admission. Search skips an over-limit or incomplete scope and reports warnings alongside
+available matches. Raising the limit permits unfinished product projection work to resume; failed batches are not marked ready.
+
+Historical token documents, version/path references, counters, GIN and B-tree indexes still occupy PostgreSQL disk. They are not
+reclaimed by withdrawal and their physical bytes are not the logical token quota or content quota: the independent synthetic
+review measured reference rows at about 2.7 times their charged snapshot metadata. That observation is not a deployment size
+estimate. Administrators must provision and monitor database/backup disk separately. Runtime grants allow updating only the
+counter's `token_bytes`; its quota/version identity and history remain protected. Existing migrations retain their SQL bytes;
+only the pre-existing whole-source freeze assertion is refreshed. No new data SHA check is added.
+
+`objects.put/stat` accept the caller transaction; upload-only `artifacts.ingest` does too. Space import registers the object,
+artifact and version through the same connection after a complete snapshot capacity preflight, avoiding a nested pool wait.
+Objects remain immutable; no existing source bytes are deleted or rewritten.
+
+
 Decision 83, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.
 
 Decision 83, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.
@@ -624,3 +657,8 @@ error. A source reference without the authorized run continues to use the reader
 `RecordStore.countIndexed`（决定 79）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
 
 `RecordStore.addIndex`（决定 80）：给一条已存的记录追加索引项。索引是派生的、只追加的（`record_index` 的触发器不许修改和删除），记录本身和摘要不变；已有的项保留、不重复，一条记录合计至多 200 项，不存在的记录不加，返回加了几项。运行引擎用它给索引之前受理的提交补上所引知识的索引。测试：`add-index.test.ts`。
+
+The second knowledge-space review adds `Artifacts.recordUploadRefusal` for a trusted caller after its enclosing transaction
+has rolled back. It appends safe scan/digest/uploader metadata only and never stores original bytes. Ordinary upload
+refusals keep their existing path; a transactional importer persists exactly one surviving audit, including a shared-path
+preflight refusal. The final error names that surviving audit rather than an action rolled back with the import.

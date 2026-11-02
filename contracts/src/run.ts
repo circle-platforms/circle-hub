@@ -1,3 +1,4 @@
+import { SpaceLocks } from './spaces.ts';
 import {CommandPolicy} from './product.ts';
 import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
@@ -139,6 +140,7 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
+  knowledge_spaces: SpaceLocks.optional().describe('Team and initiator personal knowledge versions frozen at start; absent on historical runs'),
   skills: SkillLocks.optional().describe('Skill package digests frozen at start; absent only on historical runs'),
   feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),
   feeding_objects:z.array(Sha256).optional().describe('Objects actually consumed by this run'),

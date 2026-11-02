@@ -13,7 +13,7 @@ import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { sha256Hex } from './digest.ts';
 import { MigrationError } from './errors.ts';
-import { FileKeyProvider, migrateRecords, openRecords } from './index.ts';
+import { FileKeyProvider, migrateRecords, openRecords, MIGRATIONS } from './index.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -47,7 +47,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   const config = { dataDir, logDir: join(dataDir, 'logs'), database: runtime, limits: { ...DEFAULT_LIMITS } };
   // Before the owner migrated, the runtime role refuses to start instead of trying to create tables.
   await assert.rejects(openRecords(config, { migrate: false }), (error: unknown) => error instanceof MigrationError && /还没有应用/.test((error as Error).message));
-  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), MIGRATIONS.map(m=>m.version));
   assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), []);
   // The role that owns the tables could disable the triggers, so it is refused as the runtime role.
   await assert.rejects(migrateRecords({ database: owner }, { runtimeRole: 'hub_owner' }), MigrationError);
@@ -94,8 +94,19 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   await kit.callLog.append({ traceId: 'c'.repeat(32), userId: user.id, sessionId: null, tool: 'get_nodes', runId: null, arguments: {}, callResult: 'error', errorCode: 'SOURCE_UNAVAILABLE', durationMs: 1, adminNote: '原因' });
   assert.equal((await kit.callLog.query(admin)).items[0].admin_note, '原因');
   await kit.vault.put('db.password', 'synthetic');
+  const spaceVersion = await kit.store.put({ kind: 'knowledge_space_version', schema: 'knowledge-space-version@1', provenance: 'projected', body: { synthetic: 'runtime-index' } });
+  await kit.spaceIndex!.add(spaceVersion.digest, [{ space: member.id, path: '/', entry: artifact.digest, record: artifact.digest, text: '合成搜索' }]);
+  await kit.spaceIndex!.add(spaceVersion.digest,[{space:member.id,path:'/second',entry:artifact.digest,record:artifact.digest}]);
+  assert.equal((await sql(runtime,'SELECT count(*)::int AS n FROM knowledge_space_search_totals')).rows[0].n,1);
+  await kit.spaceIndex!.complete(spaceVersion.digest, '/');
+  assert.equal(await kit.spaceIndex!.ready(spaceVersion.digest, '/'), true);
+  assert.equal((await kit.spaceIndex!.search('合成', [{ version: spaceVersion.digest, paths: ['/'] }], 0, 1)).length, 1);
 
   const refused = [
+    'DELETE FROM knowledge_space_search',
+    'DELETE FROM knowledge_space_search_ready',
+    'DELETE FROM knowledge_space_search_totals',
+    'UPDATE knowledge_space_search_totals SET quota_space = quota_space',
     `UPDATE records SET body = '{}'`,
     'DELETE FROM records',
     'TRUNCATE records CASCADE',

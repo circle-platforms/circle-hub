@@ -22,6 +22,15 @@ async function unpacked(manifest: unknown = MANIFEST): Promise<{ root: string; d
 }
 
 const gone = (path: string) => assert.rejects(access(path), `${path} is removed`);
+/** The timer's removal is asynchronous: wait for it with a bound instead of one fixed delay, which a busy runner can outlast. */
+async function eventuallyGone(path: string, deadlineMs = 2000): Promise<void> {
+  const until = Date.now() + deadlineMs;
+  while (Date.now() < until) {
+    try { await access(path); } catch { return; }
+    await sleep(20);
+  }
+  await gone(path);
+}
 
 test('a stage is the staging administrator\'s alone and names the pack digest of its pack.json', async () => {
   const staging = new PackStaging();
@@ -72,8 +81,7 @@ test('an expired stage is removed when it is next opened, and by its timer when 
   const quick = new PackStaging(Date.now, { ttlMs: 20 });
   const other = await unpacked();
   assert.ok(await quick.add('usr_a', other));
-  await sleep(80);
-  await gone(other.root);
+  await eventuallyGone(other.root);
 });
 
 test('a full store ends its oldest stage; a closed one keeps nothing, and a directory without pack.json is not kept', async () => {
