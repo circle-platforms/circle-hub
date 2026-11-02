@@ -393,6 +393,7 @@ export class RecordArtifacts implements Artifacts {
     const viewer=await this.#viewer(principal);if(!viewer)return false;
     const row=await this.#store.get<SourceArtifactBody>(artifact);
     if(row?.kind!=='source_artifact'||row.schema!==RECORD_SCHEMAS.source_artifact||!('upload' in row.body.origin)||row.body.author.user!==viewer.id||row.body.provenance_type!=='declared')return false;
+    if(row.body.personal_scope)return false;
     const matches=await this.#store.findMany({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[row.body.sha256]});
     for(const record of matches){const body=SpaceSourceBody.parse(record.body);if(body.space!=='team'&&body.artifact===artifact)return false;}
     return true;

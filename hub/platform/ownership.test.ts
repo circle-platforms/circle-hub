@@ -27,6 +27,7 @@ const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   records: 'body',
   object_holds:'record',
+  run_originals:'artifact',
   personal_sync_heads:'owner',
   personal_sync_bindings:'owner',personal_sync_notes:'owner',personal_sync_native_credits:'owner',personal_sync_exports:'owner',personal_sync_memory_reservations:'owner',
   personal_sync_identities:'identity',
@@ -122,6 +123,8 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
   const port = socketPort();
   const appended: { id: string; digest: string }[] = [];
   let privateOwner:import('../records/api.ts').Principal;
+  let heldOriginal:string,heldOriginalSha:string,heldPersonalLink:string;
+  const runOriginalBytes=Buffer.from('synthetic run backup original\r\né');
   let privateDigest:string;
   let syncEpoch:string,syncSession:string,syncObject:{id:string;bytes_base64:string};
 
@@ -191,6 +194,12 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
       privateOwner=user;
+      await kit.store.withTransaction(async tx=>{
+        const source=await kit.artifacts.ingest({personalOwner:user.id,bytes:runOriginalBytes,mediaType:'text/plain',name:'synthetic-held.txt',origin:{upload:{session:null,message:null}},author:{user:user.id},provenanceType:'declared',visibility:{readers:[user.id],admins:false,packs:[],shareable:false}},tx);
+        heldOriginal=source.digest;heldOriginalSha=source.body.sha256;
+        heldPersonalLink=(await kit.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:{space:user.id,path:'/',sha256:heldOriginalSha,artifact:heldOriginal,size:runOriginalBytes.length,by:user.id,at:source.created_at}},tx)).digest;
+      });
+      await kit.store.put({kind:'run',schema:'run@1',provenance:'observed',body:{run:'run_'+'1'.repeat(26),runner:user.id,sources:[{reference:'src:'+heldOriginalSha,artifact:heldOriginal,upload_declaration:{by:user.id}}]}});
       const api=kit.personalSync!,state=await api.state(user);syncEpoch=state.epoch;
       const client_id='33333333-3333-4333-8333-333333333333';await api.registerClient(user,{client_id,name:'synthetic-backup-client'});
       syncSession=(await api.openSession(user,{client_id,epoch:syncEpoch,known_state:null,base_snapshot:null})).session_id;
@@ -228,7 +237,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     const { dir, manifest } = await createBackup({ layout, postgres: control, libpqBin: libpq!, label: 'records' });
     await verifyBackup(dir);
     const clearing=await openRecords(kitConfig(),{migrate:false,keyProvider});
-    try{const state=await clearing.personalPayloads!.inspect(privateDigest);await clearing.personalPayloads!.purge(privateOwner,state!.epoch);assert.equal(await clearing.store.get(privateDigest),null);}finally{await clearing.close();}
+    try{const state=await clearing.personalPayloads!.inspect(privateDigest);await clearing.personalPayloads!.purge(privateOwner,state!.epoch);assert.equal(await clearing.store.get(privateDigest),null);assert.ok(await clearing.store.get(heldOriginal));assert.equal(await clearing.store.get(heldPersonalLink),null);assert.deepEqual(Buffer.from((await clearing.objects.get(heldOriginalSha))!),runOriginalBytes);}finally{await clearing.close();}
     assert.deepEqual(manifest.database.application_role, { name: role, privileges: before.privileges });
 
     assert.equal(await control.stop(), true);
@@ -255,8 +264,9 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       assert.equal((await kit.store.get<{markdown:string}>(privateDigest))?.body.markdown,'synthetic-private-backup','the earlier backup restores content cleared after it was taken');
       assert.deepEqual((await kit.personalSync!.download(privateOwner,syncSession,{epoch:syncEpoch,objects:[syncObject.id]})).objects,[syncObject]);
       assert.equal((await kit.personalSync!.operation(privateOwner,syncEpoch,'synthetic-backup-operation'))?.counts.accepted,1);
+      assert.ok(await kit.store.get(heldOriginal));assert.ok(await kit.store.get(heldPersonalLink));assert.deepEqual(Buffer.from((await kit.objects.get(heldOriginalSha))!),runOriginalBytes);
       const restored=await kit.personalPayloads!.inspect(privateDigest);assert.equal(restored?.cleared,false);
-      await kit.personalPayloads!.purge(privateOwner,restored!.epoch);assert.equal(await kit.store.get(privateDigest),null);
+      await kit.personalPayloads!.purge(privateOwner,restored!.epoch);assert.equal(await kit.store.get(privateDigest),null);assert.equal(await kit.store.get(heldPersonalLink),null);assert.ok(await kit.store.get(heldOriginal));assert.deepEqual(Buffer.from((await kit.objects.get(heldOriginalSha))!),runOriginalBytes);
       assert.equal((await kit.store.getByKey('claim', 'synthetic.0'))?.digest, appended[0].digest, 'unique business identities survive the restore');
       await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n: 99, text: '恢复之后' } });
     } finally {

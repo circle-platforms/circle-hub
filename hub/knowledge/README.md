@@ -1288,11 +1288,11 @@ message, intent or payload digest is disclosed by the audit view.
 ### Personal content purge boundary
 
 Decision 89 step 2 stores private bodies and directory objects through the records account/epoch payload port. Purging
-an epoch makes its historical roots, originals, memory versions and directory grants unavailable, without deleting
+an epoch makes its historical roots, originals without independent holders, memory versions and directory grants unavailable, without deleting
 team knowledge or team memory. A legacy team entry whose direct or indirect ground still needs a cleared personal root/capture
 is displayed as unverified; its historical record bytes are unchanged. Missing optional knowledge ports remain valid.
 
-Decision 89 step 3 adds the optional records `personalSync` port to the knowledge context. Transport objects are still
+Decision 89 step 3 adds the optional records `personalSync` port to the knowledge context. Uncommitted transport objects remain
 isolated staging: they do not enter knowledge search, memory auto-load or pack publication. The real-Hub acceptance
 scenario checks two clients, privacy and purge through this internal port alongside ordinary MCP reads. Native export,
 revision mapping, verified CAS and conflict projection are implemented in step 4; HTTP authentication stays in step 5.
@@ -1315,3 +1315,7 @@ Original bytes, quotes, capture author, read tier and media type are preserved; 
 without trimming trailing whitespace. Native writes freeze and recheck their admitted epoch. Manifests are metadata
 only. Same-content entries at the same native path with distinct stable identities remain structural conflicts because
 the existing native address cannot distinguish them; no candidate is silently discarded or renamed.
+
+The coordinator's follow-up policy keeps a personal upload independently held by a run when its personal link is
+purged. This does not retain the knowledge entry, directory grants or memory, and does not qualify a personal original
+for ordinary team import. Run readers continue through the existing declaration and credential-tier checks.

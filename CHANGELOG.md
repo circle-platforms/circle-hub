@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Preserve exact run-held personal uploads across personal-space purge while removing their personal links.
+
 - Refuse runtime database roles with effective temporary-object privileges at authorization and startup.
 
 - Prevent temporary type shadowing in every owner-defined personal storage function.

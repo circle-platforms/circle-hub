@@ -72,11 +72,15 @@ export class FileObjectStore implements ObjectStore {
       bytes = await readFile(this.path(sha256));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const privateBytes=await this.#options.personalPayloads?.anyObject(sha256);if(privateBytes)return privateBytes;
-      const privateRows=await this.#db.query('SELECT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) AS cleared FROM personal_objects o WHERE sha256=$1',[sha256]);if(privateRows.rows.length&&privateRows.rows.every(r=>r.cleared))return null;
-      // Registered but gone is data loss (objects are never deleted), not absence.
-      if ((await this.stat(sha256)) !== null) throw new IntegrityError('有对象登记，但原件字节丢失；请从备份恢复', { detail: { sha256 } });
-      return null;
+      const independent=(await this.#db.query<{data:Buffer}>('SELECT data FROM run_originals WHERE sha256=$1 ORDER BY artifact LIMIT 1',[sha256])).rows[0];
+      if(independent)bytes=independent.data;
+      else {
+        const privateBytes=await this.#options.personalPayloads?.anyObject(sha256);if(privateBytes)return privateBytes;
+        const privateRows=await this.#db.query('SELECT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) AS cleared FROM personal_objects o WHERE sha256=$1',[sha256]);if(privateRows.rows.length&&privateRows.rows.every(r=>r.cleared))return null;
+        // Registered but gone is data loss (objects are never deleted), not absence.
+        if ((await this.stat(sha256)) !== null) throw new IntegrityError('有对象登记，但原件字节丢失；请从备份恢复', { detail: { sha256 } });
+        return null;
+      }
     }
     if (sha256Hex(bytes) !== sha256) {
       throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）', { detail: { sha256 } });

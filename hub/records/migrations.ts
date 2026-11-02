@@ -728,6 +728,56 @@ CREATE TRIGGER personal_sync_native_credits_no_truncate BEFORE TRUNCATE ON perso
 CREATE TRIGGER personal_sync_exports_append_only BEFORE UPDATE OR DELETE ON personal_sync_exports FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_sync_exports_no_truncate BEFORE TRUNCATE ON personal_sync_exports FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 `},
+ {version:17,name:'run_originals',sql:`CREATE TABLE run_originals (
+ artifact pg_catalog.text PRIMARY KEY REFERENCES records(digest),
+ held_by pg_catalog.text NOT NULL REFERENCES records(digest),
+ sha256 pg_catalog.text NOT NULL,body pg_catalog.text NOT NULL,data pg_catalog.bytea NOT NULL,
+ CHECK(pg_catalog.encode(pg_catalog.sha256(data),'hex')=sha256)
+);
+CREATE INDEX run_originals_sha256 ON run_originals(sha256);
+CREATE TRIGGER run_originals_append_only BEFORE UPDATE OR DELETE ON run_originals FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER run_originals_no_truncate BEFORE TRUNCATE ON run_originals FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+CREATE FUNCTION hub_keep_run_originals(r pg_catalog.text,must_exist pg_catalog.bool) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE b pg_catalog.record;body pg_catalog.text;original pg_catalog.jsonb;raw pg_catalog.bytea;
+BEGIN
+ FOR b IN SELECT DISTINCT p.* FROM public.object_holds h JOIN public.personal_record_bindings p ON p.record=h.sha256
+ JOIN public.records c ON c.digest=p.record JOIN public.records v ON v.digest=h.record
+ WHERE h.record=r AND h.artifact AND c.kind='source_artifact' AND v.kind='run' ORDER BY p.owner,p.epoch,p.record LOOP
+ IF EXISTS(SELECT 1 FROM public.run_originals WHERE artifact=b.record) THEN CONTINUE;END IF;
+ PERFORM 1 FROM public.personal_spaces s WHERE s.owner=b.owner AND s.epoch=b.epoch AND s.mode='hub' FOR SHARE;
+ IF NOT FOUND THEN IF must_exist THEN RAISE EXCEPTION 'run original scope is unavailable';ELSE CONTINUE;END IF;END IF;
+ SELECT pg_catalog.convert_from(p.data,'UTF8') INTO body FROM public.personal_payloads p
+ WHERE (p.owner,p.epoch,p.sha256)=(b.owner,b.epoch,b.sha256)
+ AND NOT EXISTS(SELECT 1 FROM public.personal_purges x WHERE (x.owner,x.epoch)=(b.owner,b.epoch));
+ IF body IS NULL THEN IF must_exist THEN RAISE EXCEPTION 'run original is unavailable';ELSE CONTINUE;END IF;END IF;
+ original:=pg_catalog.replace(body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
+ IF original->'origin'->'upload' IS NULL THEN CONTINUE;END IF;
+ SELECT p.data INTO raw FROM public.personal_objects o JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
+ WHERE (o.owner,o.epoch,o.sha256)=(b.owner,b.epoch,original->>'sha256');
+ IF raw IS NULL THEN RAISE EXCEPTION 'run original bytes are unavailable';END IF;
+ INSERT INTO public.run_originals VALUES(b.record,r,original->>'sha256',body,raw) ON CONFLICT DO NOTHING;
+ END LOOP;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_keep_run_originals(pg_catalog.text,pg_catalog.bool) FROM PUBLIC;
+CREATE FUNCTION hub_keep_inserted_run_originals() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN PERFORM public.hub_keep_run_originals(NEW.digest,true);RETURN NULL;END $fn$;
+REVOKE ALL ON FUNCTION hub_keep_inserted_run_originals() FROM PUBLIC;
+CREATE TRIGGER records_run_originals AFTER INSERT ON records FOR EACH ROW WHEN(NEW.kind='run') EXECUTE FUNCTION hub_keep_inserted_run_originals();
+SELECT public.hub_keep_run_originals(r.digest,false) FROM public.records r WHERE r.kind='run'
+ AND EXISTS(SELECT 1 FROM public.object_holds h JOIN public.personal_record_bindings b ON b.record=h.sha256 WHERE h.record=r.digest AND h.artifact);
+CREATE OR REPLACE FUNCTION hub_read_records() RETURNS TABLE(seq pg_catalog.int8,id pg_catalog.text,digest pg_catalog.text,kind pg_catalog.text,schema pg_catalog.text,
+ provenance pg_catalog.text,created_at pg_catalog.timestamptz,body pg_catalog.text,size pg_catalog.int4) LANGUAGE sql STABLE SET search_path=pg_catalog,public,pg_temp AS $fn$
+ SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,
+ CASE WHEN h.artifact IS NOT NULL THEN h.body WHEN b.record IS NULL OR r.body<>b.marker OR p.data IS NULL THEN r.body
+ ELSE pg_catalog.convert_from(p.data,'UTF8') END,r.size FROM public.records r
+ LEFT JOIN public.personal_record_bindings b ON b.record=r.digest
+ LEFT JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(b.owner,b.epoch,b.sha256)
+ LEFT JOIN public.run_originals h ON h.artifact=r.digest
+ WHERE h.artifact IS NOT NULL OR NOT EXISTS(SELECT 1 FROM public.personal_purges x WHERE (x.owner,x.epoch)=(b.owner,b.epoch))
+$fn$;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -747,6 +797,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   personal_sync_retained:'SELECT, INSERT',
   personal_sync_operations:'SELECT, INSERT',
   personal_sync_aborts:'SELECT, INSERT',
+  run_originals:'SELECT',
   object_holds:'SELECT',
   personal_spaces:'SELECT, INSERT',
   personal_payloads:'SELECT, INSERT',

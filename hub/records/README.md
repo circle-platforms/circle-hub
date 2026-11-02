@@ -720,8 +720,9 @@ Migration 14 adds account/epoch-scoped PostgreSQL byte payloads, immutable diges
 payloads use no per-epoch encryption. Equal bytes are held independently across accounts; only an account/epoch deduplicates.
 New personal knowledge, directory snapshots, original captures and memory bodies are indirect from their first write.
 The logical envelope digest and original source byte hash remain unchanged. Reading an active record reconstructs its
-canonical body before the usual integrity check; a cleared record is absent to ordinary readers, with an explicit
-capsule inspection returning `cleared` only after validating its immutable digest chain. Missing active payloads are
+canonical body before the usual integrity check. A record with only a cleared personal holder is absent to ordinary
+readers; an independent run holder preserves its original body. Explicit capsule inspection reports the personal
+binding as `cleared` only after validating its immutable digest chain. Missing active payloads are
 integrity failures, not successful deletion.
 
 The owner-only, one-time migration exemption is limited to private rows whose replacement matches a verified payload
@@ -828,3 +829,16 @@ Runtime grants reject effective database TEMPORARY privilege before granting any
 or inherited roles. Runtime migration verification repeats that check at startup. Migration-owner verification remains
 available; granting the table owner as a runtime role is still refused. External database owners must revoke unsafe
 privileges themselves; the grant helper does not silently change database policy.
+
+### Run-held personal uploads (decision 89 review)
+
+Migration 17 retains the exact capture body and raw bytes of a personal upload when a run binds its artifact. An
+owner-only trigger performs the copy inside the run append transaction, with a shared epoch lock; failed appends retain
+nothing. Existing bindings are backfilled by the same owner-only function. Runtime has SELECT only on run_originals
+and cannot invoke the retention helper directly. The original records row and its logical digest stay unchanged.
+
+Purge removes the personal link and grant; the independently held run original remains readable through the existing
+source/run authorization and read tier. Retention creates no upload declaration and does not widen source ACLs.
+Captures carrying a personal scope keep that qualification even after their link is cleared; ordinary team import still
+requires its existing qualification. The new table is included in PostgreSQL backups; no file layout or
+per-epoch encryption was added. A historical purge that already removed bytes cannot be undone from a digest.

@@ -638,6 +638,55 @@ npm run test:docs
 
 ### 复核修正 2：拒绝运行角色的临时对象权限
 
-做了的：grantRuntime 在授权任何表／函数前检查数据库 TEMPORARY 权限，verifyMigrations 在运行连接启动校验时再次检查；PUBLIC、直接授权与角色继承均按实际权限拒绝。不在授权函数里悄悄收回数据库权限。拥有表的迁移连接仍可离线校验；grantRuntime 原有的拒绝表所有者规则保留。四处真实运行角色夹具先显式收回合成数据库的 PUBLIC TEMPORARY，原产品断言不变。没有改配置或迁移 SQL，本项迁移文件摘要仅因权限自检代码改变而同步。
+做了的：grantRuntime 在授权任何表／函数前检查数据库 TEMPORARY 权限，verifyMigrations 在运行连接启动校验时再次检查；PUBLIC、直接授权与角色继承均按实际权限拒绝。不在授权函数里悄悄收回数据库权限。拥有表的迁移连接仍可离线校验；grantRuntime 原有的拒绝表所有者规则保留。五处真实运行角色夹具先显式收回合成数据库的 PUBLIC TEMPORARY，原产品断言不变。没有改配置或迁移 SQL，本项迁移文件摘要仅因权限自检代码改变而同步。
 
 验证：personal-runtime-temp 在修正前因缺少拒绝而失败（1 失败，不算通过），修正后覆盖 PUBLIC／直接／继承权限、无部分授权、运行角色不能建临时表、权限恢复后可校验。包含 runtime-temp、definer-security、runtime-guards、resume、sync、upgrade、迁移快照、password、lock-namespaces、environment、diagnostics 与 PG 18 ownership 的定向组 42 项通过、0 失败、0 跳过；最终 npm run typecheck 和差异检查通过。完整工作流／引擎与文档检查留下一项后统一运行。
+
+### 复核修正 3：运行独立持有的个人上传
+
+做了的：
+
+- 追加迁移 17 的 run_originals，保存运行已经绑定的个人上传之原采集正文和原始字节，保留原逻辑摘要、采集作者、读取级别与媒体类型，不改原 records 行。独立副本属于运行持有，不随个人代次清除；个人空间的来源链接、目录授权与其他未被运行持有的内容照常清除。
+- 由固定搜索路径、限定类型、撤销 PUBLIC 执行权的所有者函数，在实际 run 追加事务中按精确 artifact 绑定保留；运行角色不能直接写表或调用保留函数。失败回滚不留下独立持有者。迁移按同一函数补齐已有运行；已在更早清除中消失的字节不能凭摘要恢复。
+- 读取仍经原有采集与运行权限／凭据档位检查。保留只作用于存储，不产生新的上传署名、不扩大原件 ACL、不把个人原件变成普通团队导入声明；采集记录的 personal_scope 持续阻止清除后被误认为普通上传。其他成员的私人引用、知识条目、个人记忆及非上传来源没有获得额外权限。既有 legacy 运行原件保留路径不改。
+- 新表只授运行角色 SELECT，并登记 ownership 列；迁移 1～16 SQL 不变，复核新增 SQL 后同步源文件固定值。同步审计不存原件正文，六工具与同步对象合约不变。
+
+验证记录：首次新夹具把个人采集与来源链接分两次提交，被已有“必须有本人来源链接”的约束拒绝；改为同一事务后，修正前确实复现运行采集随清除消失（回归 1 失败，不算通过），没有放宽约束。
+
+第一轮核心 18 项通过仍不足以证明读权边界，随后扩大组发现下述权限误差。收窄为只保留存储后，artifacts、roles、personal-run-originals、production-guard 与验收 46／48／49 专项复查 41 项通过、0 失败、0 跳过；原读权断言全部保留。
+
+四项新存储回归覆盖失败回滚、已有运行补齐、运行角色间接保留／直接调用拒绝与无持有者清除。真实 Hub 个人工作流回归证明本人读取不丢失、管理员及无关成员仍拒读、不生成普通上传署名。PG 18 ownership 的备份／销毁／恢复新增原件断言通过：恢复旧备份可恢复个人链接，随后清除链接而运行原件精确字节仍可读。类型检查通过；最终扩大组与完整工作流／引擎按收窄后的代码再跑，结果另记。
+
+
+首轮完整工作流／引擎组为 2,764 通过、1 失败、0 跳过；首轮扩大组为 750 通过、4 失败、0 跳过。读权失败揭示实现曾把“独立持有”扩大成自动向运行读者新增个人上传署名，这超出了保留原件的范围。已撤回这一权限变化，恢复 production-guard、artifacts 和验收 46／48 的原始断言，输入绑定代码保持原样；新验收改用个人工作流，证明本人仍能在原运行读取、管理员与无关成员无权读取，且不会生成普通上传署名。不把失败归为应当放宽的旧期待。
+
+扩大组还发现 roles.test.ts 经 migrateRecords 间接授权的夹具保留了 PostgreSQL 默认 PUBLIC TEMPORARY，按新要求应拒绝。已同其他四处角色夹具一样先收回这一默认权限；原运行角色读写、只追加保护、所有者拒绝与恢复断言均不改。该环境修正并入复核修正 2 的本机提交，首跑失败与定向复查分开记录。后续结果另记。
+
+### 本轮最终验证与停止点
+
+- 收窄后的最终代码：全部工作流／运行引擎 **2,765 项通过、0 失败、0 跳过**，macOS 沙箱用例实际执行。
+- 最终扩大定向组 **754 项通过、0 失败、0 跳过**。包括所有合约与 records、三项复核回归、原生产与读权拒收断言、知识／记忆／控制台、环境变量、缺省知识端口、锁命名与密码迁移，以及验收 46～49。
+- PG 18 ownership 的 3 项实际执行，包含备份／销毁／恢复后私人链接可再次清除、独立运行原件精确字节仍可读及运行角色不能篡改的断言。
+- 知识视图 49,000 条目用例通过，固定输出预期没有修改。迁移 17 仅追加；与复核修正 2 比较，迁移 1～16 SQL 源保持原样。没有新增全库 SHA 扫描。
+- 最终 npm run typecheck、175 文件合约核对与差异检查通过；填入结果后的文档复查 291 项通过、0 跳过。
+- 此前误扩大署名范围、遗漏的角色夹具及探针类型错误均已如上记录；失败与主动中断的运行没有算作通过。最终保留原署名、读权及既有测试断言，未增加管理员隐含读取权。
+- 已执行用例没有遗留跳过。未运行全量 unit／acceptance、Linux CI、来源归档检查；来源工具／批准导入未改。未推送、创建 PR 或部署。第 5 步尚未开始。
+
+```sh
+npm run typecheck
+npm run verify:contracts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'packs/workflow/**/*.test.ts' 'hub/runs/engine/**/*.test.ts'
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ 'contracts/src/*.test.ts' 'hub/records/**/*.test.ts' \
+ hub/knowledge/spaces.test.ts hub/knowledge/spaces-review.test.ts hub/knowledge/memory.test.ts \
+ 'hub/knowledge/personal-sync/*.test.ts' 'hub/knowledge/personal-*.test.ts' hub/knowledge/view-perf.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+ hub/runs/engine/production-guard.test.ts hub/server/console.test.ts hub/server/console-knowledge.test.ts \
+ hub/server/console-memory.test.ts hub/server/console-sharing.test.ts hub/server/console-search.test.ts \
+ hub/server/console-sync-local.test.ts hub/server/console-sync-privacy.test.ts \
+ tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts \
+ tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+npm run test:docs
+git diff --check
+```
