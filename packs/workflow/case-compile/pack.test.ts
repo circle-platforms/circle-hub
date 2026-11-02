@@ -12,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.9.13'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.9.14'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -59,8 +59,11 @@ test('the examples use the original synthetic contract, matching profile and fin
   const start = json('examples/start-run.json').arguments; assert.equal(typeof start.parameters.autoid, 'string'); assert.ok(start.inputs.profile.external.startsWith('doc:doc:'));
   const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');
 });
+// The budget covers the standard Agent Skills frontmatter (client-neutral loading: Circle and DeepSeek Harness
+// read the same name/description) plus the neutral local-tools paragraph; the procedure body is unchanged in intent.
+const SKILL_BUDGET = 8400;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
-  const skill = read('SKILL.md'); assert.ok(skill.length <= 8000); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
+  const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
 });
 test('the client skill makes the model adapt the bed, seed what assertions read and clean up in reverse', () => {
   const skill = read('SKILL.md');
@@ -109,7 +112,8 @@ test('every emitted pack code and every pack repair code is declared',()=>{
 });
 
 test('published skill heading never advertises a stale pack version',()=>{
- const heading=read('SKILL.md').split('\n')[0];const title='# 用例编译与工作簿核验';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
+ // The standard Agent Skills frontmatter opens the file; the heading that follows it is what must not carry a stale version.
+ const body=read('SKILL.md').replace(/^---\n[\s\S]*?\n---\n/,'');const heading=body.split('\n').find((line:string)=>line.trim()!=='') ?? '';const title='# 用例编译与工作簿核验';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
 });
 
 test('repository manifest paths directly name ordinary files with their declared bytes',()=>{
