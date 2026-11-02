@@ -29,6 +29,11 @@
     "description": {
       "type": "string"
     },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "the pack digest, the SHA-256 of this version's canonical manifest JSON; the value a client pins when installing local tools"
+    },
     "products": {
       "type": "array",
       "items": {
@@ -358,6 +363,55 @@
         "additionalProperties": false
       }
     },
+    "local_tools": {
+      "description": "the tools/ files this version ships for client installation; absent when it ships none",
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "how many tools/ files this version ships"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "path",
+              "sha256",
+              "size"
+            ],
+            "additionalProperties": false
+          },
+          "description": "every tools/ file of the pack manifest, sorted by path"
+        },
+        "install": {
+          "type": "string",
+          "description": "the local-tools install command pinned to this id@version and digest, without any token"
+        }
+      },
+      "required": [
+        "count",
+        "files",
+        "install"
+      ],
+      "additionalProperties": false
+    },
     "run_context": {
       "description": "the run-context parts the workflow declares beyond the defaults and its lease prefix; absent when it declares none (decision 113)",
       "type": "object",
@@ -391,6 +445,7 @@
     "kind",
     "title",
     "description",
+    "digest",
     "products",
     "inputs",
     "parameters",

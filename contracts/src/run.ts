@@ -99,6 +99,18 @@ export const InputSlotSummary = z.strictObject({
 });
 export type InputSlotSummary = z.infer<typeof InputSlotSummary>;
 
+/**
+ * The client-installable tools a workflow pack ships under tools/ (decision 35, item 12): the files a client downloads from
+ * /local-tools, verified against the pack digest, plus the install command for this exact version. The command never carries
+ * a token; the client supplies its own credentials (script-distribution).
+ */
+export const LocalToolsSummary = z.strictObject({
+  count: z.number().int().nonnegative().describe('how many tools/ files this version ships'),
+  files: z.array(z.strictObject({ path: z.string(), sha256: Sha256, size: z.number().int().nonnegative() })).describe('every tools/ file of the pack manifest, sorted by path'),
+  install: z.string().describe('the local-tools install command pinned to this id@version and digest, without any token'),
+});
+export type LocalToolsSummary = z.infer<typeof LocalToolsSummary>;
+
 export const PackSummary = z.strictObject({
   pack: z.string().describe('id@version'),
   id: PackId,
@@ -106,10 +118,12 @@ export const PackSummary = z.strictObject({
   kind: PackKindSchema,
   title: z.string(),
   description: z.string(),
+  digest: Sha256.describe('the pack digest, the SHA-256 of this version\'s canonical manifest JSON; the value a client pins when installing local tools'),
   products: z.array(z.string()).describe('every name of the product line the pack is bound to; all of them name one line'),
   inputs: z.array(InputSlotSummary),
   parameters: z.array(z.strictObject({ name: z.string(), description: z.string(), required: z.boolean(), schema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema 2020-12 of the value, as the pack declares it; absent when the pack declares none') })),
   requirements: z.array(RequirementSummary),
+  local_tools: LocalToolsSummary.optional().describe('the tools/ files this version ships for client installation; absent when it ships none'),
   run_context: z.strictObject({ parts: z.array(ContextKeySchema), lease_prefix: z.string().min(1).optional() }).optional()
     .describe('the run-context parts the workflow declares beyond the defaults and its lease prefix; absent when it declares none (decision 113)'),
 });
