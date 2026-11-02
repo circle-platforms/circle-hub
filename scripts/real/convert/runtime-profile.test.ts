@@ -3,7 +3,10 @@ import DISPATCH from '../../../packs/workflow/case-compile/tables/dispatch-roles
 import assert from 'node:assert/strict';
 import { runtimeDocument, entry, signRuntime, profileDocument } from '../../../packs/workflow/case-compile/testing/runtime.ts';
 import { parseRuntimeContract } from '../../../packs/workflow/case-compile/functions/runtime-contract.ts';
-import { checkCoverage, checkProfile, draftProfile } from './runtime-profile.ts';
+import { checkCoverage, checkProfile, draftProfile, reviewNotes } from './runtime-profile.ts';
+import { runtimeDigest } from '../../../packs/workflow/case-compile/functions/runtime-contract.ts';
+import { promptContract } from '../../../packs/workflow/case-compile/testing/confirmations.ts';
+import { signTypedRuntime } from '../../../packs/workflow/case-compile/testing/typed-fixtures.ts';
 import { convertTopology } from './bed-topology.ts';
 import { topology } from './testing.ts';
 import { checkContractShape } from '../../../packs/workflow/case-compile/functions/checks.ts';
@@ -163,4 +166,25 @@ test('optional parameter guidance names unsupplied and redacted roles have their
   const allowed = profile.allowed.map(v => v.method === 'configure' ? { ...v, parameters: { ...v.parameters, auth_token: 'device_cli' } } : v);
   assert.throws(() => checkProfile({ ...profile, allowed }, manifest, base), /脱敏参数不能定角色.*删去.*--check/);
   assert.throws(() => draftProfile({ ready: true, device_count: 2 }, manifest, base, { ...profile, allowed }), /脱敏参数不能定角色.*删去/);
+});
+// Decision 119: opened case by case, a profile kept a typed runner option from the other objects of the same runner method.
+test('the review list names typed options never supplied, one runner method opened unevenly and openings without types', () => {
+  const untyped = reviewNotes(profileDocument(), runtimeDocument());
+  assert.deepEqual(untyped.map(note => [note.kind, note.pointer]), [0, 1, 2, 3].map(i => ['untyped_allowed', `/allowed/${i}`]));
+  const contract = promptContract() as any;
+  contract.objects.push({ name: 'widget-seat-b', status: 'enabled' });
+  contract.entries.push({ ...structuredClone(contract.entries.find((row: any) => row.e === 'widget-seat' && row.f === 'configure')), e: 'widget-seat-b' });
+  const signed = signTypedRuntime(contract) as any; signed.contract_sha256 = runtimeDigest(signed);
+  const profile = profileDocument(signed) as any;
+  profile.allowed[0].parameters.prompt = 'runner_option';
+  profile.allowed.push({ object: 'widget-seat-b', method: 'configure', parameters: { line: 'device_cli' }, unsupplied: ['prompt'], reviewed: true });
+  const notes = reviewNotes(profile, signed);
+  assert.deepEqual(notes.filter(note => note.kind !== 'untyped_allowed'), [
+    { kind: 'typed_unsupplied', pointer: '/allowed/4/unsupplied/0', object: 'widget-seat-b', method: 'configure', parameter: 'prompt' },
+    { kind: 'uneven_opening', pointer: '/allowed/0', object: 'widget-seat', method: 'configure', peers: ['/allowed/4'] },
+    { kind: 'uneven_opening', pointer: '/allowed/4', object: 'widget-seat-b', method: 'configure', peers: ['/allowed/0'] },
+  ]);
+  profile.allowed[4] = { ...profile.allowed[4], parameters: { line: 'device_cli', prompt: 'runner_option' }, unsupplied: undefined };
+  assert.deepEqual(reviewNotes(profile, signed).filter(note => note.kind !== 'untyped_allowed'), []);
+  assert.deepEqual(reviewNotes(profile, { schema: 'runtime-contract@2' }), []);
 });
