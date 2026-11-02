@@ -242,7 +242,7 @@ export interface RecordStore {
   countIndexedBatch?(queries:readonly {index:readonly IndexEntry[];kind?:RecordKind;since?:string;cap?:number}[],tx?:Transaction):Promise<{count:number;capped:boolean}[]>;
   /** Native batches of the existing indexed page operation, preserving each query's cursor/order and verification. */
   findBatch?<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>;
-  /** Descending (started_at,run) candidates, before engine visibility checks; never an authorization decision. */
+  /** Descending (started_at,run) candidates, before engine visibility checks; malformed headers stay available for engine diagnosis/fallback, never an authorization decision. */
   runCandidates?<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>;
   /** Internal append-log position; never part of a record digest. Snapshot horizons may contain gaps. */
   position?(digest:string,tx?:Transaction):Promise<number|null>;

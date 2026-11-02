@@ -1055,3 +1055,9 @@ proofs retain their depth/cycle checks. A result-head summary port supplies list
 window without enumerating submission receipts, per-run request answers or detail-only withdrawal/criterion decoration.
 It shares management/latest selection with full detail, never substitutes an older visible head, and independently
 checks the last readable production result. No chart total or unknown partition changes; the full run route is retained.
+
+Independent console-performance review: a verified run envelope with missing/invalid started_at or run is a malformed
+business candidate, not a reason to fail every reader's listing. If the ordered batch encounters one, the engine scans
+the append fallback, skips/logs malformed headers and then applies the same visibility/order/cursor rules to valid runs.
+The fallback also skips them now (it previously displayed them). Diagnostics contain the record digest, never its body.
+NULL headers cannot bypass continuation predicates or become a cursor; envelope integrity failures still fail closed.

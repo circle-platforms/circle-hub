@@ -98,3 +98,27 @@ test('one request reuses the protected global request list across run pages, wit
  await requests.answer(record.digest,run.digest);
  assert.equal((await h.service.listRequests!(h.admin))[0].answered_by,run.digest,'a fresh request observes an answer');
 });
+
+test('malformed sort headers do not disable readable run pages or repeat through cursors in native and fallback stores',async t=>{
+ const h=await openHarness(postgres);t.after(h.close);const valid:RunRecord[]=[];
+ for(let n=0;n<3;n++){const body=RunRecord.parse({...runRecord,run:newId('run'),runner:h.alice.id,pack:`${h.review.pack.id}@${h.review.pack.version}`,pack_digest:h.review.pack.digest,requirements:[],sources:[],items:[],target_basis:[],started_at:`2026-11-0${n+1}T08:00:00.000Z`,client_key:'synthetic-malformed-'+n});valid.push(body);await putRun(h.kit.store,body,body.started_at);}
+ const malformed:Awaited<ReturnType<typeof h.kit.store.put>>[]=[];
+ for(const changes of [{started_at:undefined},{run:undefined},{started_at:'not-a-date'},{run:'not-a-run'}]){
+  const body={...valid[0],...changes};malformed.push(await h.kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:Object.fromEntries(Object.entries(body).filter(([,value])=>value!==undefined))}));
+ }
+ const native=h.kit.store.runCandidates;
+ // Raw candidates are integrity checked; malformed business headers are diagnosed by the engine, not a store-wide failure.
+ assert.ok((await native!.call(h.kit.store,{limit:20})).some(row=>row.digest===malformed[0].digest));
+ for(const enabled of [true,false]){
+  h.kit.store.runCandidates=enabled?native:undefined;
+  for(const by of [h.admin,h.alice,h.bob]){
+   const seen:string[]=[];let cursor:string|null=null;let pages=0;
+   do{const page=await h.service.listRuns(by,{limit:1,cursor});seen.push(...page.items.map(run=>run.run));cursor=page.next;assert.ok(++pages<=4,'malformed candidates cannot repeat indefinitely');}while(cursor);
+   assert.deepEqual(seen,by===h.bob?[]:valid.toReversed().map(run=>run.run));
+  }
+ }
+ h.kit.store.runCandidates=native;
+ for(const row of malformed)assert.ok(h.logs.some(log=>log.what==='list_runs'&&log.detail.includes(row.digest)),'each malformed record has an administrator diagnostic');
+ const continued=await native!.call(h.kit.store,{after:[valid[0].started_at,valid[0].run],limit:20});
+ assert.ok(continued.every(row=>row.body&&typeof(row.body as RunRecord).started_at==='string'&&typeof(row.body as RunRecord).run==='string'),'NULL headers do not bypass a cursor');
+});

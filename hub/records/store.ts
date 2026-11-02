@@ -6,7 +6,7 @@ import { RecordsError } from './errors.ts';
 import { noteNoncanonical, NONCANONICAL_EXPLANATION } from './integrity-notes.ts';
 import { parseStrictJson } from './strict-json.ts';
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
-import { SchemaId,RunId,IsoTime } from '../../contracts/src/common.ts';
+import { SchemaId,IsoTime } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { FindQuery, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
@@ -338,11 +338,12 @@ export class PgRecordStore implements RecordStore {
     let where='r.kind=$1';
     // Cursor strings are untrusted. Both contract headers are ASCII without controls, so U+0001 has the same
     // ordering against every valid header as an embedded NUL, which PostgreSQL text parameters cannot carry.
-    if(query.after){values.push(...query.after.map(value=>value.replaceAll('\0','\u0001')));where+=` AND (${at} IS NULL OR ${id} IS NULL OR (${at} COLLATE "C",${id} COLLATE "C")<($5::text COLLATE "C",$6::text COLLATE "C"))`;}
+    if(query.after){values.push(...query.after.map(value=>value.replaceAll('\0','\u0001')));where+=` AND (${at} COLLATE "C",${id} COLLATE "C")<($5::text COLLATE "C",$6::text COLLATE "C")`;}
     if(query.pack!==undefined){values.push(query.pack);where+=` AND EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='runs.pack' AND i.value=$${values.length})`;}
     const result=await this.#db.query(`SELECT ${COLUMNS.split(', ').map(c=>'r.'+c).join(', ')} FROM hub_read_records() r WHERE ${where}
       ORDER BY ${at} COLLATE "C" DESC NULLS FIRST,${id} COLLATE "C" DESC NULLS FIRST LIMIT $4`,values,tx);
-    return result.rows.map(row=>{const record=verifiedRecord<B>(row),body=record.body as Record<string,unknown>;if(!RunId.safeParse(body?.run).success||!IsoTime.safeParse(body?.started_at).success)throw new IntegrityError('运行排序字段不完整');return record;});
+    // Preserve verified malformed records for the engine's diagnostic/fallback path; a business header is not envelope integrity.
+    return result.rows.map(row=>verifiedRecord<B>(row));
   }
 
   async list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>> {

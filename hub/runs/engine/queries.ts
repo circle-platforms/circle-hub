@@ -7,6 +7,7 @@ import { requestsOf } from './requests.ts';
 // Absent and forbidden give the same null or empty page. Phase and counts are derived, never stored.
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
+import {RunId,IsoTime} from '../../../contracts/src/common.ts';
 import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
 import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
@@ -121,6 +122,9 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   }
   const rows: RunRecord[] = [];
   const store=ctx.deps.records.store;
+  const validHeader=(record:StoredRecord<RunRecord>)=>RunId.safeParse(record.body?.run).success&&IsoTime.safeParse(record.body?.started_at).success;
+  const diagnose=(record:StoredRecord<RunRecord>)=>ctx.log({traceId:null,run:RunId.safeParse(record.body?.run).success?record.body.run:null,what:'list_runs',detail:'Malformed run ordering headers; record '+record.digest});
+  let fallback=!store.runCandidates;
   if(store.runCandidates){
     let candidateAfter:readonly [string,string]|undefined=after?[after.at,after.id]:undefined;
     while(rows.length<=limit){
@@ -128,12 +132,15 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
       let candidates:StoredRecord<RunRecord>[];
       try{candidates=await store.runCandidates<RunRecord>({...(candidateAfter?{after:candidateAfter}:{}),...(query.pack===undefined?{}:{pack:query.pack}),limit:count});}
       catch(error){if(error instanceof TypeError||error instanceof RangeError||error instanceof RecordsError&&error.name==='RecordsError')return {items:[],next:null};throw error;}
+      // A malformed header cannot be a continuation boundary. Scan once and skip/log it in the same fallback as adapters.
+      if(candidates.some(record=>!validHeader(record))){fallback=true;rows.length=0;break;}
       const readable=await Promise.all(candidates.map(record=>runReadableBy(ctx,user,record.body)));
       for(let i=0;i<candidates.length&&rows.length<=limit;i++)if(readable[i])rows.push(candidates[i].body);
       if(candidates.length<count)break;
       const last=candidates.at(-1)!;candidateAfter=[last.body.started_at,last.body.run];
     }
-  }else{
+  }
+  if(fallback){
    let cursor: string | null = null;
    do {
     let page: Page<StoredRecord<RunRecord>>;
@@ -142,8 +149,9 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
       if (error instanceof TypeError || error instanceof RangeError || error instanceof RecordsError && error.name === 'RecordsError') return {items:[],next:null};
       throw error;
     }
-    const readable=await Promise.all(page.items.map(record=>runReadableBy(ctx,user,record.body)));
-    rows.push(...page.items.filter((_,i)=>readable[i]).map(record=>record.body));
+    const candidates=page.items.filter(record=>{if(validHeader(record))return true;diagnose(record);return false;});
+    const readable=await Promise.all(candidates.map(record=>runReadableBy(ctx,user,record.body)));
+    rows.push(...candidates.filter((_,i)=>readable[i]).map(record=>record.body));
     cursor = page.next;
    } while (cursor !== null);
   }
