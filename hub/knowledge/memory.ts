@@ -1,7 +1,7 @@
 // Memory is a versioned client preference, with its own grants and no evidence reference.
 import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,type MemoryMetadata,type MemoryWriteReceipt} from '../../contracts/src/memory.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
-import {ShareCheckSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
+import {ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
 import {canonicalize,sha256Hex,scanForCredentials,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
 import {pathOf,pathSegments} from '../refs/api.ts';
 import {KnowledgeError} from './errors.ts';
@@ -92,11 +92,15 @@ export class MemoryDocuments{
   by=await this.#user(by);path=pathCheck(path);
   const check:SharingCheck={check:ShareCheckSchema.enum.credentials,state:'pass',code:null,message:'',fix:''};
   try{for(const head of await this.#index().heads(by.id))if(withinSpacePath(head.path,path)){const {body}=await this.#version(head);this.#scan(body.title,body.path,await this.#text(body));}}
-  catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';Object.assign(check,{state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix});}
+  catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';Object.assign(check,{state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix});}
   return [check];
  }
  #scan(title:string,path:string,markdown:string){
-  for(const [name,text] of [['title',title],['path',path],['markdown',markdown]]){const scan=scanForCredentials(Buffer.from(text));if(!scan.inspected||scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');if(scan.findings.length)throw new KnowledgeError(PROTOCOL_CODES.MEMORY_CREDENTIALS_DETECTED.when,{code:'MEMORY_CREDENTIALS_DETECTED',detail:{positions:scan.findings.map(f=>({field:name,line:f.line,detector:f.detector}))}});}
+  for(const [name,text] of [['title',title],['path',path],['markdown',markdown]]){
+   const scan=scanForCredentials(Buffer.from(text));if(!scan.inspected||scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');
+   const field=uiLabelOf('memory_field',name==='title'?MemoryFieldSchema.enum.document_title:name==='path'?MemoryFieldSchema.enum.directory_path:MemoryFieldSchema.enum.markdown_text);
+   if(scan.findings.length)throw new KnowledgeError(PROTOCOL_CODES.MEMORY_CREDENTIALS_DETECTED.when+'；'+scan.findings.slice(0,5).map(f=>field+'第 '+f.line+' 行').join('、'),{code:'MEMORY_CREDENTIALS_DETECTED',detail:{positions:scan.findings.map(f=>({field:name,line:f.line,detector:f.detector}))}});
+  }
  }
  async #audit(by:Principal,intent:string,payload:string,error:KnowledgeError){
   await this.#ctx.records.store.put({kind:'action',schema:'memory-refusal@1',provenance:'observed',unique_key:intent,body:{kind:'validate',by:by.id,at:this.#now(),intent,payload,code:error.code,positions:error.code==='MEMORY_CREDENTIALS_DETECTED'?error.detail.positions??[]:[]},index:[{key:'memory.refusal.by',value:by.id}]});
@@ -163,7 +167,7 @@ export class MemoryDocuments{
   try{
    const index=this.#index(),usage=await index.usage('team',tx);if(source.bytes>index.limits.documentBytes)fail('MEMORY_DOCUMENT_LIMIT');if(usage.active-(replacement?.state==='enabled'?replacement.bytes:0)+source.bytes>index.limits.spaceBytes)fail('MEMORY_SPACE_LIMIT');
    checks[phase++].state='pass';this.#scan(source.title,target,source.markdown);checks[phase].state='pass';
-  }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
+  }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
   return {source,checks,replacement,target,safeTarget,effect:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
  }
  async share(by:Principal,raw:unknown):Promise<MemorySharingResult>{

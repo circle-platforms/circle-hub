@@ -10,3 +10,7 @@ test('audiences union inherited grants, exclude disabled accounts and hide forei
  assert.deepEqual(describeAudience({...input,viewer:'b'}),{text:'来自 a',inherited:[],members:[]});
  assert.equal(describeAudience({...input,grants:[]}).text,'仅本人');assert.equal(directoryName('/接口规范/认证'),'接口规范 › 认证');
 });
+test('the current administrator total includes an administrator owner without duplicating the owner in member details',()=>{
+ const audience=describeAudience({owner:'a',viewer:'a',ownerName:'a',users:[user('a','admin'),user('b','admin')],grants:[{path:'/',audience:'administrators',member:null}]});
+ assert.equal(audience.text,'本人及全体管理员（当前 2 人）');assert.deepEqual(audience.members,['b']);
+});

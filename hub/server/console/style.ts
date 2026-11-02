@@ -641,4 +641,7 @@ table.calls td:nth-child(n+9){white-space:normal}
 
 .space-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px;margin-top:18px}.space-main{min-width:0}.space-panel{border-right:1px solid var(--border);padding-right:16px}.space-panel section{padding:10px 0}.space-panel section>a{display:block;font-weight:600;padding:6px}.space-panel details{padding-left:12px}.space-panel summary{cursor:pointer;padding:4px 0;overflow-wrap:anywhere}.space-panel a:hover{text-decoration:underline}.space-main td{overflow-wrap:anywhere}.space-main input,.space-main textarea{max-width:100%}
 @media(max-width:820px){.space-layout{display:block}.space-panel{display:flex;flex-wrap:wrap;gap:12px;border:0;border-bottom:1px solid var(--border);margin-bottom:16px;padding:0}.space-panel section{flex:1;min-width:60px}.space-panel details{display:none}.space-panel .sub{font-size:10px}.space-main .grid.g2{grid-template-columns:1fr}}
+.knowledge-selection .batch-submit{display:none;margin-top:12px}.knowledge-selection:has(input[name="selected_entry"]:checked) .batch-submit{display:inline-flex}.knowledge-selection input[type="checkbox"]{width:16px;height:16px;accent-color:var(--accent)}
+.space-main pre{max-width:100%;overflow:auto}.space-main .actions{flex-wrap:wrap}.space-panel{min-width:0}.space-panel a{overflow-wrap:anywhere}.space-main .fields .full textarea{width:100%}
+.space-panel a[aria-current="page"]{background:var(--active);color:var(--accent);border-radius:6px}
 `;

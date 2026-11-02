@@ -7,7 +7,7 @@ import {newId,AccessError} from '../../records/api.ts';
 import {html,link,page,pre,table,type Html} from './html.ts';
 import {button,card,when} from './ui.ts';
 import {type PageContext,type PageResult,neutralPage} from './pages.ts';
-import {currentAudience,inScope,selectedScope,spaceLayout} from './space-layout.ts';
+import {currentAudience,inScope,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 import {grantDialog,checkTable} from './grant-dialog.ts';
 
@@ -21,7 +21,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
  const memory=ctx.deps.knowledge.memory;if(!memory)return neutralPage(ctx);
  const scope=selectedScope(ctx),document=ctx.url.searchParams.get('document'),version=ctx.url.searchParams.get('version');
  if(document&&!Sha256.safeParse(document).success||version&&!Sha256.safeParse(version).success)return neutralPage(ctx);
- const tabs=html`<div class="tabs">${link('/console/knowledge',uiLabelOf('knowledge_view','knowledge'),{scope})}${link('/console/knowledge',memoryLabel(),{scope,view:'memory'})}</div>`;
+ const tabs=knowledgeTabs(ctx);
  let result=html``;
  const receipt=ctx.url.searchParams.get('receipt');
  if(receipt){
@@ -64,7 +64,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
 }
 
 function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:string;current_version:string;title:string;path:string;markdown:string;state:string}):Html{
- return card({title:actionLabel(doc?'edit':'create'),hint:'纯文本保存，不执行 Markdown；保存检查大小与疑似凭据，版本变化时拒绝覆盖'},form(ctx,'write',html`<div class="fields"><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('目录',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}${field('Markdown 正文',html`<textarea name="markdown" rows="14" required>${doc?.markdown??''}</textarea>`)}</div>`,actionLabel('save')));
+ return card({title:actionLabel(doc?'edit':'create'),hint:'纯文本保存，不执行 Markdown；保存检查大小与疑似凭据，版本变化时拒绝覆盖'},form(ctx,'write',html`<div class="fields"><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('目录',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div class="full">${field('Markdown 正文',html`<textarea name="markdown" rows="14" required>${doc?.markdown??''}</textarea>`)}</div></div>`,actionLabel('save')));
 }
 
 export async function performMemoryAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined}):Promise<string>{

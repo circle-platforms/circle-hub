@@ -10747,6 +10747,44 @@
      "label": "产品"
     }
    ]
+  },
+  {
+   "axis": "knowledge_origin",
+   "label": "知识来源显示",
+   "owner": "K01",
+   "values": [
+    {
+     "code": "personal_entry",
+     "label": "个人条目"
+    },
+    {
+     "code": "team_import",
+     "label": "导入"
+    },
+    {
+     "code": "product_source",
+     "label": "产品知识来源"
+    }
+   ]
+  },
+  {
+   "axis": "memory_field",
+   "label": "记忆字段显示",
+   "owner": "K01",
+   "values": [
+    {
+     "code": "document_title",
+     "label": "标题"
+    },
+    {
+     "code": "directory_path",
+     "label": "目录"
+    },
+    {
+     "code": "markdown_text",
+     "label": "Markdown 正文"
+    }
+   ]
   }
  ],
  "kernelMapping": [

@@ -1,4 +1,5 @@
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
+import {describeAudience} from './audience.ts';
 import {personalPackControls} from './personal-packs.ts';
 // 任务包 (the design canvas's Workflows board): the packs the reader may use (administrators: every pack, with who may use
 // it), and one pack's requirements, checks, versions and permissions. Publishing runs in the console (the publish
@@ -6,6 +7,7 @@ import {personalPackControls} from './personal-packs.ts';
 // administrator's Circle (proposal decision 6 of 2026-10-31).
 import { axisUiLabel, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
+import {KnowledgeGranteeSchema} from '../../../contracts/generated/vocabulary.ts';
 import { compareVersions } from '../../runs/api.ts';
 import { commands } from './commands.ts';
 import { code, html, icon, link, liveModule, page, table, type Html } from './html.ts';
@@ -38,6 +40,16 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
   return Promise.all(pack.assigned_to.map((user) => ctx.userName(user)));
 }
 
+async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
+  if(pack.space&&pack.space!=='team')return (await currentAudience(ctx,pack.space,'/',false,pack.id)).text;
+  if(pack.kind!=='workflow')return uiLabelOf('audience_scope','team');
+  const users=(await ctx.deps.records.principals.list()).filter(user=>!user.disabled);
+  const assigned=new Set(pack.assigned_to??await ctx.deps.records.authorizations.usersOf(pack.id));
+  if(users.every(user=>user.role==='admin'||assigned.has(user.id)))return uiLabelOf('audience_scope','team');
+  const grants=[{audience:KnowledgeGranteeSchema.enum.administrators,member:null},...users.filter(user=>assigned.has(user.id)).map(user=>({audience:KnowledgeGranteeSchema.enum.member,member:user.id}))];
+  return describeAudience({owner:ctx.principal.id,viewer:ctx.principal.id,ownerName:ctx.principal.name,users,grants}).text;
+}
+
 export async function packsPage(ctx: PageContext): Promise<PageResult> {
   const listings=await ctx.deps.packs.list(ctx.principal),scope=selectedScope(ctx);
   const groups = byId(listings.filter(pack=>inScope(scope,pack.space??'team',ctx.principal.id)));
@@ -49,12 +61,13 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
       if (pack.kind !== kind||!!(pack.space&&pack.space!=='team')!==personal) continue;
       const state = stateOf(pack);
       const assigned = ctx.admin && kind === 'workflow' ? await assignedNames(ctx, pack) : null;
-      const audience=await currentAudience(ctx,pack.space??'team','/',false,pack.id);
-      cards.push(html`<a class="pack" href="/console/packs/${pack.id}${pack.space?'?space='+encodeURIComponent(pack.space):''}">
-<span class="pack-h"><span class="${PACK_ICON[pack.kind]}">${icon('pack')}</span><span class="grow"><b>${pack.title}</b><br><span class="sub">${uiLabelOf('pack_kind', pack.kind)} · <code>${pack.id}@${pack.version}</code></span></span>${chip(state.text, state.tone)}</span>
+      const audience=await usageAudience(ctx,pack),destination='/console/packs/'+pack.id+(pack.space?'?space='+encodeURIComponent(pack.space):'');
+      cards.push(html`<article class="pack">
+<span class="pack-h"><span class="${PACK_ICON[pack.kind]}">${icon('pack')}</span><span class="grow"><b><a href="${destination}">${pack.title}</a></b><br><span class="sub">${uiLabelOf('pack_kind', pack.kind)} · <code>${pack.id}@${pack.version}</code></span></span>${chip(state.text, state.tone)}</span>
 <span class="pack-m"><span>所有者 ${await ctx.userName(pack.owner)}</span><span>发布于 ${when(pack.published_at)}</span>${versions.length > 1 ? html`<span>${versions.length} 个版本</span>` : ''}</span>
-<span class="pack-m"><span>使用范围：${audience.text}</span><span>${uiLabelOf('knowledge_space_kind',pack.space&&pack.space!=='team'?'personal':'team')}</span></span>
-</a>`);
+<span class="pack-m"><span>使用范围：${audience}</span><span>${uiLabelOf('knowledge_space_kind',pack.space&&pack.space!=='team'?'personal':'team')}</span></span>
+${pack.space===ctx.principal.id?html`<div class="actions mt12"><a class="btn" href="${destination+'#grant-pack'}">授权…</a>${canPublish?link('/console/packs/'+pack.id,'发布到团队…',{space:pack.space,promote:'1'}):''}</div>`:''}
+</article>`);
     }
     return html`<section class="stack" aria-label="${uiLabelOf('pack_kind',kind)}" id="${personal?'personal-':'team-'}${kind}">${sectionHead(uiLabelOf('knowledge_space_kind',personal?'personal':'team')+' · '+uiLabelOf('pack_kind', kind), `${cards.length} 个`, undefined, undefined, hint)}
 ${cards.length === 0 ? card(null, html`<p class="empty">尚无可用的${uiLabelOf('pack_kind', kind)}</p>`) : cards}</section>`;
@@ -119,8 +132,8 @@ ${ctx.admin&&!pack.space ? html`<div class="actions">${button('/console/operatio
   const permissions = card({ title: '版本与权限' }, html`${table(['版本', '发布时间', '状态', '内容哈希', '样例', ctx.admin ? '操作' : ''], versionRows)}
 ${kv([['所有者', await ctx.userName(pack.owner)], ...(assigned === null ? [] : [['使用范围', assigned.length === 0 ? '尚未指定成员' : assigned.join('、')] as const])])}
 ${permissionActions.length === 0 ? '' : html`<div class="card-f"><div class="row">${permissionActions}</div></div><p class="sub">调整使用范围、维护人与退役版本生成命令，在管理员的 Circle 中执行。</p>`}`);
-  const body = html`${head}${personalControls}
-<div class="section">${requirements}</div>
+  const body = html`${head}
+<div class="section">${requirements}</div>${personalControls}
 ${loadFailed ? html`<p class="notice">该版本的验收要求与检查项暂不可读；版本与权限照常显示。</p>` : ''}
 <section class="grid g-2-1 section"><div class="stack">${checks}</div>${permissions}</section>
 ${dialogs.map(commandModal)}`;

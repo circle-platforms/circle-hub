@@ -25,7 +25,8 @@ under `/产品/<product>/<line>` without copying their trees. Product-line appli
 
 Owners write entries and import originals into their own space, replace/withdraw entries and append directory grants
 or revocations. Administrators may import verified team entries from team business-system captures and withdraw team
-entries; product sync stays unchanged. Uploaded files cannot be team evidence until the later signing phase. Every ground
+entries; product sync stays unchanged. An administrator importing their own ordinary upload records a declaration for
+that team import; personal-space originals and personal-credential sources retain separate restrictions. Every ground
 and quotation is verified at the boundary; no grounds means the generated unverified state. Credential scanning covers
 content, metadata and grantable originals; personal-credential sources cannot be granted. The Hub never drafts entries.
 
@@ -1261,3 +1262,6 @@ Memory grants permit browsing independently of knowledge grants. Session reads p
 caller-owned documents. Owners and team administrators may browse revision history. Metadata pages and body chunks
 are bounded; continuations recheck the current version and permission. Read-only console panels do not initialize
 knowledge roots. Credential-bearing share destinations are omitted even when an earlier size check refuses sharing.
+Knowledge sharing previews likewise return a target directory only after its credential scan, including earlier duplicate
+refusals. Memory credential refusals identify generated field labels and line numbers, never matched text; grant and share
+previews preserve that safe location information. Neither preview creates a document, team root or refusal audit.

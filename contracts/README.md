@@ -414,3 +414,5 @@ Model 23 follows the phase-three security model 22 and retains its upload declar
 refusals. Generic protocol mirrors advance HTML/mindmap to 1.0.10 and XML/workbook to 1.0.11. Memory extends only
 get_nodes and upload_file; payload modes cannot mix with evidence or runs. Metadata pages have a 16,000-byte bound,
 and body reads continue at UTF-8 boundaries. Sensitive sharing destinations are omitted from refused receipts.
+The same unmerged model 23 also generates knowledge-origin and memory-field display labels. They annotate directory
+rows and safe credential locations; they introduce no new record form, authority or evidence status.

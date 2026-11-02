@@ -560,7 +560,9 @@ export class KnowledgeSpaces {
     const previous=await this.current('team');
     const prepared=await this.#inspectSharing(by,input,view,await this.current(by.id),previous,teamPath);
     const duplicate=prepared.checks.find(c=>c.code==='SHARE_DUPLICATE')&&previous?.body.entries.find(row=>row.entry===input.entry);
-    return {ok:prepared.error===null,checks:prepared.checks,duplicate:duplicate&&previous?refOf(previous.root,duplicate.path,duplicate.entry):null};
+    let safeTargetPath=true;
+    try{this.#scan(teamPath);}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')safeTargetPath=false;else throw error;}
+    return {ok:prepared.error===null,checks:prepared.checks,duplicate:duplicate&&previous?refOf(previous.root,duplicate.path,duplicate.entry):null,...(safeTargetPath?{target_path:teamPath}:{})};
   }
   async share(by:Principal,raw:unknown,session:string|null=null):Promise<KnowledgeShareReceipt>{
     by=await this.#user(by);const input=KnowledgeShareInput.parse(raw),teamPath=pathCheck(input.team_path??input.path);

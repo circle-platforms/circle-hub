@@ -14,6 +14,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Knowledge and workflows share permission-filtered space navigation and narrow-screen scope tabs. Owners select
+  verified knowledge for checked sharing; team rows show source and submitter. Workflow audiences follow actual
+  assignments, and administrator member metadata exposes capacity and all-administrator grant counts only.
+
 - Versioned memory stays separate from evidence and knowledge grants. The existing six tools support bounded reads,
   optimistic writes and checked team sharing; the console provides plain-text editing, independent grants and history.
   Re-sharing preserves administrator edits, and current session eligibility is rechecked on every continuation.

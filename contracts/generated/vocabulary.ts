@@ -103,6 +103,8 @@ export const AXES = {
   memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
   memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史' }, { code: 'share', label: '提交共享' }, { code: 'share_preview', label: '记忆共享预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
   knowledge_directory: { label: '知识目录显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
+  knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
+  memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录' }, { code: 'markdown_text', label: 'Markdown 正文' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1107,6 +1109,26 @@ export function isKnowledgeDirectory(value: unknown): value is KnowledgeDirector
   return (KNOWLEDGE_DIRECTORY as readonly unknown[]).includes(value);
 }
 
+/** 知识来源显示 (K01) */
+export const KNOWLEDGE_ORIGIN = ['personal_entry', 'team_import', 'product_source'] as const;
+export type KnowledgeOrigin = (typeof KNOWLEDGE_ORIGIN)[number];
+export const KNOWLEDGE_ORIGIN_LABEL = { 'personal_entry': '个人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
+export const KNOWLEDGE_ORIGIN_UI = { 'personal_entry': '个人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
+export const KnowledgeOriginSchema = z.enum(KNOWLEDGE_ORIGIN);
+export function isKnowledgeOrigin(value: unknown): value is KnowledgeOrigin {
+  return (KNOWLEDGE_ORIGIN as readonly unknown[]).includes(value);
+}
+
+/** 记忆字段显示 (K01) */
+export const MEMORY_FIELD = ['document_title', 'directory_path', 'markdown_text'] as const;
+export type MemoryField = (typeof MEMORY_FIELD)[number];
+export const MEMORY_FIELD_LABEL = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文' } as const satisfies { readonly [K in MemoryField]: string };
+export const MEMORY_FIELD_UI = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文' } as const satisfies { readonly [K in MemoryField]: string };
+export const MemoryFieldSchema = z.enum(MEMORY_FIELD);
+export function isMemoryField(value: unknown): value is MemoryField {
+  return (MEMORY_FIELD as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1208,6 +1230,8 @@ export interface AxisValues {
   memory_share_effect: MemoryShareEffect;
   memory_action: MemoryAction;
   knowledge_directory: KnowledgeDirectory;
+  knowledge_origin: KnowledgeOrigin;
+  memory_field: MemoryField;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1311,6 +1335,8 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   memory_share_effect: MEMORY_SHARE_EFFECT_LABEL,
   memory_action: MEMORY_ACTION_LABEL,
   knowledge_directory: KNOWLEDGE_DIRECTORY_LABEL,
+  knowledge_origin: KNOWLEDGE_ORIGIN_LABEL,
+  memory_field: MEMORY_FIELD_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1414,6 +1440,8 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   memory_share_effect: MEMORY_SHARE_EFFECT_UI,
   memory_action: MEMORY_ACTION_UI,
   knowledge_directory: KNOWLEDGE_DIRECTORY_UI,
+  knowledge_origin: KNOWLEDGE_ORIGIN_UI,
+  memory_field: MEMORY_FIELD_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

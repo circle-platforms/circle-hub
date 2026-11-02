@@ -132,10 +132,12 @@ test('team destination paths are scanned and credential-bearing targets never en
   await spaces.ensure(w.user,'team');
   const before=(await spaces.current('team'))!.root,secret='hunter22x',team_path='/DB_PASSWORD='+secret;
   const input={root:entry.root,path:'/notes',entry:entry.entry,team_path};
+  const preview=await spaces.precheckShare(w.user,input);assert.equal(preview.target_path,undefined);assert.ok(!JSON.stringify(preview).includes(secret));
   const refused=await spaces.share(w.user,input);assert.equal(refused.code,'SHARE_CREDENTIALS');assert.equal(refused.status,'rejected');assert.equal(refused.target_path,undefined);assert.ok(!JSON.stringify(refused).includes(secret));
   assert.equal((await spaces.current('team'))!.root,before);assert.equal((await spaces.current('team'))!.body.entries.length,0);
   assert.equal((await share(w,entry)).status,'merged');
   const duplicate=await spaces.share(w.user,input);assert.equal(duplicate.code,'SHARE_DUPLICATE');assert.equal(duplicate.target_path,undefined,'an earlier refusal must not persist the unchecked destination either');
+  const duplicatePreview=await spaces.precheckShare(w.user,input);assert.equal(duplicatePreview.target_path,undefined);assert.ok(!JSON.stringify(duplicatePreview).includes(secret));
   const history=await spaces.shareHistory(w.user);assert.ok(!JSON.stringify(history).includes(secret));
 });
 

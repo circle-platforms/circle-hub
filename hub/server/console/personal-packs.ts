@@ -1,3 +1,4 @@
+import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 // Member publication uses the same publisher as team packs, with an explicit personal namespace and owner-bound stages.
 import {grantDialog,checkTable} from './grant-dialog.ts';
 import {currentAudience} from './space-layout.ts';
@@ -17,7 +18,7 @@ export function personalPackForm(ctx:PageContext,action:string,fields:Html,label
 export async function personalPublishPage(ctx:PageContext,staging:PackStaging):Promise<PageResult>{
   if(!ctx.deps.registry?.personal)return neutralPage(ctx);
   const stages=staging.list(ctx.principal.id).filter(stage=>stage.space===ctx.principal.id);
-  return {status:200,body:page(ctx.chrome('发布个人工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获授权者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),html`<div class="stack">${card({title:'上传发布内容',hint:'上传含 pack.json 的 zip；校验通过后暂存 30 分钟，确认时再次校验'},personalPackForm(ctx,'stage',html`<label>发布内容 zip<input type="file" name="archive" accept=".zip,application/zip" required></label>`,'上传并校验',true))}${card({title:'等待发布中'},table(['包','到期时间','操作'],stages.map(stage=>[code(stage.pack+'@'+stage.version),when(new Date(stage.expires).toISOString()),html`${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}`]),'没有暂存的发布内容'))}</div>`)};
+  return {status:200,body:page(ctx.chrome('发布个人工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获授权者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),html`<div class="stack">${card({title:'上传发布内容',hint:'上传含 pack.json 的 zip；校验通过后暂存 30 分钟，确认时再次校验。'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.when+'；'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.fix},personalPackForm(ctx,'stage',html`<label>发布内容 zip<input type="file" name="archive" accept=".zip,application/zip" required></label>`,'上传并校验',true))}${card({title:'等待发布中'},table(['包','到期时间','操作'],stages.map(stage=>[code(stage.pack+'@'+stage.version),when(new Date(stage.expires).toISOString()),html`${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}`]),'没有暂存的发布内容'))}</div>`)};
 }
 export async function personalPackControls(ctx:PageContext,pack:PackListing):Promise<Html>{
   const personal=ctx.deps.registry?.personal;if(!personal||pack.space!==ctx.principal.id)return html``;
