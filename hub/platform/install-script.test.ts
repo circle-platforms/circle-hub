@@ -26,6 +26,9 @@ async function administratorFixture(t: TestContext) {
   await mkdir(join(dir,'config'));await writeFile(join(dir,'config','platform.json'),'{}');
   await mkdir(join(dir,'current'));await writeFile(join(dir,'current','release.json'),'{}');
   await writeFile(join(dir,'users.json'),'[]');
+  // On Linux the bundle's Node sits in the service account's private data root: only as_hub may run it.
+  const node=join(dir,'service-node');
+  await writeFile(node,`#!/bin/sh\n[ "$SYNTHETIC_AS_SERVICE" = 1 ] || { echo "$0: Permission denied" >&2; exit 126; }\nexec "${process.execPath}" "$@"\n`,{mode:0o755});
   await writeFile(cli,`import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
 import {join} from 'node:path';
 const root=process.env.CIRCLE_HUB_DATA_DIR, args=process.argv.slice(2);
@@ -44,7 +47,7 @@ if(args.join(' ')==='user list --json'){
     const script=`set -euo pipefail\n${functions}
 say() { printf '%s\\n' "$*"; }
 fail() { printf '错误：%s\\n' "$*" >&2; exit 1; }
-as_hub() { "$@"; }
+as_hub() { SYNTHETIC_AS_SERVICE=1 "$@"; }
 hub() { as_hub "$NODE" "$SETUP_HUB" "$@"; }
 run_as_hub() { as_hub "$@"; }
 commit_in() { printf 'synthetic-current'; }
@@ -53,7 +56,7 @@ ${options.interactive?'installer_prompt_admin() { HUB_INSTALL_ADMIN_NAME="synthe
 ${main}
 ${options.after??''}`;
     const result=spawnSync('bash',['-c',script],{encoding:'utf8',timeout:10_000,input:options.input??'',env:{
-      PATH:process.env.PATH,DATA:dir,BUNDLE:dir,NODE:process.execPath,SETUP_HUB:cli,DRY_RUN:'0',HUB_INSTALL_ADMIN_NAME:options.name??'',
+      PATH:process.env.PATH,DATA:dir,BUNDLE:dir,NODE:node,SETUP_HUB:cli,DRY_RUN:'0',HUB_INSTALL_ADMIN_NAME:options.name??'',
       RUNTIME:dir,BUNDLE_DIR_NAME:'synthetic-bundle',HUB_INSTALL_BUNDLE_COMMIT:'a'.repeat(40),
       HUB_INSTALL_PASSWORD_STDIN:options.stdin?'1':'0',...options.env}});
     return {code:result.status??-1,out:result.stdout,err:result.stderr};

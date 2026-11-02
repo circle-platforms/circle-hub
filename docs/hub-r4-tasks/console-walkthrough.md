@@ -96,6 +96,8 @@
 
 ## 验证
 
+- PR #124 的 CI 真机安装（Linux，`Install on Linux`）发现问题：管理员检查以调用者身份运行服务账户数据目录里的 Node，报 `Permission denied`，被当作“账户列表格式不正确”而失败。macOS 上数据目录属于本人，所以本机检查没有发现。Claude 改为经 `as_hub` 运行，并把测试里的 Node 换成只允许经 `as_hub` 运行的包装脚本：还原修复时 2 项失败，修复后 `install-script` 与 `install-upgrade-script` 共 13 项通过、0 跳过。
+
 - 最终静态收尾：`npm run typecheck`、`npm run verify:contracts` 通过（140 份生成文件与模型一致）；`npm run test:docs` 283 项通过、0 跳过。只报告已运行的检查；筛选外、全量单元、验收、来源、备份恢复及 CI 均未记为通过。
 
 - 迁移补验：`node --test --test-concurrency=1 --test-name-pattern='migrations apply|runtime role|openRecords from' hub/records/store.test.ts hub/records/roles.test.ts hub/records/index.test.ts` 选中的 3 项通过、0 跳过，其他用例未选中；`node --test hub/records/password.test.ts` 2 项通过、0 跳过。覆盖旧版账户、旧 Circle 令牌、只应用迁移 8，以及运行角色的密码创建、修改和会话撤销；同步了原测试中固定到迁移 7 的断言。仍未跑备份恢复或全量回归。

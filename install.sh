@@ -231,7 +231,8 @@ ensure_administrator() {
   local users status
   users="$(as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" user list --json < /dev/null)" || fail "无法读取管理员账户；核对数据库后重跑，或用 circle-hub init-admin <用户名>、circle-hub setup-code 完成初始化"
   # Exit 10 means a valid listing without an administrator. An unreadable listing must never trigger initialization.
-  if printf '%s\n' "${users}" | "${NODE}" -e 'try { const users = JSON.parse(require("node:fs").readFileSync(0,"utf8")); if (!Array.isArray(users) || users.some(u => !u || typeof u.role !== "string")) process.exit(11); process.exit(users.some(u => u.role === "admin") ? 0 : 10); } catch { process.exit(11); }'; then
+  # The bundle's Node lives in the service account's data root, so only that account may run it (Linux: mode 0700).
+  if printf '%s\n' "${users}" | as_hub "${NODE}" -e 'try { const users = JSON.parse(require("node:fs").readFileSync(0,"utf8")); if (!Array.isArray(users) || users.some(u => !u || typeof u.role !== "string")) process.exit(11); process.exit(users.some(u => u.role === "admin") ? 0 : 10); } catch { process.exit(11); }'; then
     return
   else
     status=$?
