@@ -470,14 +470,19 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
   return infos.some((info) => lines.has(info.product));
 }
 
+/** The pending intake of the knowledge feeding for this reader; empty when there is none. */
+async function intakePending(ctx: PageContext): Promise<Html> {
+  const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
+  return todos.length === 0 ? html`` : knowledgeSection('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [technicalCode(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? technicalCode(JSON.stringify(row.detail)) : '—'])));
+}
+
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx))};
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx,html`${await packSources(ctx, 'product')}${await intakePending(ctx)}`))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
-  const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
-  const pending = todos.length === 0 ? html`` : knowledgeSection('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [technicalCode(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? technicalCode(JSON.stringify(row.detail)) : '—'])));
+  const pending = await intakePending(ctx);
   const blocks: Html[] = [];
   for (const line of lines) {
     const builds = await ctx.deps.knowledge.builds(line.id);

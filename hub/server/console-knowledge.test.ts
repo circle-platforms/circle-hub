@@ -63,3 +63,17 @@ test('different versions remain selectable when their knowledge content is ident
   assert.match(from,/selected>2 \/ previous-build<\/option>/);
   assert.match(to,/selected>3 \/ current-build<\/option>/);
 });
+
+test('with knowledge spaces, as the real assembly always has, the home keeps the product sources and the pending intake on the all and team scopes', async () => {
+  const todo = {source:{system:'synthetic',id:'source-2'},missing:'合成待补充',next_action:'补充合成出处'};
+  const spaces = {visible:async()=>[],shareHistory:async()=>({items:[],next:null}),capacity:async()=>1024 ** 3};
+  const deps = {products,knowledge:{spaces,feeding:{todos:async()=>[todo]}}};
+  for (const scope of ['all','team']) {
+    const ctx = context(deps, true); ctx.url = new URL(`http://127.0.0.1/console/knowledge?scope=${scope}`);
+    const body = String((await knowledgePage(ctx)).body);
+    assert.match(body, /id="product-sources"/, scope); assert.match(body, /知识入库待处理/, scope); assert.ok(body.includes(todo.missing), scope);
+  }
+  const personal = context(deps, true); personal.url = new URL('http://127.0.0.1/console/knowledge?scope=personal');
+  const body = String((await knowledgePage(personal)).body);
+  assert.doesNotMatch(body, /id="product-sources"|知识入库待处理/);
+});
