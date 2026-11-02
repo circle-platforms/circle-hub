@@ -884,3 +884,8 @@ selected. Client names batch separately. Assignment batches retain each index sc
 triple, expiry test and sorted terms, including complete history beyond a single record page. Authorization store reads
 reuse verified pages only while a read scope is active; writes and explicit transaction reads still use their original
 boundaries. Regression coverage includes 5/20 members, revocation, expiry, console-session exclusion and metadata shape.
+
+Source reads now reuse the same readonly record scope for distinct digest lookups. A separate explicit readonly port
+memoizes source/readability decisions and the current viewer only during that scope; exact capture, producer and reader
+remain in the key. Every new proof retains scan/tier/provenance checks and object-byte integrity. Returned byte arrays
+are copied. Administrative and ingestion identity checks remain fresh, and later requests observe revocation/disable.

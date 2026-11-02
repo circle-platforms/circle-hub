@@ -1333,3 +1333,10 @@ positional nulls, while a recent page fills past unavailable candidates. Current
 never stored as cross-request authorization. The SQL timestamp projection uses the first ASCII `at` member of a canonical
 strict entry body and returns no statement or grounds; it is a candidate projection, never a permission decision. Equivalent noncanonical bodies fall back to the original verified parse without rewriting them. Mock
 stores without it retain verified full-record reads for sorting. Snapshot and displayed-byte limits remain unchanged.
+
+Folder source lookups batch their existing registration index reads through the readonly record scope, including all
+continuation pages. Sharing prechecks issue entry/source/ground reads concurrently within each existing phase, then
+inspect settled results in the original order. A later I/O failure cannot overtake an earlier credential or unresolved
+source failure. Every source byte stream is still inspected, every distinct ground checked, and phase/first-error
+semantics are preserved. Synthetic regression: 2 and 12 distinct originals both require 4 SQL statements for the parallel
+read, with exact-capture, owner/grantee/admin isolation, mutable-byte isolation and later revocation checks.

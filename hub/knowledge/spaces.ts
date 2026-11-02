@@ -223,16 +223,22 @@ export class KnowledgeSpaces {
     }
     return out;
   }
-  async precheckGrant(by:Principal,path:string){
+  precheckGrant(by:Principal,path:string){return withReadScope(()=>this.#precheckGrant(by,path));}
+  async #precheckGrant(by:Principal,path:string){
     by=await this.#user(by);path=pathCheck(path);const version=await this.current(by.id);
     const checks:SharingCheck[]=ShareCheckSchema.extract(['credentials','personal_sources','local_only']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
     try{
       if(!version||!version.body.directories.includes(path))fail('SOURCE_UNAVAILABLE');
-      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry||entry.sync_private)fail('SPACE_ENTRY_INVALID');this.#scan(entry);}
-      for(const source of await this.sources(by))if(withinSpacePath(source.path,path)){const original=await this.source(by,source.sha256);if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
+      const rows=version.body.entries.filter(row=>withinSpacePath(row.path,path)),bodies=await Promise.allSettled(rows.map(row=>this.#entry(row)));
+      const entries:SpaceEntryBody[]=[];
+      for(const result of bodies){if(result.status==='rejected')throw result.reason;const entry=result.value;if(!entry||entry.sync_private)fail('SPACE_ENTRY_INVALID');this.#scan(entry);entries.push(entry);}
+      const sources=(await this.sources(by)).filter(source=>withinSpacePath(source.path,path));
+      const originals=await Promise.allSettled(sources.map(source=>this.source(by,source.sha256)));
+      for(const result of originals){if(result.status==='rejected')throw result.reason;const original=result.value;if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
       checks[phase++].state='pass';
-      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry)fail('SPACE_ENTRY_INVALID');for(const ground of entry.grounds)await this.#grantableGround(by,ground.reference);}
-      for(const source of await this.sources(by))if(withinSpacePath(source.path,path))await this.#grantableGround(by,'src:'+source.sha256);
+      const references=[...entries.flatMap(entry=>entry.grounds.map(ground=>ground.reference)),...sources.map(source=>'src:'+source.sha256)];
+      const grantable=await Promise.allSettled(references.map(reference=>this.#grantableGround(by,reference)));
+      for(const result of grantable)if(result.status==='rejected')throw result.reason;
       checks[phase++].state='pass';checks[phase].state='pass';
     }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:error instanceof KnowledgeError&&code!=='SPACE_CONTENT_UNINSPECTABLE'&&code!=='SHARE_GROUND_UNRESOLVED'?'violation':'incomplete',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
     return checks;
@@ -1040,7 +1046,7 @@ export class KnowledgeSpaces {
   /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
   async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
     const artifacts=this.#ctx.records.artifacts;
-    const records=await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({key:'knowledge.space.source_hash',values:[sha256],kind:'knowledge_space_source'});
+    const records=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     const captures=new Set(records.filter(row=>row.body.space!=='team').map(row=>row.body.artifact));
     const run=runId?(await this.#ctx.records.store.find<any>({key:'runs.id',value:runId,kind:'run',limit:1})).items[0]?.body:null;
     const pins=capture?[capture]:[...new Set<string>((run?.sources??[]).filter((binding:any)=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact;}).map((binding:any)=>String(binding.artifact)))];
@@ -1063,7 +1069,7 @@ export class KnowledgeSpaces {
   }
   /** Space authorization alone, for exact-reference scope checks; never falls back to an unrelated capture. */
   async spaceSource(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
-    const records = await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({ key: 'knowledge.space.source_hash', values: [sha256], kind: 'knowledge_space_source' });
+    const records = await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     for (const record of records) {
       const body = SpaceSourceBody.parse(record.body);
       if(capture&&body.artifact!==capture)continue;
@@ -1097,7 +1103,7 @@ export class KnowledgeSpaces {
   }
   /** Space authorization alone, for exact-reference scope checks; never falls back to an unrelated capture. */
   async mayReadSource(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<boolean> {
-    const records = await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({ key: 'knowledge.space.source_hash', values: [sha256], kind: 'knowledge_space_source' });
+    const records = await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     for (const record of records) {
       const body = SpaceSourceBody.parse(record.body);
       if(capture&&body.artifact!==capture)continue;
