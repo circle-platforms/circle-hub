@@ -8,7 +8,7 @@ import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
 import { probeConsole } from '../../scripts/real/console-page.ts';
 import { defaultPacks, fakeWorkflowPack } from './fakes.ts';
-import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { SYNTHETIC_CONSOLE_PASSWORD, testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let server: TestServer;
 before(async () => { server = await createTestServer({ packs: [...defaultPacks(), fakeWorkflowPack('facts', '合成事实', ['text/plain'], { factsOnly: true })] }); });
@@ -186,14 +186,14 @@ test('a filtered empty list page retains the service cursor', async () => {
 test('the owner probe logs in, reads the actual console and logs out on synthetic records', async () => {
   const user = await server.createUser('探测联测');
   const id = await start(user, 'facts', 7);
-  const stats = await probeConsole({ url: server.url, path: `/console/results/${id}`, token: server.admin.token });
+  const stats = await probeConsole({ url: server.url, path: `/console/results/${id}`, username: '管理员', password: SYNTHETIC_CONSOLE_PASSWORD });
   assert.equal(stats.status, 200); assert.equal(stats.csp, true); assert.equal(stats.scripts, 0);
   assert.equal(stats.externalAddresses, 0); assert.deepEqual(stats.tableRows, [7]); assert.equal(stats.logoutStatus, 303);
 });
 
 test('independent probe sessions print the same digest for the same synthetic result page',async()=>{
   const user=await server.createUser('摘要');const id=await start(user);
-  const options={url:server.url,path:`/console/results/${id}`,token:server.admin.token};
+  const options={url:server.url,path:`/console/results/${id}`,username:'管理员',password:SYNTHETIC_CONSOLE_PASSWORD};
   assert.equal((await probeConsole(options)).sha256,(await probeConsole(options)).sha256);
 });
 

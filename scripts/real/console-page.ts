@@ -1,4 +1,6 @@
-// Owner-run read-only console probe. Never print tokens, paths, names, response bodies or exception messages.
+// Owner-run read-only console probe. It signs in with a console account's username and password (every account does; a
+// token only connects a Circle), the password read from a file, never from argv. Never print passwords, tokens, paths,
+// names, response bodies or exception messages.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -141,14 +143,21 @@ export interface ProbeResult extends PageMetrics {
   logoutStatus: number;
 }
 
-/** Sign in, fetch exactly one requested page, and sign out even if the requested page fails. No redirect is followed. */
-export async function probeConsole(options: { url: string; path: string; token: string }): Promise<ProbeResult> {
+/**
+ * Sign in with a username and password, fetch exactly one requested page, and sign out even if the requested page fails.
+ * No redirect is followed.
+ */
+export async function probeConsole(options: { url: string; path: string; username: string; password: string }): Promise<ProbeResult> {
   const base = new URL(options.url);
   if (base.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) || base.username || base.password || base.pathname !== '/' || base.search || base.hash) throw new Error('invalid origin');
   const target = new URL(options.path, base);
   if (!options.path.startsWith('/console/') || target.origin !== base.origin || !target.pathname.startsWith('/console/') || target.hash || target.pathname === '/console/login' || target.pathname === '/console/logout') throw new Error('invalid path');
-  const token = options.token.trim().replace(/^Bearer[ \t]+/i, '');
-  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('invalid token');
+  // The console's bounds: a username of at most 100 characters; a password of 12 to 256 without control characters, as
+  // every stored one is. Anything else could only fail and count against the account's sign-in limit.
+  const username = options.username.trim();
+  if (username === '' || [...username].length > 100 || /\p{Cc}/u.test(username)) throw new Error('invalid username');
+  const password = options.password;
+  if (!password.isWellFormed() || [...password].length < 12 || [...password].length > 256 || /\p{Cc}/u.test(password)) throw new Error('invalid password');
   const jar = new Map<string, string>();
   const fetchPage = async (path: string, fields?: Record<string, string>): Promise<Response> => {
     const reply = await fetch(new URL(path, base), {
@@ -166,7 +175,7 @@ export async function probeConsole(options: { url: string; path: string; token: 
   const form = await fetchPage('/console/login');
   const nonce = csrfOf(await form.text());
   if (form.status !== 200 || nonce === undefined) throw new Error('login form unavailable');
-  const logged = await fetchPage('/console/login', { csrf: nonce, token });
+  const logged = await fetchPage('/console/login', { csrf: nonce, username, password });
   await logged.text();
   if (logged.status !== 303 || !jar.get('circle_hub_session')) throw new Error('login refused');
   let csrf: string | undefined;
@@ -196,11 +205,13 @@ async function main(): Promise<void> {
     const args = process.argv.slice(2); const values = new Map<string, string>();
     for (let i = 0; i < args.length; i += 2) {
       const key = args[i]; const value = args[i + 1];
-      if (!['--token-file', '--path', '--url'].includes(key) || values.has(key) || value === undefined || value.startsWith('--')) throw new Error('invalid arguments');
+      if (!['--username', '--password-file', '--path', '--url'].includes(key) || values.has(key) || value === undefined || value.startsWith('--')) throw new Error('invalid arguments');
       values.set(key, value);
     }
-    if (!values.has('--token-file') || !values.has('--path')) throw new Error('missing arguments');
-    const result = await probeConsole({ url: values.get('--url') ?? 'http://127.0.0.1:7420', path: values.get('--path')!, token: await readFile(values.get('--token-file')!, 'utf8') });
+    if (!values.has('--username') || !values.has('--password-file') || !values.has('--path')) throw new Error('missing arguments');
+    // Only the file's final line break is not part of the password; anything else in it is taken as typed.
+    const password = (await readFile(values.get('--password-file')!, 'utf8')).replace(/\r?\n$/, '');
+    const result = await probeConsole({ url: values.get('--url') ?? 'http://127.0.0.1:7420', path: values.get('--path')!, username: values.get('--username')!, password });
     process.stdout.write(`登录状态码 ${result.loginStatus}；状态码 ${result.status}；退出状态码 ${result.logoutStatus}\nCSP ${result.csp ? '有' : '无'}；脚本标签 ${result.scripts}；外部地址 ${result.externalAddresses}\n`);
     result.tableRows.forEach((rows, i) => process.stdout.write(`表 ${i + 1}：${rows} 行\n`));
     process.stdout.write(`正文 SHA-256 ${result.sha256}\n`);
