@@ -39,8 +39,10 @@ export interface TestUser {
   token: string;
 }
 
-const SYNTHETIC_CONSOLE_PASSWORD = 'synthetic-console-only-2026';
+export const SYNTHETIC_CONSOLE_PASSWORD = 'synthetic-console-only-2026';
 const consoleAccounts = new Map<string, string>();
+/** Remembers which synthetic member a test token belongs to, so console helpers sign members in with a password. */
+export function registerTestConsoleAccount(token: string, name: string): void { consoleAccounts.set(token, name); }
 /** Existing token-based test helpers use the corresponding synthetic account's password at the browser boundary. */
 export function testConsoleCredentials(token: string): Record<string,string> {
   const name=consoleAccounts.get(token.replace(/^Bearer\s+/i,''));

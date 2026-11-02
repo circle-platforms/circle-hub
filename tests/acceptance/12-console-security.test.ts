@@ -118,7 +118,7 @@ describe('scenario 12: console and API host, origin, and token security', () => 
     const authHeader = revokedMcp.headers['www-authenticate'];
     assert.ok(authHeader && String(authHeader).includes('Bearer realm="circle-hub"'));
 
-    // 2. /console/login POST with revoked token -> 401 with '令牌无效'
+    // 2. /console/login POST with revoked token -> 401 naming the failed sign-in (decision 83 wording)
     const loginPage = await requestHttp(bed.hub.port, '/console/login');
     const csrfMatch = /name="csrf"\s+value="([^"]+)"/.exec(loginPage.body);
     const csrf = csrfMatch ? csrfMatch[1] : '';
@@ -132,7 +132,7 @@ describe('scenario 12: console and API host, origin, and token security', () => 
       body: new URLSearchParams({ token: issued.token, csrf }).toString(),
     });
     assert.equal(revokedLogin.status, 401, 'revoked token login returns 401');
-    assert.ok(revokedLogin.body.includes('令牌无效'));
+    assert.ok(revokedLogin.body.includes('备用令牌仅限管理员'));
   });
 
   test('a request without a token is refused (401 on /mcp, redirect on /console)', async () => {

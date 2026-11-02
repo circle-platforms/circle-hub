@@ -1,6 +1,7 @@
 // Console client support for acceptance tests: HTML inspection, cookie/session management, and HTTP requests.
 import { request as httpRequest } from 'node:http';
 import type { TestHub } from '../../../hub/server/testing-real.ts';
+import { testConsoleCredentials } from '../../../hub/server/testing.ts';
 
 export interface ConsoleReply {
   status: number;
@@ -83,7 +84,8 @@ export async function openConsole(hub: TestHub, token?: string): Promise<Console
         origin,
         referer: `${origin}/console/login`,
       },
-      body: new URLSearchParams({ token, csrf: nonce }).toString(),
+      // Members sign in with their synthetic password; only administrators may use a token (decision 83).
+      body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: nonce }).toString(),
     });
     sessionCookie = cookieValue(cookieHeader(loginRes, 'circle_hub_session'));
   }
