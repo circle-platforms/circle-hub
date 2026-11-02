@@ -133,8 +133,8 @@ describe('search', () => {
     const run = await runOf(user);
     const session = await signIn(user.token);
     const overview = await send('/console/overview', { headers: { cookie: session } });
-    assert.match(overview.body, /<form class="search" role="search" method="get" action="\/console\/search">/);
-    assert.doesNotMatch((await send('/console/login')).body, /class="search"/, 'not on the sign-in page');
+    assert.match(overview.body, /<form role="search" method="get" action="\/console\/search">/);
+    assert.doesNotMatch((await send('/console/login')).body, /<form role="search"/, 'not on the sign-in page');
     const found = await send(`/console/search?q=${run}`, { headers: { cookie: session } });
     assert.equal(found.status, 200);
     assert.ok(found.body.includes(`href="/console/runs/${run}"`));

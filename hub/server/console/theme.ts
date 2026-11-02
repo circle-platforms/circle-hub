@@ -12,21 +12,49 @@ export const THEME_SCRIPT = `(() => {
     for (const control of document.querySelectorAll('[data-theme-switch]')) {
       control.hidden = false;
       for (const button of control.querySelectorAll('[data-theme-choice]')) {
-        button.setAttribute('aria-pressed', String(button.dataset.themeChoice === choice));
+        const selected = button.dataset.themeChoice === choice;
+        button.setAttribute('aria-checked', String(selected));
+        button.tabIndex = selected ? 0 : -1;
       }
     }
   };
   try { apply(localStorage.getItem(key)); } catch { apply('system'); }
   document.addEventListener('DOMContentLoaded', () => apply(choice), { once: true });
-  document.addEventListener('click', (event) => {
-    if (!(event.target instanceof Element)) return;
-    const button = event.target.closest('[data-theme-switch] [data-theme-choice]');
-    if (!button || !valid(button.dataset.themeChoice)) return;
-    apply(button.dataset.themeChoice);
+  const choose = (value) => {
+    apply(value);
     try {
       if (choice === 'system') localStorage.removeItem(key);
       else localStorage.setItem(key, choice);
     } catch { /* This page still switches when browser storage is blocked. */ }
+  };
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest('[data-theme-switch] [data-theme-choice]');
+    if (button && valid(button.dataset.themeChoice)) choose(button.dataset.themeChoice);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
+        const search = document.getElementById('console-search');
+        if (search) {
+          const toggle = document.getElementById('console-navigation-toggle');
+          if (toggle) toggle.checked = true;
+          search.focus();
+          event.preventDefault();
+        }
+      }
+      return;
+    }
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest('[data-theme-switch] [data-theme-choice]');
+    if (!button || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...button.parentElement.querySelectorAll('[data-theme-choice]')];
+    const at = buttons.indexOf(button);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (at + (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+    choose(buttons[next].dataset.themeChoice);
+    buttons[next].focus();
+    event.preventDefault();
   });
   window.addEventListener('storage', (event) => {
     if (event.key === key || event.key === null) {

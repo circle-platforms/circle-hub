@@ -80,7 +80,7 @@ ${cards.length === 0 ? card(null, html`<p class="empty">尚无可用的${uiLabel
 </div>`),listings);
   return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {
     active: 'packs', hint: '按当前读取权限列出工作流与通用技能',
-    actions:html`${button('/console/packs/-/publish','发布个人工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="btn" disabled title="没有发布权。可以先把个人工作流授权给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
+    actions:html`${button('/console/packs/-/publish','发布个人工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把个人工作流授权给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
 

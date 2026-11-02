@@ -204,7 +204,7 @@ ${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'e
     body: page(ctx.chrome('连接', {
       active: 'connections',
       hint: 'Hub 以只读方式访问业务系统，不修改业务数据；派发作业的运行环境在此查看',
-      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? html`${button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}` : ''}`,
+      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' })}` : ''}`,
     }), body),
   };
 }

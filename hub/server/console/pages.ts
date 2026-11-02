@@ -35,7 +35,7 @@ export interface PageContext {
   admin: boolean;
   url: URL;
   /** The chrome of a page: its title, and the place of the navigation, a line and buttons when the page has them. */
-  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'hint' | 'actions'>) => PageChrome;
+  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'hint' | 'actions' | 'crumbs'>) => PageChrome;
   /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
   csrf?: string;
   /** The request came over HTTPS (the built-in listener or the configured proxy). */
@@ -514,7 +514,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     );
   }
   const flow = html``;
-  const actions = ctx.admin ? html`${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品目录沿用产品线读权，仅管理员可用' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}` : undefined;
+  const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品目录沿用产品线读权，仅管理员可用' })}` : undefined;
   return {
     status: 200,
     body: page(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'个人、团队与共享给本账户的知识；已核验与未核验内容分别标示':'统一的知识库：每条知识均附出处，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}

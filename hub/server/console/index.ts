@@ -114,10 +114,10 @@ async function loginPage(options: ConsoleOptions, response: ServerResponse, stat
     anonymous('登录'),
     html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
 <form method="post" action="/console/login" class="mt16">
-<div class="field"><label for="hub-username">用户名</label><input id="hub-username" class="input" name="username" autocomplete="username" maxlength="200" required></div>
-<div class="field"><label for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><input id="hub-password" class="input" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>
+<div class="ch-field"><label class="ch-field-label" for="hub-username">用户名</label><div class="ch-input"><input id="hub-username" name="username" autocomplete="username" maxlength="200" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
 <input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
-<button type="submit" class="btn primary">登录</button></form>`,
+<button type="submit" class="ch-btn ch-btn--primary">登录</button></form>`,
   );
   const cookies = [cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure)];
   if (ended) cookies.push(cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '', '/console/login', 0, secure));
@@ -207,9 +207,9 @@ async function passwordPage(request: IncomingMessage, response: ServerResponse, 
   const show = (status: number, message = '') => sendHtml(response,status,page(anonymous('修改密码'),html`
 <p>${principal.name}</p>${mustChange ? html`<p class="notice">首次登录必须修改密码。</p>` : ''}${message ? html`<p class="error">${message}</p>` : ''}
 <form method="post" action="/console/password"><input type="hidden" name="csrf" value="${session.csrf}"><input type="hidden" name="next" value="${safeNext(url.searchParams.get('next'))}">
-<div class="field"><label>当前密码 <input type="password" name="current" autocomplete="current-password" maxlength="256" required></label></div>
-<div class="field"><label title="12 至 256 个字符，不含控制字符">新密码 <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></label></div>
-<div class="field"><label>再次输入新密码 <input type="password" name="confirm" autocomplete="new-password" maxlength="256" required></label></div><button type="submit" class="btn primary">修改密码</button></form>`));
+<div class="ch-field"><label class="ch-field-label" for="current-password">当前密码</label><div class="ch-input"><input id="current-password" type="password" name="current" autocomplete="current-password" maxlength="256" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="new-password" title="12 至 256 个字符，不含控制字符">新密码</label><div class="ch-input"><input id="new-password" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="confirm-password">再次输入新密码</label><div class="ch-input"><input id="confirm-password" type="password" name="confirm" autocomplete="new-password" maxlength="256" required></div></div><button type="submit" class="ch-btn ch-btn--primary">修改密码</button></form>`));
   if (request.method === 'GET') return show(200);
   if (request.method !== 'POST') { request.resume(); return sendHtml(response,405,page(anonymous('方法不允许'),html`<p>只接受 POST</p>`),{allow:'POST'}); }
   if (!sameOrigin(request,options.ownOrigins())) { request.resume(); return forbidden(response,'密码表单只能从本控制台提交'); }
@@ -444,11 +444,11 @@ async function setupPage(options: ConsoleOptions, response: ServerResponse, stat
     html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error mt12">${message}</p>`}
 <p class="sub mt12">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
 <form method="post" action="/console/setup">
-<div class="field"><label for="setup-code">初始化码</label><input id="setup-code" class="input" name="code" autocomplete="off" size="40" required value="${prefill}"></div>
-<div class="field"><label for="admin-name">管理员用户名</label><input id="admin-name" class="input" name="name" autocomplete="off" size="24" required></div>
-<div class="field"><label for="admin-password" title="可留空；留空则生成初始密码，仅显示一次，首次登录必须修改">管理员密码（可选）</label><input id="admin-password" class="input" type="password" name="password" autocomplete="new-password" maxlength="256"></div>
+<div class="ch-field"><label class="ch-field-label" for="setup-code">初始化码</label><div class="ch-input"><input id="setup-code" name="code" autocomplete="off" size="40" required value="${prefill}"></div></div>
+<div class="ch-field"><label class="ch-field-label" for="admin-name">管理员用户名</label><div class="ch-input"><input id="admin-name" name="name" autocomplete="off" size="24" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="admin-password" title="可留空；留空则生成初始密码，仅显示一次，首次登录必须修改">管理员密码（可选）</label><div class="ch-input"><input id="admin-password" type="password" name="password" autocomplete="new-password" maxlength="256"></div></div>
 <input type="hidden" name="csrf" value="${nonce}">
-<button type="submit" class="btn primary">创建管理员</button>
+<button type="submit" class="ch-btn ch-btn--primary">创建管理员</button>
 </form>
 ${secure ? trustSteps() : ''}`,
   );

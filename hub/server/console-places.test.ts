@@ -95,7 +95,7 @@ function assertPage(reply: Reply, path: string): void {
   assert.match(String(reply.headers['content-security-policy']), /default-src 'none'/, path);
   assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, '').replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
-  assert.match(reply.body, /<nav class="side" aria-label="主导航">/, path);
+  assert.match(reply.body, /<nav class="ch-nav" aria-label="主导航">/, path);
   for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
   assert.doesNotMatch(reply.body, /你/, `${path}: interface text states facts without a subject`);
 }
@@ -114,7 +114,7 @@ describe('the eight places', () => {
     for (const [path, place] of Object.entries(pages)) {
       const reply = await get(path, admin);
       assertPage(reply, path);
-      assert.match(reply.body, new RegExp(`<a class="nav-item on" href="[^"]+" aria-current="page"><svg[^>]*><path[^>]*></path></svg><span>${place}</span>`), `${path} marks ${place}`);
+      assert.match(reply.body, new RegExp(`<a class="ch-nav-item(?: [^"]*)?" href="[^"]+" aria-current="page"><span class="ch-dot" aria-hidden="true"></span><span>${place}</span>`), `${path} marks ${place}`);
     }
     assert.equal((await get('/console', admin)).headers.location, '/console/overview');
   });
@@ -188,7 +188,7 @@ describe('operations and commands', () => {
     const admin=await signIn(server.admin.token);
     for(const kind of ['workflow','skill','product','system'] as const){
       const operation=await get('/console/operations/pack?kind='+kind,admin);
-      assert.equal(operation.status,200);assert.ok(operation.body.includes(`发布${uiLabelOf('pack_kind',kind)}</h1>`));
+      assert.equal(operation.status,200);assert.match(operation.body,new RegExp('<h1[^>]*><span[^>]*>发布'+uiLabelOf('pack_kind',kind)+'<span'));
       const action='/console/admin/do/pack-stage'+(kind==='workflow'?'':'?kind='+kind);
       assert.ok(operation.body.includes(`action="${action}"`));
     }
@@ -197,7 +197,7 @@ describe('operations and commands', () => {
     const user=await member(), session=await signIn(user.token);
     assert.equal((await get('/console/operations/pack?kind=system',session)).status,404);
     const invalid=await get('/console/operations/pack?kind=__proto__',admin);
-    assert.ok(invalid.body.includes(`发布${uiLabelOf('pack_kind','workflow')}</h1>`));
+    assert.match(invalid.body,new RegExp('<h1[^>]*><span[^>]*>发布'+uiLabelOf('pack_kind','workflow')+'<span'));
   });
 
   test('product and system integrations appear in their own places and details retain catalog permissions', async () => {

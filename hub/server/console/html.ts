@@ -4,7 +4,7 @@
 // from fixed paths and encoded query parameters. Every page of a signed-in account has the side navigation of the design
 // canvas; all pages have the theme script, and only pages with live modules have the live script.
 import { createHash } from 'node:crypto';
-import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { KnowledgeSearchScopeSchema, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { LiveEventName } from './live.ts';
 import { LIVE_SCRIPT } from './script.ts';
 import { CSS } from './style.ts';
@@ -13,12 +13,27 @@ import { THEME_SCRIPT } from './theme.ts';
 /** Markup that is already safe: produced by `html` or a constant of this module. */
 export class Html {
   readonly text: string;
-  constructor(text: string) {
+  readonly layout: PageLayout;
+  constructor(text: string, layout: PageLayout = {}) {
     this.text = text;
+    this.layout = layout;
   }
   toString(): string {
     return this.text;
   }
+}
+
+/** Page producers supply authorized content, never a path-driven lookup in the shell. */
+export interface PageLayout {
+  sidebar?: Html;
+  inspector?: Html;
+  /** A selected object's inspector becomes the main view below 1180px. */
+  detail?: boolean;
+  back?: Html;
+}
+
+export function pageLayout(content: Html, layout: PageLayout): Html {
+  return new Html(content.text, { ...content.layout, ...layout });
 }
 
 const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -104,7 +119,7 @@ export const CONTENT_SECURITY_POLICY = [
   "base-uri 'none'",
 ].join('; ');
 
-/** The eight places of decision 83: no sub-menus and no counters. */
+/** The eight places; only the current place may expand its authorized navigation. */
 export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings';
 
 export interface PageChrome {
@@ -121,6 +136,8 @@ export interface PageChrome {
   hint?: string;
   /** Buttons to the right of the title. */
   actions?: unknown;
+  /** Explicit parent location, above the title; no URL guessing or additional reads. */
+  crumbs?: Html;
   /** A page without an account shown as a wider card (the setup steps). */
   wide?: boolean;
 }
@@ -148,6 +165,7 @@ export const ICONS = {
   chat: 'M4 5h16v11H10l-5 4v-4H4z',
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5V12l3 2',
   flow: 'M3 6h5c5 0 5 12 10 12h3M3 18h5c2.5 0 3.5-3 4.5-6M15 6h6',
+  menu: 'M4 6h16M4 12h16M4 18h16',
 } as const;
 
 /**
@@ -188,28 +206,47 @@ function htmlDocument(title: string, body: Html, script = false): Html {
 export function page(chrome: PageChrome, body: unknown): Html {
   const user = chrome.user;
   const content = html`${body}`;
+  const layout = body instanceof Html ? body.layout : {};
   // Escaped text can never hold this attribute: only liveModule() writes it.
-  const updates = user !== null && content.text.includes(' data-live="');
+  const updates = user !== null && [content, layout.inspector, layout.sidebar].some((part) => part?.text.includes(' data-live="'));
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
-  const top = html`<header class="top"><div><h1${chrome.hint === undefined ? '' : html` title="${chrome.hint}"`}>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub" id="page-sub">${chrome.sub}</p>`}${state}</div><div class="actions">${themeSwitch()}${chrome.actions ?? ''}</div></header>`;
-  if (user === null) return htmlDocument(chrome.title, html`<div class="login"><div class="login-card${chrome.wide ? ' setup-card' : ''}">${brand()}${top}${content}</div></div>`);
-  const nav = NAV.map(([key, label, path, name]) => html`<a class="nav-item${key === chrome.active ? ' on' : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}>${icon(name, 'nav-ico')}<span>${label}</span></a>`);
-  return htmlDocument(chrome.title, html`<div class="shell">
-<div class="side-wrap"><nav class="side" aria-label="主导航">
-<div class="brand">${logo()}<strong>circle-hub</strong></div>
-<form class="search" role="search" method="get" action="/console/search">${icon('search')}<input type="search" name="q" maxlength="100" placeholder="搜索任务、知识、记录" aria-label="搜索"></form>
-${nav}
-<div class="me"><span class="avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="me-t"><div>${user.name}</div><div class="me-r">${user.role}</div></div>
-<form class="logout" method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>
-</nav></div>
-<main class="content">${top}${content}</main>
+  const current = NAV.find(([key]) => key === chrome.active);
+  const crumbs = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? link(current[2], current[1]) : undefined);
+  const title = chrome.hint === undefined ? chrome.title : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${chrome.title}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
+  const top = html`${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${chrome.actions === undefined ? '' : html`<div class="ch-actions">${chrome.actions}</div>`}</header>`;
+  if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
+  const area = areaClass(chrome.active);
+  const nav = NAV.map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
+  const overview = html`<section class="ch-section"><h2 class="ch-panel-title">${current?.[1] ?? chrome.title}</h2>${chrome.sub === undefined ? '' : html`<p class="ch-meta">${chrome.sub}</p>`}</section><section class="ch-section"><h3 class="ch-section-label">当前页面</h3><p>${chrome.title}</p></section><section class="ch-section"><h3 class="ch-section-label">当前账号</h3><p>${user.name}</p><p class="ch-meta">${user.role}</p></section>`;
+  return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail ? ' is-detail' : ''}">
+<nav class="ch-nav" aria-label="主导航">
+<input class="ch-visually-hidden" type="checkbox" id="console-navigation-toggle" data-navigation-toggle aria-controls="console-navigation-links" aria-label="展开导航">
+<div class="ch-brand">${logo()}<span>circle-hub</span><label class="ch-icon-btn" for="console-navigation-toggle" title="展开导航" aria-label="展开导航">${icon('menu')}</label></div>
+<form role="search" method="get" action="/console/search"><label class="ch-input">${icon('search')}<input id="console-search" type="search" name="q" maxlength="100" placeholder="搜索" aria-label="搜索"><span class="ch-kbd" aria-hidden="true">⌘K</span></label></form>
+<div class="ch-nav-list" id="console-navigation-links">${nav}</div>
+<div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
+</nav>
+<main class="ch-pane" id="console-main">${top}${content}</main>
+<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? state : ''}${layout.inspector ?? overview}</aside>
 </div>`, updates);
 }
 
 function brand(): Html {
-  return html`<div class="row">${logo()}<div><div class="brand-name">circle-hub</div><div class="sub">Circle 结果校验与共享知识服务</div></div></div>`;
+  return html`<div class="ch-brand">${logo()}<span>circle-hub</span></div>`;
 }
 
 function themeSwitch(): Html {
-  return html`<div class="ch-actions" data-theme-switch hidden role="group" aria-label="主题"><button class="ch-chip" type="button" data-theme-choice="system" aria-pressed="true">跟随系统</button><button class="ch-chip" type="button" data-theme-choice="light" aria-pressed="false">浅色</button><button class="ch-chip" type="button" data-theme-choice="dark" aria-pressed="false">深色</button></div><noscript><span class="ch-meta">主题跟随系统</span></noscript>`;
+  return html`<div class="ch-seg" data-theme-switch hidden role="radiogroup" aria-label="主题"><button type="button" role="radio" data-theme-choice="system" aria-checked="true" tabindex="0">跟随系统</button><button type="button" role="radio" data-theme-choice="light" aria-checked="false" tabindex="-1">浅色</button><button type="button" role="radio" data-theme-choice="dark" aria-checked="false" tabindex="-1">深色</button></div><noscript><span class="ch-meta">主题跟随系统</span></noscript>`;
+}
+
+function areaClass(active?: NavKey): string {
+  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
+}
+
+/** Detail pages without a directory projection still offer scope links, without inventing counts or a selected scope. */
+function scopeNavigation(active: NavKey): Html {
+  if (active !== 'knowledge' && active !== 'packs') return html``;
+  const base = active === 'knowledge' ? '/console/knowledge' : '/console/packs';
+  const values = KnowledgeSearchScopeSchema.enum;
+  return html`<div class="ch-nav-sub" aria-label="空间">${[values.all, values.personal, values.shared, values.team].map((scope) => link(base, uiLabelOf('knowledge_search_scope', scope), {scope}))}</div>`;
 }

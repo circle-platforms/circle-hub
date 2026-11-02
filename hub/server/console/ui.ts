@@ -51,7 +51,7 @@ export function sectionHead(title: unknown, sub?: unknown, extra?: unknown, id?:
 
 /** A link styled as a button. */
 export function button(path: string, text: unknown, options: { primary?: boolean; icon?: keyof typeof ICONS; params?: Record<string, string | number | null | undefined>; hint?: string } = {}): Html {
-  return html`<a class="btn${options.primary ? ' primary' : ''}" href="${href(path, options.params)}"${options.hint === undefined ? '' : html` title="${options.hint}"`}>${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
+  return html`<a class="ch-btn ${options.primary ? 'ch-btn--primary' : 'ch-btn--secondary'}" href="${href(path, options.params)}"${options.hint === undefined ? '' : html` title="${options.hint}"`}>${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
 }
 
 /** A card for a capability that is planned and not built: its place is kept, nothing in it pretends to be data. */
@@ -87,9 +87,9 @@ export function seg(items: readonly (readonly [string, unknown])[], label: strin
 
 /** The steps of an operation, the current one marked; a step the backend does not have yet is marked as planned. */
 export function stepper(names: readonly (string | readonly [string, true])[], current: number): Html {
-  return html`<div class="steps-n" aria-label="步骤">${names.map((step, i) => {
+  return html`<div class="ch-actions" role="list" aria-label="步骤">${names.map((step, i) => {
     const [name, later] = typeof step === 'string' ? [step, false] : step;
-    return html`<span class="${i < current ? 'done' : i === current ? 'on' : ''}"><b>${i + 1}</b>${name}${later ? html` ${planned()}` : ''}</span>`;
+    return html`<span role="listitem" class="ch-badge ${i < current ? 'ch-badge--pass' : i === current ? 'ch-badge--info' : 'ch-badge--pending'}"${i === current ? html` aria-current="step"` : ''}><span class="ch-count">${i + 1}</span>${name}${later ? html` ${planned()}` : ''}</span>`;
   })}</div>`;
 }
 

@@ -14,6 +14,9 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- The console shares a three-column shell and responsive navigation across all areas, with a segmented theme control
+  beside the account. Sign-in and setup pages use a centred panel with the same form components and a footer theme control.
+
 - The console uses the shared Circle design tokens and local system fonts, with a persistent system/light/dark theme
   switch on signed-in and sign-in pages. Fixed scripts and styles remain allowed only by their content hashes.
 

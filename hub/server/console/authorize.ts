@@ -3,13 +3,13 @@
 // invitation code names (the identity step) or, without one, the browser's console session; the page always names it, and
 // a signed-in browser may still switch to an invitation. Approving sends the browser to the client's redirect URI with a
 // one-time code, refusing with access_denied; both end the request. No password is asked (owner-confirmed item 1), and
-// the page carries no script. The confirm page allows its form to lead to the redirect URI's origin (CSP form-action).
+// the page carries only the fixed theme script. The confirm page allows its form to lead to the redirect URI's origin (CSP form-action).
 import { labelOf as uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
 import { AUTHORIZATION_REQUEST_TTL_MS, redirectIsLocal } from '../oauth.ts';
 import { CONTENT_SECURITY_POLICY, code, html, page, type Html } from './html.ts';
-import { callout, card, kv, stepper } from './ui.ts';
+import { stepper } from './ui.ts';
 
 const STEPS = ['身份', '确认授权', '完成'] as const;
 /** Wrong invitation codes one authorization request accepts before it ends. */
@@ -41,20 +41,25 @@ export function authorizeSecurityPolicy(uri: string): string {
 }
 
 function facts(request: AuthorizationRequest): Html {
-  return kv([
+  const values = [
     ['客户端', html`<b>${request.client.name}</b> <span class="digest">${request.client.id}</span>`],
     ['回调地址', code(request.redirectUri)],
     ['访问范围', '本 Hub 的 MCP 服务（' + request.resource + '）'],
     ['有效期', `授权请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效`],
-  ]);
+  ];
+  return html`<dl class="ch-kv">${values.map(([label,value])=>html`<dt>${label}</dt><dd>${value}</dd>`)}</dl>`;
+}
+
+function callout(tone: 'info' | 'warn', body: Html): Html {
+  return html`<p class="ch-meta" role="note"><span class="ch-dot ${tone === 'warn' ? 'ch-dot--warn' : 'ch-dot--info'}" aria-hidden="true"></span>${body}</p>`;
 }
 
 function invitationForm(request: AuthorizationRequest, error: string | null, primary: boolean): Html {
   return html`<form method="post" action="/console/authorize/${request.id}">
-<div class="field"><label for="invitation">邀请码</label><input id="invitation" class="input" name="code" autocomplete="off" size="20" maxlength="64" required placeholder="XXXX-XXXX-XXXX"></div>
+<div class="ch-field"><label class="ch-field-label" for="invitation">邀请码</label><div class="ch-input"><input id="invitation" name="code" autocomplete="off" size="20" maxlength="64" required placeholder="XXXX-XXXX-XXXX"></div></div>
 ${error === null ? '' : html`<p class="error">${error}</p>`}
 <input type="hidden" name="csrf" value="${request.csrf}"><input type="hidden" name="step" value="identity">
-<button type="submit" class="btn${primary ? ' primary' : ''}">验证邀请码</button>
+<button type="submit" class="ch-btn ${primary ? 'ch-btn--primary' : 'ch-btn--secondary'}">验证邀请码</button>
 </form>`;
 }
 
@@ -62,7 +67,7 @@ ${error === null ? '' : html`<p class="error">${error}</p>`}
 export function identityPage(request: AuthorizationRequest, error: string | null): Html {
   return page(chrome('授权 Circle 连接 Hub', '输入管理员签发的邀请码确认账号；也可用密码登录控制台后授权。'), html`${stepper(STEPS, 0)}
 <p class="mt12"><b>${request.client.name}</b> 请求连接本 Hub。</p>
-${card(null, facts(request), 'mt12')}
+<section class="ch-section">${facts(request)}</section>
 <div class="mt16">${invitationForm(request, error, true)}</div>
 <p class="sub mt12">邀请码 24 小时内有效，仅可使用一次。${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}</p>`);
 }
@@ -74,8 +79,8 @@ ${card(null, facts(request), 'mt12')}
 export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
   const decide = html`<form method="post" action="/console/authorize/${request.id}" class="row mt16">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">
-<button type="submit" class="btn primary" name="decision" value="approve">授权</button>
-<button type="submit" class="btn" name="decision" value="deny">拒绝</button>
+<button type="submit" class="ch-btn ch-btn--secondary" name="decision" value="deny">拒绝</button>
+<button type="submit" class="ch-btn ch-btn--primary" name="decision" value="approve">授权</button>
 </form>`;
   const other = via === 'session'
     ? html`<details class="mt16"><summary>以其他账号授权</summary><div class="mt12">${invitationForm(request, null, false)}</div></details>`
@@ -83,7 +88,7 @@ export function confirmPage(request: AuthorizationRequest, account: { id: string
   return page(chrome('授权 Circle 连接 Hub', '管理员在团队页管理连接；成员在设置页查看本人的 Circle。断开由管理员生成命令执行。'), html`${stepper(STEPS, 1)}
 ${error === null ? '' : html`<p class="error mt12">${error}</p>`}
 <p class="mt12">以 <b>${account.name}</b>（${account.role}）的身份授权 <b>${request.client.name}</b> 连接本 Hub。</p>
-${card(null, facts(request), 'mt12')}
+<section class="ch-section">${facts(request)}</section>
 ${redirectNotice(request.redirectUri, account.name)}
 ${callout('info', html`<span>授权后，该客户端以 ${account.name} 的身份调用 Hub 的工具，权限与该账号相同。</span>`)}
 ${decide}${other}`);

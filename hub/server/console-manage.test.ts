@@ -346,11 +346,11 @@ test('publication results retain the actual manifest kind and use the same comma
   for(const kind of ['product','system'] as const){
     const title=kind==='product'?'发布产品知识来源':'发布业务系统接入';
     const checked=await send('POST','/console/admin/do/pack-stage?kind='+kind,{cookie,...upload({...PACK,id:'synthetic-'+kind,kind},csrf)});
-    assert.equal(checked.status,200,checked.body);assert.ok(checked.body.includes(title+'</h1>'));
+    assert.equal(checked.status,200,checked.body);assert.match(checked.body,new RegExp('<h1[^>]*><span[^>]*>'+title+'<span'));
     assert.ok(checked.body.includes('action="/console/admin/do/pack-publish?kind='+kind+'"'));
     const id=stageIdOf(checked.body);
     const published=await send('POST','/console/admin/do/pack-publish',{cookie,body:form({csrf,stage:id})});
-    assert.equal(published.status,200,published.body);assert.ok(published.body.includes(title+'</h1>'));
+    assert.equal(published.status,200,published.body);assert.match(published.body,new RegExp('<h1[^>]*><span[^>]*>'+title+'<span'));
     assert.deepEqual(calls.at(-1)!.argv.slice(0,2),['pack','publish']);assert.equal(calls.at(-1)!.argv.at(-1),'--stage');
     assert.ok(!calls.at(-1)!.argv.some(word=>word.startsWith('--kind')),'display context never changes command arguments');
   }

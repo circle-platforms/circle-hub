@@ -125,7 +125,7 @@ describe('the mark of circle-hub', () => {
     assert.match(login.body, /<link rel="icon" type="image\/svg\+xml" href="\/console\/favicon\.svg">/);
     assert.match(String(login.headers['content-security-policy']), /img-src 'self'(?:;|$)/);
     const overview = await send('/console/overview', { headers: { cookie: await signIn((await person()).token) } });
-    assert.match(overview.body, /<div class="brand"><svg class="ch-hubmark" viewBox="0 0 64 64"/);
+    assert.match(overview.body, /<div class="ch-brand"><svg class="ch-hubmark" viewBox="0 0 64 64"/);
     assert.doesNotMatch(overview.body, /<span class="logo/, 'the ring of Circle is gone');
 
     const icon = await send('/console/favicon.svg');
