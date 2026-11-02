@@ -9,6 +9,14 @@ import { MIGRATIONS, migrate } from './migrations.ts';
 import { PgPrincipals } from './principals.ts';
 import { newId } from './ids.ts';
 import { sha256Hex } from './digest.ts';
+import { hashPassword } from './password.ts';
+
+test('concurrent password derivations wait their turn instead of being refused as busy',async()=>{
+  // Two derivations run at once; the others queue (several members may sign in together).
+  const hashes=await Promise.all(Array.from({length:5},(_,i)=>hashPassword(`synthetic-concurrent-${i}-password`)));
+  assert.equal(new Set(hashes).size,5);
+  assert.ok(hashes.every(hash=>hash.startsWith('scrypt$131072$8$1$')));
+});
 
 test('passwords stay salted and private, reset revokes browser sessions, and changes preserve account-bound Circle tokens', async t => {
   const postgres=await startPostgres();
