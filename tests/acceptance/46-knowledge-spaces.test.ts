@@ -302,7 +302,8 @@ test('private input labels follow actual reader rights and automatic production 
     if(reference.reference.startsWith('rec:')){assert.equal(started.out.errors[0]?.code,'SOURCE_UNAVAILABLE',started.text);continue;}
     assert.equal(started.isError,false,started.text);assert.ok(started.out.run);
     assert.equal(await hub.hub.runs.getRun(hub.admin.principal,started.out.run.run),null,'administrator run queries never expose private projected labels');
-    const hidden=await admin.call('query_run',{run:started.out.run.run});assert.equal(hidden.out.errors[0]?.code,'SOURCE_UNAVAILABLE',hidden.text);
+    const stored=(await hub.records.store.find({key:'runs.id',value:started.out.run.run,kind:'run',limit:1})).items[0];
+    const hidden=await admin.call('get_nodes',{reference:'rec:'+stored.digest});assert.equal(hidden.out.errors[0]?.code,'SOURCE_UNAVAILABLE',hidden.text);
     assert.ok(!hidden.text.includes('synthetic-private-map.json'));assert.ok(!hidden.text.includes('合成个人用例'));
   }
   const before=(await hub.records.store.list({kind:'run',limit:500})).items.length;

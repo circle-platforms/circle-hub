@@ -74,12 +74,12 @@ projections. A team space version may have `by: null` for Hub directory registra
 its owner. The four generated skill protocol mirrors advance with their manifests to html-format/mindmap-format 1.0.5
 and xml-format/workbook-format 1.0.6; business code is unchanged.
 
-Decision 84 phase 3 (decision 87, task `kw-share.md`, 2026-11-02) sets model 19. It registers merged/rejected sharing
+Decision 84 phase 3 (decision 87, task `kw-share.md`, 2026-11-02) sets model 20. It registers merged/rejected sharing
 status, the sharing receipt and four personal-pack record kinds, ordered sharing refusal codes and result-ground access
 and withdrawal codes. Entry provenance, personal pack/skill namespaces and promoted team-run sharing fields are additive;
 old records remain valid without them. Sharing receipts enforce owner and success/refusal cross-field consistency at
 runtime. The six tools gain sharing, withdrawal and authorized pack-file reads without changing protocol names or adding
-a tool. Generated skill mirrors/manifests are html-format/mindmap-format 1.0.6 and xml-format/workbook-format 1.0.7;
+a tool. Generated skill mirrors/manifests are html-format/mindmap-format 1.0.7 and xml-format/workbook-format 1.0.8;
 no skill business code changes. The phase-2 temporary personal-ground code remains registered for old receipts, while
 phase 3 uses the complete current-reader rule.
 
