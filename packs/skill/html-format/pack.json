@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "html-format",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "kind": "skill",
   "title": "HTML 格式",
   "description": "按原件结构读取通用 HTML 块盒与链接，不承担工作角色判断",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "fe2b2c802afbaa1df03dbb787db2a4a51a9366737fdc37594afed74c8e480c7d",
-      "size": 10089
+      "sha256": "e3df26216c8b711ac8fb29f71fcba36360fe06fbc09caac6de5f27e9634448f7",
+      "size": 10910
     },
     {
       "path": "functions/html.ts",

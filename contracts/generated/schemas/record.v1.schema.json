@@ -32,7 +32,11 @@
         "personal_pack_version",
         "personal_pack_grant",
         "personal_pack_retirement",
-        "personal_pack_transfer"
+        "personal_pack_transfer",
+        "memory_document",
+        "memory_version",
+        "memory_grant",
+        "memory_share"
       ]
     },
     "schema": {

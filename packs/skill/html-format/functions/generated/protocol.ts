@@ -203,6 +203,30 @@ export const PROTOCOL_CODES = {
   "TEAM_PARSER_REQUIRED": {
     "when": "团队核验须使用团队可用的解析器",
     "fix": "先将解析器发布并安装到团队，或改用团队已支持的格式后重新核对引文"
+  },
+  "MEMORY_DOCUMENT_LIMIT": {
+    "when": "记忆正文超过单篇上限",
+    "fix": "缩短正文或由管理员调整单篇限额"
+  },
+  "MEMORY_SPACE_LIMIT": {
+    "when": "记忆正文超过空间有效总量上限",
+    "fix": "停用旧记忆、缩短正文或调整空间限额"
+  },
+  "MEMORY_CREDENTIALS_DETECTED": {
+    "when": "记忆含有疑似凭据",
+    "fix": "移除命中位置的凭据后重新提交"
+  },
+  "MEMORY_VERSION_CONFLICT": {
+    "when": "记忆版本已变化",
+    "fix": "读取当前版本后合并修改并重试"
+  },
+  "MEMORY_RUN_FORBIDDEN": {
+    "when": "记忆不能作为运行输入或依据",
+    "fix": "改用可核对出处的来源或知识条目"
+  },
+  "MEMORY_CURSOR_STALE": {
+    "when": "记忆集合或权限已变化",
+    "fix": "从第一页重新读取"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

@@ -407,3 +407,5 @@ within the same unmerged model revision; a manifest version cannot name two comm
 The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team verification cannot use personal parser capabilities, including through indirect personal grounds. Protocol mirrors and the four patch manifests are regenerated without parser business changes.
 
 Security model 22 adds optional live withdrawal counts (`grounds_withdrawn_hidden_count` in node views and `withdrawn_grounds_hidden_count` beside result receipts). They disclose no paths or digests and do not change stored records. The existing status label remains generated.
+
+Decision 88 and the approved memory protocol (Claude, 2026-11-02) add generated audience, pre-check, knowledge/memory view and memory-state labels in model 23. Memory is a client-context preference declaration, never run evidence. Its separate grants do not inherit knowledge grants. The default active-text cap is 48,000 bytes per space; re-sharing supersedes the earlier team revision unless an administrator edited it.

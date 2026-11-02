@@ -52,6 +52,12 @@ export const PROTOCOL_CODES = {
   PACK_PERSONAL_PUBLICATION_DENIED: { when: '个人包发布未通过校验或空间规则', fix: '核对结构、引用、样例与凭据；个人空间只接受工作流和通用技能' },
   PACK_PERSONAL_CAPABILITY_DENIED: { when: '个人工作流或通用技能不能使用命名文档、业务系统、租约、设备派发或其他外部效果', fix: '个人空间只使用上传、个人或团队知识及 Hub 生成的文件；需要其他能力时先发布到团队并由管理员分配' },
   TEAM_PARSER_REQUIRED: { when: '团队核验须使用团队可用的解析器', fix: '先将解析器发布并安装到团队，或改用团队已支持的格式后重新核对引文' },
+  MEMORY_DOCUMENT_LIMIT: { when: '记忆正文超过单篇上限', fix: '缩短正文或由管理员调整单篇限额' },
+  MEMORY_SPACE_LIMIT: { when: '记忆正文超过空间有效总量上限', fix: '停用旧记忆、缩短正文或调整空间限额' },
+  MEMORY_CREDENTIALS_DETECTED: { when: '记忆含有疑似凭据', fix: '移除命中位置的凭据后重新提交' },
+  MEMORY_VERSION_CONFLICT: { when: '记忆版本已变化', fix: '读取当前版本后合并修改并重试' },
+  MEMORY_RUN_FORBIDDEN: { when: '记忆不能作为运行输入或依据', fix: '改用可核对出处的来源或知识条目' },
+  MEMORY_CURSOR_STALE: { when: '记忆集合或权限已变化', fix: '从第一页重新读取' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;
@@ -92,11 +98,11 @@ export const REFERENCE_FORMS = {
   rec: 'rec:<记录摘要>[#<JSON Pointer>]'
 } as const;
 
-export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer', 'knowledge_space_version', 'knowledge_space_entry', 'knowledge_space_grant', 'knowledge_space_source', 'knowledge_space_quota', 'knowledge_share', 'personal_pack_version', 'personal_pack_grant', 'personal_pack_retirement', 'personal_pack_transfer'] as const;
+export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer', 'knowledge_space_version', 'knowledge_space_entry', 'knowledge_space_grant', 'knowledge_space_source', 'knowledge_space_quota', 'knowledge_share', 'personal_pack_version', 'personal_pack_grant', 'personal_pack_retirement', 'personal_pack_transfer', 'memory_document', 'memory_version', 'memory_grant', 'memory_share'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json', 'skill.json'] as const;
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 22;
+export const MODEL_VERSION = 23;
