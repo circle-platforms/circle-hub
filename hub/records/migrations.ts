@@ -441,6 +441,10 @@ BEGIN
 END $fn$;
 REVOKE ALL ON FUNCTION hub_personal_migrate_inline() FROM PUBLIC;
 SELECT hub_personal_migrate_inline();
+CREATE TABLE personal_legacy_candidates(record text PRIMARY KEY REFERENCES records(digest));
+INSERT INTO personal_legacy_candidates SELECT record FROM personal_record_bindings;
+CREATE TRIGGER personal_legacy_candidates_append_only BEFORE UPDATE OR DELETE ON personal_legacy_candidates FOR EACH ROW EXECUTE FUNCTION hub_append_only();
+CREATE TRIGGER personal_legacy_candidates_no_truncate BEFORE TRUNCATE ON personal_legacy_candidates FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 
 CREATE FUNCTION hub_read_records() RETURNS TABLE(seq bigint,id text,digest text,kind text,schema text,
  provenance text,created_at timestamptz,body text,size integer) LANGUAGE sql STABLE AS $fn$
@@ -477,21 +481,31 @@ CREATE TABLE personal_legacy_ready (record text PRIMARY KEY REFERENCES records(d
 CREATE TRIGGER personal_legacy_ready_append_only BEFORE UPDATE OR DELETE ON personal_legacy_ready FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_legacy_ready_no_truncate BEFORE TRUNCATE ON personal_legacy_ready FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 -- A runtime INSERT cannot shadow a team record or manufacture a cleared capsule.
-CREATE FUNCTION hub_check_personal_binding() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $fn$
+CREATE FUNCTION hub_check_personal_binding() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
 DECLARE r records%ROWTYPE; p bytea; b json; h text;
 BEGIN
  SELECT * INTO r FROM records WHERE digest=NEW.record;
  SELECT data INTO p FROM personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256;
  IF NOT EXISTS(SELECT 1 FROM personal_spaces WHERE owner=NEW.owner AND epoch=NEW.epoch AND mode='hub') THEN RAISE EXCEPTION 'inactive personal scope'; END IF;
- IF r.digest IS NULL OR p IS NULL OR r.body<>NEW.marker THEN RAISE EXCEPTION 'invalid personal capsule'; END IF;
+ IF r.digest IS NULL OR p IS NULL OR r.body<>NEW.marker OR NEW.marker::jsonb<>jsonb_build_object('personal_payload',NEW.sha256,'owner',NEW.owner,'epoch',NEW.epoch,'record',NEW.record,'proof',NEW.proof)
+ THEN RAISE EXCEPTION 'invalid personal capsule'; END IF;
  b:=replace(convert_from(p,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::json;
  IF r.kind NOT IN ('knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','source_artifact')
  OR (r.kind<>'source_artifact' AND (b->>'space') IS DISTINCT FROM NEW.owner)
  OR (r.kind='source_artifact' AND ((b->'author'->>'user') IS DISTINCT FROM NEW.owner OR b->'origin'->'upload' IS NULL OR b->'visibility'->>'admins'<>'false'))
  THEN RAISE EXCEPTION 'not a personal payload'; END IF;
+ IF r.kind='source_artifact' AND NOT EXISTS(
+ SELECT 1 FROM public.hub_read_records() s JOIN public.personal_record_bindings q ON q.record=s.digest
+ WHERE s.kind='knowledge_space_source' AND q.owner=NEW.owner AND q.epoch=NEW.epoch
+ AND (replace(s.body,chr(92)||'u0000',chr(92)||'u0001')::json)->>'space'=NEW.owner
+ AND (replace(s.body,chr(92)||'u0000',chr(92)||'u0001')::json)->>'artifact'=NEW.record) THEN RAISE EXCEPTION 'personal artifact has no owning knowledge source';END IF;
+ IF b->'personal_scope' IS NOT NULL THEN
+ IF (b->'personal_scope')::jsonb<>jsonb_build_object('owner',NEW.owner,'epoch',NEW.epoch) THEN RAISE EXCEPTION 'personal artifact scope mismatch';END IF;
+ END IF;
  h:=encode(sha256(convert_to('{"body":'||convert_from(p,'UTF8')||',"created_at":'||to_json(to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::text||',"kind":'||to_json(r.kind)::text||',"provenance":'||to_json(r.provenance)::text||',"schema":'||to_json(r.schema)::text||'}','UTF8')),'hex');
  IF h<>r.digest OR NEW.bytes<>octet_length(p) OR NEW.proof<>hub_personal_proof(r.digest,NEW.sha256,NEW.owner,NEW.epoch,NEW.bytes,r.created_at,r.kind,r.provenance,r.schema)
  THEN RAISE EXCEPTION 'personal capsule digest mismatch'; END IF;
+ PERFORM public.hub_finish_personal_record(NEW.record);
  RETURN NULL;
 END $fn$;
 CREATE CONSTRAINT TRIGGER personal_binding_check AFTER INSERT ON personal_record_bindings
@@ -502,6 +516,71 @@ CREATE TRIGGER personal_legacy_retire_no_truncate BEFORE TRUNCATE ON personal_le
 CREATE TABLE personal_legacy_retired (sha256 text PRIMARY KEY REFERENCES personal_legacy_retire(sha256));
 CREATE TRIGGER personal_legacy_retired_append_only BEFORE UPDATE OR DELETE ON personal_legacy_retired FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_legacy_retired_no_truncate BEFORE TRUNCATE ON personal_legacy_retired FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
+-- Runtime can only record completion after the scoped bytes actually exist.
+CREATE FUNCTION hub_personal_tree_children(o text,e text,h text) RETURNS SETOF text LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE data bytea;
+BEGIN
+ SELECT p.data INTO data FROM public.personal_payloads p WHERE p.owner=o AND p.epoch=e AND p.sha256=h;
+ IF FOUND THEN RETURN QUERY SELECT child->>'digest' FROM json_array_elements(COALESCE(replace(convert_from(data,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::json->'children','[]'::json)) child;END IF;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_personal_tree_children(text,text,text) FROM PUBLIC;
+CREATE FUNCTION hub_finish_personal_record(d text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE x record;b json;missing boolean;hashes text[];
+BEGIN
+ SELECT r.kind,r.body AS stored_marker,q.*,p.data INTO x FROM public.records r JOIN public.personal_record_bindings q ON q.record=r.digest
+ JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(q.owner,q.epoch,q.sha256) WHERE r.digest=d;
+ IF NOT FOUND THEN RAISE EXCEPTION 'personal record transfer incomplete';END IF;
+ IF x.stored_marker<>x.marker OR x.marker::jsonb<>jsonb_build_object('personal_payload',x.sha256,'owner',x.owner,'epoch',x.epoch,'record',d,'proof',x.proof)
+ THEN RAISE EXCEPTION 'invalid personal capsule';END IF;
+ b:=replace(convert_from(x.data,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::json;
+ PERFORM 1 FROM public.personal_spaces s WHERE s.owner=x.owner AND s.epoch=x.epoch AND s.mode='hub' FOR SHARE;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.personal_purges p WHERE p.owner=x.owner AND p.epoch=x.epoch) THEN RAISE EXCEPTION 'inactive personal scope';END IF;
+ IF x.kind='source_artifact' THEN
+ IF NOT EXISTS(SELECT 1 FROM public.personal_objects o JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
+ WHERE o.owner=x.owner AND o.epoch=x.epoch AND o.sha256=b->>'sha256' AND octet_length(p.data)=(b->>'size')::bigint) THEN RAISE EXCEPTION 'personal original transfer incomplete';END IF;
+ hashes:=ARRAY[b->>'sha256'];
+ ELSIF x.kind='knowledge_space_version' AND b->>'tree' IS NOT NULL THEN
+ WITH RECURSIVE wanted(h,n) AS (SELECT b->>'tree',0 UNION
+ SELECT child,w.n+1 FROM wanted w CROSS JOIN LATERAL public.hub_personal_tree_children(x.owner,x.epoch,w.h) child WHERE w.n<65)
+ SELECT array_agg(DISTINCT w.h),bool_or(p.sha256 IS NULL OR o.sha256 IS NULL OR w.n>64) INTO hashes,missing FROM wanted w LEFT JOIN public.personal_payloads p ON p.owner=x.owner AND p.epoch=x.epoch AND p.sha256=w.h
+ LEFT JOIN public.personal_objects o ON o.owner=x.owner AND o.epoch=x.epoch AND o.sha256=w.h;
+ IF missing THEN RAISE EXCEPTION 'personal tree transfer incomplete';END IF;
+ END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_legacy_candidates WHERE record=d) THEN
+ INSERT INTO public.personal_legacy_retire(sha256) SELECT unnest(hashes) ON CONFLICT DO NOTHING;
+ END IF;
+ INSERT INTO public.personal_legacy_ready(record) VALUES(d) ON CONFLICT DO NOTHING;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_finish_personal_record(text) FROM PUBLIC;
+CREATE FUNCTION hub_finish_personal_retirement(h text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.personal_legacy_retire WHERE sha256=h)
+ OR EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready r WHERE r.record=b.record)
+ AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE p.owner=b.owner AND p.epoch=b.epoch))
+ OR NOT EXISTS(SELECT 1 FROM public.personal_objects o JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE o.sha256=h)
+ THEN RAISE EXCEPTION 'personal retirement transfer incomplete';END IF;
+ -- Filesystem removal and directory durability are checked by the application before calling this function.
+ INSERT INTO public.personal_legacy_retired(sha256) VALUES(h) ON CONFLICT DO NOTHING;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_finish_personal_retirement(text) FROM PUBLIC;
+CREATE FUNCTION hub_active_personal_insert() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ PERFORM 1 FROM public.personal_spaces WHERE owner=NEW.owner AND epoch=NEW.epoch AND mode='hub' FOR SHARE;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=NEW.owner AND epoch=NEW.epoch) THEN RAISE EXCEPTION 'inactive personal scope';END IF;
+ IF TG_TABLE_NAME='personal_objects' THEN
+ IF NOT EXISTS(SELECT 1 FROM public.personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256) THEN RAISE EXCEPTION 'personal object has no payload';END IF;
+ END IF;
+ RETURN NEW;
+END $fn$;
+REVOKE ALL ON FUNCTION hub_active_personal_insert() FROM PUBLIC;
+CREATE TRIGGER personal_payloads_active BEFORE INSERT ON personal_payloads FOR EACH ROW EXECUTE FUNCTION hub_active_personal_insert();
+CREATE TRIGGER personal_objects_active BEFORE INSERT ON personal_objects FOR EACH ROW EXECUTE FUNCTION hub_active_personal_insert();
+CREATE INDEX personal_record_bindings_scope ON personal_record_bindings(owner,epoch,record);
+
 `},
   {version:15,name:'personal_sync_transport',sql:`CREATE TABLE personal_sync_heads (
  owner text NOT NULL REFERENCES users(id),epoch text NOT NULL,snapshot text,last_synced_at timestamptz,
@@ -614,9 +693,10 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   personal_record_bindings:'SELECT, INSERT',
   personal_objects:'SELECT, INSERT',
   personal_purges:'SELECT',
-  personal_legacy_ready:'SELECT, INSERT',
-  personal_legacy_retire:'SELECT, INSERT',
-  personal_legacy_retired:'SELECT, INSERT',
+  personal_legacy_ready:'SELECT',
+  personal_legacy_candidates:'SELECT',
+  personal_legacy_retire:'SELECT',
+  personal_legacy_retired:'SELECT',
   memory_heads:'SELECT, INSERT, UPDATE (version,path,state,bytes,context_bytes)',
   memory_space_usage:'SELECT, INSERT, UPDATE (active_bytes,history_bytes,active_documents)',
   knowledge_space_search: 'SELECT, INSERT',
@@ -667,6 +747,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     if (owner.owns) throw new MigrationError(`运行角色 ${role} 拥有这些表，能关掉只追加的触发器；请让另一个角色执行迁移`);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz) TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);
       await db.query(`GRANT ${privileges} ON TABLE ${table} TO "${role}"`, [], t);

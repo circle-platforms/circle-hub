@@ -92,7 +92,6 @@ export class PgRecordStore implements RecordStore {
           t,
         );
       }
-      if(personalOwner)await this.#db.query('INSERT INTO personal_legacy_ready(record) VALUES($1) ON CONFLICT DO NOTHING',[digest],t);
       if (input.unique_key !== undefined) await this.#db.query('INSERT INTO record_keys (kind, key, digest) VALUES ($1, $2, $3)', [meta.kind, input.unique_key, digest], t);
       return { id: row.id, ...meta, digest, body: JSON.parse(body) as B, created };
     }, tx);

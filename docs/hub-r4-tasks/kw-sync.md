@@ -495,3 +495,21 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
   hub/records/personal-mention-retirement.test.ts hub/records/personal-retirement-holds.test.ts \
   hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts
 ```
+
+### 第 2 步安全审查修正 4：运行角色约束
+
+- 原件绑定额外要求同一所有者、同一代次的知识来源关联；胶囊必须恰有规定的摘要／范围／证明字段。审查探针中把独立上传正文伪装成胶囊的 INSERT 现在在事务提交时被拒绝，原上传及全局文件保留。未关联、关联到其他所有者的私人原件也拒绝并回滚。
+- personal_payloads 和 personal_objects 的插入前触发器由所有者执行，只接受当前 hub 代次并拒绝已清除代次。范围行的共享锁与清除串行，直接运行角色并发插入也不能在清除后留下新载荷；原件登记还必须已有同范围载荷。
+- 运行角色不再直接 INSERT ready、retire、retired 三种完成日志。新增只读的旧转换候选清单；所有者函数核对真实载荷和完整目录图，原子加入旧文件待处理清单并标记完成，避免先标完成后漏登记旧文件。新私有记录由延迟约束完成同样检查。退役完成函数只接受已登记、转移已完成的对象；文件删除检查由应用执行，目录同步风险另在第 8 项修复。
+- SQL 中先按载荷键取数据后解析目录；来源关联读取已还原记录，防止优化器在关联过滤前解析二进制。初次 11 项组因并发用例暴露该解析顺序问题而失败 1 项；修正后 11 项通过，扩大旧库持有者／提及回归组 23 项全部通过。旧直接私人采集夹具改为在同一事务写入其知识来源，保留原隔离和并发断言，没有放宽约束。
+- 清除成员身份授权仍在应用层：入口从已认证主体推导 owner。数据库运行角色代表整个 Hub，并不代表单个成员；数据库函数接受应用传入的成员标识，不把 SQL 执行权限当成成员授权。这与现有写操作边界相同，未开放给 MCP 或同步 HTTP。
+
+最终验证：npm run typecheck、git diff --check 通过；下列组 299 项通过、0 失败、0 跳过，PG 18 ownership 与 macOS 沙箱实际运行。复核未部署迁移 14 后，源文件固定摘要为 fa0a23f2d3619b78173bc93d539ffd26cae194d08bdfcfb565bfeb138dc823a1；迁移 1～13、15 的 SQL 不改。全量 unit／acceptance、Linux CI、来源检查未运行；全工作流／引擎和文档检查仍留本轮收尾。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+  'hub/records/**/*.test.ts' hub/knowledge/personal-import-scope.test.ts hub/knowledge/personal-mount-recovery.test.ts \
+  hub/knowledge/personal-purge.test.ts hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts \
+  packs/workflow/case-review/packs.test.ts tests/acceptance/46-knowledge-spaces.test.ts \
+  tests/acceptance/47-knowledge-sharing.test.ts tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts
+```

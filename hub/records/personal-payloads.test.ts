@@ -1,8 +1,17 @@
+import type {IngestInput,Transaction} from './api.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {openTestRecords} from '../testing/records.ts';
 import {Database,createPool} from './db.ts';
 import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
+
+async function linkedCapture(kit:Awaited<ReturnType<typeof openTestRecords>>,input:IngestInput,outer?:Transaction){
+ return kit.store.withTransaction(async tx=>{
+  const artifact=await kit.artifacts.ingest(input,tx),owner=input.personalOwner!;
+  await kit.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:{space:owner,path:'/',sha256:artifact.body.sha256,artifact:artifact.digest,size:artifact.body.size,by:owner,at:artifact.created_at}},tx);
+  return artifact;
+ },outer);
+}
 
 test('new personal bodies stay indirect, preserve their logical digest and are physically removed on purge',async t=>{
  const kit=await openTestRecords();t.after(()=>kit.close());
@@ -63,7 +72,7 @@ test('equal original bytes are held separately per account and do not confer cro
  const owner=await kit.principals.createUser(admin,'synthetic-owner'),other=await kit.principals.createUser(admin,'synthetic-other');
  const bytes=Buffer.from('synthetic equal personal original');
  const input=(by:typeof owner)=>({personalOwner:by.id,bytes,mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:by.id},provenanceType:'declared' as const,visibility:{readers:[by.id],admins:false,packs:[],shareable:false}});
- const a=await kit.artifacts.ingest(input(owner)),b=await kit.artifacts.ingest(input(other));assert.equal(a.body.sha256,b.body.sha256);
+ const a=await linkedCapture(kit,input(owner)),b=await linkedCapture(kit,input(other));assert.equal(a.body.sha256,b.body.sha256);
  const db=new Database(createPool(kit.database));t.after(()=>db.end());
  assert.equal((await db.query('SELECT count(*)::int AS n FROM personal_payloads WHERE sha256=$1',[a.body.sha256])).rows[0].n,2);
  await assert.rejects(kit.personalPayloads!.purge(admin,INITIAL_PERSONAL_EPOCH));
@@ -74,10 +83,10 @@ test('equal original bytes are held separately per account and do not confer cro
  assert.deepEqual(Buffer.from((await kit.artifacts.source(other,b.body.sha256))!.bytes!),bytes);
 });
 
-test('standalone and space-transaction personal captures use one lock order and idempotent capture identity',async t=>{
+test('personal captures and explicit outer space transactions use one lock order and idempotent capture identity',async t=>{
  const kit=await openTestRecords();t.after(()=>kit.close());const {user}=await kit.principals.bootstrapAdmin('synthetic-owner');
  const input={personalOwner:user.id,bytes:Buffer.from('synthetic concurrent original'),mediaType:'text/plain',origin:{upload:{session:'synthetic-lock-order'}},author:{user:user.id},provenanceType:'declared' as const,visibility:{readers:[user.id],admins:false,packs:[],shareable:false}};
- const captures=await Promise.all(Array.from({length:12},(_,n)=>n%2?kit.artifacts.ingest(input):kit.store.withTransaction(async tx=>{await kit.store.lock('knowledge-space:'+user.id,tx);return kit.artifacts.ingest(input,tx);})));
+ const captures=await Promise.all(Array.from({length:12},(_,n)=>n%2?linkedCapture(kit,input):kit.store.withTransaction(async tx=>{await kit.store.lock('knowledge-space:'+user.id,tx);return linkedCapture(kit,input,tx);})));
  assert.equal(new Set(captures.map(r=>r.digest)).size,1);
  assert.ok((await kit.artifacts.source(user,captures[0].body.sha256))?.bytes);
 });

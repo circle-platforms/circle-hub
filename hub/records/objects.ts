@@ -92,7 +92,6 @@ export class FileObjectStore implements ObjectStore {
       if(depth>64||!isSha256(hash))throw new IntegrityError('个人目录原件结构不完整');
       const bytes=await this.get(hash);if(!bytes)throw new IntegrityError('缺少待迁移的个人原件');
       await this.#db.transaction(tx=>personal.object(owner,bytes,tx));
-      await this.#db.query('INSERT INTO personal_legacy_retire(sha256) VALUES($1) ON CONFLICT DO NOTHING',[hash]);
       if(tree){const value=JSON.parse(Buffer.from(bytes).toString());for(const child of value.children??[])await copy(owner,child.digest,true,depth+1);}
     };
     for(;;){
@@ -103,7 +102,7 @@ export class FileObjectStore implements ObjectStore {
         if(!record)continue;const body=verifiedRecord<Record<string,unknown>>(record).body;
         if(row.kind==='knowledge_space_version'&&body.tree)await copy(String(row.owner),String(body.tree),true);
         if(row.kind==='source_artifact')await copy(String(row.owner),String(body.sha256),false);
-        await this.#db.query('INSERT INTO personal_legacy_ready(record) VALUES($1) ON CONFLICT DO NOTHING',[row.digest]);
+        await this.#db.query('SELECT hub_finish_personal_record($1)',[row.digest]);
       }
     }
     const retired=await this.#db.query('SELECT sha256 FROM personal_legacy_retire q WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_retired d WHERE d.sha256=q.sha256)');
@@ -131,7 +130,7 @@ export class FileObjectStore implements ObjectStore {
       // Keep separately held team/product/run originals; audit mentions alone do not own content.
       const independent=await this.#db.query("SELECT 1 FROM object_holds h WHERE h.sha256=$1 AND NOT h.artifact AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=h.record) LIMIT 1",[hash]);
       if(!protectedNodes.has(hash)&&!independent.rows.length)await unlink(this.path(hash)).catch((error:NodeJS.ErrnoException)=>{if(error.code!=='ENOENT')throw error;});
-      await this.#db.query('INSERT INTO personal_legacy_retired(sha256) VALUES($1) ON CONFLICT DO NOTHING',[hash]);
+      await this.#db.query('SELECT hub_finish_personal_retirement($1)',[hash]);
     }
   }
 

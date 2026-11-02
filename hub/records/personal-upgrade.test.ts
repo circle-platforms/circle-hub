@@ -80,6 +80,8 @@ for(const independent of [false,true])test(`version 13 personal bodies and origi
  assert.deepEqual(await migrate(db),MIGRATIONS.slice(13).map(m=>m.version));
  assert.deepEqual((await db.query('SELECT version,name,sha256 FROM schema_migrations WHERE version<14 ORDER BY version')).rows,previous);
  await assert.rejects(db.query('SELECT hub_purge_personal($1,$2)',[user.id,INITIAL_PERSONAL_EPOCH]),/materialization incomplete/);
+ await assert.rejects(db.query('SELECT hub_finish_personal_record($1)',[artifact]),/transfer incomplete/);
+ await assert.rejects(db.query('SELECT hub_finish_personal_retirement($1)',[original.sha256]),/transfer incomplete/);
  if(independent){
   // Durable crash point: all private bytes copied, cleanup journal not yet drained.
   const payloads=new PgPersonalPayloads(db,async()=>{});
@@ -88,7 +90,7 @@ for(const independent of [false,true])test(`version 13 personal bodies and origi
       await payloads.object(user.id,(await objects.get(hash))!,tx);
       await db.query('INSERT INTO personal_legacy_retire(sha256) VALUES($1) ON CONFLICT DO NOTHING',[hash],tx);
     }
-    await db.query('INSERT INTO personal_legacy_ready(record) SELECT record FROM personal_record_bindings ON CONFLICT DO NOTHING',[],tx);
+    for(const row of (await db.query('SELECT record FROM personal_record_bindings',[],tx)).rows)await db.query('SELECT hub_finish_personal_record($1)',[row.record],tx);
   });
   await access(objects.path(original.sha256));
  }

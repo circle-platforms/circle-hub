@@ -788,3 +788,11 @@ reuse an independent personal-pack capture. This edit is to undeployed migration
 
 Review item 3 has separate negative regressions: generated-input mentions, file names and node prose never retain a
 purged private original. They assert physical file absence and normal object absence, while an actual other original survives.
+
+Review item 4: active-scope insert guards serialize with purge through a shared scope-row lock. A personal artifact
+binding requires an owning same-epoch knowledge source and a structurally exact capsule. The delayed binding check
+marks new records complete as the owner; legacy completion also validates the copied object graph and atomically queues
+its old hashes. Runtime has SELECT-only access to candidate and completion journals. Completion functions accept no
+caller-provided byte inventory. The filesystem deletion/durability check remains the application's responsibility.
+The DB application role represents the whole Hub; per-member purge authorization stays at the authenticated application
+entry, just like other Hub writes. No member-level SQL isolation is claimed. Race and direct-role regressions cover this boundary.

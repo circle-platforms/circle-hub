@@ -43,6 +43,7 @@ const COLUMN: Record<string, string> = {
   personal_objects:'owner',
   personal_purges:'owner',
   personal_legacy_ready:'record',
+  personal_legacy_candidates:'record',
   personal_legacy_retire:'sha256',
   personal_legacy_retired:'sha256',
   record_index: 'value',
