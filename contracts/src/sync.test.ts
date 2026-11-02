@@ -43,7 +43,7 @@ test('shared synthetic scenarios contain typed knowledge and memory with valid c
  const ids=new Set(scenarios.objects.map((v:{id:string})=>v.id));
  for(const scenario of scenarios.merges)for(const id of [...scenario.base,...scenario.left,...scenario.right,...scenario.expected_heads])assert.ok(ids.has(id));
  assert.equal(scenarios.transfers[1].expected_missing[0],scenarios.transfers[1].foreign_owned[0]);
- // These declarations are consumed by future service tests; this test proves fixture coherence, not live merging.
+ // Live HTTP exchange coverage is separate; parsing these fixtures proves coherence only.
 });
 test('byte chunks are bounded and object identities never silently acquire content defaults',()=>{
  assert.equal(PersonalSyncObject.safeParse({schema:'personal-sync-object@1',kind:'bytes',body:{bytes_base64:Buffer.alloc(1024*1024+1).toString('base64')}}).success,false);
@@ -55,4 +55,21 @@ test('the shared HTTP route manifest is separate from the model tool protocol',(
  const http=JSON.parse(readFileSync(new URL('../test-fixtures/sync/v1/http.json',import.meta.url),'utf8'));
  assert.deepEqual(http.routes,PERSONAL_SYNC_HTTP_ROUTES);
  assert.ok(Object.values(PERSONAL_SYNC_HTTP_ROUTES).every(route=>route.path.startsWith('/api/sync/v1/')));
+});
+
+test('frozen HTTP exchanges use closed typed object graphs and the existing portable memory revisions',()=>{
+ const exchange=JSON.parse(readFileSync(new URL('../test-fixtures/sync/v1/exchange.json',import.meta.url),'utf8')),shared=JSON.parse(readFileSync(new URL('../test-fixtures/sync/v1/scenarios.json',import.meta.url),'utf8'));
+ const rows=[...shared.objects,...Object.values(exchange.objects) as {id:string;canonical:string}[]],ids=new Set(rows.map(row=>row.id));
+ for(const row of rows){
+  const object=decodePersonalSyncObject(Buffer.from(row.canonical),row.id);assert.equal(Buffer.from(encodePersonalSyncObject(object)).toString(),row.canonical);
+  const body=object.body,links=[...('parents'in body?body.parents:[])];
+  if(object.kind==='source_revision')links.push(...object.body.chunks);
+  if(object.kind==='entry_revision')for(const ground of object.body.grounds){links.push(ground.quotation);if('source'in ground)links.push(ground.source);if('entry'in ground)links.push(ground.entry);}
+  if(object.kind==='snapshot')links.push(...object.body.pages);
+  if(object.kind==='inventory_page')for(const item of object.body.items)links.push(...item.heads);
+  for(const link of links)assert.ok(ids.has(link),link);
+ }
+ assert.deepEqual(exchange.memory.expected_heads,[exchange.memory.left,exchange.memory.right].sort());
+ const resolved=rows.find(row=>row.id===exchange.memory.resolved);assert.ok(resolved);const revision=decodePersonalSyncObject(Buffer.from(resolved.canonical),resolved.id);assert.equal(revision.kind,'memory_revision');if(revision.kind==='memory_revision'){assert.deepEqual(revision.body.parents,exchange.memory.expected_heads);assert.equal(revision.body.markdown,exchange.memory.expected_markdown);}
+ const raw=decodePersonalSyncObject(Buffer.from(exchange.objects['source-bytes'].canonical),exchange.objects['source-bytes'].id);assert.equal(raw.kind,'bytes');if(raw.kind==='bytes'){assert.equal(raw.body.bytes_base64,exchange.knowledge.raw_base64);assert.match(Buffer.from(raw.body.bytes_base64,'base64').toString(),/^\uFEFF.*\r\n/);}
 });

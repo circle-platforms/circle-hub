@@ -1,8 +1,12 @@
 import {REQUIRED_FILES} from '../../contracts/src/pack.ts';
-// Real Hub transport and atomic commits; HTTP is added by the next approved step.
+// Real Hub HTTP/MCP sync over synthetic resources and a temporary PostgreSQL.
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
+import {decodePersonalSyncObject} from '../../contracts/src/sync-canonical.ts';
+import {PersonalSyncResult,PersonalSyncState,PersonalSyncSessionReply} from '../../contracts/src/sync.ts';
+import {requestHttp} from './support/console.ts';
 import {createTestHub} from '../../hub/server/testing-real.ts';
 import {encodePersonalSyncObject} from '../../contracts/src/sync-canonical.ts';
 import {SyncObjectKindSchema} from '../../contracts/generated/vocabulary.ts';
@@ -96,4 +100,44 @@ test('HTTP sync commits personal memory for six-tool readers and mode receipts s
  const check=(await call(owner.token,'/mode/check',{mode:'local'})).json,purge={epoch:initial.epoch,expected_state:check.expected_state,operation_id:randomUUID(),mode:'local',check:check.check,confirm_purge:true};const local=await call(owner.token,'/mode',purge);assert.equal(local.status,200,local.body);assert.equal(local.json.state.mode,'local');assert.equal(local.json.state.used_bytes,0);
  assert.equal((await call(owner.token,'/sessions/'+sessions[0].session_id+'/download',{epoch:initial.epoch,objects:[encoded(memo).id]})).status,409);
  const resumed=await call(owner.token,'/mode',{epoch:initial.epoch,expected_state:local.json.state.state_version,operation_id:randomUUID(),mode:'hub',check:null,confirm_purge:false});assert.equal(resumed.status,200,resumed.body);assert.notEqual(resumed.json.state.epoch,initial.epoch);assert.deepEqual((await call(owner.token,'/operations/'+purge.operation_id+'?epoch='+initial.epoch)).json,local.json);assert.equal((await hub.hub.knowledge.memory.items(owner.principal,'personal')).length,0);
+});
+
+const exchange=JSON.parse(readFileSync(new URL('../../contracts/test-fixtures/sync/v1/exchange.json',import.meta.url),'utf8'));
+const shared=JSON.parse(readFileSync(new URL('../../contracts/test-fixtures/sync/v1/scenarios.json',import.meta.url),'utf8'));
+const golden=new Map<string,{id:string;canonical:string}>([...shared.objects,...Object.values(exchange.objects) as {id:string;canonical:string}[]].map(row=>[row.id,row]));
+async function exchangeHub(t:import('node:test').TestContext){
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false});t.after(()=>hub.close());const owner=await hub.createUser('合成冻结样例作者');
+ const call=async(path:string,body?:unknown)=>{const reply=await requestHttp(hub.port,'/api/sync/v1'+path,{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer '+owner.token,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});return {...reply,json:JSON.parse(reply.body)};};
+ const state=async()=>{const reply=await call('/state');assert.equal(reply.status,200,reply.body);return PersonalSyncState.parse(reply.json);};
+ const open=async(index:number,current:ReturnType<typeof PersonalSyncState.parse>)=>{const client_id=exchange.clients[index];assert.equal((await call('/clients',{client_id,name:'synthetic frozen client '+index})).status,200);const reply=await call('/sessions',{client_id,epoch:current.epoch,known_state:current.state_version,base_snapshot:current.snapshot});assert.equal(reply.status,200,reply.body);return PersonalSyncSessionReply.parse(reply.json);};
+ const upload=async(session:string,epoch:string,ids:string[])=>{const objects=ids.map(id=>{const row=golden.get(id);assert.ok(row,id);return {id,bytes_base64:Buffer.from(row.canonical).toString('base64')};});const request={schema:'personal-sync-upload@1',epoch,operation_id:randomUUID(),objects};const reply=await call('/sessions/'+session+'/upload',request);assert.equal(reply.status,200,reply.body);return request;};
+ const commit=(session:string,current:ReturnType<typeof PersonalSyncState.parse>,snapshot:string,base:string|null=current.snapshot)=>call('/sessions/'+session+'/commit',{schema:'personal-sync-commit@1',epoch:current.epoch,operation_id:randomUUID(),expected_state:current.state_version,base_snapshot:base,snapshot});
+ const id=(name:string):string=>exchange.objects[name].id;
+ return {hub,owner,call,state,open,upload,commit,id};
+}
+
+test('frozen two-client HTTP vectors retain both offline memory revisions until an explicit resolution',async t=>{
+ const w=await exchangeHub(t),initial=await w.state();assert.equal(initial.snapshot,null);const bootstrap=await w.open(0,initial);
+ await w.upload(bootstrap.session_id,initial.epoch,[w.id('directory'),exchange.memory.base,w.id('memory-base-page'),w.id('memory-base')]);
+ const baseReply=await w.commit(bootstrap.session_id,initial,w.id('memory-base'));assert.equal(baseReply.status,200,baseReply.body);const base=PersonalSyncResult.parse(baseReply.json);
+ const a=await w.open(0,base.state),b=await w.open(1,base.state);
+ await w.upload(a.session_id,initial.epoch,[exchange.memory.left,w.id('memory-left-page'),w.id('memory-left')]);await w.upload(b.session_id,initial.epoch,[exchange.memory.right,w.id('memory-right-page'),w.id('memory-right')]);
+ const leftReply=await w.commit(a.session_id,base.state,w.id('memory-left'));assert.equal(leftReply.status,200,leftReply.body);const left=PersonalSyncResult.parse(leftReply.json);
+ const refused=await w.commit(b.session_id,base.state,w.id('memory-right'));assert.equal(refused.status,409,refused.body);assert.equal(refused.json.code,exchange.memory.stale_code);assert.equal(refused.json.state.snapshot,left.state.snapshot);
+ await w.upload(b.session_id,initial.epoch,[w.id('memory-conflict-page'),w.id('memory-conflict')]);const conflictReply=await w.commit(b.session_id,left.state,w.id('memory-conflict'),base.state.snapshot);assert.equal(conflictReply.status,200,conflictReply.body);const conflict=PersonalSyncResult.parse(conflictReply.json);assert.equal(conflict.state.status,'conflicted');assert.equal(conflict.conflicts.length,1);assert.deepEqual(conflict.conflicts[0].heads,exchange.memory.expected_heads);
+ const reader=await connect(w.hub,w.owner.token);t.after(()=>reader.close());const waiting=await reader.call('get_nodes',{memory:{scope:'personal',for_session:true}});assert.equal(waiting.isError,false,waiting.text);assert.equal(waiting.out.memory_page?.conflict_count,1);assert.equal(waiting.out.memory_page?.items.length,0);
+ await w.upload(a.session_id,initial.epoch,[exchange.memory.resolved,w.id('memory-resolved-page'),w.id('memory-resolved')]);const resolvedReply=await w.commit(a.session_id,conflict.state,w.id('memory-resolved'));assert.equal(resolvedReply.status,200,resolvedReply.body);const resolved=PersonalSyncResult.parse(resolvedReply.json);assert.equal(resolved.conflicts.length,0);
+ const loaded=await reader.call('get_nodes',{memory:{scope:'personal',for_session:true}});assert.equal(loaded.isError,false,loaded.text);assert.equal(loaded.out.memory_page?.items.length,1);const document=loaded.out.memory_page!.items[0];assert.equal((await w.hub.hub.knowledge.memory.read(w.owner.principal,document.document,document.version)).markdown,exchange.memory.expected_markdown);
+});
+
+test('frozen HTTP source vectors preserve original bytes and reverify a fabricated quote as unverified',async t=>{
+ const w=await exchangeHub(t),initial=await w.state(),session=await w.open(0,initial);
+ const batch=await w.upload(session.session_id,initial.epoch,['directory','source-bytes','quotation','source','verified-entry','knowledge-verified-page','knowledge-verified'].map(w.id));
+ const retried=await w.call('/sessions/'+session.session_id+'/upload',batch);assert.equal(retried.status,200,retried.body);assert.equal(retried.json.counts.accepted,batch.objects.length,'a lost response recovers the original receipt');
+ const goodReply=await w.commit(session.session_id,initial,w.id('knowledge-verified'));assert.equal(goodReply.status,200,goodReply.body);const good=PersonalSyncResult.parse(goodReply.json);assert.equal(good.verification.find(row=>row.object===w.id('verified-entry'))?.status,exchange.knowledge.verified_status);
+ const spaces=w.hub.hub.knowledge.spaces!,source=await spaces.source(w.owner.principal,exchange.knowledge.raw_sha256);assert.deepEqual(Buffer.from(source!.bytes!),Buffer.from(exchange.knowledge.raw_base64,'base64'));
+ const current=await spaces.current(w.owner.user.id);assert.ok(current);const admitted=await spaces.entry(w.owner.principal,current.root,'/',current.body.entries[0].entry);assert.equal(admitted?.body.content.statement,exchange.knowledge.statement);assert.equal(admitted?.row.status,exchange.knowledge.verified_status);
+ await w.upload(session.session_id,initial.epoch,['wrong-quotation','unverified-entry','knowledge-unverified-page','knowledge-unverified'].map(w.id));const badReply=await w.commit(session.session_id,good.state,w.id('knowledge-unverified'));assert.equal(badReply.status,200,badReply.body);const bad=PersonalSyncResult.parse(badReply.json),observed=bad.verification.find(row=>row.object===w.id('unverified-entry'));assert.equal(observed?.status,exchange.knowledge.wrong_quote_status);assert.ok(observed?.codes.includes(exchange.knowledge.wrong_quote_code));
+ const latest=await spaces.current(w.owner.user.id);assert.ok(latest);assert.equal(latest.body.entries.length,1);const rechecked=await spaces.entry(w.owner.principal,latest.root,'/',latest.body.entries[0].entry);assert.equal(rechecked?.row.status,exchange.knowledge.wrong_quote_status);
+ const downloaded=await w.call('/sessions/'+session.session_id+'/download',{epoch:initial.epoch,objects:[w.id('source-bytes')]});assert.equal(downloaded.status,200,downloaded.body);const raw=decodePersonalSyncObject(Buffer.from(downloaded.json.objects[0].bytes_base64,'base64'),w.id('source-bytes'));assert.equal(raw.kind,'bytes');if(raw.kind==='bytes')assert.equal(raw.body.bytes_base64,exchange.knowledge.raw_base64);
 });

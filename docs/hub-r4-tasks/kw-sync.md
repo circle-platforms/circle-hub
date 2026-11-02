@@ -283,6 +283,8 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrenc
 
 ## 发现
 
+本节保留方案阶段的发现；六步实施及实际验证见后续逐步记录，决定 89 已在进度页正式记录。
+
 - 当前知识版本是单父链，记忆也是单篇单父修订；尚无同步稳定 ID、代次、对象拥有清单或跨知识／记忆的原子同步头。需要新协议和适配层，不能直接把原记录摘要当作可编辑对象 ID。
 - `hub/records/store.ts` 的不可变记录内联正文，`hub/records/objects.ts` 的全局原件永不删除；`spaces.ts` 与 `memory.ts` 的历史同样保存私人内容。严格清除与这些旧存储约束需要在方案审查时解决，不能只加读取过滤。
 - 现有规范 JSON 不负责 LF／BOM／NFC；原文与逐字引文身份也不能静默规范化。本方案把新同步编码与旧证据身份分开，明确交审查。
@@ -759,3 +761,214 @@ CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node -
 npm run test:docs
 git diff --check
 ```
+
+### 第 6 步：共享样例冻结、定向验收与决定 89
+
+来源：Claude 收到 10f92a91 与 5509e847 后要求继续第 6 步；随后明确要求完整 unit 与 acceptance 各跑一次并顺序进行、报告每个失败和跳过。这一要求覆盖本轮原有的“仅定向检查”限制，不回写先前未运行项为通过。
+
+做了的：
+
+- v1 的 encoding、scenarios、native-links 和 HTTP 路由样例保持原字节；新增独立编写的 exchange.json，围绕既有五个记忆修订补齐固定目录、清单与快照祖先，以及保真原文、引文和知识核验情景。README 标记版本冻结、跨端消费方式与兼容性变更边界；不新增全库 SHA 校验或测试时自动重生成期待值。
+- 合约测试检查规范字节与对象图闭包；场景 49 直接上传冻结字节，经真实 HTTP 运行两客户端离线冲突／CAS 拒收／明确解决，并检查 MCP 会话不载入冲突候选。另一场景保留 BOM／CRLF 原文及编辑文本尾随空白，服务端重新核对正确／伪造引文，分别得到已验证／待验证事实，不采信客户端。
+- 保留原有场景 49 的两端传输／续传、跨账户拒读、只同步清单、控制台过期表单、清除／新代次，以及运行独立原件读权断言。阶段 4 的容量、凭据、只追加、审计与模式切换故障注入仍由现有 records／knowledge／server 回归覆盖。
+- 更新 contracts、server、records README、CHANGELOG 和进度页决定 89，明确来源、协调答复、Hub／Circle 分界及未部署事实。没有新模型、迁移、运行代码或 Circle 改动。独立审查仍在进行，收到后续发现另行处理。
+
+验证记录将在实际运行结束后填写；完整 unit 与 acceptance 不并行、不提前将尚未运行的检查计作通过。
+
+#### 完整 unit 首跑：全部失败和跳过
+
+按本轮明确要求仅运行一次完整 unit，三个内部分组全部结束，约 1,360 秒，退出 1；合计 **8,783 项：8,682 通过、92 失败、9 跳过、0 取消**。三个分组分别为 shared 8,378（8,359／12／7）、isolated 215（133／80／2）、sentinel 190（190／0／0）；括号内依次为通过／失败／跳过。没有把两个成功分组或原定向结果当作整个 unit 通过。
+
+92 项均在 CLI 测试部署的迁移／启动阶段失败；明确报错为运行角色仍有创建临时对象的权限，run-list 的四个用例由同一 before 钩子的迁移失败连带触发。夹具使用默认 PUBLIC TEMPORARY，而复核已要求 grant／verify 阶段拒绝此权限。当前不改生产拒绝、不改迁移 14／15、不改业务断言；完整 acceptance 已在 unit 结束后单独启动。修正夹具及定向复查结果另记。
+
+| 文件 | 失败数 |
+| --- | --- |
+| hub/server/assemble/cli-admin.test.ts | 59 |
+| hub/server/cli.test.ts | 13 |
+| hub/server/command-bridge.test.ts | 4 |
+| hub/server/run-list.test.ts | 4 |
+| hub/server/assemble/assemble.test.ts | 6 |
+| hub/server/assemble/cli-run-abandon.test.ts | 1 |
+| hub/server/assemble/cli-skill-migration.test.ts | 4 |
+| hub/server/key-transfer.test.ts | 1 |
+
+以下逐项保留首跑失败，不合并成一次失败；名称与首跑位置供定位，不保留原始日志／堆栈或本机绝对路径。
+
+**hub/server/assemble/cli-admin.test.ts**
+
+- 204：user list JSON distinguishes an empty database and existing administrators without exposing password material
+- 218：password-reset recovers the sole administrator before the first change and revokes console sessions only
+- 245：password-reset refuses missing, invalid and member operator tokens and a forged --as without changing history
+- 259：initial passwords use stdin when supplied and otherwise appear once with a forced first change
+- 278：an existing administrator can reissue into the Linux file store without displaying the token
+- 299：init-admin creates the first admin and stores its token without printing it; it is refused once an admin exists
+- 318：init-admin refuses when the store already holds a token, and creates nobody
+- 326：when the token cannot be stored, the admin exists, its token is revoked and the fix is operator-token reissue, which needs no token
+- 347：when the token cannot be stored and its revocation is not confirmed, init-admin says the token may be live and names token revoke
+- 419：a lost keychain item is recovered without any token: operator-token reissue stores a new admin token, never shown, and every refusal on the way names it
+- 468：revoking the operator token itself is done and said, with the way back; a dead item is replaced by a reissue once it is removed
+- 509：disabling the operator token's own account is said, with the way back through another admin
+- 523：operator-token reissue names its admin among several, refuses a user and revokes a token it cannot store
+- 561：operator-token set stores an enabled admin's token read from stdin; it refuses an existing item, a user's token and anything invalid
+- 598：every state-changing command is refused without a token, with a non-admin token and with an invalid one
+- 645：CIRCLE_HUB_TOKEN acts for the command and is taken out of the environment before the configuration is read
+- 663：read-only commands act as the token's account: --as must name that account; without a token --as or the only admin
+- 693：a keychain item that cannot be read costs a read-only command a notice, not the listing; a changing command is refused naming the operator token
+- 734：a held-back source is listed, its findings shown as positions and shapes, accepted with a note and withdrawn again; no output carries the value
+- 757：source commands distinguish current direct, derived and absent acceptance without disclosing matches or fingerprints
+- 785：a user who is not an administrator, a bad digest and a note that copies the value are refused
+- 814：list shows the unexpired rows of a prefix with their holders and ends, and nothing without one
+- 827：release frees the key with a reason; the reason lands in the action record; --reason is required
+- 846：a user who is not an administrator gets the same answer as for a row that does not exist
+- 879：lists read originals with external id, digest, size and read time, filtered by prefix, without content
+- 899：an unmatched suffix names the suffix filter with or without a prefix
+- 909：exports a stored original to a new file with mode 0600, printing only size and digest
+- 926：refuses an unknown digest, an existing file, a path that cannot be written and a bad digest shape
+- 950：a user who is not an administrator gets the same answer as for a nonexistent original
+- 972：publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README
+- 999：runs every check of publish and writes nothing: exit 0 when publish would succeed, 1 when it would refuse
+- 1042：publish needs the publish right; then publish, list, assign, activate, unassign and retire
+- 1092：text from a pack, a resource or an argument reaches the terminal with every control character shown as an escape
+- 1126：add and list a resource, set its credentials from stdin (the password kept as its digest), read through it, disable and enable
+- 1207：update changes metadata and addresses while merging settings by key, and refuses what makes no sense
+- 1229：resource update origins prunes stale allow-plaintext entries with notification, clear-plaintext, and validates plaintext matching
+- 1318：a credential set or a login reset clears the vault's login state; a running Hub ends its stop at its next read, without a restart, and both commands say so
+- 1382：without the vault master key the listings work, the login column says why, a reset works and secret set is refused before a value is read
+- 1407：sync reports produced, skipped and failed builds and exits non-zero on a failure; a second sync produces nothing; roots and diff read the result
+- 1484：doc put/list/show publish and replace a named document; only name, digest and size are printed; non-admins get the same answer as for a missing doc
+- 1542：the help text lists the administrator commands
+- 1551：R32 a fresh administrator command exposes noncanonical action diagnostics without body text
+- 1562：R33 lease release honors the configured record byte limit atomically
+- 1604：imports grouped credentials, hashes the password, shares a key across resources and supports dry run
+- 1623：review 5: an invalid later resource value is refused before any credential is written
+- 1633：missing and commented keys write nothing, malformed files disclose no values or paths
+- 1656：authorization, vault and every target are checked before opening the environment file
+- 1677：file key loss requires a fresh vault before reimport
+- 1677：temporary keychain loss requires reissue and a fresh vault before reimport
+- 1807：a read prints only declared names, outcome codes and artifact sizes and digests
+- 1838：review 1: resource read exposes connector diagnostics only with the explicit events flag
+- 1851：review 5: dry-run and real import validate every value before the first write
+- 1875：review 6: missing and empty keys refuse explicitly with corrective hints and no writes
+- 1891：review 8: Basic targets refuse before file access and a static authorization header reaches the stub
+- 1943：pack publish forwards repeated explicit answer-request flags without touching the real keychain
+- 1960：lease release refuses an unfinished dispatch job before changing the row
+- 1977：lease ownership commands audit reassignment and list owner, holder and run without internal identities
+- 2008：administrator sharing commands cover users package audiences policy listing and withdrawals
+- 2038：pack shapes lists only unruled identities and refuses nonadministrators
+
+**hub/server/cli.test.ts**
+
+- 128：migrates as the owner role, grants the runtime role and exits 0; again it applies nothing
+- 156：with a placeholder assembly module serve refuses with a message that says what is missing
+- 163：serve refuses an operator token in its environment, by name and without its value, before anything starts
+- 181：with an assembly it listens on loopback, answers /healthz and stops on the stop signal; the database keeps running
+- 229：the first admin is bootstrapped with its token shown once; users and tokens are managed as the operator token's admin; token values never listed
+- 289：state-changing built-ins need an admin's operator token: none, a user's or an invalid one is refused before anything changes; CIRCLE_HUB_TOKEN works for one command
+- 326：token issue --raw prints the token and a newline on stdout and nothing else; the confirmation goes to stderr
+- 365：logs export and run show read as the operator token's account, as the assembly's read-only commands do: --as must name it; without a token --as or the only admin
+- 423：stored text reaches the terminal with every control character as an escape: run show, user list, token list; JSON escapes what JSON.stringify leaves raw
+- 490：logs export writes JSON lines without argument content, to stdout or to a new private file
+- 521：run show and the reserved commands say clearly what a placeholder assembly module lacks; an unknown command is a usage error
+- 544：registerCommand and the assembly hook add commands with records and the acting admin; built-in names are refused
+- 574：run show reads through the module's command-time assembly with the CLI's stderr, never serve's
+
+**hub/server/command-bridge.test.ts**
+
+- 66：a bridged command acts as the administrator of the given token, exactly as the CLI does
+- 87：commands that are not bridged are refused before anything runs
+- 97：a secret value reaches only the command readSecret, by its name
+- 121：setup-code prints a code only while no administrator exists
+
+**hub/server/run-list.test.ts**
+
+- 149：pages newest first and the cursor continues without dropping a row
+- 166：pack, user, state and since each keep only the matching runs
+- 179：unknown keeps only runs whose newest accepted result has an unknown terminal
+- 190：a non-admin is refused and the listing never prints submission text, quotes or the stored marker
+
+**hub/server/assemble/assemble.test.ts**
+
+- 77：a retired CIRCLE_SERVER_* variable refuses serve and the admin commands before the assembly or the key is touched
+- 107：serve without a vault key stops before listening and never creates the key
+- 120：serve with the platform keychain provider and no keychain item stops and never adds one
+- 137：a vault that holds entries is never told to create a key: the restore advice replaces the provider's key init
+- 180：with a key, serve assembles the real packages, listens, serves the six tools to a token and stops
+- 304：run show through the CLI uses the command-time assembly: it reads runs without the vault key, and serve's assembly is never called
+
+**hub/server/assemble/cli-run-abandon.test.ts**
+
+- 17：run abandon has no anonymous fallback and permits only the authenticated runner or administrator
+
+**hub/server/assemble/cli-skill-migration.test.ts**
+
+- 18：skill bind-legacy resolves and displays a published digest and appends an authenticated migration declaration
+- 38：skill bind-legacy appends migration declaration for xlsx@1 using workbook-format
+- 65：skill bind-legacy appends migration declaration for xml@1 using xml-format
+- 92：skill bind-legacy appends migration declaration for html@1 using html-format
+
+**hub/server/key-transfer.test.ts**
+
+- 14：records verify decrypts every vault entry and prints only the count
+
+**全部 9 项跳过**
+
+下列用例没有验证通过；不启用 Linux VM 或真实 systemd 来补跑。三个只输出 SKIP 的 Linux 用例，原因由各文件的 process.platform 条件核对。
+
+- hub/platform/linux-lifecycle-real.test.ts：Linux synthetic deploy, backup, empty-root restore, verification and rollback use the real user manager；requires isolated Linux VM and HUB_TEST_SYSTEMD_REAL=1
+- hub/platform/linux-restore.test.ts：Linux restore bootstraps an empty root directly from a verified synthetic backup；requires Linux PostgreSQL restore
+- hub/platform/rehearse.test.ts：Linux rehearsal loses both private file keys and proves backups contain neither；skipped: Linux file key rehearsal
+- hub/platform/systemd-real.test.ts：synthetic user unit really installs, stops, restarts and uninstalls on Linux；requires an isolated Linux user manager and explicit HUB_TEST_SYSTEMD_REAL=1
+- hub/rules/sandbox/linux-isolation.test.ts：Linux OS isolation confines all Node threads and denies network, writes, unbound reads and bound executables；Linux-only operating-system isolation
+- hub/rules/sandbox/orphan-linux.test.ts：Linux orphan cleanup kills only a matching installation marker；日志仅标记 SKIP；源码条件为非 Linux 时跳过
+- hub/rules/sandbox/resident-linux.test.ts：Linux resident accounting finds a child started by a non-leader thread；日志仅标记 SKIP；源码条件为非 Linux 时跳过
+- hub/rules/sandbox/resident-linux.test.ts：Linux resident accounting includes a supervisor and its child；日志仅标记 SKIP；源码条件为非 Linux 时跳过
+- hub/rules/sandbox/sandbox.test.ts：without sandbox-exec the default refuses to run；sandbox-exec is available here
+
+完整 unit 的执行命令：
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 npm run test:unit
+```
+
+本轮显式清空 UNIT_SHARD／JUNIT_REPORT，确保 all 覆盖完整 938 文件；acceptance 没有与 unit 并行。macOS 沙箱可用，相关正向用例实际执行。
+
+#### 完整 acceptance 首跑
+
+在完整 unit 完全结束后，按并发 1 执行一次 npm run test:acceptance，**236 项通过、0 失败、0 跳过、0 取消**，退出 0，用时约 3,109.6 秒（51 分 50 秒）。以 Node 的最终汇总为计数依据，JUnit 同样没有 failure／error／skipped。场景 14、两个场景 28、26／41 的复核报告和全链评审，以及本轮场景 46～49 均实际执行；macOS 沙箱用例没有跳过。没有把本次通过当作之前间歇问题的根因证明，也没有更改其断言或添加重试。
+
+```sh
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 npm run test:acceptance
+```
+
+本轮显式清空 ACCEPTANCE_SHARD，使用 JUnit 报告留存逐项结果；报告与原始日志留在本机临时目录，不入 Git。完整 unit／acceptance 都只执行这一次，后续修正仅定向复查。
+
+#### 完整 unit 失败的夹具修正
+
+- 修改范围仅增加 hub/server/assemble/test-cli.ts、hub/server/cli.test.ts、hub/server/run-list.test.ts、hub/server/command-bridge.test.ts 的合成数据库准备：由测试数据库所有者显式收回 PUBLIC TEMPORARY，再调用原 CLI 迁移与授权。四处夹具共覆盖上述八个失败文件；生产的 grant／verify 拒绝条件与迁移 SQL 均不改，原业务断言均保留。
+- 新增 CLI 回归，故意给运行角色 TEMPORARY 后要求迁移被拒绝，并证明 CLI 没有擅自收回这一权限来绕过拒绝。run-list 的前置迁移断言增加安全错误文本，避免只报 1 不等于 0。
+- 定向复查包含全部八个失败文件、运行临时权限回归、迁移固定值，以及本阶段要求的 environment、diagnostics、PG 18 ownership 和 lock-namespaces；首轮 130 项中 126 通过、4 失败、0 跳过：命令桥接有独立建库入口，初次修正漏掉了它；补齐其默认／setup-code 两个数据库后，该文件 4 项全部通过、0 跳过。没有把首轮定向组写成全绿。原完整 unit 的 92 个失败现在均有定向通过证据，新增的 CLI 不安全权限拒收回归也通过；没有复跑完整 unit。
+- 收尾时发现 Claude 新增的第四轮审查附录：审计在准入前写入的中等问题，以及 v1 暂不区分访问令牌作用范围的协调决定。本步先保留附录原文，审计修正和对应说明另作独立提交；不将其混入 fixture／验收提交，不提前声称该问题已经解决。
+
+#### 第 6 步收尾
+
+- 定向合约／共享样例／场景 49 与四项指定基线组 33 项通过、0 失败、0 跳过。完整 unit 首跑和全部 92 个失败、9 个跳过如上逐项列出；完整 acceptance 一次运行 236 项全通过、0 跳过。夹具修正的定向首轮 126／4 与桥接最终 4／0 分开记录，不把全量 unit 改报为通过，也不叠加重复用例。
+- 本步未改运行时业务代码、模型、生成物、迁移 14／15 或技能版本；完整验证暴露的变更仅为四处合成 CLI 数据库夹具与一项反向权限回归，业务断言没有放宽。最终类型／文档／差异检查在提交前执行。
+- 不推送、不建 PR、不部署，不启动 Circle 仓库任务。第四轮审计准入问题另作提交；该审查附录保持未暂存供下一项原样收入。
+
+```sh
+npm run typecheck
+npm run verify:contracts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ contracts/src/sync.test.ts contracts/src/sync-merge.test.ts tests/acceptance/49-personal-sync.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" HUB_UNIT_CONCURRENCY=4 node --test --test-concurrency=1 --test-reporter=tap \
+ hub/server/assemble/cli-admin.test.ts hub/server/cli.test.ts hub/server/command-bridge.test.ts hub/server/run-list.test.ts \
+ hub/server/assemble/assemble.test.ts hub/server/assemble/cli-run-abandon.test.ts hub/server/assemble/cli-skill-migration.test.ts hub/server/key-transfer.test.ts \
+ hub/records/personal-runtime-temp.test.ts hub/records/migrations.snapshot.test.ts \
+ hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts
+CIRCLE_HUB_LIBPQ_BIN="$HOME/.local/pgsql-18.6/bin" node --test --test-concurrency=1 --test-reporter=tap hub/server/command-bridge.test.ts
+npm run test:docs
+git diff --check
+```
+
+提交前收尾：npm run typecheck、176 文件合约核对和差异检查通过；最终文档检查 291 项通过、0 失败、0 跳过。四处 CLI 夹具与新权限拒收回归均已在上述定向运行中核对，原全量失败与全部跳过保持原始记录。

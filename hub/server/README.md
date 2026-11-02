@@ -1075,3 +1075,14 @@ mode/status labels and last successful sync; administrator member details expose
 device IDs or personal titles. The pre-check cannot count unpersisted read-only share checks: it reports that count as
 unknown and explains their re-verification instead. Team copies and local copies remain; an older backup can restore
 older personal content.
+
+### Personal sync acceptance boundary (decision 89, step 6)
+
+Acceptance 49 uses the frozen v1 exchange vectors directly as HTTP bytes, rather than re-encoding test expectations
+with server code. Two devices create sibling memory revisions, observe a stale CAS refusal, retain both conflicting
+heads with no automatic session memory, and resolve them with an explicit child. Knowledge exchange preserves raw
+BOM/CRLF bytes and trailing editable whitespace; the Hub re-verifies quotes and marks a fabricated quotation unverified.
+Existing cases cover transport retries, foreign/absent equivalence, stale console forms, clear/resume and independent
+run-original retention without widening reader rights. Authentication/admission/audit failures and transaction rollback
+remain covered by server and records regressions. These are synthetic Hub checks, not evidence of a deployed Circle
+sync client; the client and release/deployment remain outside this task.

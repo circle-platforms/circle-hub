@@ -454,3 +454,16 @@ and original chunks are byte objects. Verification observations include bounded 
 separately from immutable revisions. Structural directory conflicts may have one head. Commit projections map accepted
 objects to native addresses or memory versions; a pack manifest only reports existing installation, never installs it.
 No vocabulary or protocol mirror changed in this step; model 26 and the six MCP tools remain unchanged.
+
+### Frozen personal sync compatibility vectors (decision 89, step 6)
+
+The portable v1 suite is in `test-fixtures/sync/v1/`; its README defines the frozen compatibility boundary. Encoding,
+raw/quote bytes, read-only grounds, ancestry merges and HTTP route vectors remain unchanged. `exchange.json` adds full
+inventory/snapshot ancestry around the existing memory revisions and fixed source/quote examples. The golden bytes
+were authored independently, remain literal JSON data, and need no Hub database or server import for a client runner.
+Canonical object IDs are protocol identities; no additional repository/data SHA verification is introduced.
+
+`src/sync.test.ts` checks the typed encoding and object closure. Acceptance 49 consumes the same bytes through the real
+Bearer HTTP transport, checks CAS/conflict resolution and MCP session loading, and independently observes source bytes
+and verified/unverified knowledge. A source cannot become verified merely because a client supplies a canonical object.
+The model remains 26, generated schemas 176 and MCP tools six. Circle client implementation is a separate task.

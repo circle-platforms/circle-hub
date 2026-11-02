@@ -748,7 +748,7 @@ operation until the checked, authenticated mode-switch routes are wired in subse
 inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings
 store a digest of the native identity, never its path. The state token includes the native knowledge root and memory
 heads but excludes transfer timestamps and activity. Projection and personal-pack adapters, verified CAS and conflict
-handling are the next step; uploading alone cannot promote an object.
+handling are implemented below under atomic commits; uploading alone cannot promote an object.
 
 Migration 15 appends transport tables without changing migration 14 or its exemption. Only derived sync heads have
 column-scoped UPDATE privileges. Clients, sessions, graph edges, leases, retained-history markers and operation receipts
@@ -760,20 +760,20 @@ epoch, session and frozen snapshot. Found own objects gain a session lease so co
 Upload validates the entire bounded canonical batch and scans decoded text fields before storing any part. Original
 byte objects are preserved and scanned as bytes; an uninspected binary chunk remains staged, not verified or admitted
 as a model-readable source. Full original reconstruction, cross-chunk scanning and evidence re-verification are checked
-at commit in the next step. One operation key binds the route, session and complete request; exact replay returns its
+at atomic commit. One operation key binds the route, session and complete request; exact replay returns its
 original safe receipt, including after a process restart. A failed receipt insert rolls back payloads and catalog rows.
 
 Logical usage preserves native knowledge history and memory history, adding unique sync objects and private client
 metadata per account/epoch. Byte objects count original bytes plus metadata, not base64 inflation. Concurrent admission
 uses the same space lock. Session creation, registration and staging all check capacity; transferring an owned object
-again does not charge twice. The next step integrates this quota with native writers and projected sync records.
+again does not charge twice. Atomic commit integrates this quota with native writers and projected sync records.
 
 The owner-defined `hub_collect_personal_sync` removes only unretained objects after their last live session ends; it
 preserves independent native originals and record payloads. Runtime cannot DELETE payloads or catalog rows directly.
 Purge already deletes all epoch payloads, including client names and staged sync bodies; hashes/receipts remain safe
 metadata. PG 18 ownership now backs up, purges and restores a real staged batch, session and operation receipt as well
-as private record bodies. Returning from local to Hub will use a new owner-defined mode function, not an UPDATE grant
-on personal_spaces (Claude 2026-11-03); that mode API remains step 5.
+as private record bodies. Returning from local to Hub uses the owner-defined hub_resume_personal function, not an
+UPDATE grant on personal_spaces (Claude 2026-11-03); the HTTP mode adapter is described in step 5 below.
 
 Decision 89 review item 1: startup retirement treats each team version's products[].root as a knowledge-record mount,
 not a directory object file. It skips those mount boundaries while preserving ordinary team directory objects. The
@@ -805,7 +805,7 @@ Security review bounds legacy tree traversal by account/epoch and caches at most
 
 Legacy file retirement fsyncs the containing directory before recording completion. Failure keeps the pending journal and prevents purge; restart retries the directory sync even if unlink already succeeded. The durability regression injects that exact crash boundary.
 
-Review item 9 exposes a metadata-only personal mode read and a console-only resume operation. The runtime still cannot UPDATE personal_spaces. The owner-defined resume function requires a completed local purge and a fresh UUID; the authenticated application checks the account, epoch and expected state while holding its existing space lock. New head, mode and a content-free action audit commit together. Direct runtime regression covers privileges, invalid reuse, rollback, disabled accounts and concurrent resume. General bidirectional HTTP mode switching remains in step 5.
+Review item 9 exposes a metadata-only personal mode read and a console-only resume operation. The runtime still cannot UPDATE personal_spaces. The owner-defined resume function requires a completed local purge and a fresh UUID; the authenticated application checks the account, epoch and expected state while holding its existing space lock. New head, mode and a content-free action audit commit together. Direct runtime regression covers privileges, invalid reuse, rollback, disabled accounts and concurrent resume. General bidirectional HTTP mode switching is implemented in step 5 below.
 
 ### Atomic personal sync commits (decision 89, step 4)
 
