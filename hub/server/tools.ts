@@ -28,6 +28,7 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
+import { localToolsOf } from '../runs/packs/ports.ts';
 import { IntegrityError, RecordsError, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
@@ -419,6 +420,20 @@ const startRun: Handler = async (deps, call, args) => {
       if (accepted.length > 0) answer = { ...answer, accepted_by: accepted };
     } catch (error) {
       call.context.adminNote(`start_run: the packs accepting the read sources were not listed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+    }
+    // The tools/ files of the very version this run froze (script-distribution, step 2), as an answer-level fact: the run
+    // record never changes. The frozen pack_digest is the authority; a pack that cannot be loaded again leaves the fact out.
+    const summary = answer.run as { pack?: unknown; pack_digest?: unknown } | undefined;
+    if (typeof summary?.pack === 'string' && isSha256(summary.pack_digest)) {
+      try {
+        const loaded = await deps.workflows.forUser(call.principal, summary.pack);
+        if (loaded !== null && loaded.pack.digest === summary.pack_digest) {
+          const tools = localToolsOf({ id: loaded.pack.id, version: loaded.pack.version, digest: loaded.pack.digest, manifest: loaded.manifest });
+          if (tools !== null) answer = { ...answer, local_tools: tools };
+        }
+      } catch (error) {
+        call.context.adminNote(`start_run: the local tools of ${summary.pack} were not listed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+      }
     }
   }
   return { answer, text };

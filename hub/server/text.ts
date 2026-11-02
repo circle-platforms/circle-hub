@@ -403,6 +403,7 @@ function packEntry(p: PackSummary): Entry {
     );
   }
   for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
+  if (p.local_tools !== undefined) lines.push(`  本地工具 ${p.local_tools.count} 个；安装：${clip.field(p.local_tools.install, CLIP.line, '安装命令的超出部分')}；清单见 structuredContent`);
   lines.push(`  示例 start_run：${startRunExample(p)}`);
   for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
@@ -910,6 +911,7 @@ function startText(v: StartOut, context: TextContext): string {
   if (r.unversioned_root !== undefined) head.push(`不分版本的知识根 ${r.unversioned_root}（构建未声明）`);
   else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
+  if (v.local_tools !== undefined) head.push(`本地工具 ${v.local_tools.count} 个（客户端按包号核对后安装）；安装：${headClip.field(v.local_tools.install, CLIP.line, '安装命令的超出部分')}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if(r.criterion_changes?.length)blocks.push({priority:1,head:['判据变更声明：'],entries:r.criterion_changes.map(change=>{
     const clip=new Clip(null,seeConsole(r.run));

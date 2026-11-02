@@ -19,12 +19,12 @@ test('requirement summaries expose the locked rules and permitted runtime interp
 import {parseDeclarations} from '../packs/load.ts';
 import {packSummary} from '../packs/ports.ts';
 import {workflowPack,withFiles,editJson,bytesOf} from '../packs/testing/builder.ts';
-import type {PackVersionInfo} from '../packs/types.ts';
+import type {PackManifest} from '../../../contracts/src/pack.ts';
 test('list_task_packs and start_run derive identical ruling fields from loaded ledger bytes',()=>{
  const pack=withFiles(editJson<any>(workflowPack(),'requirements.json',f=>{f.requirements[0].run_table=true;}),{'ledger.json':{schema:'ledger@1',shapes:[{requirement:'titles',interpreter:'range@1',ruled_in:'10.6.0'}]}});
  const declarations=parseDeclarations('workflow',new Map(Object.entries(pack.files).map(([path,content])=>[path,bytesOf(content)])));
  assert.equal(declarations.kind,'workflow');if(declarations.kind!=='workflow')return;
- const info={id:'synthetic',version:'10.6.0',kind:'workflow',title:'合成',description:'合成'} as PackVersionInfo;
+ const info={id:'synthetic',version:'10.6.0',kind:'workflow' as const,title:'合成',description:'合成',digest:'a'.repeat(64),manifest:{schema:'pack@1',id:'synthetic',version:'10.6.0',kind:'workflow' as const,title:'合成',description:'合成',files:[]} satisfies PackManifest};
  const listed=packSummary(info,declarations,[]);
  const started=declarations.requirements.requirements.map(t=>requirementSummary(t,declarations.ledger,declarations.checks.checks,'synthetic@10.6.0'));
  assert.deepEqual(listed.requirements,started);

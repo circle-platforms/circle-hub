@@ -9,7 +9,7 @@ import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts
 import { PackFileError } from './load.ts';
 import { publishCheckMarks } from './marks.ts';
 import { createPackCatalog, createPacksPort, createWorkflowStore } from './ports.ts';
-import { corruptByte, editJson, productPack, systemPack, TITLES_TABLE, workflowPack } from './testing/builder.ts';
+import { corruptByte, editJson, productPack, systemPack, TITLES_TABLE, withFiles, workflowPack } from './testing/builder.ts';
 import { openPackTestbed, type PackTestbed } from './testing/setup.ts';
 
 let postgres: TemporaryPostgres;
@@ -133,6 +133,8 @@ test('summaries: the packs a user may use, with the names of the bound product l
   const [summary] = await store.summaries(bed.bob);
   assert.ok(PackSummary.safeParse(summary).success, JSON.stringify(PackSummary.safeParse(summary).error?.issues));
   assert.equal(summary.pack, 'demo-review@1.0.0');
+  assert.match(summary.digest, /^[0-9a-f]{64}$/, 'every listed pack carries its digest');
+  assert.equal(summary.local_tools, undefined, 'a pack without tools/ discloses no local tools');
   assert.deepEqual(summary.products, ['Widget', 'Gadget'], 'the line whose catalogs include the required ones, by every name');
   assert.deepEqual(summary.inputs, [{ slot: 'target', role: 'subject', description: '被判的文档', accepts: ['application/json'], required: true, many: false }]);
   assert.deepEqual(summary.parameters, [{ name: 'strict', description: '严格模式', required: false, schema: { type: 'boolean' } }], 'each parameter is listed with its name, description and value schema');
@@ -144,6 +146,20 @@ test('summaries: the packs a user may use, with the names of the bound product l
   const [bound] = await store.summaries(bed.bob);
   assert.equal(bound.version, '2.0.0');
   assert.deepEqual(bound.products, ['Sprocket'], 'a workflow with product.id binds that line only');
+});
+
+test('summaries: a pack that ships tools/ lists its local tools with the digest-pinned install command', async (t) => {
+  const bed = await testbed(t);
+  const tools = 'import { readFile } from "node:fs/promises";\nvoid readFile;\n';
+  const { version } = await bed.publish(bed.alice, withFiles(workflowPack(), { 'tools/fetch-run.ts': tools, 'functions/keep.ts': 'export const keep = 1;\n' }));
+  await bed.registry.assign(bed.admin, bed.bob.id, 'demo-review');
+  const store = createWorkflowStore(bed.registry);
+  const [summary] = await store.summaries(bed.bob);
+  assert.ok(PackSummary.safeParse(summary).success, JSON.stringify(PackSummary.safeParse(summary).error?.issues));
+  assert.equal(summary.digest, version.digest);
+  assert.equal(summary.local_tools?.count, 1);
+  assert.deepEqual(summary.local_tools?.files, [{ path: 'tools/fetch-run.ts', sha256: sha256Hex(tools), size: Buffer.byteLength(tools) }], 'only tools/ files are listed, with the manifest bytes verified');
+  assert.equal(summary.local_tools?.install, `circle-hub local-tools install demo-review@1.0.0 --digest ${version.digest} --into <目录>`);
 });
 
 test('PacksPort: packs by reference, active product lines only, readable products follow assignments', async (t) => {
