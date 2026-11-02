@@ -802,6 +802,11 @@ export async function recheckProduction(ctx:EngineContext,stored:StoredRecord<Ru
   const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest);
   if(!workflow||!isProduction(workflow))return null;
   const produced=await evaluateProduction(ctx,stored.body,stored.digest,workflow,traceId,user);
+  const refusal=await personalGroundProblem(ctx,user,produced.evaluation.result,stored.body.sources);
+  if(refusal){
+    await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(stored.digest)],startedAt:produced.startedAt,endedAt:ctx.now().toISOString(),acceptance:'not_accepted',codes:[refusal.code],detail:{production:true,refusal:refusal.code,result:null,repair:[]}});
+    return null;
+  }
   await recordResultRequests(ctx,stored.body,produced.evaluation.result);
   return keepProduction(ctx,stored,produced,{traceId,sessionId:stored.body.session??null});
 }

@@ -976,3 +976,7 @@ Second phase-2 review: `bindInputs` now rejects a personal-space capture before 
 any run, including judgment runs. The capture record decides this guard; an unrelated private copy of equal bytes never
 changes an independent original. Source-artifact record inputs also check original read rights before exposing metadata.
 Phase 3 replaces the temporary admission guard with actual result readers, rather than keeping a permanent private-input ban.
+
+Automatic production rechecks apply the same temporary phase-2 admission guard before appending a replacement result.
+Legacy runs cannot bypass it through maintenance; a refusal records its registered code and preserves every old result.
+The regression uses a real assembly and an explicitly persisted legacy private capture, with an independent-capture control.
