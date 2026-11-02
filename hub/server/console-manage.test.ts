@@ -46,8 +46,8 @@ const bridge: CommandBridge = {
     calls.push(call);
     if (argv[0] === 'pack' && argv[1] === 'publish' && call.packJson?.includes('echo-pack')) return { code: 1, stdout: [], stderr: [`读不出 ${argv[2]} 里的 pack.json`] };
     if (argv[0] === 'pack' && argv[1] === 'publish' && call.packJson?.includes('failing-pack')) return { code: 1, stdout: [], stderr: ['- [publish.unsampled] checks.json：检查 titles 没有反例样例（处理：补一个反例样例）'] };
-    if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: ['发布校验通过：synthetic-pack@1.0.0（工作流包，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过', '包 synthetic-pack 还没有已发布的版本，没有可比较的当前版本', '试运行：没有发布，也没有写入任何内容；去掉 --dry-run 即发布这个版本'], stderr: [] };
-    if (argv[0] === 'pack' && argv[1] === 'publish') return { code: 0, stdout: ['已发布 synthetic-pack@1.0.0（工作流包，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过'], stderr: [] };
+    if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: ['发布校验通过：synthetic-pack@1.0.0（工作流，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过', '包 synthetic-pack 还没有已发布的版本，没有可比较的当前版本', '试运行：没有发布，也没有写入任何内容；去掉 --dry-run 即发布这个版本'], stderr: [] };
+    if (argv[0] === 'pack' && argv[1] === 'publish') return { code: 0, stdout: ['已发布 synthetic-pack@1.0.0（工作流，摘要 ' + 'e'.repeat(64) + '）：样例 4/4 通过'], stderr: [] };
     if (argv[0] === 'token' && argv[1] === 'issue') return { code: 0, stdout: ['已为 alice 签发令牌 tok_synthetic。令牌只显示这一次，请立即保存到只有使用者能读的地方：', 'T'.repeat(43)], stderr: [] };
     if (argv[0] === 'secret' && argv[1] === 'list') return { code: 0, stdout: ['DEMO 第 1 版'], stderr: [] };
     return { code: 0, stdout: [`已执行 ${argv.slice(0, 2).join(' ')}`], stderr: [] };
@@ -341,7 +341,22 @@ async function stage(cookie: string, packJson: Record<string, unknown> = PACK, c
   return { answer, dir: call.argv[2] };
 }
 
-test('发布任务包 checks the upload with the dry run first, then publishes the staged directory, which is removed after', async () => {
+test('publication results retain the actual manifest kind and use the same commands for every entry point', async () => {
+  const cookie=`circle_hub_session=${session}`;
+  for(const kind of ['product','system'] as const){
+    const title=kind==='product'?'发布产品知识来源':'发布业务系统接入';
+    const checked=await send('POST','/console/admin/do/pack-stage?kind='+kind,{cookie,...upload({...PACK,id:'synthetic-'+kind,kind},csrf)});
+    assert.equal(checked.status,200,checked.body);assert.ok(checked.body.includes(title+'</h1>'));
+    assert.ok(checked.body.includes('action="/console/admin/do/pack-publish?kind='+kind+'"'));
+    const id=stageIdOf(checked.body);
+    const published=await send('POST','/console/admin/do/pack-publish',{cookie,body:form({csrf,stage:id})});
+    assert.equal(published.status,200,published.body);assert.ok(published.body.includes(title+'</h1>'));
+    assert.deepEqual(calls.at(-1)!.argv.slice(0,2),['pack','publish']);assert.equal(calls.at(-1)!.argv.at(-1),'--stage');
+    assert.ok(!calls.at(-1)!.argv.some(word=>word.startsWith('--kind')),'display context never changes command arguments');
+  }
+});
+
+test('发布工作流 checks the upload with the dry run first, then publishes the staged directory, which is removed after', async () => {
   calls.length = 0;
   const cookie = `circle_hub_session=${session}`;
   const { answer, dir } = await stage(cookie);
@@ -357,7 +372,7 @@ test('发布任务包 checks the upload with the dry run first, then publishes t
   await access(dir);
   const id = stageIdOf(answer.body);
   const operation = await send('GET', '/console/operations/pack', { cookie });
-  assert.ok(operation.body.includes(id) && /暂存的任务包/.test(operation.body), 'the operation page lists the stage');
+  assert.ok(operation.body.includes(id) && /暂存的工作流/.test(operation.body), 'the operation page lists the stage');
 
   const published = await send('POST', '/console/admin/do/pack-publish', { cookie, body: form({ csrf, stage: id }) });
   assert.equal(published.status, 200, published.body);
@@ -423,7 +438,7 @@ test('only the administrator who staged a pack can publish or discard it; any ot
 
   const discarded = await send('POST', '/console/admin/do/pack-discard', { cookie, body: form({ csrf, stage: id }) });
   assert.equal(discarded.status, 200);
-  assert.match(discarded.body, /已放弃暂存的任务包/);
+  assert.match(discarded.body, /已放弃暂存的工作流/);
   await assert.rejects(access(dir), 'discarding removes the directory');
   assert.equal(calls.length, 1, 'discarding publishes nothing');
 });

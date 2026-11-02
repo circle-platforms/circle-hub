@@ -6,6 +6,12 @@ import type {RecordsKit,Principal} from '../records/api.ts';
 import {temporaryDirectory,writePack,type PackRegistry} from '../runs/api.ts';
 import {createSkillParserRegistry,bindLegacyParser} from '../refs/api.ts';
 
+/** The version a repository skill pack's pack.json states, so tests follow the current release instead of pinning one. */
+export async function repositorySkillVersion(id:string):Promise<string>{
+ const root=fileURLToPath(new URL(`../../packs/skill/${id}/`,import.meta.url));
+ return String(JSON.parse(await readFile(join(root,'pack.json'),'utf8')).version);
+}
+
 export async function installMindmapFixture(registry:PackRegistry,records:RecordsKit,admin:Principal){
  const temp=await temporaryDirectory('hub-skill-fixture-');
  try{

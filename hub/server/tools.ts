@@ -168,14 +168,14 @@ export function sandboxError(error: SandboxError): ProtocolError {
   if (error.detail.limit === 'document_cache_bytes') return { code: 'SOURCE_RETRYABLE', message: `文档缓存估算超过预算：${error.code}`, fix: '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' };
   const tooLarge = error.detail.limit === 'memory' ? '解析原件超过沙箱内存上限' : error.code === 'SANDBOX_OUTPUT_TOO_LARGE' ? '解析结果超过沙箱输出上限' : undefined;
   if (tooLarge !== undefined) return { code: 'SOURCE_RETRYABLE', message: `${tooLarge}：${error.code}`, fix: '原样重读仍会失败；请来源维护者拆分原件后重读，或请解析器维护者降低解析所需的内存和输出' };
-  return { code: 'SOURCE_RETRYABLE', message: `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: '管理员核对技能包和沙箱状态，恢复后重新读取' };
+  return { code: 'SOURCE_RETRYABLE', message: `来源片段暂时未核对：通用技能沙箱 ${error.code}`, fix: '管理员核对通用技能和沙箱状态，恢复后重新读取' };
 }
 
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
   if (error instanceof SandboxError) {
     // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
-    call.context.adminNote(`技能包沙箱失败：${error.code}`);
+    call.context.adminNote(`通用技能沙箱失败：${error.code}`);
     return errorAnswer(tool, [sandboxError(error)]);
   }
   const code = protocolCodeOf(error);

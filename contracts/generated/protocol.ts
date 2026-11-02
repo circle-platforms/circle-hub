@@ -6,7 +6,7 @@ export const PROTOCOL_CODES = {
   REFERENCE_AMBIGUOUS: { when: '精确值有歧义（T03 整份不受理之一）', fix: '从诊断给出的可能所指里选一个' },
   QUOTE_MISMATCH: { when: '原文与引用对不上（T03 整份不受理之一）', fix: '按原文逐字引用，或先调用 resolve_reference' },
   SOURCE_UNPARSEABLE: { when: '所有候选解析器拒收来源，保留最后确定的解析原因', fix: '按解析器在抛出处给出的修正说明修改后重传' },
-  SOURCE_UNAVAILABLE: { when: '无权或权限未定的读者面前，缺失与无权同形（D05 R[3]）', fix: '核对引用；需要读权时请管理员分享或分配任务包；真实原因只进管理员记录' },
+  SOURCE_UNAVAILABLE: { when: '无权或权限未定的读者面前，缺失与无权同形（D05 R[3]）', fix: '核对引用；需要读权时请管理员分享或分配工作流；真实原因只进管理员记录' },
   IDEMPOTENCY_MISMATCH: { when: '同一步骤键或意图键内容不同（D05、B06）', fix: '改了内容就不要带原键' },
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },
   RUN_SUPERSEDED: { when: '运行已被新修订取代（W06）', fix: '对新运行提交' },
@@ -27,7 +27,7 @@ export const PROTOCOL_CODES = {
   EFFECT_UNKNOWN_DISPOSED: { when: '效果原结局仍未证明，运行者已具名选择标记失败处置（V05 R[2]）', fix: '按处置记录归入已拒收；原效果结局与冻结/解除许可仍按原记录，不把处置当作已证明未执行' },
   EFFECT_BUDGET_EXHAUSTED: { when: 'P11 R[3] 第 4 款：效果次数或时长预算用完', fix: '指出该行预算，以新修订调整声明或缩小工作范围' },
   BOUNDARY_POLICY_DENIED: { when: 'P11 R[3] 第 6 款：全局边界政策表拒绝', fix: '按当前政策调整动作或环境，重新核验后开新修订' },
-  PACK_POLICY_DENIED: { when: 'P11 R[3] 第 7 款：任务包政策表重跑未通过', fix: '按政策表结论修正输入，重跑核验' },
+  PACK_POLICY_DENIED: { when: 'P11 R[3] 第 7 款：工作流政策表重跑未通过', fix: '按政策表结论修正输入，重跑核验' },
   EFFECT_CONTENT_UNVERIFIED: { when: 'P11 R[3] 第 8 款：外发字节不是核验后的产物或未过凭据核对', fix: '重新核验要外发的确切字节，按凭据规则受理后再派发' },
   AUDIENCE_VISIBILITY_EXCEEDED: { when: 'P11 R[3] 第 9 款：内容可见范围不覆盖受众或身份未映射', fix: '收窄受众，或由管理员补身份映射与覆盖确切内容的分享许可' },
 } as const;
@@ -44,7 +44,7 @@ export const CORE_VIOLATION_CODES = {
   'core.catalog.param_out_of_range': { interpreter: 'catalog', when: '参数取值超出目录声明的范围', fix: '改用范围内的值；如果是反向用例，在用例上标明' },
   'core.catalog.param_type_mismatch': { interpreter: 'catalog', when: '参数取值不符合声明的类型', fix: '改成声明的类型' },
   'core.catalog.arity_mismatch': { interpreter: 'catalog', when: '命令的参数个数与所有已声明的签名都不符', fix: '对上其中一个声明的签名' },
-  'core.membership.not_in_set': { interpreter: 'membership', when: '取值不在任务包声明的封闭集合里', fix: '改用声明的取值之一' },
+  'core.membership.not_in_set': { interpreter: 'membership', when: '取值不在工作流声明的封闭集合里', fix: '改用声明的取值之一' },
   'core.pattern.no_match': { interpreter: 'pattern', when: '取值不符合声明的模式', fix: '按声明的写法重写' },
   'core.range.out_of_bounds': { interpreter: 'range', when: '数值、前缀或阈值检验不通过', fix: '让取值落在声明的界限内' },
   'core.coverage.shortfall': { interpreter: 'coverage', when: '覆盖到的集合没有包含表要求的全部成员', fix: '补上缺的成员，或写明跳过的理由' },
@@ -77,4 +77,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 15;
+export const MODEL_VERSION = 16;

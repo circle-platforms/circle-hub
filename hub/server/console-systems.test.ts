@@ -34,7 +34,7 @@ before(async () => {
   const options = {
           store: server.records.store,
           load: async (ref: string) => {
-            if (ref !== 'plm-test') throw new ConnectorError('PACK_UNAVAILABLE', `系统包 ${ref} 不可用`);
+            if (ref !== 'plm-test') throw new ConnectorError('PACK_UNAVAILABLE', `业务系统接入 ${ref} 不可用`);
             return { pack: handle, profile: await readProfile(handle) };
           },
           redactor,

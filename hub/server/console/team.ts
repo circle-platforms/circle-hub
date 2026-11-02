@@ -22,7 +22,7 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
     const spare = commands.tokenIssue(user), invite = commands.userInvite(user);
     if (ctx.admin) dialogs.push(toggle, spare, ...(user.disabled ? [] : [invite]));
     members.push([link(`/console/team/${user.id}`, user.name), uiLabelOf('permission_role', user.role), uiLabelOf('account_status', user.disabled ? 'disabled' : 'enabled'),
-      user.role === 'admin' ? '全部任务包' : assigned.join('、') || '—',
+      user.role === 'admin' ? '全部工作流' : assigned.join('、') || '—',
       ctx.admin ? html`${commandLink(toggle, user.disabled ? '启用' : '停用')} ${user.disabled ? '' : commandLink(invite, '签发邀请码')} ${commandLink(spare, '签发 Circle 访问令牌')}` : '—']);
     if (member !== undefined) {
       if (ctx.admin) permissions.push(['重置密码', html`<form method="post" action="/console/admin/do/password-reset"><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><input type="hidden" name="user" value="${user.id}"><button type="submit" class="btn" title="生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改">重置密码</button></form>`]);
@@ -45,10 +45,10 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
       circles.push([await circleName(principals, token),user.name,when(token.last_used_at),ctx.admin ? commandLink(revoke,'断开') : '由管理员断开']);
     }
   }
-  return {status:200,body:page(ctx.chrome(member === undefined ? '团队' : users[0].name,{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和任务包分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin ? button('/console/operations/member','添加成员',{primary:true,icon:'plus'}) : ''}`}),html`
+  return {status:200,body:page(ctx.chrome(member === undefined ? '团队' : users[0].name,{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin ? button('/console/operations/member','添加成员',{primary:true,icon:'plus'}) : ''}`}),html`
 ${member === undefined ? '' : html`<p>${link('/console/team','返回团队')}</p>`}
-${liveModule('members',['member.connected'],card({title:member === undefined ? '成员' : '成员详情',meta:`${users.length} 人`},table(['名字','角色','状态','可用的任务包','操作'],members)))}
-${member === undefined ? '' : html`${sectionHead('权限')}${card(null,definitions(permissions))}${sectionHead('任务包分配')}${card(null,table(['任务包','可使用','操作'],assignments,'尚无任务包'))}`}
+${liveModule('members',['member.connected'],card({title:member === undefined ? '成员' : '成员详情',meta:`${users.length} 人`},table(['名字','角色','状态','可用的工作流','操作'],members)))}
+${member === undefined ? '' : html`${sectionHead('权限')}${card(null,definitions(permissions))}${sectionHead('工作流分配')}${card(null,table([uiLabelOf('pack_kind', 'workflow'),'可使用','操作'],assignments,'尚无工作流'))}`}
 <div class="mt16">${liveModule('member-circles',['member.connected'],card({title:'已连接的 Circle',hint:'停用、启用和断开生成命令，在管理员的 Circle 或 Hub 主机上执行。'},table(['设备名','成员','最近使用时间','操作'],circles,'尚无已连接的 Circle')))}</div>
 ${liveModule('dialogs',['member.connected'],dialogs.map(commandModal))}`)};
 }

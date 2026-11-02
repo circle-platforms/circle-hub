@@ -58,7 +58,7 @@
     {
       "code": "core.membership.not_in_set",
       "interpreter": "membership",
-      "when": "取值不在任务包声明的封闭集合里",
+      "when": "取值不在工作流声明的封闭集合里",
       "fix": "改用声明的取值之一"
     },
     {

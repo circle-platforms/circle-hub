@@ -36,7 +36,7 @@ async function trials(ctx: PageContext, path: string, user: string | undefined, 
   }
   const next = found.next === null ? html`` : link(path, '下一页尝试读取记录', { user: param(ctx, 'user'), from: param(ctx, 'from'), to: param(ctx, 'to'), trial_cursor: found.next });
   return card({ title: `${uiLabelOf('action_kind', 'trial')}记录`, meta: '仅管理员可见 · 新的在前' },
-    html`${table(['开始时间', '操作', '成员', '系统包', '环境', '登录', '接口结果'], rows, '本页没有尝试读取记录')}${next}`);
+    html`${table(['开始时间', '操作', '成员', uiLabelOf('pack_kind', 'system'), '环境', '登录', '接口结果'], rows, '本页没有尝试读取记录')}${next}`);
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -148,7 +148,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   return {
     status: 200,
     body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div><div class="mt16">${await trials(ctx, path, userId, from, to)}</div>
-${sectionHead('知识流向', undefined, undefined, undefined, '按成员、任务包追踪知识的来源、去向及所用流程')}
+${sectionHead('知识流向', undefined, undefined, undefined, '按成员、工作流追踪知识的来源、去向及所用流程')}
 ${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`),
   };
 }

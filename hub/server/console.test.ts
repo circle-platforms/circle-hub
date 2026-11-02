@@ -418,7 +418,10 @@ describe('pages', () => {
     assert.ok(!packs.body.includes('分配给'));
     const admin = await signIn(server.admin.token);
     const all = await get('/console/packs', admin);
-    for (const id of ['review@1.0.0', 'local-review@1.0.0', 'line-a@1.0.0', 'tracker-system@1.0.0']) assert.ok(all.body.includes(id), id);
+    for (const id of ['review@1.0.0', 'local-review@1.0.0']) assert.ok(all.body.includes(id), id);
+    for (const id of ['line-a@1.0.0', 'tracker-system@1.0.0']) assert.ok(!all.body.includes(id), id);
+    assert.ok((await get('/console/knowledge', admin)).body.includes('line-a'));
+    assert.ok((await get('/console/connections', admin)).body.includes('tracker-system'));
     assert.ok(all.body.includes(user.user.name), 'assignments are shown to admins');
   });
 

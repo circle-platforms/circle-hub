@@ -12,6 +12,7 @@ import { circleName } from './circles.ts';
 import { code, html, icon, link, liveModule, logo, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { readsText, systemReads } from './trial.ts';
+import { packSources } from './pack-sources.ts';
 import { button, callout, card, chip, commandLink, commandModal, duration, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 
 export interface Circle {
@@ -91,6 +92,7 @@ export async function connectionsPage(ctx: PageContext): Promise<PageResult> {
   const now = (ctx.deps.now?.() ?? new Date()).getTime();
   const circles = await circlesOf(ctx);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
+  const sources = await packSources(ctx, 'system', resources);
   let executors: ExecutorView[] | null = null;
   let executorsFailed = false;
   if (ctx.admin && ctx.deps.dispatch !== undefined) {
@@ -145,7 +147,7 @@ ${wires(rightNodes.length, false)}
       ];
     });
     const period = reads === null ? undefined : [...reads.values()][0];
-    systemsBody = html`${table(['系统', '系统包', '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统')}<p class="note">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
+    systemsBody = html`${table(['系统', uiLabelOf('pack_kind', 'system'), '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统')}<p class="note">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
   }
   let environmentsBody: Html;
   if (!ctx.admin) environmentsBody = html`<p class="sub">运行环境仅管理员可见。</p>`;
@@ -185,7 +187,7 @@ ${wires(rightNodes.length, false)}
       ];
     }), '尚无运行环境')}<p class="note">响应时间取近 24 小时内已有发送与应答时刻的执行器调用；耗时为 Hub 发出请求到收到应答的时间，中位与最慢按已完成的调用计算。扫描受限时次数为下限，耗时只涵盖已扫描调用。</p>`;
   }
-  const body = html`${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
+  const body = html`${sources}${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
 <div class="section">${topology}</div>`)}
 ${sectionHead('已连接的 Circle', undefined, undefined, 'circles', ctx.admin ? '按设备列出；断开生成命令，成员管理在团队页' : '仅列出本人的 Circle，断开由管理员执行')}
 ${liveModule('circles', ['member.connected'], circlesCard)}
@@ -202,7 +204,7 @@ ${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'e
     body: page(ctx.chrome('连接', {
       active: 'connections',
       hint: 'Hub 以只读方式访问业务系统，不修改业务数据；派发作业的运行环境在此查看',
-      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' }) : ''}`,
+      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? html`${button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' })}${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}` : ''}`,
     }), body),
   };
 }

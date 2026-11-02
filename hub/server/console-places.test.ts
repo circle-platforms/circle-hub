@@ -95,7 +95,7 @@ function assertPage(reply: Reply, path: string): void {
   assert.doesNotMatch(reply.body.replace(`<script type="module">${LIVE_SCRIPT}</script>`, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="side" aria-label="主导航">/, path);
-  for (const place of ['总览', '任务', '知识库', '任务包', '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
+  for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
   assert.doesNotMatch(reply.body, /你/, `${path}: interface text states facts without a subject`);
 }
 
@@ -106,9 +106,9 @@ describe('the eight places', () => {
     const admin = await signIn(server.admin.token);
     const pages: Record<string, string> = {
       '/console/overview': '总览', '/console/runs': '任务', [`/console/runs/${run}`]: '任务', '/console/knowledge': '知识库',
-      '/console/packs': '任务包', '/console/packs/review': '任务包', '/console/connections': '连接', '/console/records': '记录',
+      '/console/packs': uiLabelOf('pack_kind', 'workflow'), '/console/packs/review': uiLabelOf('pack_kind', 'workflow'), '/console/connections': '连接', '/console/records': '记录',
       '/console/settings': '设置', '/console/team': '团队', '/console/operations': '设置', '/console/operations/member': '团队', '/console/operations/system': '连接',
-      '/console/operations/pack': '任务包', '/console/operations/knowledge': '知识库', '/console/overview?days=30': '总览',
+      '/console/operations/pack': uiLabelOf('pack_kind', 'workflow'), '/console/operations/knowledge': '知识库', '/console/overview?days=30': '总览',
     };
     for (const [path, place] of Object.entries(pages)) {
       const reply = await get(path, admin);
@@ -183,6 +183,83 @@ describe('tasks', () => {
 });
 
 describe('operations and commands', () => {
+  test('publication titles and form routes follow the kind without granting members administration', async () => {
+    const admin=await signIn(server.admin.token);
+    for(const kind of ['workflow','skill','product','system'] as const){
+      const operation=await get('/console/operations/pack?kind='+kind,admin);
+      assert.equal(operation.status,200);assert.ok(operation.body.includes(`发布${uiLabelOf('pack_kind',kind)}</h1>`));
+      const action='/console/admin/do/pack-stage'+(kind==='workflow'?'':'?kind='+kind);
+      assert.ok(operation.body.includes(`action="${action}"`));
+    }
+    assert.ok((await get('/console/knowledge',admin)).body.includes('href="/console/operations/pack?kind=product"'));
+    assert.ok((await get('/console/connections',admin)).body.includes('href="/console/operations/pack?kind=system"'));
+    const user=await member(), session=await signIn(user.token);
+    assert.equal((await get('/console/operations/pack?kind=system',session)).status,404);
+    const invalid=await get('/console/operations/pack?kind=__proto__',admin);
+    assert.ok(invalid.body.includes(`发布${uiLabelOf('pack_kind','workflow')}</h1>`));
+  });
+
+  test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
+    const admin=await signIn(server.admin.token);
+    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections',admin);
+    assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/packs\/line-a"/);
+    assert.ok(knowledge.body.includes(uiLabelOf('pack_kind','product')));assert.match(knowledge.body,/合成产品线（line-a）/);
+    assert.match(connections.body,/id="system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
+    assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
+    for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
+      const detail=await get('/console/packs/'+id,admin);
+      assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`>${place}</a> › <a[^>]*>${uiLabelOf('pack_kind',kind)}</a> ›`));
+      const user=await member(), session=await signIn(user.token);
+      assert.equal((await get('/console/packs/'+id,session)).status,404);
+    }
+    const user=await member(), session=await signIn(user.token), mine=await get('/console/knowledge',session);
+    assert.doesNotMatch(mine.body,/href="\/console\/packs\/line-a"/,'moving source configuration does not grant new catalog access');
+    assert.ok(mine.body.includes('合成产品线'),'existing product-line knowledge remains readable');
+  });
+
+  test('unavailable source metadata stays unknown while retired and inactive catalog states remain visible', async t => {
+    const sources = [
+      { id: 'synthetic-unknown-product', version: '1.0.0', kind: 'product' as const, title: '合成未启用来源', description: '合成说明', digest: 'c'.repeat(64), owner: null, summary: null, active: false },
+      { id: 'synthetic-unused-system', version: '1.0.0', kind: 'system' as const, title: '合成退役接入', description: '合成说明', digest: 'd'.repeat(64), owner: null, summary: null, withdrawn: true },
+    ];
+    const catalog = server.deps.packs, list = catalog.list;
+    catalog.list = async principal => (await list.call(catalog, principal)).map(pack => ({ ...pack,
+      ...(pack.id === sources[0].id ? { active: false } : {}),
+      ...(pack.id === sources[1].id ? { withdrawn: true } : {}),
+    }));
+    t.after(() => { catalog.list = list; });
+    server.fakes.workflows.packs.push(...sources);
+    t.after(() => { for (const source of sources) server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(source), 1); });
+    const admin = await signIn(server.admin.token);
+    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections', sources[1], 'retired']] as const) {
+      const body = (await get(path, admin)).body;
+      const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
+      assert.ok(row);
+      assert.ok(row.includes(uiLabelOf('pack_status', state)));
+      assert.match(row, /<td>—<\/td>/, 'no product line or business system is invented');
+    }
+  });
+
+  test('workflows and generic skills have separate columns and acceptance stays above detail controls without a node graph', async t => {
+    const skill={id:'synthetic-skill',version:'1.0.0',kind:'skill' as const,title:'合成通用技能',description:'合成说明',digest:'f'.repeat(64),owner:null,summary:null};
+    server.fakes.workflows.packs.push(skill);
+    t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
+    const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
+    assert.equal(list.status,200);assert.match(list.body,/class="grid g2 section"/);
+    const workflow=/<section class="stack" aria-label="工作流" id="workflow">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    const skills=/<section class="stack" aria-label="通用技能" id="skill">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review"/);
+    assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
+    assert.match(workflow,/title="规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果"/);
+    assert.match(skills,/title="只规定做法，没有验收要求"/);
+    assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
+    const detail=await get('/console/packs/review',admin);
+    assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本与权限'));
+    assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);
+    const memberSession=await signIn((await member()).token), mine=await get('/console/packs',memberSession);
+    assert.ok(!mine.body.includes(skill.title));
+  });
+
   test('Circle tables show registered device names or direct-token labels without token identifiers', async () => {
     const user=await member();
     const client=await server.records.principals.registerClient('合成 MacBook Circle',['http://127.0.0.1/callback']);
@@ -214,7 +291,7 @@ describe('operations and commands', () => {
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
     const detail=await get(`/console/team/${user.user.id}`,admin);
-    assert.match(detail.body,/成员详情|权限|任务包分配|已连接的 Circle/);
+    assert.match(detail.body,/成员详情|权限|工作流分配|已连接的 Circle/);
     assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
     assert.equal((await get(`/console/team/${other.user.id}`,session)).status,404);
     assert.equal((await get('/console/team/absent',admin)).status,404);

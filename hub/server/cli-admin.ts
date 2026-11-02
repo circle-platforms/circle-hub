@@ -8,6 +8,7 @@
 // the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
 // admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
+import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
 import {bindLegacySkills,bindLegacyParser} from '../refs/api.ts';
@@ -50,16 +51,16 @@ export interface AdminCommandOptions {
   assembly?: AssemblyOptions;
 }
 
-export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <技能包 id@版本>';
+export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <通用技能 id@版本>';
 export const PACK_USAGE =
-  'pack install <技能包@版本> | uninstall <技能包> | bind-skills <旧运行> --skill <技能包@版本>… --reason <理由> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
-export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+  'pack install <通用技能@版本> | uninstall <通用技能> | bind-skills <旧运行> --skill <通用技能@版本>… --reason <理由> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <工作流> | unassign <用户> <工作流> | retire <发布版本> | activate <产品知识来源> | deactivate <产品知识来源> | list | shapes <工作流>';
+export const RESOURCE_USAGE = 'resource add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
 export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
-export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <任务包> [--reason <理由>] | list [--object <对象>]';
-export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
+export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <工作流> [--reason <理由>] | list [--object <对象>]';
+export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，密码从标准输入读取或随机生成；操作令牌存进钥匙串，不显示';
@@ -367,16 +368,16 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
     case 'install': {
       const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
       const decision=await decided(()=>hub.registry.install(by,positionals[0]));
-      session.out(`通用技能包已安装；决定 ${decision.digest}`);return 0;
+      session.out(`通用技能已安装；决定 ${decision.digest}`);return 0;
     }
     case 'uninstall': {
       const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
       const decision=await decided(()=>hub.registry.uninstall(by,positionals[0]));
-      session.out(`通用技能包已卸载；旧运行仍按冻结摘要复核；决定 ${decision.digest}`);return 0;
+      session.out(`通用技能已卸载；旧运行仍按冻结摘要复核；决定 ${decision.digest}`);return 0;
     }
     case 'bind-skills': {
       const {positionals,values}=parse(rest,{skill:{type:'string',multiple:true},reason:{type:'string'}},1);
-      if(!values.reason||!Array.isArray(values.skill)||!values.skill.length)throw new UsageError('pack bind-skills <旧运行> --skill <技能包@版本>… --reason <理由>');
+      if(!values.reason||!Array.isArray(values.skill)||!values.skill.length)throw new UsageError('pack bind-skills <旧运行> --skill <通用技能@版本>… --reason <理由>');
       const by=await session.admin(),hub=await session.hub();
       const record=await decided(()=>bindLegacySkills({registry:hub.registry,records:hub.records},by,positionals[0],values.skill as string[],values.reason as string));
       session.out(`历史运行的技能摘要声明已追加；不是原执行历史的补造；rec:${record}`);return 0;
@@ -413,12 +414,12 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
         } finally {
           if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
         }
-        if (!checked.ok) return refused(checked, '任务包未通过发布校验');
+        if (!checked.ok) return refused(checked, '发布内容未通过发布校验');
         const ref = `${checked.manifest.id}@${checked.manifest.version}`;
         const samples = checked.report.samples;
         session.out(
           checked.existing === null
-            ? `发布校验通过：${ref}（${labelOf('pack_kind', checked.manifest.kind)}，摘要 ${checked.digest}）：样例 ${samples.passed}/${samples.total} 通过`
+            ? `发布校验通过：${ref}（${uiLabelOf('pack_kind', checked.manifest.kind)}，摘要 ${checked.digest}）：样例 ${samples.passed}/${samples.total} 通过`
             : `${ref} 已经以同样的内容发布过（摘要 ${checked.digest}），发布不会产生新的记录`,
         );
         for (const line of changeLines(checked)) session.out(line);
@@ -432,20 +433,20 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       } finally {
         if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
       }
-      if (!outcome.ok) return refused(outcome, '任务包没有发布');
+      if (!outcome.ok) return refused(outcome, '发布内容没有发布');
       const version = outcome.version;
       const ref = `${version.id}@${version.version}`;
       const samples = outcome.report.samples;
       session.out(
         outcome.created
-          ? `已发布 ${ref}（${labelOf('pack_kind', version.kind)}，摘要 ${version.digest}）：样例 ${samples.passed}/${samples.total} 通过`
+          ? `已发布 ${ref}（${uiLabelOf('pack_kind', version.kind)}，摘要 ${version.digest}）：样例 ${samples.passed}/${samples.total} 通过`
           : `${ref} 已经以同样的内容发布过（摘要 ${version.digest}），包版本没有新的记录`,
       );
       if(values['answer-request']?.length)session.out(`请求作答：发布记录 rec:${version.record} 对应 ${new Set(values['answer-request']).size} 个指定请求（重复作答不增写）`);
       for (const warning of outcome.report.warnings) session.err(`注意：${problemLine(warning).slice(2)}`);
-      if (version.kind === 'product' && !(await hub.registry.isActive(version.id))) session.out(`产品包启用后才生效：circle-hub pack activate ${version.id}`);
-      if (version.kind === 'workflow') session.out(`工作流包分配给用户后才能用：circle-hub pack assign <用户> ${version.id}`);
-      if (version.kind === 'system') session.out(`系统包实例化为资源后才读取：circle-hub resource add ${version.id} --name <名字> --environment <环境> --origin <角色>=<地址>`);
+      if (version.kind === 'product' && !(await hub.registry.isActive(version.id))) session.out(`产品知识来源启用后才生效：circle-hub pack activate ${version.id}`);
+      if (version.kind === 'workflow') session.out(`工作流分配给用户后才能用：circle-hub pack assign <用户> ${version.id}`);
+      if (version.kind === 'system') session.out(`业务系统接入实例化为资源后才读取：circle-hub resource add ${version.id} --name <名字> --environment <环境> --origin <角色>=<地址>`);
       return 0;
     }
     case 'grant-publish':
@@ -490,7 +491,7 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       const hub = await session.hub();
       if (sub === 'activate') await decided(() => hub.registry.activate(admin, packId));
       else await decided(() => hub.registry.deactivate(admin, packId));
-      session.out(sub === 'activate' ? `产品包 ${packId} 已对整个 Hub 启用` : `产品包 ${packId} 已停用`);
+      session.out(sub === 'activate' ? `产品知识来源 ${packId} 已对整个 Hub 启用` : `产品知识来源 ${packId} 已停用`);
       return 0;
     }
     case 'list': {
@@ -499,13 +500,13 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       const hub = await session.hub();
       const listings = await hub.catalog.list(viewer);
       if (listings.length === 0) {
-        session.out(viewer.role === 'admin' ? '还没有发布任何任务包' : '没有分配给你的任务包');
+        session.out(viewer.role === 'admin' ? '还没有发布任何内容' : '当前账户没有可用的工作流');
         return 0;
       }
       const names = await session.names();
       for (const pack of listings) {
-        const state = pack.withdrawn ? '已下架' : pack.kind === 'product' ? (pack.active ? '已启用' : '未启用') : '已发布';
-        const fields = [`${pack.id}@${pack.version}`, labelOf('pack_kind', pack.kind), pack.title, state];
+        const state = uiLabelOf('pack_status', pack.withdrawn ? 'retired' : pack.kind === 'product' ? (pack.active ? 'enabled' : 'inactive') : 'published');
+        const fields = [`${pack.id}@${pack.version}`, uiLabelOf('pack_kind', pack.kind), pack.title, state];
         if (viewer.role === 'admin') {
           fields.push(`所有者 ${names.get(pack.owner) ?? pack.owner}`, pack.published_at);
           if (pack.kind === 'workflow') fields.push(`分配给 ${(pack.assigned_to ?? []).map((id) => names.get(id) ?? id).join('、') || '无'}`);
@@ -594,7 +595,7 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         if (Object.hasOwn(origins, role)) throw new UsageError(`角色 ${role} 的地址给了两次`);
         origins[role] = url;
       }
-      if (Object.keys(origins).length === 0) throw new UsageError('至少用一个 --origin <角色>=<地址> 给出系统包每个角色的地址');
+      if (Object.keys(origins).length === 0) throw new UsageError('至少用一个 --origin <角色>=<地址> 给出业务系统接入每个角色的地址');
       const plaintext = new Set<string>();
       for (const role of values['allow-plaintext'] ?? []) {
         if (!Object.hasOwn(origins, role)) throw new UsageError(`--allow-plaintext ${role}：这个角色没有用 --origin 给地址`);
@@ -621,7 +622,7 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
       };
       const record = await decided(() => hub.connectors.admin.addResource(admin, input));
-      session.out(`已添加资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      session.out(`已添加资源 ${record.id}：${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       await resourceWarnings(session,record);
       return 0;
     }
@@ -712,7 +713,7 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
       for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
-      session.out(`已更新资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      session.out(`已更新资源 ${record.id}：${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       if (values['clear-plaintext']) session.out('已清空所有明文放行');
       else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);
       await resourceWarnings(session,record);
@@ -815,7 +816,7 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
 async function productOf(hub: AssembledHub, viewer: Principal, name: string): Promise<ProductHandle> {
   const product = (await hub.packs.productByName(name)) ?? (await hub.packs.productById(name));
   if (product === null || !(await hub.packs.readableProducts(viewer)).has(product.product.id)) {
-    throw new CliError(`没有叫 ${name.slice(0, 80)} 的启用中的产品包，或者你不能读它的知识`, '用 circle-hub pack list 查看产品包，用 pack activate 启用');
+    throw new CliError(`没有叫 ${name.slice(0, 80)} 的启用中的产品知识来源，或当前账户无权读取相关知识`, '用 circle-hub pack list 查看产品知识来源，用 pack activate 启用');
   }
   return product;
 }

@@ -22,7 +22,7 @@ export const PROTOCOL_CODES = {
   },
   "SOURCE_UNAVAILABLE": {
     "when": "无权或权限未定的读者面前，缺失与无权同形（D05 R[3]）",
-    "fix": "核对引用；需要读权时请管理员分享或分配任务包；真实原因只进管理员记录"
+    "fix": "核对引用；需要读权时请管理员分享或分配工作流；真实原因只进管理员记录"
   },
   "IDEMPOTENCY_MISMATCH": {
     "when": "同一步骤键或意图键内容不同（D05、B06）",
@@ -105,7 +105,7 @@ export const PROTOCOL_CODES = {
     "fix": "按当前政策调整动作或环境，重新核验后开新修订"
   },
   "PACK_POLICY_DENIED": {
-    "when": "P11 R[3] 第 7 款：任务包政策表重跑未通过",
+    "when": "P11 R[3] 第 7 款：工作流政策表重跑未通过",
     "fix": "按政策表结论修正输入，重跑核验"
   },
   "EFFECT_CONTENT_UNVERIFIED": {

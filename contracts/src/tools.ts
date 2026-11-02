@@ -248,7 +248,7 @@ export const SubmitResultOutput = Envelope.safeExtend({
 export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_task_packs',
-    label: '查询任务包',
+    label: '查询工作流',
     title: 'List task packs',
     description: 'List the task packs you may use, with the inputs, parameters and requirements of each.',
     input: ListTaskPacksInput,

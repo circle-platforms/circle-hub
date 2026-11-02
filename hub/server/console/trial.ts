@@ -42,7 +42,7 @@ export function trialInputOf(form: Form): SystemTrialInput {
     const name = line.slice(at + 1).trim();
     if (Object.hasOwn(typed, name)) credentials[line.slice(0, at).trim()] = typed[name];
   }
-  return { system_pack: word(form, 'system_pack', '系统包'), environment, origins, ...(plaintext.size > 0 ? { allow_plaintext: [...plaintext] } : {}), credentials };
+  return { system_pack: word(form, 'system_pack', uiLabelOf('pack_kind', 'system')), environment, origins, ...(plaintext.size > 0 ? { allow_plaintext: [...plaintext] } : {}), credentials };
 }
 
 export type TrialOutcome = { report: SystemTrialReport } | { status: number; message: string };
@@ -112,7 +112,7 @@ export function trialCard(report: SystemTrialReport): Html {
   const spent = Date.parse(report.ended_at) - Date.parse(report.started_at);
   return card(
     { title: '尝试连接结果', meta: `${report.system_pack.id}@${report.system_pack.version} · ${uiLabelOf('environment', report.environment)} · 尝试读取 ${tried} 个接口 · 用时 ${duration(spent)}` },
-    html`${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '系统包没有声明接口')}<p class="note">每次尝试连接记一条尝试读取记录，包含操作者、时间与各接口的结果；不保存配置、凭据内容或来源原文。登录失败时，加密保存用于防止重复登录的摘要。需要参数的接口不尝试读取；登录失败后，同样的凭据不再发送。</p>`,
+    html`${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '业务系统接入没有声明接口')}<p class="note">每次尝试连接记一条尝试读取记录，包含操作者、时间与各接口的结果；不保存配置、凭据内容或来源原文。登录失败时，加密保存用于防止重复登录的摘要。需要参数的接口不尝试读取；登录失败后，同样的凭据不再发送。</p>`,
   );
 }
 

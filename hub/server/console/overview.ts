@@ -164,7 +164,7 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
     for (const build of await ctx.deps.knowledge.builds(line.id)) if (build.root !== null) { current += 1; break; }
   }
   const knowledge = card({ title: '知识库', hint: '按产品线统计' }, html`<div class="kstats two"><div><span class="sub">产品线</span><b class="num">${lines.length}</b></div><div><span class="sub">已有知识的产品线</span><b class="num">${current}</b></div></div>
-<p class="sub">每条知识均附出处；成员可读分配给自己的任务包所绑定的产品线。</p><div class="card-f"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
+<p class="sub">每条知识均附出处；成员可读分配给自己的工作流所绑定的产品线。</p><div class="card-f"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
   const storage = await storageFacts(ctx);
   const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : `最近 ${when(storage.backups.latest_at)}`;

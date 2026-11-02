@@ -4,6 +4,7 @@
 // from fixed paths and encoded query parameters. Every page of a signed-in account has the side navigation of the design
 // canvas, and the script when the page has a live module; the login and setup pages are a card without it.
 import { createHash } from 'node:crypto';
+import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { LiveEventName } from './live.ts';
 import { LIVE_SCRIPT } from './script.ts';
 import { CSS } from './style.ts';
@@ -167,7 +168,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['overview', '总览', '/console/overview', 'home'],
   ['tasks', '任务', '/console/runs', 'review'],
   ['knowledge', '知识库', '/console/knowledge', 'book'],
-  ['packs', '任务包', '/console/packs', 'pack'],
+  ['packs', uiLabelOf('pack_kind', 'workflow'), '/console/packs', 'pack'],
   ['connections', '连接', '/console/connections', 'sys'],
   ['records', '记录', '/console/records', 'rec'],
   ['team', '团队', '/console/team', 'users'],

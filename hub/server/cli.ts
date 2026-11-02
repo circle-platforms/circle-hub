@@ -47,8 +47,8 @@ interface ReservedCommandDescriptions {
   readonly 'operator-token':string;
 }
 const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
-  pack: '管理任务包',
-  skill:'管理通用技能包的迁移声明',
+  pack: '管理工作流',
+  skill:'管理通用技能的迁移声明',
   resource: '管理资源声明',
   secret: '管理密钥库条目',
   knowledge: '读取和管理知识树',
@@ -486,7 +486,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   }
   // Item ids and labels come from users' documents, build names from the build site: every line is made safe.
   const run = detail.run;
-  out(io, `运行 ${run.run}：任务包 ${run.pack}，开始于 ${run.started_at}`);
+  out(io, `运行 ${run.run}：工作流 ${run.pack}，开始于 ${run.started_at}`);
   out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
   out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
   if(detail.management)out(io,'管理状态：已放弃；选择来源 rec:'+detail.management.record+(detail.management.result?'':'；管理投影等待 Hub 自动补齐')) ;
