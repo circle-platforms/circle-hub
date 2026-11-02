@@ -437,11 +437,16 @@ test('tree original and relation endpoints resolve at the locked root, both quot
 test('administrators pass the product rule too; revocation changes reads rather than the stored receipt',async t=>{
   const w=await setup(t);const answer=await w.service.submitResult(w.admin,w.args(),call);
   const digest=answer.result!.contributions!.stored[0].record;
+  const receipt=(await w.kit.store.find({kind:'validation_result',key:'runs.result.run',value:w.run.run})).items[0];assert.ok(receipt);
   const previous=w.packs.readableProducts.bind(w.packs);
   w.packs.readableProducts=async user=>user.id===w.admin.id ? new Set() : previous(user);
   assert.equal(await w.knowledge.layers.contributions.read(digest,w.admin),null);
   assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin),[]);
-  assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),answer,'a repeat returns the historical receipt without another effect');
+  const repeated=await w.service.submitResult(w.admin,w.args(),call);assert.equal(repeated.errors[0]?.code,'SOURCE_UNAVAILABLE');assert.equal(repeated.result,undefined,'a revoked product grant also protects cached receipt replay without revealing current source presence');
+  assert.deepEqual((await w.kit.store.get(receipt.digest))?.body,receipt.body,'the original immutable receipt remains unchanged');
+  w.packs.readableProducts=previous;
+  assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),answer,'restoring the grant returns the same receipt without another effect');
+  assert.equal((await w.kit.store.find({kind:'validation_result',key:'runs.result.run',value:w.run.run})).items.length,1);
 });
 
 test('a handled artifact with a refuted requirement is not admitted',async t=>{

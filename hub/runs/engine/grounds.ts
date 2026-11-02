@@ -13,6 +13,7 @@ import { resultFor,runById,submissionByDigest } from './store.ts';
 import {HubReadFailure,retryRead} from './retry-read.ts';
 import {attemptEvidence} from './retry-evidence.ts';
 import {receivedDigest} from './util.ts';
+import {unavailableError} from './errors.ts';
 
 export function groundsOf(value:unknown):string[]{
   const metadata=new WeakMap<object,string>();
@@ -63,8 +64,12 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
   const permissionOptions={pending:options.pending,...(provisional?{provisionalSubmission:provisional.digest}:{})};
   const submitter=options.submitter??await ctx.deps.records.principals.get(run.runner??run.configurer??'');
   const diagnostic=new Set(options.recorded?value.unavailable_references??[]:[]);
+  const claims=[...value.cross_item,...Object.values(value.partitions).flatMap(items=>items.flatMap(item=>item.requirements.flatMap(requirement=>requirement.claims)))];
+  if(options.recorded&&submitter)for(const reference of grounds.filter(reference=>!diagnostic.has(reference)))if(!await groundsReadableBy(ctx,run,[reference],submitter,permissionOptions))return unavailableError();
   if(!options.recorded&&submitter){
     for(const reference of grounds)if(!await groundsReadableBy(ctx,run,[reference],submitter,permissionOptions)){
+      // Evidence already read successfully cannot become an absent diagnostic after a concurrent grant revocation.
+      if(run.sources.some(source=>source.reference===reference)||claims.some(claim=>claim.warrant.producer==='function'&&claim.warrant.id==='quote@1'&&claim.statement.verdict==='support'&&claim.grounds.includes(reference)))return unavailableError();
       // Submitter-scoped exact validators already saw the same opaque absence. Do not disclose whether it exists.
       diagnostic.add(reference);
     }
