@@ -313,7 +313,7 @@ describe('operations and commands', () => {
     const settings = await get('/console/team', admin);
     const [token] = await server.records.principals.tokens(user.user.id);
     for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token revoke ${token.id}`, `circle-hub token issue ${user.user.id} --label=Circle`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
-    assert.match(settings.body, /<div class="modal" id="cmd-user-disable-[^"]+" role="dialog"/);
+    assert.match(settings.body, /<div class="ch-dialog" id="cmd-user-disable-[^"]+" role="dialog"/);
     assert.match(settings.body, /href="#cmd-user-disable-[^"]+"/, 'the button opens its dialog by fragment');
     assert.doesNotMatch(settings.body, /action="\/console\/admin\/do\/(?!member-add)/, 'no management form on the settings page');
     const connections = await get('/console/connections', admin);
@@ -324,7 +324,7 @@ describe('operations and commands', () => {
     assert.ok(pack.body.includes('circle-hub pack retire review@1.0.0'));
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
     for (const path of ['/console/packs/absent', '/console/packs/__proto__', '/console/operations/backup']) assert.equal((await get(path, admin)).status, 404, path);
-    assert.match(CSS, /\.modal:target\{/);
+    assert.match(CSS, /\.ch-dialog:target/);
   });
 
   test('a command word that is not an identifier is quoted for the shell', () => {
@@ -350,4 +350,29 @@ describe('sign-in states', () => {
     assert.match(cookieOf(login, 'circle_hub_ended') ?? '', /Max-Age=0/, 'said once');
     assert.doesNotMatch((await send('/console/login')).body, /登录已过期或已退出/);
   });
+});
+
+test('contextual system and call inspectors only select rows in the authorized projection and retain filter URLs',async()=>{
+ const author=await member(),stranger=await member([]),admin=await signIn(server.admin.token),other=await signIn(stranger.token);
+ const run=await runWithResult(author),calls=await server.records.callLog.query(author.principal,{runId:run,limit:100});
+ const call=calls.items[0];assert.ok(call);
+ const records=await get('/console/records?'+new URLSearchParams({run,call:call.digest}),admin);
+ assert.equal(records.status,200);assert.match(records.body,/aria-label="详情"/);assert.match(records.body,/class="is-selected" aria-selected="true"/);
+ assert.ok(records.body.includes('run='+run+'&amp;call='));assert.match(records.body,/返回记录/);
+ const hidden=await get('/console/records?call='+call.digest,other),missing=await get('/console/records?call='+'0'.repeat(64),other);
+ assert.equal(hidden.status,404);assert.equal(hidden.body,missing.body);
+ const [resource]=await server.deps.resources.list(server.admin.principal);
+ assert.equal((await get('/console/connections?system='+encodeURIComponent(resource.id),admin)).status,200);
+ const refused=await get('/console/connections?system='+encodeURIComponent(resource.id),other),absent=await get('/console/connections?system=synthetic-missing',other);
+ assert.equal(refused.status,404);assert.equal(refused.body,absent.body);
+ const complete=await get('/console/runs/'+run+'?view=record',await signIn(author.token));
+ assert.match(complete.body,/data-without-inspector/);assert.match(complete.body,/完整记录/);assert.doesNotMatch(complete.body,/class="ch-app[^\"]*is-detail/);
+});
+
+test('the overview uses a Stat and thin parts bar with labelled counts instead of a donut and no area renders placeholder inspector facts',async()=>{
+ const session=await signIn(server.admin.token),overview=await get('/console/overview',session);
+ assert.match(overview.body,/检查项结果/);assert.match(overview.body,/class="ch-stat-value"/);assert.match(overview.body,/class="ch-parts"/);assert.doesNotMatch(overview.body,/donut|donut-hold/);
+ for(const area of ['overview','runs','connections','records','team','settings']){
+  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.match(page.body,/aria-label="概况"/);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+ }
 });

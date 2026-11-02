@@ -77,11 +77,11 @@ export function table(headers: readonly (string|Html)[], rows: readonly unknown[
 }
 
 export function definitions(pairs: readonly (readonly [string, unknown])[]): Html {
-  return html`<dl>${pairs.map(([term, value]) => html`<dt>${term}</dt><dd>${value}</dd>`)}</dl>`;
+  return html`<dl class="ch-kv">${pairs.map(([term, value]) => html`<dt>${term}</dt><dd>${value}</dd>`)}</dl>`;
 }
 
 export function section(title: string, body: unknown, hint?: string): Html {
-  return html`<section><h2${hint === undefined ? '' : html` title="${hint}"`}>${title}</h2>${body}</section>`;
+  return html`<section class="ch-section"><h2 class="ch-section-label"${hint === undefined ? '' : html` title="${hint}"`}>${title}</h2>${body}</section>`;
 }
 
 /**
@@ -228,7 +228,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-nav-list" id="console-navigation-links">${nav}</div>
 <div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
-<main class="ch-pane" id="console-main">${top}${content}</main>
+<main class="ch-pane" id="console-main">${top}<div class="ch-section" data-area-content>${content}</div></main>
 ${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? state : ''}${inspector}</aside>` : ''}
 </div>`, updates);
 }

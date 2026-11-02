@@ -52,10 +52,10 @@ test('result page keeps the production record and counts after accepted model co
   assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续受理的模型评论/);
   assert.ok(!result.body.includes('模型评论独立标记'));
   const run=await send(`/console/runs/${id}`,cookie);
-  const main=run.body.split('<h2>结果分类</h2>')[1].split('<h2>模型评论（判断）</h2>')[0];
+  const main=run.body.split(/<h2[^>]*>结果分类<\/h2>/)[1].split(/<h2[^>]*>模型评论（判断）<\/h2>/)[0];
   assert.ok(main.includes(original.record));assert.ok(main.includes(countsLine(original.result.acceptance,original.result.partitions,INTERFACE_LABELS)));
   assert.ok(!main.includes(countsLine(stored.latest!.result.acceptance,stored.latest!.result.partitions,INTERFACE_LABELS)));
-  const commentary=run.body.split('<h2>模型评论（判断）</h2>')[1]?.split('<h2>提交与回执</h2>')[0];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
+  const commentary=run.body.split(/<h2[^>]*>模型评论（判断）<\/h2>/)[1]?.split(/<h2[^>]*>提交与回执<\/h2>/)[0];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
   for(const title of ['已采用的成果','仍需处理的事项','需要你决定的请求'])assert.ok(!commentary.includes(title),title);
   assert.match(commentary,/模型声明的分区（判断，未采用）/);assert.match(commentary,/模型声明跳过 entry-0/);assert.match(commentary,/合成跳过/);
 

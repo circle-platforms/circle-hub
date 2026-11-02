@@ -8,7 +8,7 @@ import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import {timestamp} from './knowledge-display.ts';
-import {panel as card,badge as chip,technical,facts as kv,commandLink,commandModal} from './presentation.ts';
+import {panel as card,badge as chip,technical,facts as kv,commandLink,commandModal,dialog,actionLink} from './presentation.ts';
 import { compareVersions } from '../../runs/api.ts';
 import { commands } from './commands.ts';
 import { code, html, href, link, liveModule, page, pageLayout, table, type Html } from './html.ts';
@@ -103,7 +103,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   }
   const head = card(null, html`<div class="ch-section"><div class="ch-section"><div class="ch-actions"><span class="ch-tag">${uiLabelOf('pack_kind',pack.kind)}</span><h2>${pack.title}</h2>${chip(state.text, state.tone)}</div>
 <p class="ch-meta">${uiLabelOf('pack_kind', pack.kind)} · 所有者 ${await ctx.userName(pack.owner)} · 发布于 ${timestamp(pack.published_at)}</p>${technical(kv([['标识',code(`${pack.id}@${pack.version}`)],['内容哈希',code(pack.digest)]]))}</div>
-${ctx.admin&&!pack.space ? html`<div class="ch-actions">${button('/console/operations/pack', '发布新版本', { icon: 'upload',params:{kind:pack.kind} })}</div>` : ''}</div>`);
+</div>`);
   const personalControls=await personalPackControls(ctx,pack);
   const requirements = loaded === null ? (pack.kind === 'workflow' ? card({title:'验收要求'}, html`<p class="notice">验收要求暂不可读</p>`) : html``) : card({ title: '验收要求', meta: `${loaded.requirements.length} 项` }, table(
     ['要求项', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '必需', '检查项'],
@@ -130,18 +130,18 @@ ${ctx.admin&&!pack.space ? html`<div class="ch-actions">${button('/console/opera
   }
   const permissions = card({ title: '版本记录' }, html`${table(['发布时间', '状态', '查看', '样例', ctx.admin ? '操作' : ''], versionRows)}
 ${kv([['所有者', await ctx.userName(pack.owner)], ...(assigned === null ? [] : [['使用范围', assigned.length === 0 ? uiLabelOf('audience_scope','team_unassigned') : assigned.join('、')] as const])])}
-${permissionActions.length === 0 ? '' : html`<div class="ch-actions"><div class="ch-actions">${permissionActions}</div></div><p class="sub">调整使用范围、维护人与退役版本生成命令，在管理员的 Circle 中执行。</p>`}`);
+${permissionActions.length === 0 ? '' : html`<div class="ch-actions"><div class="ch-actions">${permissionActions}</div></div><p class="ch-meta">调整使用范围、维护人与退役版本生成命令，在管理员的 Circle 中执行。</p>`}`);
   const body = html`${head}
-<div class="ch-section">${requirements}</div>${personalControls}
+<div class="ch-section">${requirements}</div>${personalControls.body}
 ${loadFailed ? html`<p class="notice">该版本的验收要求与检查项暂不可读；版本与权限照常显示。</p>` : ''}
-<section class="ch-section"><div class="ch-section">${checks}</div>${permissions}</section>
-${dialogs.map(commandModal)}`;
+<section class="ch-section"><div class="ch-section">${checks}</div>${dialog('pack-versions','版本记录',permissions)}</section>
+${dialogs.map(commandModal)}<footer class="ch-inspector-actions">${actionLink('#pack-versions','版本记录','ghost')}${personalControls.actions}${ctx.admin&&!pack.space&&!pack.withdrawn?commandLink(commands.packRetire(`${pack.id}@${pack.version}`),'退役…','ch-btn ch-btn--danger'):''}${ctx.admin&&!pack.space?button('/console/operations/pack','发布新版本…',{primary:true,params:{kind:pack.kind}}):''}</footer>`;
   const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',anchor:'product-sources'}
     : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',anchor:'system-sources'}
     : {active:'packs' as const,title:uiLabelOf('pack_kind','workflow'),path:'/console/packs',anchor:pack.kind};
   const breadcrumb = html`${link(home.path,home.title)} › ${link(home.path+'#'+home.anchor,uiLabelOf('pack_kind',pack.kind))} › ${pack.title}`;
   const scope=selectedScope(ctx);
   const listing=await packList(ctx,listings,scope,pack);
-  const layout=pageLayout(listing,{inspector:html`<div class="ch-section" data-area-content>${body}</div>`,detail:true,back:link(home.path,'返回列表',{scope})});
+  const layout=pageLayout(listing,{inspector:html`<div class="ch-section" data-area-content data-inspector-content>${body}</div>`,detail:true,back:link(home.path,'返回列表',{scope})});
   return { status: 200, body: page(ctx.chrome(home.title, { active: home.active, crumbs:breadcrumb }),home.active==='packs'?await spaceLayout(ctx,layout,listings):layout) };
 }

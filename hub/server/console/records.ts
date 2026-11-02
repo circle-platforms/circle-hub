@@ -1,3 +1,4 @@
+import {technicalCode,stat,facts} from './presentation.ts';
 // 记录 (the design canvas's Audit board): the append-only call log with its filters, the calls per day and tool, per member
 // and per result over the last 14 days, and the lines themselves. Administrators see every call with the admin notes; a
 // member sees their own calls only (the call log answers so itself). /console/admin/calls is the administrators' path of
@@ -6,7 +7,7 @@ import { CALL_RESULT, uiLabelOf, type CallResult } from '../../../contracts/gene
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import { TRIAL_REPORT_SCHEMA, TrialRecord } from '../../connectors/api.ts';
 import type { CallLogLine, Page } from '../../records/api.ts';
-import { html, link, page, table, type Html } from './html.ts';
+import { html, link, page, pageLayout, table, type Html } from './html.ts';
 import { callTable, names, neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { TOOL_LABELS, toolName } from './tasks.ts';
 import { card, count, dayBars, duration, hbar, kpi, plannedCard, sectionHead, stackBar } from './ui.ts';
@@ -30,9 +31,9 @@ async function trials(ctx: PageContext, path: string, user: string | undefined, 
     const body = parsed.data;
     const outcome = (ok: boolean | null) => uiLabelOf('action_result', ok === null ? 'unknown' : ok ? 'completed' : 'error');
     const routes = body.routes.map((r) => [r.route, r.tried ? outcome(r.ok) : '未尝试读取', r.status === null ? '—' : `HTTP ${r.status}`, r.code ?? '—', r.ms === null ? '—' : duration(r.ms)]);
-    rows.push([body.started_at, uiLabelOf('action_kind', body.action), await ctx.userName(body.principal), `${body.system_pack.id}@${body.system_pack.version}`,
+    rows.push([body.started_at, uiLabelOf('action_kind', body.action), await ctx.userName(body.principal), technicalCode(`${body.system_pack.id}@${body.system_pack.version}`),
       uiLabelOf('environment', body.environment), body.auth.sent ? `${outcome(body.auth.ok)}${body.auth.code === null ? '' : ` · ${body.auth.code}`}` : '未发送登录',
-      html`<details><summary>${body.routes.length} 个接口</summary>${table(['接口', '结果', '状态码', '错误码', '耗时'], routes, '没有接口')}<p class="sub">结束于 ${body.ended_at}</p></details>`,
+      html`<details><summary>${body.routes.length} 个接口</summary>${table(['接口', '结果', '状态码', '错误码', '耗时'], routes, '没有接口')}<p class="ch-meta">结束于 ${body.ended_at}</p></details>`,
     ]);
   }
   const next = found.next === null ? html`` : link(path, '下一页尝试读取记录', { user: param(ctx, 'user'), from: param(ctx, 'from'), to: param(ctx, 'to'), trial_cursor: found.next });
@@ -76,7 +77,7 @@ async function statistics(ctx: PageContext, now: number): Promise<Html> {
   const errors = items.filter((line) => line.call_result !== 'ok').length;
   const refused = items.filter((line) => line.acceptance === 'not_accepted').length;
   const users = new Set(items.map((line) => line.user).filter((user) => user !== null));
-  const kpis = html`<section class="grid g4 section">
+  const kpis = html`<section class="ch-section" data-columns="4">
 ${kpi('工具调用', count(items.length), { unit: '次', note: scope, state: 'info' })}
 ${kpi('提交结果', count(items.filter((line) => line.tool === 'submit_result').length), { unit: '次', note: `其中未受理 ${refused} 次`, state: 'ok' })}
 ${kpi('调用出错', count(errors), { unit: '次', note: '出错与传输失败', state: errors > 0 ? 'down' : 'ok', ...(errors > 0 ? { tone: 'bad' as const } : {}) })}
@@ -102,8 +103,8 @@ ${kpi(ctx.admin ? '成员' : '本人', count(users.size), { unit: '人', note: c
   const people = [];
   for (const [user, n] of top) people.push(html`<div class="frow"><span class="fname">${await ctx.userName(user)}</span>${hbar(n, top[0][1], 'fill-hub')}<span class="fval num">${n}</span></div>`);
   const results = CALL_RESULT.map((result) => ({ result, n: items.filter((line) => line.call_result === result).length }));
-  const side = card({ title: ctx.admin ? '按成员' : '调用状态', hint: ctx.admin ? `按成员统计，${scope}` : `按调用状态统计，${scope}` }, html`${ctx.admin ? html`<div class="funnel">${people.length === 0 ? html`<p class="empty">没有调用</p>` : people}</div>${sectionHead('调用状态')}` : ''}${stackBar(results.map((r) => ({ value: r.n, fill: RESULT_FILL[r.result] })), '调用结果的占比')}<div class="result-legend mt8">${results.map((r) => html`<span><i class="${RESULT_FILL[r.result].replace('fill-', 'f-')}"></i>${uiLabelOf('call_result', r.result)} <b class="num">${r.n}</b></span>`)}</div>`);
-  return html`${kpis}<section class="grid g-2-1 section">${distribution}${side}</section>`;
+  const side = card({ title: ctx.admin ? '按成员' : '调用状态', hint: ctx.admin ? `按成员统计，${scope}` : `按调用状态统计，${scope}` }, html`${ctx.admin ? html`<div class="funnel">${people.length === 0 ? html`<p class="empty">没有调用</p>` : people}</div>${sectionHead('调用状态')}` : ''}${stackBar(results.map((r) => ({ value: r.n, fill: RESULT_FILL[r.result] })), '调用结果的占比')}<div class="result-legend">${results.map((r) => html`<span><i class="${RESULT_FILL[r.result].replace('fill-', 'f-')}"></i>${uiLabelOf('call_result', r.result)} <b class="num">${r.n}</b></span>`)}</div>`);
+  return html`${kpis}<section class="ch-section" data-columns="2">${distribution}${side}</section>`;
 }
 
 /** The records page at `path` (/console/records, or /console/admin/calls for administrators only). */
@@ -123,10 +124,10 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
     userId = /^usr_[0-9a-z]{26}$/.test(user) ? user : ((await ctx.deps.records.principals.findByName(user))?.id ?? '');
   }
   const toolOptions = html`<option value="">全部工具</option>${TOOLS.map((t) => html`<option value="${t.name}"${t.name === tool ? html` selected` : ''}>${t.label}</option>`)}${tool !== undefined && !TOOL_LABELS.has(tool) ? html`<option value="${tool}" selected>${tool}</option>` : ''}`;
-  const filters = html`<form class="filters" method="get" action="${path}">
+  const filters = html`<form class="ch-actions" data-filters method="get" action="${path}">
 ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></label>` : ''}<label>工具 <select name="tool">${toolOptions}</select></label>
 <label>运行 <input name="run" value="${run ?? ''}"></label><label>从 <input name="from" value="${param(ctx, 'from') ?? ''}" placeholder="2026-11-01"></label>
-<label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label><button type="submit">筛选</button></form>`;
+<label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
   const chrome = ctx.chrome('记录', { active: 'records', hint: ctx.admin ? '操作与校验记录仅追加、不可修改，可按成员、工具、运行与时间筛选' : '仅显示与本人相关的调用；记录仅追加、不可修改' });
   if (problems.length > 0 || from === null || to === null) {
     return { status: 400, body: page(chrome, html`${card(null, html`${filters}<p class="error">${problems.join('；')}</p>`)}`) };
@@ -144,12 +145,16 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
           cursor: cursor ?? null,
         });
   const now = (ctx.deps.now?.() ?? new Date()).getTime();
-  const next = lines.next === null ? html`` : html`<p class="mt12">${link(path, '下一页', { user, tool, run, from: param(ctx, 'from'), to: param(ctx, 'to'), cursor: lines.next })}</p>`;
-  const list = card({ title: '调用记录', meta: `本页 ${lines.items.length} 条 · 新的在前` }, html`${filters}${callTable(lines.items, ctx.admin, await names(ctx, lines.items))}${next}`);
+  const next = lines.next === null ? html`` : html`<p>${link(path, '下一页', { user, tool, run, from: param(ctx, 'from'), to: param(ctx, 'to'), cursor: lines.next })}</p>`;
+  const selectedDigest=param(ctx,'call');
+  const selected=selectedDigest?lines.items.find(line=>line.digest===selectedDigest):undefined;
+  if(selectedDigest&&!selected)return neutralPage(ctx);
+  const inspector=selected?html`<div data-inspector-content><span class="ch-tag">调用记录</span><h2 class="ch-panel-title">${toolName(selected.tool)}</h2>${facts([['时间',selected.at],['成员',await ctx.userName(selected.user)],['调用结果',uiLabelOf('call_result',selected.call_result)],['受理结果',selected.acceptance?uiLabelOf('acceptance',selected.acceptance):'—'],['错误码',selected.error_code??'—'],['耗时',duration(selected.duration_ms)],['任务',selected.run?link('/console/runs/'+selected.run,'查看任务'):'—']])}${ctx.admin&&selected.admin_note?card({title:'管理员备注'},html`<p>${selected.admin_note}</p>`):''}${technicalCode(JSON.stringify(selected,null,2))}</div>`:html`<h2 class="ch-panel-title">记录</h2>${stat('本页调用',lines.items.length)}${stat('本页调用出错',lines.items.filter(line=>line.call_result!=='ok').length)}${lines.items[0]?card({title:'最近调用'},html`<p>${toolName(lines.items[0].tool)}</p><p class="ch-meta">${lines.items[0].at}</p>`):''}`;
+  const list = card({ title: '调用记录', meta: `本页 ${lines.items.length} 条 · 新的在前` }, html`${filters}${callTable(lines.items, ctx.admin, await names(ctx, lines.items),{path,params:Object.fromEntries(ctx.url.searchParams),selected:selected?.digest})}${next}`);
   return {
     status: 200,
-    body: page(chrome, html`${await statistics(ctx, now)}<div class="mt16">${list}</div><div class="mt16">${await trials(ctx, path, userId, from, to)}</div>${await spaceRecords(ctx, path, userId, from, to)}
+    body: page(chrome,pageLayout(html`${await statistics(ctx, now)}<div>${list}</div><div>${await trials(ctx, path, userId, from, to)}</div>${await spaceRecords(ctx, path, userId, from, to)}
 ${sectionHead('知识流向', undefined, undefined, undefined, '按成员、工作流追踪知识的来源、去向及所用流程')}
-${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`),
+${plannedCard('知识流向', '记录中已包含每条知识的出处与每次引用；上线后在此将两者关联展示。', 'flow')}`,{inspector,detail:!!selected,back:link(path,'返回记录',Object.fromEntries([...ctx.url.searchParams].filter(([key])=>key!=='call')))})),
   };
 }

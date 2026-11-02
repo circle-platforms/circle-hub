@@ -109,11 +109,11 @@ async function hasAdmin(deps: ServerDeps): Promise<boolean> {
 
 async function loginPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, ended = false, next: string | null = null): Promise<void> {
   const nonce = options.sessions.issueNonce(secure);
-  const setup = await hasAdmin(options.deps) ? '' : html`<p class="notice mt12">这个 Hub 还没有管理员：${link('/console/setup', '用初始化码创建首位管理员')}</p>`;
+  const setup = await hasAdmin(options.deps) ? '' : html`<p class="notice">这个 Hub 还没有管理员：${link('/console/setup', '用初始化码创建首位管理员')}</p>`;
   const body = page(
     anonymous('登录'),
-    html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
-<form method="post" action="/console/login" class="mt16">
+    html`${message === null ? '' : html`<p class="error">${message}</p>`}${ended ? html`<p class="notice">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
+<form method="post" action="/console/login">
 <div class="ch-field"><label class="ch-field-label" for="hub-username">用户名</label><div class="ch-input"><input id="hub-username" name="username" autocomplete="username" maxlength="200" required></div></div>
 <div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
 <input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
@@ -248,7 +248,7 @@ async function loginLink(request: IncomingMessage, response: ServerResponse, opt
   if (request.method === 'GET') {
     const found = links.peek(code);
     const principal = found === null ? null : await options.deps.records.principals.authenticate(`Bearer ${found.token}`);
-    if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p><p class="mt12">${link('/console/login', '前往登录页')}</p>`));
+    if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p>${LINK_INVALID}</p><p>${link('/console/login', '前往登录页')}</p>`));
     // A link from Circle leads every account to the password sign-in at the requested page; it never opens a session.
     return redirect(response,'/console/login?next='+encodeURIComponent(found.next));
   }
@@ -268,7 +268,7 @@ async function loginLink(request: IncomingMessage, response: ServerResponse, opt
   }
   const taken = links.take(code);
   const principal = taken === null ? null : await options.deps.records.principals.authenticate(`Bearer ${taken.token}`);
-  if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p>`));
+  if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p>${LINK_INVALID}</p>`));
   redirect(response,'/console/login?next='+encodeURIComponent(taken.next));
 }
 
@@ -435,14 +435,14 @@ const SETUP_STEPS = ['初始化码', '创建管理员', '连接 Circle', '完成
 
 async function setupPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, prefill = ''): Promise<void> {
   if (await hasAdmin(options.deps)) {
-    sendHtml(response, status === 200 ? 409 : status, page(anonymous('初始化'), html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}<p class="mt12">这个 Hub 已经有管理员；请用用户名和密码${link('/console/login', '登录')}。</p>`));
+    sendHtml(response, status === 200 ? 409 : status, page(anonymous('初始化'), html`${message === null ? '' : html`<p class="error">${message}</p>`}<p>这个 Hub 已经有管理员；请用用户名和密码${link('/console/login', '登录')}。</p>`));
     return;
   }
   const nonce = options.sessions.issueNonce(secure);
   const body = page(
     { ...anonymous('创建首位管理员'), wide: true, hint: '使用初始化码创建首位管理员；管理员用户名必填，密码可留空。' },
-    html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error mt12">${message}</p>`}
-<p class="sub mt12">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
+    html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error">${message}</p>`}
+<p class="ch-meta">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
 <form method="post" action="/console/setup">
 <div class="ch-field"><label class="ch-field-label" for="setup-code">初始化码</label><div class="ch-input"><input id="setup-code" name="code" autocomplete="off" size="40" required value="${prefill}"></div></div>
 <div class="ch-field"><label class="ch-field-label" for="admin-name">管理员用户名</label><div class="ch-input"><input id="admin-name" name="name" autocomplete="off" size="24" required></div></div>
@@ -494,18 +494,18 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
     page(
       { ...anonymous('管理员已创建'), wide: true },
       html`${stepper(SETUP_STEPS, 2)}
-<p class="mt12">已创建管理员 ${outcome.name}。</p>${outcome.password === null ? '' : html`<p class="notice">初始密码仅显示一次；首次登录必须修改。</p>${pre(outcome.password)}`}
+<p>已创建管理员 ${outcome.name}。</p>${outcome.password === null ? '' : html`<p class="notice">初始密码仅显示一次；首次登录必须修改。</p>${pre(outcome.password)}`}
 <p class="notice">下面是这位管理员的访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
-<h2 class="mt16">在 Circle 中连接这个 Hub</h2>
-<p class="sub">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；先用用户名和密码登录控制台，再确认授权即完成连接。</p>
-<pre class="snippet">${circleEntry(mcpOrigin(request, secure), false)}</pre>
-<p class="sub">客户端不支持 MCP 标准授权时改用访问令牌：在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，配置写成：</p>
-<pre class="snippet">${circleEntry(mcpOrigin(request, secure))}</pre>
-${secure ? html`<p class="sub">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
-<h2 class="mt16">接下来</h2>
-<ol class="small"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
-<p class="mt12">${link('/console/login', '前往登录')}</p>`,
+<h2>在 Circle 中连接这个 Hub</h2>
+<p class="ch-meta">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；先用用户名和密码登录控制台，再确认授权即完成连接。</p>
+<pre class="ch-quote">${circleEntry(mcpOrigin(request, secure), false)}</pre>
+<p class="ch-meta">客户端不支持 MCP 标准授权时改用访问令牌：在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，配置写成：</p>
+<pre class="ch-quote">${circleEntry(mcpOrigin(request, secure))}</pre>
+${secure ? html`<p class="ch-meta">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
+<h2>接下来</h2>
+<ol class="ch-meta"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
+<p>${link('/console/login', '前往登录')}</p>`,
     ),
     { 'set-cookie': cookie(secure ? SECURE_SETUP_COOKIE : SETUP_COOKIE, '', '/console/setup', 0, secure) },
   );

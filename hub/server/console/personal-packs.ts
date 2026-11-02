@@ -9,28 +9,31 @@ import type { PackListing } from '../../ports.ts';
 import { code, html, link, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import {when} from './ui.ts';
-import {panel as card,areaPage as page,field,technical} from './presentation.ts';
+import {panel as card,areaPage as page,field,technical,dialog,actionLink} from './presentation.ts';
 import { unpackZip } from './upload.ts';
 import { PackStaging, stagedDigest } from './staging.ts';
 
 export function personalPackForm(ctx:PageContext,action:string,fields:Html,label:string,multipart=false,disabled=false):Html{
-  return html`<form method="post" action="/console/packs/do/${action}"${multipart?html` enctype="multipart/form-data"`:''}><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<button class="ch-btn ch-btn--secondary" type="submit"${disabled?html` disabled`:html``}>${label}</button></form>`;
+  return html`<form method="post" action="/console/packs/do/${action}"${multipart?html` enctype="multipart/form-data"`:''}><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<button class="ch-btn ${action==='retire'||action==='revoke'?'ch-btn--danger':action==='discard'?'ch-btn--secondary':'ch-btn--primary'}" type="submit"${disabled?html` disabled`:html``}>${label}</button></form>`;
 }
 export async function personalPublishPage(ctx:PageContext,staging:PackStaging):Promise<PageResult>{
   if(!ctx.deps.registry?.personal)return neutralPage(ctx);
   const stages=staging.list(ctx.principal.id).filter(stage=>stage.space===ctx.principal.id);
   return {status:200,body:page(ctx.chrome('发布个人工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获授权者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),html`<div class="ch-section">${card({title:'上传发布内容',hint:'上传含 pack.json 的 zip；校验通过后暂存 30 分钟，确认时再次校验。'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.when+'；'+PROTOCOL_CODES.PACK_PERSONAL_CAPABILITY_DENIED.fix},personalPackForm(ctx,'stage',html`${field('发布内容 zip',html`<input type="file" name="archive" accept=".zip,application/zip" required>`)}`,'上传并校验',true))}${card({title:'等待发布中'},table(['包','到期时间','操作'],stages.map(stage=>[technical(code(stage.pack+'@'+stage.version),'查看待发布版本'),when(new Date(stage.expires).toISOString()),html`${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}`]),'没有暂存的发布内容'))}</div>`)};
 }
-export async function personalPackControls(ctx:PageContext,pack:PackListing):Promise<Html>{
-  const personal=ctx.deps.registry?.personal;if(!personal||pack.space!==ctx.principal.id)return html``;
+export async function personalPackControls(ctx:PageContext,pack:PackListing):Promise<{body:Html;actions:Html}>{
+  const personal=ctx.deps.registry?.personal;if(!personal||pack.space!==ctx.principal.id)return {body:html``,actions:html``};
   const fields=html`<input type="hidden" name="pack" value="${pack.id}"><input type="hidden" name="version" value="${pack.version}">`;
   const grants=await personal.grants(ctx.principal,pack.id);
   const audience=await currentAudience(ctx,pack.space,'/',false,pack.id);
   const targets=ctx.url.searchParams.get('grant_audience')==='administrators'?(await ctx.deps.records.principals.list()).filter(u=>!u.disabled&&u.role==='admin'):ctx.url.searchParams.get('grant_member')?[await ctx.deps.records.principals.findByName(ctx.url.searchParams.get('grant_member')!)].filter((u):u is NonNullable<typeof u>=>!!u&&!u.disabled):undefined;
-  const dialog=await grantDialog(ctx,{id:'grant-pack',workflow:true,content:pack.title+' · 仅可使用',current:audience.text,checks:await personal.precheckGrant(ctx.principal,pack.id,targets),grants,fields,form:(action,controls,label,disabled)=>personalPackForm(ctx,action,controls,label,false,disabled)});
+  const sharingDialog=await grantDialog(ctx,{id:'grant-pack',workflow:true,trigger:false,content:pack.title+' · 仅可使用',current:audience.text,checks:await personal.precheckGrant(ctx.principal,pack.id,targets),grants,fields,form:(action,controls,label,disabled)=>personalPackForm(ctx,action,controls,label,false,disabled)});
   const canPublish=await ctx.deps.records.authorizations.canPublish(ctx.principal.id);
   const checked=ctx.url.searchParams.get('promote')==='1'?await personal.precheckPromotion(ctx.principal,pack.id+'@'+pack.version):null;
-  return html`<p>使用范围：${audience.text}</p>${dialog}${card({title:'发布到团队',hint:'个人版本与授权保留；团队版本按使用范围共享。确认时重新检查，已有个人运行仍保持个人读权'},checked?html`<p>个人：保留不变 · ${audience.text}</p><p>团队：新写入一条 · ${uiLabelOf('audience_scope','team')}</p>${checkTable(checked.checks)}${personalPackForm(ctx,'promote',fields,'确认发布到团队',false,!checked.ok)}`:canPublish?link('/console/packs/'+pack.id,'发布到团队…',{space:pack.space,promote:'1'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把个人工作流授权给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`)}${pack.withdrawn?'':card({title:'下架个人版本',hint:'停止新运行使用；历史运行仍按原摘要读取'},personalPackForm(ctx,'retire',fields,'下架此版本'))}`;
+  const preview=checked?dialog('promote-personal-pack','发布到团队',html`<p>个人版本与分享保留；团队版本独立，确认时重新检查。</p><p>个人：保留不变 · ${audience.text}</p><p>团队：${uiLabelOf('audience_scope','team')}</p>${checkTable(checked.checks)}`,personalPackForm(ctx,'promote',fields,'确认发布到团队',false,!checked.ok)):html``;
+  const body=html`<p>使用范围：${audience.text}</p>${sharingDialog}${preview}`;
+  const retire=pack.withdrawn?html``:dialog('retire-personal-pack','下架个人版本',html`<p>停止新运行使用；版本记录仍按原摘要读取。</p>`,personalPackForm(ctx,'retire',fields,'下架此版本'));
+  return {body:html`${body}${retire}`,actions:html`${pack.withdrawn?'':actionLink('#retire-personal-pack','下架…','danger')}${actionLink('#grant-pack','分享…')}${canPublish?actionLink('/console/packs/'+pack.id+'?'+new URLSearchParams({space:pack.space!,promote:'1'})+'#promote-personal-pack','分享到团队…'):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权">分享到团队…</button>`}`};
 
 }
 export async function performPersonalPackAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined},staging:PackStaging,upload?:{bytes:Buffer}):Promise<string>{

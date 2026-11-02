@@ -47,11 +47,11 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(home.body,/最近变化/);assert.doesNotMatch(home.body,/知识入库流程/);
  assert.match(home.body,/共享给我的 › 合成控制台接收人 › 共享经验/);
  const own=await browser.get(space({space:owner.user.id,path:verified.path}));assert.equal(own.status,200,own.body);
- assert.match(own.body,/方法 › 认证/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
+ assert.match(textOf(parse(own.body)),/知识库 › 个人 › 方法/);assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
  assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已核验<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>未核验<\/span>/);
  assert.match(own.body,/\/ 1 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
- assert.match(own.body,/<details class="ch-section"><summary[^>]*>知识版本历史<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本历史/);
+ assert.match(own.body,/<details class="ch-section" id="knowledge-history"><summary[^>]*>知识版本历史<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本历史/);
  assert.match(own.body,/版本 2 · \d{4}-\d{2}-\d{2} \d{2}:\d{2} ·/);
  assert.equal((own.body.match(/href="#grant-knowledge"/g)??[]).length,1);
  const checked=await browser.post('/console/knowledge/do/grant',{csrf:csrf(own.body),path:verified.path,audience:'administrators',member:reader.user.name,preview_grant:'1'});
@@ -154,4 +154,21 @@ test('memory refusal audits and unchanged receipts cannot bind as inputs even fo
   const read=await who.call('get_nodes',{reference:'rec:'+record.digest});assert.equal(read.isError,true);assert.ok(!read.text.includes('"positions"'));
   const started=await who.call('start_run',{pack,inputs:{target:{reference:'rec:'+record.digest}}});assert.equal(started.out.errors[0]?.code,'SOURCE_UNAVAILABLE',started.text);assert.equal(started.out.run,undefined);
  }
+});
+
+
+test('entry inspectors keep counts with labels and one ordered action row; opening withdrawal only displays its confirmation', {skip},async()=>{
+ const spaces=hub.hub.knowledge.spaces!,original=await spaces.entry(owner.principal,verified.root,verified.path,verified.entry);assert.ok(original);
+ const current=await spaces.write(owner.principal,{path:'/方法/认证',kind:EntryKindSchema.enum.observation,statement:'合成操作栏检查',grounds:original.body.grounds});
+ const path=space({space:owner.user.id,path:'/方法/认证',root:current.root,entry:current.entry});
+ const before=await hub.records.store.watermark!(),reply=await browser.get(path);
+ assert.equal(reply.status,200,reply.body);
+ assert.match(reply.body,/<h2 class="ch-section-label"[^>]*>来源 · 1<\/h2>/);
+ const foot=/<footer class="ch-inspector-actions">([\s\S]*?)<\/footer>/.exec(reply.body)?.[1]??'';
+ assert.match(foot,/ch-btn--ghost[^>]*>版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到团队…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
+ assert.doesNotMatch(foot,/<details|<summary|<form/);
+ assert.match(reply.body,/<div class="ch-dialog" id="withdraw-entry"[\s\S]*action="\/console\/knowledge\/do\/withdraw"/);
+ const confirmation=await browser.get(path+'#withdraw-entry');assert.equal(confirmation.status,200);
+ assert.equal(await hub.records.store.watermark!(),before,'GET selection and confirmation never perform a withdrawal');
+ assert.equal((await spaces.entry(owner.principal,current.root,'/方法/认证',current.entry))?.row.status,'verified');
 });

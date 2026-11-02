@@ -42,7 +42,7 @@ export function authorizeSecurityPolicy(uri: string): string {
 
 function facts(request: AuthorizationRequest): Html {
   const values = [
-    ['客户端', html`<b>${request.client.name}</b> <span class="digest">${request.client.id}</span>`],
+    ['客户端', html`<b>${request.client.name}</b> <span class="ch-meta">${request.client.id}</span>`],
     ['回调地址', code(request.redirectUri)],
     ['访问范围', '本 Hub 的 MCP 服务（' + request.resource + '）'],
     ['有效期', `授权请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效`],
@@ -66,10 +66,10 @@ ${error === null ? '' : html`<p class="error">${error}</p>`}
 /** The identity step: the invitation code, or signing in to the console first. */
 export function identityPage(request: AuthorizationRequest, error: string | null): Html {
   return page(chrome('授权 Circle 连接 Hub', '输入管理员签发的邀请码确认账号；也可用密码登录控制台后授权。'), html`${stepper(STEPS, 0)}
-<p class="mt12"><b>${request.client.name}</b> 请求连接本 Hub。</p>
+<p><b>${request.client.name}</b> 请求连接本 Hub。</p>
 <section class="ch-section">${facts(request)}</section>
-<div class="mt16">${invitationForm(request, error, true)}</div>
-<p class="sub mt12">邀请码 24 小时内有效，仅可使用一次。${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}</p>`);
+<div>${invitationForm(request, error, true)}</div>
+<p class="ch-meta">邀请码 24 小时内有效，仅可使用一次。${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}</p>`);
 }
 
 /**
@@ -77,17 +77,17 @@ export function identityPage(request: AuthorizationRequest, error: string | null
  * account, and the approval is refused when it is no longer the one the page showed.
  */
 export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
-  const decide = html`<form method="post" action="/console/authorize/${request.id}" class="row mt16">
+  const decide = html`<form method="post" action="/console/authorize/${request.id}" class="ch-actions">
 <input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">
 <button type="submit" class="ch-btn ch-btn--secondary" name="decision" value="deny">拒绝</button>
 <button type="submit" class="ch-btn ch-btn--primary" name="decision" value="approve">授权</button>
 </form>`;
   const other = via === 'session'
-    ? html`<details class="mt16"><summary>以其他账号授权</summary><div class="mt12">${invitationForm(request, null, false)}</div></details>`
+    ? html`<details><summary>以其他账号授权</summary><div>${invitationForm(request, null, false)}</div></details>`
     : '';
   return page(chrome('授权 Circle 连接 Hub', '管理员在团队页管理连接；成员在设置页查看本人的 Circle。断开由管理员生成命令执行。'), html`${stepper(STEPS, 1)}
-${error === null ? '' : html`<p class="error mt12">${error}</p>`}
-<p class="mt12">以 <b>${account.name}</b>（${account.role}）的身份授权 <b>${request.client.name}</b> 连接本 Hub。</p>
+${error === null ? '' : html`<p class="error">${error}</p>`}
+<p>以 <b>${account.name}</b>（${account.role}）的身份授权 <b>${request.client.name}</b> 连接本 Hub。</p>
 <section class="ch-section">${facts(request)}</section>
 ${redirectNotice(request.redirectUri, account.name)}
 ${callout('info', html`<span>授权后，该客户端以 ${account.name} 的身份调用 Hub 的工具，权限与该账号相同。</span>`)}
@@ -98,17 +98,17 @@ ${decide}${other}`);
 export function endedPage(request: AuthorizationRequest): Html {
   const approved = request.ended === 'approved';
   return page(chrome(approved ? '已授权' : '已拒绝'), html`${stepper(STEPS, 2)}
-<p class="mt12">${approved ? html`已授权 <b>${request.client.name}</b> 连接本 Hub，可关闭本页。` : html`已拒绝 <b>${request.client.name}</b> 的授权请求，该客户端未获连接。`}</p>`);
+<p>${approved ? html`已授权 <b>${request.client.name}</b> 连接本 Hub，可关闭本页。` : html`已拒绝 <b>${request.client.name}</b> 的授权请求，该客户端未获连接。`}</p>`);
 }
 
 /** A request that does not exist for this browser (expired, ended by too many wrong codes, a restart, another browser's). */
 export function expiredPage(message = `授权请求已过期、不存在，或不是由本浏览器发起的。授权请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效，Hub 重启后失效。`): Html {
-  return page(chrome('授权请求已失效'), html`<p class="mt12">${message}</p><p class="sub">请在 Circle 中重新连接 Hub，浏览器将打开新的授权页。</p>`);
+  return page(chrome('授权请求已失效'), html`<p>${message}</p><p class="ch-meta">请在 Circle 中重新连接 Hub，浏览器将打开新的授权页。</p>`);
 }
 
 /** An authorization request the endpoint cannot answer at a redirect URI (unknown client, mismatched redirect URI). */
 export function refusedPage(message: string): Html {
-  return page(chrome('授权请求无效'), html`<p class="error mt12">${message}</p>`);
+  return page(chrome('授权请求无效'), html`<p class="error">${message}</p>`);
 }
 
 /** The message for an invitation that cannot be used. */

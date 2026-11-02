@@ -1,3 +1,5 @@
+import {dot} from './ui.ts';
+import {technical,technicalCode,stat,facts,actionLink} from './presentation.ts';
 // 连接 (the design canvas's Connections board): the Circles connected with a token, the business systems the Hub reads
 // (resources, administrators only: the catalog gives others none) and the runtime environments dispatch jobs go to (the
 // registered executors, administrators only). The Hub only reads business systems; a write route is never opened here.
@@ -9,8 +11,8 @@ import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
 import { circleName } from './circles.ts';
-import { code, html, icon, link, liveModule, logo, page, table, type Html } from './html.ts';
-import type { PageContext, PageResult } from './pages.ts';
+import { code, html, icon, link, liveModule, logo, page, pageLayout, table, type Html } from './html.ts';
+import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
 import { button, callout, card, chip, commandLink, commandModal, duration, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
@@ -104,21 +106,21 @@ export async function connectionsPage(ctx: PageContext): Promise<PageResult> {
   }
   const dialogs: CommandDialog[] = [];
   const recent = circles.filter((c) => c.token.last_used_at !== null && now - Date.parse(c.token.last_used_at) < DAY).length;
-  const kpis = html`<section class="grid g4 section">
+  const kpis = html`<section class="ch-section" data-columns="4">
 ${kpi('已连接的 Circle', circles.length, { unit: '个', note: `24 小时内使用过 ${recent} 个`, state: circles.length > 0 ? 'ok' : 'idle' })}
 ${ctx.admin ? kpi('业务系统', resources.filter((r) => r.enabled).length, { unit: `/ ${resources.length}`, note: '启用 / 全部，只读访问', state: resources.some((r) => r.binding_error) ? 'down' : 'ok' }) : kpi('业务系统', '—', { note: '仅管理员可见', state: 'idle' })}
 ${ctx.admin ? kpi('运行环境', executors === null ? '—' : executors.filter((e) => environmentState(e).code === 'available').length, { unit: executors === null ? '' : `/ ${executors.length}`, note: executors === null ? (executorsFailed ? '暂不可用' : '派发未接入') : environmentNote(executors), state: executors !== null && executors.some((e) => environmentState(e).code === 'frozen') ? 'down' : 'idle' }) : kpi('运行环境', '—', { note: '仅管理员可见', state: 'idle' })}
 ${kpi('业务系统写操作', '未开放', { note: '消息通知与数据回写均未开放', state: 'idle' })}
 </section>`;
-  const leftNodes = circles.slice(0, 5).map((c) => html`<div class="tnode"><span class="dot ${c.token.last_used_at !== null && now - Date.parse(c.token.last_used_at) < DAY ? 'ok' : 'idle'}" aria-hidden="true"></span><b>${c.name}</b><span class="sub">${c.owner}</span></div>`);
-  const rightNodes = resources.slice(0, 5).map((r) => { const s = systemState(r); return html`<div class="tnode"><span class="dot ${s.dot}" aria-hidden="true"></span><b>${r.name}</b><span class="sub">${r.system_pack}</span></div>`; });
+  const leftNodes = circles.slice(0, 5).map((c) => html`<div class="tnode">${dot(c.token.last_used_at !== null && now - Date.parse(c.token.last_used_at) < DAY ? 'ok' : 'idle')}<b>${c.name}</b><span class="ch-meta">${c.owner}</span></div>`);
+  const rightNodes = resources.slice(0, 5).map((r) => { const s = systemState(r); return html`<div class="tnode">${dot(s.dot)}${link('/console/connections',r.name,{system:r.id})}<span class="ch-meta">只读访问</span></div>`; });
   const topology = card({ title: '连接拓扑', hint: '左侧为已连接的 Circle，右侧为业务系统；Hub 只执行只读访问' }, html`<div class="topo">
-<div class="topo-col">${leftNodes.length === 0 ? html`<div class="tnode ghost">尚无已连接的 Circle</div>` : leftNodes}</div>
+<div class="topo-col">${leftNodes.length === 0 ? html`<div class="tnode ch-btn--ghost">尚无已连接的 Circle</div>` : leftNodes}</div>
 ${wires(leftNodes.length, true)}
-<div class="tnode hubn">${logo()}<b>circle-hub</b><span class="sub">MCP 服务</span></div>
+<div class="tnode hubn">${logo()}<b>circle-hub</b><span class="ch-meta">MCP 服务</span></div>
 ${wires(rightNodes.length, false)}
-<div class="topo-col">${rightNodes.length === 0 ? html`<div class="tnode ghost">${ctx.admin ? '尚无业务系统' : '业务系统仅管理员可见'}</div>` : rightNodes}</div>
-</div>${circles.length > 5 || resources.length > 5 ? html`<p class="note">各列最多显示 5 个；完整列表见下文。</p>` : ''}`);
+<div class="topo-col">${rightNodes.length === 0 ? html`<div class="tnode ch-btn--ghost">${ctx.admin ? '尚无业务系统' : '业务系统仅管理员可见'}</div>` : rightNodes}</div>
+</div>${circles.length > 5 || resources.length > 5 ? html`<p class="ch-meta">各列最多显示 5 个；完整列表见下文。</p>` : ''}`);
   const circleRows = circles.map(c => {
     const revoke = commands.tokenRevoke(c.token,c.owner);
     if(ctx.admin) dialogs.push(revoke);
@@ -127,7 +129,7 @@ ${wires(rightNodes.length, false)}
   const circlesCard = card(null, table(['设备名','成员','最近使用时间','操作'], circleRows, '尚无已连接的 Circle'));
   let systemsBody: Html;
   if (!ctx.admin) {
-    systemsBody = html`<p class="sub">业务系统的配置仅管理员可见；任务中对业务系统的读取显示在各任务的执行过程中。</p>`;
+    systemsBody = html`<p class="ch-meta">业务系统的配置仅管理员可见；任务中对业务系统的读取显示在各任务的执行过程中。</p>`;
   } else {
     const reads = await systemReads(ctx, resources.map((r) => r.id));
     const rows = resources.map((r) => {
@@ -136,22 +138,22 @@ ${wires(rightNodes.length, false)}
       const relogin = commands.resourceResetLogin(r);
       dialogs.push(toggle, relogin);
       return [
-        html`<span class="namecell"><span class="pack-i o" aria-hidden="true">${icon('sys')}</span><span><b>${r.name}</b><span class="digest">${r.id}</span></span></span>`,
-        r.system_pack,
+        html`<span class="namecell"><span class="pack-i o" aria-hidden="true">${icon('sys')}</span><span>${link('/console/connections',r.name,{system:r.id})}${technicalCode(r.id)}</span></span>`,
+        technicalCode(r.system_pack),
         isEnvironment(r.environment) ? uiLabelOf('environment', r.environment) : r.environment,
         r.origins === undefined ? '—' : html`${Object.entries(r.origins).map(([role, origin]) => html`<div>${role}：${code(origin)}</div>`)}`,
-        html`${chip('只读', 'judgment')}${(r.allow_plaintext ?? []).length > 0 ? html` <span class="sub">明文 http：${(r.allow_plaintext ?? []).join('、')}</span>` : ''}`,
-        html`${chip(s.text, s.tone)}${r.binding_error ? html`<div class="error small">${r.binding_error.message}</div>` : ''}`,
+        html`${chip('只读', 'judgment')}${(r.allow_plaintext ?? []).length > 0 ? html` <span class="ch-meta">明文 http：${(r.allow_plaintext ?? []).join('、')}</span>` : ''}`,
+        html`${chip(s.text, s.tone)}${r.binding_error ? html`<div class="error ch-meta">${r.binding_error.message}</div>` : ''}`,
         reads === null ? '暂不可用' : readsText(reads.get(r.id)),
         html`${commandLink(toggle, r.enabled ? '停用' : '启用')} ${commandLink(relogin, '重新认证')}`,
       ];
     });
     const period = reads === null ? undefined : [...reads.values()][0];
-    systemsBody = html`${table(['系统', uiLabelOf('pack_kind', 'system'), '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统')}<p class="note">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
+    systemsBody = html`${table(['系统', uiLabelOf('pack_kind', 'system'), '环境', '访问地址', '访问方式', '状态', '近 24 小时读取', '操作'], rows, '尚无业务系统',undefined,{selected:resources.findIndex(resource=>resource.id===ctx.url.searchParams.get('system')),hrefs:resources.map(resource=>'/console/connections?'+new URLSearchParams({system:resource.id}))})}<p class="ch-meta">${period === undefined ? '' : `统计时段 ${when(period.since)} 至 ${when(period.until)}；`}读取次数与耗时取自每次读取的读取清单，耗时是已完成读取从开始到结束的时间的中位数。</p>`;
   }
   let environmentsBody: Html;
-  if (!ctx.admin) environmentsBody = html`<p class="sub">运行环境仅管理员可见。</p>`;
-  else if (executors === null) environmentsBody = html`<p class="sub">${executorsFailed ? '运行环境列表暂不可用。' : '这个 Hub 进程未接入派发；运行环境在 Hub 所在主机上以 circle-hub executor 登记。'}</p>`;
+  if (!ctx.admin) environmentsBody = html`<p class="ch-meta">运行环境仅管理员可见。</p>`;
+  else if (executors === null) environmentsBody = html`<p class="ch-meta">${executorsFailed ? '运行环境列表暂不可用。' : '这个 Hub 进程未接入派发；运行环境在 Hub 所在主机上以 circle-hub executor 登记。'}</p>`;
   else {
     environmentsBody = html`${table(['运行环境', '执行器', '执行器版本', '网关', '资源', '最近派发', '响应时间', '状态', '操作'], executors.map((e) => {
       const disable = commands.executorDisable(e);
@@ -170,25 +172,29 @@ ${wires(rightNodes.length, false)}
       if (dispose !== null && !dialogs.some((dialog) => dialog.id === dispose.id)) dialogs.push(dispose);
       return [
         html`<b>${e.target}</b>`,
-        code(e.id),
-        e.state?.known.version !== true ? html`<span class="sub">未知</span>` : e.state.reported_version !== null ? code(e.state.reported_version) : html`<span class="sub">未上报</span>`,
+        technicalCode(e.id),
+        e.state?.known.version !== true ? html`<span class="ch-meta">未知</span>` : e.state.reported_version !== null ? technicalCode(e.state.reported_version) : html`<span class="ch-meta">未上报</span>`,
         code(gateway),
         e.resources.length,
         e.state?.known.latest !== true
-          ? html`<span class="sub">未知</span>`
+          ? html`<span class="ch-meta">未知</span>`
           : latest === null
-            ? html`<span class="sub">尚无派发</span>`
-            : html`${latest.run === null ? when(latest.at) : link(`/console/runs/${latest.run}`, when(latest.at))}<div class="sub">${uiLabelOf('effect_outcome', latest.outcome)}${latest.frozen ? ' · 派发结果未确认' : ''}</div>`,
-        calls === null || calls === undefined ? html`<span class="sub">暂不可用</span>`
+            ? html`<span class="ch-meta">尚无派发</span>`
+            : html`${latest.run === null ? when(latest.at) : link(`/console/runs/${latest.run}`, when(latest.at))}<div class="ch-meta">${uiLabelOf('effect_outcome', latest.outcome)}${latest.frozen ? ' · 派发结果未确认' : ''}</div>`,
+        calls === null || calls === undefined ? html`<span class="ch-meta">暂不可用</span>`
           : calls.calls === 0 && !calls.partial ? '近 24 小时无调用'
-          : html`${calls.partial ? '至少 ' : ''}${calls.calls} 次<div class="sub">中位 ${calls.median_ms === null ? '未知' : duration(calls.median_ms)} · 最慢 ${calls.slowest_ms === null ? '未知' : duration(calls.slowest_ms)}</div>`,
-        html`${chip(s.text, s.tone)}${s.detail.map((line) => html`<div class="sub">${line}</div>`)}`,
+          : html`${calls.partial ? '至少 ' : ''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms === null ? '未知' : duration(calls.median_ms)} · 最慢 ${calls.slowest_ms === null ? '未知' : duration(calls.slowest_ms)}</div>`,
+        html`${chip(s.text, s.tone)}${s.detail.map((line) => html`<div class="ch-meta">${line}</div>`)}`,
         html`${e.enabled ? commandLink(disable, '停用') : ''}${clear === null ? '' : html` ${commandLink(clear, '确认已恢复')}`}${dispose === null ? '' : html` ${commandLink(dispose, '处置派发结果')}`}${frozen?.run ? html` ${link(`/console/runs/${frozen.run}`, '查看任务')}` : ''}`,
       ];
-    }), '尚无运行环境')}<p class="note">响应时间取近 24 小时内已有发送与应答时刻的执行器调用；耗时为 Hub 发出请求到收到应答的时间，中位与最慢按已完成的调用计算。扫描受限时次数为下限，耗时只涵盖已扫描调用。</p>`;
+    }), '尚无运行环境')}<p class="ch-meta">响应时间取近 24 小时内已有发送与应答时刻的执行器调用；耗时为 Hub 发出请求到收到应答的时间，中位与最慢按已完成的调用计算。扫描受限时次数为下限，耗时只涵盖已扫描调用。</p>`;
   }
+  const chosenId=ctx.url.searchParams.get('system');
+  const chosen=chosenId?resources.find(resource=>resource.id===chosenId):undefined;
+  if(chosenId&&!chosen)return neutralPage(ctx);
+  const inspector=chosen?html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">业务系统</span>${chip(systemState(chosen).text,systemState(chosen).tone)}</div><h2 class="ch-panel-title">${chosen.name}</h2>${facts([['环境',isEnvironment(chosen.environment)?uiLabelOf('environment',chosen.environment):chosen.environment],['访问方式','只读'],['访问地址',html`${Object.values(chosen.origins??{}).map(origin=>html`<p>${origin}</p>`)}`]])}${technical(html`${code(chosen.id)} ${code(chosen.system_pack)}`)}<footer class="ch-inspector-actions">${commandLink(commands.resourceToggle(chosen),chosen.enabled?'停用…':'启用…','ch-btn ch-btn--danger')}${commandLink(commands.resourceResetLogin(chosen),'重新认证…')}</footer></div>`:html`<h2 class="ch-panel-title">连接</h2>${stat('已连接的 Circle',circles.length)}${stat('24 小时内使用过',recent)}${ctx.admin?html`${stat('业务系统',resources.length)}${stat('运行环境',executors?.length??'—')}`:''}${card({title:'最近使用'},html`<ul class="ch-feed">${circles.slice(0,3).map(circle=>html`<li>${circle.name}<span class="ch-meta">${when(circle.token.last_used_at)}</span></li>`)}</ul>`)}`;
   const body = html`${sources}${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
-<div class="section">${topology}</div>`)}
+<div class="ch-section">${topology}</div>`)}
 ${sectionHead('已连接的 Circle', undefined, undefined, 'circles', ctx.admin ? '按设备列出；断开生成命令，成员管理在团队页' : '仅列出本人的 Circle，断开由管理员执行')}
 ${liveModule('circles', ['member.connected'], circlesCard)}
 ${sectionHead('业务系统', undefined, undefined, 'systems', '凭据加密保存，页面与模型只可见名称；停用、启用与重新认证在 Circle 中执行')}
@@ -197,14 +203,14 @@ ${sectionHead('运行环境', undefined, undefined, 'envs', '派发作业的执�
 ${liveModule('environments', ['environment.status'], card(null, environmentsBody))}
 ${executors !== null && executors.length > 0 ? callout('info', '占用与冻结取自派发记录：有作业持有时为使用中，派发结果未确认或作业结束后未恢复时为已冻结；执行器版本取自 Hub 与该执行器最近一次会话。') : ''}
 ${sectionHead('多终端协同与消息通知', undefined, undefined, 'more', '各终端 Circle 的工作状态同步，经 Hub 收发消息、转交任务')}
-<section class="grid g2">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端查看并继续任务。', 'terminal')}${plannedCard('消息通知', '接入 Telegram、微信、企业微信、飞书，经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}</section>
+<section class="ch-section" data-columns="2">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端查看并继续任务。', 'terminal')}${plannedCard('消息通知', '接入 Telegram、微信、企业微信、飞书，经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}</section>
 ${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'environment.status'], dialogs.map(commandModal))}`;
   return {
     status: 200,
     body: page(ctx.chrome('连接', {
       active: 'connections',
       hint: 'Hub 以只读方式访问业务系统，不修改业务数据；派发作业的运行环境在此查看',
-      actions: html`${seg([['circles', '已连接的 Circle'], ['systems', '业务系统'], ['envs', '运行环境'], ['more', '多终端与通知']], '连接分区')}${ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' })}` : ''}`,
-    }), body),
+      actions: html`${ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system', '接入业务系统', { primary: true, icon: 'plus' })}` : ''}`,
+    }),pageLayout(html`${seg([['circles','已连接的 Circle'],['systems','业务系统'],['envs','运行环境'],['more','多终端与通知']],'连接分区')}${body}`,{inspector,detail:!!chosen,back:link('/console/connections','返回连接')})),
   };
 }

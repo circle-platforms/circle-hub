@@ -24,7 +24,7 @@ export async function knowledgeHome(ctx:PageContext):Promise<Html>{
  }
  rows.sort((a,b)=>b.at.localeCompare(a.at));
  const history=await spaces.shareHistory(ctx.principal);
- const search=html`<form class="filters" method="get" action="/console/search"><input type="hidden" name="scope" value="${scope}"><label>关键词<input name="q" required maxlength="200"></label><button type="submit">搜索</button></form>`;
+ const search=html`<form class="ch-actions" data-filters method="get" action="/console/search"><input type="hidden" name="scope" value="${scope}"><label>关键词<input name="q" required maxlength="200"></label><button class="ch-btn ch-btn--secondary" type="submit">搜索</button></form>`;
  const own=visible.find(v=>v.space===ctx.principal.id);
  const personalHistory=scope==='personal'?(await ctx.deps.knowledge.memory?.usage(ctx.principal))?.history??0:0;
  const controls=scope==='personal'?html`<div class="ch-actions">${button('/console/knowledge/space','导入个人知识',{params:{space:ctx.principal.id,path:'/',import:'1',scope},hint:'上传本人原文进入个人空间'})}<a class="ch-btn ch-btn--secondary" href="${'/console/knowledge/space?'+new URLSearchParams({space:ctx.principal.id,path:'/',scope})+'#grant-knowledge'}">分享…</a>${button('/console/knowledge/space','新建',{primary:true,params:{space:ctx.principal.id,path:'/',edit:'1',scope}})}</div>`:scope==='team'&&ctx.admin?button('/console/operations/knowledge','导入团队知识',{primary:true}):html``;

@@ -14,6 +14,10 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- The remaining console areas share sections, statistics, badges and dialogs with contextual overviews. System, call and
+  member selections open responsive inspectors; task evidence remains accessible on phones. Inspector actions are grouped
+  at the foot, destructive actions open confirmations, and overview check results use a thin segmented bar instead of a ring.
+
 - Knowledge, memory and workflow views use shared lists and tables with contextual inspectors. Readable names replace
   inline hashes; technical references remain available through explicit view entries. Wide tables scroll within their
   containers on narrow screens, and knowledge selection exposes the existing batch sharing preview.

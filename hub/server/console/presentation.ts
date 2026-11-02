@@ -5,7 +5,8 @@ import type { PageContext } from './pages.ts';
 import { parseReference } from '../../refs/api.ts';
 
 export function panel(head: CardHead | null, body: unknown, view = ''): Html {
-  return html`<section class="ch-section"${view ? html` data-view="${view}"` : ''}>${head ? html`<div class="ch-page-head"><div><h2 class="ch-section-label"${head.hint ? html` title="${head.hint}" tabindex="0"` : ''}>${head.lead ?? ''}${head.title}</h2>${head.meta === undefined ? '' : html`<p class="ch-meta">${head.meta}</p>`}</div>${head.tail === undefined ? '' : html`<div class="ch-actions">${head.tail}</div>`}</div>` : ''}${body}</section>`;
+  const counted=typeof head?.meta==='number'||typeof head?.meta==='string'&&/^[\d,]+(?:\s*[个项条人])?$/.test(head.meta);
+  return html`<section class="ch-section"${view ? html` data-view="${view}"` : ''}>${head ? html`<div class="ch-page-head"><div><h2 class="ch-section-label"${head.hint ? html` title="${head.hint}" tabindex="0"` : ''}>${head.lead ?? ''}${head.title}${counted?html` · ${head.meta}`:''}</h2>${head.meta === undefined || counted ? '' : html`<p class="ch-meta">${head.meta}</p>`}</div>${head.tail === undefined ? '' : html`<div class="ch-actions">${head.tail}</div>`}</div>` : ''}${body}</section>`;
 }
 
 export function facts(pairs: readonly (readonly [unknown, unknown])[]): Html {
@@ -40,7 +41,7 @@ export function commandLink(dialog:CommandDialog,label:unknown='在 Circle 中�
   return html`<a class="${cls}" href="#${dialog.id}">${label}</a>`;
 }
 export function commandModal(dialog:CommandDialog):Html{
-  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${dialog.title}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre>${dialog.command}</pre><p class="ch-meta">在管理员的 Circle 中执行，或在 Hub 主机上执行同一命令。</p></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
+  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${dialog.title}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre class="ch-quote">${dialog.command}</pre><p class="ch-meta">在管理员的 Circle 中执行，或在 Hub 主机上执行同一命令。</p></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
 }
 
 /** Resolve only through the existing read boundary; missing and forbidden names remain indistinguishable. */
@@ -57,4 +58,12 @@ export async function sourceBlock(ctx: PageContext, reference: string, quotation
     }
   } catch { /* Reference diagnostics remain behind the explicit technical disclosure. */ }
   return html`<div class="ch-source"><div class="ch-source-head"><span>${title}</span>${action ?? html`<span class="ch-meta">无法打开</span>`}</div>${quotation ? html`<p class="ch-quote">${quotation}</p>` : ''}${technical(code(reference), '查看引用')}</div>`;
+}
+
+/** Native fragment dialogs preserve the existing confirmation form without running a write on open. */
+export function dialog(id:string,title:string,body:Html,actions:Html=html``):Html{
+ return html`<div class="ch-dialog" id="${id}" role="dialog" aria-modal="true" aria-label="${title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h2 class="ch-dialog-title">${title}</h2></div><div class="ch-dialog-body">${body}</div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a>${actions}</div></div></div>`;
+}
+export function actionLink(url:string,label:unknown,kind:'ghost'|'danger'|'secondary'|'primary'='secondary'):Html{
+ return html`<a class="ch-btn ch-btn--${kind}" href="${url}">${label}</a>`;
 }

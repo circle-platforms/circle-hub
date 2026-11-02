@@ -1,3 +1,4 @@
+import {technicalCode} from './presentation.ts';
 // The tasks of the console (the design canvas's 任务 board): a run with the result display rule 20 derives, its head and the
 // waterfall of what happened, built only from what the Hub recorded: the call log lines of the run (each bar is the Hub's
 // time on one call; the gap before a submission is Circle's own time, which the Hub does not observe), the Hub's checks of
@@ -53,7 +54,7 @@ export async function packTitles(ctx: PageContext): Promise<Map<string, string>>
 export const packIdOf = (ref: string): string => (ref.includes('@') ? ref.slice(0, ref.lastIndexOf('@')) : ref);
 
 export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles: ReadonlyMap<string, string>): string {
-  return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? packIdOf(run.pack);
+  return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? '工作流名称暂不可读';
 }
 
 export function resultCell(row: Pick<TaskRow, 'result' | 'pending'>): Html {
@@ -70,8 +71,8 @@ export async function taskHead(ctx: PageContext, detail: RunDetail, titles: Read
   const who = run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner);
   const line = [run.product, run.version, run.build].filter(Boolean).join(' / ');
   return card(null, html`<div class="dhead"><div class="grow">
-<div class="row"><h2 title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
-<p class="sub mt4">工作流 ${run.pack}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)} · 运行 ${code(run.run)}</p>
+<div class="ch-actions"><h2 class="ch-panel-title" title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
+<p class="ch-meta">工作流 ${taskTitle(run,titles)}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)}</p>
 </div></div>`);
 }
 
@@ -107,7 +108,7 @@ function callDot(line: CallLogLine): DotState {
 
 function callSub(line: CallLogLine, run: RunRecordView): string {
   const parts: string[] = [];
-  if (line.tool === 'start_run') parts.push(`工作流 ${run.pack}`);
+  if (line.tool === 'start_run') parts.push('工作流启动');
   if (line.acceptance !== null) parts.push(uiLabelOf('acceptance', line.acceptance));
   if (line.call_result !== 'ok') parts.push(uiLabelOf('call_result', line.call_result));
   if (line.error_code !== null) parts.push(line.error_code);
@@ -254,7 +255,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const at = (t: number): number => ((t - t0) / (t1 - t0)) * 100;
   const open = steps.some((s) => s.open === true);
   const ticks = [0, 1, 2, 3, 4].map((i) => clock(t0 + ((t1 - t0) * i) / 4));
-  const rows = steps.map((s) => html`<div class="wf-row static"><span class="wf-name${s.depth === 1 ? ' d1' : ''}">${dot(s.dot)}<b>${s.name}</b><span class="sub">${s.sub}</span></span><span class="wf-track">${track(at(s.start), at(s.end), s.fill, { point: s.point === true, label: `${s.name} ${s.dur}`.trim() })}</span><span class="wf-dur">${s.dur}</span></div>`);
+  const rows = steps.map((s) => html`<div class="wf-row static"><span class="wf-name${s.depth === 1 ? ' d1' : ''}">${dot(s.dot)}<b>${s.name}</b><span class="ch-meta">${s.sub}</span></span><span class="wf-track">${track(at(s.start), at(s.end), s.fill, { point: s.point === true, label: `${s.name} ${s.dur}`.trim() })}</span><span class="wf-dur">${s.dur}</span></div>`);
   const toolCalls = calls.length;
   const pending = pendingCount(detail);
   const waiting = steps.filter((s) => s.open === true).length;
@@ -266,14 +267,14 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
 <div${waiting > 0 ? html` class="unk"` : ''}><b class="num">${waiting}</b><span>${uiLabelOf('request_status','waiting')}</span></div>
 <div><b class="num">${total === null ? '—' : duration(total)}</b><span>从第一次调用到最后一次</span></div>
 </div>`;
-  const legend = html`<div class="wf-legend mt12"><span><i class="k-circle"></i>Circle 调用</span><span><i class="k-hub"></i>Hub 校验</span><span><i class="k-wait"></i>${uiLabelOf('request_status','waiting')}</span><span><i class="k-hand"></i>${uiLabelOf('static_terminal','judgment')}</span><span><i class="k-fail"></i>${uiLabelOf('dynamic_terminal','fail')}</span></div>`;
+  const legend = html`<div class="wf-legend"><span><i class="k-circle"></i>Circle 调用</span><span><i class="k-hub"></i>Hub 校验</span><span><i class="k-wait"></i>${uiLabelOf('request_status','waiting')}</span><span><i class="k-hand"></i>${uiLabelOf('static_terminal','judgment')}</span><span><i class="k-fail"></i>${uiLabelOf('dynamic_terminal','fail')}</span></div>`;
   const process = card({ title: '执行过程', meta: open ? `截至 ${clock(now)}` : `${clock(t0)} 至 ${clock(t1)}`, hint: '每段工具调用的长度是 Hub 处理这次调用的时间；提交前的空档是 Circle 在本机的时间，Hub 不调用模型，也不观测这段时间。' }, html`${summary}${legend}
-<div class="wf mt16"><div class="wf-axis"><span class="sub">步骤</span><span class="wf-ticks flex">${ticks.map((t) => html`<span>${t}</span>`)}</span><span class="wf-dur">耗时</span></div>
+<div class="wf"><div class="wf-axis"><span class="ch-meta">步骤</span><span class="wf-ticks flex">${ticks.map((t) => html`<span>${t}</span>`)}</span><span class="wf-dur">耗时</span></div>
 <div class="wf-rows">${rows}</div></div>
-${callsShown ? '' : html`<p class="note">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
+${callsShown ? '' : html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow = [...calls].sort((a, b) => b.duration_ms - a.duration_ms).slice(0, 3);
-  const longest = slow.length === 0 ? '' : card({ title: '耗时最长的调用' }, html`<ul class="slow">${slow.map((line) => html`<li><span><b>${toolName(line.tool)}</b> <span class="sub">${clock(line.at)}</span></span>${hbar(line.duration_ms, slow[0].duration_ms, 'fill-hub')}<span class="wf-dur">${duration(line.duration_ms)}</span></li>`)}</ul>`);
-  return html`${process}${longest === '' ? '' : html`<div class="mt16">${longest}</div>`}`;
+  const longest = slow.length === 0 ? '' : card({ title: '耗时最长的调用' }, html`<ul class="slow">${slow.map((line) => html`<li><span><b>${toolName(line.tool)}</b> <span class="ch-meta">${clock(line.at)}</span></span>${hbar(line.duration_ms, slow[0].duration_ms, 'fill-hub')}<span class="wf-dur">${duration(line.duration_ms)}</span></li>`)}</ul>`);
+  return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;
 }
 
 /** A tool of the call log by its Chinese name, with the name the protocol uses (a method that is not a tool shows only that). */

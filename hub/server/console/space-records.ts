@@ -1,3 +1,4 @@
+import {technicalCode,stat,facts} from './presentation.ts';
 // Decision 88 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
 import { SpaceGrantBody } from '../../../contracts/src/spaces.ts';
 import { KnowledgeShareBody, PersonalPackGrantBody } from '../../../contracts/src/sharing.ts';
@@ -64,7 +65,7 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
       const visible = body.space === ctx.principal.id || body.audience === KnowledgeGranteeSchema.enum.member && body.member === ctx.principal.id || ctx.admin && body.audience === KnowledgeGranteeSchema.enum.administrators;
       if (!visible || !inFilter(body.by, body.at)) continue;
       const target = body.audience === KnowledgeGranteeSchema.enum.administrators ? uiLabelOf('knowledge_grantee', body.audience) : `${uiLabelOf('knowledge_grantee', body.audience)}：${await ctx.userName(body.member)}`;
-      rows.push([when(body.at), await ctx.userName(body.by), 'pack' in body ? body.pack : directory(body.path), target, uiLabelOf('knowledge_grant_action', body.action)]);
+      rows.push([when(body.at), await ctx.userName(body.by), 'pack' in body ? technicalCode(body.pack) : directory(body.path), target, uiLabelOf('knowledge_grant_action', body.action)]);
     }
     cards.push(card({ title: kind.title, hint: ctx.admin ? '列出本人发出、本人收到及授权给全体管理员的记录；其他成员之间的授权不显示' : '仅列出本人发出或本人收到的授权历史；收回不删除历史' }, html`${table(['时间', '授权人', '对象', '受众', '操作'], rows, '本页没有匹配的授权记录')}${pages.map((page, i) => page.next ? more(sources[i].cursor, page.next, sources[i].label) : '')}`));
   }
@@ -78,7 +79,7 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     if (!parsed.success) continue;
     const body = parsed.data;
     if (!ctx.admin && body.by !== ctx.principal.id || !inFilter(body.by, body.at)) continue;
-    rows.push([when(body.at), await ctx.userName(body.by), directory(body.target_path ?? body.source.path, true), uiLabelOf('knowledge_share_status', body.status), body.code ?? '—', body.message, code(`tree:${body.source.root}${body.source.path}@${body.source.entry}`)]);
+    rows.push([when(body.at), await ctx.userName(body.by), directory(body.target_path ?? body.source.path, true), uiLabelOf('knowledge_share_status', body.status), body.code ?? '—', body.message, technicalCode(`tree:${body.source.root}${body.source.path}@${body.source.entry}`)]);
   }
   cards.push(card({ title: '提交共享记录', hint: ctx.admin ? '管理员可见全部提交共享的安全回执；不包含个人原文或提交内容' : '仅显示本人提交共享的安全回执，拒收后个人原条目保留' }, html`${table(['时间', '提交人', '团队目录', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的提交共享记录')}${shares.next ? more(cursor, shares.next, '更早的提交共享') : ''}`));
   const memoryShares=ctx.admin?await ctx.deps.records.store.list({kind:'memory_share',newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')}):await ctx.deps.records.store.find({kind:'memory_share',key:'memory.share.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')});
