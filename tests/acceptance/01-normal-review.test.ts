@@ -10,6 +10,7 @@ import { actionsOf } from '../../hub/runs/engine/store.ts';
 import type { ValidationResult } from '../../contracts/src/validation.ts';
 import { PARTITION } from '../../contracts/generated/vocabulary.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
+import {repositorySkillVersion} from '../../hub/testing/skills.ts';
 import { DOCUMENTS } from '../fixtures/agile/index.ts';
 import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
@@ -41,11 +42,13 @@ describe('scenario 1: a normal review', () => {
   let result: ValidationResult;
   let receiptText = '';
 
-  test('list_task_packs shows exactly the workflow packs assigned to the reviewer, never a product or system pack', async () => {
+  test('list_task_packs shows exactly assigned workflows and installed generic skills, never a product or system pack', async () => {
     const listed = await client.call('list_task_packs', {});
     assert.equal(listed.isError, false);
-    assert.deepEqual(listed.out.packs.map((p) => p.id).sort(), Object.values(WORKFLOW).sort());
-    assert.ok(listed.out.packs.every((p) => p.kind === 'workflow'));
+    const skillIds=['html-format','mindmap-format','workbook-format','xml-format'];
+    assert.deepEqual(listed.out.packs.map((p) => p.id).sort(), [...Object.values(WORKFLOW),...skillIds].sort());
+    assert.deepEqual(listed.out.packs.filter(p=>p.kind==='workflow').map(p=>p.id).sort(),Object.values(WORKFLOW).sort());
+    assert.deepEqual(listed.out.packs.filter(p=>p.kind==='skill').map(p=>[p.id,p.version,p.requirements.length]).sort(),await Promise.all(skillIds.map(async id=>[id,await repositorySkillVersion(id),0])));
     const review = listed.out.packs.find((p) => p.id === WORKFLOW.review)!;
     assert.deepEqual(review.requirements.map((r) => r.key), ['literal', 'catalog', 'findings', 'expected_quality', 'level']);
     assert.deepEqual(new Set(review.products), new Set([...bed.product.names, ...bed.second.names]), 'the pack binds no fixed line: every name of every line that provides its catalog');
