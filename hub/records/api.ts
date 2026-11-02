@@ -55,6 +55,7 @@ export interface Principal {
 }
 
 export interface User extends Principal {
+  deleted_at?: string | null;
   disabled: boolean;
   created_at: string;
   updated_at: string;
@@ -62,6 +63,7 @@ export interface User extends Principal {
 
 /** One snapshot of a user row after a change: who changed it and when (role changes are recorded this way). */
 export interface UserChange {
+  deleted_at?: string | null;
   password_changed?: true;
   user: string;
   name: string;
@@ -856,6 +858,7 @@ export interface CallLog {
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
+  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'>;
   personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;

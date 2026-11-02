@@ -82,3 +82,11 @@ test('Hub-rendered record inputs retain their user author and are shared through
   const read=await sourceReaderFor(h.kit,h.bob).read(sha,{user:h.bob.id,role:h.bob.role,run:run.run});
   assert.ok(read?.bytes);assert.equal(await h.kit.artifacts.source(h.bob,sha),null);
 });
+
+test('deletion audits have a dedicated administrator metadata port and never become arbitrary record grounds',{skip},async t=>{
+ const h=await openHarness(postgres);t.after(()=>h.close());const port=h.kit.memberDeletions!,preview=await port.preview(h.admin,h.alice.id),{randomUUID}=await import('node:crypto'),intent=await port.prepare(h.admin,{...preview,operation_id:randomUUID()}),receipt=await port.finish(h.admin,h.alice.id,intent.operation_id);
+ const reader=recordReaderFor(h.kit,h.service,h.admin),context={user:h.admin.id,role:h.admin.role};assert.equal(await reader.read(receipt.record,context),null);assert.equal(await reader.read('0'.repeat(64),context),null);
+ assert.equal((await port.status(h.admin,h.alice.id))?.result?.record,receipt.record);await assert.rejects(port.status(h.bob,h.alice.id));await assert.rejects(port.status(h.alice,h.alice.id));
+ const proof=await h.kit.store.put({kind:'knowledge_team_source_attribution',schema:'knowledge-team-source-attribution@1',provenance:'declared',body:{team_source:'a'.repeat(64),declaration:'b'.repeat(64),uploader:h.alice.id,declared_at:receipt.at,artifact:'c'.repeat(64),sha256:'d'.repeat(64),by:h.admin.id,at:receipt.at}});
+ assert.equal(await reader.read(proof.digest,context),null);
+});

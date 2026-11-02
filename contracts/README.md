@@ -509,3 +509,12 @@ in the console. Regeneration also updates the four skill protocol mirrors, with 
 Replaying the four approved finishing blocks onto sync model 26 yields models 27–30. Model 30 contains all sync and
 finishing rules; it introduces no additional decision. The generated protocol mirrors and manifest-only skill patches
 are html/mindmap 1.0.14 and xml/workbook 1.0.15. Earlier phase paragraphs retain their original model/version history.
+
+### Permanent member deletion (decision 91)
+
+Claude approved proposal d437875f on 2026-11-03. Model 31 adds the account display value `deleted`, deletion-time metadata
+on the user port, and closed `member-deletion@1` and `knowledge-team-source-attribution@1` records. The deletion receipt
+has only operation/member/actor/time/epoch, a canonical digest manifest and nonnegative counts; no plaintext manifest.
+The team credential preserves a previously verified declaration for one exact independent team capture, without private
+paths or text. Both kinds are excluded from arbitrary record-reference readers. No rejection code or MCP tool changes;
+the four skills' code-only protocol mirrors remain byte-identical in this step.

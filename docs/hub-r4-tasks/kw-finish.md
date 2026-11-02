@@ -772,3 +772,23 @@ try{
 - 同步基线已批准的显示值为“已清除的私人文件夹”，继承测试仍断言“个人文件夹”；只同步该断言，`node --test contracts/src/vocab-axes.test.ts`，9 通过、0 失败、0 跳过，退出 0。
 - 其余变基受影响组：全部 `hub/runs/engine/**/*.test.ts`、`packs/workflow/**/*.test.ts`、`contracts/src/*.test.ts`，以及 environment、PG 18 ownership、lock-namespaces、diagnostics、migrations.snapshot、member-freeze、console-sync-local、console-sync-design 和验收 12、46～50、52～53，统一 `node --test --test-concurrency=1`，并设 `CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin`。3230 项，3228 通过、2 失败、0 跳过，退出 1；两处为上述旧显示断言及原容量错误处理的字段数组触发词表静态检查。字段改为受 `CapacityUsage` 约束的结构键表，不手写知识视图轴，也不改测试规则。原词表检查以 `--test-name-pattern='uses generated axes'` 重跑，1 通过、0 失败、0 跳过；容量展示测试 2 通过、0 失败、0 跳过。未重复整个大组，不把首轮记为全绿。
 - `node --test --test-concurrency=2 ".github/checks/*.test.ts"`：315 通过、0 失败、0 跳过，退出 0。所有列出的通过均为本工作树本轮实际执行；没有运行全量 unit／acceptance、来源工具检查、生产部署或真实系统验证。来源工具没有变动，因而未运行 verify:references／test:references；删除、私人包清除与新迁移测试属于后续步骤，尚未运行。
+
+### 第 2 步：获批合约、墓碑与清除协调
+
+做了的：
+
+- 模型 31 按本轮批准增加 account_status.deleted（已删除的成员）、member_deletion 与 knowledge_team_source_attribution；后两种记录为严格封闭形状，只保存批准的身份／时间／摘要／数量，不接收私人路径、标题、正文、引文或凭据。User／UserChange 的 deleted_at 可兼容旧快照。没有增加拒收码；生成器输出 179 个文件。通用技能镜像只含拒收码，本步没有对应字节变化，因此四个技能不再升版。
+- 迁移 19 只追加新 SQL；14、15 及其余既有迁移 SQL 不变。审读新增的表、身份约束、转换窗口、绑定验证器、墓碑及作用域触发器与所有者函数，更新 migrations.snapshot 的整文件固定值；保留原逐迁移固定值。新表 member_deletion_intents 只向运行角色授予 SELECT；新增所有者函数全部限定类型，search_path 以 pg_temp 收尾，没有增加 UPDATE／DELETE 权限。
+- 署名记录纳入现有私人载荷分类，归档登记仍属已有 knowledge_space_source。一次性转换只限未登记 19 时的真实表所有者会话和 knowledge_source_attribution；只能替换正文为带原摘要／正文摘要／归属／代次／证明的胶囊，其他列不变。运行角色即使设置转换开关、伪造临时系统表也不能使用；迁移登记后表所有者也不能重新开启。旧声明按原文登记的旧代次归属，已经清除的代次立即去掉载荷，不能因之后重新同步而复活。
+- 删除端口 preview／prepare／finish／status 使用真实管理员身份。按空间业务锁、共用管理员集合锁、账户行锁提交；最后一名启用管理员不可删除，目标可以已停用。排队预检在取得实际事务后复核管理员，不能用已失效的初次检查读取私人统计。
+- prepare 保存摘要清单与计数、不可恢复的 deleted_at 墓碑，清除口令散列并撤销令牌；不可再启用、改角色或重置口令。旧控制台会话、邀请、令牌和同步代次不能恢复该身份。用户名仅在未删除账户间唯一，旧身份与历史名称保留；同名新账户取得新 ID，不继承旧空间或凭据。
+- finish 复用现有对象物理退休及 hub_purge_personal，未假冒目标 Principal。存储清理失败时保留不可写／不可认证墓碑和摘要进度，不追加完成记录；相同操作可重试。最终清除与完成记录在同一事务提交；自删只能继续已授权的同一操作，不能授权新删除。既有合法独立持有者保护继续由同一个清除器负责。
+- 新完成审计与团队署名凭据均拒绝任意 rec: 读取，管理员也走单独的摘要进度端口。尚未纳入可清除存储的私人包／原文会阻止预检和所有者函数，不允许先报告完成再补清理。私人包、归档采集及独立团队／运行持有者的完整接入仍属于第 3 步；本步没有提供控制台或命令行删除入口。
+
+验证：
+
+- 新删除基础回归首轮：4 通过、0 失败、0 跳过；旧库转换及闭合形状首轮 3 通过、0 失败、0 跳过。生成器首次拒绝与 label 重复的 ui 字段，移除冗余 ui 后生成成功，用语未变。
+- records 全部测试、contracts/src 全部测试、environment、PG 18 ownership、diagnostics、readers-sharing：`node --test --test-concurrency=1`，654 项，653 通过、1 失败、0 跳过，退出 1。失败是同步旧夹具用不完整且未登记索引的记录，加上 321／123 的旧累计字段直接期待 444；与第四块已批准的按真实记录字节重新计量相冲突。改成完整合成树、知识／记忆记录及索引，用明确输入的序列化字节数作期望，继续要求两组并发暂存最多受理一组，没有放宽容量规则。
+- 修正后的删除、旧库转换、同步、definer、防迁移改写、锁命名与署名组：27 通过、0 失败、0 跳过。随后加入未准备原文的拒绝保护并重跑删除／转换／definer／migrations.snapshot／PG 18 ownership／environment／lock-namespaces／diagnostics／readers-sharing：32 通过、0 失败、0 跳过。上述 PG 组均实际设置 `CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin`，包含备份、销毁、恢复及运行角色防篡改，没有跳过。
+- 新窗口回归在登记迁移前实测：临时伪造 pg_class／schema_migrations 的运行角色更新被拒绝，所有者改其他列也被拒绝，只有精确原摘要胶囊替换获准；事务回滚后正常升级逐行保持原逻辑摘要。补用非规范但合法的旧 JSON 正文验证字节不重写：2 通过、0 失败、0 跳过。
+- 最后的预检权限／审计隔离组（含排队管理员停用后拒绝、并发自删、未准备原文拒绝及管理员任意 rec: 不可读）：12 通过、0 失败、0 跳过，退出 0。`node node_modules/typescript/bin/tsc --noEmit`、`node tools/gen-contracts.ts --check`（179 文件）及 `git diff --check` 通过；文档检查 315 通过、0 失败、0 跳过，退出 0。不重复已通过的大组；未跑全量 unit／acceptance、真实系统验证或部署。第 3 步新增私人包、团队凭据及冻结运行边界后，再跑全部受影响工作流／引擎与验收；来源工具未改，verify:references／test:references 未运行。

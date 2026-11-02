@@ -26,6 +26,10 @@ test('every definer pins pg_temp last and a malicious temporary text domain cann
  await kit.personalPayloads!.scope(user.id);
  await rt.query('INSERT INTO personal_sync_objects VALUES($1,$2,$3,$4,1,1)',[user.id,INITIAL_PERSONAL_EPOCH,'synthetic-object',SyncObjectKindSchema.enum.bytes]);
  await rt.query('SELECT hub_collect_personal_sync($1,$2,now())',[user.id,INITIAL_PERSONAL_EPOCH]);
+ const counts={records:0,payloads:0,objects:0,attributions:0,archives:0,private_versions:0};
+ await assert.rejects(rt.query('SELECT hub_begin_member_deletion($1,$1,$2,$3,$4,$5,now(),$6)',[user.id,INITIAL_PERSONAL_EPOCH,'00000000-0000-4000-8000-000000000003','a'.repeat(64),JSON.stringify(counts),user.updated_at]),(error:unknown)=>(error as {code:string}).code==='P0001');
+ await assert.rejects(rt.query('SELECT hub_finish_member_deletion($1,$2)',[user.id,'00000000-0000-4000-8000-000000000003']),(error:unknown)=>(error as {code:string}).code==='P0001');
+
  assert.deepEqual(JSON.parse((await db.query<{body:string}>('SELECT body FROM public.records WHERE digest=$1',[victim.digest])).rows[0].body),{text:'synthetic immutable history'});
  assert.ok(await kit.store.get(victim.digest));
  const functions=(await db.query<{proname:string;proconfig:string[]}>("SELECT proname,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace AND prosecdef")).rows;assert.ok(functions.length>=9);

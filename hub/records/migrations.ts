@@ -783,10 +783,179 @@ $fn$;
 CREATE TRIGGER personal_sync_mode_operations_append_only BEFORE UPDATE OR DELETE ON personal_sync_mode_operations FOR EACH ROW EXECUTE FUNCTION hub_append_only();
 CREATE TRIGGER personal_sync_mode_operations_no_truncate BEFORE TRUNCATE ON personal_sync_mode_operations FOR EACH STATEMENT EXECUTE FUNCTION hub_append_only();
 `},
+ {version:19,name:'member_deletion',sql:`ALTER TABLE public.users ADD COLUMN deleted_at pg_catalog.timestamptz;
+ALTER TABLE public.user_history ADD COLUMN deleted_at pg_catalog.timestamptz;
+ALTER TABLE public.users DROP CONSTRAINT users_name_key;
+CREATE UNIQUE INDEX users_live_name ON public.users(name) WHERE deleted_at IS NULL;
+ALTER TABLE public.users ADD CONSTRAINT deleted_members_disabled CHECK(deleted_at IS NULL OR disabled);
+CREATE TABLE public.member_deletion_intents (
+ member pg_catalog.text PRIMARY KEY REFERENCES public.users(id),
+ operation_id pg_catalog.text NOT NULL UNIQUE CHECK(operation_id ~ '^[0-9a-f-]{36}$'),by_user pg_catalog.text NOT NULL REFERENCES public.users(id),
+ epoch pg_catalog.text NOT NULL,at pg_catalog.timestamptz NOT NULL,
+ purge_manifest pg_catalog.text NOT NULL CHECK(purge_manifest ~ '^[0-9a-f]{64}$'),
+ counts pg_catalog.jsonb NOT NULL
+);
+${APPEND_ONLY('member_deletion_intents')}
+-- Only the real table-owner migration session can use this bounded conversion window.
+CREATE FUNCTION public.hub_member_layout_conversion() RETURNS pg_catalog.bool LANGUAGE sql STABLE
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+ SELECT CURRENT_USER=pg_catalog.pg_get_userbyid(c.relowner)
+ AND SESSION_USER=pg_catalog.pg_get_userbyid(c.relowner)
+ AND pg_catalog.current_setting('role') IN ('none',pg_catalog.pg_get_userbyid(c.relowner))
+ AND pg_catalog.current_setting('circle_hub.member_layout_conversion',true)='19'
+ AND NOT EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=19)
+ FROM pg_catalog.pg_class c WHERE c.oid='public.records'::pg_catalog.regclass
+$fn$;
+REVOKE ALL ON FUNCTION public.hub_member_layout_conversion() FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_append_only() RETURNS pg_catalog.trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF TG_TABLE_NAME='records' AND TG_OP='UPDATE' THEN
+ IF public.hub_member_layout_conversion() AND OLD.kind='knowledge_source_attribution'
+ AND (pg_catalog.to_jsonb(NEW)-'body')=(pg_catalog.to_jsonb(OLD)-'body')
+ AND EXISTS(SELECT 1 FROM public.personal_record_bindings b JOIN public.personal_payloads p
+ ON (p.owner,p.epoch,p.sha256)=(b.owner,b.epoch,b.sha256)
+ WHERE b.record=OLD.digest AND b.marker=NEW.body
+ AND pg_catalog.convert_from(p.data,'UTF8')=OLD.body
+ AND (pg_catalog.replace(OLD.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.json)->>'space'=b.owner
+ AND (pg_catalog.replace(OLD.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.json)->>'by'=b.owner
+ AND b.sha256=pg_catalog.encode(pg_catalog.sha256(p.data),'hex') AND b.bytes=pg_catalog.octet_length(p.data)
+ AND b.proof=public.hub_personal_proof(OLD.digest,b.sha256,b.owner,b.epoch,b.bytes,OLD.created_at,OLD.kind,OLD.provenance,OLD.schema)) THEN RETURN NEW;END IF;
+ END IF;
+ RAISE EXCEPTION 'append-only table %: % rejected',TG_TABLE_NAME,TG_OP USING ERRCODE='HU001';
+END $fn$;
+CREATE OR REPLACE FUNCTION hub_check_personal_binding() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE r public.records%ROWTYPE; p pg_catalog.bytea; b pg_catalog.json; h pg_catalog.text;
+BEGIN
+ SELECT * INTO r FROM records WHERE digest=NEW.record;
+ SELECT data INTO p FROM personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256;
+ IF NOT (public.hub_member_layout_conversion() AND r.kind='knowledge_source_attribution') AND NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=NEW.owner AND epoch=NEW.epoch AND mode='hub') THEN RAISE EXCEPTION 'inactive personal scope'; END IF;
+ IF r.digest IS NULL OR p IS NULL OR r.body<>NEW.marker OR NEW.marker::jsonb<>jsonb_build_object('personal_payload',NEW.sha256,'owner',NEW.owner,'epoch',NEW.epoch,'record',NEW.record,'proof',NEW.proof)
+ THEN RAISE EXCEPTION 'invalid personal capsule'; END IF;
+ b:=replace(convert_from(p,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::pg_catalog.json;
+ IF r.kind NOT IN ('knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','source_artifact','knowledge_source_attribution')
+ OR (r.kind<>'source_artifact' AND (b->>'space') IS DISTINCT FROM NEW.owner)
+ OR (r.kind='source_artifact' AND ((b->'author'->>'user') IS DISTINCT FROM NEW.owner OR b->'origin'->'upload' IS NULL OR b->'visibility'->>'admins'<>'false'))
+ THEN RAISE EXCEPTION 'not a personal payload'; END IF;
+ IF r.kind='source_artifact' AND NOT EXISTS(
+ SELECT 1 FROM public.hub_read_records() s JOIN public.personal_record_bindings q ON q.record=s.digest
+ WHERE s.kind='knowledge_space_source' AND q.owner=NEW.owner AND q.epoch=NEW.epoch
+ AND (replace(s.body,chr(92)||'u0000',chr(92)||'u0001')::pg_catalog.json)->>'space'=NEW.owner
+ AND (replace(s.body,chr(92)||'u0000',chr(92)||'u0001')::pg_catalog.json)->>'artifact'=NEW.record) THEN RAISE EXCEPTION 'personal artifact has no owning knowledge source';END IF;
+ IF r.kind='knowledge_source_attribution' AND b->>'by' IS DISTINCT FROM NEW.owner THEN RAISE EXCEPTION 'not the attributed uploader';END IF;
+ IF b->'personal_scope' IS NOT NULL THEN
+ IF (b->'personal_scope')::pg_catalog.jsonb<>jsonb_build_object('owner',NEW.owner,'epoch',NEW.epoch) THEN RAISE EXCEPTION 'personal artifact scope mismatch';END IF;
+ END IF;
+ h:=encode(sha256(convert_to('{"body":'||convert_from(p,'UTF8')||',"created_at":'||to_json(to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::pg_catalog.text||',"kind":'||to_json(r.kind)::pg_catalog.text||',"provenance":'||to_json(r.provenance)::pg_catalog.text||',"schema":'||to_json(r.schema)::pg_catalog.text||'}','UTF8')),'hex');
+ IF h<>r.digest OR NEW.bytes<>octet_length(p) OR NEW.proof<>hub_personal_proof(r.digest,NEW.sha256,NEW.owner,NEW.epoch,NEW.bytes,r.created_at,r.kind,r.provenance,r.schema)
+ THEN RAISE EXCEPTION 'personal capsule digest mismatch'; END IF;
+ IF public.hub_member_layout_conversion() AND r.kind='knowledge_source_attribution' THEN INSERT INTO public.personal_legacy_ready VALUES(NEW.record) ON CONFLICT DO NOTHING;
+ ELSE PERFORM public.hub_finish_personal_record(NEW.record);END IF;
+ RETURN NULL;
+END $fn$;
+CREATE OR REPLACE FUNCTION hub_active_personal_insert() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF public.hub_member_layout_conversion() THEN RETURN NEW;END IF;
+ IF EXISTS(SELECT 1 FROM public.users WHERE id=NEW.owner AND deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'deleted member';END IF;
+ PERFORM 1 FROM public.personal_spaces WHERE owner=NEW.owner AND epoch=NEW.epoch AND mode='hub' FOR SHARE;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=NEW.owner AND epoch=NEW.epoch) THEN RAISE EXCEPTION 'inactive personal scope';END IF;
+ IF TG_TABLE_NAME='personal_objects' THEN
+ IF NOT EXISTS(SELECT 1 FROM public.personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256) THEN RAISE EXCEPTION 'personal object has no payload';END IF;
+ END IF;
+ RETURN NEW;
+END $fn$;
+CREATE FUNCTION public.hub_convert_member_attributions() RETURNS pg_catalog.void LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE r public.records%ROWTYPE;b pg_catalog.json;o pg_catalog.text;e pg_catalog.text;h pg_catalog.text;p pg_catalog.text;m pg_catalog.text;d pg_catalog.text;
+BEGIN
+ IF CURRENT_USER<>pg_catalog.pg_get_userbyid((SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.records'::pg_catalog.regclass))
+ OR EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=19) THEN RAISE EXCEPTION 'migration owner only, once' USING ERRCODE='42501';END IF;
+ PERFORM pg_catalog.set_config('circle_hub.member_layout_conversion','19',true);
+ FOR r IN SELECT * FROM public.records WHERE kind='knowledge_source_attribution' AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings q WHERE q.record=records.digest) ORDER BY seq LOOP
+ b:=pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.json;o:=b->>'space';
+ IF o IS DISTINCT FROM b->>'by' OR o !~ '^usr_[0-9a-z]{26}$' OR NOT EXISTS(SELECT 1 FROM public.users WHERE id=o) THEN RAISE EXCEPTION 'invalid personal attribution owner';END IF;
+ d:=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to('{"body":'||r.body||',"created_at":'||pg_catalog.to_json(pg_catalog.to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::pg_catalog.text||',"kind":'||pg_catalog.to_json(r.kind)::pg_catalog.text||',"provenance":'||pg_catalog.to_json(r.provenance)::pg_catalog.text||',"schema":'||pg_catalog.to_json(r.schema)::pg_catalog.text||'}','UTF8')),'hex');
+ IF d<>r.digest THEN RAISE EXCEPTION 'attribution digest mismatch before conversion';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,'00000000-0000-4000-8000-000000000001') ON CONFLICT DO NOTHING;
+ SELECT q.epoch INTO e FROM public.personal_record_bindings q WHERE q.record=b->>'source' AND q.owner=o;
+ IF e IS NULL THEN SELECT epoch INTO e FROM public.personal_spaces WHERE owner=o;END IF;
+ h:=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(r.body,'UTF8')),'hex');
+ INSERT INTO public.personal_payloads VALUES(o,e,h,pg_catalog.convert_to(r.body,'UTF8')) ON CONFLICT DO NOTHING;
+ p:=public.hub_personal_proof(r.digest,h,o,e,pg_catalog.octet_length(r.body),r.created_at,r.kind,r.provenance,r.schema);
+ m:=pg_catalog.json_build_object('personal_payload',h,'owner',o,'epoch',e,'record',r.digest,'proof',p)::pg_catalog.text;
+ INSERT INTO public.personal_record_bindings VALUES(r.digest,o,e,h,pg_catalog.octet_length(r.body),m,p);
+ UPDATE public.records SET body=m WHERE digest=r.digest;
+ END LOOP;
+ SET CONSTRAINTS personal_binding_check IMMEDIATE;
+ DELETE FROM public.personal_payloads p WHERE EXISTS(SELECT 1 FROM public.personal_purges x WHERE (x.owner,x.epoch)=(p.owner,p.epoch));
+ PERFORM pg_catalog.set_config('circle_hub.member_layout_conversion','',true);
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_convert_member_attributions() FROM PUBLIC;
+SELECT public.hub_convert_member_attributions();
+CREATE FUNCTION public.hub_protect_deleted_member() RETURNS pg_catalog.trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF OLD.deleted_at IS NOT NULL AND (NEW.deleted_at IS DISTINCT FROM OLD.deleted_at OR NOT NEW.disabled
+ OR NEW.name IS DISTINCT FROM OLD.name OR NEW.role IS DISTINCT FROM OLD.role OR NEW.password_hash IS DISTINCT FROM OLD.password_hash
+ OR NEW.password_revision IS DISTINCT FROM OLD.password_revision) THEN RAISE EXCEPTION 'permanent member tombstone' USING ERRCODE='HU001';END IF;
+ RETURN NEW;
+END $fn$;
+CREATE TRIGGER users_tombstone BEFORE UPDATE ON public.users FOR EACH ROW EXECUTE FUNCTION public.hub_protect_deleted_member();
+CREATE FUNCTION public.hub_guard_member_scope() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF NEW.mode='hub' AND EXISTS(SELECT 1 FROM public.users WHERE id=NEW.owner AND deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'deleted member';END IF;
+ RETURN NEW;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_guard_member_scope() FROM PUBLIC;
+CREATE TRIGGER personal_spaces_member BEFORE INSERT OR UPDATE ON public.personal_spaces FOR EACH ROW EXECUTE FUNCTION public.hub_guard_member_scope();
+CREATE FUNCTION public.hub_begin_member_deletion(a pg_catalog.text,o pg_catalog.text,e pg_catalog.text,op pg_catalog.text,m pg_catalog.text,c pg_catalog.jsonb,t pg_catalog.timestamptz,revision pg_catalog.timestamptz)
+ RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE u public.users%ROWTYPE;admin_set_lock CONSTANT pg_catalog.int8:=7301562002;k pg_catalog.text;
+BEGIN
+ IF pg_catalog.jsonb_typeof(c)<>'object' OR c - ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[]<>'{}'::pg_catalog.jsonb THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ FOREACH k IN ARRAY ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[] LOOP
+ IF NOT c ? k OR pg_catalog.jsonb_typeof(c->k)<>'number' OR (c->>k) !~ '^(0|[1-9][0-9]*)$' OR (c->>k)::pg_catalog.int8>9007199254740991 THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ END LOOP;
+ -- Same administrator-set lock as role changes and deactivation.
+ PERFORM pg_catalog.pg_advisory_xact_lock(admin_set_lock);
+ PERFORM 1 FROM public.users WHERE id=a AND role='admin' AND NOT disabled FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='42501';END IF;
+ SELECT * INTO u FROM public.users WHERE id=o FOR UPDATE;
+ IF NOT FOUND OR u.deleted_at IS NOT NULL OR u.updated_at<>revision THEN RAISE EXCEPTION 'member state changed';END IF;
+ IF u.role='admin' AND NOT u.disabled AND NOT EXISTS(SELECT 1 FROM public.users WHERE role='admin' AND NOT disabled AND id<>o) THEN RAISE EXCEPTION 'last active administrator';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,e) ON CONFLICT DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=o AND epoch=e) THEN RAISE EXCEPTION 'epoch changed';END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.owner=o AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready x WHERE x.record=b.record)) THEN RAISE EXCEPTION 'personal transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key='personal.pack.owner' WHERE r.kind='personal_pack_version' AND i.value=o AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=r.digest)) THEN RAISE EXCEPTION 'personal pack transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key IN ('artifact.author','artifact.reader') AND i.value=o
+ CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS b) x
+ WHERE r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings q WHERE q.record=r.digest)
+ AND ((x.b->'origin'->'upload' IS NOT NULL AND x.b->'author'->>'user'=o) OR
+ (x.b->'origin'->'read' IS NOT NULL AND x.b->'visibility'->>'admins'='false' AND x.b->'visibility'->'readers'=pg_catalog.jsonb_build_array(o)))) THEN RAISE EXCEPTION 'private original transfer incomplete';END IF;
+ INSERT INTO public.member_deletion_intents VALUES(o,op,a,e,t,m,c);
+ UPDATE public.users SET disabled=true,deleted_at=t,password_hash=NULL,password_must_change=false,password_revision=password_revision+1,updated_at=t WHERE id=o;
+ UPDATE public.tokens SET revoked_at=t,revoked_by=a WHERE user_id=o AND revoked_at IS NULL;
+ INSERT INTO public.user_history(user_id,name,role,disabled,changed_by,changed_at,deleted_at) VALUES(o,u.name,u.role,true,a,t,t);
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_begin_member_deletion(pg_catalog.text,pg_catalog.text,pg_catalog.text,pg_catalog.text,pg_catalog.text,pg_catalog.jsonb,pg_catalog.timestamptz,pg_catalog.timestamptz) FROM PUBLIC;
+CREATE FUNCTION public.hub_finish_member_deletion(o pg_catalog.text,op pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE e pg_catalog.text;
+BEGIN
+ SELECT epoch INTO e FROM public.member_deletion_intents WHERE member=o AND operation_id=op;
+ IF NOT FOUND OR NOT EXISTS(SELECT 1 FROM public.users WHERE id=o AND disabled AND deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'unavailable';END IF;
+ -- The same purge function and all of its durable-retirement guards remain authoritative.
+ PERFORM public.hub_purge_personal(o,e);
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_finish_member_deletion(pg_catalog.text,pg_catalog.text) FROM PUBLIC;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  member_deletion_intents:'SELECT',
   personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at,native_state,memory_projection,conflicts)',
   personal_sync_bindings:'SELECT, INSERT',
   personal_sync_notes:'SELECT, INSERT',
@@ -867,6 +1036,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     await db.query(`GRANT EXECUTE ON FUNCTION hub_purge_personal(text,text),hub_resume_personal(text,text,text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz),hub_replace_personal_memory(text,text,jsonb),hub_lock_personal_scope(text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_begin_member_deletion(text,text,text,text,text,jsonb,timestamptz,timestamptz),hub_finish_member_deletion(text,text),hub_member_layout_conversion() TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);
       await db.query(`GRANT ${privileges} ON TABLE ${table} TO "${role}"`, [], t);

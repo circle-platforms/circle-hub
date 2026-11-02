@@ -951,3 +951,23 @@ admission share this implementation; `personalSync.usageForSpace` adds the exist
 creating a personal root or exporting a snapshot. It is an internal metadata port: callers enforce owner/admin access.
 The epoch is part of native version metadata before its fixed-point charge is calculated. No migration or additional
 pack charge is introduced by this integration.
+
+### Permanent member tombstones and deletion coordination
+
+`memberDeletions.preview/prepare/finish/status` is the administrator-only metadata port. Preparation checks a stable
+manifest under the space lock, the principals package's existing administrator-set lock and committing account locks.
+It permits a disabled target but never removes the last active administrator. `deleted_at` seals the identity, removes
+its password hash and revokes tokens; SQL guards prohibit restoration and resuming a deleted personal scope. Names
+remain in the tombstone/history, while a partial unique index lets a new account reuse a login name with a different id.
+
+Migration 19 additionally encapsulates inline personal attribution records using the original logical digest. The
+conversion window requires the real table owner and the unrecorded migration, accepts only attribution capsules with
+exact ownership/proofs, and cannot change other row columns. Closed epochs stay closed. The runtime role receives
+only SELECT on deletion intents and narrowly defined function execution, with no new UPDATE/DELETE grant.
+
+Completion first drains the existing durable object retirement, then calls the same `hub_purge_personal` function and
+appends a digest/count-only receipt in one transaction. Failure leaves a sealed identity and resumable intent, not a
+completion receipt. Self-deletion can finish its already authorized operation; a new operation still requires a live
+administrator. Unscoped private packs/originals refuse deletion until their payload preparation is complete. The public
+record-reference reader exposes neither deletion receipts nor team attribution credentials; status is the dedicated
+administrator metadata boundary. Private pack/frozen-holder and console/CLI integration follows in the next task step.

@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Add permanent member tombstones and guarded digest-only deletion receipts over the existing personal payload purger.
+
 - Share exact native capacity accounting with personal sync admission and freeze archive and attribution requests to their admitted epoch.
 
 - Integrate personal sync with the shared console shell, Inspector, confirmation dialogs and current-state feedback.

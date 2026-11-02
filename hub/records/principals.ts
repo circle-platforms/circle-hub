@@ -49,6 +49,9 @@ function invitationCode(): string {
   return `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}`;
 }
 
+/** Reused by member deletion, keeping a single named administrator-set namespace. */
+export async function lockAdministratorSet(db:Database,tx:Transaction){await db.query('SELECT pg_advisory_xact_lock($1)',[ADMIN_SET_LOCK],tx);}
+
 function userOf(row: Row): User {
   if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里', { detail: { user: row.id } });
   return {
@@ -56,6 +59,7 @@ function userOf(row: Row): User {
     name: String(row.name),
     role: row.role,
     disabled: row.disabled === true,
+    ...(row.deleted_at?{deleted_at:iso(row.deleted_at)}:{}),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
   };
@@ -138,7 +142,7 @@ export class PgPrincipals implements Principals {
   }
 
   async verifyPassword(name: string, password: string): Promise<{ user: User; revision: number; mustChange: boolean } | null> {
-    const row = typeof name === 'string' && NAME.test(name) ? (await this.#db.query('SELECT * FROM users WHERE name = $1', [name])).rows[0] : undefined;
+    const row = typeof name === 'string' && NAME.test(name) ? (await this.#db.query('SELECT * FROM users WHERE name = $1 AND deleted_at IS NULL', [name])).rows[0] : undefined;
     const matches = await matchesPassword(password, row?.password_hash === undefined || row.password_hash === null ? null : String(row.password_hash));
     if (!matches || row === undefined || row.disabled) return null;
     return {user:userOf(row),revision:Number(row.password_revision),mustChange:row.password_must_change === true};
@@ -226,7 +230,7 @@ export class PgPrincipals implements Principals {
 
   async findByName(name: string): Promise<User | null> {
     if (typeof name !== 'string') return null;
-    const row = (await this.#db.query('SELECT * FROM users WHERE name = $1', [name])).rows[0];
+    const row = (await this.#db.query('SELECT * FROM users WHERE name = $1 AND deleted_at IS NULL', [name])).rows[0];
     return row === undefined ? null : userOf(row);
   }
 
@@ -242,6 +246,7 @@ export class PgPrincipals implements Principals {
       name: String(row.name),
       role: validRole(row.role),
       disabled: row.disabled === true,
+      ...(row.deleted_at?{deleted_at:iso(row.deleted_at)}:{}),
       changed_by: row.changed_by === null ? null : String(row.changed_by),
       changed_at: iso(row.changed_at),
       ...(row.password_changed === true ? {password_changed:true as const} : {}),
@@ -426,6 +431,7 @@ export class PgPrincipals implements Principals {
   async #locked(tx: PgTransaction, userId: string): Promise<User> {
     const row = typeof userId === 'string' && USER_ID.test(userId) ? (await this.#db.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId], tx)).rows[0] : undefined;
     if (row === undefined) throw new ConflictError('没有这个用户');
+    if(row.deleted_at)throw new ConflictError(labelOf('account_status','deleted'));
     return userOf(row);
   }
 
@@ -438,7 +444,7 @@ export class PgPrincipals implements Principals {
     const at = this.#now().toISOString();
     const id = newId('usr');
     const inserted = await this.#db.query(
-      'INSERT INTO users (id, name, role, disabled, created_at, updated_at, password_hash, password_must_change, password_revision) VALUES ($1, $2, $3, false, $4, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING RETURNING *',
+      'INSERT INTO users (id, name, role, disabled, created_at, updated_at, password_hash, password_must_change, password_revision) VALUES ($1, $2, $3, false, $4, $4, $5, $6, $7) ON CONFLICT DO NOTHING RETURNING *',
       [id, name, role, at, hash, mustChange, hash === null ? 0 : 1],
       tx,
     );

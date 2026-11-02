@@ -49,6 +49,13 @@ export type SpaceGrantBody = z.infer<typeof SpaceGrantBody>;
 export const SpaceSourceBody = z.strictObject({ sync_private:z.boolean().optional(),name:z.string().max(300).nullable().optional(),personal_epoch:z.uuid().optional(), space: SpaceId, path: TreePath, sha256: Sha256, artifact: Sha256, size: z.number().int().nonnegative(), by: UserId, at: IsoTime, attribution: Sha256.optional() }).refine(row=>row.attribution===undefined||row.space==='team',"only team source associations carry attributions");
 export const SourceAttributionBody = z.strictObject({space:UserId,source:Sha256,artifact:Sha256,sha256:Sha256,by:UserId,at:IsoTime,audience:z.literal('team')}).refine(row=>row.space===row.by,"only the uploader attributes a personal source");
 export type SourceAttributionBody = z.infer<typeof SourceAttributionBody>;
+// A team-held declaration receipt contains no private path or plaintext.
+export const TeamSourceAttributionBody = z.strictObject({team_source:Sha256,declaration:Sha256,uploader:UserId,declared_at:IsoTime,artifact:Sha256,sha256:Sha256,by:UserId,at:IsoTime});
+export type TeamSourceAttributionBody = z.infer<typeof TeamSourceAttributionBody>;
+// These are quantitative manifest fields, not a new vocabulary axis or a plaintext manifest.
+export const MemberDeletionCounts = z.strictObject({records:z.number().int().nonnegative(),payloads:z.number().int().nonnegative(),objects:z.number().int().nonnegative(),attributions:z.number().int().nonnegative(),archives:z.number().int().nonnegative(),private_versions:z.number().int().nonnegative()});
+export const MemberDeletionBody = z.strictObject({operation_id:z.uuid(),member:UserId,by:UserId,at:IsoTime,epoch:z.uuid(),purge_manifest:Sha256,counts:MemberDeletionCounts});
+export type MemberDeletionBody = z.infer<typeof MemberDeletionBody>;
 export const SpaceQuotaBody = z.strictObject({ space: UserId, bytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), by: UserId, at: IsoTime });
 export const SpaceLocks = z.strictObject({ team: Sha256, personal: Sha256.nullable().describe('No personal root while personal content is stored only locally'), owner: UserId });
 export const SpaceEntryReceipt = z.strictObject({ space: SpaceId, root: Sha256, entry: Sha256, reference: z.string(), status: KnowledgeEntryStatusSchema });
@@ -61,4 +68,6 @@ export const schemas = {
   'knowledge-space-source@1': SpaceSourceBody,
   'knowledge-source-attribution@1': SourceAttributionBody,
   'knowledge-space-quota@1': SpaceQuotaBody,
+  'knowledge-team-source-attribution@1': TeamSourceAttributionBody,
+  'member-deletion@1': MemberDeletionBody,
 };

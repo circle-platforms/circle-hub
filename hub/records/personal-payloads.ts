@@ -11,7 +11,7 @@ import {IntegrityError,RecordsError} from './errors.ts';
 export const INITIAL_PERSONAL_EPOCH='00000000-0000-4000-8000-000000000001';
 export interface PersonalScope {owner:string;epoch:string}
 export function personalRecordOwner(kind:RecordKind,body:unknown):string|null{
- if(!RecordKindSchema.extract(['knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant']).safeParse(kind).success)return null;
+ if(!RecordKindSchema.extract(['knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','knowledge_source_attribution']).safeParse(kind).success)return null;
  const space=(body as {space?:unknown})?.space;
  return typeof space==='string'&&/^usr_[0-9a-z]{26}$/.test(space)?space:null;
 }

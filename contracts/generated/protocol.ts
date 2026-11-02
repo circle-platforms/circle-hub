@@ -108,11 +108,11 @@ export const REFERENCE_FORMS = {
   rec: 'rec:<记录摘要>[#<JSON Pointer>]'
 } as const;
 
-export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer', 'knowledge_space_version', 'knowledge_space_entry', 'knowledge_space_grant', 'knowledge_space_source', 'knowledge_space_quota', 'knowledge_share', 'personal_pack_version', 'personal_pack_grant', 'personal_pack_retirement', 'personal_pack_transfer', 'memory_document', 'memory_version', 'memory_grant', 'memory_share', 'knowledge_source_attribution'] as const;
+export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer', 'knowledge_space_version', 'knowledge_space_entry', 'knowledge_space_grant', 'knowledge_space_source', 'knowledge_space_quota', 'knowledge_share', 'personal_pack_version', 'personal_pack_grant', 'personal_pack_retirement', 'personal_pack_transfer', 'memory_document', 'memory_version', 'memory_grant', 'memory_share', 'knowledge_source_attribution', 'member_deletion', 'knowledge_team_source_attribution'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json', 'skill.json'] as const;
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 30;
+export const MODEL_VERSION = 31;

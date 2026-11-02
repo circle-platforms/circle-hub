@@ -12,6 +12,7 @@ import {openRecords} from './index.ts';
 import {Database,createPool} from './db.ts';
 import {grantRuntime} from './migrations.ts';
 import {sha256Hex} from './digest.ts';
+import {canonicalize} from './canonical.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 const kinds=SyncObjectKindSchema.enum;
@@ -106,14 +107,15 @@ test('foreign objects and sessions look absent even to administrators; disabled 
  assert.deepEqual((await w.api.download(w.other,b.session_id,{epoch,objects:[object.id]})).objects,[object]);
 });
 
-test('legacy usage is preserved and concurrent staged batches cannot both exceed the shared account capacity',async t=>{
- const w=await world(t),s=await session(w),epoch=s.state.epoch;
+test('native logical bytes are rederived rather than trusting legacy counters and concurrent staged batches cannot exceed capacity',async t=>{
+ const w=await world(t),s=await session(w),epoch=s.state.epoch,at='2026-11-03T00:00:00.000Z';
  const before=(await w.api.state(w.owner)).used_bytes;
- await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{space:w.owner.id,used_bytes:321}});
- const document=await w.kit.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body:{space:w.owner.id}});
- const version=await w.kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:w.owner.id,document:document.digest,markdown:'synthetic'}});
+ const leaf=await w.kit.objects.put(Buffer.from(canonicalize({name:'synthetic',children:[],entries:[]})),'application/json',undefined,w.owner.id),tree=await w.kit.objects.put(Buffer.from(canonicalize({name:'',children:[{name:'synthetic',digest:leaf.sha256}],entries:[]})),'application/json',undefined,w.owner.id);
+ const knowledge=await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{space:w.owner.id,used_bytes:321,parent:null,tree:tree.sha256,sources:[],products:[],entries:[],directories:['/','/synthetic'],by:w.owner.id,at,reason:'synthetic legacy counter'},index:[{key:'knowledge.space.version',value:w.owner.id}]});
+ const document=await w.kit.store.put({kind:'memory_document',schema:'memory-document@1',provenance:'declared',body:{space:w.owner.id,by:w.owner.id,at,intent:'1'.repeat(64)},index:[{key:'memory.document.space',value:w.owner.id}]});
+ const version=await w.kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:w.owner.id,document:document.digest,parent:null,title:'synthetic',path:'/',state:'enabled',bytes:9,markdown:'synthetic',content_version:null,by:w.owner.id,at,intent:'2'.repeat(64),payload:'3'.repeat(64)},index:[{key:'memory.version.space',value:w.owner.id}]});
  await w.kit.store.withTransaction(tx=>w.kit.memoryIndex!.apply({document:document.digest,space:w.owner.id,version:version.digest,path:'/',state:'enabled',bytes:1,contextBytes:1},123,tx));
- assert.equal((await w.api.state(w.owner)).used_bytes,before+444);
+ const actual=[knowledge,document,version].reduce((n,row)=>n+Buffer.byteLength(canonicalize(row.body)),0);assert.notEqual(actual,444);assert.equal((await w.api.state(w.owner)).used_bytes,before+actual);
  const objects=[blob('x'.repeat(1200)),blob('y'.repeat(1200))],current=(await w.api.state(w.owner)).used_bytes;
  await w.kit.store.put({kind:'knowledge_space_quota',schema:'knowledge-space-quota@1',provenance:'declared',body:{space:w.owner.id,bytes:current+1800,by:w.admin.id,at:new Date().toISOString()},index:[{key:'knowledge.space.quota',value:w.owner.id}]});
  const results=await Promise.allSettled(objects.map(o=>w.api.upload(w.owner,s.session_id,batch(epoch,[o]))));
