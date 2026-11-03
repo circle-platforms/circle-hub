@@ -38,6 +38,8 @@ export interface PageContext {
   chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'hint' | 'actions' | 'crumbs'>) => PageChrome;
   /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
   csrf?: string;
+  /** The personal epoch read when rendering a write form. */
+  personalEpoch?: string;
   /** The request came over HTTPS (the built-in listener or the configured proxy). */
   secure?: boolean;
   /** The origin the browser reached (scheme and the Host the app accepted), for the Circle entry of this Hub. */
@@ -478,7 +480,7 @@ async function intakePending(ctx: PageContext): Promise<Html> {
 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx,html`${await packSources(ctx, 'product')}${await intakePending(ctx)}`))};
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx,html`${await packSources(ctx, 'product')}${await intakePending(ctx)}`))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);

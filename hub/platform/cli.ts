@@ -431,6 +431,7 @@ const restore: Handler = async (args, context, io) => {
     }
     const target = settings ? { ...context, database: settings.database } : context;
     const cluster = postgresFor(target, (await readCurrentRelease(context.layout))?.dir);
+    io.stdout('恢复清除之前的备份会带回已清除的个人内容');
     const report = await restoreBackup({ layout: context.layout, backupDir: dir, postgres: cluster, runner: context.runner, libpqBin: context.libpqBin, now: context.now });
     io.stdout(`已从 ${dir} 恢复：${report.tables} 张表 ${report.rows} 行，与清单一致；文件 ${report.files} 个；数据库在运行`);
     io.stdout(`数据库与表属于角色 ${cluster.target.user}；应用角色 ${cluster.application.user} 的 ${report.privileges} 项权限与备份时一致，不拥有任何对象`);

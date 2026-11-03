@@ -674,3 +674,14 @@ call count immediately before/after refused transport; its test now passes in th
 Static wiring is aligned: Linux keychainFor selects fileKeyStore and hubKeyProvider selects fileKeyProvider using the same
 resolved deployment root and vault key names. Actual service-user production execution remains unverified. The owner canceled
 backup/rehearsal work; the integrator performs the final authorized real pipe. No agent accessed real keys or target systems.
+
+Decision 89 step 2: personal payloads are in PostgreSQL and are included in the existing consistent dump/restore, with
+no extra key or unlisted filesystem area. Restoring a backup from before personal content was cleared brings that
+content back; the restore command prints this fact. Old backups and independently held team copies are not erased.
+The ownership regression backs up private payloads, purges them, restores the older snapshot and verifies both restored
+content and a subsequent purge under the application role. It also checks the unchanged table ownership and grants.
+
+Decision 89 step 3 registers CIRCLE_HUB_SYNC_MAX_BATCH_BYTES in the platform service environment allow-list. Migration 15
+adds ten scoped transport tables; ownership covers every table and preserves the restricted personal_spaces grants.
+The backup regression also restores a staged sync object with its session and idempotent receipt. Runtime collection
+uses an owner-defined function with a pinned search path, without direct DELETE grants on payloads or the object catalog.

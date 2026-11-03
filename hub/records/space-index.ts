@@ -25,6 +25,7 @@ export interface SpaceSearchIndex {
   search(text: string, scopes: Array<{
     version: string;
     paths: string[];
+    excludeRecords?:string[];
   }>, offset: number, limit: number): Promise<SpaceSearchRow[]>;
 }
 /** Adjacent Unicode character pairs within each word; isolated one-character words retain their token. */
@@ -109,7 +110,7 @@ export class PgSpaceSearchIndex implements SpaceSearchIndex {
     }>(`
    SELECT s.space,s.version,s.path,s.entry,s.record FROM knowledge_space_search s JOIN knowledge_space_search_documents d ON d.record=s.record WHERE d.tokens @> $1::text[] AND EXISTS (
     SELECT 1 FROM jsonb_array_elements($2::jsonb) scope, jsonb_array_elements_text(scope->'paths') prefix
-    WHERE scope->>'version'=s.version AND (prefix.value='/' OR s.path=prefix.value OR starts_with(s.path,prefix.value||'/'))
+    WHERE scope->>'version'=s.version AND NOT COALESCE((scope->'excludeRecords') ? s.record,false) AND (prefix.value='/' OR s.path=prefix.value OR starts_with(s.path,prefix.value||'/'))
    ) ORDER BY space,path,entry OFFSET $3 LIMIT $4`, [tokens, JSON.stringify(scopes), offset, limit]);
     return result.rows;
   }

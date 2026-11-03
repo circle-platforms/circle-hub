@@ -50,3 +50,14 @@ not read. `CIRCLE_HUB_HOME` is not among them (the platform reads the data root 
 the retired-name guard, the platform-only names or the keychain defaults stop agreeing.
 
 Memory limits use decimal UTF-8 bytes: CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES defaults to 24,000 body bytes (1–16 MiB), CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES to 48,000 title/path/body bytes (1–64 MiB), and CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS to 20 active documents (1–10,000). Space limits apply separately to team and each personal space and count only enabled current versions. Session lists and body reads check the same limits. Historical personal memory also counts toward personal capacity; every appended version checks that capacity. An unchanged write returns its current version without consuming history.
+
+Personal sync transport: `CIRCLE_HUB_SYNC_MAX_BATCH_BYTES` defaults to 8 MiB (1 KiB–64 MiB) of canonical object bytes.
+The internal transport negotiates a lower batch/object count and size when the existing HTTP wire budget requires it.
+Object/page counts and the 24-hour continuation lifetime use the approved protocol constants. `CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE` defaults to 120 requests per account per minute (1–10,000).
+Both listeners share the limiter across access tokens and declared device IDs, with at most two in-flight writes per
+account. Refusals return SYNC_RATE_LIMITED and Retry-After; global request/response bytes also use the existing HTTP
+budget. Both approved variables are registered for platform forwarding.
+
+The account request count includes unknown sync paths and wrong methods. Those refusals and over-quota requests stay
+in the bounded in-memory admission counter; they do not append persistent sync audits. Valid admitted requests keep
+their normal operation audits. No extra denial-log or token-scope configuration variable is introduced.

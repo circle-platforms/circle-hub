@@ -33,8 +33,12 @@ before(async () => {
   const client = new pg.Client({ host: postgres.socketDir, port: postgres.config.port, user: postgres.config.user, database: 'postgres' });
   await client.connect();
   await client.query(`CREATE ROLE ${RUNTIME} LOGIN NOSUPERUSER`);
-  await client.end();
   const database = await postgres.createDatabase();
+  try {
+    await client.query(`REVOKE TEMPORARY ON DATABASE "${database.database}" FROM PUBLIC`);
+  } finally {
+    await client.end();
+  }
   env = {
     CIRCLE_HUB_DATA_DIR: join(scratch, 'data'),
     CIRCLE_HUB_PORT: '0',
@@ -43,7 +47,8 @@ before(async () => {
     CIRCLE_HUB_DATABASE_NAME: database.database,
     CIRCLE_HUB_DATABASE_USER: RUNTIME,
   };
-  assert.equal((await run(['serve', '--migrate-only'])).code, 0);
+  const migrated = await run(['serve', '--migrate-only']);
+  assert.equal(migrated.code, 0, migrated.text);
   const root = await run(['user', 'create', '根管理员', '--role', 'admin']);
   adminToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
   assert.equal((await run(['user', 'create', '甲'], { ...env, CIRCLE_HUB_TOKEN: adminToken })).code, 0);

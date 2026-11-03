@@ -105,6 +105,10 @@ export const AXES = {
   knowledge_directory: { label: '知识目录显示', ui: '知识文件夹显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
   knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目', ui: '私人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
   memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录', ui: '文件夹' }, { code: 'markdown_text', label: 'Markdown 正文' }, { code: 'active_content', label: '启用内容' }, { code: 'active_documents', label: '启用篇数' }] },
+  sync_mode: { label: '同步方式', owner: 'K01', values: [{ code: 'local', label: '仅保存在本机' }, { code: 'hub', label: '同步到 Hub' }] },
+  sync_status: { label: '同步状态', owner: 'K01', values: [{ code: 'idle', label: '尚未同步' }, { code: 'syncing', label: '等待同步中' }, { code: 'conflicted', label: '有冲突' }, { code: 'purging', label: '等待清除中' }, { code: 'complete', label: '同步完成' }] },
+  sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
+  sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1129,6 +1133,46 @@ export function isMemoryField(value: unknown): value is MemoryField {
   return (MEMORY_FIELD as readonly unknown[]).includes(value);
 }
 
+/** 同步方式 (K01) */
+export const SYNC_MODE = ['local', 'hub'] as const;
+export type SyncMode = (typeof SYNC_MODE)[number];
+export const SYNC_MODE_LABEL = { 'local': '仅保存在本机', 'hub': '同步到 Hub' } as const satisfies { readonly [K in SyncMode]: string };
+export const SYNC_MODE_UI = { 'local': '仅保存在本机', 'hub': '同步到 Hub' } as const satisfies { readonly [K in SyncMode]: string };
+export const SyncModeSchema = z.enum(SYNC_MODE);
+export function isSyncMode(value: unknown): value is SyncMode {
+  return (SYNC_MODE as readonly unknown[]).includes(value);
+}
+
+/** 同步状态 (K01) */
+export const SYNC_STATUS = ['idle', 'syncing', 'conflicted', 'purging', 'complete'] as const;
+export type SyncStatus = (typeof SYNC_STATUS)[number];
+export const SYNC_STATUS_LABEL = { 'idle': '尚未同步', 'syncing': '等待同步中', 'conflicted': '有冲突', 'purging': '等待清除中', 'complete': '同步完成' } as const satisfies { readonly [K in SyncStatus]: string };
+export const SYNC_STATUS_UI = { 'idle': '尚未同步', 'syncing': '等待同步中', 'conflicted': '有冲突', 'purging': '等待清除中', 'complete': '同步完成' } as const satisfies { readonly [K in SyncStatus]: string };
+export const SyncStatusSchema = z.enum(SYNC_STATUS);
+export function isSyncStatus(value: unknown): value is SyncStatus {
+  return (SYNC_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 同步对象种类 (K01) */
+export const SYNC_OBJECT_KIND = ['bytes', 'source_revision', 'entry_revision', 'directory_revision', 'memory_revision', 'pack_manifest', 'inventory_page', 'snapshot', 'deletion'] as const;
+export type SyncObjectKind = (typeof SYNC_OBJECT_KIND)[number];
+export const SYNC_OBJECT_KIND_LABEL = { 'bytes': '保真字节', 'source_revision': '原文修订', 'entry_revision': '知识修订', 'directory_revision': '目录修订', 'memory_revision': '记忆修订', 'pack_manifest': '包清单', 'inventory_page': '清单页', 'snapshot': '同步快照', 'deletion': '删除修订' } as const satisfies { readonly [K in SyncObjectKind]: string };
+export const SYNC_OBJECT_KIND_UI = { 'bytes': '保真字节', 'source_revision': '原文修订', 'entry_revision': '知识修订', 'directory_revision': '目录修订', 'memory_revision': '记忆修订', 'pack_manifest': '包清单', 'inventory_page': '清单页', 'snapshot': '同步快照', 'deletion': '删除修订' } as const satisfies { readonly [K in SyncObjectKind]: string };
+export const SyncObjectKindSchema = z.enum(SYNC_OBJECT_KIND);
+export function isSyncObjectKind(value: unknown): value is SyncObjectKind {
+  return (SYNC_OBJECT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 同步信息 (K01) */
+export const SYNC_FIELD = ['last_synced_at', 'cleared_personal_folder'] as const;
+export type SyncField = (typeof SYNC_FIELD)[number];
+export const SYNC_FIELD_LABEL = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的个人文件夹' } as const satisfies { readonly [K in SyncField]: string };
+export const SYNC_FIELD_UI = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的私人文件夹' } as const satisfies { readonly [K in SyncField]: string };
+export const SyncFieldSchema = z.enum(SYNC_FIELD);
+export function isSyncField(value: unknown): value is SyncField {
+  return (SYNC_FIELD as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1232,6 +1276,10 @@ export interface AxisValues {
   knowledge_directory: KnowledgeDirectory;
   knowledge_origin: KnowledgeOrigin;
   memory_field: MemoryField;
+  sync_mode: SyncMode;
+  sync_status: SyncStatus;
+  sync_object_kind: SyncObjectKind;
+  sync_field: SyncField;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1337,6 +1385,10 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   knowledge_directory: KNOWLEDGE_DIRECTORY_LABEL,
   knowledge_origin: KNOWLEDGE_ORIGIN_LABEL,
   memory_field: MEMORY_FIELD_LABEL,
+  sync_mode: SYNC_MODE_LABEL,
+  sync_status: SYNC_STATUS_LABEL,
+  sync_object_kind: SYNC_OBJECT_KIND_LABEL,
+  sync_field: SYNC_FIELD_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1442,6 +1494,10 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   knowledge_directory: KNOWLEDGE_DIRECTORY_UI,
   knowledge_origin: KNOWLEDGE_ORIGIN_UI,
   memory_field: MEMORY_FIELD_UI,
+  sync_mode: SYNC_MODE_UI,
+  sync_status: SYNC_STATUS_UI,
+  sync_object_kind: SYNC_OBJECT_KIND_UI,
+  sync_field: SYNC_FIELD_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

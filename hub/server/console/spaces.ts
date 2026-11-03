@@ -1,3 +1,6 @@
+import {randomUUID} from 'node:crypto';
+import {personalLocal,personalSyncNotice,checkPersonalFormEpoch} from './personal-sync.ts';
+import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 import {spaceLayout,currentAudience,knowledgeTabs} from './space-layout.ts';
@@ -5,7 +8,7 @@ import {directoryName} from './audience.ts';
 import {knowledgeDirectory,batchSharePage,shareBatch,existingTeamLink} from './knowledge-directory.ts';
 export {batchSharePage};
 import { z } from 'zod';
-import { ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, isKnowledgeSearchScope, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { SyncModeSchema, ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, isKnowledgeSearchScope, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { Sha256 } from '../../../contracts/src/common.ts';
 import { KnowledgeError, type SpaceEntryView } from '../../knowledge/api.ts';
 import { RecordsError } from '../../records/api.ts';
@@ -17,7 +20,7 @@ import {knowledgeState,number,size,timestamp,versionName,versionLabel} from './k
 import {sharingRows} from './sharing-history.ts';
 const field = inputField;
 function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false): Html {
-  return html `<form method="post" action="/console/knowledge/do/${action}"${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><div data-fields>${fields}</div><button type="submit" class="ch-btn ${action==='revoke'||action==='withdraw'?'ch-btn--danger':'ch-btn--primary'}"${disabled?html` disabled`:html``}>${label}</button></form>`;
+  return html `<form method="post" action="/console/knowledge/do/${action}"${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}<div data-fields>${fields}</div><button type="submit" class="ch-btn ${action==='revoke'||action==='withdraw'?'ch-btn--danger':'ch-btn--primary'}"${disabled?html` disabled`:html``}>${label}</button></form>`;
 }
 const spaceContent = (content: Html) => html `<div class="ch-section" data-area-content>${content}</div>`;
 const spaceLink = (space: string, root?: string, path = '/') => ({ space, ...(root ? { root } : {}), path });
@@ -54,10 +57,12 @@ ${field('修改原因', html `<input name="reason" maxlength="1000" value="${dra
 `, draft ? '保存修改' : space === 'team' ? '导入条目' : '保存条目'));
 }
 export async function spacePage(ctx: PageContext): Promise<PageResult> {
+  ctx.personalEpoch=(await ctx.deps.records.personalSync?.state(ctx.principal))?.epoch;
   const spaces = ctx.deps.knowledge.spaces;
   if (!spaces)
     return neutralPage(ctx);
   const space = ctx.url.searchParams.get('space') ?? ctx.principal.id;
+  if(space===ctx.principal.id&&!ctx.url.searchParams.has('root')&&await personalLocal(ctx))return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge'}),await spaceLayout(ctx,await personalSyncNotice(ctx)))};
   const paths = await spaces.paths(ctx.principal, space);
   if (!paths.length)
     return neutralPage(ctx);
@@ -96,7 +101,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
     const canEdit = (own || space === 'team' && ctx.admin) && (entry.row.status === 'verified' || entry.row.status === 'unverified');
     const canWithdraw=canEdit||space==='team'&&entry.body.by===ctx.principal.id&&entry.body.shared_from!==undefined;
     const shared=entry.body.shared_from;
-    const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',technical(code('tree:'+shared.root+shared.path+'@'+shared.entry),'查看')]]):html``;
+    const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',await personalOriginCleared(ctx,shared.root)?clearedPersonalFolder():technical(code('tree:'+shared.root+shared.path+'@'+shared.entry),'查看')]]):html``;
     const withdrawNotice=entry.grounds_withdrawn.length||entry.grounds_withdrawn_hidden_count?html`<p class="notice">${uiLabelOf('validity_status','grounds_withdrawn')}${entry.grounds_withdrawn_hidden_count?`；另有 ${entry.grounds_withdrawn_hidden_count} 项来源不可读取`:''}</p>`:html``;
     let share=html``;
     if(own&&entry.row.status==='verified'){
@@ -201,6 +206,13 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   const spaces = ctx.deps.knowledge.spaces;
   if (!spaces)
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
+  if(action==='sync-resume'||action==='sync-mode'){
+    const api=ctx.deps.knowledge.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
+    try{await api.changeMode(ctx.principal,{epoch:values.get('epoch')??'',expected_state:values.get('expected_state')??'',mode:action==='sync-resume'?SyncModeSchema.enum.hub:values.get('mode'),operation_id:values.get('operation_id')||randomUUID(),check:values.get('check')||null,confirm_purge:values.get('confirm_purge')==='true'});}
+    catch(error){if(error instanceof RecordsError&&error.code)throw new KnowledgeError(error.message,{code:error.code});throw error;}
+    return '/console/knowledge?scope=personal&sync=settings';
+  }
+  if((values.get('space')||ctx.principal.id)!=='team')await checkPersonalFormEpoch(ctx,values.get('personal_epoch'));
   if(action==='share-batch')return shareBatch(ctx,values);
   const get = (name: string) => values.get(name) ?? '', space = get('space') || ctx.principal.id, path = get('path') || '/';
   if(action==='grant'&&get('preview_grant')==='1')return grantPreviewLocation('/console/knowledge/space',{space:ctx.principal.id,path},'grant-knowledge',values);
@@ -248,7 +260,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
 export function spaceActionFailure(ctx: PageContext, error: unknown): PageResult {
   if (error instanceof KnowledgeError && error.code === 'SOURCE_UNAVAILABLE')
     return neutralPage(ctx);
-  const message = error instanceof KnowledgeError ? error.message : error instanceof z.ZodError || error instanceof SyntaxError ? '条目或表单格式不正确' : null;
+  const message = error instanceof KnowledgeError || error instanceof RecordsError&&(error.code==='SYNC_MODE_LOCAL'||error.code==='SYNC_EPOCH_CHANGED'||error.code==='SYNC_VERSION_CONFLICT') ? error.message : error instanceof z.ZodError || error instanceof SyntaxError ? '条目或表单格式不正确' : null;
   if (message === null)
     throw error;
   return { status: 400, body: page(ctx.chrome('知识操作未完成', { active: 'knowledge' }), html `<p class="error">${message}</p><p>${link('/console/knowledge', '返回知识库')}</p>`) };

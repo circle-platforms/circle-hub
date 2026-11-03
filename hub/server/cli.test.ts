@@ -45,6 +45,14 @@ let databases = 0;
 async function environment(extra: Record<string, string> = {}): Promise<NodeJS.ProcessEnv> {
   databases += 1;
   const database = await postgres.createDatabase();
+  // Only the synthetic database owner adjusts the fixture's unsafe PostgreSQL default.
+  const owner = new pg.Client({ host: postgres.socketDir, port: postgres.config.port, user: postgres.config.user, database: 'postgres' });
+  await owner.connect();
+  try {
+    await owner.query(`REVOKE TEMPORARY ON DATABASE "${database.database}" FROM PUBLIC`);
+  } finally {
+    await owner.end();
+  }
   const dataDir = join(scratch, `data-${databases}`);
   return {
     CIRCLE_HUB_DATA_DIR: dataDir,
@@ -125,6 +133,22 @@ describe('retired names and startup', () => {
 });
 
 describe('serve --migrate-only', () => {
+  test('refuses unsafe runtime temporary privileges without silently revoking the database policy', async () => {
+    const env = await environment();
+    const admin = new pg.Client({ host: postgres.socketDir, port: postgres.config.port, user: postgres.config.user, database: 'postgres' });
+    await admin.connect();
+    try {
+      await admin.query(`GRANT TEMPORARY ON DATABASE "${env.CIRCLE_HUB_DATABASE_NAME}" TO ${RUNTIME}`);
+      const result = await run(['serve', '--migrate-only'], env);
+      assert.equal(result.code, 1, result.text);
+      assert.match(result.text, /运行角色.*创建临时对象/);
+      const privilege = await admin.query("SELECT pg_catalog.has_database_privilege($1,$2,'TEMPORARY') AS allowed", [RUNTIME, env.CIRCLE_HUB_DATABASE_NAME]);
+      assert.equal(privilege.rows[0].allowed, true, 'the operator must correct the database policy explicitly');
+    } finally {
+      await admin.end();
+    }
+  });
+
   test('migrates as the owner role, grants the runtime role and exits 0; again it applies nothing', async () => {
     const env = await environment();
     const first = await run(['serve', '--migrate-only'], env);

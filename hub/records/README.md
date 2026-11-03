@@ -713,3 +713,152 @@ retained. A small portable decoder is checked against that parser for every name
 `node tools/gen-credential-scanner.ts --check` to check the generated data; the knowledge-contribution pack generator also
 mirrors the scanner, decoder and data into its standalone skill, without a runtime package dependency. This avoids two
 credential policies drifting apart; it adds no per-source hashing or data-verification pass.
+
+### Personal payload storage (decision 89, step 2)
+
+Migration 14 adds account/epoch-scoped PostgreSQL byte payloads, immutable digest capsules and purge journals. These
+payloads use no per-epoch encryption. Equal bytes are held independently across accounts; only an account/epoch deduplicates.
+New personal knowledge, directory snapshots, original captures and memory bodies are indirect from their first write.
+The logical envelope digest and original source byte hash remain unchanged. Reading an active record reconstructs its
+canonical body before the usual integrity check. A record with only a cleared personal holder is absent to ordinary
+readers; an independent run holder preserves its original body. Explicit capsule inspection reports the personal
+binding as `cleared` only after validating its immutable digest chain. Missing active payloads are
+integrity failures, not successful deletion.
+
+The owner-only, one-time migration exemption is limited to private rows whose replacement matches a verified payload
+and capsule; all other columns remain identical. The migration marker prevents reuse, runtime grants cannot execute
+the converter or update records, and the append-only triggers remain enabled. A deferred binding constraint rejects
+capsules that would shadow unrelated records. The role regression temporarily grants UPDATE to prove the trigger
+itself still rejects an application role, even with the migration flag set and spoofed temporary catalog tables.
+The owner exemption also refuses a team record. Search paths pin the catalog and public schema ahead of temporary tables.
+
+Legacy directory objects and imported originals are materialized before serving. A persistent hash-only retirement
+journal resumes after crashes; purge refuses unfinished conversion or retirement. References held independently by team trees (including nested nodes) or ordinary
+captures keep their global copies. Personal payload bytes are deleted by the narrow purge function; immutable
+capsules and safe hashes remain. Purge also removes private search and memory projections and invalidates directory
+grants. It preserves team copies. PostgreSQL backup/restore includes both payloads and capsules in one snapshot:
+restoring a backup taken before a purge restores that old content. The restore command states this boundary.
+
+No sync HTTP handler or client is provided by this step. Current mode defaults to Hub. Clearing is an internal service
+operation until the checked, authenticated mode-switch routes are wired in subsequent steps.
+
+### Personal sync transport (decision 89, step 3)
+
+`personalSync` is an account-scoped internal port, not an MCP tool or an HTTP handler. It rechecks the account and epoch
+inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings
+store a digest of the native identity, never its path. The state token includes the native knowledge root and memory
+heads but excludes transfer timestamps and activity. Projection and personal-pack adapters, verified CAS and conflict
+handling are implemented below under atomic commits; uploading alone cannot promote an object.
+
+Migration 15 appends transport tables without changing migration 14 or its exemption. Only derived sync heads have
+column-scoped UPDATE privileges. Clients, sessions, graph edges, leases, retained-history markers and operation receipts
+are append-only. Client names live in removable personal payloads. Every catalog lookup includes owner and epoch;
+knowing another account's object hash confers no read or deduplication right. A session freezes committed graph inventory
+in indexed rows; later uploads only extend its staging leases, not that frozen inventory. Cursors bind the account,
+epoch, session and frozen snapshot. Found own objects gain a session lease so concurrent expiry cannot collect them.
+
+Upload validates the entire bounded canonical batch and scans decoded text fields before storing any part. Original
+byte objects are preserved and scanned as bytes; an uninspected binary chunk remains staged, not verified or admitted
+as a model-readable source. Full original reconstruction, cross-chunk scanning and evidence re-verification are checked
+at atomic commit. One operation key binds the route, session and complete request; exact replay returns its
+original safe receipt, including after a process restart. A failed receipt insert rolls back payloads and catalog rows.
+
+Logical usage preserves native knowledge history and memory history, adding unique sync objects and private client
+metadata per account/epoch. Byte objects count original bytes plus metadata, not base64 inflation. Concurrent admission
+uses the same space lock. Session creation, registration and staging all check capacity; transferring an owned object
+again does not charge twice. Atomic commit integrates this quota with native writers and projected sync records.
+
+The owner-defined `hub_collect_personal_sync` removes only unretained objects after their last live session ends; it
+preserves independent native originals and record payloads. Runtime cannot DELETE payloads or catalog rows directly.
+Purge already deletes all epoch payloads, including client names and staged sync bodies; hashes/receipts remain safe
+metadata. PG 18 ownership now backs up, purges and restores a real staged batch, session and operation receipt as well
+as private record bodies. Returning from local to Hub uses the owner-defined hub_resume_personal function, not an
+UPDATE grant on personal_spaces (Claude 2026-11-03); the HTTP mode adapter is described in step 5 below.
+
+Decision 89 review item 1: startup retirement treats each team version's products[].root as a knowledge-record mount,
+not a directory object file. It skips those mount boundaries while preserving ordinary team directory objects. The
+upgrade regression covers first and repeated startup; a real synthetic produced product also stays readable after recovery.
+
+Decision 89 review item 2: object_holds indexes exact storage fields, with SELECT-only runtime access and owner trigger
+maintenance. Authorization bound objects cover resource, variable and executor definitions; pack manifests/files,
+verbatim submissions, frozen executor maps, producer outputs/lists and registered feeding objects have explicit paths.
+Generator inputs, arbitrary strings and ordinary grounds are not storage ownership. A non-space artifact holder keeps
+that artifact outside the personal conversion. Executor-map members also keep their global bytes. Personal captures
+include their trusted account/epoch in both body and deduplication identity, so a fixed-clock knowledge import cannot
+reuse an independent personal-pack capture. This edit is to undeployed migration 14 under Claude's explicit permission.
+
+Review item 3 has separate negative regressions: generated-input mentions, file names and node prose never retain a
+purged private original. They assert physical file absence and normal object absence, while an actual other original survives.
+
+Review item 4: active-scope insert guards serialize with purge through a shared scope-row lock. A personal artifact
+binding requires an owning same-epoch knowledge source and a structurally exact capsule. The delayed binding check
+marks new records complete as the owner; legacy completion also validates the copied object graph and atomically queues
+its old hashes. Runtime has SELECT-only access to candidate and completion journals. Completion functions accept no
+caller-provided byte inventory. The filesystem deletion/durability check remains the application's responsibility.
+The DB application role represents the whole Hub; per-member purge authorization stays at the authenticated application
+entry, just like other Hub writes. No member-level SQL isolation is claimed. Race and direct-role regressions cover this boundary.
+
+Review item 5 adds a metadata-only cleared(record) predicate for authorized views. It joins immutable binding and purge
+metadata and never loads the active private body. Capsule inspection still performs the full integrity checks when needed.
+
+Security review bounds legacy tree traversal by account/epoch and caches at most 50,000 node keys per set. Completion validates at most 10,000 nodes and 64 levels; excess refuses completion. The 1,200-version synthetic fixture asserts distinct-account copies and indexed holder queries.
+
+Legacy file retirement fsyncs the containing directory before recording completion. Failure keeps the pending journal and prevents purge; restart retries the directory sync even if unlink already succeeded. The durability regression injects that exact crash boundary.
+
+Review item 9 exposes a metadata-only personal mode read and a console-only resume operation. The runtime still cannot UPDATE personal_spaces. The owner-defined resume function requires a completed local purge and a fresh UUID; the authenticated application checks the account, epoch and expected state while holding its existing space lock. New head, mode and a content-free action audit commit together. Direct runtime regression covers privileges, invalid reuse, rollback, disabled accounts and concurrent resume. General bidirectional HTTP mode switching is implemented in step 5 below.
+
+### Atomic personal sync commits (decision 89, step 4)
+
+Migration 16 adds scoped bindings, private notes, native-byte credits, export accounting and memory reservations. The
+account lock serializes native writes, sync CAS and epoch changes. An owner-defined scope lock avoids granting UPDATE
+on personal_spaces. Memory replacement checks stored records and replaces only the active owner's projection; runtime
+can call the fixed-path function but cannot directly delete heads. The memory anchor plus later native records rebuilds
+deletions and conflicts without resurrecting candidates.
+
+Commit receipts bind the operation to its session and request, including failed-response replay. State conflicts retain
+staged objects and return the caller's latest state. Observations and receipts are private removable payloads; action
+audits contain metadata only. Native logical history and staged objects share quota accounting, with projection credits
+preventing double billing. Frozen receipt size is included in usage. Result pages respect item and wire-byte budgets.
+
+The follow-up security review hardens every owner-defined function with `search_path=pg_catalog,public,pg_temp` and
+qualified parameter, return and local types. A synthetic runtime-domain exploit first reproduced history rewriting;
+the regression now checks unchanged bytes and every definer's catalog configuration. Undeployed migrations 14–16
+were reviewed under the coordinator's explicit correction; no conversion exemption or runtime write grant was added.
+
+Runtime grants reject effective database TEMPORARY privilege before granting anything, including privilege from PUBLIC
+or inherited roles. Runtime migration verification repeats that check at startup. Migration-owner verification remains
+available; granting the table owner as a runtime role is still refused. External database owners must revoke unsafe
+privileges themselves; the grant helper does not silently change database policy.
+
+### Run-held personal uploads (decision 89 review)
+
+Migration 17 retains the exact capture body and raw bytes of a personal upload when a run binds its artifact. An
+owner-only trigger performs the copy inside the run append transaction, with a shared epoch lock; failed appends retain
+nothing. Existing bindings are backfilled by the same owner-only function. Runtime has SELECT only on run_originals
+and cannot invoke the retention helper directly. The original records row and its logical digest stay unchanged.
+
+Purge removes the personal link and grant; the independently held run original remains readable through the existing
+source/run authorization and read tier. Retention creates no upload declaration and does not widen source ACLs.
+Captures carrying a personal scope keep that qualification even after their link is cleared; ordinary team import still
+requires its existing qualification. The new table is included in PostgreSQL backups; no file layout or
+per-epoch encryption was added. A historical purge that already removed bytes cannot be undone from a digest.
+
+The invoker-only `hub_read_records()` has no function-level SET clause: its fully qualified SQL must inline so digest
+predicates reach `records_digest_key` before reconstructing private or run-held bodies. A 50,000-record plan regression
+checks present and absent digest reads as both migration owner and runtime role, without a timing threshold or forced
+planner settings. Every SECURITY DEFINER retains its fixed search path. Migrations 14 and 15 are now frozen separately
+in the reviewed SQL snapshots; this correction changes migration 17 only.
+
+### Sync mode receipts and access-token authentication (decision 89, step 5)
+
+Migration 18 adds append-only, content-free personal_sync_mode_operations, keyed by account/epoch/operation. The
+full request identity binds replay to the same intent; a cached old purge result cannot purge a later epoch. Mode
+pre-check proofs include native state, staged object/session/operation metadata and current grant/share observations.
+A grant or staged batch invalidates a proof even when no native content head moved. Unpersisted read-only share checks
+are reported as unknown, not zero. Purge, receipt and mode audit commit in one transaction. Re-enable uses the existing
+owner-defined hub_resume_personal with a new UUID; runtime still has no UPDATE on personal_spaces, and receives only
+SELECT/INSERT on mode receipts. Migrations 14 and 15 remain frozen, and migration 17 keeps its inlineable reader.
+
+The principals port now distinguishes access Bearers from password-console session credentials and returns the
+server's token/OAuth-client IDs for auditing, without exposing token values. Existing internal console authentication
+is unchanged. Member sync metadata rechecks the current actor's enabled/admin role and exposes mode/time only.

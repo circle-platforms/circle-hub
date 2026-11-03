@@ -11,7 +11,7 @@ import { LimitError, validPassword } from '../../records/api.ts';
 // GET only.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { RecordsError, type Principal } from '../../records/api.ts';
 import { KnowledgeError } from '../../knowledge/api.ts';
 import type { ServerDeps } from '../api.ts';
@@ -858,7 +858,15 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
         if(file)upload={bytes:file.bytes,name:file.filename,mediaType:mediaTypeFor(file.bytes,undefined,file.filename)};
       }else{const parsed=await formOf(request,ACTION_FORM_LIMIT);if(parsed==='aborted')return void response.destroy();if(parsed==='too_large')return sendHtml(response,413,page(ctx.chrome('表单超出大小上限'),html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`));if(typeof parsed==='string')return forbidden(response,'表单格式不正确');values=parsed;}
       if(values.get('csrf')!==session!.csrf)return forbidden(response,'表单已过期或不是本控制台发出的');
-      try{const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);if(values.get('preview_grant')!=='1'&&segments[2]!=='share-batch'&&segments[2]!=='memory-share')session!.notice='操作已完成';return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
+      try{
+        const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);
+        if(values.get('preview_grant')!=='1'&&segments[2]!=='share-batch'&&segments[2]!=='memory-share'){
+          // A replay may return an earlier mode receipt; feedback reports the current state, never a new purge.
+          const state=segments[2]==='sync-mode'||segments[2]==='sync-resume'?await ctx.deps.records.personalSync?.state(ctx.principal):undefined;
+          session!.notice=state?axisUiLabel('sync_mode')+'：'+uiLabelOf('sync_mode',state.mode):'操作已完成';
+        }
+        return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);
+      }catch(error){result=spaceActionFailure(ctx,error);}
     }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;

@@ -4,6 +4,34 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Integrate personal sync with the shared console shell, Inspector, confirmation dialogs and current-state feedback.
+
+- Admit sync requests before appending audit records so unknown routes and rate refusals cannot grow the log.
+
+- Freeze portable v1 personal-sync exchange examples and verify two-client conflicts and knowledge grounds over HTTP.
+
+- Expose personal knowledge and memory sync over a scoped Bearer-only HTTP API with bounded batches and audit receipts.
+  Add password-console mode controls that atomically purge personal payloads or resume with a fresh epoch.
+
+- Keep logical record digest reads indexed when reconstructing run-held personal uploads.
+
+- Preserve exact run-held personal uploads across personal-space purge while removing their personal links.
+
+- Refuse runtime database roles with effective temporary-object privileges at authorization and startup.
+
+- Prevent temporary type shadowing in every owner-defined personal storage function.
+
+- Apply personal sync snapshots atomically with state comparison, deterministic conflicts and fresh evidence checks.
+  Console and MCP writes share the epoch and capacity boundary; manifest sync does not install workflows.
+
+- Keep local personal views empty and allow their owner to return to Hub storage through a fresh epoch.
+
+- Synchronize legacy object directories before completing retirement.
+
+- Check cleared team grounds through the existing exact source index.
+
+- Bound repeated legacy personal-tree traversal and keep retirement holder lookups indexed.
+
 The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](docs/hub-r4-brief.md). Nothing below has been released.
 
 ### Removed
@@ -35,6 +63,17 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 - The console uses the shared Circle design tokens and local system fonts, with a persistent system/light/dark theme
   switch on signed-in and sign-in pages. Fixed scripts and styles remain allowed only by their content hashes.
+
+- Personal sync now has scoped internal heads, stable item identities, atomic batch staging, frozen inventories and durable replay receipts.
+  Staging and private device metadata count toward personal capacity; expired unreferenced objects can be collected safely.
+  Native projection, verified commits and the HTTP API remain pending.
+
+- Personal knowledge and memory payloads can be cleared by account and epoch while immutable digest capsules remain.
+  A scoped upgrade preserves logical record identities; team copies survive and dependent legacy grounds become unverified.
+  Restoring an older backup can restore cleared content, which the restore command now states. Sync HTTP handlers are still pending.
+
+- Personal knowledge and memory sync now has an independent HTTP contract and shared client encoding fixtures.
+  The contract preserves original evidence bytes and keeps MCP at six tools; HTTP handlers are not yet implemented.
 
 - Memory refusal audits and unchanged-write receipts cannot be read as generic records or evidence. Owners see safe
   refusal summaries and administrators see counts; administrators retain visibility of grants in which they participate.
@@ -166,6 +205,14 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - The unit, acceptance and Linux isolation jobs of `Hub checks` list their slowest test files in the job summary and keep Node's junit report for 14 days, so a file that holds up its shard shows, and the measured durations that balance the shards can be checked against a run. The test runners write that report when `JUNIT_REPORT` names a file.
 
 ### Fixed
+
+- Sharing audit and team provenance views mask cleared personal folder paths while retaining team copies and safe receipt facts.
+
+- Personal payload guards reject cleared-epoch inserts and unrelated upload bindings; completion journals are owner-managed.
+
+- Personal-content upgrades preserve independently owned definitions, pack files and workflow objects; private imports have distinct capture identities. Mere mentions no longer retain cleared originals.
+
+- Personal-content upgrades now resume correctly when historical team trees mount product knowledge.
 
 - Console workflow cards distinguish received grants from personal ownership and show team member assignments.
   Sharing receipts display statements and team links. Knowledge/memory navigation, state chips, sizes, times,

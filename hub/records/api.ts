@@ -1,3 +1,6 @@
+export {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
+import type {PgPersonalSync} from './personal-sync.ts';
+import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
 export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
@@ -148,7 +151,9 @@ export interface Principals {
   /** Registers a client; refused (LimitError) while too many registered in the last minutes. */
   registerClient(name: string, redirectUris: readonly string[]): Promise<OAuthClient>;
   client(clientId: string): Promise<OAuthClient | null>;
-  /** `Authorization` header value (`Bearer <token>`). Null for anything that is not a live token of an enabled user. */
+  /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
+  authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
+  /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
 }
 
@@ -167,6 +172,8 @@ export interface IndexEntry {
 }
 
 export interface RecordInput<B = unknown> {
+  /** Internal personal-space storage scope; never supplied by a model input. */
+  personalOwner?:string;
   kind: RecordKind;
   /**
    * `name@major` as contracts SchemaId (`^[a-z][a-z0-9_-]*@(0|[1-9][0-9]*)$`: lowercase letters, digits, `_` and `-`, no
@@ -275,9 +282,9 @@ export interface ObjectInfo {
   created_at: string;
 }
 
-/** Content-addressed bytes under <data>/objects/ab/<sha256>: written atomically, verified on every read, never overwritten or deleted. */
+/** Immutable content-addressed bytes. Personal originals use removable account/epoch-scoped payloads. */
 export interface ObjectStore {
-  put(bytes: Uint8Array, mediaType: string, tx?:Transaction): Promise<ObjectInfo & { created: boolean }>;
+  put(bytes: Uint8Array, mediaType: string, tx?:Transaction, personalOwner?:string): Promise<ObjectInfo & { created: boolean }>;
   /**
    * Null when absent. Throws IntegrityError when the stored bytes no longer hash to their name or when a registered object's
    * file is missing. No read-tier check: for trusted callers; readers go through Artifacts.source().
@@ -386,6 +393,8 @@ export interface CredentialScan {
 
 /** Body of a `source_artifact@1` record. */
 export interface SourceArtifactBody {
+  /** Present on personal knowledge captures; separates their storage scope from independent pack captures. */
+  personal_scope?:{owner:string;epoch:string};
   sha256: string;
   size: number;
   media_type: string;
@@ -406,6 +415,8 @@ export interface SourceArtifactBody {
 export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 
 export interface IngestInput {
+  /** Internal scope for personal original imports. */
+  personalOwner?:string;
   /** An opaque matcher prepared for exactly this origin/author; revalidated before admission. */
   derivedCoverage?: DerivedCoverage;
   /** Source byte digests for a Hub-generated derivative; never a global pool of accepted text. */
@@ -826,7 +837,10 @@ export interface CallLog {
 // ---------------------------------------------------------------- the kit
 
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
+export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
+  personalSync?:PersonalSyncStore;
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

@@ -4,7 +4,7 @@ import type { ServerDeps } from './api.ts';
 import { knowledgePage, runsPage, type PageContext } from './console/pages.ts';
 const member = {id:'usr_01arzte2b0dy6pj8cd4avj118p',name:'合成成员',role:'user' as const};
 function context(deps: unknown, admin = false): PageContext {
-  return {deps:{packs:{list:async()=>[]},...deps as object} as unknown as ServerDeps,principal:admin ? {...member,role:'admin'} : member,admin,url:new URL('http://127.0.0.1/console/knowledge'),userName:async()=>member.name,chrome:(title,extra)=>({title,...extra,user:{name:member.name,role:'用户',admin},csrf:null})};
+  return {deps:{records:{},packs:{list:async()=>[]},...deps as object} as unknown as ServerDeps,principal:admin ? {...member,role:'admin'} : member,admin,url:new URL('http://127.0.0.1/console/knowledge'),userName:async()=>member.name,chrome:(title,extra)=>({title,...extra,user:{name:member.name,role:'用户',admin},csrf:null})};
 }
 const products = {products:async()=>[],readableProducts:async()=>new Set<string>()};
 test('knowledge removes the retired intake flow card and keeps explanations on the page heading',async()=>{

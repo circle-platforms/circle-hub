@@ -87,7 +87,7 @@ export class PersonalPacks {
   async retire(by:Principal,pack:string,version:string){
     by=await this.#own(by);const info=(await this.versions(by.id,pack)).find(info=>info.version===version);if(!info)throw new AccessError('对象不存在或无权读取');
     const body=PersonalPackRetirementBody.parse({space:by.id,pack,version,digest:info.digest,by:by.id,at:this.#now()});
-    return this.#options.records.store.put({kind:'personal_pack_retirement',schema:'personal-pack-retirement@1',provenance:'declared',body,index:[{key:'personal.pack.retired',value:personalPackKey(by.id,pack)+'@'+version}]});
+    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('knowledge-space:'+by.id,tx);await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);return this.#options.records.store.put({kind:'personal_pack_retirement',schema:'personal-pack-retirement@1',provenance:'declared',body,index:[{key:'personal.pack.retired',value:personalPackKey(by.id,pack)+'@'+version}]},tx);});
   }
   async check(by:Principal,directory:string):Promise<PublishCheck>{return await this.#publish(by,directory,true) as PublishCheck;}
   async publish(by:Principal,directory:string):Promise<PublishOutcome>{return await this.#publish(by,directory,false) as PublishOutcome;}
@@ -113,6 +113,7 @@ export class PersonalPacks {
         const files:Record<string,string>={};const artifacts=this.#options.records.artifacts;
         for(const file of read.pack.files){await this.#options.records.objects.put(file.bytes,'application/octet-stream');if(artifacts){const artifact=await artifacts.ingest({bytes:file.bytes,mediaType:extname(file.path)==='.json'?'application/json':'text/plain',name:file.path,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'});files[file.path]=artifact.digest;}}
       const writing=this.#writes.then(async()=>{by=await this.#own(by);return this.#options.records.store.withTransaction(async tx=>{
+        await this.#options.records.store.lock('knowledge-space:'+by.id,tx);
         await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,manifest.id),tx);
         const checked=await checkExisting(tx);if(checked.failure)return checked.failure;if(checked.existing)return {ok:true,created:false,version:checked.existing,report} as PublishOutcome;
         await this.#options.records.objects.put(read.pack.manifestBytes,'application/json');

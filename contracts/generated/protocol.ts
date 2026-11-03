@@ -59,6 +59,15 @@ export const PROTOCOL_CODES = {
   MEMORY_RUN_FORBIDDEN: { when: '记忆不能作为运行输入或依据', fix: '改用可核对出处的来源或知识条目' },
   MEMORY_TEAM_DISABLED: { when: '团队记忆已被管理员停用，请联系管理员', fix: '由管理员核对并重新启用原团队记忆后，再提交共享' },
   MEMORY_CURSOR_STALE: { when: '记忆集合或权限已变化', fix: '从第一页重新读取' },
+  SYNC_VERSION_CONFLICT: { when: '同步期间内容已变化', fix: '取得最新内容并合并后重试' },
+  SYNC_OBJECT_HASH_MISMATCH: { when: '同步对象摘要不符', fix: '按规范形式重新计算并上传' },
+  SYNC_OBJECT_INVALID: { when: '同步对象不符合结构', fix: '核对对象格式后重试' },
+  SYNC_OBJECT_MISSING: { when: '同步对象尚未齐全', fix: '补齐本人缺少的对象后重试' },
+  SYNC_BATCH_LIMIT: { when: '同步批量超过上限', fix: '按服务器给出的大小分批重试' },
+  SYNC_SESSION_EXPIRED: { when: '同步会话已到期', fix: '保留本机修改并重新开始同步' },
+  SYNC_MODE_LOCAL: { when: '当前仅保存在本机', fix: '在客户端设置同步方式后重试' },
+  SYNC_EPOCH_CHANGED: { when: '同步方式已变化', fix: '重新读取同步设置，不自动上传旧内容' },
+  SYNC_RATE_LIMITED: { when: '同步请求过于频繁', fix: '等待答复中的重试时间后重试' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;
@@ -106,4 +115,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 24;
+export const MODEL_VERSION = 26;

@@ -57,6 +57,14 @@ export async function openCliHarness(): Promise<CliHarness> {
     async deployment(options = {}) {
       count += 1;
       const database = await postgres.createDatabase();
+      // Match a secured deployment: runtime must not inherit temporary-object privileges from PUBLIC.
+      const owner = new pg.Client({ host: postgres.socketDir, port: postgres.config.port, user: postgres.config.user, database: 'postgres' });
+      await owner.connect();
+      try {
+        await owner.query(`REVOKE TEMPORARY ON DATABASE "${database.database}" FROM PUBLIC`);
+      } finally {
+        await owner.end();
+      }
       const dataDir = join(scratch, `data-${count}`);
       const env: NodeJS.ProcessEnv = {
         CIRCLE_HUB_DATA_DIR: dataDir,

@@ -319,6 +319,7 @@ describe('platform CLI', () => {
     assert.equal(refused.code, 1);
     assert.equal(refused.lines[0], `数据根：${root}`);
     assert.match(refused.err, /只能恢复到空的数据根/);
+    assert.match(refused.out,/恢复清除之前的备份会带回已清除的个人内容/);
     assert.match((await run('status')).out, /备份：1 份/);
   });
 

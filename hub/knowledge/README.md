@@ -1284,3 +1284,43 @@ byte-for-byte unchanged when saved. Scan diagnostics retain safe original positi
 Private refusal audits and no-op receipts are excluded from both generic readers, including for administrators and
 evidence resolution. The console exposes only owner-safe code/field/line summaries or administrator counts; no raw
 message, intent or payload digest is disclosed by the audit view.
+
+### Personal content purge boundary
+
+Decision 89 step 2 stores private bodies and directory objects through the records account/epoch payload port. Purging
+an epoch makes its historical roots, originals without independent holders, memory versions and directory grants unavailable, without deleting
+team knowledge or team memory. A legacy team entry whose direct or indirect ground still needs a cleared personal root/capture
+is displayed as unverified; its historical record bytes are unchanged. Missing optional knowledge ports remain valid.
+
+Decision 89 step 3 adds the optional records `personalSync` port to the knowledge context. Uncommitted transport objects remain
+isolated staging: they do not enter knowledge search, memory auto-load or pack publication. The real-Hub acceptance
+scenario checks two clients, privacy and purge through this internal port alongside ordinary MCP reads. Native export,
+revision mapping, verified CAS and conflict projection are implemented in step 4; HTTP authentication stays in step 5.
+
+Cleared team src grounds use the existing source-hash index and metadata-only purge checks; no full team-source body scan or cross-request negative cache is used. A 400-source regression covers bounded matching loads and immediate invalidation.
+
+After a completed personal purge, local-mode personal paths and visible spaces are empty. New runs still freeze the team root but freeze personal as null; source binding explicitly handles that absence. Returning to Hub storage uses a new epoch and never restores old grants or roots. This is the step-2 review empty-view boundary, not the step-4 native sync adapter.
+
+### Atomic personal revisions (decision 89, step 4)
+
+`personalSync` now exports stable native identities and applies a complete snapshot in one owner/epoch transaction.
+It checks object ancestry, explicit deletion and all competing parents; directory collisions suppress their dependent
+subtree. Conflicts have no current default content. Memory reserves the largest candidate and one document slot,
+loads no conflicting candidate, and retains explicitly readable owner history.
+
+Grounds are re-resolved using the actual reader and available parser closure; missing and forbidden are indistinguishable.
+Observations are appended separately. Unverified or restricted candidates remain owner-only even under directory grants,
+and search excludes them before pagination. Same-batch predecessor links become actual historical native roots.
+Original bytes, quotes, capture author, read tier and media type are preserved; editable text follows canonical encoding
+without trimming trailing whitespace. Native writes freeze and recheck their admitted epoch. Manifests are metadata
+only. Same-content entries at the same native path with distinct stable identities remain structural conflicts because
+the existing native address cannot distinguish them; no candidate is silently discarded or renamed.
+
+The coordinator's follow-up policy keeps a personal upload independently held by a run when its personal link is
+purged. This does not retain the knowledge entry, directory grants or memory, and does not qualify a personal original
+for ordinary team import. Run readers continue through the existing declaration and credential-tier checks.
+
+The step-5 HTTP and console mode adapters delegate to the same personal-sync service. Purging uses the raw mode
+boundary, so it does not first export a private snapshot merely to remove it. The accepted purge is atomic with its
+receipt/audit; re-enable starts empty in a new epoch through the owner-defined storage function. Team copies and
+independently run-held originals keep their existing read rules. The HTTP transport is not a seventh model tool.

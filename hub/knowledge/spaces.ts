@@ -1,9 +1,10 @@
+import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 // Personal/team knowledge uses immutable versions and shared content-addressed objects. Every read rechecks current grants.
 import { z } from 'zod';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
-import { KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
+import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
@@ -105,7 +106,7 @@ export class KnowledgeSpaces {
     const record = await this.#ctx.records.store.get(root);
     return record?.kind === 'knowledge_space_version' ? { root, body: SpaceVersionBody.parse(record.body) } : null;
   }
-  async #tree(directories: string[], entries: SpaceRow[], products: SpaceVersionBody['products'],tx?:Transaction): Promise<string> {
+  async #tree(directories: string[], entries: SpaceRow[], products: SpaceVersionBody['products'],tx?:Transaction,personalOwner?:string): Promise<string> {
     const build = async (path: string): Promise<string> => {
       const mount = products.find(p => p.path === path);
       if (mount)
@@ -116,7 +117,7 @@ export class KnowledgeSpaces {
       for (const name of names)
         children.push({ name, digest: await build(pathOf([...segments, name])) });
       const node = { name: segments.at(-1) ?? '', children, entries: entries.filter(r => r.path === path && active(r)).map(r => r.entry).sort() };
-      return (await this.#ctx.records.objects.put(Buffer.from(canonicalize(node)), 'application/json',tx)).sha256;
+      return (await this.#ctx.records.objects.put(Buffer.from(canonicalize(node)), 'application/json',tx,personalOwner)).sha256;
     };
     return build('/');
   }
@@ -127,12 +128,14 @@ export class KnowledgeSpaces {
     const delta=previous===null&&entries.length===0&&directories.length===1?0:Buffer.byteLength(canonicalize(body))+bytes;
     body.used_bytes+=delta;return body;
   }
-  async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? []): Promise<SpaceVersion> {
+  async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? [],sync=false): Promise<SpaceVersion> {
     const body=this.#draft(space,previous,entries,directories,by,reason,bytes,sources,products);
-    if(space!=='team'&&body.used_bytes+((await this.#ctx.records.memoryIndex?.usage(space,tx))?.history??0)>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
-    body.tree=await this.#tree(body.directories,entries,products,tx);
+    if(space!=='team'){body.personal_epoch=await personalEpoch(this.#ctx,space,tx);if(body.personal_epoch&&(previous!==null||entries.length>0||directories.length>1||sources.length>0))body.used_bytes+=Buffer.byteLength(canonicalize({personal_epoch:body.personal_epoch}))-1;}
+    if(!sync&&space!=='team'&&body.used_bytes+((await this.#ctx.records.memoryIndex?.usage(space,tx))?.history??0)>await this.capacity(space,tx))fail('SPACE_CAPACITY_EXCEEDED');
+    body.tree=await this.#tree(body.directories,entries,products,tx,space==='team'?undefined:space);
     const record=await this.#ctx.records.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body,index:[{key:VERSION_KEY,value:space}]},tx);
-    const version={root:record.digest,body};await this.#index(version,tx);return version;
+    const version={root:record.digest,body};await this.#index(version,tx);
+    if(!sync&&space!=='team'&&this.#ctx.records.personalSync&&body.personal_epoch)await this.#ctx.records.personalSync.assertCapacity(by!,body.personal_epoch,tx);return version;
   }
   async ensure(by: Principal, space: string = by.id): Promise<SpaceVersion> {
     by = await this.#user(by);
@@ -152,7 +155,7 @@ export class KnowledgeSpaces {
       return previous ?? this.#save(space, null, [], ['/'], by, '建立个人知识空间', 0, tx);
     });
   }
-  async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: (await this.ensure(by)).root }; }
+  async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local?null:(await this.ensure(by)).root }; }
   async capacity(space: string, tx?: Transaction): Promise<number> {
     const row = (await this.#ctx.records.store.find({ key: QUOTA_KEY, value: space, kind: 'knowledge_space_quota', newestFirst: true, limit: 1 }, tx)).items[0];
     return row ? SpaceQuotaBody.parse(row.body).bytes : DEFAULT_PERSONAL_CAPACITY;
@@ -179,6 +182,7 @@ export class KnowledgeSpaces {
   }
   async paths(by: Principal, space: string): Promise<string[]> {
     by = await this.#user(by);
+    if(space===by.id&&await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local)return [];
     if (space === 'team' || space === by.id)
       return ['/'];
     const owner = await this.#ctx.records.principals.get(space);
@@ -220,7 +224,7 @@ export class KnowledgeSpaces {
     const checks:SharingCheck[]=ShareCheckSchema.extract(['credentials','personal_sources','local_only']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
     try{
       if(!version||!version.body.directories.includes(path))fail('SOURCE_UNAVAILABLE');
-      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry)fail('SPACE_ENTRY_INVALID');this.#scan(entry);}
+      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry||entry.sync_private)fail('SPACE_ENTRY_INVALID');this.#scan(entry);}
       for(const source of await this.sources(by))if(withinSpacePath(source.path,path)){const original=await this.source(by,source.sha256);if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
       checks[phase++].state='pass';
       for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry)fail('SPACE_ENTRY_INVALID');for(const ground of entry.grounds)await this.#grantableGround(by,ground.reference);}
@@ -236,19 +240,20 @@ export class KnowledgeSpaces {
     revoke?: boolean;
   }): Promise<void> {
     by = await this.#user(by);
-    const path = pathCheck(input.path);
-    const body = SpaceGrantBody.parse({ space: by.id, path, audience: input.audience, member: input.member ?? null, action: input.revoke ? 'revoke' : 'grant', by: by.id, at: this.#ctx.now().toISOString() });
+    const path = pathCheck(input.path),epoch=await personalEpoch(this.#ctx,by.id);
+    const body = SpaceGrantBody.parse({personal_epoch:epoch, space: by.id, path, audience: input.audience, member: input.member ?? null, action: input.revoke ? 'revoke' : 'grant', by: by.id, at: this.#ctx.now().toISOString() });
     if (body.member && !(await this.#ctx.records.principals.get(body.member)))
       fail('SOURCE_UNAVAILABLE');
     await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
+      await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       const version = await this.current(by.id, tx);
       if (!input.revoke) {
         if (!version || !version.body.directories.includes(path))
           fail('SOURCE_UNAVAILABLE');
         for (const row of version.body.entries.filter(r => withinSpacePath(r.path, path))) {
           const entry = await this.#entry(row);
-          if (!entry)
+          if (!entry||entry.sync_private)
             fail('SPACE_ENTRY_INVALID');
           this.#scan(entry);
           for (const ground of entry.grounds)
@@ -322,6 +327,7 @@ export class KnowledgeSpaces {
     status: SpaceEntryBody['status'];
   }> {
     by = await this.#user(by);
+    const epoch=space===by.id?await personalEpoch(this.#ctx,by.id):undefined;
     const input = SpaceEntryInput.parse(raw);
     input.path = pathCheck(input.path);
     if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
@@ -356,6 +362,7 @@ export class KnowledgeSpaces {
     }
     return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
+      await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       const previous = await this.current(space, tx);
       const grants = space === 'team' ? [] : this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY, by.id, 'knowledge_space_grant', tx));
       if (grants.some(g => withinSpacePath(input.path, g.path)))
@@ -373,7 +380,7 @@ export class KnowledgeSpaces {
       const entry = sha256Hex(canonicalize(content));
       if (rows.some(r => r.entry === entry))
         fail('SPACE_ENTRY_INVALID', '该空间已包含相同条目');
-      const body = SpaceEntryBody.parse({ space, entry, content, grounds: input.grounds, status: input.grounds.length ? 'verified' : 'unverified', by: by.id, at: this.#ctx.now().toISOString(), session, replaces: input.replaces ?? null });
+      const body = SpaceEntryBody.parse({ ...(epoch?{personal_epoch:epoch}:{}),space, entry, content, grounds: input.grounds, status: input.grounds.length ? 'verified' : 'unverified', by: by.id, at: this.#ctx.now().toISOString(), session, replaces: input.replaces ?? null });
       const record = await this.#ctx.records.store.put({ kind: 'knowledge_space_entry', schema: 'knowledge-space-entry@1', provenance: 'declared', body, index: [{ key: 'knowledge.space.entry', value: entry }, { key: 'knowledge.space.entry_owner', value: space }] }, tx);
       rows.push({ path: input.path, entry, record: record.digest, status: body.status });
       const sources = [...previous?.body.sources ?? []];
@@ -386,9 +393,36 @@ export class KnowledgeSpaces {
       return { space, root: version.root, entry, reference: refOf(version.root, input.path, entry), status: body.status };
     }));
   }
+  /** Internal aggregate projection: the caller owns the account/epoch transaction and performs evidence checks. */
+  async syncProjection(by:Principal,input:{epoch:string;directories:string[];entries:Array<{record?:string;object:string;item_id:string;path:string;content:SpaceEntryBody['content'];grounds:SpaceEntryBody['grounds'];status:SpaceEntryBody['status'];privateOnly:boolean}>;sources:Array<{record?:string;object:string;item_id:string;path:string;name:string|null;mediaType:string;size:number;sha256:string;readBytes:()=>Promise<Uint8Array>;privateOnly:boolean;original?:import('../records/api.ts').SourceArtifact}>},tx:Transaction){
+    await guardPersonalEpoch(this.#ctx,by.id,input.epoch,tx);by=await this.#user(by);
+    const previous=await this.current(by.id,tx),rows:SpaceRow[]=[],sources:string[]=[],bindings:Array<{kind:import('../../contracts/generated/vocabulary.ts').SyncObjectKind;item_id:string;object_id:string;native:string;locator:string}>=[];
+    for(const source of input.sources){
+      this.#scan({path:source.path,name:source.name});
+      if(source.record){const record=await this.#ctx.records.store.get(source.record,tx);if(record?.kind==='knowledge_space_source'){const body=SpaceSourceBody.parse(record.body);if(body.space===by.id&&body.path===source.path&&body.sha256===source.sha256&&!!body.sync_private===source.privateOnly&&(body.name!==undefined?body.name:source.original?.body.name??null)===source.name){sources.push(record.digest);bindings.push({kind:'source_revision',item_id:source.item_id,object_id:source.object,native:record.digest,locator:sha256Hex(source.path)});continue;}}}
+      const artifact=source.original??await this.#ctx.records.artifacts.ingest({personalOwner:by.id,bytes:await source.readBytes(),mediaType:source.mediaType,name:source.name,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false}},tx);
+      const body=SpaceSourceBody.parse({sync_private:source.privateOnly,name:source.name,personal_epoch:input.epoch,space:by.id,path:source.path,sha256:artifact.body.sha256,artifact:artifact.digest,size:artifact.body.size,by:by.id,at:this.#ctx.now().toISOString()});
+      const record=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body,index:[{key:SOURCE_KEY,value:by.id},{key:'knowledge.space.source_hash',value:body.sha256}]},tx);sources.push(record.digest);
+      bindings.push({kind:'source_revision',item_id:source.item_id,object_id:source.object,native:record.digest,locator:sha256Hex(source.path)});
+    }
+    for(const entry of input.entries){
+      this.#scan(entry.content);this.#scan(entry.path);
+      const content=entry.content;if(!content.statement||Buffer.byteLength(canonicalize(content))>this.#ctx.limits.maxDataBytes)fail('SPACE_ENTRY_INVALID');
+      if(entry.record){const old=await this.#ctx.records.store.get(entry.record,tx);if(old?.kind==='knowledge_space_entry'){const body=SpaceEntryBody.parse(old.body);if(body.space===by.id&&body.status===entry.status&&!!body.sync_private===entry.privateOnly&&canonicalize(body.content)===canonicalize(content)&&canonicalize(body.grounds)===canonicalize(entry.grounds)){rows.push({private_only:entry.privateOnly,path:entry.path,entry:body.entry,record:old.digest,status:body.status});bindings.push({kind:'entry_revision',item_id:entry.item_id,object_id:entry.object,native:old.digest,locator:sha256Hex(entry.path)});continue;}}}
+      const id=sha256Hex(canonicalize(content)),body=SpaceEntryBody.parse({personal_epoch:input.epoch,sync_private:entry.privateOnly,space:by.id,entry:id,content,grounds:entry.grounds,status:entry.status,by:by.id,at:this.#ctx.now().toISOString(),session:null,replaces:null});
+      const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:id},{key:'knowledge.space.entry_owner',value:by.id}]},tx);rows.push({private_only:entry.privateOnly,path:entry.path,entry:id,record:record.digest,status:body.status});
+      bindings.push({kind:'entry_revision',item_id:entry.item_id,object_id:entry.object,native:record.digest,locator:sha256Hex(entry.path)});
+    }
+    if(previous&&canonicalize(previous.body.entries)===canonicalize(rows)&&canonicalize(previous.body.sources)===canonicalize(sources)&&canonicalize(previous.body.directories)===canonicalize([...new Set(input.directories)].sort()))return {version:previous,bindings};
+    const version=await this.#save(by.id,previous,rows,input.directories,by,'同步个人知识',input.sources.reduce((n,s)=>n+s.size,0)+rows.length*256,tx,sources,[],true);
+    return {version,bindings};
+  }
+  async syncMayGrant(by:Principal,references:readonly string[]):Promise<boolean>{try{for(const ref of references)await this.#grantableGround(by,ref);return true;}catch{return false;}}
+
   async directory(by: Principal, path: string, space = by.id): Promise<SpaceVersion> {
     by = await this.#user(by);
     path = pathCheck(path);
+    const epoch=space===by.id?await personalEpoch(this.#ctx,by.id):undefined;
     this.#scan(path);
     if (space === 'team' && withinSpacePath(path, PRODUCTS_PATH))
       fail('SPACE_ENTRY_INVALID', '产品目录由产品知识来源维护');
@@ -396,6 +430,7 @@ export class KnowledgeSpaces {
       fail('SOURCE_UNAVAILABLE');
     return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
+      await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       const previous = await this.current(space, tx);
       if (previous?.body.directories.includes(path))
         return previous;
@@ -405,8 +440,10 @@ export class KnowledgeSpaces {
   async withdraw(by: Principal, entry: string, space = by.id): Promise<void> {
     by = await this.#user(by);
     if (space !== by.id && space !== 'team') fail('SOURCE_UNAVAILABLE');
+    const epoch=space===by.id?await personalEpoch(this.#ctx,by.id):undefined;
     await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
+      await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       const previous = await this.current(space, tx);
       if (!previous)
         fail('SOURCE_UNAVAILABLE');
@@ -434,11 +471,34 @@ export class KnowledgeSpaces {
     if (!row)
       return null;
     const body = await this.#entry(row);
-    if (!body || body.space !== version.body.space)
+    if (!body || body.space !== version.body.space ||body.sync_private&&by.id!==body.space)
       return null;
     const current = await this.current(version.body.space);
-    const state = current?.body.entries.find(r => r.entry === digest)?.status ?? row.status;
+    let state = current?.body.entries.find(r => r.entry === digest)?.status ?? row.status;
+    if(body.space==='team'&&state===KnowledgeEntryStatusSchema.enum.verified&&await this.#clearedGrounds(body.grounds.map(g=>g.reference),version))state=KnowledgeEntryStatusSchema.enum.unverified;
     return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest),...await this.withdrawalState(body.grounds.map(g=>g.reference),by), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
+  }
+  /** Cleared personal dependencies also invalidate indirect team grounds without changing their records. */
+  async #clearedGrounds(references:readonly string[],version:SpaceVersion,visiting=new Set<string>(),depth=0):Promise<boolean>{
+    const payloads=this.#ctx.records.personalPayloads;if(!payloads)return false;
+    if(depth>64)fail('SPACE_ENTRY_INVALID','依据链超过可核对的深度上限');
+    for(const reference of references){const ref=parseReference(reference);
+      if(ref.scheme==='src')for(const source of await this.#ctx.records.store.findMany({key:'knowledge.space.source_hash',values:[ref.sha256],kind:'knowledge_space_source'})){
+        if(!version.body.sources.includes(source.digest))continue;
+        const original=SpaceSourceBody.parse(source.body);
+        if(original.sha256===ref.sha256&&await payloads.cleared(original.artifact))return true;
+      }
+      if(ref.scheme!=='tree')continue;
+      if(await payloads.cleared(ref.root))return true;
+      if(!ref.entry)continue;
+      if(visiting.has(reference))fail('SPACE_ENTRY_INVALID','依据链存在循环，核对未完成');
+      const nextVersion=await this.version(ref.root);if(!nextVersion)continue;
+      const row=nextVersion.body.entries.find(r=>r.entry===ref.entry&&r.path===ref.path);if(!row)continue;
+      const entry=await this.#entry(row);if(!entry)continue;
+      const next=new Set(visiting);next.add(reference);
+      if(await this.#clearedGrounds(entry.grounds.map(g=>g.reference),nextVersion,next,depth+1))return true;
+    }
+    return false;
   }
   /** Follow immutable grounds while checking the current withdrawal projection; no historic body is changed. */
   async #withdrawnGrounds(references: readonly string[], visiting=new Set<string>(),depth=0):Promise<string[]> {
@@ -705,7 +765,7 @@ export class KnowledgeSpaces {
     const binding = sha256Hex(canonicalize([by.id, text, scope, spaces.map(s => [s.version.root, s.paths]), products, limit]));
     const offset = this.#cursor(cursor, binding);
     let rows:SpaceSearchRow[]=[];
-    try{rows=await this.#ctx.records.spaceIndex?.search(text, [...spaces.map(s => ({ version: s.version.root, paths: s.paths })), ...products.map(p => ({ version: p.version, paths: [p.path] }))], offset, limit + 1)??[];}
+    try{rows=await this.#ctx.records.spaceIndex?.search(text, [...spaces.map(s => ({ version: s.version.root, paths: s.paths,...(s.space!==by.id?{excludeRecords:s.version.body.entries.filter(r=>r.private_only).map(r=>r.record)}:{}) })), ...products.map(p => ({ version: p.version, paths: [p.path] }))], offset, limit + 1)??[];}
     catch(error){unavailable(null,error);}
     const matches = [];
     let consumed = 0, size = 0;
@@ -880,12 +940,12 @@ export class KnowledgeSpaces {
       if (record.kind !== 'knowledge_space_source')
         continue;
       const body = SpaceSourceBody.parse(record.body);
-      if (body.space === version.body.space && paths.some(path => withinSpacePath(body.path, path)))
+      if ((!body.sync_private||by.id===body.space)&&body.space === version.body.space && paths.some(path => withinSpacePath(body.path, path)))
         hashes.add(body.sha256);
     }
     for (const row of version.body.entries.filter(r => paths.some(path => withinSpacePath(r.path, path)))) {
       const body = await this.#entry(row);
-      if (!body)
+      if (!body||body.sync_private&&by.id!==body.space)
         continue;
       for (const ground of body.grounds) {
         const ref = parseReference(ground.reference);
@@ -900,17 +960,19 @@ export class KnowledgeSpaces {
     if (!paths.length)
       return [];
     const records = await this.#records<z.infer<typeof SpaceSourceBody>>(SOURCE_KEY, space, 'knowledge_space_source');
-    return records.map(r => SpaceSourceBody.parse(r.body)).filter(s => paths.some(p => withinSpacePath(s.path, p)));
+    return records.map(r => SpaceSourceBody.parse(r.body)).filter(s => (!s.sync_private||by.id===s.space)&&paths.some(p => withinSpacePath(s.path, p)));
   }
   async importFile(by: Principal, bytes: Uint8Array, mediaType: string, name: string | null, path = '/', session: string | null = null) {
     bytes=Uint8Array.from(bytes);
     by = await this.#user(by);
     path = pathCheck(path);
-    const upload:IngestInput={bytes,mediaType,name,origin:{upload:{session,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'};
+    const epoch=await personalEpoch(this.#ctx,by.id);
+    const upload:IngestInput={personalOwner:by.id,bytes,mediaType,name,origin:{upload:{session,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'};
     try{
     this.#scan({path,name});
     return await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
+      await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       const previous = await this.current(by.id, tx);
       const planned=this.#draft(by.id,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'导入个人知识原文',bytes.byteLength,[...previous?.body.sources??[],'0'.repeat(64)]);
       if (planned.used_bytes > await this.capacity(by.id, tx))
@@ -919,7 +981,7 @@ export class KnowledgeSpaces {
       const grants=this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY,by.id,'knowledge_space_grant',tx));
       if(grants.some(grant=>withinSpacePath(path,grant.path)))this.#inspectSource(bytes);
       const artifact = await this.#ctx.records.artifacts.ingest(upload,tx);
-      const body = SpaceSourceBody.parse({ space: by.id, path, sha256: artifact.body.sha256, artifact: artifact.digest, size: artifact.body.size, by: by.id, at: this.#ctx.now().toISOString() });
+      const body = SpaceSourceBody.parse({personal_epoch:epoch, space: by.id, path, sha256: artifact.body.sha256, artifact: artifact.digest, size: artifact.body.size, by: by.id, at: this.#ctx.now().toISOString() });
       const source = await this.#ctx.records.store.put({ kind: 'knowledge_space_source', schema: 'knowledge-space-source@1', provenance: 'declared', body, index: [{ key: SOURCE_KEY, value: by.id }, { key: 'knowledge.space.source_hash', value: body.sha256 }] }, tx);
       await this.#save(by.id, previous, previous?.body.entries ?? [], [...previous?.body.directories ?? [], path], by, '导入个人知识原文', body.size, tx, [...previous?.body.sources ?? [], source.digest]);
       return artifact;
@@ -964,7 +1026,7 @@ export class KnowledgeSpaces {
     for (const record of records) {
       const body = SpaceSourceBody.parse(record.body);
       if(capture&&body.artifact!==capture)continue;
-      if (!(await this.mayRead(by, body.space, body.path)))
+      if (body.sync_private&&by.id!==body.space||!(await this.mayRead(by, body.space, body.path)))
         continue;
       let owner = await this.#ctx.records.principals.get(body.space === 'team' ? body.by : body.space);
       if (body.space === 'team' && (!owner || owner.disabled))
@@ -976,7 +1038,7 @@ export class KnowledgeSpaces {
         const locks = run?.body.knowledge_spaces;
         if (!locks)
           continue;
-        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? await this.version(locks.personal) : await this.current(body.space);
+        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? (locks.personal?await this.version(locks.personal):null) : await this.current(body.space);
         if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
           continue;
       }
@@ -1010,7 +1072,7 @@ export class KnowledgeSpaces {
         const locks = run?.body.knowledge_spaces;
         if (!locks)
           continue;
-        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? await this.version(locks.personal) : await this.current(body.space);
+        const version = body.space === 'team' ? await this.version(locks.team) : body.space === locks.owner ? (locks.personal?await this.version(locks.personal):null) : await this.current(body.space);
         if (!version || !version.body.sources.includes(record.digest) || !(await this.runAllows(by, version.root, body.path, runId)))
           continue;
       }

@@ -40,8 +40,12 @@ before(async () => {
   const client = new pg.Client({ host: postgres.socketDir, port: postgres.config.port, user: postgres.config.user, database: 'postgres' });
   await client.connect();
   await client.query(`CREATE ROLE ${RUNTIME} LOGIN NOSUPERUSER`);
-  await client.end();
   const database = await postgres.createDatabase();
+  try {
+    await client.query(`REVOKE TEMPORARY ON DATABASE "${database.database}" FROM PUBLIC`);
+  } finally {
+    await client.end();
+  }
   env = {
     CIRCLE_HUB_DATA_DIR: join(scratch, 'data'),
     CIRCLE_HUB_PORT: '0',
@@ -125,6 +129,13 @@ test('setup-code prints a code only while no administrator exists', async () => 
   const saved = env;
   try {
     const database = await postgres.createDatabase();
+    const owner = new pg.Client({ host: postgres.socketDir, port: postgres.config.port, user: postgres.config.user, database: 'postgres' });
+    await owner.connect();
+    try {
+      await owner.query(`REVOKE TEMPORARY ON DATABASE "${database.database}" FROM PUBLIC`);
+    } finally {
+      await owner.end();
+    }
     env = { ...saved, CIRCLE_HUB_DATABASE_NAME: database.database, CIRCLE_HUB_DATA_DIR: join(scratch, 'fresh') };
     assert.equal((await cli(['serve', '--migrate-only'])).code, 0);
     const issued = await cli(['setup-code']);

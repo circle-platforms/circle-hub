@@ -1,3 +1,4 @@
+import {PgPersonalPayloads,type PersonalScope} from './personal-payloads.ts';
 import {SpaceSourceBody} from '../../contracts/src/spaces.ts';
 // Source artifacts (B02): content-addressed bytes plus a `source_artifact@1` record with provenance, author, capture time,
 // provenance type, read tier, visibility and the credential scan conclusion. An upload with a credential hit is refused
@@ -214,6 +215,7 @@ export interface ArtifactsOptions {
 
 export class RecordArtifacts implements Artifacts {
   readonly #db: Database;
+  readonly #personal:PgPersonalPayloads;
   readonly #store: RecordStore;
   readonly #objects: ObjectStore;
   readonly #authorizations: Authorizations;
@@ -222,13 +224,25 @@ export class RecordArtifacts implements Artifacts {
 
   constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, options: ArtifactsOptions) {
     this.#db = db;
+    this.#personal=new PgPersonalPayloads(db,(key,tx)=>store.lock(key,tx));
     this.#store = store;
     this.#objects = objects;
     this.#authorizations = authorizations;
     this.#options = options;
   }
 
-  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> { return this.#ingest(input, false,tx); }
+  ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> {
+    return input.personalOwner?this.#personalIngest(input,false,tx):this.#ingest(input,false,tx);
+  }
+
+  #personalIngest(input:IngestInput,consume:boolean,outer?:Transaction):Promise<SourceArtifact>{
+    const snapshot={...input,bytes:consume?input.bytes:Uint8Array.from(input.bytes)};
+    return this.#store.withTransaction(async tx=>{
+      // Personal writes always acquire the space lock before the ingest deduplication lock.
+      await this.#store.lock('knowledge-space:'+input.personalOwner,tx);
+      return this.#ingest(snapshot,true,tx,await this.#personal.scope(input.personalOwner!,tx));
+    },outer);
+  }
 
   async recordUploadRefusal(input:Pick<IngestInput,'bytes'|'mediaType'|'origin'|'author'|'run'>,code:ProtocolCode){
     const origin=validOrigin(input.origin);if(!('upload'in origin))throw new TypeError('upload refusal requires an upload origin');
@@ -237,9 +251,9 @@ export class RecordArtifacts implements Artifacts {
     return this.#recordRefusedUpload({sha256:sha256Hex(bytes),size:bytes.length,mediaType:input.mediaType,origin,author,run:input.run??null,scan:this.#scan(bytes)},code);
   }
 
-  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, true); }
+  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return input.personalOwner?this.#personalIngest(input,true):this.#ingest(input, true); }
 
-  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction): Promise<SourceArtifact> {
+  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction,personalScope?:PersonalScope): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
@@ -293,6 +307,7 @@ export class RecordArtifacts implements Artifacts {
       origin,
       author,
       captured_at: capturedAt,
+      ...(personalScope?{personal_scope:personalScope}:{}),
       // An upload says whether its client declared the capture time. Any other artifact has no client capture to declare
       // and keeps exactly the record it had before the field existed, so its identity and every view built on it do not move.
       ...('upload' in origin ? { captured_at_declared: input.capturedAt !== undefined } : {}),
@@ -308,6 +323,7 @@ export class RecordArtifacts implements Artifacts {
     // the same answer again reuses its record (round-four review, item 7).
     const dedupe = digestOf({
       sha256,
+      ...(personalScope?{personal_scope:personalScope}:{}),
       ...('upload' in origin && input.capturedAt !== undefined ? { captured_at: capturedAt } : {}),
       media_type: input.mediaType,
       name,
@@ -329,13 +345,13 @@ export class RecordArtifacts implements Artifacts {
       ...('read' in origin ? [{ key: 'artifact.object', value: origin.read.object }] : []),
       ...(author.user === null ? [] : [{ key: 'artifact.author', value: author.user }]),
     ]);
-    await this.#objects.put(bytes, input.mediaType,outer);
+    await this.#objects.put(bytes, input.mediaType,outer,input.personalOwner);
     return this.#store.withTransaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [INGEST_LOCK_SPACE, dedupe], tx);
       const existing = await this.#store.find<SourceArtifactBody>({ key: 'artifact.dedupe', value: dedupe, kind: 'source_artifact', limit: 1 }, tx);
       if (existing.items[0] !== undefined) return existing.items[0];
       return this.#store.put<SourceArtifactBody>(
-        { kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
+        { personalOwner:input.personalOwner,kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
         tx,
       );
     },outer);
@@ -377,6 +393,7 @@ export class RecordArtifacts implements Artifacts {
     const viewer=await this.#viewer(principal);if(!viewer)return false;
     const row=await this.#store.get<SourceArtifactBody>(artifact);
     if(row?.kind!=='source_artifact'||row.schema!==RECORD_SCHEMAS.source_artifact||!('upload' in row.body.origin)||row.body.author.user!==viewer.id||row.body.provenance_type!=='declared')return false;
+    if(row.body.personal_scope)return false;
     const matches=await this.#store.findMany({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[row.body.sha256]});
     for(const record of matches){const body=SpaceSourceBody.parse(record.body);if(body.space!=='team'&&body.artifact===artifact)return false;}
     return true;

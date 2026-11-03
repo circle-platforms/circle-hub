@@ -22,17 +22,17 @@ export const SpaceEntryInput = SpaceEntryContent.extend({
 });
 export type SpaceEntryInput = z.infer<typeof SpaceEntryInput>;
 export const SpaceEntryBody = z.strictObject({
-  space: SpaceId, entry: Sha256, content: SpaceEntryContent, grounds: z.array(SpaceGround).max(100),
+  sync_private:z.boolean().optional(),personal_epoch:z.uuid().optional(), space: SpaceId, entry: Sha256, content: SpaceEntryContent, grounds: z.array(SpaceGround).max(100),
   status: KnowledgeEntryStatusSchema.extract(['verified', 'unverified']),
   by: UserId, at: IsoTime, session: z.string().nullable(), replaces: Sha256.nullable(),
   shared_from: SpaceEntryOrigin.optional(),
 });
 export type SpaceEntryBody = z.infer<typeof SpaceEntryBody>;
-export const SpaceRow = z.strictObject({ path: TreePath, entry: Sha256, record: Sha256, status: KnowledgeEntryStatusSchema });
+export const SpaceRow = z.strictObject({ private_only:z.boolean().optional(),path: TreePath, entry: Sha256, record: Sha256, status: KnowledgeEntryStatusSchema });
 export const SpaceTreeNode = z.strictObject({ name: z.string(), children: z.array(z.strictObject({ name: z.string().min(1), digest: Sha256 })).max(10000), entries: z.array(Sha256).max(10000) });
 export type SpaceRow = z.infer<typeof SpaceRow>;
 export const SpaceVersionBody = z.strictObject({
-  space: SpaceId, parent: Sha256.nullable(), tree: Sha256,
+  personal_epoch:z.uuid().optional(), space: SpaceId, parent: Sha256.nullable(), tree: Sha256,
   sources: z.array(Sha256).max(10000).default([]),
   products: z.array(z.strictObject({ product: z.string(), line: z.string().nullable(), path: TreePath, root: Sha256 })).max(10000).default([]),
   directories: z.array(TreePath).max(10000), entries: z.array(SpaceRow).max(10000),
@@ -41,13 +41,13 @@ export const SpaceVersionBody = z.strictObject({
 }).refine(row=>row.space==='team'||row.by!==null,'personal versions name their owner');
 export type SpaceVersionBody = z.infer<typeof SpaceVersionBody>;
 export const SpaceGrantBody = z.strictObject({
-  space: UserId, path: TreePath, audience: KnowledgeGranteeSchema, member: UserId.nullable(),
+  personal_epoch:z.uuid().optional(), space: UserId, path: TreePath, audience: KnowledgeGranteeSchema, member: UserId.nullable(),
   action: KnowledgeGrantActionSchema, by: UserId, at: IsoTime,
 }).refine(v => (v.audience === 'member') === (v.member !== null), 'a member grant names exactly one member');
 export type SpaceGrantBody = z.infer<typeof SpaceGrantBody>;
-export const SpaceSourceBody = z.strictObject({ space: SpaceId, path: TreePath, sha256: Sha256, artifact: Sha256, size: z.number().int().nonnegative(), by: UserId, at: IsoTime });
+export const SpaceSourceBody = z.strictObject({ sync_private:z.boolean().optional(),name:z.string().max(300).nullable().optional(),personal_epoch:z.uuid().optional(), space: SpaceId, path: TreePath, sha256: Sha256, artifact: Sha256, size: z.number().int().nonnegative(), by: UserId, at: IsoTime });
 export const SpaceQuotaBody = z.strictObject({ space: UserId, bytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), by: UserId, at: IsoTime });
-export const SpaceLocks = z.strictObject({ team: Sha256, personal: Sha256, owner: UserId });
+export const SpaceLocks = z.strictObject({ team: Sha256, personal: Sha256.nullable().describe('No personal root while personal content is stored only locally'), owner: UserId });
 export const SpaceEntryReceipt = z.strictObject({ space: SpaceId, root: Sha256, entry: Sha256, reference: z.string(), status: KnowledgeEntryStatusSchema });
 export const SpaceSearchHit = SpaceEntryReceipt.extend({ path: TreePath, statement: z.string(), kind: EntryKindSchema });
 export const schemas = {

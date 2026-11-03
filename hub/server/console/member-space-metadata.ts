@@ -3,6 +3,8 @@ import {SpaceGrantBody} from '../../../contracts/src/spaces.ts';
 import {MemoryGrantBody} from '../../../contracts/src/memory.ts';
 import {PersonalPackGrantBody} from '../../../contracts/src/sharing.ts';
 import {KnowledgeGranteeSchema,KnowledgeGrantActionSchema,uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
+import {timestamp,size} from './knowledge-display.ts';
+import {axisUiLabel} from '../../../contracts/generated/vocabulary.ts';
 import type {User} from '../../records/api.ts';
 import type {PageContext} from './pages.ts';
 
@@ -23,5 +25,6 @@ export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Arr
   }
   counts.push(source.label+' '+(user.disabled?0:[...latest.values()].filter(Boolean).length));
  }
- return [['私人空间已用（含版本记录）',(current?.body.used_bytes??0)+(memory?.history??0)+' 字节'],['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
+ const sync=await ctx.deps.records.personalSync?.memberMetadata(ctx.principal,user.id);
+ return [...(sync?[[axisUiLabel('sync_mode'),uiLabelOf('sync_mode',sync.mode)],[uiLabelOf('sync_field','last_synced_at'),sync.last_synced_at?timestamp(sync.last_synced_at):'—']] as Array<[string,unknown]>:[]),['私人空间已用（含版本记录）',size((current?.body.used_bytes??0)+(memory?.history??0))],['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
 }

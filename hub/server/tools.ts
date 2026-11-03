@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
-import { labelOf, type Acceptance, type CallResult } from '../../contracts/generated/vocabulary.ts';
+import { SyncModeSchema, labelOf, type Acceptance, type CallResult } from '../../contracts/generated/vocabulary.ts';
 import { annotationsFor, type ToolAnnotations } from '../../contracts/src/annotations.ts';
 import { RunId, type ProtocolError } from '../../contracts/src/common.ts';
 import type { PackSummary } from '../../contracts/src/run.ts';
@@ -501,6 +501,10 @@ const getNodes: Handler = async (deps, call, args) => {
   let root = input.root;
   if(root===undefined&&input.run===undefined&&input.reference===undefined&&deps.knowledge.spaces){
     const space=input.space??call.principal.id;
+    if(space===call.principal.id&&await deps.records.personalPayloads?.mode(call.principal.id)===SyncModeSchema.enum.local){
+      if(cursor)return {answer:errorAnswer('get_nodes',[unavailable()])};
+      return {answer:{call_result:'ok',errors:[],nodes:[],coverage:{complete:true,examined:0,total:0},next:null}};
+    }
     const visible=await deps.knowledge.spaces.paths(call.principal,space);
     if(!visible.length)return {answer:errorAnswer('get_nodes',[unavailable()])};
     root=(space==='team'||space===call.principal.id?await deps.knowledge.spaces.ensure(call.principal,space):await deps.knowledge.spaces.current(space))?.root;
@@ -512,7 +516,8 @@ const getNodes: Handler = async (deps, call, args) => {
     if (detail === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     if(input.space!==undefined&&root===undefined&&deps.knowledge.spaces){
       const locks=detail.run.knowledge_spaces;
-      root=input.space==='team'?locks?.team:input.space===locks?.owner?locks.personal:(await deps.knowledge.spaces.current(input.space))?.root;
+      if(input.space===call.principal.id&&locks?.owner===call.principal.id&&locks.personal===null&&!cursor)return {answer:{call_result:'ok',errors:[],nodes:[],coverage:{complete:true,examined:0,total:0},next:null}};
+      root=input.space==='team'?locks?.team:input.space===locks?.owner?locks.personal??undefined:(await deps.knowledge.spaces.current(input.space))?.root;
       if(!root)return {answer:errorAnswer('get_nodes',[unavailable()])};
     }
     root ??= detail.run.root??detail.run.knowledge_spaces?.team;feedingOffset=detail.run.feeding_offset;

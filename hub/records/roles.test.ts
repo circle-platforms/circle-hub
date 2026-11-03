@@ -39,6 +39,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   await sql(postgres.config, `CREATE ROLE hub_owner LOGIN PASSWORD '${ownerPassword}'`);
   await sql(postgres.config, `CREATE ROLE hub_runtime LOGIN PASSWORD '${runtimePassword}'`);
   await sql(postgres.config, 'CREATE DATABASE t_roles OWNER hub_owner');
+  await sql(postgres.config, 'REVOKE TEMPORARY ON DATABASE t_roles FROM PUBLIC');
   t.after(() => postgres.dropDatabase('t_roles'));
   const owner: DatabaseConfig = { ...postgres.config, database: 't_roles', user: 'hub_owner', password: ownerPassword };
   const runtime: DatabaseConfig = { ...postgres.config, database: 't_roles', user: 'hub_runtime', password: runtimePassword };

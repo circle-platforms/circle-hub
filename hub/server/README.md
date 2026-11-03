@@ -1030,3 +1030,69 @@ Directory actions sit beside the title. Each grant dialog has one POST form for 
 selected audience and exact username through a same-origin/CSRF-protected redirect; confirmation rechecks authority.
 Revocation uses a secondary or danger control. Narrow tables scroll within their own boxes, while state/time/count and
 scope labels stay on one line. Synthetic layout captures are evidence for presentation only, not permission checks.
+
+Decision 89 review item 5 masks cleared personal source directories in sharing receipts, team-entry provenance and
+source links. Public team destinations, statements and safe receipt facts remain visible; immutable receipt bytes are
+not rewritten. The marker comes from model 26 display metadata. Console contexts cache only the metadata flag for one
+request, and both members and administrators retain the normal raw-record refusals. The real-Hub regression uses
+synthetic console passwords through testConsoleCredentials and verifies team content remains available after purge.
+
+Decision 89 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms never restore purged personal content. Originals independently held by runs retain their existing reader restrictions and read-tier checks; personal knowledge links and grants are removed. The HTTP transport is described below; MCP still exposes only six tools.
+
+### Personal sync commit integration (decision 89, step 4)
+
+Console and MCP personal knowledge/memory writes participate in the same state and capacity boundary as internal sync
+commits. A rendered personal write form carries its epoch and refuses stale content after purge and resume; the service
+also rechecks the epoch after asynchronous admission. Existing MCP inputs remain unchanged, and only six tools are
+exposed. Memory answers report the generated conflict status and count instead of silently selecting a candidate.
+The dedicated HTTP route and own-account mode controls are described below.
+
+### Personal sync HTTP and mode controls (decision 89, step 5)
+
+The dedicated `/api/sync/v1` routes implement the versioned contracts in contracts/src/sync.ts: state, clients,
+sessions, frozen inventory, missing objects, batch upload/download, CAS commit, operation receipts, abort, mode check
+and mode change. They accept live access Bearers only, including registered OAuth clients; cookies, console-session
+Bearers and setup/invitation codes do not authenticate. There is no model tool or proxy to this API. Host, exact own
+Origin, HTTPS/proxy authority, no-store, body limits and shutdown use the existing listeners. JSON must be unambiguous
+UTF-8 with no duplicate keys; compressed request bodies and unknown fields/query keys are refused.
+
+Admission is shared across listeners/tokens/devices by account. Responses are bounded along with request bodies by
+one global budget. Session ownership is checked before body parsing; current account/token and epoch are checked again
+before sending a private result. Unknown and foreign sessions/operations return the same refusal. Logs use the fixed
+sync route prefix and never print exceptions, tokens or client content.
+
+Each authenticated, admitted request to a valid route/method has append-only started/finished action metadata: actor, server token ID/OAuth client,
+separately declared device UUID, route template, times, counts, state identities and actual HTTP outcome. Titles,
+paths, device names, original/quote bytes and body arguments are excluded. A failed start audit prevents work. A failed
+finish audit returns a retryable response; upload/commit/mode receipts let the caller recover a committed operation.
+
+The console uses its own password-session routes with CSRF and same-origin checks. Local mode requires a fresh
+pre-check and explicit purge confirmation. The same service transaction changes mode, purges the scoped payloads,
+and stores a content-free receipt and audit; failure rolls everything back. Restoring Hub mode calls the existing
+owner-defined function and creates a new epoch, without UPDATE privilege on personal_spaces. Old purge receipts remain
+replayable but never clear the new epoch. These receipts contain no personal bodies. Personal views show generated
+mode/status labels and last successful sync; administrator member details expose mode and sync time only, without
+device IDs or personal titles. The pre-check cannot count unpersisted read-only share checks: it reports that count as
+unknown and explains their re-verification instead. Team copies and local copies remain; an older backup can restore
+older personal content.
+
+### Personal sync acceptance boundary (decision 89, step 6)
+
+Acceptance 49 uses the frozen v1 exchange vectors directly as HTTP bytes, rather than re-encoding test expectations
+with server code. Two devices create sibling memory revisions, observe a stale CAS refusal, retain both conflicting
+heads with no automatic session memory, and resolve them with an explicit child. Knowledge exchange preserves raw
+BOM/CRLF bytes and trailing editable whitespace; the Hub re-verifies quotes and marks a fabricated quotation unverified.
+Existing cases cover transport retries, foreign/absent equivalence, stale console forms, clear/resume and independent
+run-original retention without widening reader rights. Authentication/admission/audit failures and transaction rollback
+remain covered by server and records regressions. These are synthetic Hub checks, not evidence of a deployed Circle
+sync client; the client and release/deployment remain outside this task.
+
+The fourth review moves account admission ahead of every audit append. Unknown sync paths and wrong methods consume
+the same in-memory account request count but create no audit rows; requests refused as over quota also append nothing.
+Valid admitted operations retain their started/finished metadata and rollback/recovery behavior. Admission failures
+cannot grow the append-only record store without bound by changing paths, methods, tokens or declared devices.
+
+Token-scope decision (Claude, fourth review of 5509e847): v1 access tokens have no per-route scopes. A client holding a
+member's MCP access Bearer can also call that member's sync API and, after a fresh pre-check and explicit confirmation,
+purge their Hub copy through `/mode`. This is accepted for v1: local copies are unaffected and can be synchronized again.
+The API remains outside the six model tools; per-route token scopes are deferred, not implemented or implied here.
