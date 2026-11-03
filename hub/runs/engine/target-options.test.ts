@@ -51,20 +51,20 @@ test('an unknown build name lists every lockable build, newest line first, own r
     build('Rel_MERIDIAN_10_8_1_66', '10.8.1', true),
     build('Rel_MERIDIAN_10_8_1_62', '10.8.1', true),
     build('Beta_MERIDIAN_10_9_0_12', '10.9', false),
-    build('Beta_MERIDIAN_10_9_0_585', '10.9', true),
+    build('Beta_MERIDIAN_10_9_0_521', '10.9', true),
     build('Rel_MERIDIAN_10_8_2_8', '10.8.2', true),
     build('Beta_MERIDIAN_10_9_0_700', '10.9', false),
     build('Rel_MERIDIAN_10_7_0_61', '10.7', false),
   ];
-  const error = await refusalOf(context(builds, new Set(['10.9'])), '10.9.0.585');
+  const error = await refusalOf(context(builds, new Set(['10.9'])), '10.9.0.521');
   assert.equal(error.code, 'REFERENCE_UNRESOLVED');
-  assert.equal(error.message, '产品线 meridian 里没有名字或别名是“10.9.0.585”的构建');
+  assert.equal(error.message, '产品线 meridian 里没有名字或别名是“10.9.0.521”的构建');
   assert.equal(error.warrant, 'runs.build_name@1');
   assert.equal(error.provenance, 'projected');
   assert.equal(error.collected_at, AT);
   assert.deepEqual({ ...error.coverage, note: undefined }, { complete: true, examined: 7, total: 7, note: undefined });
   // 10.7 has neither a root of its own nor a seedling: not lockable, not an option.
-  assert.deepEqual(error.options, ['Beta_MERIDIAN_10_9_0_585', 'Beta_MERIDIAN_10_9_0_12', 'Beta_MERIDIAN_10_9_0_700', 'Rel_MERIDIAN_10_8_2_8', 'Rel_MERIDIAN_10_8_1_66', 'Rel_MERIDIAN_10_8_1_62']);
+  assert.deepEqual(error.options, ['Beta_MERIDIAN_10_9_0_521', 'Beta_MERIDIAN_10_9_0_12', 'Beta_MERIDIAN_10_9_0_700', 'Rel_MERIDIAN_10_8_2_8', 'Rel_MERIDIAN_10_8_1_66', 'Rel_MERIDIAN_10_8_1_62']);
   assert.equal(error.options_coverage?.complete, true);
   assert.equal(error.options_coverage?.examined, 6);
   assert.equal(error.options_coverage?.total, 6);
@@ -73,7 +73,7 @@ test('an unknown build name lists every lockable build, newest line first, own r
   assert.match(line, /限定：投影，采集于 2026-11-01T00:00:00.000Z，查找范围完整：已查 7，共 7（名字或别名不分大小写逐字相等才算/);
   assert.match(line, /规则：runs\.build_name@1/);
   assert.match(line, /可选（共 6 个，全部列出；可以锁定知识根的构建，按版本线从新到旧/);
-  assert.ok(line.includes('Beta_MERIDIAN_10_9_0_585'), 'the newest line build with its own root is listed, not hidden behind a cut');
+  assert.ok(line.includes('Beta_MERIDIAN_10_9_0_521'), 'the newest line build with its own root is listed, not hidden behind a cut');
 });
 
 test('a list past the limit names every build with a root of its own first and says how to list one line in full', async () => {
@@ -96,7 +96,7 @@ test('a list past the limit names every build with a root of its own first and s
 test('the build basis says the scope the default chose from and which root the run locks (B01 qualifier)', async () => {
   const builds = [
     { ...build('Rel_MERIDIAN_10_9_0_12', '10.9', true), released_at: '2026-01-24T00:00:00.000Z' },
-    build('Beta_MERIDIAN_10_9_0_585', '10.9', true),
+    build('Beta_MERIDIAN_10_9_0_521', '10.9', true),
     build('Beta_MERIDIAN_10_9_0_668', '10.9', true),
   ];
   const seedling: RootInfo = { root, composition, product: 'meridian', build: builds[1]!, produced_at: AT };
@@ -107,7 +107,7 @@ test('the build basis says the scope the default chose from and which root the r
   const text = target.basis.find((claim) => (claim.statement.data as { field?: string }).field === 'build')!.statement.text;
   assert.match(text, /按默认规则选定版本线 10\.9 中最新的已发布构建 Rel_MERIDIAN_10_9_0_12/);
   assert.match(text, /另有 2 个可以锁定知识根的未发布构建不参加默认选择，要用它们就在 build 里写名字/);
-  assert.match(text, /锁定的是版本线 10\.9 的树苗根 aaaaaaaaaaaa，这个根产自构建 Beta_MERIDIAN_10_9_0_585；这个构建另有同步根 ffffffffffff，没有锁定/);
+  assert.match(text, /锁定的是版本线 10\.9 的树苗根 aaaaaaaaaaaa，这个根产自构建 Beta_MERIDIAN_10_9_0_521；这个构建另有同步根 ffffffffffff，没有锁定/);
 });
 
 // Issue 131: a product line with no build to list never answers "pick one listed below"; it says which fact is missing and,

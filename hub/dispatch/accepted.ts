@@ -17,7 +17,7 @@ function capped(notes: DispatchNote[]): DispatchNote[] {
   const kept = notes.slice(-(MAX_NOTES - 1));
   return [{ text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept];
 }
-// CES reads a running task's status by its id and never resubmits it; here the progress read is the same submission.
+// the reference compile skill reads a running task's status by its id and never resubmits it; here the progress read is the same submission.
 const PROGRESS = '稍后逐字原样重交派发时的那次提交读进展';
 
 async function activeAdmin(records: Pick<RecordsKit, 'principals'>) {
@@ -29,7 +29,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (!admin) return ready ? [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动派发；等管理员开通账号' }] : [];
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
   // A job refused at the effect boundary before any remote call sent nothing and used nothing of the run's dispatch: once
-  // the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as CES
+  // the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as the reference compile skill
   // resubmits a workbook its gateway refused. A job that reached the target, its precheck included, is only read.
   const retry = ready && jobs.length > 0 && jobs.every((job) => job.ended === 'done' && job.boundary_refused && job.status.outcome === 'not_dispatched');
   if (jobs.length && !retry) return capped(jobs.map((job) => runnerNote(job, admin.id)));
@@ -79,7 +79,7 @@ function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, ad
   return '读结果引用看逐条结论';
 }
 
-/** A failed bed check is reported as it is, the way CES reports its environment check before a run. */
+/** A failed bed check is reported as it is, the way the reference compile skill reports its environment check before a run. */
 function details(status: JobStatus): string[] {
   const parts = (status.failed_checks ?? []).map((check) => `未通过的核对 ${[check.step, check.seat, check.check].filter(Boolean).join(' ')}：${check.missing_fact}`);
   if (status.failed_conditions?.length) parts.push(`未满足的条件：${status.failed_conditions.map((c) => `${c.pointer} ${c.operator}`).join('、')}`);
