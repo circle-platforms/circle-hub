@@ -160,24 +160,41 @@ function basename(href: string): string {
 type FileKind = 'commandTree' | 'bugsFixed' | 'mib' | 'image';
 
 /**
- * famx-assets@1 (declared grammar; origin: the listing page's own file naming as documented in this pack's README —
- * `command_tree-<build>.xml`, `Bugs_Fixed_with_<build>.html`, `<prefix>-MIB[_<language>]-<build>.txt|mib|my` and
- * `<prefix>-<build>.<image extension>`, with `<build>` a complete build name in the product's own naming grammar —
- * declared for the owner's R6 rule 2026-10-24). A role is read from a whole file name; nothing is recognised by a
- * substring, a word or an extension alone, and a name the grammar does not read keeps its link and is reported as an
- * unchecked role. A variant build's entry is named after its own image file, which the same image form covers.
+ * famx-assets@2 (declared grammar; origin: the listing pages' own file naming as documented in this pack's README —
+ * `command_tree-[<prefix>-]<build>.xml`, `Bugs_Fixed_with_[<prefix>_]<build>.html`, `<prefix>-MIB[_<language>]-<build>.txt|mib|my`
+ * and `<prefix>-<build>.<image extension>`, with `<build>` a complete build name in the product's own naming grammar and
+ * `<prefix>` letters and digits — declared for the owner's R6 rule 2026-10-24; @2 admits the product prefix the newer
+ * listings write before the build in the command-tree and fixed-bug forms). A role is read from a whole file name; nothing is
+ * recognised by a substring, a word or an extension alone, and a name the grammar does not read keeps its link and is
+ * reported as an unchecked role. A variant build's entry is named after its own image file, which the same image form covers.
  */
 const ASSET_BUILD = '(?:Rel|Beta)[_.][A-Za-z][A-Za-z0-9]{0,31}(?:-[A-Za-z0-9]{1,16}){0,6}[_.][0-9]{1,9}(?:[_.][0-9]{1,9}){1,15}';
-const ASSET_FORMS: ReadonlyArray<[FileKind, RegExp]> = [
-  ['commandTree', new RegExp(`^command_tree-${ASSET_BUILD}\\.xml$`)],
-  ['bugsFixed', new RegExp(`^Bugs_Fixed_with_${ASSET_BUILD}\\.html?$`)],
-  ['mib', new RegExp(`^[A-Za-z0-9]+-MIB(?:_[A-Za-z0-9]+)?-${ASSET_BUILD}\\.(?:txt|mib|my)$`)],
-  ['image', new RegExp(`^[A-Za-z0-9]+-${ASSET_BUILD}\\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\\.gz)$`)],
+const ASSET_PREFIX = '[A-Za-z0-9]+';
+/** Each form once without and once with its prefix; the build is the one capture group of either. */
+const ASSET_FORMS: ReadonlyArray<[FileKind, RegExp[]]> = [
+  ['commandTree', [new RegExp(`^command_tree-(${ASSET_BUILD})\\.xml$`), new RegExp(`^command_tree-${ASSET_PREFIX}-(${ASSET_BUILD})\\.xml$`)]],
+  ['bugsFixed', [new RegExp(`^Bugs_Fixed_with_(${ASSET_BUILD})\\.html?$`), new RegExp(`^Bugs_Fixed_with_${ASSET_PREFIX}_(${ASSET_BUILD})\\.html?$`)]],
+  ['mib', [new RegExp(`^${ASSET_PREFIX}-MIB(?:_[A-Za-z0-9]+)?-(${ASSET_BUILD})\\.(?:txt|mib|my)$`)]],
+  ['image', [new RegExp(`^${ASSET_PREFIX}-(${ASSET_BUILD})\\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\\.gz)$`)]],
 ];
 
+/** The builds a whole file name names under one form, without and with the prefix (two only when the name is ambiguous). */
+function assetBuilds(forms: readonly RegExp[], name: string): string[] {
+  return [...new Set(forms.flatMap((form) => form.exec(name)?.[1] ?? []))];
+}
+
 function fileKind(name: string): FileKind | null {
-  for (const [kind, form] of ASSET_FORMS) if (form.test(name)) return kind;
+  for (const [kind, forms] of ASSET_FORMS) if (assetBuilds(forms, name).length > 0) return kind;
   return null;
+}
+
+/**
+ * The build a fixed-bug file is for, read from its whole file name (the last segment of a link or build-site file key, escapes
+ * decoded) under famx-assets@2; null when the name is not that form or names two builds. Never read from the page text.
+ */
+export function fixedBugsBuild(link: string): string | null {
+  const builds = assetBuilds(ASSET_FORMS.find(([kind]) => kind === 'bugsFixed')![1], basename(link));
+  return builds.length === 1 ? builds[0] : null;
 }
 
 function imageDetails(text: string): { size?: string; sha256?: string; md5?: string } {
@@ -199,7 +216,7 @@ function filesOf(name: string, links: Link[], warnings: string[]): BuildFiles {
     const ref: FileRef = { name: file, href: link.href };
     if (file !== '' && !file.includes(name)) warnings.push(`构建 ${name} 的链接 ${file} 不含构建名，仍按位置归到该构建`);
     const kind = file === '' ? null : fileKind(file);
-    if (kind === null) warnings.push(`构建 ${name} 的资产角色未核对：${file} 不符合 famx-assets@1 整名语法；下一步由包作者补资产语法或作者声明角色后重读，保留原链接`);
+    if (kind === null) warnings.push(`构建 ${name} 的资产角色未核对：${file} 不符合 famx-assets@2 整名语法；下一步由包作者补资产语法或作者声明角色后重读，保留原链接`);
     if (kind === 'image' && files.image === null) {
       const image: ImageRef = { ...ref, ...imageDetails(link.text) };
       files.image = image;
