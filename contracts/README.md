@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 109 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 110 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -518,3 +518,8 @@ has only operation/member/actor/time/epoch, a canonical digest manifest and nonn
 The team credential preserves a previously verified declaration for one exact independent team capture, without private
 paths or text. Both kinds are excluded from arbitrary record-reference readers. No rejection code or MCP tool changes;
 the four skills' code-only protocol mirrors remain byte-identical in this step.
+
+Decision 91 block-5 display polish (Claude, 2026-11-03) sets model 32. account_status.deleted is the status label
+“已删除”; the separate generated account_display_name.deleted_member supplies the identity placeholder “已删除的成员”.
+The two terms are tested independently. No stored record shape, permission, rejection code or migration changes. Four
+skill protocol mirrors are byte-identical because this revision changes only display vocabulary; no skill version bump.

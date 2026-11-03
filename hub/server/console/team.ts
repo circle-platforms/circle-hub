@@ -43,7 +43,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   if(ctx.admin)dialogs.push(revoke);
   inspector=html`<div data-inspector-content><span class="ch-tag">Circle</span><h2 class="ch-panel-title">${selectedDevice.name}</h2>${definitions([['成员',selectedDevice.owner],['最近使用时间',when(selectedDevice.token.last_used_at)]])}<footer class="ch-inspector-actions">${ctx.admin?commandLink(revoke,'断开…','ch-btn ch-btn--danger'):html`<span class="ch-meta">由管理员断开</span>`}</footer></div>`;
  }else if(selectedUser?.deleted_at){
-  inspector=html`<div data-inspector-content><span class="ch-tag">成员</span><h2 class="ch-panel-title">${uiLabelOf('account_status','deleted')}</h2>${definitions([['成员编号',selectedUser.id],['删除时间',when(selectedUser.deleted_at)]])}${ctx.admin?await memberDeletionProgress(ctx,selectedUser.id):''}</div>`;
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status','deleted'),'plain')}</div><h2 class="ch-panel-title">${uiLabelOf('account_display_name','deleted_member')}</h2>${definitions([['成员编号',selectedUser.id],['删除时间',when(selectedUser.deleted_at)]])}${ctx.admin?await memberDeletionProgress(ctx,selectedUser.id):''}</div>`;
  }else if(selectedUser){
   const deletion=ctx.admin&&ctx.url.searchParams.get('deletion')==='preview'?await memberDeletionDialog(ctx,selectedUser.id):html``;
   confirmations=html`${confirmations}${deletion}`;

@@ -71,7 +71,18 @@ try {
         const body=await evaluate('document.body.innerText');assert.match(body,expected);assert.doesNotMatch(body,/该内容不存在或无权查看|Hub 内部错误|请求参数不对|登录控制台/);
         assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false,name+' horizontal overflow '+width+' '+theme);
         assert.deepEqual(wordingProblems(await evaluate('document.documentElement.outerHTML')),[],name);
-        if(name==='deletion-preview')assert.match(await evaluate("document.querySelector('#delete-member-confirm pre').textContent"),/--expected-state=/);
+        if(name==='deletion-preview'){
+          assert.match(await evaluate("document.querySelector('#delete-member-confirm pre').textContent"),/--expected-state=/);
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源署名','归档的原文','私人工作流与技能']);
+          assert.equal(await evaluate("[...document.querySelectorAll('[data-deletion-scope] dt')].every(node=>node.getBoundingClientRect().height<28)"),true,'category names must remain readable on one line');
+          assert.ok(await evaluate("document.querySelector('#delete-member-confirm').innerText.includes('在 Hub 所在主机上的 Circle 中执行下列命令完成删除；内容变化后须重新检查。')"));
+        }
+        if(name==='deletion-pending'||name==='deletion-complete'){
+          const head=await evaluate("(()=>{const root=document.querySelector('[data-inspector-content]'),tag=root.querySelector('.ch-tag'),badge=tag.parentElement.querySelector('.ch-badge');return {tagWidth:tag.getBoundingClientRect().width,rowWidth:tag.parentElement.getBoundingClientRect().width,sameRow:badge?.parentElement===tag.parentElement,status:badge?.textContent,name:root.querySelector('h2')?.textContent,neutral:badge?.classList.contains('ch-badge--pending')};})()");
+          assert.equal(head.name,'已删除的成员');assert.equal(head.status,'已删除');assert.equal(head.neutral,true);assert.equal(head.sameRow,true);assert.ok(head.tagWidth>0&&head.tagWidth<head.rowWidth/2,'the member tag must keep its content width');
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('[data-inspector-content] dt')].filter(node=>!node.closest('[data-technical]')).map(node=>node.textContent)"),['成员编号','删除时间']);
+        }
+        if(name==='team-list')assert.deepEqual(await evaluate("[...document.querySelectorAll('main tbody tr')].map(row=>[...row.querySelectorAll('td')].map(cell=>cell.textContent)).filter(cells=>cells[0]==='已删除的成员').map(cells=>cells[2])"),['已删除']);
         if(name==='deletion-complete')assert.equal(await evaluate("document.body.innerText.includes('重置密码')"),false);
         await shot(name+'-'+theme+'-'+width);matrix.push({name,width,theme});
         assert.equal(await evaluate("[...document.querySelectorAll('.ch-table-wrap')].every(node=>node.scrollWidth<=node.clientWidth||['auto','scroll'].includes(getComputedStyle(node).overflowX))"),true,'wide tables scroll inside their region');
@@ -93,6 +104,7 @@ try {
     await capture('deletion-pending',member,/等待清除中/);
     await rm(blocked);await api.finish(hub.admin.principal,user.user.id,intent.operation_id);
     await capture('deletion-complete',member,/私人内容已清除/);
+    await capture('team-list',hub.url+'/console/team',/已删除的成员/);
     await capture('team-tombstone',hub.url+'/console/knowledge/space?'+new URLSearchParams({space:'team',root:shared.team_root,path:'/',entry:entry.entry}),/已删除的成员/);
     assert.deepEqual(errors,[]);await writeFile(join(dir,'result.json'),JSON.stringify({matrix,checks,errors},null,2));
     await writeFile(join(dir,'index.html'),'<!doctype html><meta charset="utf-8"><title>合成删除页面核对</title><style>body{font-family:sans-serif}img{max-width:100%;border:1px solid gray}section{margin:30px 0}</style>'+matrix.map(item=>{const file=item.name+'-'+item.theme+'-'+item.width+'.png';return '<section><h2>'+file+'</h2><img src="'+file+'"></section>';}).join(''));

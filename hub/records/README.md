@@ -1017,3 +1017,10 @@ purged binding whose member has a deletion intent and permanent tombstone. Other
 append-only. The runtime still has no DELETE or UPDATE grant on record_index; the owner-defined purger performs only
 these scoped removals. Regression tests exercise local and deletion purges, reject runtime deletes, reject owner removal
 before a purge, and reject removal of an unrelated index key after a purge.
+
+Deletion previews expose display-only scope_counts separately from the unchanged technical audit counts. Knowledge and
+memory count scoped content versions; originals count exact source captures, excluding only captures explicitly named
+by scoped private pack file maps. Same-byte independent uploads still count as originals. Attribution and archive rows
+and private pack versions retain their actual scoped counts. Only private-version metadata is loaded to classify file
+captures; no new content hash validation is added. Display counts are not mutation inputs, purge manifests or persisted
+receipt fields. The existing owner-function audit recomputation and purge boundary are unchanged.

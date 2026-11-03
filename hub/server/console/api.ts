@@ -399,7 +399,7 @@ async function memberOf(ctx: PageContext, user: User,provided?:TokenInfo[]): Pro
   const status=user.deleted_at?AccountStatusSchema.enum.deleted:user.disabled?AccountStatusSchema.enum.disabled:AccountStatusSchema.enum.enabled;
   const used = tokens.map((t) => t.last_used_at).filter((at): at is string => at !== null).sort();
   return {
-    id: user.id, name: user.deleted_at?uiLabelOf('account_status','deleted'):user.name, deleted_at:user.deleted_at??null, status,status_label:uiLabelOf('account_status',status), role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
+    id: user.id, name: user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name, deleted_at:user.deleted_at??null, status,status_label:uiLabelOf('account_status',status), role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
     circles: tokens.filter((t) => t.revoked_at === null).length, last_active_at: used.at(-1) ?? null,
     tokens: tokens.map((t) => ({ id: t.id, label: t.label, client: t.client, created_at: t.created_at, last_used_at: t.last_used_at, revoked_at: t.revoked_at })),
   };

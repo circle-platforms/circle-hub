@@ -166,7 +166,7 @@ export async function listRunInventory(kit: RecordsKit, admin: Principal, query:
     throw new CliError(`--limit 要 1 到 ${RUN_LIST_MAX_LIMIT} 的整数`);
   }
   const cursor = query.cursor === null ? null : decode(query.cursor, query, admin.id);
-  const names = new Map((await kit.principals.list()).map((user) => [user.id, user.deleted_at?uiLabelOf('account_status','deleted'):user.name]));
+  const names = new Map((await kit.principals.list()).map((user) => [user.id, user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name]));
   const filter = { ...(query.user === null ? {} : { user: query.user }), ...(query.pack === null ? {} : { pack: query.pack }) };
   const since = query.since === null ? null : Date.parse(query.since);
   const runs = (await everyRun(kit.store, filter))

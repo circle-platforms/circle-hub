@@ -1127,7 +1127,8 @@ The password-console team Inspector links to a GET-only deletion preview and sha
 command without private names, paths or bodies; the console has no direct deletion POST or command bridge action.
 `GET /console/api/members/<id>/deletion` exposes only the same administrator preview/progress. A sealed unfinished
 operation displays waiting and recovery instructions, never a false success. Deleted identities use the generated
-account-status interface label throughout team provenance and member views, retain deletion time, and offer no reset,
+account_display_name placeholder throughout team provenance and member views, with the separate account_status badge;
+they retain deletion time and offer no reset,
 re-enable, quota or token controls. Team content and exact already-authorized frozen copies keep their original rights.
 
 Deletion follow-up checks remove tombstones from name-based member search and refuse them as new private knowledge,
@@ -1138,5 +1139,11 @@ before sealing; CLI callers cannot make the deletion receipt report a different 
 
 Synthetic visual reproduction uses Node 24 with CHROME_BIN and console/testing-member-deletion-browser.ts. It starts an
 isolated loopback Hub and browser profile, verifies real HTTP status/content, checks keyboard focus and internal table
-scrolling, and writes five deletion states in both themes at 1440, 1024 and 390 px. It neither opens a personal browser
-profile nor touches a deployed Hub. The task page records the actual inspected matrix and checks.
+scrolling, and writes six deletion and team-list states in both themes at 1440, 1024 and 390 px. It neither opens a
+personal browser profile nor touches a deployed Hub. The task page records the actual inspected matrix and checks.
+
+Deletion display polish uses account_status.deleted (“已删除”) separately from the account_display_name.deleted_member
+placeholder (“已删除的成员”). A tombstone Inspector places the content-width member tag beside a neutral status badge.
+The preview shows six content categories, including prior versions and exact original captures; technical storage counts
+and the manifest remain inside the closed “查看清除清单摘要” disclosure in preview, pending and completed states. The
+console instructs execution in Circle on the Hub host and has no deletion confirmation button or write route.

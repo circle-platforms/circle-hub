@@ -60,7 +60,8 @@ export const AXES = {
   pack_status: { label: '发布状态', ui: '状态', owner: 'T01', values: [{ code: 'published', label: '已发布' }, { code: 'retired', label: '已退役' }, { code: 'enabled', label: '已启用' }, { code: 'inactive', label: '未启用' }] },
   environment: { label: '环境类别', ui: '环境', owner: 'D01', values: [{ code: 'test', label: '测试' }, { code: 'shared', label: '共享' }, { code: 'production', label: '生产', ui: '正式' }] },
   permission_role: { label: '权限角色', ui: '角色', owner: 'R01', values: [{ code: 'user', label: '用户', ui: '成员' }, { code: 'admin', label: '管理员' }] },
-  account_status: { label: '账户状态', owner: 'R01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'deleted', label: '已删除的成员' }] },
+  account_status: { label: '账户状态', owner: 'R01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'deleted', label: '已删除' }] },
+  account_display_name: { label: '账户显示名称', owner: 'R01', values: [{ code: 'deleted_member', label: '已删除的成员' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
   validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
   qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }, { code: 'legacy_keyword_rules', label: '旧规则（关键词）' }, { code: 'possible_credentials', label: '可能含凭据' }] },
@@ -689,11 +690,21 @@ export function isPermissionRole(value: unknown): value is PermissionRole {
 /** 账户状态 (R01) */
 export const ACCOUNT_STATUS = ['enabled', 'disabled', 'deleted'] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUS)[number];
-export const ACCOUNT_STATUS_LABEL = { 'enabled': '已启用', 'disabled': '已停用', 'deleted': '已删除的成员' } as const satisfies { readonly [K in AccountStatus]: string };
-export const ACCOUNT_STATUS_UI = { 'enabled': '已启用', 'disabled': '已停用', 'deleted': '已删除的成员' } as const satisfies { readonly [K in AccountStatus]: string };
+export const ACCOUNT_STATUS_LABEL = { 'enabled': '已启用', 'disabled': '已停用', 'deleted': '已删除' } as const satisfies { readonly [K in AccountStatus]: string };
+export const ACCOUNT_STATUS_UI = { 'enabled': '已启用', 'disabled': '已停用', 'deleted': '已删除' } as const satisfies { readonly [K in AccountStatus]: string };
 export const AccountStatusSchema = z.enum(ACCOUNT_STATUS);
 export function isAccountStatus(value: unknown): value is AccountStatus {
   return (ACCOUNT_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 账户显示名称 (R01) */
+export const ACCOUNT_DISPLAY_NAME = ['deleted_member'] as const;
+export type AccountDisplayName = (typeof ACCOUNT_DISPLAY_NAME)[number];
+export const ACCOUNT_DISPLAY_NAME_LABEL = { 'deleted_member': '已删除的成员' } as const satisfies { readonly [K in AccountDisplayName]: string };
+export const ACCOUNT_DISPLAY_NAME_UI = { 'deleted_member': '已删除的成员' } as const satisfies { readonly [K in AccountDisplayName]: string };
+export const AccountDisplayNameSchema = z.enum(ACCOUNT_DISPLAY_NAME);
+export function isAccountDisplayName(value: unknown): value is AccountDisplayName {
+  return (ACCOUNT_DISPLAY_NAME as readonly unknown[]).includes(value);
 }
 
 /** 引用形式 (B03) */
@@ -1265,6 +1276,7 @@ export interface AxisValues {
   environment: Environment;
   permission_role: PermissionRole;
   account_status: AccountStatus;
+  account_display_name: AccountDisplayName;
   reference_scheme: ReferenceScheme;
   validity_status: ValidityStatus;
   qualifier_mark: QualifierMark;
@@ -1377,6 +1389,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   environment: ENVIRONMENT_LABEL,
   permission_role: PERMISSION_ROLE_LABEL,
   account_status: ACCOUNT_STATUS_LABEL,
+  account_display_name: ACCOUNT_DISPLAY_NAME_LABEL,
   reference_scheme: REFERENCE_SCHEME_LABEL,
   validity_status: VALIDITY_STATUS_LABEL,
   qualifier_mark: QUALIFIER_MARK_LABEL,
@@ -1489,6 +1502,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   environment: ENVIRONMENT_UI,
   permission_role: PERMISSION_ROLE_UI,
   account_status: ACCOUNT_STATUS_UI,
+  account_display_name: ACCOUNT_DISPLAY_NAME_UI,
   reference_scheme: REFERENCE_SCHEME_UI,
   validity_status: VALIDITY_STATUS_UI,
   qualifier_mark: QUALIFIER_MARK_UI,

@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Separate deleted-member names from status badges and show readable deletion categories with host-execution instructions.
+
 - Freeze all deleted-account fields and token revocation history, verify deletion manifests inside PostgreSQL, and show tombstones consistently without revival or new-grant actions.
 
 - Purge private installs and original captures with deleted members while preserving exact existing team and frozen-run holders.

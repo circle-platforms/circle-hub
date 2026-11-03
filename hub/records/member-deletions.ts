@@ -4,6 +4,8 @@ import {isAbsolute} from 'node:path';
 import {MemberDeletionBody,MemberDeletionCounts,type MemberDeletionBody as Receipt} from '../../contracts/src/spaces.ts';
 import {PermissionRoleSchema} from '../../contracts/generated/vocabulary.ts';
 import {canonicalize} from './canonical.ts';
+import {parseStrictJson} from './strict-json.ts';
+import {RecordKindSchema} from '../../contracts/src/records.ts';
 import {sha256Hex} from './digest.ts';
 import {iso} from './db.ts';
 import type {Database} from './db.ts';
@@ -12,7 +14,8 @@ import {AccessError,ConflictError,RecordsError} from './errors.ts';
 import {lockAdministratorSet} from './principals.ts';
 import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
-export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts']}
+export interface MemberDeletionScopeCounts {knowledge:number;memory:number;originals:number;attributions:number;archived_originals:number;private_versions:number}
+export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts'];scope_counts:MemberDeletionScopeCounts}
 export class PgMemberDeletions {
  readonly cacheRoots=new Set<string>();
  registerCacheRoot(root:string){if(!isAbsolute(root))throw new TypeError('private cache root');this.cacheRoots.add(root);}
@@ -30,7 +33,10 @@ export class PgMemberDeletions {
   if(unscoped.rowCount)throw new ConflictError('私人原文清除准备尚未完成，不能删除成员');
   try{await this.db.query('SELECT hub_check_member_holders($1)',[member],tx);}catch(cause){throw new ConflictError('已有任务的冻结副本无法核对，不能删除成员',{cause});}
   const scope=(await this.db.query('SELECT epoch FROM personal_spaces WHERE owner=$1',[member],tx)).rows[0];
-  const records=(await this.db.query('SELECT b.record,r.kind FROM personal_record_bindings b JOIN records r ON r.digest=b.record WHERE b.owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) ORDER BY b.record',[member],tx)).rows;
+  const records=(await this.db.query(`SELECT b.record,r.kind,CASE WHEN r.kind='personal_pack_version' THEN pg_catalog.convert_from(v.data,'UTF8') END AS pack_body
+   FROM personal_record_bindings b JOIN records r ON r.digest=b.record
+   LEFT JOIN personal_payloads v ON r.kind='personal_pack_version' AND (v.owner,v.epoch,v.sha256)=(b.owner,b.epoch,b.sha256)
+   WHERE b.owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) ORDER BY b.record`,[member],tx)).rows;
   const payloads=(await this.db.query('SELECT epoch,sha256 FROM personal_payloads WHERE owner=$1 ORDER BY epoch,sha256',[member],tx)).rows;
   const objects=(await this.db.query('SELECT o.epoch,o.sha256 FROM personal_objects o WHERE owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(o.owner,o.epoch)) ORDER BY epoch,sha256',[member],tx)).rows;
   const caches=(await this.db.query('SELECT digest FROM personal_cache_installs WHERE owner=$1 ORDER BY digest',[member],tx)).rows.map(row=>String(row.digest));
@@ -38,8 +44,14 @@ export class PgMemberDeletions {
    UNION ALL SELECT 'pack',held_by,sha256 FROM held_object_targets WHERE owner=$1
    UNION ALL SELECT 'sharing',digest,digest FROM record_index WHERE key IN ('knowledge.share.by','memory.share.by') AND value=$1 ORDER BY category,holder,node`,[member],tx)).rows;
   const counts=MemberDeletionCounts.parse({records:records.length,payloads:payloads.length,objects:objects.length,attributions:records.filter(r=>r.kind==='knowledge_source_attribution').length,archives:records.filter(r=>r.kind==='knowledge_space_source').length,private_versions:records.filter(r=>r.kind==='personal_pack_version').length});
+  // Display categories count scoped content versions/captures, never payload blobs or shared hashes.
+  // Only an exact file-capture relation excludes a pack file from the original-document category.
+  const packFiles=new Set<string>();for(const record of records)if(record.kind===RecordKindSchema.enum.personal_pack_version&&typeof record.pack_body==='string'){
+   const body=parseStrictJson(record.pack_body) as {files?:Record<string,unknown>};for(const capture of Object.values(body.files??{}))if(typeof capture==='string')packFiles.add(capture);
+  }
+  const scope_counts:MemberDeletionScopeCounts={knowledge:records.filter(r=>r.kind===RecordKindSchema.enum.knowledge_space_entry).length,memory:records.filter(r=>r.kind===RecordKindSchema.enum.memory_version).length,originals:records.filter(r=>r.kind===RecordKindSchema.enum.source_artifact&&!packFiles.has(r.record as string)).length,attributions:counts.attributions,archived_originals:counts.archives,private_versions:counts.private_versions};
   const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects,caches})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
-  return {member,epoch,purge_manifest,counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
+  return {member,epoch,purge_manifest,counts,scope_counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
  }
  async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#preview(member,tx);});}
  async status(by:Principal,member:string){return this.store.withTransaction(async tx=>{
@@ -47,7 +59,7 @@ export class PgMemberDeletions {
   const row=await this.store.getByKey<Receipt>('member_deletion',intent.operation_id,tx);
   return {intent,result:row?{record:row.digest,...MemberDeletionBody.parse(row.body)}:null};
  });}
- async prepare(by:Principal,input:MemberDeletionPreview&{operation_id:string}):Promise<Receipt>{
+ async prepare(by:Principal,input:Omit<MemberDeletionPreview,'scope_counts'>&{operation_id:string}):Promise<Receipt>{
   // Parse the operation and immutable manifest before touching an identity.
   MemberDeletionBody.parse({operation_id:input.operation_id,member:input.member,epoch:input.epoch,purge_manifest:input.purge_manifest,counts:input.counts,by:by.id,at:this.now().toISOString()});
   return this.store.withTransaction(async tx=>{

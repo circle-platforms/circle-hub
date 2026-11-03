@@ -647,7 +647,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
       if (userId === null || userId === undefined) return Promise.resolve('—');
       let pending = names.get(userId);
       if (pending === undefined) {
-        pending = memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.deleted_at?uiLabelOf('account_status','deleted'):user?.name ?? userId);
+        pending = memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.deleted_at?uiLabelOf('account_display_name','deleted_member'):user?.name ?? userId);
         names.set(userId, pending);
       }
       return pending;
