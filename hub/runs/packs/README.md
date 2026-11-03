@@ -339,3 +339,7 @@ existing run dependency locks are independent holders. Their files remain availa
 while current resolve, grant, publish and new run eligibility still require a live owner. Extraction shares the committing
 account boundary, and only independently held digests keep usable caches. The registry registers its extraction root with
 the records deletion coordinator, including non-default roots in synthetic tests.
+
+New grants explicitly refuse deleted target identities, even for a dependency-free skill; historical grants remain
+revocable. An unverifiable legacy exact private workflow/dependency holder blocks deletion instead of fabricating a
+replacement. A new actual holder invalidates an older deletion confirmation without changing the private payload count.

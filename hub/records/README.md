@@ -970,7 +970,8 @@ appends a digest/count-only receipt in one transaction. Failure leaves a sealed 
 completion receipt. Self-deletion can finish its already authorized operation; a new operation still requires a live
 administrator. Unscoped private packs/originals refuse deletion until their payload preparation is complete. The public
 record-reference reader exposes neither deletion receipts nor team attribution credentials; status is the dedicated
-administrator metadata boundary. Private pack/frozen-holder and console/CLI integration follows in the next task step.
+administrator metadata boundary. Private pack/frozen-holder cleanup and the guarded console/CLI path use the same
+coordinator, as detailed below.
 
 ### Account-owned installs and independent frozen holders
 

@@ -1479,3 +1479,8 @@ permission; another equal-byte capture cannot borrow the declaration. Personal s
 retaining their observed origin. Permanent deletion clears imports, archives, declarations, knowledge/memory history and
 projections, while independent team and other-member captures retain their original rights. Missing private grounds use
 the existing current unverified projection; immutable historic receipts are not rewritten.
+
+Saved observed originals preserve the exact original captured_at timestamp: saving to a private archive is not a new
+observation. Deleted accounts cannot receive new folder or memory grants, while an owner can still revoke their historical
+grants. Username reuse never reattaches a fresh account to the old grant identity. The deletion scenario covers real
+console/MCP/sync invalidation alongside retained independent team originals, attribution and team memory.

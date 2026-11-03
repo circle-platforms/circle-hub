@@ -860,3 +860,28 @@ Claude 对原提交 20e37368／2b549f3d 的独立复核未发现安全缺陷，�
 4. 所有者删除函数在账户行锁内重新从数据库生成同一规范摘要和六项计数，再与调用值比较，任何不符在封闭前拒绝。数据库 helper 仅所有者可执行，限定类型与搜索路径，不能作为运行角色查询私人范围的入口；没有扩大 SHA 内容扫描范围。回归用真实载荷、原件与缓存登记，逐项伪造计数／清单，核对拒绝后无墓碑／意图，真实值才受理。
 
 复核测试首轮出现测试文件 SQL 引号与脚本替换错误（2 个文件未能载入）；修正后核心 12 项通过。扩大指定组 69 项中 66 通过、3 失败、0 跳过：新夹具错误地把未登记来源的采集单独提交，已被现有绑定检查正确拒绝；另一个新测试使用了不存在的记忆查询字段。补齐真实来源登记并使用现有 items/shared 端口，未改生产边界；三个受影响文件共 12 项复核通过、0 失败、0 跳过。其余 66 项包含 PG 18 备份／恢复、所有者／运行角色、definer 临时域、防迁移改写、环境、锁、密码、缺知识端口诊断、真实冻结评估与新授权拒绝。最终工作流／引擎完整定向组、文档及类型检查结果在第 6 步续记。
+
+### 第 6 步：最终定向检查、真实页面核对与文档收尾
+
+做了的：
+
+- 完成第五块及本轮独立复核的全部补充。更新 records／knowledge／runs engine／packs／server README、CHANGELOG 和设计页实施状态。按本轮明确要求在决定 91 登记删除及窄索引例外的来源；最终阶段集成和合并进度仍由 Claude 负责。没有新增配置变量；CHROME_BIN 只用于合成截图工具，不是 Hub 运行配置。
+- 新增可复现截图工具 hub/server/console/testing-member-deletion-browser.ts，以 CHROME_BIN 指定浏览器，独立临时 profile、临时 PostgreSQL、密码会话和回环 HTTP。五种状态为删除预检／确认、最后管理员拒绝、真实存储故障后的等待清除、同操作恢复完成、团队保留内容的已删除提交人／署名人。每种状态均深浅两种主题、1440／1024／390 px，共 30 张；全部实际 HTTP 200，逐项核对预期内容，0 浏览器脚本异常，页面无横向溢出，宽表在自身容器滚动，实际键盘模式的可见目标有焦点提示。
+- 已逐张打开并目视检查全部 30 张最终截图：预检影响说明和完整命令可换行，窄屏 Dialog 可用；失败不伪装完成，墓碑没有恢复按钮；团队内容仍能打开原文，提交人／署名人和已清除私人文件夹显示正确，深浅色均可读。截图目录使用 circle-hub-finish-block5-browser-96CNcq，含 index.html 和 result.json，保留在本机临时目录，不把截图、profile、日志或绝对路径加入 Git。截图对应本块最终页面结构；其后数据库加固及搜索过滤未修改这些页面布局／样式。
+- 首轮截图焦点探针误选窄屏隐藏的主列表链接而失败；探针改为检查真实可见目标，未改产品代码或降低焦点要求。修正后完整 30 格验证通过。新回归中的类型导入和记忆端口名错误均已修正，最终类型检查通过，未删测试。
+
+最终验证（各组有重叠，不合计成一个通过数）：
+
+| 范围 | 命令与实际结果 |
+| --- | --- |
+| 完整工作流／引擎定向组 | node --test --test-concurrency=4 'packs/workflow/**/*.test.ts' 'hub/runs/engine/**/*.test.ts'，设置 HUB_UNIT_CONCURRENCY=4 和 PG 18 工具目录；2770 通过、0 失败、0 取消、0 跳过，退出 0，约 555 秒。macOS 沙箱相关项实际运行。生产代码在这一轮保持稳定。 |
+| 最终控制台／平台／迁移组 | node --test --test-concurrency=2，文件为 hub/server/cli.test.ts、console.test.ts、console-api.test.ts、console-api-write.test.ts、console-search.test.ts、console-wording.test.ts、run-list.test.ts，console 下 member-deletion、source-archive、member-space-metadata、audience、contrast，以及 records 的 member-deletion-integrity、personal-definer-security、migrations.snapshot、lock-namespaces、password、platform 的 environment／ownership 和 refs/diagnostics。PG 18 实际设置 CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin；97 项，96 通过、1 失败、0 取消、0 跳过，退出 1。唯一失败是旧成员容量断言仍要求 48 B，第四块的精确显示已经是 48 字节；仅同步正／反两处显示断言，原数值和隐私要求不变。该文件随后 1 项通过、0 失败、0 跳过，退出 0。PG 18 备份／销毁／恢复、运行角色与所有者、definer、冻结迁移、锁、密码与诊断均已实际通过。没有把首跑 97 项写成全绿。 |
+| 最终受影响验收 | 新迁移 23 下 node --test --test-concurrency=1，逐项选取 tests/acceptance/12-*.test.ts 及 46、47、48、49、50、51、52、53、54 的同式文件；51 通过、0 失败、0 取消、0 跳过，退出 0，约 100 秒。包含真实 HTTP／MCP／同步及成员永久删除。 |
+| 类型 | node node_modules/typescript/bin/tsc --noEmit，退出 0，无诊断。环境没有 npm，使用同一 TypeScript 入口。 |
+| 合约 | node tools/gen-contracts.ts --check，179 个生成文件与模型一致，退出 0；未手改生成物。继承 410c9c44 的 labelOf／uiLabelOf 分开断言，记录“个人”与界面“私人”分别验证。 |
+| 文档 | node --test --test-concurrency=2 '.github/checks/*.test.ts'，315 通过、0 失败、0 取消、0 跳过，退出 0。追加本节实际结果后，docs.test.ts 专门组复核 249 通过、0 失败、0 跳过，退出 0。 |
+| 迁移与差异 | 直接与同步基线比较，迁移 1～18 源码完整前缀字节一致；19～22 保持已提交 SQL，仅追加 23；migrations.snapshot 包含冻结 14／15 检查并已通过。git diff --check 通过。 |
+
+最终本地实施提交（变基后）：第 1 步 54fbbdc0，第 2 步 6c0b0583，第 3 步 c2cf72e5／afde63fc，第 4 步 7af7c86d，第 5 步 142c12a3，独立复核补充 2497a478，第 6 步为本节、截图工具及文档所在提交。kw-finish-local 已基于 kw-sync-local 410c9c44；kw-finish-pre-sync 等旧基线备份仍保留。所有新增实施提交均署名，本机提交，不推送、不建 PR。
+
+跳过与未执行：上述实际执行组均 0 跳过，没有把未运行算通过。按本任务只做定向验证，未运行整套 test:unit／全量 acceptance、Linux isolation／GitHub CI、真实模型、业务系统、生产部署或持久 Hub 操作；来源归档工具与批准导入未改，verify:references／test:references 未运行。第一轮大组、测试夹具／类型／探针失误、旧显示断言及并发性能阈值失败均在本页保留实际结果和复查，没有更改生产判定、性能阈值或固定知识视图摘要来绕过失败。

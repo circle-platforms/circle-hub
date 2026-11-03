@@ -1072,3 +1072,8 @@ runner and workflow owner after projection but before this account boundary and 
 Human grant-based reads through a personal workflow also check its current owner. The initiator's own stored-run authority
 remains distinct. No frozen evaluator, internal source-reading authority, maintenance policy or B03 frozen-input rule is
 rewritten by these checks; they apply to admission and current human access, not a new interpretation of old results.
+
+Deleted owners do not invalidate exact already-frozen workflow evaluation or an existing run's genuine ordinary-upload
+declaration. This custody adds no current namespace access or new-run eligibility. MCP lease context resolves historical
+holder and registration-owner names through the generated deleted-account interface label, while stable identity keys
+and stored run bytes stay unchanged.

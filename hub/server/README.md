@@ -1129,3 +1129,14 @@ command without private names, paths or bodies; the console has no direct deleti
 operation displays waiting and recovery instructions, never a false success. Deleted identities use the generated
 account-status interface label throughout team provenance and member views, retain deletion time, and offer no reset,
 re-enable, quota or token controls. Team content and exact already-authorized frozen copies keep their original rights.
+
+Deletion follow-up checks remove tombstones from name-based member search and refuse them as new private knowledge,
+memory or pack grant targets. A new account with the same username is a separate identity. Team/member/record display,
+run inventory and MCP lease-context holder names use the generated deleted-account label; immutable source/audit records
+keep their original identity references. The migration owner function checks the actual purge manifest and counts again
+before sealing; CLI callers cannot make the deletion receipt report a different scope.
+
+Synthetic visual reproduction uses Node 24 with CHROME_BIN and console/testing-member-deletion-browser.ts. It starts an
+isolated loopback Hub and browser profile, verifies real HTTP status/content, checks keyboard focus and internal table
+scrolling, and writes five deletion states in both themes at 1440, 1024 and 390 px. It neither opens a personal browser
+profile nor touches a deployed Hub. The task page records the actual inspected matrix and checks.

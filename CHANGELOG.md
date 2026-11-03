@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Freeze all deleted-account fields and token revocation history, verify deletion manifests inside PostgreSQL, and show tombstones consistently without revival or new-grant actions.
+
 - Purge private installs and original captures with deleted members while preserving exact existing team and frozen-run holders.
 
 - Add permanent member tombstones and guarded digest-only deletion receipts over the existing personal payload purger.
