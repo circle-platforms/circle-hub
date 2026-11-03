@@ -1,13 +1,13 @@
 {
-  "comment": "合成示例，未在真实运行器上验收；实际运行以前驱串联 test-bed 预订",
+  "comment": "合成示例，未在真实运行器上验收。subject 是用 upload_file 上传本目录 case-mindmap.json 得到的 src: 引用（实际用敏捷平台的脑图时写 {\"external\": \"agile:mindmap:<文档号>\"}）；contract、inventory、profile 要先由管理员用 circle-hub doc put 发布本目录的 runtime-contract-v2.json、bed-topology.json、runtime-profile-v2.json；产品和构建换成自己的（需自备对应产品包）；实际运行以前驱串联 test-bed 预订",
   "tool": "start_run",
   "arguments": {
     "pack": "case-compile",
-    "product": "widget",
-    "build": "Fixture_Build_A",
+    "product": "<产品名称>",
+    "build": "<构建号>",
     "inputs": {
       "subject": {
-        "external": "agile:mindmap:fixture-document"
+        "reference": "src:f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942"
       },
       "contract": {
         "external": "doc:doc:fixture-runtime-contract"

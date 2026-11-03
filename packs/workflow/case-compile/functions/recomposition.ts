@@ -64,7 +64,7 @@ export function recompositionGaps(slots: PlanSlots, proof: any, manifestSha?: st
         note('重绑定账与 replacements 缺一一对应；等待编写模型提交前补账');
     for (const r of use.rebindings) {
         if (!r.authority || !r.source_of_value) {
-            note('重绑定缺 source_of_value/authority；等待编写模型和台架维护者提交前补齐');
+            note('重绑定缺 source_of_value/authority；等待编写模型和自动化测试环境维护者提交前补齐');
             continue;
         }
         if (!slots.replacements.some(p => p.case === r.from && p.bed === r.to) || r.authority !== 'src:' + manifestSha)

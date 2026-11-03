@@ -1,14 +1,16 @@
-import {analyzeStructure} from './compile-structure.ts';
+import {analyzeStructure,type StructureCase} from './compile-structure.ts';
 import {admittedRecomposition} from './recomposition.ts';
-// Project exactly one authored case and freeze the original runner contract, profile, manifest and lease view.
-// Every check recomputes from these inputs; malformed documents refuse the whole run with all problem pointers.
+// Project the automatable cases of one document (or the one case named by autoid) and freeze the original runner contract,
+// profile, manifest and lease view. Every check recomputes from these inputs; malformed documents refuse the whole run with
+// all problem pointers.
 import { isRecord, refusal, type PackWarning } from './text.ts';
 import { parseRuntimeContract } from './runtime-contract.ts';
 import { parseProfile } from './profile.ts';
 import { parseManifest } from './manifest.ts';
 import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
+import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
 import { readWorkbookModel } from './xlsx-model.ts';
-import { documentIdOf, extractCases, type CaseRule } from './cases.ts';
+import { documentIdOf, extractCases, rootDocumentId, type CaseRule } from './cases.ts';
 
 interface Slot {
   slot: string;
@@ -58,14 +60,14 @@ export function projectItems(input: unknown): unknown {
   }
   const inventorySlot = slotOf(inputs, 'inventory');
   if (inventorySlot === undefined || inventorySlot.model === null || inventorySlot.model === undefined) {
-    return refusal('no_inventory', '没有台架清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:bed-topology"}（管理员用 circle-hub doc put 发布）');
+    return refusal('no_inventory', '没有自动化测试环境清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:bed-topology"}（管理员用 circle-hub doc put 发布）');
   }
   const manifestRead = parseManifest(inventorySlot.model);
   if (!manifestRead.ok) {
     const first = manifestRead.problems[0];
     return refusal(
       'manifest_invalid',
-      `台架清单有 ${manifestRead.problems.length} 个问题，整份拒绝`,
+      `自动化测试环境清单有 ${manifestRead.problems.length} 个问题，整份拒绝`,
       first === undefined ? '按清单的形状（test-bed-manifest@1）改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
       problemWarnings('case-compile.manifest_problem', manifestRead.problems),
     );
@@ -81,23 +83,53 @@ export function projectItems(input: unknown): unknown {
   const workbook = slotOf(inputs, 'workbook');
   if (workbook) {
     if (workbook.parser !== 'xlsx@1' || typeof workbook.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(workbook.sha256) || !readWorkbookModel(workbook.model)) return refusal('workbook_input', '工作簿不是完整的 xlsx@1 绑定原件', '上传原始 xlsx，按 upload_file 返回的 src: 引用绑定，不上传自行转换的 JSON');
-    if (Buffer.byteLength(JSON.stringify(workbook.model), 'utf8') > WORKBOOK_FORMAT.max_model_bytes) return refusal('workbook_input', '单用例工作簿模型超过核验预算', '减少同一个用例内的非必要内容后重新生成，不能截断模型或拆掉要执行的行');
+    if (Buffer.byteLength(JSON.stringify(workbook.model), 'utf8') > WORKBOOK_FORMAT.max_model_bytes) return refusal('workbook_input', '工作簿模型超过核验预算', '减少用例内的非必要内容，或把脑图拆成几份分别上传、各开一次运行（也可填 autoid 一次编一条）后重新生成；不能截断模型或拆掉要执行的行');
     if (typeof parameters.plan_run !== 'string' || !/^run_[a-z0-9]+$/.test(parameters.plan_run)) return refusal('workbook_context', '缺少已满足的计划运行号 plan_run', '从已满足提交及结果复制计划运行号，以其为 predecessor 开新运行并绑定原工作簿');
   }
   const rule: CaseRule = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
   const extraction = extractCases(subject.model, rule,true);
   if (extraction.impreciseAutoids.length) return refusal('autoid_imprecise', `文档有 ${extraction.impreciseAutoids.length} 个 autoid 数值超出安全范围，JSON 解析后无法保证原编号精度`, `把原文节点 ${extraction.impreciseAutoids[0].selector ?? extraction.impreciseAutoids[0].node} 的 autoid 以文本重新导出或重新上传；不能从已舍入数值猜原编号`, extraction.impreciseAutoids.map((value) => ({ code: 'case-compile.autoid_problem', message: `${value.pointer}（节点 ${value.selector ?? value.node}）：数值精度无法保证；从原件以文本重导出或请求核心无损数字解析，不复制当前数值` })));
-  if (typeof parameters.autoid !== 'string' || !new RegExp(profileRead.profile.workbook.autoid_pattern, 'u').test(parameters.autoid)) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行');
+  // Without autoid the run takes the whole document (decision 104): every case the rule takes, that the author did not
+  // exclude and that carries an autoid of the configured shape, in document order. An autoid of another shape refuses the
+  // run instead of silently dropping its case; a case without an autoid is not compiled and is counted in the summary. With
+  // autoid, exactly that case, as before.
+  const whole = parameters.autoid === undefined, autoidShape = new RegExp(profileRead.profile.workbook.autoid_pattern, 'u');
+  if (!whole && (typeof parameters.autoid !== 'string' || !autoidShape.test(parameters.autoid))) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行；要编译整份文档就不填 autoid');
   const structure=analyzeStructure(subject.model,subject.sha256??'');
-  const selected=structure.cases.filter(c=>c.autoid===parameters.autoid&&!c.excluded.length&&(rule!=='tagged'||(isRecord((subject.model as any)?.nodes?.[c.node]?.data)&&Array.isArray((subject.model as any).nodes[c.node].data.resource)&&(subject.model as any).nodes[c.node].data.resource.length>0))).map(c=>{
-    const raw=(subject.model as any).nodes[c.node],data=raw.data??{},old=extraction.cases.find(v=>v.selector===c.selector||v.id===c.id);
+  const nodeAt=(index:number):any=>(subject.model as any)?.nodes?.[index];
+  const ruled=structure.cases.filter(c=>!c.excluded.length&&(rule!=='tagged'||(isRecord(nodeAt(c.node)?.data)&&Array.isArray(nodeAt(c.node).data.resource)&&nodeAt(c.node).data.resource.length>0)));
+  const authoredAutoid=(index:number):unknown=>isRecord(nodeAt(index)?.data)?nodeAt(index).data.autoid:undefined;
+  const unnumbered=new Set(ruled.filter(c=>{const value=authoredAutoid(c.node);return value===undefined||value===null||value==='';}));
+  if (whole) {
+    const malformed=ruled.filter(c=>!unnumbered.has(c)&&!(c.autoid!==null&&autoidShape.test(c.autoid)));
+    const shown=(c:StructureCase)=>{const value=authoredAutoid(c.node);const text=JSON.stringify(typeof value==='string'&&value.length>64?value.slice(0,64)+'…':value)??String(value);return `${c.selector||'（无选择器）'} ${text.slice(0,80)}`;};
+    if (malformed.length) return refusal('autoid_invalid', `整份文档有 ${malformed.length} 个用例的 autoid 不符合配置形状 ${profileRead.profile.workbook.autoid_pattern}：${malformed.slice(0,10).map(shown).join('、')}${malformed.length>10?` 等 ${malformed.length} 个`:''}`, '作者改正或删去这些 autoid 后重新上传文档，再开始新运行（没有 autoid 的用例不编译）；或填 parameters.autoid 只编一条');
+  }
+  const parents=new Map<number,number>();for(const [index,node] of ((subject.model as any)?.nodes??[]).entries())for(const child of Array.isArray(node?.children)?node.children:[])if(typeof child==='number'&&!parents.has(child))parents.set(child,index);
+  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid):c.autoid===parameters.autoid).map(c=>{
+    // The earlier extraction of the same node, by selector: a pasted case keeps the node id of the case it was copied from,
+    // the parser then addresses both by position, so only the selector names one node. A model without selectors falls
+    // back to a node id that names exactly one case.
+    const raw=(subject.model as any).nodes[c.node],data=raw.data??{},old=c.selector?extraction.cases.find(v=>v.selector===c.selector):extraction.cases.filter(v=>v.id===c.id).length===1?extraction.cases.find(v=>v.id===c.id):undefined;
     const expectedNodes=[...new Set(c.atoms.filter(a=>a.kind==='expectation').map(a=>a.selector))].map(selector=>{const n=(subject.model as any).nodes.find((n:any)=>n.selector===selector);return {text:n?.text??c.atoms.find(a=>a.selector===selector)?.text??'',selector:n?selector:null,...(n?.data?.assertion!==undefined?{declaration:n.data.assertion}:{})};});
-    return {...(old??{id:c.id,title:raw.text,tags:Array.isArray(data.resource)?data.resource:[],priority:data.priority===undefined?null:String(data.priority),autoid:c.autoid,auto:data.auto===undefined?null:String(data.auto),negative:data.negative===true,selector:c.selector}),steps:c.atoms.filter(a=>a.kind==='action').map(a=>({text:a.text,expected:c.atoms.filter(e=>e.kind==='expectation'&&e.after.includes(a.id)).map(e=>e.text)})),expected:c.atoms.filter(a=>a.kind==='expectation'&&!a.after.length).map(a=>a.text),expected_nodes:expectedNodes,projection_unknowns:c.missing,source_atoms:c.atoms};
+    // The case's place in the mind map (issue #144): the texts of the nodes from the root to the case, verbatim, along the
+    // same children links the extraction walks. The workbook shows them joined on the case's first row for reviewers.
+    const path:string[]=[];for(let at:number|undefined=c.node,guard=0;at!==undefined&&guard<=parents.size;guard++){const n=nodeAt(at);path.unshift(isRecord(n)&&typeof n.text==='string'?n.text:'');at=parents.get(at);}
+    return {path,...(old??{id:c.id,title:raw.text,tags:Array.isArray(data.resource)?data.resource:[],priority:data.priority===undefined?null:String(data.priority),autoid:c.autoid,auto:data.auto===undefined?null:String(data.auto),negative:data.negative===true,selector:c.selector}),steps:c.atoms.filter(a=>a.kind==='action').map(a=>({text:a.text,expected:c.atoms.filter(e=>e.kind==='expectation'&&e.after.includes(a.id)).map(e=>e.text)})),expected:c.atoms.filter(a=>a.kind==='expectation'&&!a.after.length).map(a=>a.text),expected_nodes:expectedNodes,projection_unknowns:c.missing,source_atoms:c.atoms};
   });
-  if (selected.length === 0) return refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
-  if (selected.length > 1) return refusal('autoid_ambiguous', '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
+  if (selected.length === 0) return whole ? refusal('autoid_not_found', `整份文档里按规则取不到带文字 autoid 的自动化用例（${unnumbered.size} 个用例没有 autoid）`, '核对用例文档和 case_rule：自动化用例要有文字 autoid 且没有声明不自动化') : refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
+  if (new Set(selected.map((value) => value.autoid)).size !== selected.length) return refusal('autoid_ambiguous', whole ? '整份文档里有重复的 autoid，工作簿和派发结果无法一一对应用例' : '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
+  // One run is one workbook and one dispatch, so the dispatch policy's item cap bounds the cases at the start, not after the
+  // plans, the workbook and the verification are done.
+  if (selected.length > DISPATCH.max_items) return refusal('too_many_cases', `文档选出 ${selected.length} 个自动化用例，超过一次派发最多 ${DISPATCH.max_items} 个（派发政策 max_items）`, `把脑图拆成几份、每份至多 ${DISPATCH.max_items} 个自动化用例，分别上传并各开一次运行；或填 parameters.autoid 一次只编一条`);
   const model = isRecord(subject.model) ? subject.model : {};
-  const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, extraction.cases[0]?.id ?? null);
+  // An item id is <document>:<node id> when that id names one node of the document; a repeated node id takes the node's
+  // selector instead, which names one node.
+  const nodeIdCount = new Map<string, number>();
+  for (const node of Array.isArray(model.nodes) ? model.nodes : []) if (isRecord(node) && isRecord(node.data) && typeof node.data.id === 'string' && node.data.id !== '') nodeIdCount.set(node.data.id, (nodeIdCount.get(node.data.id) ?? 0) + 1);
+  // Since 3.9.17 a mind map without an agile document id is named by its root node (rootDocumentId), no longer by its first
+  // case's node id. Runs started earlier keep the item ids recorded with them; only new runs use this rule.
+  const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, rootDocumentId(subject.model));
   const warnings: PackWarning[] = [];
   if (extraction.cases.length === 0) warnings.push({ code: 'case-compile.no_cases', message: `文档 ${documentId} 里按规则取不到用例（${extraction.ruleSummary}）` });
   if (extraction.candidates > 0) warnings.push({ code: 'case-compile.candidate_only', message: `${extraction.candidates} 个节点只靠标记识别，case_rule 为 tagged 时不是用例（要取用请加标签，或改用默认规则）` });
@@ -105,9 +137,10 @@ export function projectItems(input: unknown): unknown {
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const recompositionRun=slotOf(inputs,'recomposition_run'),recompositionResult=slotOf(inputs,'recomposition_result');
   const recompositionRequested=!!recompositionRun||!!recompositionResult||parameters.pipeline==='recomposed';
+  if (recompositionRequested && selected.length > 1) return refusal('invalid_parameter', '整份文档编译不接受单个用例的重组阶段凭证', '不带重组输入开运行，或填 autoid 逐条走重组流水线');
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const items = selected.map((found) => ({
-    id: `${documentId}:${found.id}`,
+    id: `${documentId}:${(nodeIdCount.get(found.id) ?? 0) > 1 && found.selector ? found.selector : found.id}`,
     label: found.title.slice(0, MAX_TITLE),
     summary: `${found.steps.length} 步；${found.expected.length + found.steps.reduce((n, step) => n + step.expected.length, 0)} 个期望结果${found.negative ? '；反向用例' : ''}`,
     location: { slot: 'subject', source: sha256, parser: 'kityminder@1', selector: found.selector ?? '' },
@@ -124,6 +157,7 @@ export function projectItems(input: unknown): unknown {
       projection_unknowns:found.projection_unknowns,
       source_atoms:found.source_atoms,
       title: found.title,
+      path: found.path,
       tags: found.tags,
       priority: found.priority,
       autoid: found.autoid,
@@ -135,7 +169,28 @@ export function projectItems(input: unknown): unknown {
       marked_only: extraction.markedOnly,
     },
   }));
-  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
+  // A workbook of several cases is verified against every case's accepted plan: freeze them from the plan run's accepted
+  // validation record (plan_result, bound by the Hub from the plan run id), in item order.
+  let planSet: unknown[] | null = null;
+  const planResult = slotOf(inputs, 'plan_result');
+  if (workbook && (planResult || items.length > 1)) {
+    const accepted = planResult && isRecord(planResult.meta) && planResult.meta.kind === 'validation_result' && typeof planResult.meta.record === 'string' && planResult.external === null && isRecord(planResult.model) && planResult.model.kind === 'validation_result' && isRecord(planResult.model.body) ? planResult.model.body : null;
+    if (!accepted || accepted.schema !== 'validation@1' || accepted.acceptance !== 'accepted' || accepted.run !== parameters.plan_run || !isRecord(accepted.locks) || accepted.locks.pack !== WORKBOOK_FORMAT.generator || !isRecord(accepted.partitions) || !Array.isArray(accepted.partitions.delivered)) return refusal('workbook_context', '整份文档的工作簿要按计划运行受理的全部计划核验，缺可用的 plan_result', '在 inputs.plan_result 写计划运行号（与 plan_run 相同，Hub 换成它最近一次受理的结果），以同版包的计划运行为前驱重开核验运行');
+    planSet = [];
+    for (const item of items) {
+      const delivered = (accepted.partitions.delivered as unknown[]).filter((row) => isRecord(row) && row.item === item.id);
+      const requirement = (key: string) => { const row = delivered.length === 1 && isRecord(delivered[0]) && Array.isArray(delivered[0].requirements) ? (delivered[0].requirements as unknown[]).find((value) => isRecord(value) && value.requirement === key) : undefined; return isRecord(row) && row.status === 'satisfied' && Array.isArray(row.claims) ? row.claims.filter((claim: unknown) => isRecord(claim) && isRecord(claim.statement)) : []; };
+      // The plan is the model's accepted judgment (its claim carries the plan slot's data and no rule verdict); the catalog
+      // receipt is the commands_known rule verdict that supports with the catalog.
+      const plans = requirement('plan').filter((claim: any) => isRecord(claim.statement.data) && claim.statement.verdict === undefined);
+      const catalogs = requirement('commands_known').filter((claim: any) => claim.statement.verdict === 'support' && isRecord(claim.statement.data) && Object.hasOwn(claim.statement.data, 'command_catalog'));
+      if (plans.length !== 1 || catalogs.length !== 1) return refusal('workbook_context', `计划运行没有受理用例 ${item.fields.autoid} 的唯一计划和命令目录回执`, '先在计划运行里让每个用例的计划要求项都满足并被受理，再按其运行号绑定 plan_result');
+      const data = (catalogs[0] as any).statement.data;
+      planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, path: item.fields.path, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
+    }
+  }
+  const skipped = whole && unnumbered.size > 0 ? `；另有 ${unnumbered.size} 个用例没有 autoid，不编译（要编译请作者补 autoid 后重新上传）` : '';
+  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）${skipped}。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
   return {
     items,
     groups: [
@@ -151,6 +206,7 @@ export function projectItems(input: unknown): unknown {
         manifest_sha256: typeof inventorySlot.sha256 === 'string' ? inventorySlot.sha256 : '',
         workbook: workbook ? { model: workbook.model, sha256: workbook.sha256, source: `src:${workbook.sha256}` } : null,
         generation: { plan_run: parameters.plan_run ?? null, build: context.build ?? null, generator: WORKBOOK_FORMAT.generator },
+        plan_set: planSet,
         leases: { now: typeof frozenLeases.now === 'string' ? frozenLeases.now : new Date(0).toISOString(), entries: Array.isArray(frozenLeases.entries) ? frozenLeases.entries : [] },
         case_rule: rule,
         marked_only: extraction.markedOnly,

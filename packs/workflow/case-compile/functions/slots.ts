@@ -20,7 +20,7 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
     for (const key of Object.keys(raw)) if (!allowed.includes(key)) issue(`${at}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；按 slots.schema.json 删除');
   };
   keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities','recomposition'], '');
-  if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是台架名');
+  if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是自动化测试环境名');
   if (!Array.isArray(value.blocks) || value.blocks.length) issue('/blocks', '本轮 blocks 必须是空数组');
   if(Object.hasOwn(value,'recomposition')&&!schema(SLOT_TABLE.item.plan.data.properties.recomposition).safeParse(value.recomposition).success)issue('/recomposition','重组消费形状不符合声明');
   const steps: PlanStep[] = [];

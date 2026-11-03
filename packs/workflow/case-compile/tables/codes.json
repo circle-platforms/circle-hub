@@ -45,7 +45,7 @@
     },
     {
       "code": "case-compile.bed_unknown",
-      "when": "bucket 不是配置选定的清单台架",
+      "when": "bucket 不是配置选定的清单自动化测试环境",
       "fix": "bucket 写配置的 bed"
     },
     {
@@ -152,12 +152,12 @@
     },
     {
       "code": "case-compile.no_inventory",
-      "when": "没有台架清单",
-      "fix": "绑定发布的台架清单"
+      "when": "没有自动化测试环境清单",
+      "fix": "绑定发布的自动化测试环境清单"
     },
     {
       "code": "case-compile.manifest_invalid",
-      "when": "台架清单不合式",
+      "when": "自动化测试环境清单不合式",
       "fix": "按指针修正清单并重新发布"
     },
     {
@@ -177,8 +177,8 @@
     },
     {
       "code": "case-compile.autoid_invalid",
-      "when": "autoid 不是配置要求的原始文字",
-      "fix": "复制完整原始 autoid 字符串"
+      "when": "autoid 不是配置要求的原始文字；整份文档编译时任一用例的 autoid 不符合配置形状",
+      "fix": "复制完整原始 autoid 字符串；整份文档时作者改正或删去所列用例的 autoid 后重新上传，或填 autoid 只编一条"
     },
     {
       "code": "case-compile.autoid_not_found",
@@ -202,13 +202,18 @@
     },
     {
       "code": "case-compile.workbook_input",
-      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过单用例核验预算",
-      "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少该用例的非必要内容后重新生成，不截断模型或删除执行行"
+      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过核验预算",
+      "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少用例的非必要内容，或把脑图拆成几份分别上传、各开一次运行后重新生成，不截断模型或删除执行行"
     },
     {
       "code": "case-compile.workbook_context",
-      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run",
+      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run；多于一个用例时缺计划运行的已受理结果 plan_result，或它没有受理每个用例的唯一计划和命令目录回执",
       "fix": "从已满足的计划提交与结果复制运行号，以其为 predecessor，填写相同 plan_run 并开始绑定原件的新核验运行"
+    },
+    {
+      "code": "case-compile.too_many_cases",
+      "when": "文档选出的自动化用例超过派发政策 policies/dispatch.json 的 max_items（一次派发的用例上限）",
+      "fix": "把脑图拆成几份、每份不超过上限，分别上传并各开一次运行；或填 autoid 一次只编一条"
     }
   ],
   "warnings": [
@@ -229,7 +234,7 @@
     },
     {
       "code": "case-compile.manifest_problem",
-      "when": "台架清单逐条问题",
+      "when": "自动化测试环境清单逐条问题",
       "fix": "按指针处理"
     },
     {
