@@ -1063,3 +1063,8 @@ bodies per batch, and batches their exact capture metadata separately. Deduplica
 removal and re-addition still counts each admitted delta. Root metadata, memory history and integrity refusals retain
 their original rules; stored cumulative counters remain untrusted. This keeps sync-state and console capacity reads
 from issuing one query per historical version, without holding every historical entry body in one new live batch.
+
+Team knowledge and memory use the same verified historical capacity ledger as personal spaces. Team versions are no
+longer omitted: added entry registrations and exact capture sizes are charged along with version metadata and memory
+history, using bounded batches rather than trusting cumulative counters. Quota records accept the existing team space
+identifier as well as account ids. This change adds no tables, migration, runtime grants or mutable ledger authority.

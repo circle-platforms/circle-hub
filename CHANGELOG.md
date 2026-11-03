@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Bound retained team knowledge and memory with administrator quotas that survive personal purge and reuse member capacity controls.
+
 - Release sync write admission when a peer disconnects before body reading, and replay legacy document runs across their actual upgrade boundary.
 
 - Serialize team sharing with private ground owners before copying their originals.

@@ -1494,3 +1494,14 @@ Team sharing freezes the readable private ground owners before copying. Private 
 then the team space lock is acquired, preserving the private-before-team order used by memory sharing. Account row locks
 cover both submitter and dependency owners; the full inspection runs afterward. A changed candidate that introduces an
 unlocked owner refuses this attempt. Unrelated equal-byte private captures never enter the lock set or confer authority.
+
+### Retained team-space capacity
+
+The team space defaults to 10 GiB under the coordinator's implementation authorization, pending the owner's default
+confirmation. Administrators adjust it through the same quota record and console control used for member capacity.
+Knowledge, captured originals, space-version metadata and memory history share the verified retained-history ledger;
+external product mounts and workflow executable files are outside this charge. Every team revision, share and admin
+import checks the quota under the team-space lock, with sharing preflight before original-byte promotion. Personal
+removal, purge and a fresh sync epoch never credit retained team copies. Lowering a quota preserves existing data and
+refuses new charge until capacity is available. Only administrators may read or adjust team totals; member refusals
+use the existing capacity code and team wording without disclosing numeric usage.

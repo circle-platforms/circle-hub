@@ -1189,3 +1189,11 @@ The named-document regression creates its legacy-shaped private runs in an empty
 applies every remaining migration. It still refuses the old personal run, including one owned by an administrator,
 for an administrator-only named document. Inserting that missing-package shape after upgrade is also required to fail;
 the frozen-package trigger and all reviewed migrations stay unchanged.
+
+### Administrator team-space capacity
+
+The team Inspector shows retained team usage only to administrators and reuses the member capacity Dialog, exact
+MB/GB conversion, CSRF checks and quota action. The team header exposes an Inspector link so the control remains
+reachable when narrow layouts hide the default Inspector. Lowering the limit keeps existing data; later writes can
+retry after an administrator increases capacity. Member views expose neither the control nor team numeric usage,
+and the same restriction is enforced on service reads, writes and capacity-error details.

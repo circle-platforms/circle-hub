@@ -11,7 +11,7 @@ export function safeBytes(value:bigint):number{if(value<0n||value>BigInt(Number.
 function added(current:readonly string[],previous:readonly string[]){const counts=new Map<string,number>();for(const id of previous)counts.set(id,(counts.get(id)??0)+1);return current.filter(id=>{const count=counts.get(id)??0;if(count){counts.set(id,count-1);return false;}return true;});}
 function invalid():never{throw new IntegrityError('容量计费记录不完整，须恢复完整记录后重新核对');}
 export async function historyUsage(store:RecordStore,space:string,tx?:Transaction):Promise<CapacityHistory>{
- const versions=await (space==='team'?Promise.resolve([]):store.findMany({kind:'knowledge_space_version',key:'knowledge.space.version',values:[space]},tx));
+ const versions=await store.findMany({kind:'knowledge_space_version',key:'knowledge.space.version',values:[space]},tx);
  const documents=await store.findMany({kind:'memory_document',key:'memory.document.space',values:[space]},tx);
  const memories=await store.findMany({kind:'memory_version',key:'memory.version.space',values:[space]},tx);
  let knowledge=0n,memory=0n;

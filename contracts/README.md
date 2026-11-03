@@ -523,3 +523,11 @@ Decision 91 block-5 display polish (Claude, 2026-11-03) sets model 32. account_s
 “已删除”; the separate generated account_display_name.deleted_member supplies the identity placeholder “已删除的成员”.
 The two terms are tested independently. No stored record shape, permission, rejection code or migration changes. Four
 skill protocol mirrors are byte-identical because this revision changes only display vocabulary; no skill version bump.
+
+
+PR #139's phase-5 review follow-up (Claude, 2026-11-03) sets model 33. The existing quota shape accepts SpaceId,
+including team, without a new record kind or migration. Team history uses the same verified-record accounting, defaults
+to 10 GiB as directed by Claude pending the owner's final default confirmation, and shares the existing admin control.
+The capacity refusal code now names space generically; team refusals use team wording, with optional space=team in the
+existing numeric capacity detail for admins only. Members receive no team totals. Generated protocol mirrors and their
+four patch manifests change together; no skill business code changes.

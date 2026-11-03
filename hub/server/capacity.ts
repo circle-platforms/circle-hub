@@ -1,5 +1,6 @@
 // One presentation and exact unit conversion for console, MCP and CLI capacity messages.
 import {CapacityUnitSchema,uiLabelOf,type CapacityUnit} from '../../contracts/generated/vocabulary.ts';
+import type {SpaceId} from '../../contracts/src/spaces.ts';
 import {KnowledgeError,type CapacityUsage} from '../knowledge/api.ts';
 export const inputCapacityUnits=CapacityUnitSchema.extract(['mb','gb']);
 export const unitBytes=(unit:CapacityUnit)=>unit==='gb'?1073741824n:unit==='mb'?1048576n:1024n;
@@ -21,12 +22,13 @@ export function capacityInput(bytes:number){
  while(remainder){remainder*=10n;fraction+=String(remainder/factor);remainder%=factor;}
  return {amount:String(value/factor)+(fraction?'.'+fraction:''),unit};
 }
-export function capacityFailure(error:unknown):(CapacityUsage&{requested:number})|null{
+export function capacityFailure(error:unknown):(CapacityUsage&{requested:number;space?:SpaceId})|null{
  if(!(error instanceof KnowledgeError)||error.code!=='SPACE_CAPACITY_EXCEEDED')return null;const facts=error.detail.capacity;
  if(!facts||typeof facts!=='object')return null;const data=facts as Record<string,unknown>;
  const required:Record<keyof(CapacityUsage&{requested:number}),0>={used:0,limit:0,remaining:0,over:0,requested:0,knowledge:0,memory:0};
  for(const key of Object.keys(required))if(typeof data[key]!=='number'||!Number.isSafeInteger(data[key])||Number(data[key])<0)return null;
- return data as unknown as CapacityUsage&{requested:number};
+ if(data.space!==undefined&&data.space!=='team')return null;
+ return data as unknown as CapacityUsage&{requested:number;space?:SpaceId};
 }
 export function knowledgeMessage(error:KnowledgeError):string{
  const facts=capacityFailure(error);if(!facts)return error.message;

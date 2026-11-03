@@ -243,7 +243,7 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
       throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
     let bytes:number;try{bytes=parseCapacity(get('amount'),get('unit'));}catch(error){throw new KnowledgeError(error instanceof Error?error.message:'容量格式不正确',{code:'SPACE_ENTRY_INVALID'});}
     await spaces.setCapacity(ctx.principal, get('space'), bytes);
-    return '/console/team/' + encodeURIComponent(get('space'));
+    return get('space')==='team'?'/console/team':'/console/team/' + encodeURIComponent(get('space'));
   }
   else
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });

@@ -83,6 +83,12 @@ try {
         const body=await evaluate('document.body.innerText');assert.match(body,expected);assert.doesNotMatch(body,/该内容不存在或无权查看|Hub 内部错误|请求参数不对|登录控制台/);
         assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false,name+' horizontal overflow '+width+' '+theme);
         assert.deepEqual(wordingProblems(await evaluate('document.documentElement.outerHTML')),[],name);
+        if(name==='team-capacity-dialog'){
+          assert.equal(await evaluate("document.querySelector('#adjust-team-capacity').matches(':target')"),true);
+          assert.equal(await evaluate("document.querySelector('#adjust-team-capacity [name=space]').value"),'team');
+          assert.equal(await evaluate("document.querySelector('#adjust-team-capacity [name=unit]').value"),'gb');
+          assert.equal(await evaluate("document.querySelector('#adjust-team-capacity [name=amount]').value"),'10');
+        }
         if(name==='deletion-preview'){
           assert.match(await evaluate("document.querySelector('#delete-member-confirm pre').textContent"),/--expected-state=/);
           assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源署名','归档的原文','私人工作流与技能']);
@@ -107,6 +113,10 @@ try {
     await cdp('Page.enable');await cdp('Page.setLifecycleEventsEnabled',{enabled:true});await cdp('Runtime.enable');await cdp('Network.enable');await cdp('Network.setCookie',{name:'circle_hub_session',value:owner.sessionCookie,url:hub.url});
     const text=Buffer.from('合成团队保留原文，精确署名。'),file=await spaces.importFile(user.principal,text,'text/plain','合成私人原件.txt'),source=(await hub.records.store.findMany<any>({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[file.body.sha256]})).find(row=>row.body.artifact===file.digest)!;
     await spaces.attributeSource(user.principal,source.digest,file.digest);const entry=await spaces.write(user.principal,{kind:'observation',statement:'合成团队独立保留条目',grounds:[{reference:'src:'+file.body.sha256,quotation:'精确署名'}]}),shared=await spaces.share(user.principal,{root:entry.root,path:'/',entry:entry.entry});assert.ok(shared.team_root);
+    if(process.argv.includes('--team-capacity-only')){
+      await capture('team-capacity',hub.url+'/console/team?capacity=team',/团队空间容量/);
+      await capture('team-capacity-dialog',hub.url+'/console/team?capacity=team#adjust-team-capacity',/调整团队容量/);
+    }else{
     const member=hub.url+'/console/team/'+user.user.id;
     await capture('deletion-preview',member+'?deletion=preview#delete-member-confirm',/确认永久删除成员/);
     await capture('deletion-refused',hub.url+'/console/team/'+hub.admin.user.id+'?deletion=preview#delete-member-confirm',/至少须保留一名启用的管理员/);
@@ -118,6 +128,7 @@ try {
     await capture('deletion-complete',member,/私人内容已清除/);
     await capture('team-list',hub.url+'/console/team',/已删除的成员/);
     await capture('team-tombstone',hub.url+'/console/knowledge/space?'+new URLSearchParams({space:'team',root:shared.team_root,path:'/',entry:entry.entry}),/已删除的成员/);
+    }
     assert.deepEqual(errors,[]);assert.ok(assetResponses.some(asset=>asset.path.endsWith('.css')&&asset.status===200&&asset.type==='text/css'));assert.ok(assetResponses.every(asset=>asset.status===200||asset.status===304));await writeFile(join(dir,'result.json'),JSON.stringify({matrix,checks,errors,assetResponses,nonceResponses:seenNonces.size},null,2));
     await writeFile(join(dir,'index.html'),'<!doctype html><meta charset="utf-8"><title>合成删除页面核对</title><style>body{font-family:sans-serif}img{max-width:100%;border:1px solid gray}section{margin:30px 0}</style>'+matrix.map(item=>{const file=item.name+'-'+item.theme+'-'+item.width+'.png';return '<section><h2>'+file+'</h2><img src="'+file+'"></section>';}).join(''));
     console.log(JSON.stringify({dir,images:matrix.length,checks},null,2));
