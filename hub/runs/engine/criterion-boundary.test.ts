@@ -16,6 +16,17 @@ test('non-expected role refuses only that declaration and does not mask other ex
  assert.equal(out.errors.length,0);assert.equal(out.refused[0]?.code,'core.criterion.source_role_mismatch');assert.deepEqual(out.accepted.map(value=>value.index),[1]);
  const bad=await resolveCriterionChanges(resolver,[{id:'one'}],[{...criterion,criterion:subject,grounds:[{reference:expected,quote:'不逐字'}]}]);assert.equal(bad.errors[0]?.code,'QUOTE_MISMATCH');
 });
+test('a ground may quote the subject original with its role carried (A03 R[3]); other roles are refused at their own pointer',async()=>{
+ const hint='src:'+'d'.repeat(64)+'/text@1/l/1';
+ const roles:Resolver={...resolver,resolve:async reference=>({ok:true,value:{reference,text:'旧判据；依据',role:reference===subject?'subject':reference===hint?'hint':'expected',source:'a'.repeat(64),digest:'a'.repeat(64)}})};
+ const quoted=await resolveCriterionChanges(roles,[{id:'one'}],[{...criterion,grounds:[{reference:expected,quote:'依据'},{reference:subject,quote:'依据'}]}]);
+ assert.equal(quoted.refused.length,0,JSON.stringify(quoted.refused));assert.deepEqual(quoted.accepted[0]?.ground_roles,['expected','subject']);
+ const hinted=await resolveCriterionChanges(roles,[{id:'one'}],[{...criterion,grounds:[{reference:expected,quote:'依据'},{reference:hint,quote:'依据'}]}]);
+ assert.equal(hinted.accepted.length,0);assert.equal(hinted.refused[0]?.code,'core.criterion.source_role_mismatch');
+ assert.equal(hinted.refused[0]?.path,'/criterion_changes/0/grounds/1/reference');assert.match(hinted.refused[0]?.message??'',/依据第 2 条的来源角色是线索/);
+ const judged=await resolveCriterionChanges(roles,[{id:'one'}],[{...criterion,criterion:subject}]);
+ assert.equal(judged.refused[0]?.path,'/criterion_changes/0/criterion');assert.match(judged.refused[0]?.message??'',/判据只能取期望来源的片段（A03 R\[0\]）/);
+});
 test('unknown items and canonical duplicate criterion locations are whole-submission schema problems',async()=>{
  const unknown=await resolveCriterionChanges(resolver,[],[criterion]);assert.equal(unknown.errors[0]?.code,'SUBMISSION_SCHEMA_VIOLATION');
  const duplicate=await resolveCriterionChanges(resolver,[{id:'one'}],[criterion,criterion]);assert.equal(duplicate.errors[0]?.path,'/criterion_changes/1/criterion');

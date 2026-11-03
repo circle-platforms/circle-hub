@@ -6,12 +6,12 @@ import { requirementSummary } from './start.ts';
 import { parseDeclarations } from '../packs/load.ts';
 import { packSummary } from '../packs/ports.ts';
 import { bytesOf, editJson, withFiles, workflowPack } from '../packs/testing/builder.ts';
-import type { PackVersionInfo } from '../packs/types.ts';
+import type { PackManifest } from '../../../contracts/src/pack.ts';
 import type { RequirementTemplate } from '../../../contracts/src/pack.ts';
 import { RequirementSummary } from '../../../contracts/src/run.ts';
 import { terminalLabel } from '../../server/claims.ts';
 
-const dynamic: RequirementTemplate = { key: 'bed_run', name: '合成台架运行', description: '合成', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['dynamic'], accepted_producer: 'fact', checks: [], error_handling: [], observation: 'dispatch@1' };
+const dynamic: RequirementTemplate = { key: 'bed_run', name: '合成自动化测试环境运行', description: '合成', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['dynamic'], accepted_producer: 'fact', checks: [], error_handling: [], observation: 'dispatch@1' };
 /** The shape `dispatchCountOf` reads: which requirements a row releases, and the rounds it writes. */
 const row = (repetition?: number): { release: { requirements: string[] }; repetition?: number } => ({
   release: { requirements: ['bed_run'] },
@@ -61,7 +61,7 @@ test('the pack listing and the frozen run carry the same policy', () => {
   const declarations = parseDeclarations('workflow', new Map(Object.entries(pack.files).map(([path, content]) => [path, bytesOf(content)])));
   assert.equal(declarations.kind, 'workflow');
   if (declarations.kind !== 'workflow') return;
-  const info = { id: 'synthetic', version: '10.6.0', kind: 'workflow', title: '合成', description: '合成' } as PackVersionInfo;
+  const info = { id: 'synthetic', version: '10.6.0', kind: 'workflow' as const, title: '合成', description: '合成', digest: 'a'.repeat(64), manifest: { schema: 'pack@1', id: 'synthetic', version: '10.6.0', kind: 'workflow' as const, title: '合成', description: '合成', files: [] } satisfies PackManifest };
   const listed = packSummary(info, declarations, []);
   const started = declarations.requirements.requirements.map((t) => requirementSummary(t, declarations.ledger, declarations.checks.checks, 'synthetic@10.6.0', { workClass: declarations.workflow.work_class, effects: declarations.requirements.effects ?? [] }));
   // One projection, two callers: the frozen policy is the same in both. (The two summaries still differ on `observation`,
@@ -77,7 +77,7 @@ test('a work class declared by the workflow reaches both summaries as its defaul
   const declarations = parseDeclarations('workflow', new Map(Object.entries(pack.files).map(([path, content]) => [path, bytesOf(content)])));
   assert.equal(declarations.kind, 'workflow');
   if (declarations.kind !== 'workflow') return;
-  const info = { id: 'synthetic', version: '10.6.0', kind: 'workflow', title: '合成', description: '合成' } as PackVersionInfo;
+  const info = { id: 'synthetic', version: '10.6.0', kind: 'workflow' as const, title: '合成', description: '合成', digest: 'a'.repeat(64), manifest: { schema: 'pack@1', id: 'synthetic', version: '10.6.0', kind: 'workflow' as const, title: '合成', description: '合成', files: [] } satisfies PackManifest };
   const listed = packSummary(info, declarations, []);
   const started = declarations.requirements.requirements.map((t) => requirementSummary(t, declarations.ledger, declarations.checks.checks, 'synthetic@10.6.0', { workClass: declarations.workflow.work_class, effects: declarations.requirements.effects ?? [] }));
   assert.deepEqual(listed.requirements, started);

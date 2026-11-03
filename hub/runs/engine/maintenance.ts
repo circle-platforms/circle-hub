@@ -3,7 +3,6 @@ import {ENGINE_COMPONENT} from './deps.ts';
 import { abandonDecision,finishAbandon } from './management.ts';
 import { canSeeRun } from './readers.ts';
 import { recheckProduction } from './start.ts';
-import { isUnsettled } from './terminals.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { parseReference } from '../../refs/api.ts';
 import { submitResult, roundsUsedOf } from './submit.ts';
@@ -15,19 +14,84 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
-import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
-import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests } from './requests.ts';
+import { INDEX, latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
+import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody } from './requests.ts';
+import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
 
-export async function maintainRuns(ctx:EngineContext):Promise<void>{
+/**
+ * One maintenance pass. `stop` is asked between runs and between the request sweeps: a pass asked to stop (the service is
+ * shutting down) returns there, and what it did not reach is done by the next pass, since every step is idempotent.
+ */
+export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false,memory?:MaintenanceMemory):Promise<void>{
+  const ctx=passContext(base);
+  const started=ctx.now().getTime();
+  const store=ctx.deps.records.store;
+  // A pass with memory visits only the runs something happened to; without one, or when it cannot tell, it visits every run.
+  const full=memory===undefined||memory.fullAt===null||started-memory.fullAt>=FULL_PASS_MS||!store.lastPositions||ctx.deps.dispatch!==undefined&&!ctx.deps.dispatch.runs;
+  // The jobs of the dispatched runs: their events count as the run's records (they are indexed by job, not by run).
+  const dispatched=memory&&store.lastPositions?await ctx.deps.dispatch?.runs?.()??new Map<string,readonly string[]>():null;
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await legacyResultRequests(ctx,run);await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    // Read on full passes too, so that the memory a full pass leaves lets the next pass skip what did not change.
+    const watched=(run:StoredRecord<RunRecord>)=>[run.body.run,...(run.body.predecessor?[run.body.predecessor]:[]),...(dispatched?.get(run.body.run)??[])];
+    const positions=dispatched===null?null:await store.lastPositions!({keys:RUN_KEYS,values:[...new Set(page.items.flatMap(watched))]});
+    for(const run of page.items){if(stop())return;
+      // The run's own records, its predecessor's (a successor answers the predecessor's requests) and its jobs' events.
+      const position=positions===null?0:Math.max(0,...watched(run).map(value=>positions.get(value)??0));
+      if(memory&&!full&&positions!==null&&unchanged(memory,run.body,position,started))continue;
+      memory?.runs.set(run.body.run,{position,at:started});
+      const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
+  if(memory&&full)memory.fullAt=started;
+  if(stop())return;
   await repairedPackRequests(ctx);
+  if(stop())return;
   await acceptedSourceRequests(ctx);
+  if(stop())return;
   await escalateOverdueRequests(ctx);
+}
+/**
+ * What scheduled passes remember: per run, the newest append position among its records (its predecessor's and its
+ * dispatch jobs' events included) when a pass last visited it, and when. A pass then visits a run only when that position
+ * moved or its submission deadline passed since.
+ */
+export interface MaintenanceMemory {
+  runs: Map<string, { position: number; at: number }>;
+  /** When the last pass that visited every run started (null: none yet). */
+  fullAt: number | null;
+}
+/**
+ * How often a scheduled pass visits every run anyway: for what no record of the run shows, such as a moved knowledge root or
+ * a disabled account. The first pass after a start always visits every run.
+ */
+export const FULL_PASS_MS = 30 * 60 * 1000;
+/** The index keys whose value is a run id (its actions, submissions, results, requests, successor runs) or a job id. */
+const RUN_KEYS = [INDEX.actionRun, INDEX.submissionRun, INDEX.resultRun, INDEX.runPredecessor, 'runs.request.run', 'dispatch.job'];
+function unchanged(memory:MaintenanceMemory,run:RunRecord,position:number,now:number):boolean{
+  const seen=memory.runs.get(run.run);
+  if(!seen||seen.position!==position)return false;
+  const due=run.submission_due?Date.parse(run.submission_due):Number.NaN;
+  // A deadline that passed since the last visit is work no record shows yet.
+  return !(Number.isFinite(due)&&seen.at<due&&due<=now);
+}
+/**
+ * The pass reads the account list once: every step looks up the named administrator, and on a store with hundreds of runs
+ * and thousands of requests that was one account query per run and per overdue request. An account changed during a pass
+ * is seen by the next one.
+ */
+function passContext(ctx:EngineContext):EngineContext{
+  const principals=ctx.deps.records.principals;
+  const list=principals?.list;
+  if(!principals||!list)return ctx;
+  let listed:ReturnType<typeof list>|undefined;
+  const once=new Proxy(principals,{get(target,property){
+    if(property==='list')return ()=>listed??=list.call(target);
+    const value=Reflect.get(target,property,target);
+    return typeof value==='function'?value.bind(target):value;
+  }});
+  return {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,principals:once}}};
 }
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
@@ -255,14 +319,11 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
 
 async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
   const latest=await latestAccepted(ctx.deps.records.store,stored.body.run);
-  const runner=stored.body.runner??stored.body.configurer;
-  if(!latest||!runner)return;
-  for(const [partition,items] of Object.entries(latest.body.partitions))for(const [i,item] of items.entries())for(const [j,requirement] of item.requirements.entries())for(const [k,layer] of requirement.layers.entries()){
-    if(!isUnsettled(layer)||!layer.reason||layer.exit&&layer.missing)continue;
-    const path='/partitions/'+partition+'/'+i+'/requirements/'+j+'/layers/'+k;
-    await putRequest(ctx,{run:stored.body.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:latest.digest,code:layer.reason,item:item.item,requirement:requirement.requirement,missing:'旧结果 rec:'+latest.digest+' '+path+'：'+(!layer.exit?'出口未写；':'')+(!layer.missing?'缺失事实未写':''),next_action:'原提交者带 Circle-Session-Id 用 submit_result 原样重交，Hub 追加重评结果；旧运行或作者缺会话时，以原工作为 predecessor 开带会话的新修订后重新复核。旧记录不回填'});
-  }
+  if(!latest)return;
+  await restoreLegacyRequests(ctx,stored,latest);
+  await restoreRecordedRequests(ctx,stored,latest);
 }
+
 
 /** Cache identity contains only the safe status fields used by the projection, never remote error text or lease material. */
 function dispatchSnapshot(jobs:import('../../dispatch/api.ts').RunJob[]):string{
@@ -322,9 +383,15 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
   });
 }
 
-/** Keep original deadlines immutable; each expired unanswered request advances to a named administrator. */
+/**
+ * Keep original deadlines immutable; each expired unanswered request advances to a named administrator. An escalation that
+ * already names an active administrator stays listed as overdue under its own deadline: escalating it again would name the
+ * same next action and audience. It advances only when its administrator was disabled or lost the role (decision 101).
+ */
 async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
   const requests=await requestRecords(ctx),byId=new Map(requests.map(request=>[request.record,request]));
+  // The escalations that exist already: writing one again only finds it (requests are deduplicated by this key).
+  const existing=new Set(requests.map(requestKeyOf));
   const answerOf=(request:(typeof requests)[number],seen=new Set<string>()):string|null=>{
     if(request.answered_by)return request.answered_by;
     if(seen.has(request.record))return null;
@@ -337,8 +404,14 @@ async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
     const answer=answerOf(request);
     if(answer){await answerRequest(ctx,request.record,answer);continue;}
     if(Date.parse(request.due)>ctx.now().getTime())continue;
-    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+    const admins=((await ctx.deps.records.principals?.list?.())??[]).filter(p=>p.role==='admin'&&!p.disabled);
+    if(byId.has(request.source)&&admins.some(p=>p.id===request.audience))continue;
+    const admin=admins[0];
     if(!admin)throw new Error('到期请求升级缺少具名管理员');
-    await putRequest(ctx,{...(request.run?{run:request.run}:{}),...(request.pack_digest?{pack_digest:request.pack_digest}:{}),kind:'clarification',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:request.record,code:'awaiting_step',missing:'请求 rec:'+request.record+' 到期仍未作答，缺少该请求所列事实或处置',next_action:'管理员核对原请求 rec:'+request.record+' 的缺失事实、原受众和下一步，按其真实作答入口推进；只有原请求的实际回答才能关闭升级请求，不修改原期限或原记录'});
+    const escalation:RequestBody={...(request.run?{run:request.run}:{}),...(request.pack_digest?{pack_digest:request.pack_digest}:{}),kind:'clarification',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:request.record,code:'awaiting_step',missing:'请求 rec:'+request.record+' 到期仍未作答，缺少该请求所列事实或处置',next_action:'管理员核对原请求 rec:'+request.record+' 的缺失事实、原受众和下一步，按其真实作答入口推进；只有原请求的实际回答才能关闭升级请求，不修改原期限或原记录'};
+    const key=requestKey(RequestBodySchema.parse(escalation));
+    if(existing.has(key))continue;
+    await putRequest(ctx,escalation);
+    existing.add(key);
   }
 }

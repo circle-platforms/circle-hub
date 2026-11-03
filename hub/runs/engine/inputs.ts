@@ -1,4 +1,4 @@
-import {completeKnowledgeView} from '../../knowledge/api.ts';
+import {completeKnowledgeView,parseViewId} from '../../knowledge/api.ts';
 import {defectIndexKeys,mergeIndexBindings,narrowIndexId} from './index-default.ts';
 // Binding the start_run inputs to the workflow's input slots (W02 F[8], P02, A03): a reference the caller may read (an
 // upload_file result, or a Hub record reference, B03 R[4]) or an external object read through its system pack as the
@@ -11,11 +11,11 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
-import type { Principal, VariableSnapshot } from '../../records/api.ts';
+import { disclosedExistence, type Principal, type VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import { Refusal, protocolError, unavailableError } from './errors.ts';
+import { Refusal, missingError, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
 import { identityOf, runOfRecord } from './readers.ts';
 import {isPersonalSpace,personalExternalAllowed,personalCapabilityError} from '../packs/personal-capabilities.ts';
@@ -60,6 +60,8 @@ export function withRevision(id: string, revision: string | null): string {
   return ExternalObjectId.safeParse(full).success ? full : id;
 }
 
+const VIEW_ID_FIX = '照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；错误里点名的参数必须写上，取值不要自己编；改好后重新开始运行';
+
 export async function bindInputs(
   ctx: EngineContext,
   user: Principal,
@@ -81,12 +83,34 @@ export async function bindInputs(
   const schemaError = (path: string, message: string, fix?: string): void => {
     errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', message, { path, ...(fix ? { fix } : {}) }));
   };
+  // The neutral answer is for the credential and login classes only (D05 R[3]): held bytes, a refused Hub account.
   const gone = (path: string, note: string): void => {
     errors.push(unavailableError(path));
     notes.push(`${path}: ${note}`);
   };
+  // Not found or no permission (decision 112): the caller is told which, the admin note keeps the detail.
+  const missingAt = (exists: boolean, path: string, what: string, note: string, fix?: string): void => {
+    errors.push(missingError(exists, path, what, fix));
+    notes.push(`${path}: ${note}`);
+  };
+  const readFailed = (path: string, message: string, fix: string, note: string): void => {
+    errors.push(protocolError('SOURCE_READ_FAILED', message, { path, fix }));
+    notes.push(`${path}: ${note}`);
+  };
   for (const name of Object.keys(inputs)) {
     if (!slots.has(name)) schemaError(`/inputs/${name}`, `任务包没有输入槽 ${name}（有：${[...slots.keys()].join('、')}）`);
+  }
+  // Cheap checks first. A knowledge view id that lacks a required parameter is a deterministic caller mistake: say so at once,
+  // with the way to write it, instead of building another input's large view first and reporting it behind a bare "unavailable".
+  for (const [name, given] of Object.entries(inputs)) {
+    if (!slots.has(name)) continue;
+    const list = Array.isArray(given) ? given : [given];
+    for (const [k, binding] of list.entries()) {
+      if (!('external' in binding) || !binding.external.startsWith('knowledge:')) continue;
+      // Only a missing required parameter is certain to fail at the read: other grammar problems are left to the reader.
+      const parsed = parseViewId(binding.external);
+      if (!parsed.ok && parsed.missing !== undefined) schemaError(Array.isArray(given) ? `/inputs/${name}/${k}` : `/inputs/${name}`, parsed.reason, VIEW_ID_FIX);
+    }
   }
 
   const readReference = async (slot: WorkflowInput, path: string, text: string, artifact?: string): Promise<Read | null> => {
@@ -111,8 +135,17 @@ export async function bindInputs(
         }
       }
       const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) })??await ctx.deps.knowledge?.spaces?.spaceSource(user,ref.sha256,undefined,'function',artifact)??null;
-      if (source === null || source.bytes === null) {
-        gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
+      if (source === null) {
+        // Another account's personal upload is answered neutrally (D05 R[3]); team and system originals say which.
+        // Without a way to look the source up, the answer stays neutral.
+        const existence = typeof artifacts.records === 'function' ? disclosedExistence(user.id, await artifacts.records(ref.sha256)) : 'neutral';
+        if (existence === 'neutral') { gone(path, 'source absent or not readable by the caller'); return null; }
+        const exists = existence === 'exists';
+        missingAt(exists, path, `原件 src:${ref.sha256}`, exists ? 'source not readable by the caller' : 'no such source', exists ? '请上传者或管理员把这份原件分享给你，或换一份你能读的原件' : '核对摘要；先用 upload_file 上传，再用它返回的引用');
+        return null;
+      }
+      if (source.bytes === null) {
+        gone(path, `bytes withheld (${source.readTier})`);
         return null;
       }
       if(isPersonalSpace(workflow.pack?.space)&&'read' in source.artifact.body.origin&&!await ctx.deps.knowledge?.spaces?.mayReadSource(user,ref.sha256,undefined,'function',source.artifact.digest)){
@@ -144,7 +177,11 @@ export async function bindInputs(
     if (ref.scheme === 'rec') {
       const record = await guardedRecords(ctx).read(ref.record, identityOf(user));
       if (record === null) {
-        gone(path, 'record absent or not visible to the caller');
+        const stored = await store.get(ref.record);
+        const existence = disclosedExistence(user.id, stored === null ? [] : [stored]);
+        if (existence === 'neutral') { gone(path, 'record not visible to the caller'); return null; }
+        const exists = existence === 'exists';
+        missingAt(exists, path, `记录 rec:${ref.record}`, exists ? 'record not visible to the caller' : 'no such record', exists ? '请记录所在运行的运行者分享给你，或换一条你能读的记录' : '核对记录摘要');
         return null;
       }
       if(record.kind==='source_artifact'){
@@ -192,12 +229,14 @@ export async function bindInputs(
 
   const readExternal = async (slot: WorkflowInput, path: string, id: string): Promise<Read | null> => {
     if(isPersonalSpace(workflow.pack?.space)&&!personalExternalAllowed(id)){errors.push(personalCapabilityError(path));return null;}
+    // The run will be refused anyway once an input is known to be wrong: do not build a large knowledge view for another one.
+    if (errors.length > 0 && id.startsWith('knowledge:')) return null;
     if (!slot.accepts.includes(externalType(id))) {
       schemaError(path, `输入槽 ${slot.slot} 不接受 ${externalType(id)} 类型的外部对象（接受：${slot.accepts.join('、')}）`);
       return null;
     }
     if (!(await ctx.deps.external.accepts(id,{principal:user,run:runId,purpose:`运行输入 ${slot.slot}`,adminNote:reason=>notes.push(`${path}: ${reason}`)}))) {
-      gone(path, `no enabled resource reads ${externalType(id)}`);
+      readFailed(path, `Hub 没有能读 ${externalType(id)} 的已启用资源`, '请管理员配置能读这类外部对象的资源（circle-hub resource list）后，用同样参数重新开始', `no enabled resource reads ${externalType(id)}`);
       return null;
     }
     const readContext={ feeding_offset:feeding?.feeding_offset,principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
@@ -208,9 +247,9 @@ export async function bindInputs(
       const scoped = await narrowIndexId(slot,id,inputs,defectId => defectIndexKeys(defectId,readContext,ctx.deps.external,records));
       if(!scoped.ok){schemaError(path,scoped.message,scoped.fix);return null;}
       if(scoped.ids.length === 1)requestId = scoped.ids[0];
-      else merged = await mergeIndexBindings(scoped.ids,scoped.label,readContext,ctx.deps.external,records);
+      else merged = await mergeIndexBindings(scoped.ids,scoped.label,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries});
     }
-    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records) : await ctx.deps.external.read(requestId,readContext));
+    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries}) : await ctx.deps.external.read(requestId,readContext));
     if (!read.ok) {
       if(read.retry) {
         const step = read.inputError?.fix;
@@ -222,8 +261,10 @@ export async function bindInputs(
         return null;
       }
       if (read.inputError !== undefined) {
-        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
-        else schemaError(path, read.inputError.message, read.inputError.fix);
+        // The reader's claim fields (grounds, qualifier, missing fact) stay on the answer (D05 R[8]).
+        const { code, message, fix, ...claim } = read.inputError;
+        if(code)errors.push(protocolError(code,message,{path,fix,...claim}));
+        else errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', message, { path, ...(fix ? { fix } : {}), ...claim }));
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
@@ -237,12 +278,16 @@ export async function bindInputs(
     }
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
     if (chosen === undefined) {
-      gone(path, 'the read gave no original or content artifact');
+      readFailed(path, `读取 ${id} 没有给出原件或内容件`, '由系统包负责人核对这类外部对象的读取声明和投影后重读', 'the read gave no original or content artifact');
       return null;
     }
     const source = await artifacts.source(user, chosen.artifact.body.sha256, { consumer: 'function',record:chosen.artifact.digest });
-    if (source === null || source.bytes === null) {
-      gone(path, source === null ? 'read artifact not readable by the caller' : `bytes withheld (${source.readTier})`);
+    if (source === null) {
+      missingAt(true, path, `${id} 的原件`, 'read artifact not readable by the caller', '请资源管理员把这份原件分享给你');
+      return null;
+    }
+    if (source.bytes === null) {
+      gone(path, `bytes withheld (${source.readTier})`);
       return null;
     }
     let meta: Record<string, unknown> | null = null;

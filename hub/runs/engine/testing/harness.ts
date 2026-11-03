@@ -1,3 +1,4 @@
+import type { RunsEngineDeps } from '../deps.ts';
 import {createTestParserRegistry} from '../../../testing/parsers.ts';
 import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
 // Test harness of the runs engine: a records kit in a temporary PostgreSQL database, three accounts, the toy packs in a
@@ -33,6 +34,8 @@ export interface HarnessOptions {
   /** Wire the lease service into the engine (a workflow that declares leases needs it). */
   leases?: boolean;
   leaseJobs?: (keys: readonly string[]) => Promise<Array<{key:string;job:string}>>;
+  /** The device observations port (decision 112): the newest observations and a look at booked devices. */
+  observations?: RunsEngineDeps['observations'];
 }
 
 export interface Harness {
@@ -121,6 +124,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       external,
       now,
       ...(leases !== null ? { leases, leaseJobs: options.leaseJobs ?? (async () => []) } : {}),
+      ...(options.observations !== undefined ? { observations: options.observations } : {}),
       ...(options.sandboxLimits !== undefined ? { sandboxLimits: options.sandboxLimits } : {}),
       ...(options.clientKeyWindowMs !== undefined ? { clientKeyWindowMs: options.clientKeyWindowMs } : {}),
       adminLog: (entry) => logs.push(entry),

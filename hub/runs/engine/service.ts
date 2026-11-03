@@ -1,8 +1,9 @@
 import { createDocumentCache } from '../../refs/api.ts';
 import {withQueryReads} from './query-scope.ts';
 import {requestReadable} from './grounds.ts';
+import { withRequestPermissions } from '../../records/api.ts';
 import { abandonRun } from './management.ts';
-import { maintainRuns } from './maintenance.ts';
+import { maintainRuns, type MaintenanceMemory } from './maintenance.ts';
 import { requestsOf } from './requests.ts';
 // createRunsService: the RunsService of hub/ports.ts plus the engine's extras (results, runs of a pack, the production result
 // of a start, Hub-side runs for standing obligations). Every call that carries a CallContext reports the real reasons behind
@@ -14,9 +15,11 @@ import { createEngineContext, type EngineContext, type RunsEngineDeps } from './
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, getRunSummary, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
+import { submissionByDigest } from './store.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
+import { packContext } from './pack-context.ts';
 import { wellFormed } from './util.ts';
 
 /** Longest single message one call's admin note takes from the engine, in code points (the server clips the joined note again). */
@@ -49,15 +52,21 @@ function forCall(ctx: EngineContext, call: CallContext|undefined): EngineContext
 }
 
 /** Parsed sources can be much larger than their immutable bytes. A service instance must never own them across calls. */
-async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,operation:(scoped:EngineContext)=>Promise<T>):Promise<T>{
+async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,operation:(scoped:EngineContext)=>Promise<T>,principal?:Principal):Promise<T>{
   const scoped=forCall(ctx,call);
-  try{return await operation(scoped);}finally{scoped.documents.dispose?.();}
+  try{return principal ? await withRequestPermissions(scoped.deps.records.artifacts,principal,()=>operation(scoped)) : await operation(scoped);}finally{scoped.documents.dispose?.();}
 }
 
 export interface RunsEngine extends RunsService {
-  maintain():Promise<void>;
+  /** One pass over every run; with `incremental`, only the runs the scheduled passes' memory shows something happened to. */
+  maintain(options?:{incremental?:boolean}):Promise<void>;
+  /**
+   * Schedules a pass every minute and resolves when the first pass is done (it is retried on schedule should it fail). The
+   * scheduled passes are incremental; the first one, and one every FULL_PASS_MS, visit every run.
+   */
   startMaintenance():Promise<void>;
-  stopMaintenance():Promise<void>;
+  /** Ends the schedule and waits for a pass in progress; with `abort` that pass returns at its next run (shutting down). */
+  stopMaintenance(options?:{abort?:boolean}):Promise<void>;
   /** For a run whose requirements are all facts the answer carries `result`: the reference and counts of the result computed at once. */
   startRun(user: Principal, input: Parameters<RunsService['startRun']>[1], context: CallContext): Promise<StartRunAnswer>;
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<SubmitAnswer>;
@@ -84,7 +93,9 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   ctx.documents.dispose?.();
   let ongoing:Promise<void>|null=null;
   let timer:ReturnType<typeof setInterval>|null=null;
-  const maintain=():Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current)).finally(()=>{ongoing=null;}));
+  let aborted=false;
+  const memory:MaintenanceMemory={runs:new Map(),fullAt:null};
+  const maintain=(options:{incremental?:boolean}={}):Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted,options.incremental===true?memory:undefined)).finally(()=>{ongoing=null;}));
   // Submissions stored before citations were indexed get their index in the background: a pass at the start and at every
   // tick until one reaches its end (backfillCitations). Stopping aborts the pass under way; the next one resumes it.
   let indexing:Promise<void>|null=null;
@@ -98,44 +109,58 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
     async startMaintenance(){
-      await maintain();
+      aborted=false;
       if(stopIndexing.signal.aborted)stopIndexing=new AbortController();
       void indexCitations();
-      timer??=setInterval(()=>{void maintain().catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));if(!indexed)void indexCitations();},60000);
+      // Scheduled first, so a failed first pass is retried like any other.
+      timer??=setInterval(()=>{void maintain({incremental:true}).catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));if(!indexed)void indexCitations();},60000);
       timer.unref();
+      await maintain({incremental:true});
     },
-    async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}stopIndexing.abort();await indexing;await ongoing;},
-    listRequests(user,run) { return withQueryReads(ctx,current=>requestsOf(current,user,run)); },
+    async stopMaintenance(options={}){if(timer){clearInterval(timer);timer=null;}if(options.abort===true)aborted=true;stopIndexing.abort();try{await indexing;await ongoing;}finally{aborted=false;}},
+    listRequests(user,run) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>requestsOf(current,user,run))); },
     async startRun(user, input, context) {
-      return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer);
+      return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer,user);
     },
     startRunDetailed(user, input, context) {
-      return withDocuments(ctx,context,current=>startRun(current,user,input,context,{host:'local_circle'}));
+      return withDocuments(ctx,context,current=>startRun(current,user,input,context,{host:'local_circle'}),user);
     },
     async startHubRun(configurer, input, context) {
       if (configurer.role !== 'admin') return refused([unavailableError('/pack')]);
-      return withDocuments(ctx,context,current=>startRun(current,configurer,input,context,{host:'hub'}));
+      return withDocuments(ctx,context,current=>startRun(current,configurer,input,context,{host:'hub'}),configurer);
     },
     submitResult(user, args, context) {
-      return withDocuments(ctx,context,current=>submitResult(current,user,args,context));
+      return withDocuments(ctx,context,current=>submitResult(current,user,args,context),user);
     },
     resolveReference(user, input, context) {
-      return withDocuments(ctx,context,current=>previewReference(current,user,input,context));
+      return withDocuments(ctx,context,current=>previewReference(current,user,input,context),user);
     },
     getRun(user, run): Promise<RunDetail | null> {
-      return withQueryReads(ctx,current=>getRun(current, user, run));
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>getRun(current, user, run)));
+    },
+    exportRun(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const detail = await getRun(current, user, run);
+        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        const result = detail.latest?.result.acceptance === 'accepted' ? detail.latest.result : null;
+        const submission = result ? (await submissionByDigest(current.deps.records.store, run, result.submission))?.body ?? null : null;
+        return { run: detail.run, result, submission };
+      }));
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {
-      return withQueryReads(ctx,current=>listRuns(current, user, query));
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>listRuns(current, user, query)));
+    },
+    packContext(user, packs) {
+      return packContext(ctx, user, packs);
     },
     getResult(user, run, submission) {
-      return withQueryReads(ctx,current=>getResult(current, user, run, submission));
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>getResult(current, user, run, submission)));
     },
     runsFor(user, pack, query) {
-      return withQueryReads(ctx,current=>runsFor(current, user, pack, query));
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runsFor(current, user, pack, query)));
     },
   };
 }

@@ -36,7 +36,7 @@ test('tree criteria and quotes require every original source to be bound as expe
  for(const path of ['subject','unbound','missing','mixed','mixed-unbound','non-source','mixed-record'])for(const position of ['criterion','grounds']){
   const rejected=position==='criterion'?{...h.proposal,criterion:tree(path)}:{...h.proposal,criterion:tree('expected'),grounds:[{reference:tree(path),quote:'依据'}]};
   const out=await resolveCriterionChanges(resolver,[{id:'one'}],[rejected,h.proposal]);
-  assert.deepEqual(out.errors,[],`${path}/${position}`);assert.deepEqual(out.refused.map(error=>[error.code,error.path]),[['core.criterion.source_role_mismatch','/criterion_changes/0']],`${path}/${position}`);assert.deepEqual(out.accepted.map(row=>row.index),[1],`${path}/${position}`);
+  assert.deepEqual(out.errors,[],`${path}/${position}`);assert.deepEqual(out.refused.map(error=>[error.code,error.path]),[['core.criterion.source_role_mismatch',position==='criterion'?'/criterion_changes/0/criterion':'/criterion_changes/0/grounds/0/reference']],`${path}/${position}`);assert.deepEqual(out.accepted.map(row=>row.index),[1],`${path}/${position}`);
  }
 });
 test('expected-bound tree originals remain eligible without changing ordinary tree role semantics',async t=>{
@@ -46,7 +46,7 @@ test('expected-bound tree originals remain eligible without changing ordinary tr
 });
 test('a non-expected tree declaration is locally refused and creates no judgment request',async t=>{
  const {h,run,tree}=await setup(t);const answer=await h.submit(run.run,[{...h.proposal,criterion:tree('subject')},h.proposal]);
- assert.equal(answer.acceptance,'accepted',JSON.stringify(answer));assert.ok(answer.errors.some(error=>error.code==='core.criterion.source_role_mismatch'&&error.path==='/criterion_changes/0'));
+ assert.equal(answer.acceptance,'accepted',JSON.stringify(answer));assert.ok(answer.errors.some(error=>error.code==='core.criterion.source_role_mismatch'&&error.path==='/criterion_changes/0/criterion'));
  const requests=(await createRequestService(h.kit).all(run.run)).filter(request=>request.declaration);assert.deepEqual(requests.map(request=>request.declaration),['/criterion_changes/1']);
  const result=(await h.service.getResult(h.alice,run.run))!.result;assert.ok(Object.values(result.partitions).flat().some(row=>row.requirements.some(requirement=>requirement.status!=='satisfied')));
 });

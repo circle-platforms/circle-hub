@@ -104,7 +104,7 @@ test('neither absent visibility nor read-only sharing grants predecessor authori
     for(const shared of [false,true]){
       if(shared){await w.h.kit.authorizations.share(w.h.admin,w.draft.run,[w.h.bob.id]);assert.ok(await w.h.service.getRun(w.h.bob,w.draft.run));}
       const answer=await w.h.service.startRun(w.h.bob,w.input,w.h.call('other-verifier'));
-      assert.equal(answer.call_result,'error');assert.ok(answer.errors.some(e=>e.path==='/predecessor'&&e.code==='SOURCE_UNAVAILABLE'));
+      assert.equal(answer.call_result,'error');assert.ok(answer.errors.some(e=>e.path==='/predecessor'&&e.code==='SOURCE_NOT_PERMITTED'),JSON.stringify(answer.errors));
     }
   }finally{await w.close();}
 });

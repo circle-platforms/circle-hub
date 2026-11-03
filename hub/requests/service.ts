@@ -7,11 +7,20 @@ interface RequestContext {deps:{records:Pick<RecordsKit,'store'>};now:()=>Date;t
 export type RequestBody=z.infer<typeof Request>;
 export const RequestBodySchema=Request;
 export type RequestView=RequestBody & {record:string;answered_by:string|null};
-export async function putRequest(ctx:RequestContext,input:RequestBody):Promise<StoredRecord<RequestBody>>{
-  const body=Request.parse(input);
+/** The identity a request is deduplicated by: the parsed body without its deadline. */
+export function requestKey(body:RequestBody):string{
   // The deadline is fixed on first creation, not extended by reading or resubmitting the same problem.
   const {due:_,...identity}=body;
-  const key=digestOf(identity);
+  return digestOf(identity);
+}
+/** The key of a listed request, the same one its creation indexed. */
+export function requestKeyOf(view:RequestView):string{
+  const {record:_record,answered_by:_answer,...body}=view;
+  return requestKey(body);
+}
+export async function putRequest(ctx:RequestContext,input:RequestBody):Promise<StoredRecord<RequestBody>>{
+  const body=Request.parse(input);
+  const key=requestKey(body);
   const old=await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.key',value:key,limit:1},ctx.transaction);
   if(old.items[0])return old.items[0];
   return ctx.deps.records.store.put({kind:'request',schema:'request@1',provenance:'observed',body,created_at:ctx.now().toISOString(),index:[{key:'runs.request.key',value:key},...(body.run?[{key:'runs.request.run',value:body.run}]:[]),...(body.pack_digest?[{key:'runs.request.pack',value:body.pack_digest}]:[])]},ctx.transaction);
@@ -30,12 +39,32 @@ export async function requestRecords(ctx:RequestContext,run?:string):Promise<Req
   const out:RequestView[]=[];let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RequestBody>>=run===undefined?await ctx.deps.records.store.list<RequestBody>({kind:'request',limit:500,cursor},ctx.transaction):await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.run',value:run,limit:500,cursor},ctx.transaction);
-    const records=page.items.filter(record=>record.schema==='request@1');
-    const queries=records.map(record=>({kind:'action' as const,key:'runs.request.answer',value:record.digest,limit:1,newestFirst:true}));
-    const answers=ctx.deps.records.store.findBatch?await ctx.deps.records.store.findBatch<{detail:{answer:string}}>(queries,ctx.transaction):await Promise.all(queries.map(query=>ctx.deps.records.store.find<{detail:{answer:string}}>(query,ctx.transaction)));
-    records.forEach((record,i)=>out.push({...record.body,record:record.digest,answered_by:answers[i].items[0]?.body.detail.answer??null}));
+    const requests=page.items.filter(record=>record.schema==='request@1');
+    const answers=await newestAnswers(ctx,requests.map(record=>record.digest));
+    for(const record of requests)out.push({...record.body,record:record.digest,answered_by:answers.get(record.digest)??null});
     cursor=page.next;
   }while(cursor!==null);
+  return out;
+}
+/**
+ * The newest answer of each request, read for a page of requests at once (one lookup per request made a listing of every
+ * request cost one round trip each). Every answer action carries its request in detail.request, the value it is indexed
+ * under; should one not, the page falls back to the lookup per request, so the answer is the same either way.
+ */
+async function newestAnswers(ctx:RequestContext,requests:readonly string[]):Promise<Map<string,string|null>>{
+  const out=new Map<string,string|null>();
+  if(!requests.length)return out;
+  const wanted=new Set(requests);
+  const rows=await ctx.deps.records.store.findMany<{detail?:{request?:unknown;answer?:unknown}}>({kind:'action',key:'runs.request.answer',values:requests},ctx.transaction);
+  if(rows.every(row=>typeof row.body.detail?.request==='string'&&wanted.has(row.body.detail.request))){
+    // findMany returns the matches oldest first, so the last answer seen for a request is its newest.
+    for(const row of rows)out.set(row.body.detail!.request as string,typeof row.body.detail!.answer==='string'?row.body.detail!.answer:null);
+    return out;
+  }
+  for(const request of requests){
+    const answer=await ctx.deps.records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:request,limit:1,newestFirst:true},ctx.transaction);
+    out.set(request,answer.items[0]?.body.detail.answer??null);
+  }
   return out;
 }
 export async function requestsOf(ctx:RequestContext,user:Principal,run?:string):Promise<RequestView[]>{

@@ -22,10 +22,10 @@ test('legacy public summaries derive rulings from the locked package without edi
  assert.deepEqual(result.requirements[0].rules,['structure@1']);
  assert.deepEqual(result.requirements[0].run_interpreters,['range@1']);
  assert.equal(JSON.stringify(body),before);
- assert.throws(()=>summaryOf(body,{...workflow,pack:{...workflow.pack,digest:'f'.repeat(64)}}),error=>error instanceof RecordsError && error.code==='SOURCE_UNAVAILABLE');
- assert.throws(()=>summaryOf(body),error=>error instanceof RecordsError && error.code==='SOURCE_UNAVAILABLE' && Boolean(error.fix));
+ assert.throws(()=>summaryOf(body,{...workflow,pack:{...workflow.pack,digest:'f'.repeat(64)}}),error=>error instanceof RecordsError && error.code==='SOURCE_READ_FAILED');
+ assert.throws(()=>summaryOf(body),error=>error instanceof RecordsError && error.code==='SOURCE_READ_FAILED' && Boolean(error.fix));
 });
-test('stored legacy runs support reading, listing and idempotent reuse, and missing locked packages are unavailable',async t=>{
+test('stored legacy runs support reading, listing and idempotent reuse, and a missing locked package is a read failure for the administrator',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await openHarness(pg);t.after(()=>h.close());
  const reference=await h.upload(h.alice,new TextEncoder().encode('synthetic history'));
  const input={pack:h.review.pack.id,product:'synthetic',version:'10.6',inputs:{map:{reference}},client_key:'synthetic-history'};
@@ -43,7 +43,7 @@ test('stored legacy runs support reading, listing and idempotent reuse, and miss
  assert.deepEqual(original!.body,body);
  assert.equal(original!.body.requirements[0].rules,undefined);
  const missing=createRunsService({now:()=>new Date('2026-10-22T08:00:00.000Z'),records:h.kit,workflows:{forUser:async()=>null,byDigest:async()=>null,summaries:async()=>[]},packs:h.packs,knowledge:h.knowledge,external:h.external});
- await assert.rejects(missing.getRun(h.alice,body.run),error=>error instanceof RecordsError && error.code==='SOURCE_UNAVAILABLE' && Boolean(error.fix));
+ await assert.rejects(missing.getRun(h.alice,body.run),error=>error instanceof RecordsError && error.code==='SOURCE_READ_FAILED' && Boolean(error.fix));
  const refused=await missing.startRun(h.alice,input,h.call('synthetic-history'));
- assert.equal(refused.call_result,'error');assert.equal(refused.errors[0].code,'SOURCE_UNAVAILABLE');assert.equal(refused.errors[0].fix,'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行');
+ assert.equal(refused.call_result,'error');assert.equal(refused.errors[0].code,'SOURCE_READ_FAILED');assert.equal(refused.errors[0].fix,'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行');
 });

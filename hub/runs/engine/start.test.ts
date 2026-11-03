@@ -136,17 +136,19 @@ test('an unknown build, a build of another line, a build or line without a root,
   assert.equal(unknownProduct.run, undefined);
 });
 
-test('absent and forbidden look the same: an unknown pack and an unassigned pack give one answer', { skip }, async () => {
+test('an unknown pack is absent and an unassigned pack is not permitted (D05 R[3], decision 112)', { skip }, async () => {
   const before = h.logs.length;
   const unknown = await h.service.startRun(h.alice, { pack: 'no-such-pack', inputs: {} }, h.call());
   const unassigned = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: { map: { reference: map } } }, h.call());
-  assert.deepEqual(unknown, unassigned);
-  assert.deepEqual(unknown, { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/pack' }] });
+  assert.deepEqual(unknown.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有任务包 no-such-pack']]);
+  assert.deepEqual(unassigned.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_NOT_PERMITTED', '/pack', '任务包 toy-review 存在，没有分配给你']]);
+  assert.match(unassigned.errors[0]!.fix ?? '', /请管理员把它分配给你/);
   valid(unknown);
+  valid(unassigned);
   assert.equal(h.logs.length, before + 2);
-  // a predecessor the caller may not see is unavailable too
+  // a predecessor that does not exist is absent
   const theirs = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: map } }, predecessor: 'run_01m5h9zh07x7amhg4bwmye5yhw' }, h.call());
-  assert.deepEqual(theirs.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/predecessor']]);
+  assert.deepEqual(theirs.errors.map((e) => [e.code, e.path]), [['SOURCE_ABSENT', '/predecessor']]);
 });
 
 test('inputs: required slots, unknown slots, accepted types, readable references, whole sources', { skip }, async () => {
@@ -160,7 +162,9 @@ test('inputs: required slots, unknown slots, accepted types, readable references
   assert.match(wrongType.errors[0].message, /不接受媒体类型 text\/plain/);
   const bobs = await h.upload(h.bob, toyMap({ ...standardDocument(), id: 'docbob' }));
   const forbidden = await start({ map: { reference: bobs } });
-  assert.deepEqual(forbidden.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/inputs/map']]);
+  assert.deepEqual(forbidden.errors.map((e) => [e.code, e.path]), [['SOURCE_NOT_PERMITTED', '/inputs/map']]);
+  const absent = await start({ map: { reference: `src:${'e'.repeat(64)}` } });
+  assert.deepEqual(absent.errors.map((e) => [e.code, e.path]), [['SOURCE_ABSENT', '/inputs/map']]);
   const fragment = await start({ map: { reference: `${map}/kityminder@1/n/c1aaaaaaaaaa` } });
   assert.match(fragment.errors[0].message, /整份源文件/);
   const many = await start({ map: [{ reference: map }, { reference: map }] });
@@ -189,7 +193,7 @@ test('inputs: required slots, unknown slots, accepted types, readable references
     [two, 'hint', 'text/plain'],
   ]);
   const badNote = await start({ map: { reference: map }, notes: [{ reference: one }, { reference: bobs }] });
-  assert.deepEqual(badNote.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/inputs/notes/1']]);
+  assert.deepEqual(badNote.errors.map((e) => [e.code, e.path]), [['SOURCE_NOT_PERMITTED', '/inputs/notes/1']]);
 });
 
 test('an external object input is read as the caller; its meta is handed to the projection', { skip }, async () => {
@@ -211,11 +215,11 @@ test('parameters are checked against the workflow and frozen', { skip }, async (
   assert.equal((await start({ strict: false })).call_result, 'ok');
 });
 
-test('a projection that yields no item refuses the whole start_run with the pack fix', { skip }, async () => {
+test('a projection that yields no item refuses the whole start_run with the pack fix and the pack function as its rule', { skip }, async () => {
   const outline = await h.upload(h.alice, toyMap({ id: 'docout', title: '只有提纲', groups: [{ id: 'g1outline000', text: '提纲', cases: [] }] }));
   const answer = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: outline } } }, h.call());
   valid(answer);
-  assert.deepEqual(answer.errors, [{ code: 'toy-review.no_case', message: '文档里没有用例节点（docout）', fix: '给用例节点加上 resource 标签', path: '/inputs/map' }]);
+  assert.deepEqual(answer.errors, [{ code: 'toy-review.no_case', message: '文档里没有用例节点（docout）', fix: '给用例节点加上 resource 标签', path: '/inputs/map', warrant: 'toy-review@1.0.0 functions/project.ts' }]);
   assert.equal(answer.run, undefined);
 });
 
@@ -296,7 +300,7 @@ test('a repeated client key inside its window returns the run even after the pac
   assert.ok(await h.service.getRun(h.bob, first.run!.run));
   // other content under the key is still a mismatch; a fresh start needs the pack
   assert.deepEqual((await h.service.startRun(h.bob, { ...request, parameters: { strict: true } }, h.call())).errors.map((e) => e.code), ['IDEMPOTENCY_MISMATCH']);
-  assert.deepEqual((await h.service.startRun(h.bob, { ...request, client_key: 'retry-2' }, h.call())).errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/pack']]);
+  assert.deepEqual((await h.service.startRun(h.bob, { ...request, client_key: 'retry-2' }, h.call())).errors.map((e) => [e.code, e.path]), [['SOURCE_NOT_PERMITTED', '/pack']]);
 });
 
 test('the target composition and canonical build are passed to input and expected-source reads before the run is stored', {skip}, async()=>{

@@ -25,8 +25,18 @@ export interface ProducerOrigin {
 }
 
 /** New declarations are structured inputs; legacy display text never supplies a family. */
-export function submissionOrigin(submission:Pick<Submission,'model'|'model_identity'>,sessions:ProducerOrigin['sessions']):ProducerOrigin {
-  return {sessions,model:submission.model_identity?.model_id??submission.model,family:submission.model_identity?.model_family_id??null};
+export function submissionOrigin(submission:Pick<Submission,'model'|'model_identity'>,sessions:ProducerOrigin['sessions'],run?:Pick<import('../../../contracts/src/run.ts').RunRecord,'session'|'model_identity'>,submissionSession?:string|null):ProducerOrigin {
+  const inherited = run?.session !== undefined && submissionSession === run.session ? run.model_identity : undefined;
+  const identity = submission.model_identity ?? inherited;
+  return {sessions,model:identity?.model_id??submission.model??null,family:identity?.model_family_id??null};
+}
+
+/** Evaluation gets a model only from the submitted text or an explicit identity in the same observed session. */
+export type EffectiveSubmission = Submission & {model:string};
+export function effectiveSubmission(submission:Submission,run:Pick<import('../../../contracts/src/run.ts').RunRecord,'session'|'model_identity'>,session:string|null):EffectiveSubmission|null {
+  if (submission.model !== undefined) return submission as EffectiveSubmission;
+  const model=submissionOrigin(submission,[],run,session).model;
+  return model===null ? null : {...submission,model};
 }
 
 /** Everyone known to have produced the work a judgment is about: their sessions and declared model identities. */
