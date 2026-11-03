@@ -1032,3 +1032,12 @@ The extraction callback alone holds the member row; journal insertion commits fi
 Direct extraction has its own two-slot, one-per-member bound, leaving eight of the normal ten pool connections available.
 After sample checks, current account eligibility is re-read, and publication/promotion retain the committing account
 lock. Deletion can seal an account during a slow sample without waiting for a sandbox or allowing later cache revival.
+
+### Indexed upload declaration freezing
+
+Migration 21's run trigger and one-time backfill first select `knowledge.space.source_hash` index candidates by the
+capture SHA-256, then decode only those logical bodies. The materialized candidate boundary keeps unrelated source
+bodies out of per-upload parsing. Exact capture identity, personal/team scope and the run's sequence boundary remain
+required; equal bytes alone do not freeze a declaration, and later registrations do not change an earlier run.
+The owner explicitly allowed this in-place SQL correction before deployment; migrations 1–18 are unchanged, including
+frozen 14/15. Migrations 19–23 are frozen from the integration PR onward; subsequent corrections append migrations.

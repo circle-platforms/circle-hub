@@ -1271,7 +1271,11 @@ BEGIN
  b:=pg_catalog.replace(capture.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
  IF b->'author'->>'user' IS DISTINCT FROM u OR b->>'provenance_type'<>'declared' OR b->'origin'->'upload' IS NULL OR b->'personal_scope' IS NOT NULL OR pg_catalog.substring(binding->>'reference','^src:([0-9a-f]{64})(?:/|$)') IS DISTINCT FROM b->>'sha256' THEN CONTINUE;END IF;
  IF EXISTS(SELECT 1 FROM public.personal_record_bindings p JOIN public.personal_spaces q ON q.owner=p.owner WHERE p.record=capture.digest AND p.epoch IS DISTINCT FROM q.account_epoch) THEN CONTINUE;END IF;
- IF EXISTS(SELECT 1 FROM public.hub_read_records() a WHERE a.kind='knowledge_space_source' AND a.seq<=run_seq AND (pg_catalog.replace(a.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'space'<>'team' AND (pg_catalog.replace(a.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'artifact'=capture.digest) THEN CONTINUE;END IF;
+ -- Narrow by the capture hash before decoding any logical source body, including during the backfill.
+ IF EXISTS(WITH candidates AS MATERIALIZED (
+  SELECT a.body FROM public.record_index i JOIN public.hub_read_records() a ON a.digest=i.digest
+  WHERE i.key='knowledge.space.source_hash' AND i.value=b->>'sha256' AND a.kind='knowledge_space_source' AND a.seq<=run_seq
+ ) SELECT 1 FROM candidates a WHERE (pg_catalog.replace(a.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'space'<>'team' AND (pg_catalog.replace(a.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'artifact'=capture.digest) THEN CONTINUE;END IF;
  INSERT INTO public.run_upload_declarations VALUES(r,capture.digest,u) ON CONFLICT DO NOTHING;
  END LOOP;
 END $fn$;

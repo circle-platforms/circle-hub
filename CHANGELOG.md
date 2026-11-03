@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Narrow frozen upload declarations by the source hash index before decoding registrations during run admission and upgrade.
+
 - Bound private pack staging per member and keep sandbox publication checks outside pooled database transactions.
 
 - Separate deleted-member names from status badges and show readable deletion categories with host-execution instructions.
