@@ -1338,12 +1338,17 @@ Folder source lookups batch their existing registration index reads through the 
 continuation pages. Sharing prechecks issue entry/source/ground reads concurrently within each existing phase, then
 inspect settled results in the original order. A later I/O failure cannot overtake an earlier credential or unresolved
 source failure. Every source byte stream is still inspected, every distinct ground checked, and phase/first-error
-semantics are preserved. Synthetic regression: 2 and 12 distinct originals both require 4 SQL statements for the parallel
+semantics are preserved. Synthetic regression: 2 and 12 distinct originals both require 7 SQL statements after personal-payload integration for the parallel
 read, with exact-capture, owner/grantee/admin isolation, mutable-byte isolation and later revocation checks.
 
-The recent-page `total` counts matching kind/space headers inside the currently authorized snapshot paths. SQL drops
+The recent-page `total` counts matching kind/space/sync-private headers inside the currently authorized snapshot paths. SQL drops
 cross-space candidates before counting or paging; fallback stores apply the same header filter. The console displays an
 ordinary exact count. Selected bodies still pass strict parsing and content hashing: content-hash
 mismatches are omitted and recorded in the bounded maintenance integrity diagnostics (identifiers and fixed explanation,
 never private text). Such damaged records can remain in the header count until integrity checking reports them; this is
 an integrity incident, not normal visibility uncertainty, and does not authorize hydrating every off-page body.
+
+The sync rebase retains local-mode paths, epoch admission and cleared-ground downgrade checks in batched entry reads.
+Readonly mode/cleared answers are reused only inside the request; raw sync writes must remain outside that scope.
+The native candidate/count/batch ports use hub_read_records(), never physical capsule bodies. Purged roots and former
+grants stay absent after resume, and private-only sync entries are excluded from grantee counts before pagination.

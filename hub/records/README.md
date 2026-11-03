@@ -904,3 +904,17 @@ handles (artifacts, principals, knowledge stores included) are not universally h
 an intercepted store, but callers must not assume that. Finish the outer read scope before a raw service write, then start
 a fresh read scope afterward. A nested withReadScope reuses its active outer scope and is not an invalidation barrier.
 POST actions stay outside the read scope; no cross-request authorization cache is introduced.
+
+### Batched reads over personal payloads
+
+All native indexed batches, candidate headers and counters use the same hub_read_records() logical view as scalar
+reads; purge and independently run-held originals keep their existing semantics. Physical append positions remain
+physical positions for cursors/watermarks. Header counting compares the expected space and reader's sync-private
+visibility before paging; selected bodies still pass integrity and service authorization checks.
+
+Object get() coalesces only simultaneously queued I/O, detaches the queue before any await and retains no completed
+bytes or authorization result across calls. Files keep priority. Missing files use one SQL batch with the former
+fallback precedence: independent run bytes, then an active personal owner/epoch payload, then cleared-versus-missing
+registration handling. Every returned byte stream is hashed; a bad sibling falls back to isolated reads and cannot
+hide healthy bytes. Returned arrays are detached per caller. This trusted byte port grants no access: callers still
+use exact source/capture and read-tier guards. New reads recheck purge; no cross-request authorization cache is added.

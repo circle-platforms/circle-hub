@@ -994,3 +994,11 @@ Claude 转交独立审查（针对 `54b6649c`）：未发现授权回归。确�
 方法：临时 loopback TestHub、合成管理员、全新浏览器 context/profile；在新文档注册 `securitypolicyviolation` 监听，保存主题为 dark。打开 `/console/login`，验证主题控件不再 hidden，点击 light 并断言根节点主题改变；用该合成会话打开 `/console/overview`，验证主题脚本、`circleHubRestartLive` 已执行。Playwright 只对该页面的 SSE 路由返回有限合成 `task.updated` 事件，断言出现订阅请求及带 `circle-hub-refresh: live` 的页面请求，确认不是只下载脚本。有限流关闭后页面显示重连是预期夹具行为。检查登录/总览脚本的 SRI 属性、状态 200、两个文档的 CSP 事件与 pageerror 均为空；六张截图逐张查看。现有 CSP 精确断言仍保留，无 unsafe-inline/eval、通配符或任意远程来源。
 
 本机 macOS 27.0.1 上，默认 Firefox 153/157 启动尝试失败，未计作 CSP 通过。按 [Mozilla 的隔离 app-data 说明](https://bugzilla.mozilla.org/show_bug.cgi?id=2069536)，为最终 Firefox 子进程设置全新临时 `MOZ_APP_DATA` 与 `MOZ_LOCAL_APP_DATA` 后正常启动，使用默认浏览器 sandbox/GPU 参数；未访问个人 Firefox 数据或调整系统权限。以上 Firefox 157 为该正常启动后的实际页面结果。可重复方式：从现有 Playwright 包导入对应 browser type，`launch({headless:true, env:{...process.env, MOZ_APP_DATA:<fresh-dir>, MOZ_LOCAL_APP_DATA:<fresh-dir>}})`（Firefox 专用），其余步骤如上。该结果证明所列版本，未声称覆盖历史引擎。
+
+#### 变基与读取边界
+
+已保留 `console-perf-pre-sync`（`b4b76d43`），把 11 个性能/审查提交变基到指定的 `kw-sync-local 410c9c44`，未修改 sync 分支。README 追加内容并存；控制台知识页保留同步设置 Inspector、只在 Hub 模式显示编辑入口及窄屏返回；entry 批次保留 `sync_private` 拒绝、本机模式 paths 为空及团队已清空依据降为未核验的既有判断（运行时标签仍由模型提供）。所有新增 records 批量索引、计数、时间头和运行候选 SQL 均改为 `hub_read_records()`，保留个人载荷重建/清空、独立运行原件和原物理游标水位。
+
+变基后的定向回归先发现 sync 原文字节入库带回 N+1：2 / 12 原文为 18 / 88 SQL。保留原有常数查询断言，补齐对象读取的同批 I/O 合并与一次 SQL 字节后备查询，保持文件 → 独立运行持有 → 活跃个人 epoch 的原顺序，清空/缺失判断与每份字节摘要验证均保留。队列在等待前移交，不保留完成结果，不缓存跨请求授权；损坏兄弟项隔离失败，每个调用者取独立数组。只读 mode/cleared 在当前请求内复用，原始同步写入仍在外层读取作用域之外。修正后 2 / 12 原文均 7 SQL。
+
+新增集成回归覆盖 batch 与 scalar 索引分页/计数一致、逻辑载荷时间头、purge 后旧 epoch 排除、新 epoch 不复活旧授权、owner/grantee 私人条目及精确计数，以及原文字节损坏/兄弟项隔离/可变数组隔离/清空后即时重读。未修改 `read-scope.ts`、模型或迁移；同步迁移保持上游原样。

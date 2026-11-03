@@ -25,6 +25,7 @@ export interface ObjectStoreOptions {
 }
 
 export class FileObjectStore implements ObjectStore {
+  #pending=new Map<string,Array<{resolve:(bytes:Uint8Array|null)=>void;reject:(error:unknown)=>void}>>();
   readonly root: string;
   readonly #db: Database;
   readonly #options: ObjectStoreOptions;
@@ -67,25 +68,46 @@ export class FileObjectStore implements ObjectStore {
 
   async get(sha256: string): Promise<Uint8Array | null> {
     if (!isSha256(sha256)) return null;
-    let bytes: Buffer;
-    try {
-      bytes = await readFile(this.path(sha256));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const independent=(await this.#db.query<{data:Buffer}>('SELECT data FROM run_originals WHERE sha256=$1 ORDER BY artifact LIMIT 1',[sha256])).rows[0];
-      if(independent)bytes=independent.data;
-      else {
-        const privateBytes=await this.#options.personalPayloads?.anyObject(sha256);if(privateBytes)return privateBytes;
-        const privateRows=await this.#db.query('SELECT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) AS cleared FROM personal_objects o WHERE sha256=$1',[sha256]);if(privateRows.rows.length&&privateRows.rows.every(r=>r.cleared))return null;
-        // Registered but gone is data loss (objects are never deleted), not absence.
-        if ((await this.stat(sha256)) !== null) throw new IntegrityError('有对象登记，但原件字节丢失；请从备份恢复', { detail: { sha256 } });
-        return null;
-      }
+    return new Promise((resolve,reject)=>{
+      const waiting=this.#pending.get(sha256);if(waiting){waiting.push({resolve,reject});return;}
+      this.#pending.set(sha256,[{resolve,reject}]);
+      if(this.#pending.size===1)queueMicrotask(()=>{void this.#flushGets();});
+    });
+  }
+
+  async #readBytes(hashes:readonly string[]):Promise<Map<string,Uint8Array>>{
+    const values=new Map<string,Uint8Array>(),missing:string[]=[];
+    await Promise.all(hashes.map(async hash=>{
+      let bytes:Buffer;try{bytes=await readFile(this.path(hash));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;missing.push(hash);return;}
+      if(sha256Hex(bytes)!==hash)throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）',{detail:{sha256:hash}});
+      values.set(hash,bytes);
+    }));
+    if(missing.length)for(const [hash,bytes]of await this.#databaseBytes(missing))values.set(hash,bytes);
+    return values;
+  }
+
+  // Same-tick I/O coalescing only: detach before awaiting and retain no completed value or authorization proof.
+  async #flushGets():Promise<void>{
+    const batch=this.#pending;this.#pending=new Map();
+    try{const values=await this.#readBytes([...batch.keys()]);for(const [hash,waiting]of batch)for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}
+    catch{await Promise.all([...batch].map(async([hash,waiting])=>{try{const values=await this.#readBytes([hash]);for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}catch(error){for(const call of waiting)call.reject(error);}}));}
+  }
+  async #databaseBytes(hashes:readonly string[]):Promise<Map<string,Uint8Array>>{
+    // Keep get()'s precedence: an independent run holder, then the first active account/epoch payload.
+    const rows=await this.#db.query<{sha256:string;data:Buffer|null;independent:boolean;cleared:boolean;registered:boolean}>(`SELECT wanted.sha256,coalesce(h.data,p.data) AS data,h.data IS NOT NULL AS independent,
+      EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256)
+       AND NOT EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch))) AS cleared,
+      EXISTS(SELECT 1 FROM objects o WHERE o.sha256=wanted.sha256) AS registered
+      FROM unnest($1::text[]) AS wanted(sha256)
+      LEFT JOIN LATERAL (SELECT r.data FROM run_originals r WHERE r.sha256=wanted.sha256 ORDER BY r.artifact LIMIT 1) h ON true
+      LEFT JOIN LATERAL (SELECT p.data FROM personal_objects o JOIN personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
+       WHERE $2::bool AND o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch)) ORDER BY o.owner,o.epoch LIMIT 1) p ON h.data IS NULL`,[hashes,!!this.#options.personalPayloads]);
+    const values=new Map<string,Uint8Array>();
+    for(const row of rows.rows){
+      if(row.data!==null){if(sha256Hex(row.data)!==row.sha256)throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）',{detail:{sha256:row.sha256}});values.set(row.sha256,row.independent?Buffer.from(row.data):Uint8Array.from(row.data));}
+      else if(!row.cleared&&row.registered)throw new IntegrityError('有对象登记，但原件字节丢失；请从备份恢复',{detail:{sha256:row.sha256}});
     }
-    if (sha256Hex(bytes) !== sha256) {
-      throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）', { detail: { sha256 } });
-    }
-    return bytes;
+    return values;
   }
 
   /** One-time materialization of legacy personal trees/originals before serving requests. */

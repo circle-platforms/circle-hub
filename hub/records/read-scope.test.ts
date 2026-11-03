@@ -162,3 +162,23 @@ test('value memo uses explicit JSON keys, isolates owners and clears with interc
  const left=Symbol('read'),right=Symbol('read'),port={[left]:async()=>1,[right]:async()=>2};
  await withReadScope(async()=>{const scoped=memoReadPort(port,[left,right]);assert.equal(await scoped[left](),1);assert.equal(await scoped[right](),2);});
 });
+
+test('batched record pages, counts and entry headers read logical personal payloads and exclude purged epochs',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic-batch-admin'),owner=await kit.principals.createUser(admin,'synthetic-batch-owner');
+ const at='2026-11-03T02:00:00.000Z',store=kit.store;const records:Awaited<ReturnType<typeof store.put>>[]=[];
+ for(let n=0;n<3;n++)records.push(await store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{space:owner.id,at,text:'synthetic-private-'+n},index:[{key:'synthetic.logical',value:'personal'}]}));
+ const team=await store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{space:'team',at},index:[{key:'synthetic.logical',value:'personal'}]});
+ const query={kind:'knowledge_space_entry' as const,key:'synthetic.logical',value:'personal',limit:2};
+ const first=(await store.findBatch!([query]))[0];assert.deepEqual(first,await store.find(query));assert.equal(first.items.length,2);assert.ok(first.items.every(r=>r.body&&JSON.stringify(r.body).includes('synthetic-private')));
+ assert.deepEqual(await store.findBatch!([{...query,cursor:first.next}]),[await store.find({...query,cursor:first.next})]);
+ const count={index:[{key:query.key,value:query.value}]};assert.deepEqual(await store.countIndexedBatch!([count]),[await store.countIndexed!(count)]);
+ const digests=records.map(r=>r.digest),spaces=digests.map(()=>owner.id);
+ assert.equal((await store.entryCandidates!({digests,spaces,offset:0,limit:1})).total,3);assert.equal((await store.entryTimes!(digests)).size,3);
+ const epoch=(await kit.personalPayloads!.scope(owner.id)).epoch;await kit.personalPayloads!.purge(owner,epoch);
+ const page=(await store.findBatch!([query]))[0];assert.deepEqual(page,await store.find(query));assert.deepEqual(page.items.map(r=>r.digest),[team.digest]);
+ assert.deepEqual(await store.countIndexedBatch!([count]),[{count:1,capped:false}]);assert.equal((await store.entryCandidates!({digests,spaces,offset:0,limit:100})).total,0);assert.equal((await store.entryTimes!(digests)).size,0);
+ const local=await kit.personalSync!.state(owner);await kit.personalSync!.resume(owner,local.epoch,local.state_version);
+ assert.equal((await store.entryCandidates!({digests,spaces,offset:0,limit:100})).total,0);
+ const fresh=await store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{space:owner.id,at,text:'synthetic-fresh'},index:[{key:query.key,value:query.value}]});
+ assert.deepEqual((await store.findBatch!([query]))[0].items.map(r=>r.digest),[team.digest,fresh.digest]);
+});

@@ -66,7 +66,7 @@ export class KnowledgeSpaces {
   #rawCtx: KnowledgeContext;
   get #ctx():KnowledgeContext {
     const ctx=this.#rawCtx;
-    return {...ctx,records:{...ctx.records,store:scopedRecordStore(ctx.records.store),principals:memoReadPort(ctx.records.principals,['get','list'])}};
+    return {...ctx,records:{...ctx.records,store:scopedRecordStore(ctx.records.store),...(ctx.records.personalPayloads?{personalPayloads:memoReadPort(ctx.records.personalPayloads,['mode','cleared'])}:{}),principals:memoReadPort(ctx.records.principals,['get','list'])}};
   }
   #writes=new Map<string,WriteQueue>();
   #legacy: TreeReader;
@@ -508,11 +508,11 @@ export class KnowledgeSpaces {
       let fallback:{index:number;at:string}[]|undefined;
       if(!store.entryCandidates){
         const records=await store.getMany<SpaceEntryBody>(digests);
-        fallback=candidates.flatMap((c,index)=>{const r=records.get(c.row.record);return r?.kind==='knowledge_space_entry'&&r.body.space===c.space?[{index,at:SpaceEntryBody.parse(r.body).at}]:[];}).sort((a,b)=>b.at.localeCompare(a.at));
+        fallback=candidates.flatMap((c,index)=>{const r=records.get(c.row.record);return r?.kind==='knowledge_space_entry'&&r.body.space===c.space&&(!r.body.sync_private||by.id===r.body.space)?[{index,at:SpaceEntryBody.parse(r.body).at}]:[];}).sort((a,b)=>b.at.localeCompare(a.at));
       }
       const items:SpaceEntryView[]=[];let total=0,offset=0;
       while(items.length<limit){
-        const page=store.entryCandidates?await store.entryCandidates({digests,spaces:candidates.map(c=>c.space),offset,limit:limit-items.length}):{items:fallback!.slice(offset,offset+limit-items.length),total:fallback!.length};
+        const page=store.entryCandidates?await store.entryCandidates({digests,spaces:candidates.map(c=>c.space),reader:by.id,offset,limit:limit-items.length}):{items:fallback!.slice(offset,offset+limit-items.length),total:fallback!.length};
         // Space headers are filtered before counting. Content integrity is checked on hydration and reported separately.
         total=page.total;if(!page.items.length)break;offset+=page.items.length;
         const selected=page.items.map(item=>({candidate:candidates[item.index],at:item.at}));

@@ -58,3 +58,26 @@ test('recent excludes cross-space headers from exact counts and reports content 
   assert.ok(!JSON.stringify(wide.items).includes('合成另一个成员的私人条目'));
  }
 });
+
+test('batched knowledge preserves sync-private visibility, purge and fresh-epoch empty views',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
+ const open=await spaces.write(w.user,{kind:'observation',statement:'合成允许分享',path:'/shared'});
+ const restricted=await spaces.write(w.user,{kind:'observation',statement:'合成同步私人条目',path:'/shared'});
+ await spaces.grant(w.user,{path:'/shared',audience:'member',member:w.outsider.id});
+ const root=(await spaces.current(w.user.id))!,row=root.body.entries.find(row=>row.entry===restricted.entry)!,original=(await w.kit.store.get<any>(row.record))!;
+ const record=await w.kit.store.put({kind:'knowledge_space_entry',schema:original.schema,provenance:'declared',body:{...original.body,sync_private:true}});
+ const version=await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{...root.body,parent:root.root,entries:root.body.entries.map(r=>r===row?{...r,record:record.digest,private_only:true}:r)},index:[{key:'knowledge.space.version',value:w.user.id}]});
+ const wanted=root.body.entries.map(r=>({path:r.path,entry:r.entry}));
+ assert.equal((await spaces.entries(w.user,version.digest,wanted)).filter(Boolean).length,2);
+ const shared=await spaces.entries(w.outsider,version.digest,wanted);assert.equal(shared.filter(Boolean).length,1);assert.equal(shared.find(Boolean)?.row.entry,open.entry);
+ assert.equal((await spaces.recent(w.user,'personal',1)).total,2);
+ const native=w.kit.store.entryCandidates;
+ for(const enabled of [true,false]){w.kit.store.entryCandidates=enabled?native:undefined;const page=await spaces.recent(w.outsider,'shared',1);assert.equal(page.total,1);assert.equal(page.items[0].row.entry,open.entry);}
+ w.kit.store.entryCandidates=native;
+ const epoch=(await w.kit.personalPayloads!.scope(w.user.id)).epoch;await w.kit.personalPayloads!.purge(w.user,epoch);
+ for(const by of [w.user,w.outsider]){assert.deepEqual(await spaces.entries(by,version.digest,wanted),[null,null]);assert.equal((await spaces.recent(by,by===w.user?'personal':'shared',100)).total,0);}
+ const local=await w.kit.personalSync!.state(w.user);await w.kit.personalSync!.resume(w.user,local.epoch,local.state_version);
+ assert.equal((await spaces.recent(w.user,'personal',100)).total,0);
+ await spaces.write(w.user,{kind:'observation',statement:'合成新纪元条目',path:'/shared'});
+ assert.equal((await spaces.recent(w.user,'personal',100)).total,1);assert.equal((await spaces.recent(w.outsider,'shared',100)).total,0,'old grants never return in the new epoch');
+});
