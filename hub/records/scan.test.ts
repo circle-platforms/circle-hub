@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
+import { assertLinearGrowth } from '../testing/growth.ts';
 import { CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
 
 const BS = String.fromCharCode(0x5c);
@@ -372,6 +373,36 @@ test('base64 image data containing a synthetic credential shape is still a cloud
   assert.equal(scan.inspected, true);
   assert.equal(scan.clean, false);
   assert.ok(scan.findings.some((finding) => finding.detector === 'cloud_key'));
+});
+
+test('8 MiB and 32 MiB base64 runs scan without an exception and keep the verdict of smaller runs (#153)', () => {
+  const MiB = 1024 * 1024;
+  // The same public seed as largeSyntheticBytes: the shorter fixtures are prefixes of these bytes, so the verdict is
+  // the one the 1.5 MB image gets above. On main a base64 view pattern overflowed V8's stack on one run of about 6 MB;
+  // this line has no such view, and these runs keep it that way.
+  const seeded = (length: number) => createHash('shake256', { outputLength: length }).update('circle-hub scan large clean fixture v1').digest();
+  const image = (size: number, wrapped: boolean) => {
+    const encoded = seeded((size / 4) * 3).toString('base64');
+    return Buffer.from(`![diagram](data:image/png;base64,${wrapped ? (encoded.match(/.{1,76}/g) ?? []).join('\r\n') : encoded})`);
+  };
+  for (const size of [8 * MiB, 32 * MiB]) {
+    for (const wrapped of [false, true]) {
+      const scan = scanForCredentials(image(size, wrapped));
+      assert.deepEqual({ inspected: scan.inspected, clean: scan.clean, findings: scan.findings.length }, { inspected: true, clean: true, findings: 0 }, `${size} ${wrapped}`);
+    }
+  }
+  // A synthetic credential shape deep inside a 32 MiB run is still found, as in the 1.5 MB image.
+  const bytes = seeded(24 * MiB);
+  const collision = `/${'AI' + 'za'}${'Ab3'.repeat(11)}Z9/AAA`;
+  bytes.set(Buffer.from(collision, 'base64'), 15 * MiB);
+  const encoded = bytes.toString('base64');
+  assert.equal(encoded.slice(20 * MiB, 20 * MiB + 44), collision);
+  const scan = scanForCredentials(Buffer.from(`![diagram](data:image/png;base64,${encoded})`));
+  assert.equal(scan.clean, false);
+  assert.ok(scan.findings.some((finding) => finding.detector === 'cloud_key'));
+  // Linear, not timed: CPU time from a 4 MiB run to a 32 MiB one grows with the size (hub/testing/growth.ts). The
+  // growth check ignores a thrown scan, which is why the runs above are scanned first.
+  assertLinearGrowth('base64 run', (size) => image(size, false), (input) => scanForCredentials(input), { small: 4 * MiB });
 });
 
 test('scanWithContexts gives the same scan and, per kept finding, the text it was found in', () => {
