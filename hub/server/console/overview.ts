@@ -1,3 +1,5 @@
+import {chart,parts,comparisons,timeline} from './charts.ts';
+import {dot} from './ui.ts';
 // 总览 (the design canvas's Main board): today's tasks with the span of their calls, each day's task results, the checks of
 // those results, the main reasons items are held back, the business systems, the knowledge and the Hub's state. Every
 // figure comes from the records the reader may see; a result is read for at most RECENT_LIMIT recent tasks, and the page
@@ -6,13 +8,13 @@ import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/gene
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
 import type { CallLogLine } from '../../records/api.ts';
-import { html, link, liveModule, page, type Html } from './html.ts';
+import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
-import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
+import { TASK_FILL, primaryResult, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
-import { card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
+import { card, clock, count,  kpi, plannedCard, sectionHead, when } from './ui.ts';
 
 export const PERIODS = [7, 14, 30] as const;
 export const RECENT_LIMIT = 120;
@@ -79,10 +81,10 @@ export function blockers(tasks: readonly TaskRow[]): { label: string; value: num
   return [...tally].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 5);
 }
 
-async function todayTasks(ctx: PageContext, today: readonly TaskRow[], titles: ReadonlyMap<string, string>, now: number): Promise<Html> {
+async function periodTasks(ctx: PageContext, today: readonly TaskRow[], titles: ReadonlyMap<string, string>, now: number,since:number): Promise<Html> {
   let calls: readonly CallLogLine[] = [];
   try {
-    calls = (await ctx.deps.records.callLog.query(ctx.principal, { from: new Date(startOfDay(now)).toISOString(), limit: 500 })).items;
+    calls = (await ctx.deps.records.callLog.query(ctx.principal, { from: new Date(since).toISOString(),to:new Date(now).toISOString(), limit: 500 })).items;
   } catch {
     calls = [];
   }
@@ -95,23 +97,10 @@ async function todayTasks(ctx: PageContext, today: readonly TaskRow[], titles: R
     spans.set(line.run, span === undefined ? { start, end } : { start: Math.min(span.start, start), end: Math.max(span.end, end) });
   }
   const rows = today.slice(0, 20);
-  if (rows.length === 0) return html`<p class="empty">今日尚无任务。</p>`;
-  const starts = rows.map((row) => Math.min(Date.parse(row.run.started_at), spans.get(row.run.run)?.start ?? Infinity));
-  const t0 = Math.min(...starts);
-  const t1 = Math.max(now, ...rows.map((row) => spans.get(row.run.run)?.end ?? 0));
-  const at = (t: number): number => ((t - t0) / Math.max(t1 - t0, 1)) * 100;
-  const lines: Html[] = [];
-  for (const [i, row] of rows.entries()) {
-    const span = spans.get(row.run.run);
-    const start = starts[i];
-    const end = row.result === 'awaiting' ? now : span?.end ?? start;
-    const who = row.run.runner === undefined ? uiLabelOf('execution_host', row.run.host) : await ctx.userName(row.run.runner);
-    lines.push(html`<a class="wf-row" href="/console/runs/${row.run.run}"><span class="wf-name"><b>${taskTitle(row.run, titles)}</b><span class="sub">${who} · ${clock(row.run.started_at)}</span></span><span class="wf-track">${track(at(start), at(end), row.result === null ? 'fill-unchecked' : row.result === 'awaiting' ? 'fill-wait' : 'fill-circle', { label: taskTitle(row.run, titles) })}</span><span class="wf-dur">${row.result === null ? '—' : taskChip(row.result)}</span></a>`);
-  }
-  const ticks = [0, 1, 2, 3, 4].map((k) => clock(t0 + ((t1 - t0) * k) / 4));
-  return html`<div class="wf-legend"><span><i class="k-circle"></i>Circle 调用</span><span><i class="k-wait"></i>等待提交中</span></div>
-<div class="wf tasks task-list"><div class="wf-axis"><span class="sub">任务 · 执行人 · 开始时间</span><span class="wf-ticks flex">${ticks.map((t) => html`<span>${t}</span>`)}</span><span class="wf-dur">结果</span></div>
-<div class="wf-rows">${lines}</div></div>${today.length > rows.length ? html`<p class="note">今日共 ${today.length} 个任务，显示最近的 ${rows.length} 个；${link('/console/runs', '查看全部任务')}。</p>` : ''}`;
+  if (rows.length === 0) return html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-note">在 Circle 中运行工作流后，这里显示任务。</p>${link('/console/packs','查看工作流')}</section>`;
+  const spansToShow=[];
+  for(const row of rows){const span=spans.get(row.run.run),start=Date.parse(row.run.started_at),end=row.result==='awaiting'?now:span?.end??start,who=row.run.runner?await ctx.userName(row.run.runner):uiLabelOf('execution_host',row.run.host);spansToShow.push({label:taskTitle(row.run,titles),detail:who+' · '+(row.result?uiLabelOf('task_result',row.result):'结果暂不可用'),start,end:Math.max(start,end),url:'/console/runs/'+row.run.run});}
+  return html`${timeline('期间任务',spansToShow,'最多显示最近 20 个任务；调用扫描上限 500 条，等待区间右端是当前截至时间')}${today.length>rows.length?html`<p>${link('/console/runs','查看全部任务')}</p>`:''}`;
 }
 
 export async function overviewPage(ctx: PageContext): Promise<PageResult> {
@@ -121,17 +110,17 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   const since = startOfDay(now - (days - 1) * DAY);
   const [{ runs, more }, titles] = await Promise.all([runsSince(ctx, since, RECENT_LIMIT), packTitles(ctx)]);
   const tasks = await loadTasks(ctx, runs);
-  const today = tasks.filter((task) => Date.parse(task.run.started_at) >= startOfDay(now));
+  const today=tasks;
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
   const passed = settled.filter((task) => task.result === 'passed').length;
   const pending = tasks.reduce((n, task) => n + task.pending, 0);
-  const requests = (await ctx.deps.runs.listRequests?.(ctx.principal) ?? []).filter((r) => r.answered_by === null);
+  const requests = (await ctx.deps.runs.listRequests?.(ctx.principal) ?? []).filter((r) => r.answered_by === null&&tasks.some(task=>task.run.run===r.run));
   const scope = more ? `最近 ${days} 天内最近的 ${RECENT_LIMIT} 个任务` : `最近 ${days} 天`;
-  const kpis = html`<section class="grid g4 section">
-${kpi('今日任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个`, state: 'info' })}
+  const kpis = html`<section class="ch-section" data-columns="4">
+${kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个`, state: 'info' })}
 ${kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '—' : `${Math.round((passed / settled.length) * 100)}`, { unit: settled.length === 0 ? '' : '%', note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: 'ok' })}
-${kpi('未决项', count(pending), { unit: '项', note: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) })}
-${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '在接收人的 Circle 中处理', state: requests.length > 0 ? 'warn' : 'idle' })}
+${kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) })}
+${kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的 Circle 中处理', state: requests.length > 0 ? 'warn' : 'idle' })}
 </section>`;
   // Each day's results: a column per day stacked by task result, the held result only while one exists.
   const dayStarts = Array.from({ length: days }, (_, i) => startOfDay(now - (days - 1 - i) * DAY));
@@ -144,52 +133,47 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   });
   const totals = new Map<TaskResult, number>();
   for (const task of tasks) if (task.result !== null) totals.set(task.result, (totals.get(task.result) ?? 0) + 1);
-  const legend = html`<div class="result-legend">${shown.filter((result) => (totals.get(result) ?? 0) > 0 || result === 'passed').map((result) => html`<span>${swatch(TASK_FILL[result])}${uiLabelOf('task_result', result)} <b class="num">${totals.get(result) ?? 0}</b></span>`)}</div>`;
-  const daily = card({ title: '每日任务结果', hint: `按任务结果统计，${scope}` }, html`${legend}${dayBars(columns, `${scope}每天的任务结果`)}<div class="axis"><span>${columns[0].label}</span><span>${columns[Math.floor(columns.length / 2)].label}</span><span>今日</span></div>`);
-  const checks = checkCounts(tasks);
-  const checkTotal = checks.reduce((n, c) => n + c.value, 0);
-  const checkCard = card({ title: '检查项结果', hint: `${scope}全部结果中的检查项` }, html`<div class="donut-box">${donut(checks.map((c) => ({ value: c.value, stroke: c.stroke })), { value: count(checkTotal), label: '项检查' }, '检查项结果的分布')}
-<ul class="dlist">${checks.map((c) => html`<li>${swatch(c.fill)}<span>${c.label}</span><b class="num">${c.value}</b><em class="num">${checkTotal === 0 ? '—' : `${Math.round((c.value / checkTotal) * 100)}%`}</em></li>`)}</ul></div>
-<p class="note">“等待判定中”不计入通过；“未知”与“检查未完成”单独统计，不计入未通过。</p>`);
-  const stuck = blockers(tasks);
-  const stuckCard = card({ title: '主要阻塞原因', hint: `${scope}被退回或未完成的条目，按原因汇总` }, html`${stuck.length === 0 ? html`<p class="empty">没有被退回或未完成的条目。</p>` : html`<div class="funnel">${stuck.map((s) => html`<div class="frow"><span class="fname" title="${s.label}">${s.label}</span>${hbar(s.value, stuck[0].value, 'fill-wait')}<span class="fval num">${s.value}</span></div>`)}</div>`}
-<p class="note">相关请求已下发至对应的 Circle，在 Circle 中处理。</p>`);
+  const daily=chart('每日任务数量',columns.map((column,i)=>({label:column.label,values:[tasks.filter(task=>{const at=Date.parse(task.run.started_at);return at>=dayStarts[i]&&(i===dayStarts.length-1||at<dayStarts[i+1]);}).length]})),[{label:'任务'}],'bar',scope);
+  const resultsTable=html`<details class="ch-tableview"><summary>按结果以表格查看</summary>${table(['日期',...shown.map(result=>uiLabelOf('task_result',result)),'结果暂不可用'],columns.map((column,i)=>[column.label,...column.parts.map(part=>part.value),tasks.filter(task=>task.result===null&&Date.parse(task.run.started_at)>=dayStarts[i]&&(i===dayStarts.length-1||Date.parse(task.run.started_at)<dayStarts[i+1])).length]))}</details>`;
+  const checks=checkCounts(tasks),checkTotal=checks.reduce((sum,item)=>sum+item.value,0);
+  const checkCard=card({title:'检查项结果',hint:scope+'全部结果中的检查项；等待判定中不计入通过，未知与检查未完成单独统计，不计入未通过。'},html`${kpi('检查项',checkTotal)}${parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布')}`);
+  const stuck=blockers(tasks),stuckCard=card({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},stuck.length?comparisons('主要阻塞原因',stuck):html`<p class="ch-empty-note">没有被退回或未完成的条目。</p>`);
   const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
-  const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id));
-  const systems = card({ title: '业务系统', hint: '只读访问；近 24 小时的读取次数与耗时' }, html`${!ctx.admin ? html`<p class="sub">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="syslist">${resources.slice(0, 6).map((r) => html`<a class="sysrow" href="/console/connections#systems"><span class="dot ${r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle'}" aria-hidden="true"></span><span class="sys-t"><b>${r.name}</b><span class="sub">${r.system_pack} · ${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="sub">${reads === null ? '暂不可用' : readsText(reads.get(r.id))}</span></a>`)}</div>`}
-<div class="card-f"><span class="chip plain">只读访问，不修改业务数据</span>${link('/console/connections', '查看全部')}</div>`);
+  const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id),now-since);
+  const systems = card({ title: '业务系统读取', meta:'当前配置 · '+scope+'读取', hint: '只读访问；'+scope+'的读取次数与耗时' }, html`${!ctx.admin ? html`<p class="ch-meta">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="ch-list">${resources.slice(0, 6).map((r) => html`<a class="ch-row" href="/console/connections#systems">${dot(r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle')}<span class="ch-row-body"><b>${r.name}</b><span class="ch-meta">${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="ch-meta">${reads === null ? '暂不可用' : readsText(reads.get(r.id),scope)}</span></a>`)}</div>`}
+<div class="ch-actions"><span class="ch-tag">只读访问，不修改业务数据</span>${link('/console/connections', '查看全部')}</div>`);
   const lines = await readableLines(ctx);
   let current = 0;
   for (const line of lines) {
     for (const build of await ctx.deps.knowledge.builds(line.id)) if (build.root !== null) { current += 1; break; }
   }
-  const knowledge = card({ title: '知识库', hint: '按产品线统计' }, html`<div class="kstats two"><div><span class="sub">产品线</span><b class="num">${lines.length}</b></div><div><span class="sub">已有知识的产品线</span><b class="num">${current}</b></div></div>
-<p class="sub">每条知识均附出处；成员可读分配给自己的工作流所绑定的产品线。</p><div class="card-f"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
+  const knowledge = card({ title: '知识库', meta:'当前快照', hint: '按产品线统计，成员可读分配给自己的工作流所绑定的产品线。' }, html`<div class="ch-stats">${kpi('产品线',lines.length)}${kpi('已有知识的产品线',current)}</div>
+<div class="ch-actions"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
   const storage = await storageFacts(ctx);
-  const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : `最近 ${when(storage.backups.latest_at)}`;
-  const health = html`<div class="health">
-<a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>服务</b><span class="sub">运行中${facts?.release ? ` · ${facts.release}` : ''}</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot ${facts?.certificate ? 'ok' : 'idle'}" aria-hidden="true"></span><span><b>证书</b><span class="sub">${facts?.certificate ? '内置 HTTPS 已启用' : '未启用 HTTPS'}</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot ok" aria-hidden="true"></span><span><b>数据库</b><span class="sub">仅本机连接${storage.database_bytes === null ? '' : ` · ${sizeText(storage.database_bytes)}`}</span></span></a>
-<a class="hcell" href="/console/settings#hub"><span class="dot ${storage.backups !== null && storage.backups.count > 0 ? 'ok' : 'idle'}" aria-hidden="true"></span><span><b>备份</b><span class="sub">${backupNote}</span></span></a>
-<a class="hcell" href="/console/records"><span class="dot info" aria-hidden="true"></span><span><b>记录</b><span class="sub">仅追加，不可修改</span></span></a>
+  const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : html`最近 ${when(storage.backups.latest_at)}`;
+  const health = html`<div class="ch-list">
+<a class="ch-row" href="/console/settings#hub">${dot('ok')}<span><b>服务</b><span class="ch-meta">运行中${facts?.release ? ` · ${facts.release}` : ''}</span></span></a>
+<a class="ch-row" href="/console/settings#hub">${dot(facts?.certificate ? 'ok' : 'idle')}<span><b>证书</b><span class="ch-meta">${facts?.certificate ? '内置 HTTPS 已启用' : '未启用 HTTPS'}</span></span></a>
+<a class="ch-row" href="/console/settings#hub">${dot('ok')}<span><b>数据库</b><span class="ch-meta">仅本机连接${storage.database_bytes === null ? '' : ` · ${sizeText(storage.database_bytes)}`}</span></span></a>
+<a class="ch-row" href="/console/settings#hub">${dot(storage.backups !== null && storage.backups.count > 0 ? 'ok' : 'idle')}<span><b>备份</b><span class="ch-meta">${backupNote}</span></span></a>
+<a class="ch-row" href="/console/records">${dot('info')}<span><b>记录</b><span class="ch-meta">仅追加，不可修改</span></span></a>
 </div>`;
-  const periods = html`<nav class="seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` class="on" aria-current="true"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
+  const periods = html`<nav class="ch-seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` aria-current="page"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
   const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
-${liveModule('overview-today', ['task.updated'], html`<section class="card section"><div class="card-h"><h3 title="每行一个任务，点击查看执行过程">今日任务</h3></div>${await todayTasks(ctx, today, titles, now)}</section>`)}
-${liveModule('overview-results', ['task.updated'], html`<section class="grid g-2-1 section">${daily}${checkCard}</section>`)}
-${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<section class="grid g3 section">${stuckCard}${systems}${knowledge}</section>`)}
+${liveModule('overview-today', ['task.updated'], html`<section class="ch-section">${await periodTasks(ctx,today,titles,now,since)}</section>`)}
+${liveModule('overview-results', ['task.updated'], html`<section class="ch-section" data-columns="2"><div class="ch-section">${daily}${resultsTable}</div>${checkCard}</section>`)}
+${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<section class="ch-section" data-columns="3">${stuckCard}${systems}${knowledge}</section>`)}
 ${sectionHead('规划中的功能', undefined, undefined, undefined, '已规划、尚未上线的功能，上线后在此处启用')}
-<section class="grid g3">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section>
-${sectionHead('运行状况', undefined, undefined, undefined, '服务、证书、数据库、备份与记录')}
+<section class="ch-section" data-columns="3">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section>
+${sectionHead('当前运行状况', undefined, undefined, undefined, '服务、证书、数据库、备份与记录')}
 ${health}`;
   return {
     status: 200,
     body: page(ctx.chrome('总览', {
       active: 'overview',
-      sub: `${scope} · 截至 ${when(new Date(now).toISOString())}`,
-      actions: periods,
-    }), body),
+      sub: html`${scope} · 截至 ${when(new Date(now).toISOString())}`,
+
+    }),pageLayout(html`${periods}${body}`,{inspector:html`<h2 class="ch-panel-title">总览</h2><p class="ch-meta">${scope}</p>${kpi('任务',tasks.length)}${kpi('未决项',pending)}${card({title:'最近任务'},html`<ul class="ch-feed">${tasks.slice(0,3).map(task=>html`<li>${link('/console/runs/'+task.run.run,taskTitle(task.run,titles))}${task.result?taskChip(task.result):'结果暂不可用'}</li>`)}</ul>`)}`})),
   };
 }

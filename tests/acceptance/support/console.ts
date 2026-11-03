@@ -39,7 +39,7 @@ const cookieHeader = (reply: ConsoleReply, name: string): string | undefined =>
 const cookieValue = (header: string | undefined): string => (header ?? '').split(';')[0].split('=').slice(1).join('=');
 const csrfOf = (body: string): string => /name="csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
 
-export async function openConsole(hub: TestHub, token?: string): Promise<ConsoleClient> {
+export async function openConsole<T extends Pick<TestHub,'port'>>(hub: T, token?: string): Promise<ConsoleClient> {
   const port = hub.port;
   let sessionCookie: string | undefined;
 

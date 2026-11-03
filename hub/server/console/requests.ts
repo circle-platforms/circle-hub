@@ -15,8 +15,8 @@ export async function awaitingRequests(ctx: PageContext, requests: readonly RunR
   const rows = await Promise.all(sorted.map(async row => [
     uiLabelOf('request_status', expired(row) ? 'overdue' : 'waiting'),
     uiLabelOf('request_kind', row.kind),
-    ...(showTask ? [row.run ? link(`/console/runs/${row.run}`, row.run) : '—'] : []),
+    ...(showTask ? [row.run ? link(`/console/runs/${row.run}`, '查看任务') : '—'] : []),
     await ctx.userName(row.audience), when(row.due), row.missing, row.next_action,
   ]));
-  return section('等待回应中的请求', table(['状态', '种类', ...(showTask ? ['所属任务'] : []), '接收人', '期限', '待补充内容', '后续处理'], rows), '请求的处理在接收人的 Circle 中完成；本页只显示请求的接收人、期限与状态。');
+  return section('等待回应中的请求', table(['状态', '类型', ...(showTask ? ['所属任务'] : []), '接收人', '期限', '待补充内容', '后续处理'], rows), '请求的处理在接收人的 Circle 中完成；本页只显示请求的接收人、期限与状态。');
 }

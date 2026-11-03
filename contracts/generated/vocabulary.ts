@@ -6,13 +6,13 @@ export const AXES = {
   effect_trigger: { label: '触发方式', owner: 'W03', values: [{ code: 'runner_session', label: '由运行者会话经效果写入发起' }, { code: 'hub_template', label: '放行条件满足后由 Hub 按模板派发' }] },
   write_interaction: { label: '交互方式', owner: 'D03', values: [{ code: 'submit_then_read', label: '提交一次，再读状态和结果' }] },
   nature: { label: '性质', owner: 'B01', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'unknown', label: '未知' }] },
-  basis_rank: { label: '依据等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
-  expectation_basis: { label: '期望检查文字依据', owner: 'A02', values: [{ code: 'model_judgment', label: '模型判断' }] },
+  basis_rank: { label: '依据等级', ui: '来源等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
+  expectation_basis: { label: '期望检查文字依据', ui: '期望检查文字来源', owner: 'A02', values: [{ code: 'model_judgment', label: '模型判断' }] },
   provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察', ui: '观测' }, { code: 'projected', label: '投影', ui: '推算' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选', ui: '待确认' }, { code: 'client_captured', label: '客户端捕获', ui: '客户端采集' }] },
   source_role: { label: '来源角色', owner: 'A03', values: [{ code: 'expected', label: '期望来源' }, { code: 'subject', label: '被判对象' }, { code: 'artifact_under_verification', label: '待判定产物' }, { code: 'reported_actual', label: '报告的实际结果' }, { code: 'republished', label: '派生' }, { code: 'hint', label: '线索' }, { code: 'request_text', label: '请求原文' }] },
   independence: { label: '独立性', owner: 'A04', values: [{ code: 'human_non_author', label: '人且非作者' }, { code: 'model_family_declared', label: '不同模型族（客户端声明）' }, { code: 'judge_not_author', label: '判断者不是作者' }, { code: 'not_independent', label: '非独立' }, { code: 'unknown', label: '未知' }] },
   control: { label: '控制区间', owner: 'A05', values: [{ code: 'automatic', label: '自动' }, { code: 'human_takeover', label: '人工接管' }] },
-  resolution: { label: '解析状态', ui: '出处定位', owner: 'T04', values: [{ code: 'resolved', label: '已解析', ui: '已定位' }, { code: 'ambiguous', label: '有歧义', ui: '多处匹配' }, { code: 'unresolved', label: '未解析', ui: '未定位' }] },
+  resolution: { label: '解析状态', ui: '来源定位', owner: 'T04', values: [{ code: 'resolved', label: '已解析', ui: '已定位' }, { code: 'ambiguous', label: '有歧义', ui: '多处匹配' }, { code: 'unresolved', label: '未解析', ui: '未定位' }] },
   verdict: { label: '判定', ui: '校验结果', owner: 'V01', values: [{ code: 'support', label: '支持', ui: '成立' }, { code: 'refute', label: '反驳', ui: '不成立' }, { code: 'unknown', label: '未知' }, { code: 'abstain', label: '弃权' }] },
   discriminating_power: { label: '判别力', owner: 'V01', values: [{ code: 'established', label: '已建立' }, { code: 'not_established', label: '未建立' }] },
   layer: { label: '判定层', ui: '检查方式', owner: 'V03', values: [{ code: 'static', label: '静态', ui: '引用校验' }, { code: 'dynamic', label: '动态', ui: '沙箱复验' }] },
@@ -31,7 +31,7 @@ export const AXES = {
   trigger: { label: '触发', owner: 'W09', values: [{ code: 'session', label: '会话' }, { code: 'event_or_schedule', label: '事件或定时' }, { code: 'requirement', label: '要求项' }, { code: 'standing_obligation', label: '常设义务' }] },
   execution_host: { label: '执行宿主', ui: '执行位置', owner: 'W06', values: [{ code: 'local_circle', label: '本地 Circle', ui: '本机 Circle' }, { code: 'bot', label: 'bot', ui: '机器人' }, { code: 'hub', label: 'Hub（仅确定性函数）', ui: 'Hub 校验' }] },
   item_handling: { label: '条目处理声明', owner: 'W07', values: [{ code: 'handled', label: '已处理' }, { code: 'skipped', label: '跳过' }] },
-  action_kind: { label: '动作种类', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'trial', label: '尝试读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验', ui: '校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根', ui: '发布新版本' }, { code: 'lease', label: '租约' }] },
+  action_kind: { label: '动作种类', ui: '动作类型', owner: 'B05', values: [{ code: 'read', label: '读取' }, { code: 'trial', label: '尝试读取' }, { code: 'parse', label: '解析' }, { code: 'generate', label: '生成' }, { code: 'read_back', label: '回读' }, { code: 'validate', label: '边界校验', ui: '校验' }, { code: 'dispatch', label: '派发' }, { code: 'classify', label: '归类' }, { code: 'move_root', label: '移动当前根', ui: '发布新版本' }, { code: 'lease', label: '租约' }] },
   lease_op: { label: '租约操作', owner: 'D04', values: [{ code: 'acquire', label: '取得' }, { code: 'extend', label: '续租' }, { code: 'release', label: '释放' }, { code: 'force_release', label: '强制释放' }, { code: 'take_over', label: '接管' }, { code: 'register', label: '登记' }, { code: 'unregister', label: '注销' }] },
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
@@ -42,17 +42,17 @@ export const AXES = {
   retry_safety: { label: '重试安全类', owner: 'D03', values: [{ code: 'same_key_safe', label: '同键安全' }, { code: 'dedup_window', label: '时间窗内去重' }, { code: 'duplicate_tolerant', label: '可容忍重复' }, { code: 'unsafe', label: '不安全' }] },
   signing: { label: '署名方式', owner: 'D03', values: [{ code: 'own_credential', label: '本人凭据' }, { code: 'service_on_behalf', label: '服务账号代表发起用户' }] },
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
-  request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
+  request_kind: { label: '请求种类', ui: '请求类型', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
   request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }] },
-  permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
+  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
-  entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '教训' }] },
+  entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '教训' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干', ui: '大类' }, { code: 'branch', label: '枝', ui: '分类' }, { code: 'leaf', label: '叶', ui: '条目' }] },
   change_kind: { label: '版本差类型', owner: 'K01', values: [{ code: 'added', label: '新增' }, { code: 'removed', label: '删除' }, { code: 'modified', label: '修改' }] },
   read_tier: { label: '读取档位', owner: 'B02', values: [{ code: 'model_readable', label: '模型可读' }, { code: 'function_bytes_only', label: '只许函数按引用读字节' }, { code: 'retain_only', label: '只保留' }] },
   home: { label: '家', owner: 'C01', values: [{ code: 'knowledge', label: '知识' }, { code: 'policy', label: '政策' }, { code: 'method', label: '方法' }, { code: 'resource', label: '资源' }] },
   ownership: { label: '归属', owner: 'C02', values: [{ code: 'generic', label: '通用' }, { code: 'product', label: '产品专用' }, { code: 'system_adapter', label: '系统适配器' }, { code: 'workflow', label: '工作流专用' }] },
-  producer_kind: { label: '生产者种类', owner: 'C08', values: [{ code: 'function', label: '函数' }, { code: 'model', label: '模型' }, { code: 'human', label: '人' }] },
+  producer_kind: { label: '生产者种类', ui: '生产者类型', owner: 'C08', values: [{ code: 'function', label: '函数' }, { code: 'model', label: '模型' }, { code: 'human', label: '人' }] },
   determinism: { label: '确定性类', owner: 'C08', values: [{ code: 'deterministic', label: '确定性' }, { code: 'nondeterministic', label: '非确定性' }] },
   error_handling: { label: '错误处理', owner: 'W02', values: [{ code: 'repair', label: '修复' }, { code: 'reject', label: '进已拒收' }, { code: 'request', label: '发请求' }, { code: 'unknown', label: '记未知' }] },
   check_tier: { label: '检查档位', ui: '检查级别', owner: 'C05', values: [{ code: 'blocking', label: '阻断', ui: '阻断项' }, { code: 'advisory', label: '提示', ui: '提示项' }] },
@@ -66,17 +66,17 @@ export const AXES = {
   qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }, { code: 'legacy_keyword_rules', label: '旧规则（关键词）' }, { code: 'possible_credentials', label: '可能含凭据' }] },
   reason: { label: '未知与未完成的原因', ui: '原因', owner: 'V03', values: [{ code: 'no_check', label: '未装检查', ui: '未配置检查' }, { code: 'check_error', label: '检查出错' }, { code: 'timeout', label: '超时' }, { code: 'missing_input', label: '缺输入', ui: '缺少输入' }, { code: 'declared_skip', label: '模型声明跳过' }, { code: 'not_covered', label: '提交未覆盖' }, { code: 'awaiting_step', label: '在等某一步', ui: '等待前序步骤中' }, { code: 'output_failed', label: '出件失败', ui: '输出失败' }, { code: 'repair_exhausted', label: '修复轮数用完', ui: '修复次数已用完' }, { code: 'budget_exhausted', label: '预算用完', ui: '预算已用完' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
   sample_source: { label: '样例来源', owner: 'T02', values: [{ code: 'author', label: '作者' }, { code: 'returned_counterexample', label: '回流反例' }, { code: 'retained_delivery', label: '外部留存交付' }] },
-  target: { label: '目标种类', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
+  target: { label: '目标种类', ui: '目标类型', owner: 'W02', values: [{ code: 'item', label: '条目' }, { code: 'run', label: '运行' }] },
   measure: { label: '度量', owner: 'C04', values: [{ code: 'count', label: '个数' }, { code: 'sum', label: '总和' }, { code: 'min', label: '最小值' }, { code: 'max', label: '最大值' }] },
   placement: { label: '归位方式', owner: 'K04', values: [{ code: 'code_only', label: '只按代码归位' }, { code: 'judgment_allowed', label: '可由 bot 提议归位' }] },
   fragment_read: { label: '片段读取状态', owner: 'T04', values: [{ code: 'bound', label: '已绑定可读' }, { code: 'not_bound', label: '不是这次运行的输入' }, { code: 'not_groundable', label: '这类记录不能作根据' }, { code: 'entry_unaddressed', label: '知识条目单独引用了，没写树地址' }, { code: 'malformed', label: '引用写法不对' }, { code: 'no_fragment', label: '找不到片段' }, { code: 'too_large', label: '超过大小上限' }, { code: 'retain_only', label: '只保留、不可读' }, { code: 'unavailable', label: '暂时读不到' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
-  document_output_kind: { label: '按文档的产出种类', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }, { code: 'applicability_claim', label: '适用条件主张' }] },
-  task_output_kind: { label: '按任务的产出种类', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
-  relation_kind: { label: '关系种类', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }, { code: 'covers', label: '覆盖' }] },
+  document_output_kind: { label: '按文档的产出种类', ui: '按文档的产出类型', owner: 'K03', values: [{ code: 'classification', label: '分类' }, { code: 'placement_proposal', label: '归位提议' }, { code: 'assertion', label: '声明' }, { code: 'relation', label: '关系' }, { code: 'applicability_claim', label: '适用条件主张' }] },
+  task_output_kind: { label: '按任务的产出种类', ui: '按任务的产出类型', owner: 'W07', values: [{ code: 'ranking', label: '排序' }, { code: 'selection', label: '取舍' }, { code: 'score', label: '分数' }] },
+  relation_kind: { label: '关系种类', ui: '关系类型', owner: 'K03', values: [{ code: 'same_subject', label: '说的是同一件事' }, { code: 'contradicts', label: '互相矛盾' }, { code: 'covers', label: '覆盖' }] },
   exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
   work_class: { label: '工作类', owner: 'V07', values: [{ code: 'verification', label: '验证' }, { code: 'reproduction', label: '复现' }, { code: 'web', label: 'Web' }] },
   link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
-  variable_kind: { label: '变量种类', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
+  variable_kind: { label: '变量种类', ui: '变量类型', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
   share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
   applicability_field: { label: '适用条件字段', owner: 'K02', values: [{ code: 'models', label: '型号' }, { code: 'platforms', label: '平台' }, { code: 'builds', label: '起止构建' }, { code: 'components', label: '部件' }, { code: 'memory', label: '内存' }, { code: 'licenses', label: '许可' }, { code: 'deployment_forms', label: '部署形态' }] },
@@ -87,24 +87,24 @@ export const AXES = {
   declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
   knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
   release_status: { label: '发布说明状态', owner: 'K02', values: [{ code: 'fixed', label: '已修复' }, { code: 'known', label: '已知' }] },
-  composition_basis: { label: '组成依据', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
+  composition_basis: { label: '组成依据', ui: '组成来源', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
   binding_status: { label: '版本绑定状态', owner: 'K03', values: [{ code: 'bound', label: '已绑定' }, { code: 'undeclared', label: '未声明' }, { code: 'conflict', label: '冲突' }] },
-  binding_basis: { label: '版本绑定依据', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
-  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人' }, { code: 'team', label: '团队' }] },
-  knowledge_entry_status: { label: '条目状态', owner: 'K02', values: [{ code: 'verified', label: '已核验' }, { code: 'unverified', label: '未核验' }, { code: 'withdrawn', label: '已撤回' }, { code: 'superseded', label: '被取代' }] },
-  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的' }, { code: 'all', label: '全部' }] },
-  knowledge_grantee: { label: '授权对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
-  knowledge_grant_action: { label: '授权操作', owner: 'R01', values: [{ code: 'grant', label: '授权' }, { code: 'revoke', label: '收回授权' }] },
-  knowledge_share_status: { label: '提交共享状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
-  audience_scope: { label: '可见范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人' }, { code: 'members', label: '本人及 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
-  share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读' }] },
+  binding_basis: { label: '版本绑定依据', ui: '版本绑定来源', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
+  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }] },
+  knowledge_entry_status: { label: '条目状态', owner: 'K02', values: [{ code: 'verified', label: '已核验', ui: '已验证' }, { code: 'unverified', label: '未核验', ui: '待验证' }, { code: 'withdrawn', label: '已撤回' }, { code: 'superseded', label: '被取代' }] },
+  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
+  knowledge_grantee: { label: '授权对象', ui: '分享对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
+  knowledge_grant_action: { label: '授权操作', ui: '分享操作', owner: 'R01', values: [{ code: 'grant', label: '授权', ui: '已分享' }, { code: 'revoke', label: '收回授权', ui: '已收回分享' }] },
+  knowledge_share_status: { label: '提交共享状态', ui: '分享到团队状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
+  audience_scope: { label: '可见范围', ui: '分享范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人', ui: '仅自己可见' }, { code: 'members', label: '本人及 {n} 名成员', ui: '已分享给 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）', ui: '已分享给全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）', ui: '已分享给 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）', ui: '全员可见' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
+  share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析', ui: '来源可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目', ui: '引用私人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读', ui: '依赖的私人条目或技能可读' }] },
   knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
   memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
-  memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史' }, { code: 'share', label: '提交共享' }, { code: 'share_preview', label: '记忆共享预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
-  knowledge_directory: { label: '知识目录显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
-  knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
-  memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录' }, { code: 'markdown_text', label: 'Markdown 正文' }, { code: 'active_content', label: '启用内容' }, { code: 'active_documents', label: '启用篇数' }] },
+  memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史', ui: '版本记录' }, { code: 'share', label: '提交共享', ui: '分享到团队' }, { code: 'share_preview', label: '记忆共享预检', ui: '分享到团队预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
+  knowledge_directory: { label: '知识目录显示', ui: '知识文件夹显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
+  knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目', ui: '私人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
+  memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录', ui: '文件夹' }, { code: 'markdown_text', label: 'Markdown 正文' }, { code: 'active_content', label: '启用内容' }, { code: 'active_documents', label: '启用篇数' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -983,7 +983,7 @@ export function isBindingBasis(value: unknown): value is BindingBasis {
 export const KNOWLEDGE_SPACE_KIND = ['personal', 'team'] as const;
 export type KnowledgeSpaceKind = (typeof KNOWLEDGE_SPACE_KIND)[number];
 export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
-export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
 export const KnowledgeSpaceKindSchema = z.enum(KNOWLEDGE_SPACE_KIND);
 export function isKnowledgeSpaceKind(value: unknown): value is KnowledgeSpaceKind {
   return (KNOWLEDGE_SPACE_KIND as readonly unknown[]).includes(value);
@@ -993,7 +993,7 @@ export function isKnowledgeSpaceKind(value: unknown): value is KnowledgeSpaceKin
 export const KNOWLEDGE_ENTRY_STATUS = ['verified', 'unverified', 'withdrawn', 'superseded'] as const;
 export type KnowledgeEntryStatus = (typeof KNOWLEDGE_ENTRY_STATUS)[number];
 export const KNOWLEDGE_ENTRY_STATUS_LABEL = { 'verified': '已核验', 'unverified': '未核验', 'withdrawn': '已撤回', 'superseded': '被取代' } as const satisfies { readonly [K in KnowledgeEntryStatus]: string };
-export const KNOWLEDGE_ENTRY_STATUS_UI = { 'verified': '已核验', 'unverified': '未核验', 'withdrawn': '已撤回', 'superseded': '被取代' } as const satisfies { readonly [K in KnowledgeEntryStatus]: string };
+export const KNOWLEDGE_ENTRY_STATUS_UI = { 'verified': '已验证', 'unverified': '待验证', 'withdrawn': '已撤回', 'superseded': '被取代' } as const satisfies { readonly [K in KnowledgeEntryStatus]: string };
 export const KnowledgeEntryStatusSchema = z.enum(KNOWLEDGE_ENTRY_STATUS);
 export function isKnowledgeEntryStatus(value: unknown): value is KnowledgeEntryStatus {
   return (KNOWLEDGE_ENTRY_STATUS as readonly unknown[]).includes(value);
@@ -1003,7 +1003,7 @@ export function isKnowledgeEntryStatus(value: unknown): value is KnowledgeEntryS
 export const KNOWLEDGE_SEARCH_SCOPE = ['personal', 'team', 'shared', 'all'] as const;
 export type KnowledgeSearchScope = (typeof KNOWLEDGE_SEARCH_SCOPE)[number];
 export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
-export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '团队', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
 export const KnowledgeSearchScopeSchema = z.enum(KNOWLEDGE_SEARCH_SCOPE);
 export function isKnowledgeSearchScope(value: unknown): value is KnowledgeSearchScope {
   return (KNOWLEDGE_SEARCH_SCOPE as readonly unknown[]).includes(value);
@@ -1023,7 +1023,7 @@ export function isKnowledgeGrantee(value: unknown): value is KnowledgeGrantee {
 export const KNOWLEDGE_GRANT_ACTION = ['grant', 'revoke'] as const;
 export type KnowledgeGrantAction = (typeof KNOWLEDGE_GRANT_ACTION)[number];
 export const KNOWLEDGE_GRANT_ACTION_LABEL = { 'grant': '授权', 'revoke': '收回授权' } as const satisfies { readonly [K in KnowledgeGrantAction]: string };
-export const KNOWLEDGE_GRANT_ACTION_UI = { 'grant': '授权', 'revoke': '收回授权' } as const satisfies { readonly [K in KnowledgeGrantAction]: string };
+export const KNOWLEDGE_GRANT_ACTION_UI = { 'grant': '已分享', 'revoke': '已收回分享' } as const satisfies { readonly [K in KnowledgeGrantAction]: string };
 export const KnowledgeGrantActionSchema = z.enum(KNOWLEDGE_GRANT_ACTION);
 export function isKnowledgeGrantAction(value: unknown): value is KnowledgeGrantAction {
   return (KNOWLEDGE_GRANT_ACTION as readonly unknown[]).includes(value);
@@ -1043,7 +1043,7 @@ export function isKnowledgeShareStatus(value: unknown): value is KnowledgeShareS
 export const AUDIENCE_SCOPE = ['owner', 'members', 'administrators', 'combined', 'received', 'team', 'team_unassigned', 'product'] as const;
 export type AudienceScope = (typeof AUDIENCE_SCOPE)[number];
 export const AUDIENCE_SCOPE_LABEL = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
-export const AUDIENCE_SCOPE_UI = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AUDIENCE_SCOPE_UI = { 'owner': '仅自己可见', 'members': '已分享给 {n} 名成员', 'administrators': '已分享给全体管理员（当前 {n} 人）', 'combined': '已分享给 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全员可见', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
 export const AudienceScopeSchema = z.enum(AUDIENCE_SCOPE);
 export function isAudienceScope(value: unknown): value is AudienceScope {
   return (AUDIENCE_SCOPE as readonly unknown[]).includes(value);
@@ -1053,7 +1053,7 @@ export function isAudienceScope(value: unknown): value is AudienceScope {
 export const SHARE_CHECK = ['grounds', 'quotations', 'sources', 'duplicates', 'credentials', 'permission', 'structure', 'sandbox', 'references', 'size', 'team_memory_status', 'personal_sources', 'local_only', 'dependencies'] as const;
 export type ShareCheck = (typeof SHARE_CHECK)[number];
 export const SHARE_CHECK_LABEL = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
-export const SHARE_CHECK_UI = { 'grounds': '依据可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用个人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的个人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
+export const SHARE_CHECK_UI = { 'grounds': '来源可解析', 'quotations': '引文逐字一致', 'sources': '来源可共享', 'duplicates': '与团队条目不重复', 'credentials': '凭据扫描', 'permission': '发布权', 'structure': '结构校验', 'sandbox': '沙箱运行（正反样例）', 'references': '引用可解析', 'size': '大小检查', 'team_memory_status': '团队记忆状态', 'personal_sources': '引用私人凭据来源的条目', 'local_only': '仅本机内容', 'dependencies': '依赖的私人条目或技能可读' } as const satisfies { readonly [K in ShareCheck]: string };
 export const ShareCheckSchema = z.enum(SHARE_CHECK);
 export function isShareCheck(value: unknown): value is ShareCheck {
   return (SHARE_CHECK as readonly unknown[]).includes(value);
@@ -1093,7 +1093,7 @@ export function isMemoryShareEffect(value: unknown): value is MemoryShareEffect 
 export const MEMORY_ACTION = ['create', 'edit', 'save', 'history', 'share', 'share_preview', 'enable_memory', 'disable_memory'] as const;
 export type MemoryAction = (typeof MEMORY_ACTION)[number];
 export const MEMORY_ACTION_LABEL = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本历史', 'share': '提交共享', 'share_preview': '记忆共享预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
-export const MEMORY_ACTION_UI = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本历史', 'share': '提交共享', 'share_preview': '记忆共享预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
+export const MEMORY_ACTION_UI = { 'create': '新建记忆', 'edit': '编辑记忆', 'save': '保存记忆', 'history': '版本记录', 'share': '分享到团队', 'share_preview': '分享到团队预检', 'enable_memory': '启用记忆', 'disable_memory': '停用记忆' } as const satisfies { readonly [K in MemoryAction]: string };
 export const MemoryActionSchema = z.enum(MEMORY_ACTION);
 export function isMemoryAction(value: unknown): value is MemoryAction {
   return (MEMORY_ACTION as readonly unknown[]).includes(value);
@@ -1113,7 +1113,7 @@ export function isKnowledgeDirectory(value: unknown): value is KnowledgeDirector
 export const KNOWLEDGE_ORIGIN = ['personal_entry', 'team_import', 'product_source'] as const;
 export type KnowledgeOrigin = (typeof KNOWLEDGE_ORIGIN)[number];
 export const KNOWLEDGE_ORIGIN_LABEL = { 'personal_entry': '个人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
-export const KNOWLEDGE_ORIGIN_UI = { 'personal_entry': '个人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
+export const KNOWLEDGE_ORIGIN_UI = { 'personal_entry': '私人条目', 'team_import': '导入', 'product_source': '产品知识来源' } as const satisfies { readonly [K in KnowledgeOrigin]: string };
 export const KnowledgeOriginSchema = z.enum(KNOWLEDGE_ORIGIN);
 export function isKnowledgeOrigin(value: unknown): value is KnowledgeOrigin {
   return (KNOWLEDGE_ORIGIN as readonly unknown[]).includes(value);
@@ -1123,7 +1123,7 @@ export function isKnowledgeOrigin(value: unknown): value is KnowledgeOrigin {
 export const MEMORY_FIELD = ['document_title', 'directory_path', 'markdown_text', 'active_content', 'active_documents'] as const;
 export type MemoryField = (typeof MEMORY_FIELD)[number];
 export const MEMORY_FIELD_LABEL = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
-export const MEMORY_FIELD_UI = { 'document_title': '标题', 'directory_path': '目录', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
+export const MEMORY_FIELD_UI = { 'document_title': '标题', 'directory_path': '文件夹', 'markdown_text': 'Markdown 正文', 'active_content': '启用内容', 'active_documents': '启用篇数' } as const satisfies { readonly [K in MemoryField]: string };
 export const MemoryFieldSchema = z.enum(MEMORY_FIELD);
 export function isMemoryField(value: unknown): value is MemoryField {
   return (MEMORY_FIELD as readonly unknown[]).includes(value);

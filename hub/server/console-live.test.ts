@@ -12,7 +12,8 @@ import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { createApp } from './app.ts';
 import type { CommandBridge } from './command-bridge.ts';
-import { CONTENT_SECURITY_POLICY, SCRIPT_HASH } from './console/html.ts';
+import { CONTENT_SECURITY_POLICY, SCRIPT_HASH, THEME_SCRIPT_HASH } from './console/html.ts';
+import { THEME_SCRIPT } from './console/theme.ts';
 import { LIVE_EVENTS, environmentTransition, eventsOf, visibleTo, wantedEvents, type LiveEvent } from './console/live.ts';
 import type { PageContext } from './console/pages.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
@@ -390,28 +391,34 @@ describe('sessions', () => {
 });
 
 describe('the module script', () => {
-  test('a page with live modules carries exactly the script the CSP allows by its hash; other pages and the login page carry none', async () => {
+  test('every page carries the hash-allowed theme script and only live pages carry the live module', async () => {
     const session = await signIn(server.admin.token);
     const overview = await send(server.port, '/console/overview', { headers: { cookie: session } });
     assert.equal(overview.status, 200);
     const scripts = [...overview.body.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)];
-    assert.equal(scripts.length, 1);
-    assert.match(scripts[0][0], /^<script type="module">/);
-    assert.equal(scripts[0][1], LIVE_SCRIPT);
-    const hash = createHash('sha256').update(scripts[0][1], 'utf8').digest('base64');
+    assert.equal(scripts.length, 2);
+    assert.match(scripts[0][0], /^<script data-console-theme>/);
+    assert.equal(scripts[0][1], THEME_SCRIPT);
+    assert.equal(createHash('sha256').update(scripts[0][1]).digest('base64'), THEME_SCRIPT_HASH);
+    assert.match(scripts[1][0], /^<script type="module">/);
+    assert.equal(scripts[1][1], LIVE_SCRIPT);
+    const hash = createHash('sha256').update(scripts[1][1], 'utf8').digest('base64');
     assert.equal(hash, SCRIPT_HASH);
     const csp = String(overview.headers['content-security-policy']);
     assert.equal(csp, CONTENT_SECURITY_POLICY);
     assert.ok(csp.includes(`script-src 'sha256-${hash}'`));
+    assert.ok(csp.includes(`'sha256-${THEME_SCRIPT_HASH}'`));
     assert.ok(csp.includes("connect-src 'self'"));
     assert.doesNotMatch(csp, /unsafe|\*/);
     assert.match(overview.body, /<p class="live-state" id="live-state" role="status" hidden><\/p>/);
     assert.match(overview.body, /data-live="task\.updated"/);
     const records = await send(server.port, '/console/records', { headers: { cookie: session } });
     assert.equal(records.status, 200);
-    assert.doesNotMatch(records.body, /<script/i);
+    assert.doesNotMatch(records.body.replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i);
+    assert.ok(records.body.includes(THEME_SCRIPT));
     const login = await send(server.port, '/console/login');
-    assert.doesNotMatch(login.body, /<script/i);
+    assert.doesNotMatch(login.body.replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i);
+    assert.ok(login.body.includes(THEME_SCRIPT));
   });
 
   test('the script parses as a JavaScript module and names only the stream of this console', async () => {

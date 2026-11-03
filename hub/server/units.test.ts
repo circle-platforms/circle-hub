@@ -15,7 +15,8 @@ import { SandboxError } from '../rules/api.ts';
 
 import { parseTarget } from './app.ts';
 import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './claims.ts';
-import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, liveModule, page } from './console/html.ts';
+import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, liveModule, page, THEME_SCRIPT_HASH } from './console/html.ts';
+import { THEME_SCRIPT } from './console/theme.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
 import { SessionStore, cookie } from './console/session.ts';
 import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './http.ts';
@@ -89,19 +90,27 @@ test('html escapes every interpolation once, keeps nested markup and encodes lin
   assert.equal(html`<a href="${href('/x', { q: '"><script>' })}">t</a>`.text, '<a href="/x?q=%22%3E%3Cscript%3E">t</a>');
 });
 
-test('the CSP allows exactly the page stylesheet and the live module by their hashes, and nothing else', () => {
+test('the CSP allows exactly the page stylesheet, the theme script and the live module by their hashes, and nothing else', () => {
   const text = page({ title: 't', user: null, csrf: null }, html``).text;
   const style = /<style>([\s\S]*?)<\/style>/.exec(text)?.[1] ?? '';
   const hash = createHash('sha256').update(style, 'utf8').digest('base64');
   assert.ok(CONTENT_SECURITY_POLICY.includes(`style-src 'sha256-${hash}'`));
-  assert.ok(CONTENT_SECURITY_POLICY.includes(`script-src 'sha256-${createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64')}'`));
+  const themeHash = createHash('sha256').update(THEME_SCRIPT, 'utf8').digest('base64');
+  assert.equal(THEME_SCRIPT_HASH, themeHash);
+  const scriptSrc = /script-src ([^;]*)/.exec(CONTENT_SECURITY_POLICY)?.[1]?.trim();
+  assert.equal(scriptSrc, `'sha256-${createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64')}' 'sha256-${themeHash}'`, 'only the live module and the theme script');
   assert.ok(CONTENT_SECURITY_POLICY.includes("connect-src 'self'"));
   assert.doesNotMatch(CONTENT_SECURITY_POLICY, /unsafe|\*/);
-  assert.doesNotMatch(text, /<script/i, 'a page without an account has no script');
+  const themeOnly = (doc: string, label: string) => {
+    assert.equal([...doc.matchAll(/<script\b/gi)].length, 1, label);
+    assert.ok(doc.includes(`<script data-console-theme>${THEME_SCRIPT}</script>`), label);
+  };
+  themeOnly(text, 'a page without an account has only the theme script');
   const user = { name: '合成', role: '成员', admin: false };
-  assert.doesNotMatch(page({ title: 't', user, csrf: 'c' }, html`<p>x</p>`).text, /<script/i, 'nor a page without a live module');
+  themeOnly(page({ title: 't', user, csrf: 'c' }, html`<p>x</p>`).text, 'and so has a page without a live module');
   const lively = page({ title: 't', user, csrf: 'c' }, liveModule('m', ['task.updated'], html`<p>x</p>`)).text;
-  assert.equal([...lively.matchAll(/<script\b/g)].length, 1);
+  assert.equal([...lively.matchAll(/<script\b/g)].length, 2, 'the theme script and the live module');
+  assert.ok(lively.includes(`<script data-console-theme>${THEME_SCRIPT}</script>`));
   assert.ok(lively.includes(`<script type="module">${LIVE_SCRIPT}</script>`));
   assert.match(lively, /<div class="live-module" id="live-m" data-live="task\.updated"><p>x<\/p><\/div>/);
 });

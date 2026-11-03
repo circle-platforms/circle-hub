@@ -14,6 +14,28 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- Console vocabulary values use the model's interface labels, while static copy follows the shared Chinese wording and
+  spacing rules. Explanations appear in keyboard-accessible tooltips; rendered-page checks preserve original evidence.
+  Selected and hovered row helpers, control borders and chart loading states meet the shared contrast requirements.
+
+- Console rows select contextual actions instead of carrying buttons. Keyboard selection, dialogs, pending submissions,
+  live refresh and success messages share consistent behavior; charts offer matching hover, keyboard and table views,
+  with unified periods and compact numeric/time formatting. Native forms and strict hash-based CSP remain supported.
+
+- The remaining console areas share sections, statistics, badges and dialogs with contextual overviews. System, call and
+  member selections open responsive inspectors; task evidence remains accessible on phones. Inspector actions are grouped
+  at the foot, destructive actions open confirmations, and overview check results use a thin segmented bar instead of a ring.
+
+- Knowledge, memory and workflow views use shared lists and tables with contextual inspectors. Readable names replace
+  inline hashes; technical references remain available through explicit view entries. Wide tables scroll within their
+  containers on narrow screens, and knowledge selection exposes the existing batch sharing preview.
+
+- The console shares a three-column shell and responsive navigation across all areas, with a segmented theme control
+  beside the account. Sign-in and setup pages use a centred panel with the same form components and a footer theme control.
+
+- The console uses the shared Circle design tokens and local system fonts, with a persistent system/light/dark theme
+  switch on signed-in and sign-in pages. Fixed scripts and styles remain allowed only by their content hashes.
+
 - Memory refusal audits and unchanged-write receipts cannot be read as generic records or evidence. Owners see safe
   refusal summaries and administrators see counts; administrators retain visibility of grants in which they participate.
 

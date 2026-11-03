@@ -1,3 +1,5 @@
+import {timeline,comparisons} from './charts.ts';
+import {technicalCode} from './presentation.ts';
 // The tasks of the console (the design canvas's 任务 board): a run with the result display rule 20 derives, its head and the
 // waterfall of what happened, built only from what the Hub recorded: the call log lines of the run (each bar is the Hub's
 // time on one call; the gap before a submission is Circle's own time, which the Hub does not observe), the Hub's checks of
@@ -11,7 +13,7 @@ import type { RunDetail } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
-import { card, chip, dot, duration, hbar, track, when, clock, type DotState } from './ui.ts';
+import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
 import type { PageContext } from './pages.ts';
 import { environmentState } from './connections.ts';
 
@@ -53,7 +55,7 @@ export async function packTitles(ctx: PageContext): Promise<Map<string, string>>
 export const packIdOf = (ref: string): string => (ref.includes('@') ? ref.slice(0, ref.lastIndexOf('@')) : ref);
 
 export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles: ReadonlyMap<string, string>): string {
-  return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? packIdOf(run.pack);
+  return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? '工作流名称暂不可读';
 }
 
 export function resultCell(row: Pick<TaskRow, 'result' | 'pending'>): Html {
@@ -70,8 +72,8 @@ export async function taskHead(ctx: PageContext, detail: RunDetail, titles: Read
   const who = run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner);
   const line = [run.product, run.version, run.build].filter(Boolean).join(' / ');
   return card(null, html`<div class="dhead"><div class="grow">
-<div class="row"><h2 title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
-<p class="sub mt4">工作流 ${run.pack}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)} · 运行 ${code(run.run)}</p>
+<div class="ch-actions"><h2 class="ch-panel-title" title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
+<p class="ch-meta">工作流 ${taskTitle(run,titles)}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)}</p>
 </div></div>`);
 }
 
@@ -107,7 +109,7 @@ function callDot(line: CallLogLine): DotState {
 
 function callSub(line: CallLogLine, run: RunRecordView): string {
   const parts: string[] = [];
-  if (line.tool === 'start_run') parts.push(`工作流 ${run.pack}`);
+  if (line.tool === 'start_run') parts.push('工作流启动');
   if (line.acceptance !== null) parts.push(uiLabelOf('acceptance', line.acceptance));
   if (line.call_result !== 'ok') parts.push(uiLabelOf('call_result', line.call_result));
   if (line.error_code !== null) parts.push(line.error_code);
@@ -194,7 +196,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : 'answered');
     steps.push({
       name: uiLabelOf('request_kind', request.kind),
-      sub: `接收人 ${audience} · 期限 ${when(request.due)} · ${state}`,
+      sub: `接收人 ${audience} · 期限 ${fullTime(request.due)} · ${state}`,
       fill: open ? 'fill-wait' : 'fill-pass',
       dot: open ? (overdue ? 'down' : 'warn') : 'ok',
       start: created,
@@ -251,29 +253,16 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const t0 = Math.min(started, ...steps.map((s) => s.start).filter(Number.isFinite));
   let t1 = Math.max(...steps.map((s) => s.end).filter(Number.isFinite), t0);
   if (t1 - t0 < 1000) t1 = t0 + 1000;
-  const at = (t: number): number => ((t - t0) / (t1 - t0)) * 100;
   const open = steps.some((s) => s.open === true);
-  const ticks = [0, 1, 2, 3, 4].map((i) => clock(t0 + ((t1 - t0) * i) / 4));
-  const rows = steps.map((s) => html`<div class="wf-row static"><span class="wf-name${s.depth === 1 ? ' d1' : ''}">${dot(s.dot)}<b>${s.name}</b><span class="sub">${s.sub}</span></span><span class="wf-track">${track(at(s.start), at(s.end), s.fill, { point: s.point === true, label: `${s.name} ${s.dur}`.trim() })}</span><span class="wf-dur">${s.dur}</span></div>`);
   const toolCalls = calls.length;
   const pending = pendingCount(detail);
   const waiting = steps.filter((s) => s.open === true).length;
   const total = calls.length === 0 ? null : Date.parse([...calls].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0].at) - Math.min(...calls.map((c) => Date.parse(c.at) - c.duration_ms));
-  const summary = html`<div class="wf-sum">
-<div><b class="num">${toolCalls}</b><span>工具调用</span></div>
-<div><b class="num">${detail.run.items.length}</b><span>条目</span></div>
-<div${pending > 0 ? html` class="unk"` : ''}><b class="num">${pending}</b><span>未决项</span></div>
-<div${waiting > 0 ? html` class="unk"` : ''}><b class="num">${waiting}</b><span>${uiLabelOf('request_status','waiting')}</span></div>
-<div><b class="num">${total === null ? '—' : duration(total)}</b><span>从第一次调用到最后一次</span></div>
-</div>`;
-  const legend = html`<div class="wf-legend mt12"><span><i class="k-circle"></i>Circle 调用</span><span><i class="k-hub"></i>Hub 校验</span><span><i class="k-wait"></i>${uiLabelOf('request_status','waiting')}</span><span><i class="k-hand"></i>${uiLabelOf('static_terminal','judgment')}</span><span><i class="k-fail"></i>${uiLabelOf('dynamic_terminal','fail')}</span></div>`;
-  const process = card({ title: '执行过程', meta: open ? `截至 ${clock(now)}` : `${clock(t0)} 至 ${clock(t1)}`, hint: '每段工具调用的长度是 Hub 处理这次调用的时间；提交前的空档是 Circle 在本机的时间，Hub 不调用模型，也不观测这段时间。' }, html`${summary}${legend}
-<div class="wf mt16"><div class="wf-axis"><span class="sub">步骤</span><span class="wf-ticks flex">${ticks.map((t) => html`<span>${t}</span>`)}</span><span class="wf-dur">耗时</span></div>
-<div class="wf-rows">${rows}</div></div>
-${callsShown ? '' : html`<p class="note">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
-  const slow = [...calls].sort((a, b) => b.duration_ms - a.duration_ms).slice(0, 3);
-  const longest = slow.length === 0 ? '' : card({ title: '耗时最长的调用' }, html`<ul class="slow">${slow.map((line) => html`<li><span><b>${toolName(line.tool)}</b> <span class="sub">${clock(line.at)}</span></span>${hbar(line.duration_ms, slow[0].duration_ms, 'fill-hub')}<span class="wf-dur">${duration(line.duration_ms)}</span></li>`)}</ul>`);
-  return html`${process}${longest === '' ? '' : html`<div class="mt16">${longest}</div>`}`;
+  const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'—':duration(total))}</div>`;
+  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；提交前的空档是 Circle 本机时间，Hub 不观测这段时间。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
+  const slow=[...calls].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,3);
+  const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),'毫秒'):'';
+  return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;
 }
 
 /** A tool of the call log by its Chinese name, with the name the protocol uses (a method that is not a tool shows only that). */

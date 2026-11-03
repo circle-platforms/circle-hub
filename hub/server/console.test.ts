@@ -8,6 +8,7 @@ import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { NEUTRAL } from './console/pages.ts';
+import { THEME_SCRIPT } from './console/theme.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -120,11 +121,11 @@ async function runWithResult(user: TestUser, findings: string[] = ['期望结果
 describe('the mark of circle-hub', () => {
   test('every page carries the mark inline and names the icon, served to anyone as an image of this origin only', async () => {
     const login = await send('/console/login');
-    assert.match(login.body, /<svg class="logo lg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">/);
+    assert.match(login.body, /<svg class="ch-hubmark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">/);
     assert.match(login.body, /<link rel="icon" type="image\/svg\+xml" href="\/console\/favicon\.svg">/);
     assert.match(String(login.headers['content-security-policy']), /img-src 'self'(?:;|$)/);
     const overview = await send('/console/overview', { headers: { cookie: await signIn((await person()).token) } });
-    assert.match(overview.body, /<div class="brand"><svg class="logo" viewBox="0 0 64 64"/);
+    assert.match(overview.body, /<div class="ch-brand"><svg class="ch-hubmark" viewBox="0 0 64 64"/);
     assert.doesNotMatch(overview.body, /<span class="logo/, 'the ring of Circle is gone');
 
     const icon = await send('/console/favicon.svg');
@@ -139,7 +140,7 @@ describe('the mark of circle-hub', () => {
 });
 
 describe('sign-in', () => {
-  test('the login page has a strict CSP without script, frames denied, and a one-time nonce cookie scoped to the login path', async () => {
+  test('the login page allows only fixed scripts by hash, denies frames and scopes its one-time nonce cookie to the login path', async () => {
     const page = await send('/console/login');
     assert.equal(page.status, 200);
     const csp = String(page.headers['content-security-policy']);
@@ -147,9 +148,10 @@ describe('sign-in', () => {
     assert.match(csp, /style-src 'sha256-[A-Za-z0-9+/=]+'/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.match(csp, /form-action 'self'/);
-    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'the live module of the signed-in pages, by its hash only');
+    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'only the fixed live and theme scripts by hash');
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
-    assert.doesNotMatch(page.body, /<script/i);
+    assert.ok(page.body.includes(`<script data-console-theme>${THEME_SCRIPT}</script>`));
+    assert.doesNotMatch(page.body.replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     const login = cookieHeader(page, 'circle_hub_login') ?? '';
     assert.match(login, /; Path=\/console\/login; HttpOnly; SameSite=Strict; Max-Age=900$/);
@@ -266,7 +268,7 @@ describe('pages', () => {
     for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录']) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
     }
-    const blocks = [...page.body.matchAll(/<div class="claim"><dl>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
+    const blocks = [...page.body.matchAll(/<div class="ch-source"(?: data-evidence)?><dl[^>]*>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
     assert.ok(blocks.length >= 2, 'the target basis and the finding are shown as claims');
     const order: readonly string[] = DISPLAY_ORDER;
     for (const labels of blocks) {
@@ -399,7 +401,7 @@ describe('pages', () => {
     const bare = await createTestServer({ postgres, withoutProducts: true });
     try {
       const admin = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(bare.admin.token, bare.port) } });
-      assert.ok(admin.body.includes('（line-a）'), 'the product pack id of the catalog');
+      assert.ok(admin.body.includes('/console/packs/line-a'), 'the product pack id of the catalog');
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
@@ -413,13 +415,13 @@ describe('pages', () => {
     const user = await person(['local-review']);
     const session = await signIn(user.token);
     const packs = await get('/console/packs', session);
-    assert.ok(packs.body.includes('>local-review@1.0.0<'));
-    assert.ok(!packs.body.includes('>review@1.0.0<'), 'an unassigned pack is not listed');
+    assert.ok(packs.body.includes('href="/console/packs/local-review?scope='));
+    assert.ok(!packs.body.includes('href="/console/packs/review?scope='), 'an unassigned pack is not listed');
     assert.ok(!packs.body.includes('分配给'));
     const admin = await signIn(server.admin.token);
     const all = await get('/console/packs', admin);
-    for (const id of ['review@1.0.0', 'local-review@1.0.0']) assert.ok(all.body.includes(id), id);
-    for (const id of ['line-a@1.0.0', 'tracker-system@1.0.0']) assert.ok(!all.body.includes(id), id);
+    for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope='), id);
+    for (const id of ['line-a', 'tracker-system']) assert.ok(!all.body.includes('href="/console/packs/'+id+'?scope='), id);
     assert.ok((await get('/console/knowledge', admin)).body.includes('line-a'));
     assert.ok((await get('/console/connections', admin)).body.includes('tracker-system'));
     assert.ok(all.body.includes(user.user.name), 'assignments are shown to admins');
@@ -445,7 +447,9 @@ describe('pages', () => {
       assert.equal(admin.status, 200, path);
       assert.ok(admin.body.includes(user.user.name));
       assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
-      assert.ok(admin.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a member is a command for the Circle');
+      for(const row of admin.body.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)??[])assert.doesNotMatch(row,/<button|<form|ch-btn/);
+      const selected=await get('/console/team/'+user.user.id,session);
+      assert.ok(selected.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a selected member is a command for the Circle');
     }
     const connections = await get('/console/connections', session);
     assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');

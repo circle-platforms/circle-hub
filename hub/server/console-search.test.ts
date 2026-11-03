@@ -133,8 +133,8 @@ describe('search', () => {
     const run = await runOf(user);
     const session = await signIn(user.token);
     const overview = await send('/console/overview', { headers: { cookie: session } });
-    assert.match(overview.body, /<form class="search" role="search" method="get" action="\/console\/search">/);
-    assert.doesNotMatch((await send('/console/login')).body, /class="search"/, 'not on the sign-in page');
+    assert.match(overview.body, /<form role="search" method="get" action="\/console\/search">/);
+    assert.doesNotMatch((await send('/console/login')).body, /<form role="search"/, 'not on the sign-in page');
     const found = await send(`/console/search?q=${run}`, { headers: { cookie: session } });
     assert.equal(found.status, 200);
     assert.ok(found.body.includes(`href="/console/runs/${run}"`));
@@ -171,7 +171,7 @@ describe('a knowledge node\'s citations', () => {
 
     const page = await send(`/console/knowledge/tree?root=${ROOT_1}&path=%2Fcatalog%2Falpha`, { headers: { cookie: reader } });
     assert.match(page.body, /近 30 天被引用 2 次/);
-    assert.match(page.body, /<th>出处<\/th>/);
+    assert.match(page.body, /<th[^>]*>来源<\/th>/);
 
     const stranger = await signIn((await member([])).token);
     const hidden = await send(`/console/api/knowledge/node?root=${ROOT_1}&path=%2Fcatalog%2Falpha`, { headers: { cookie: stranger } });

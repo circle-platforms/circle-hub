@@ -257,9 +257,11 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const issued = await post('token-issue', { user: 'usr_alice', label: '--raw' });
   assert.deepEqual(calls.at(-1)!.argv, ['token', 'issue', 'usr_alice', '--label=--raw']);
   assert.match(issued.body, /只显示这一次/);
+  assert.match(issued.body,/<div class="ch-toast" role="status" data-toast-success/,'only the confirmation disappears; one-time output remains in the response');
 
   const flagged = await post('user-create', { name: '--role=admin', role: 'user' });
   assert.equal(flagged.status, 400);
+  assert.doesNotMatch(flagged.body,/<div class="ch-toast" role="status" data-toast-success/,'failed actions never show the success confirmation');
   assert.equal(calls.length, 2, 'a positional that looks like a flag never reaches a command');
 
   await post('secret-set', { name: 'DEMO', value: 'synthetic secret value', reason: '轮换' });
@@ -276,7 +278,7 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const member = await post('member-add', { name: 'carol', role: 'user', label: 'MacBook' });
   assert.equal(member.status, 200, member.body);
   assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
-  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /授权页/.test(member.body));
+  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /连接确认页/.test(member.body));
   assert.ok(!member.body.includes('CIRCLE_HUB_TOKEN'), 'the standard authorization needs no token in the Circle entry');
   const withToken = await post('member-add', { name: 'dave', role: 'user', label: 'MacBook', connect: 'token' });
   assert.equal(withToken.status, 200, withToken.body);
@@ -350,11 +352,11 @@ test('publication results retain the actual manifest kind and use the same comma
   for(const kind of ['product','system'] as const){
     const title=kind==='product'?'发布产品知识来源':'发布业务系统接入';
     const checked=await send('POST','/console/admin/do/pack-stage?kind='+kind,{cookie,...upload({...PACK,id:'synthetic-'+kind,kind},csrf)});
-    assert.equal(checked.status,200,checked.body);assert.ok(checked.body.includes(title+'</h1>'));
+    assert.equal(checked.status,200,checked.body);assert.match(checked.body,new RegExp('<h1[^>]*><span[^>]*>'+title+'<span'));
     assert.ok(checked.body.includes('action="/console/admin/do/pack-publish?kind='+kind+'"'));
     const id=stageIdOf(checked.body);
     const published=await send('POST','/console/admin/do/pack-publish',{cookie,body:form({csrf,stage:id})});
-    assert.equal(published.status,200,published.body);assert.ok(published.body.includes(title+'</h1>'));
+    assert.equal(published.status,200,published.body);assert.match(published.body,new RegExp('<h1[^>]*><span[^>]*>'+title+'<span'));
     assert.deepEqual(calls.at(-1)!.argv.slice(0,2),['pack','publish']);assert.equal(calls.at(-1)!.argv.at(-1),'--stage');
     assert.ok(!calls.at(-1)!.argv.some(word=>word.startsWith('--kind')),'display context never changes command arguments');
   }
@@ -412,7 +414,7 @@ test('a failing check offers no 发布 step and keeps nothing; content already p
   // A message of the command that names the private directory shows <目录> instead.
   const echoed = await stage(cookie, { ...PACK, id: 'echo-pack' });
   assert.equal(echoed.answer.status, 409);
-  assert.ok(!echoed.answer.body.includes(echoed.dir) && echoed.answer.body.includes('读不出 &lt;目录&gt; 里的 pack.json'), echoed.answer.body);
+  assert.ok(!echoed.answer.body.includes(echoed.dir) && echoed.answer.body.includes('读不出 &lt;文件夹&gt; 里的 pack.json'), echoed.answer.body);
   await assert.rejects(access(echoed.dir));
 
   const empty = await send('POST', '/console/admin/do/pack-stage', { cookie, body: Buffer.from(`--${BOUNDARY}\r\nContent-Disposition: form-data; name="csrf"\r\n\r\n${csrf}\r\n--${BOUNDARY}\r\nContent-Disposition: form-data; name="archive"; filename="x.zip"\r\n\r\nnot a zip\r\n--${BOUNDARY}--\r\n`), type: `multipart/form-data; boundary=${BOUNDARY}` });

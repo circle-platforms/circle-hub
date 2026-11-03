@@ -12,8 +12,8 @@ test('received skills stay in their own group and team scopes disclose assignmen
  const ctx={principal:users[0],url:new URL('http://127.0.0.1/console/packs'),userName:async(id:string)=>users.find(user=>user.id===id)?.name??'—',chrome:(title:string)=>({title,user:{name:'合成作者',role:'成员',admin:false}}),deps:{packs:{list:async()=>listings},records:{principals:{list:async()=>users},authorizations:{canPublish:async()=>false,usersOf:async()=>assignments}}}} as unknown as PageContext;
  const render=async()=>String((await packsPage(ctx)).body);
  const body=await render();
- assert.match(body,/<section[^>]+id="shared-skill">[\s\S]*?合成受权技能/);
- assert.doesNotMatch(/<section[^>]+id="personal-skill">([\s\S]*?)<\/section>/.exec(body)?.[1]??'',/合成受权技能/);
+ assert.match(body,/<section[^>]+id="shared-skill"[^>]*>[\s\S]*?合成受权技能/);
+ assert.doesNotMatch(/<section[^>]+id="personal-skill"[^>]*>([\s\S]*?)<\/section>/.exec(body)?.[1]??'',/合成受权技能/);
  assert.match(body,/使用范围：团队/);assert.doesNotMatch(body,/使用范围：合成作者|使用范围：本人及全体管理员/);
  ctx.admin=true;ctx.principal={...ctx.principal,role:'admin'};
  assert.match(await render(),/使用范围：合成作者/);

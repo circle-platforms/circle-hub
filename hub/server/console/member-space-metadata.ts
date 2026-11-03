@@ -23,5 +23,5 @@ export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Arr
   }
   counts.push(source.label+' '+(user.disabled?0:[...latest.values()].filter(Boolean).length));
  }
- return [['个人空间已用（含历史）',(current?.body.used_bytes??0)+(memory?.history??0)+' 字节'],['授权给全体管理员的目录与工作流',counts.join(' · ')]];
+ return [['私人空间已用（含版本记录）',(current?.body.used_bytes??0)+(memory?.history??0)+' 字节'],['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
 }

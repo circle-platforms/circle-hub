@@ -1,3 +1,4 @@
+import {technicalCode} from './presentation.ts';
 // 接入业务系统's 尝试连接 (connectors' trial.ts through ServerDeps.systems) and the reads each business system had in the last
 // day (connectors' statistics.ts over the read manifests). The trial takes the very form of the operation: its addresses,
 // plaintext roles, credential items and the credential contents typed with them. Only the trial action is saved; nothing of
@@ -95,13 +96,13 @@ function authLine(report: SystemTrialReport): Html {
       ? chip(auth.kind === 'login_token' ? '登录失败' : '凭据被拒绝', 'fail')
       : chip(auth.kind === 'none' ? '不需要认证' : '未检验', 'unchecked');
   const said = auth.message ?? auth.reason;
-  return html`<p>${state} <span class="sub">${AUTH_KIND[auth.kind]}${auth.ms === null ? '' : ` · 用时 ${duration(auth.ms)}`}${said === null ? '' : ` · ${said}`}</span></p>`;
+  return html`<p>${state} <span class="ch-meta">${AUTH_KIND[auth.kind]}${auth.ms === null ? '' : ` · 用时 ${duration(auth.ms)}`}${said === null ? '' : ` · ${said}`}</span></p>`;
 }
 
 /** The trial's report: authentication, then every route with its result; never a body, a header value or a credential. */
 export function trialCard(report: SystemTrialReport): Html {
   const rows = report.routes.map((route) => [
-    html`<b>${route.route}</b><div class="digest">${route.method} ${route.path}</div>`,
+    html`<b>${route.route}</b><div class="ch-meta">${route.method} ${route.path}</div>`,
     !route.tried ? chip('未尝试读取', 'unchecked') : route.ok === true ? chip('可读取', 'pass') : route.ok === false ? chip('读取失败', 'fail') : chip('结果未知', 'unchecked'),
     route.status === null ? '—' : `HTTP ${route.status}`,
     route.ms === null ? '—' : duration(route.ms),
@@ -111,16 +112,16 @@ export function trialCard(report: SystemTrialReport): Html {
   const tried = report.routes.filter((route) => route.tried).length;
   const spent = Date.parse(report.ended_at) - Date.parse(report.started_at);
   return card(
-    { title: '尝试连接结果', meta: `${report.system_pack.id}@${report.system_pack.version} · ${uiLabelOf('environment', report.environment)} · 尝试读取 ${tried} 个接口 · 用时 ${duration(spent)}` },
-    html`${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '业务系统接入没有声明接口')}<p class="note">每次尝试连接记一条尝试读取记录，包含操作者、时间与各接口的结果；不保存配置、凭据内容或来源原文。登录失败时，加密保存用于防止重复登录的摘要。需要参数的接口不尝试读取；登录失败后，同样的凭据不再发送。</p>`,
+    { title: '尝试连接结果',hint:'每次尝试连接记一条尝试读取记录，不保存配置、凭据内容或来源原文，登录失败后相同凭据不再发送。', meta: `${uiLabelOf('environment', report.environment)} · 尝试读取 ${tried} 个接口 · 用时 ${duration(spent)}` },
+    html`${technicalCode(`${report.system_pack.id}@${report.system_pack.version}`)}${authLine(report)}${table(['接口', '结果', '状态', '耗时', '大小', '说明'], rows, '业务系统接入没有声明接口')}`,
   );
 }
 
-/** The reads of the last day of each business system; null when they cannot be read now (unknown stays unknown). */
-export async function systemReads(ctx: PageContext, ids: readonly string[]): Promise<Map<string, ReadStatistics> | null> {
+/** The reads of each business system in the requested window (the last day by default); null when they cannot be read now (unknown stays unknown). */
+export async function systemReads(ctx: PageContext, ids: readonly string[],windowMs=24*60*60*1000): Promise<Map<string, ReadStatistics> | null> {
   if (!ctx.admin || ids.length === 0) return new Map();
   try {
-    const stats = await readStatistics(ctx.deps.records.store, ids, ctx.deps.now?.() ?? new Date());
+    const stats = await readStatistics(ctx.deps.records.store, ids, ctx.deps.now?.() ?? new Date(),windowMs);
     return new Map(stats.map((item) => [item.resource, item]));
   } catch {
     return null;
@@ -128,9 +129,9 @@ export async function systemReads(ctx: PageContext, ids: readonly string[]): Pro
 }
 
 /** One line for a table or the overview: the reads of the window, those not completed by result, the median time. */
-export function readsText(stats: ReadStatistics | null | undefined): string {
+export function readsText(stats: ReadStatistics | null | undefined,period='近 24 小时'): string {
   if (stats === null || stats === undefined) return '暂不可用';
-  if (stats.reads === 0) return '近 24 小时无读取';
+  if (stats.reads === 0) return period+'无读取';
   const others = ACTION_RESULT.filter((result) => result !== 'completed' && stats.results[result] > 0).map((result) => `${uiLabelOf('action_result', result)} ${stats.results[result]} 次`);
   return `${stats.partial ? '至少 ' : ''}${stats.reads} 次${others.length > 0 ? `（${others.join('，')}）` : ''}${stats.median_ms === null ? '' : ` · 中位 ${duration(stats.median_ms)}`}`;
 }

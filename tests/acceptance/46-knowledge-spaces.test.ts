@@ -66,11 +66,11 @@ test('private source imports verify exact quotations and capacity errors keep th
   assert.equal(source.isError, false, source.text);
   assert.ok(source.out.reference);
   assert.equal((await admin.call('get_nodes', { reference: source.out.reference })).isError, true);
-  const saved = await client.call('upload_file', { personal_entry: { kind: 'observation', statement: '合成已核验的观察', grounds: [{ reference: source.out.reference, quotation: '处理两项' }] } });
+  const saved = await client.call('upload_file', { personal_entry: { kind: 'observation', statement: '合成已验证的观察', grounds: [{ reference: source.out.reference, quotation: '处理两项' }] } });
   assert.equal(saved.isError, false, saved.text);
   assert.equal(saved.out.personal_entry?.status, 'verified');
   const fullEntry = await client.call('get_nodes', { reference: saved.out.personal_entry!.reference });
-  assert.match(fullEntry.text, /已核验/);
+  assert.match(fullEntry.text, /已验证/);
   assert.ok(fullEntry.text.includes('处理两项'));
   assert.equal((await client.call('resolve_reference', { root: saved.out.personal_entry!.root, text: '处理两项', expect: 'quotation' })).out.resolution, 'resolved');
   const bad = await client.call('upload_file', { personal_entry: { kind: 'observation', statement: '合成错误引文', grounds: [{ reference: source.out.reference, quotation: '处理三项' }] } });
@@ -165,10 +165,10 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const ownConsole = await openConsole(hub, owner.token), otherConsole = await openConsole(hub, other.token), adminConsole = await openConsole(hub, hub.admin.token);
   const home = await ownConsole.get('/console/knowledge');
   assert.equal(home.status, 200);
-  for (const text of ['全部', '个人', '团队', '服务器备份', '最近变化', '我的提交共享'])
+  for (const text of ['全部', '我的', '团队', '服务器备份', '最近变化', '分享到团队记录'])
     assert.ok(home.body.includes(text), text);
-  assert.ok(!home.body.includes('共享给我的'),'the empty received group is hidden');
-  assert.match((await ownConsole.get('/console/knowledge?scope=personal')).body,/导入个人知识/);
+  assert.ok(!home.body.includes('与我共享'),'the empty received group is hidden');
+  assert.match((await ownConsole.get('/console/knowledge?scope=personal')).body,/导入我的知识/);
   assert.ok(!home.body.includes('href="/console/operations/knowledge"'));
   const ownPage = await ownConsole.get(spacePath(owner.user.id));
   assert.equal(ownPage.status, 200);
@@ -184,7 +184,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.ok(originalEntry);
   const editor = await ownConsole.get(spacePath(owner.user.id, '/合成/目录', saved.root) + '&entry=' + originalEntry.entry + '&edit=1');
   assert.equal(editor.status, 200);
-  assert.ok(editor.body.includes('修改个人条目'));
+  assert.ok(editor.body.includes('修改我的条目'));
   assert.ok(editor.body.includes(`name="replaces" value="${originalEntry.entry}"`));
   assert.ok(editor.body.includes('>合成控制台观察</textarea>'));
   const edited = await ownConsole.post('/console/knowledge/do/entry', { ...fields, statement: '合成控制台观察（修订）', replaces: originalEntry.entry, expected_version: saved.root });
@@ -193,8 +193,8 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const page = await ownConsole.get(spacePath(owner.user.id, '/合成/目录'));
   assert.equal(page.status, 200);
   assert.ok(page.body.includes('合成控制台观察'));
-  assert.ok(page.body.includes('未核验'));
-  assert.ok(page.body.includes('知识版本历史'));
+  assert.ok(page.body.includes('待验证'));
+  assert.ok(page.body.includes('知识版本记录'));
   const hidden = await otherConsole.get(spacePath(owner.user.id, '/合成/目录', saved.root));
   const absent = await otherConsole.get(spacePath('usr_' + '0'.repeat(26), '/合成/目录', saved.root));
   assert.equal(hidden.status, 404);
@@ -209,7 +209,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.ok(shared.body.includes('合成控制台观察'));
   assert.ok(!shared.body.includes('action="/console/knowledge/do/entry"'));
   assert.ok(!shared.body.includes('action="/console/knowledge/do/grant"'));
-  assert.ok(shared.body.includes('版本历史仅本人可见'));
+  assert.ok(shared.body.includes('版本记录仅本人可见'));
   assert.deepEqual(await spaces.history(other.principal,owner.user.id),{items:[],next:null});
   await spaces.grant(owner.principal,{path:'/',audience:'member',member:other.user.id});
   assert.deepEqual(await spaces.history(other.principal,owner.user.id),{items:[],next:null},'a whole-space grant does not grant the audit history');
@@ -236,7 +236,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.ok(!badEntry.body.includes('hunter22x'));
   const adminPage = await adminConsole.get('/console/team/' + owner.user.id);
   assert.equal(adminPage.status, 200);
-  assert.ok(adminPage.body.includes('个人空间容量'));
+  assert.ok(adminPage.body.includes('私人空间容量'));
   assert.equal((await otherConsole.post('/console/knowledge/do/quota', { csrf: outsiderCsrf, space: owner.user.id, bytes: '1024' })).status, 404);
   assert.equal((await adminConsole.post('/console/knowledge/do/quota', { csrf: csrf(adminPage.body), space: owner.user.id, bytes: '0' })).status, 303);
   assert.equal((await ownConsole.post('/console/knowledge/do/directory', { csrf: nonce, path: '/capacity-test' })).status, 400);

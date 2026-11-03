@@ -116,11 +116,17 @@ test('console owner stages and publishes a generic skill, controls grants and ca
   const ownConsole=await openConsole(hub,owner.token),otherConsole=await openConsole(hub,other.token);const home=await ownConsole.get('/console/packs/-/publish');assert.equal(home.status,200,home.body);const nonce=csrf(home.body);
   const boundary='synthetic-personal-pack';const body=Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="csrf"\r\n\r\n${nonce}\r\n--${boundary}\r\nContent-Disposition: form-data; name="archive"; filename="synthetic.zip"\r\nContent-Type: application/zip\r\n\r\n`),Buffer.from(zipSync(files)),Buffer.from(`\r\n--${boundary}--\r\n`)]);
   const staged=await new Promise<Awaited<ReturnType<typeof ownConsole.get>>>((resolve,reject)=>{import('node:http').then(({request})=>{const req=request({host:'127.0.0.1',port:hub.port,path:'/console/packs/do/stage',method:'POST',headers:{cookie:'circle_hub_session='+ownConsole.sessionCookie,origin:'http://127.0.0.1:'+hub.port,'content-type':'multipart/form-data; boundary='+boundary}},res=>{const chunks:Buffer[]=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>resolve({status:res.statusCode!,headers:res.headers,body:Buffer.concat(chunks).toString()}));});req.on('error',reject);req.end(body);}).catch(reject);});
-  assert.equal(staged.status,303,staged.body);const waiting=await ownConsole.get('/console/packs/-/publish'),stage=/name="stage" value="([^"]+)"/.exec(waiting.body)?.[1];assert.ok(stage,waiting.body);
+  assert.equal(staged.status,303,staged.body);const waiting=await ownConsole.get('/console/packs/-/publish'),stage=/stage=([^"&]+)/.exec(waiting.body)?.[1];assert.ok(stage,waiting.body);
+  assert.doesNotMatch(waiting.body.slice(waiting.body.indexOf('<table')),/<tr[^>]*>[^<]*<form/);
+  const selectedStage=await ownConsole.get('/console/packs/-/publish?stage='+stage);assert.match(selectedStage.body,/name="stage" value="[^"]+"/);
+  assert.match(waiting.body,/<div class="ch-toast" role="status" data-toast-success/);assert.doesNotMatch(selectedStage.body,/<div class="ch-toast" role="status" data-toast-success/,'confirmation is consumed once, never inferred from a URL');
   const outsider=await otherConsole.get('/console/packs/-/publish');assert.equal((await otherConsole.post('/console/packs/do/publish',{csrf:csrf(outsider.body),stage})).status,400);
   assert.equal((await ownConsole.post('/console/packs/do/publish',{csrf:nonce,stage})).status,303);
-  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>授权…<\/a>/);assert.match(detail.body,/发布到团队/);
+  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>分享…<\/a>/);assert.match(detail.body,/分享到团队/);
   assert.equal((await otherConsole.get(detailUrl)).status,404);
+  const previewReply=await ownConsole.send('/console/packs/do/grant',{method:'POST',headers:{origin:'http://127.0.0.1:'+hub.port,'content-type':'application/x-www-form-urlencoded','circle-hub-form':'enhanced'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'administrators',preview_grant:'1'}).toString()});
+  assert.equal(previewReply.status,200,previewReply.body);assert.match(JSON.parse(previewReply.body).location,/#grant-pack$/);assert.equal((await hub.hub.registry.personal!.grants(owner.principal,spec.id)).length,0,'enhanced preview preserves its Dialog destination and creates no grant');
+
   assert.equal((await ownConsole.post('/console/packs/do/grant',{csrf:'invalid',pack:spec.id,audience:'member',member:other.user.name})).status,403);
   assert.equal((await ownConsole.send('/console/packs/do/grant',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'member',member:other.user.name}).toString()})).status,403);
   assert.equal((await ownConsole.post('/console/packs/do/grant',{csrf:nonce,pack:spec.id,audience:'member',member:other.user.name})).status,303);assert.equal((await otherConsole.get(detailUrl)).status,200);
@@ -220,11 +226,11 @@ test('shared revisions use the selected team directory through MCP and password-
   const team=(await spaces.current('team'))!,current=await spaces.entry(other.principal,team.root,'/revision-team/second',changed.entry);
   assert.equal(current?.body.replaces,first.entry);assert.equal(current?.body.shared_from?.path,body.path);
   assert.match((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).text,/被取代/);
-  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队目录/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
+  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队文件夹/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
 });
 
 test('rejected raw submissions never disclose copied private quotations through direct records or record inputs',async()=>{
-  const spaces=hub.hub.knowledge.spaces!,privateQuote='合成仅本人可读的拒收原始引文甲';
+  const spaces=hub.hub.knowledge.spaces!,privateQuote='合成仅自己可见可读的拒收原始引文甲';
   const privateSource=await spaces.importFile(owner.principal,Buffer.from(privateQuote),'text/plain','synthetic-rejected-quote.txt','/rejected-private');
   const personal=await spaces.write(owner.principal,{kind:'observation',statement:'合成被拒提交依据',path:'/rejected-private',grounds:[{reference:'src:'+privateSource.body.sha256,quotation:privateQuote}]});
   const input=await hub.records.artifacts.ingest({bytes:Buffer.from('{"synthetic":"public-input-for-rejected-submission"}'),mediaType:'application/json',origin:{read:{object:'synthetic:document:submission-input'}},author:{user:null},provenanceType:'observed',visibility:{readers:[owner.user.id,other.user.id],admins:true,packs:[],shareable:false}});
@@ -254,8 +260,8 @@ test('records disclose member grants only to participants and give administrator
     const published=await personal.publish(owner.principal,written.dir);assert.ok(published.ok,JSON.stringify(published));
     await personal.grant(owner.principal,id,{audience,...(audience==='member'?{member:other.user.id}:{})});
   }
-  const first=await spaces.write(owner.principal,{kind:'observation',statement:'合成审计甲未核验条目',path:'/audit-owner-source'});
-  const second=await spaces.write(other.principal,{kind:'observation',statement:'合成审计乙未核验条目',path:'/audit-other-source'});
+  const first=await spaces.write(owner.principal,{kind:'observation',statement:'合成审计甲待验证条目',path:'/audit-owner-source'});
+  const second=await spaces.write(other.principal,{kind:'observation',statement:'合成审计乙待验证条目',path:'/audit-other-source'});
   await spaces.share(owner.principal,{root:first.root,path:'/audit-owner-source',entry:first.entry,team_path:'/audit-owner-target'});
   await spaces.share(other.principal,{root:second.root,path:'/audit-other-source',entry:second.entry,team_path:'/audit-other-target'});
   // A stale or wrong projection must not turn a member grant into an administrator-visible event.

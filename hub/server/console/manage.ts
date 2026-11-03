@@ -1,3 +1,4 @@
+import {technicalCode} from './presentation.ts';
 // The console's management (owner decision 75): administrators manage users and tokens, task packs, resources, secrets and
 // knowledge sync from the browser. Every action is a form POST (this server's own origin, the session's CSRF token, an
 // administrator's session) that runs the matching `circle-hub` commands through the command bridge, as the signed-in
@@ -15,7 +16,7 @@
 // administrator exists; its token is shown once and opens a session.
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
-import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, labelOf, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import { initialPassword, validPassword } from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
@@ -286,8 +287,8 @@ export class JobStore {
 
 /** A POST form to an action of this console, with the session's CSRF token. */
 export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean; primary?: boolean; kind?: PackKind } = {}): Html {
-  const button = options.primary ? html`<div class="form-f"><button type="submit" class="primary">${submit}</button></div>` : html`<button type="submit">${submit}</button>`;
-  return html`<form method="post" action="/console/admin/do/${name}${options.kind&&options.kind!=='workflow'?'?kind='+encodeURIComponent(options.kind):''}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html` class="inline"` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
+  const button = options.primary ? html`<div class="ch-actions"><button type="submit" class="ch-btn ch-btn--primary">${submit}</button></div>` : html`<button class="ch-btn ch-btn--secondary" type="submit">${submit}</button>`;
+  return html`<form method="post" action="/console/admin/do/${name}${options.kind&&options.kind!=='workflow'?'?kind='+encodeURIComponent(options.kind):''}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html`` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
 }
 
 const TOKEN_ONCE = '下面的令牌只显示这一次：现在复制，保存到只有使用者能读的地方。离开这页就再也看不到它。';
@@ -300,7 +301,7 @@ function onceNotice(argv: readonly string[]): string | null {
 }
 
 function runLines(run: CommandRun, notice: string | null): Html {
-  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${labelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
+  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${uiLabelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
 ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
@@ -319,43 +320,43 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
   const body = steps.map((step, index) => several
     ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
     : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
-  const trust = ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : '';
-  const connected = html`<p class="sub">成员完成连接后，${link('/console/team', '团队')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
+  const trust = ctx.secure ? '把颁发机构证书加入 trust_cert_files。' : '';
+  const connected = html`<p>${link('/console/team','查看团队')}</p>`;
   const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
-      ? card({ title: '写入成员的 Circle', meta: '访问令牌' }, html`<p class="sub">在该成员的 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，再把以下配置写入 Circle 的 settings.json${trust}：</p><pre class="snippet">${circleEntry(originOf(ctx))}</pre>${connected}`)
-      : card({ title: '成员的 Circle 如何连接', meta: 'MCP 标准授权' }, html`<p class="sub">把以下配置写入该成员 Circle 的 settings.json${trust}。Circle 首次连接时在浏览器中打开授权页，成员输入上面的邀请码并确认授权即完成连接。</p><pre class="snippet">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
+      ? card({ title: '写入成员的 Circle',hint:'在成员的 Circle 中用 /secrets CIRCLE_HUB_TOKEN 保存令牌，再把配置写入 settings.json。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx))}</pre>${connected}`)
+      : card({ title: '成员的 Circle 如何连接',hint:'把配置写入成员 Circle 的 settings.json。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
-    body: page(actionChrome(ctx, action), html`<div class="stack">${body}${after}</div><p class="mt16">${link(action.back, '返回')}</p>`),
+    body: page({...actionChrome(ctx, action),...(last.code===0?{notice:'操作已完成'}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
   };
 }
 
 export function formErrorPage(ctx: PageContext, action: Action, message: string): PageResult {
-  return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
+  return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p>${link(action.back, '返回')}</p>`) };
 }
 
-const jobState = (job: Job): Html => chip(labelOf('action_result', job.result === null ? 'unknown' : job.result.code === 0 ? 'completed' : 'error'), job.result === null ? 'unknown' : job.result.code === 0 ? 'pass' : 'fail');
+const jobState = (job: Job): Html => chip(uiLabelOf('action_result', job.result === null ? 'unknown' : job.result.code === 0 ? 'completed' : 'error'), job.result === null ? 'unknown' : job.result.code === 0 ? 'pass' : 'fail');
 
 export function jobsSection(jobs: readonly Job[]): Html {
   return section('后台任务', table(['开始', '任务', '发起人', '状态'], jobs.map((job) => [
     when(job.started),
     link(`/console/admin/jobs/${job.id}`, `${job.title}：${job.argv.slice(2).join(' ')}`),
     job.by,
-    html`${jobState(job)}${job.finished === null ? '' : html` <span class="sub">${when(job.finished)}</span>`}`,
+    html`${jobState(job)}${job.finished === null ? '' : html` <span class="ch-meta">${when(job.finished)}</span>`}`,
   ]), '尚无后台任务'));
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
   const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入团队知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
-  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
+  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p>${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
     ? html`<p class="notice">尚未收到命令执行结果</p>`
     : runLines(job.result, null);
   return {
     status: 200,
-    body: page(chrome, html`${liveModule('job', ['import.progress'], card({ title: job.title, tail: jobState(job), meta: `发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`), { job: job.id })}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`),
+    body: page(chrome, html`${liveModule('job', ['import.progress'], card({ title: job.title, tail: jobState(job), meta: html`发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`), { job: job.id })}<p>${link('/console/operations/knowledge', '返回')}</p>`),
   };
 }
 
@@ -371,9 +372,9 @@ export interface ManageDeps {
 
 const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在 Hub 所在主机的 Circle 中执行对应的命令';
 
-/** A run's output with the private directories written as <目录>: no page shows where the server keeps an upload. */
+/** A run's output with the private directories written as <文件夹>: no page shows where the server keeps an upload. */
 function withoutPaths(run: CommandRun, ...paths: string[]): CommandRun {
-  const hide = (line: string): string => paths.reduce((text, path) => text.split(path).join('<目录>'), line);
+  const hide = (line: string): string => paths.reduce((text, path) => text.split(path).join('<文件夹>'), line);
   return { ...run, stdout: run.stdout.map(hide), stderr: run.stderr.map(hide) };
 }
 
@@ -471,13 +472,12 @@ const publishAction = (ctx: PageContext, kind: PackKind = publishingKind(ctx)): 
   ...publication(ctx, kind), build: () => { throw new FormError('请上传发布内容'); },
 });
 const PACK_STEP_NAMES = ['上传', '发布校验', '发布', '完成'] as const;
-const shortDigest = (digest: string): string => `${digest.slice(0, 12)}…`;
 
 /** The 发布 and 放弃 forms of a stage, with the session's CSRF token. */
 export function stageForms(stage: StagedPack, csrf: string): Html {
   const options = { inline: true, kind: stage.kind };
   const id = html`<input type="hidden" name="stage" value="${stage.id}">`;
-  return html`<div class="row">${actionForm('pack-publish', csrf, id, '发布', { ...options, primary: false })}${actionForm('pack-discard', csrf, id, '放弃', options)}</div>`;
+  return html`<div class="ch-actions">${actionForm('pack-publish', csrf, id, '发布', { ...options, primary: false })}${actionForm('pack-discard', csrf, id, '放弃', options)}</div>`;
 }
 
 function checkLines(run: CommandRun): Html {
@@ -489,7 +489,7 @@ function refusedPage(ctx: PageContext, refusal: StepRefusal): PageResult {
   const action = publishAction(ctx);
   // A stage that ended, expired or belongs to someone else: the console's neutral answer.
   if (refusal.status === 404) return neutralPage(ctx);
-  return { status: refusal.status, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${refusal.message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
+  return { status: refusal.status, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${refusal.message}</p>`)}<p>${link(action.back, '返回')}</p>`) };
 }
 
 /** The check's page: every result of the dry run, then the 发布 step when the pack was staged. */
@@ -499,16 +499,16 @@ export function stageResultPage(ctx: PageContext, result: StageResult): PageResu
   const run = result.run!;
   const stage = result.stage;
   const next = stage !== null
-    ? card({ title: '发布', tail: chip('等待发布中', 'judgment'), meta: `暂存至 ${when(new Date(stage.expires).toISOString())}` }, html`<p>${uiLabelOf('pack_kind',stage.kind??publishingKind(ctx))} ${code(`${stage.pack}@${stage.version}`)}（摘要 ${shortDigest(stage.digest)}）已暂存。发布执行 ${code('circle-hub pack publish <目录> --stage')}，写入发布记录；暂存 30 分钟内有效，过期后需重新上传。</p>${stageForms(stage, ctx.csrf ?? '')}`)
+    ? card({ title: '发布',hint:'确认后写入发布记录；暂存 30 分钟内有效，过期后需重新上传。', tail: chip('等待发布中', 'judgment'), meta: html`暂存至 ${when(new Date(stage.expires).toISOString())}` }, html`<p>${uiLabelOf('pack_kind',stage.kind??publishingKind(ctx))} 已暂存 ${technicalCode(`${stage.pack}@${stage.version} · ${stage.digest}`)}。</p>${stageForms(stage, ctx.csrf ?? '')}`)
     : result.published !== null
-      ? callout('info', html`相同内容已发布为 ${code(`${result.published.pack}@${result.published.version}`)}，无需再次发布；未暂存。`)
+      ? callout('info', html`相同内容已发布为 ${technicalCode(`${result.published.pack}@${result.published.version}`)}，无需再次发布；未暂存。`)
       : run.code === 0
         ? callout('warn', '发布校验已通过，但暂存未能保存；请重新上传。')
         : callout('warn', '未通过发布校验，未暂存；按上面每条问题的处理修改后重新上传。');
   const status = run.code === 0 ? 200 : run.code === 2 ? 400 : 409;
   return {
     status,
-    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, stage !== null ? 2 : 1)}<div class="stack">${card({ title: '发布校验', meta: code('circle-hub pack publish <目录> --stage --dry-run') }, checkLines(run))}${next}</div><p class="mt16">${link(action.back, '返回')}</p>`),
+    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, stage !== null ? 2 : 1)}<div class="ch-section">${card({ title: '发布校验', meta: code('circle-hub pack publish <文件夹> --stage --dry-run') }, checkLines(run))}${next}</div><p>${link(action.back, '返回')}</p>`),
   };
 }
 
@@ -520,7 +520,7 @@ export function publishResultPage(ctx: PageContext, result: PublishStageResult):
   const status = run.code === 0 ? 200 : run.code === 2 ? 400 : 409;
   return {
     status,
-    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, run.code === 0 ? 4 : 2)}<div class="stack">${card({ title: '发布', meta: code('circle-hub pack publish <目录> --stage') }, runLines(run, null))}</div><p class="mt16">${run.code === 0 ? html`${link(packHome(result.stage?.kind??publishingKind(ctx)).path,`查看${uiLabelOf('pack_kind',result.stage?.kind??publishingKind(ctx))}`)} · ` : ''}${link(action.back, '返回')}</p>`),
+    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, run.code === 0 ? 4 : 2)}<div class="ch-section">${card({ title: '发布', meta: code('circle-hub pack publish <文件夹> --stage') }, runLines(run, null))}</div><p>${run.code === 0 ? html`${link(packHome(result.stage?.kind??publishingKind(ctx)).path,`查看${uiLabelOf('pack_kind',result.stage?.kind??publishingKind(ctx))}`)} · ` : ''}${link(action.back, '返回')}</p>`),
   };
 }
 
@@ -531,14 +531,14 @@ export async function runPackStep(ctx: PageContext, deps: ManageDeps, name: Pack
   const discarded = await discardStage(ctx, deps, form.get('stage'));
   if (discarded === null) return refusedPage(ctx, { status: 404, message: NEUTRAL });
   const action = publishAction(ctx, discarded.kind);
-  return { status: 200, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已放弃暂存的${uiLabelOf('pack_kind',discarded.kind??publishingKind(ctx))} ${code(`${discarded.pack}@${discarded.version}`)}，暂存内容已删除。</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
+  return { status: 200, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已放弃暂存的${uiLabelOf('pack_kind',discarded.kind??publishingKind(ctx))} ${technicalCode(`${discarded.pack}@${discarded.version}`)}，暂存内容已删除。</p>`)}<p>${link(action.back, '返回')}</p>`) };
 }
 
 /** Runs one action for `principal` (an administrator) with the session's token; the steps of 发布任务包 go to runPackStep. */
 export async function runAction(ctx: PageContext, deps: ManageDeps, name: string, form: Form, token: string, upload?: Buffer): Promise<PageResult> {
   if (isPackStep(name)) return runPackStep(ctx, deps, name, form, token, upload);
   const action = ACTIONS[name];
-  if (deps.bridge === undefined) return { status: 503, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${BRIDGE_MISSING}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
+  if (deps.bridge === undefined) return { status: 503, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${BRIDGE_MISSING}</p>`)}<p>${link(action.back, '返回')}</p>`) };
   let built: Built[];
   try {
     const made = action.build(form);
@@ -558,7 +558,7 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
       return result;
     });
     deps.log(`控制台后台任务 ${what} 由 ${ctx.principal.name} 发起`);
-    return { status: 202, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已在后台开始，${link(`/console/admin/jobs/${job.id}`, '查看进展')}。Hub 重启时，进行中的任务需重新发起，已写入的内容不受影响。</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
+    return { status: 202, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已在后台开始，${link(`/console/admin/jobs/${job.id}`, '查看进展')}。Hub 重启时，进行中的任务需重新发起，已写入的内容不受影响。</p>`)}<p>${link(action.back, '返回')}</p>`) };
   }
   const runs: { argv: readonly string[]; run: CommandRun }[] = [];
   for (const step of built) {
@@ -607,9 +607,9 @@ export async function completeSetup(
 }
 
 export function environmentOptions(selected = ''): Html {
-  return html`${ENVIRONMENT.map((value) => html`<option value="${value}"${value === selected ? html` selected` : ''}>${labelOf('environment', value)}</option>`)}`;
+  return html`${ENVIRONMENT.map((value) => html`<option value="${value}"${value === selected ? html` selected` : ''}>${uiLabelOf('environment', value)}</option>`)}`;
 }
 
 export function roleOptions(): Html {
-  return html`${PERMISSION_ROLE.map((value) => html`<option value="${value}">${labelOf('permission_role', value)}</option>`)}`;
+  return html`${PERMISSION_ROLE.map((value) => html`<option value="${value}">${uiLabelOf('permission_role', value)}</option>`)}`;
 }

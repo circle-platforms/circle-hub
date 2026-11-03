@@ -4,7 +4,7 @@ import { uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabul
 import { isUnknownTerminal, type ValidationResult } from '../../../contracts/src/validation.ts';
 import type { RunDetail } from '../../ports.ts';
 import { isAbandonedResult } from '../../runs/api.ts';
-import { html, type Html } from './html.ts';
+import { type Html } from './html.ts';
 import { chip, type DotState, type Tone } from './ui.ts';
 
 /** A run whose every requirement takes facts only: its result is the one start_run computed (the production result). */
@@ -80,9 +80,4 @@ export const TASK_FILL: Readonly<Record<TaskResult, string>> = {
 
 export function taskChip(result: TaskResult): Html {
   return chip(uiLabelOf('task_result', result), TASK_TONE[result]);
-}
-
-/** The legend swatch of a fill class (an `i` coloured like the chart's part). */
-export function swatch(fill: string): Html {
-  return html`<i class="${fill.replace('fill-', 'f-')}"></i>`;
 }

@@ -1,3 +1,4 @@
+import {tooltip,technical} from './presentation.ts';
 import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
 import { LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
@@ -109,15 +110,15 @@ async function hasAdmin(deps: ServerDeps): Promise<boolean> {
 
 async function loginPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, ended = false, next: string | null = null): Promise<void> {
   const nonce = options.sessions.issueNonce(secure);
-  const setup = await hasAdmin(options.deps) ? '' : html`<p class="notice mt12">这个 Hub 还没有管理员：${link('/console/setup', '用初始化码创建首位管理员')}</p>`;
+  const setup = await hasAdmin(options.deps) ? '' : html`<p class="notice">这个 Hub 还没有管理员：${link('/console/setup', '用初始化码创建首位管理员')}</p>`;
   const body = page(
     anonymous('登录'),
-    html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}${ended ? html`<p class="notice mt12">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
-<form method="post" action="/console/login" class="mt16">
-<div class="field"><label for="hub-username">用户名</label><input id="hub-username" class="input" name="username" autocomplete="username" maxlength="200" required></div>
-<div class="field"><label for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><input id="hub-password" class="input" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>
+    html`${message === null ? '' : html`<p class="error">${message}</p>`}${ended ? html`<p class="notice">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
+<form method="post" action="/console/login">
+<div class="ch-field"><label class="ch-field-label" for="hub-username">用户名</label><div class="ch-input"><input id="hub-username" name="username" autocomplete="username" maxlength="200" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
 <input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
-<button type="submit" class="btn primary">登录</button></form>`,
+<button type="submit" class="ch-btn ch-btn--primary">登录</button></form>`,
   );
   const cookies = [cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure)];
   if (ended) cookies.push(cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '', '/console/login', 0, secure));
@@ -208,9 +209,9 @@ async function passwordPage(request: IncomingMessage, response: ServerResponse, 
 <p>${principal.name}</p>${mustChange ? html`<p class="notice">首次登录必须修改密码。</p>` : ''}${message ? html`<p class="error">${message}</p>` : ''}
 <form method="post" action="/console/password"><input type="hidden" name="csrf" value="${session.csrf}"><input type="hidden" name="next" value="${safeNext(url.searchParams.get('next'))}">
 <input type="text" name="username" value="${principal.name}" autocomplete="username" hidden readonly>
-<div class="field"><label>当前密码 <input type="password" name="current" autocomplete="current-password" maxlength="256" required></label></div>
-<div class="field"><label title="12 至 256 个字符，不含控制字符">新密码 <input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></label></div>
-<div class="field"><label>再次输入新密码 <input type="password" name="confirm" autocomplete="new-password" maxlength="256" required></label></div><button type="submit" class="btn primary">修改密码</button></form>`));
+<div class="ch-field"><label class="ch-field-label" for="current-password">当前密码</label><div class="ch-input"><input id="current-password" type="password" name="current" autocomplete="current-password" maxlength="256" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="new-password" title="12 至 256 个字符，不含控制字符">新密码</label><div class="ch-input"><input id="new-password" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="confirm-password">再次输入新密码</label><div class="ch-input"><input id="confirm-password" type="password" name="confirm" autocomplete="new-password" maxlength="256" required></div></div><button type="submit" class="ch-btn ch-btn--primary">修改密码</button></form>`));
   if (request.method === 'GET') return show(200);
   if (request.method !== 'POST') { request.resume(); return sendHtml(response,405,page(anonymous('方法不允许'),html`<p>只接受 POST</p>`),{allow:'POST'}); }
   if (!sameOrigin(request,options.ownOrigins())) { request.resume(); return forbidden(response,'密码表单只能从本控制台提交'); }
@@ -259,7 +260,7 @@ async function loginLink(request: IncomingMessage, response: ServerResponse, opt
   if (request.method === 'GET') {
     const found = links.peek(code);
     const principal = found === null ? null : await options.deps.records.principals.authenticate(`Bearer ${found.token}`);
-    if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p><p class="mt12">${link('/console/login', '前往登录页')}</p>`));
+    if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p>${LINK_INVALID}</p><p>${link('/console/login', '前往登录页')}</p>`));
     // A link from Circle leads every account to the password sign-in at the requested page; it never opens a session.
     return redirect(response,'/console/login?next='+encodeURIComponent(found.next));
   }
@@ -279,7 +280,7 @@ async function loginLink(request: IncomingMessage, response: ServerResponse, opt
   }
   const taken = links.take(code);
   const principal = taken === null ? null : await options.deps.records.principals.authenticate(`Bearer ${taken.token}`);
-  if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p class="mt12">${LINK_INVALID}</p>`));
+  if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p>${LINK_INVALID}</p>`));
   redirect(response,'/console/login?next='+encodeURIComponent(taken.next));
 }
 
@@ -365,7 +366,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   }
   if (!sameOrigin(request, options.ownOrigins())) {
     request.resume();
-    return forbidden(response, '授权表单只能从本控制台的页面提交');
+    return forbidden(response, '连接确认表单只能从本控制台的页面提交');
   }
   const form = await formOf(request);
   if (form === 'aborted') return void response.destroy();
@@ -383,7 +384,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
       open.failures += 1;
       if (open.failures >= MAX_INVITATION_FAILURES) {
         store!.end(open.id);
-        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次未通过验证，该授权请求已结束。`));
+        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次未通过验证，该连接请求已结束。`));
       }
       return show(400, invitationProblem(check.reason));
     }
@@ -402,13 +403,13 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
     }
     if (named === null) return { status: 401, error: '请先输入邀请码' };
     // The account must still be the one the page named: signing in as someone else in another tab changes nothing here.
-    if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新授权' };
+    if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新确认连接' };
     if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
       open.invitation = null;
       return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status','disabled')}）：请管理员重新签发` };
     }
     const code = store!.grant(open, named.id);
-    if (code === null) return { status: 409, error: '该授权请求已处理' };
+    if (code === null) return { status: 409, error: '该连接请求已处理' };
     options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获授权，账号 ${named.id}`);
     return to({ code });
   };
@@ -446,20 +447,20 @@ const SETUP_STEPS = ['初始化码', '创建管理员', '连接 Circle', '完成
 
 async function setupPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, prefill = ''): Promise<void> {
   if (await hasAdmin(options.deps)) {
-    sendHtml(response, status === 200 ? 409 : status, page(anonymous('初始化'), html`${message === null ? '' : html`<p class="error mt12">${message}</p>`}<p class="mt12">这个 Hub 已经有管理员；请用用户名和密码${link('/console/login', '登录')}。</p>`));
+    sendHtml(response, status === 200 ? 409 : status, page(anonymous('初始化'), html`${message === null ? '' : html`<p class="error">${message}</p>`}<p>这个 Hub 已经有管理员；请用用户名和密码${link('/console/login', '登录')}。</p>`));
     return;
   }
   const nonce = options.sessions.issueNonce(secure);
   const body = page(
     { ...anonymous('创建首位管理员'), wide: true, hint: '使用初始化码创建首位管理员；管理员用户名必填，密码可留空。' },
-    html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error mt12">${message}</p>`}
-<p class="sub mt12">初始化码仅可使用一次，24 小时内有效。重新生成：${code('circle-hub setup-code')}</p>
+    html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error">${message}</p>`}
+<p class="ch-meta">初始化码 24 小时内有效，仅可使用一次</p>${technical(code('circle-hub setup-code'),'查看重新生成命令')}
 <form method="post" action="/console/setup">
-<div class="field"><label for="setup-code">初始化码</label><input id="setup-code" class="input" name="code" autocomplete="off" size="40" required value="${prefill}"></div>
-<div class="field"><label for="admin-name">管理员用户名</label><input id="admin-name" class="input" name="name" autocomplete="off" size="24" required></div>
-<div class="field"><label for="admin-password" title="可留空；留空则生成初始密码，仅显示一次，首次登录必须修改">管理员密码（可选）</label><input id="admin-password" class="input" type="password" name="password" autocomplete="new-password" maxlength="256"></div>
+<div class="ch-field"><label class="ch-field-label" for="setup-code">初始化码</label><div class="ch-input"><input id="setup-code" name="code" autocomplete="off" size="40" required value="${prefill}"></div></div>
+<div class="ch-field"><label class="ch-field-label" for="admin-name">管理员用户名</label><div class="ch-input"><input id="admin-name" name="name" autocomplete="off" size="24" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="admin-password" title="可留空；留空则生成初始密码，仅显示一次，首次登录必须修改">管理员密码（可选）</label><div class="ch-input"><input id="admin-password" type="password" name="password" autocomplete="new-password" maxlength="256"></div></div>
 <input type="hidden" name="csrf" value="${nonce}">
-<button type="submit" class="btn primary">创建管理员</button>
+<button type="submit" class="ch-btn ch-btn--primary">创建管理员</button>
 </form>
 ${secure ? trustSteps() : ''}`,
   );
@@ -505,18 +506,18 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
     page(
       { ...anonymous('管理员已创建'), wide: true },
       html`${stepper(SETUP_STEPS, 2)}
-<p class="mt12">已创建管理员 ${outcome.name}。</p>${outcome.password === null ? '' : html`<p class="notice">初始密码仅显示一次；首次登录必须修改。</p>${pre(outcome.password)}`}
+<p>已创建管理员 ${outcome.name}。</p>${outcome.password === null ? '' : html`<p class="notice">初始密码仅显示一次；首次登录必须修改。</p>${pre(outcome.password)}`}
 <p class="notice">下面是这位管理员的访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
-<h2 class="mt16">在 Circle 中连接这个 Hub</h2>
-<p class="sub">把下面这段写入 Circle 的 settings.json。Circle 首次连接时在浏览器中打开授权页；先用用户名和密码登录控制台，再确认授权即完成连接。</p>
-<pre class="snippet">${circleEntry(mcpOrigin(request, secure), false)}</pre>
-<p class="sub">客户端不支持 MCP 标准授权时改用访问令牌：在 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，配置写成：</p>
-<pre class="snippet">${circleEntry(mcpOrigin(request, secure))}</pre>
-${secure ? html`<p class="sub">Hub 使用自己的证书颁发机构：把 Hub 数据目录中的 ${code('tls/ca.crt')} 复制到这台电脑，在 Circle 设置的 ${code('trust_cert_files')} 中写入它的路径。</p>${trustSteps()}` : ''}
-<h2 class="mt16">接下来</h2>
-<ol class="small"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
-<p class="mt12">${link('/console/login', '前往登录')}</p>`,
+<h2>在 Circle 中连接这个 Hub</h2>
+<h2 class="ch-section-label">${tooltip('连接 Circle','把配置写入 Circle 的 settings.json，首次连接时登录控制台并确认身份。')}</h2>
+<pre class="ch-quote">${circleEntry(mcpOrigin(request, secure), false)}</pre>
+<h2 class="ch-section-label">${tooltip('兼容连接方式','客户端不支持 MCP 标准连接确认时，在 Circle 中用 /secrets CIRCLE_HUB_TOKEN 保存令牌后采用下方配置。')}</h2>
+<pre class="ch-quote">${circleEntry(mcpOrigin(request, secure))}</pre>
+${secure ? html`${trustSteps()}` : ''}
+<h2>接下来</h2>
+<ol class="ch-meta"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>
+<p>${link('/console/login', '前往登录')}</p>`,
     ),
     { 'set-cookie': cookie(secure ? SECURE_SETUP_COOKIE : SETUP_COOKIE, '', '/console/setup', 0, secure) },
   );
@@ -635,6 +636,8 @@ async function action(request: IncomingMessage, response: ServerResponse, option
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
 function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL, principal: Principal, session: ConsoleSession, secure: boolean): PageContext {
   const names = new Map<string, Promise<string>>();
+  const notice = request.method === 'GET' && request.headers['circle-hub-refresh'] !== 'live' ? session.notice : undefined;
+  if (notice) delete session.notice;
   return {
     deps: options.deps,
     principal,
@@ -644,7 +647,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
     secure,
     origin: mcpOrigin(request, secure),
     ...(options.hub === undefined ? {} : { hub: options.hub }),
-    chrome: (title, extra = {}) => ({ title, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
+    chrome: (title, extra = {}) => ({ title, notice, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
     userName: (userId) => {
       if (userId === null || userId === undefined) return Promise.resolve('—');
       let pending = names.get(userId);
@@ -855,7 +858,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
         if(file)upload={bytes:file.bytes,name:file.filename,mediaType:mediaTypeFor(file.bytes,undefined,file.filename)};
       }else{const parsed=await formOf(request,ACTION_FORM_LIMIT);if(parsed==='aborted')return void response.destroy();if(parsed==='too_large')return sendHtml(response,413,page(ctx.chrome('表单超出大小上限'),html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`));if(typeof parsed==='string')return forbidden(response,'表单格式不正确');values=parsed;}
       if(values.get('csrf')!==session!.csrf)return forbidden(response,'表单已过期或不是本控制台发出的');
-      try{const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);return redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
+      try{const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);if(values.get('preview_grant')!=='1'&&segments[2]!=='share-batch'&&segments[2]!=='memory-share')session!.notice='操作已完成';return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);}catch(error){result=spaceActionFailure(ctx,error);}
     }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;
