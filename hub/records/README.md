@@ -983,8 +983,7 @@ The owner-only, once-20 inline transform cannot be enabled by the runtime role a
 
 Actual frozen run namespaces/digests and dependency locks retain exact version bodies and objects before a personal
 link is removed. Team sources and independent equal-byte owners remain separate holders. Custody never creates an ACL:
-current public namespace resolution still rejects the deleted owner. Extraction holds the account row through publication
-and extraction; deletion retires unheld caches and private name/external-object lookup values durably. A cleanup failure
+current public namespace resolution still rejects the deleted owner. Extraction holds the account row only while writing extracted files; deletion retires unheld caches and private name/external-object lookup values durably. A cleanup failure
 leaves the tombstone and same-operation recovery intent, without a completion receipt.
 
 Both local-mode purge and member deletion preserve a minimal team attribution credential only after checking the full
@@ -1024,3 +1023,12 @@ by scoped private pack file maps. Same-byte independent uploads still count as o
 and private pack versions retain their actual scoped counts. Only private-version metadata is loaded to classify file
 captures; no new content hash validation is added. Display counts are not mutation inputs, purge manifests or persisted
 receipt fields. The existing owner-function audit recomputation and purge boundary are unchanged.
+
+### Bounded pre-publication work
+
+Private publication and promotion pre-checks share a process-local admission queue on the records kit: two checks at
+once and one per member, including across registry instances. Waiting and sandbox samples own no database connection.
+The extraction callback alone holds the member row; journal insertion commits first so crashes remain recoverable.
+Direct extraction has its own two-slot, one-per-member bound, leaving eight of the normal ten pool connections available.
+After sample checks, current account eligibility is re-read, and publication/promotion retain the committing account
+lock. Deletion can seal an account during a slow sample without waiting for a sandbox or allowing later cache revival.

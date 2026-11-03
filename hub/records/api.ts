@@ -864,7 +864,7 @@ export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'usageForSpace'|'stabl
 export interface RecordsKit {
   memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'>;
   personalSync?:PersonalSyncStore;
-  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

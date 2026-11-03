@@ -96,6 +96,10 @@ export class PersonalPacks {
   async check(by:Principal,directory:string):Promise<PublishCheck>{return await this.#publish(by,directory,true) as PublishCheck;}
   async publish(by:Principal,directory:string):Promise<PublishOutcome>{return await this.#publish(by,directory,false) as PublishOutcome;}
   async #publish(by:Principal,directory:string,dry:boolean):Promise<PublishOutcome|PublishCheck>{
+    const work=()=>this.#publishAdmitted(by,directory,dry);
+    return this.#options.records.personalPayloads?.withStagingSlot(by.id,work)??work();
+  }
+  async #publishAdmitted(by:Principal,directory:string,dry:boolean):Promise<PublishOutcome|PublishCheck>{
     by=await this.#own(by);const refuse=(problems:PackProblem[],report:PublishReport|null=null):PublishOutcome=>({ok:false,problems,report});
     const read=await readPackDirectory(directory,{limits:this.#options.limits});if(!read.ok)return refuse(read.problems);
     const {manifest,digest}=read.pack;if(manifest.kind!=='workflow'&&manifest.kind!=='skill')return refuse([problem('personal.kind','pack.json','个人空间只接受工作流与通用技能','选择团队空间并按团队权限发布')]);
@@ -103,8 +107,8 @@ export class PersonalPacks {
     const dependencyErrors=await this.#dependencyProblems(by,manifest.dependencies??[]);if(dependencyErrors.length)return refuse(dependencyErrors);
     let staged:StagedTree|null=null;
     try{
-      const samples=async()=>{if(needsSandbox(validation.pack))staged=await this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));return runPublishCheck({pack:validation.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});};
-      const report=await (this.#options.records.personalPayloads?this.#options.records.personalPayloads.stage(by.id,digest,samples):samples());report.warnings.unshift(...validation.pack.warnings);const errors=refusalsOf(report,validation.pack);if(errors.length)return refuse(errors,report);
+      if(needsSandbox(validation.pack)){const stage=()=>this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));staged=await (this.#options.records.personalPayloads?this.#options.records.personalPayloads.stage(by.id,digest,stage):stage());}
+      const report=await runPublishCheck({pack:validation.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});by=await this.#own(by);report.warnings.unshift(...validation.pack.warnings);const errors=refusalsOf(report,validation.pack);if(errors.length)return refuse(errors,report);
       const checkExisting=async(tx?:Transaction)=>{
         const owners=new Set<string>(),dependencies=await this.#dependencyProblems(by,manifest.dependencies??[],false,undefined,owners);if(tx&&!dependencies.length){by=await this.#options.records.principals.lockActive(by,tx,[...owners]);dependencies.push(...await this.#dependencyProblems(by,manifest.dependencies??[]));}if(dependencies.length)return {failure:refuse(dependencies,report)};
         const versions=await this.versions(by.id,manifest.id,tx),existing=versions.find(info=>info.version===manifest.version)??null;
@@ -131,6 +135,10 @@ export class PersonalPacks {
     }finally{await (staged as StagedTree|null)?.discard();}
   }
   async precheckPromotion(by:Principal,ref:string){
+    const work=()=>this.#precheckPromotionAdmitted(by,ref);
+    return this.#options.records.personalPayloads?.withStagingSlot(by.id,work)??work();
+  }
+  async #precheckPromotionAdmitted(by:Principal,ref:string){
     by=await this.#own(by);const checks:SharingCheck[]=ShareCheckSchema.extract(['permission','structure','sandbox','references','credentials']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
     const reject=(problems:PackProblem[])=>{checks[phase]={...checks[phase],state:'violation',message:problems.map(p=>p.rule+'：'+p.message).join('；'),fix:problems.map(p=>p.fix).join('；')};return {ok:false,checks};};
     let staged:StagedTree|null=null;
@@ -147,7 +155,7 @@ export class PersonalPacks {
       if(info.manifest.dependencies?.some(dep=>dep.space))return reject([problem('personal.dependency','pack.json','团队发布不能依赖个人空间中的技能','先将依赖发布到团队并更新个人版本')]);
       const team=await this.#team.check(by,opened.handle.directory,{deferCredentials:true});if(!team.ok)return reject(team.problems);
       checks[phase++].state='pass';const credentials=credentialProblems(read.pack);if(credentials.length)return reject(credentials);
-      checks[phase].state='pass';return {ok:true,checks};
+      by=await this.#own(by);checks[phase].state='pass';return {ok:true,checks};
     }catch(error){if(error instanceof AccessError)throw error;checks[phase]={...checks[phase],state:'incomplete',message:'发布内容或检查暂不可用',fix:'恢复读取条件后重新预检'};return {ok:false,checks};}finally{await staged?.discard();}
   }
   async precheckGrant(by:Principal,pack:string,targets?:readonly Principal[]){

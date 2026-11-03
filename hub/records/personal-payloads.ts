@@ -9,6 +9,7 @@ import type {Transaction,Principal,RecordKind} from './api.ts';
 import {canonicalize} from './canonical.ts';
 import {sha256Hex,envelopeDigest} from './digest.ts';
 import {IntegrityError,RecordsError} from './errors.ts';
+import {stagingSlots} from './staging-slots.ts';
 export const INITIAL_PERSONAL_EPOCH='00000000-0000-4000-8000-000000000001';
 export interface PersonalScope {owner:string;epoch:string}
 export const isPersonalPackRecord=(kind:RecordKind)=>RecordKindSchema.extract(['personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer']).safeParse(kind).success;
@@ -26,6 +27,8 @@ export class PgPersonalPayloads {
  beforePurge?:(owner:string,by:Principal,tx:Transaction)=>Promise<void>;
  readonly db:Database;
  readonly lock:(key:string,tx:Transaction)=>Promise<void>;
+ readonly withStagingSlot=stagingSlots(2);
+ readonly #extract=stagingSlots(2);
  constructor(db:Database,lock:(key:string,tx:Transaction)=>Promise<void>){this.db=db;this.lock=lock;}
  /** A missing row is the historical Hub default; reading mode does not create personal content. */
  async mode(owner:string,tx?:Transaction):Promise<SyncMode>{
@@ -48,9 +51,11 @@ export class PgPersonalPayloads {
  }
  /** Journal ownership before any pre-publication cache can appear, even if the process later crashes. */
  async stage<T>(owner:string,digest:string,work:()=>Promise<T>):Promise<T>{
+  return this.#extract(owner,async()=>{
   const active=async(tx:Transaction)=>{const row=(await this.db.query('SELECT disabled,deleted_at FROM users WHERE id=$1 FOR SHARE',[owner],tx)).rows[0];if(!row||row.disabled||row.deleted_at)throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE'});};
   await this.db.transaction(async tx=>{await active(tx);await this.db.query('INSERT INTO personal_cache_installs(owner,digest) VALUES($1,$2) ON CONFLICT DO NOTHING',[owner,digest],tx);});
   return this.db.transaction(async tx=>{await active(tx);return work();});
+  });
  }
  /** Internal frozen readers hold the account row until extraction finishes; this grants no reader ACL. */
  async holdPack(owner:string,digest:string,tx:Transaction):Promise<boolean>{

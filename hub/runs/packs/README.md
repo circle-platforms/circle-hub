@@ -343,3 +343,8 @@ the records deletion coordinator, including non-default roots in synthetic tests
 New grants explicitly refuse deleted target identities, even for a dependency-free skill; historical grants remain
 revocable. An unverifiable legacy exact private workflow/dependency holder blocks deletion instead of fabricating a
 replacement. A new actual holder invalidates an older deletion confirmation without changing the private payload count.
+
+Private publish/check and promotion pre-check admission is shared through the records kit (two at once, one per member).
+Only `Extractor.stage` runs under the cache journal's account lock; sandbox samples run after that transaction commits.
+The current account is checked again after samples and locked at commit/promotion, so deletion during a check refuses
+publication and discards the private temporary tree. Queued or running samples cannot consume all database connections.
