@@ -138,7 +138,7 @@ export async function searchHub(ctx: PageContext, raw: string): Promise<SearchRe
 
   // Members: administrators only.
   if (ctx.admin) {
-    for (const user of await ctx.deps.records.principals.list()) {
+    for (const user of (await ctx.deps.records.principals.list()).filter(user=>!user.deleted_at)) {
       if (results.members.length < SEARCH_MAX_HITS && matches(needle, user.name, user.id)) {
         results.members.push({ id: user.id, name: user.name, role: user.role, role_label: uiLabelOf('permission_role', user.role) });
       }

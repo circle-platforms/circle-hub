@@ -1329,6 +1329,64 @@ BEGIN
  INSERT INTO public.user_history(user_id,name,role,disabled,changed_by,changed_at,deleted_at) VALUES(o,u.name,u.role,true,a,t,t);
 END $fn$;
 `},
+ {version:23,name:'member_deletion_integrity',sql:`CREATE OR REPLACE FUNCTION public.hub_protect_deleted_member() RETURNS pg_catalog.trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF OLD.deleted_at IS NOT NULL AND NEW IS DISTINCT FROM OLD THEN RAISE EXCEPTION 'permanent member tombstone' USING ERRCODE='HU001';END IF;
+ RETURN NEW;
+END $fn$;
+CREATE FUNCTION public.hub_protect_token_revocation() RETURNS pg_catalog.trigger LANGUAGE plpgsql
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF OLD.revoked_at IS NOT NULL AND (NEW.revoked_at IS DISTINCT FROM OLD.revoked_at OR NEW.revoked_by IS DISTINCT FROM OLD.revoked_by) THEN RAISE EXCEPTION 'permanent token revocation' USING ERRCODE='HU001';END IF;
+ RETURN NEW;
+END $fn$;
+CREATE TRIGGER tokens_revocation BEFORE UPDATE ON public.tokens FOR EACH ROW EXECUTE FUNCTION public.hub_protect_token_revocation();
+-- Fixed ASCII keys and digest/epoch strings encode the same manifest as the application JCS encoder.
+-- No general JSON canonicalizer or caller-supplied object list is trusted at this boundary.
+CREATE FUNCTION public.hub_member_deletion_snapshot(o pg_catalog.text) RETURNS TABLE(purge_manifest pg_catalog.text,counts pg_catalog.jsonb)
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+ WITH r AS (SELECT b.record,r.kind FROM public.personal_record_bindings b JOIN public.records r ON r.digest=b.record WHERE b.owner=o AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch))),
+ p AS (SELECT epoch,sha256 FROM public.personal_payloads WHERE owner=o),
+ b AS (SELECT epoch,sha256 FROM public.personal_objects b WHERE owner=o AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch))),
+ c AS (SELECT digest FROM public.personal_cache_installs WHERE owner=o),
+ manifest AS (SELECT '{"caches":['||COALESCE((SELECT pg_catalog.string_agg(pg_catalog.to_json(digest)::pg_catalog.text,',' ORDER BY digest) FROM c),'')||'],"objects":['||COALESCE((SELECT pg_catalog.string_agg('{"epoch":'||pg_catalog.to_json(epoch)::pg_catalog.text||',"sha256":'||pg_catalog.to_json(sha256)::pg_catalog.text||'}',',' ORDER BY epoch,sha256) FROM b),'')||'],"payloads":['||COALESCE((SELECT pg_catalog.string_agg('{"epoch":'||pg_catalog.to_json(epoch)::pg_catalog.text||',"sha256":'||pg_catalog.to_json(sha256)::pg_catalog.text||'}',',' ORDER BY epoch,sha256) FROM p),'')||'],"records":['||COALESCE((SELECT pg_catalog.string_agg(pg_catalog.to_json(record)::pg_catalog.text,',' ORDER BY record) FROM r),'')||']}' AS text)
+ SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(manifest.text,'UTF8')),'hex'),
+ pg_catalog.jsonb_build_object('records',(SELECT pg_catalog.count(*) FROM r),'payloads',(SELECT pg_catalog.count(*) FROM p),'objects',(SELECT pg_catalog.count(*) FROM b),'attributions',(SELECT pg_catalog.count(*) FROM r WHERE kind='knowledge_source_attribution'),'archives',(SELECT pg_catalog.count(*) FROM r WHERE kind='knowledge_space_source'),'private_versions',(SELECT pg_catalog.count(*) FROM r WHERE kind='personal_pack_version')) FROM manifest
+$fn$;
+REVOKE ALL ON FUNCTION public.hub_member_deletion_snapshot(pg_catalog.text) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_begin_member_deletion(a pg_catalog.text,o pg_catalog.text,e pg_catalog.text,op pg_catalog.text,m pg_catalog.text,c pg_catalog.jsonb,t pg_catalog.timestamptz,revision pg_catalog.timestamptz)
+ RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE u public.users%ROWTYPE;admin_set_lock CONSTANT pg_catalog.int8:=7301562002;k pg_catalog.text;
+BEGIN
+ IF pg_catalog.jsonb_typeof(c)<>'object' OR c - ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[]<>'{}'::pg_catalog.jsonb THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ FOREACH k IN ARRAY ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[] LOOP
+ IF NOT c ? k OR pg_catalog.jsonb_typeof(c->k)<>'number' OR (c->>k) !~ '^(0|[1-9][0-9]*)$' OR (c->>k)::pg_catalog.int8>9007199254740991 THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ END LOOP;
+ -- Same administrator-set lock as role changes and deactivation.
+ PERFORM pg_catalog.pg_advisory_xact_lock(admin_set_lock);
+ PERFORM 1 FROM public.users WHERE id=a AND role='admin' AND NOT disabled FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='42501';END IF;
+ SELECT * INTO u FROM public.users WHERE id=o FOR UPDATE;
+ IF NOT FOUND OR u.deleted_at IS NOT NULL OR u.updated_at<>revision THEN RAISE EXCEPTION 'member state changed';END IF;
+ IF u.role='admin' AND NOT u.disabled AND NOT EXISTS(SELECT 1 FROM public.users WHERE role='admin' AND NOT disabled AND id<>o) THEN RAISE EXCEPTION 'last active administrator';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,e) ON CONFLICT DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=o AND epoch=e) THEN RAISE EXCEPTION 'epoch changed';END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.owner=o AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready x WHERE x.record=b.record)) THEN RAISE EXCEPTION 'personal transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key='personal.pack.owner' WHERE r.kind='personal_pack_version' AND i.value=o AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=r.digest)) THEN RAISE EXCEPTION 'personal pack transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key IN ('artifact.author','artifact.reader') AND i.value=o
+ CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS b) x
+ WHERE r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings q WHERE q.record=r.digest)
+ AND public.hub_capture_owner(x.b)=o) THEN RAISE EXCEPTION 'private original transfer incomplete';END IF;
+ PERFORM public.hub_check_member_holders(o);
+ PERFORM 1 FROM public.hub_member_deletion_snapshot(o) s WHERE s.purge_manifest=m AND s.counts=c;
+ IF NOT FOUND THEN RAISE EXCEPTION 'deletion manifest or counts changed';END IF;
+ INSERT INTO public.member_deletion_intents VALUES(o,op,a,e,t,m,c);
+ UPDATE public.users SET disabled=true,deleted_at=t,password_hash=NULL,password_must_change=false,password_revision=password_revision+1,updated_at=t WHERE id=o;
+ UPDATE public.tokens SET revoked_at=t,revoked_by=a WHERE user_id=o AND revoked_at IS NULL;
+ INSERT INTO public.user_history(user_id,name,role,disabled,changed_by,changed_at,deleted_at) VALUES(o,u.name,u.role,true,a,t,t);
+END $fn$;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */

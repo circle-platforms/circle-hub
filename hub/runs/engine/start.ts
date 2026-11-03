@@ -1,5 +1,6 @@
 import {groundsAudience,guardedRecords} from './grounds.ts';
 import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
+import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
@@ -137,7 +138,7 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
   const identity=async(id:string)=>{
     const record=await ctx.deps.records.principals?.get(id);
     if(!record)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','持有人用户资料缺失',{path:'/pack',fix:'请管理员恢复用户资料后重开运行'})]);
-    return {user:id,name:record.name};
+    return {user:id,name:record.deleted_at?uiLabelOf('account_status','deleted'):record.name};
   };
   return {now:ctx.now().toISOString(),entries:await Promise.all(rows.map(async row=>({key:row.key,since:row.since,until:row.until,run:row.run,mine:false,
     jobs:jobs.filter(job=>job.key===row.key).map(job=>job.job),

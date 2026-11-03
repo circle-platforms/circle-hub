@@ -1,7 +1,7 @@
 // Admin inventory of runs already stored. It reads the run and validation-result indexes and derives
 // status, terminal counts and the unknown count. It does not write, and it never returns submission
 // bodies, quotes or credentials.
-import { labelOf, PARTITION, type Layer, type StaticTerminal, type DynamicTerminal } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, uiLabelOf, PARTITION, type Layer, type StaticTerminal, type DynamicTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { ValidationResult } from '../../contracts/src/validation.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
@@ -166,7 +166,7 @@ export async function listRunInventory(kit: RecordsKit, admin: Principal, query:
     throw new CliError(`--limit 要 1 到 ${RUN_LIST_MAX_LIMIT} 的整数`);
   }
   const cursor = query.cursor === null ? null : decode(query.cursor, query, admin.id);
-  const names = new Map((await kit.principals.list()).map((user) => [user.id, user.name]));
+  const names = new Map((await kit.principals.list()).map((user) => [user.id, user.deleted_at?uiLabelOf('account_status','deleted'):user.name]));
   const filter = { ...(query.user === null ? {} : { user: query.user }), ...(query.pack === null ? {} : { pack: query.pack }) };
   const since = query.since === null ? null : Date.parse(query.since);
   const runs = (await everyRun(kit.store, filter))

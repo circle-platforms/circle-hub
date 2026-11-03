@@ -263,8 +263,7 @@ export class KnowledgeSpaces {
     by = await this.#user(by);
     const path = pathCheck(input.path),epoch=await personalEpoch(this.#ctx,by.id);
     const body = SpaceGrantBody.parse({personal_epoch:epoch, space: by.id, path, audience: input.audience, member: input.member ?? null, action: input.revoke ? 'revoke' : 'grant', by: by.id, at: this.#ctx.now().toISOString() });
-    if (body.member && !(await this.#ctx.records.principals.get(body.member)))
-      fail('SOURCE_UNAVAILABLE');
+    if(body.member){const target=await this.#ctx.records.principals.get(body.member);if(!target||!input.revoke&&target.deleted_at)fail('SOURCE_UNAVAILABLE');}
     await this.#write(by.id,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + by.id, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);

@@ -996,3 +996,23 @@ capture retention to the reviewed typed storage graph. A self-asserted declarati
 becomes a frozen permission. Pre-publication cache ownership is journalled before bytes appear; writing holds the user
 row until staging is complete. Deletion includes failed/unpublished cache digests, and shares the same durable cleanup
 across the personal and team extraction roots. Its journal stores only identity and digest and adds no capacity charge.
+
+### Deletion integrity and the narrow removable-index exception
+
+Migration 22 refuses deletion when an existing run's exact private workflow or dependency holder cannot be verified.
+A new independent holder or team share invalidates the application's read-only pre-check even if private counts stay
+unchanged. Migration 23 freezes every column of a tombstone, and token revocation is one-way for all accounts: neither
+the original revocation time nor its actor can be cleared or replaced. No runtime grant is widened.
+
+The deletion owner function now derives the canonical digest manifest and all six counts from the database under the
+member row lock, and refuses caller values that differ. Its helper is owner-only, schema-qualified and pins pg_temp last;
+the runtime cannot call it to inspect arbitrary private scopes. The helper hashes the same fixed-key manifest as the
+application and does not add unrelated content-integrity scans.
+
+There is a deliberate, narrow exception to the append-only record-index invariant introduced in migration 20.
+The table owner may remove artifact.object rows only after their personal binding's epoch has been purged, including
+local-only mode purges. It may remove personal.pack.id, personal.pack.grant and personal.pack.retired rows only for a
+purged binding whose member has a deletion intent and permanent tombstone. Other index keys and record envelopes remain
+append-only. The runtime still has no DELETE or UPDATE grant on record_index; the owner-defined purger performs only
+these scoped removals. Regression tests exercise local and deletion purges, reject runtime deletes, reject owner removal
+before a purge, and reject removal of an unrelated index key after a purge.

@@ -51,3 +51,8 @@ test('a newly frozen private dependency invalidates a deletion preview even with
  const api=bed.kit.memberDeletions!,preview=await api.preview(bed.admin,bed.carol.id);await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:{...runRecord,runner:bed.alice.id,sources:[],skills:[{pack:pack.id,version:'1.0.0',space:bed.carol.id,digest:published.version.digest}]}});
  const fresh=await api.preview(bed.admin,bed.carol.id);assert.deepEqual(fresh.counts,preview.counts);assert.notEqual(fresh.state,preview.state);await assert.rejects(api.prepare(bed.admin,{...preview,operation_id:randomUUID()}),/重新检查/);assert.equal((await bed.kit.principals.get(bed.carol.id))?.disabled,false);
 });
+
+test('a deleted identity cannot receive a new private skill grant but its historical grant can be revoked',async t=>{
+ const bed=await openPackTestbed({postgres:pg});t.after(()=>bed.close());const personal=bed.registry.personal!,pack=skill('synthetic-deleted-grantee'),result=await personal.publish(bed.alice,(await bed.write(pack)).dir);assert.ok(result.ok,JSON.stringify(result));await personal.grant(bed.alice,pack.id,{audience:'member',member:bed.carol.id});await remove(bed);
+ await assert.rejects(personal.grant(bed.alice,pack.id,{audience:'member',member:bed.carol.id}),{name:'AccessError'});await personal.grant(bed.alice,pack.id,{audience:'member',member:bed.carol.id,revoke:true});assert.equal((await personal.grants(bed.alice,pack.id)).some(grant=>grant.member===bed.carol.id),false);
+});
