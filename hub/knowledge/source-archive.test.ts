@@ -41,11 +41,11 @@ test('scope, folder, current grants and cursor bindings hide private names, coun
 });
 test('personal connector captures stay private even beside equal-byte team copies, and only administrators save team reads',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
- const input={bytes:text,mediaType:'text/plain',name:'合成业务读取',origin:{read:{object:'synthetic:record:source'}},author:{user:null},provenanceType:'observed' as const};
+ const input={bytes:text,mediaType:'text/plain',name:'合成业务读取',capturedAt:'2026-10-01T00:00:00.000Z',origin:{read:{object:'synthetic:record:source'}},author:{user:null},provenanceType:'observed' as const};
  const personal=await w.kit.artifacts.ingest({...input,visibility:{readers:[w.user.id],admins:false,packs:[],shareable:false}}),team=await w.kit.artifacts.ingest({...input,visibility:{readers:[],admins:true,packs:[],shareable:false}});
  await spaces.archiveSource(w.admin,save(team.digest,'team','/团队原文'));await assert.rejects(spaces.archiveSource(w.user,save(team.digest,'team')),{code:'SOURCE_UNAVAILABLE'});
  await assert.rejects(spaces.archiveSource(w.admin,save(team.digest,'team','/产品/合成')),{code:'SPACE_ENTRY_INVALID'});
- await spaces.archiveSource(w.user,save(personal.digest,w.user.id,'/私人原文'));await assert.rejects(spaces.grant(w.user,{path:'/私人原文',audience:'member',member:w.outsider.id}),{code:'SPACE_ENTRY_INVALID'});
+ const archived=await spaces.archiveSource(w.user,save(personal.digest,w.user.id,'/私人原文')),copied=await w.kit.store.get<import('../records/api.ts').SourceArtifactBody>(archived.artifact);assert.notEqual(archived.artifact,personal.digest);assert.equal(copied?.body.captured_at,personal.body.captured_at);assert.deepEqual(copied?.body.origin,personal.body.origin);assert.equal(copied?.provenance,'observed');await assert.rejects(spaces.grant(w.user,{path:'/私人原文',audience:'member',member:w.outsider.id}),{code:'SPACE_ENTRY_INVALID'});
  await spaces.directory(w.user,'/已分享');await spaces.grant(w.user,{path:'/已分享',audience:'member',member:w.outsider.id});await assert.rejects(spaces.archiveSource(w.user,save(personal.digest,w.user.id,'/已分享')),{code:'SPACE_ENTRY_INVALID'});
  assert.equal((await spaces.archive(w.outsider,{scope:'shared'})).total,0);assert.equal((await spaces.archive(w.outsider,{scope:'team'})).total,1);assert.equal((await spaces.source(w.outsider,team.body.sha256,undefined,'model',team.digest))?.artifact.digest,team.digest);
  assert.equal(await spaces.source(w.outsider,personal.body.sha256,undefined,'model',personal.digest),null);

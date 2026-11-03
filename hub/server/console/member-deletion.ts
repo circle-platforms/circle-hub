@@ -8,7 +8,7 @@ export const deletionDialogId='delete-member-confirm';
 export async function memberDeletionDialog(ctx:PageContext,member:string):Promise<Html>{
  try{
   const check=await deletionCheck(ctx.deps.records,ctx.principal,member),c=check.preview.counts;
-  return dialog(deletionDialogId,'确认永久删除成员',html`<p>${DELETION_EFFECT}</p>${definitions([['记录',c.records],['载荷',c.payloads],['原件',c.objects],['来源署名',c.attributions],['归档登记',c.archives],['私人工作流与技能版本',c.private_versions]])}<p>检查结果只适用于当前范围；内容变化后须重新检查。确认后，在管理员的 Circle 或 Hub 主机执行下列命令。</p>${technical(code(check.preview.purge_manifest),'查看清除清单摘要')}<pre class="ch-quote">${check.command}</pre>`);
+  return dialog(deletionDialogId,'确认永久删除成员',html`<p>${DELETION_EFFECT}</p>${definitions([['记录',c.records],['载荷',c.payloads],['原件',c.objects],['来源署名',c.attributions],['归档登记',c.archives],['私人版本',c.private_versions]])}<p>检查结果只适用于当前范围；内容变化后须重新检查。确认后，在管理员的 Circle 或 Hub 主机执行下列命令。</p>${technical(code(check.preview.purge_manifest),'查看清除清单摘要')}<pre class="ch-quote">${check.command}</pre>`);
  }catch(error){if(!(error instanceof RecordsError))throw error;return dialog(deletionDialogId,'删除检查未通过',html`<p role="alert">${error.message}</p><p>尚未删除成员；修正后重新检查。</p>`,actionLink('/console/team/'+member+'?deletion=preview#'+deletionDialogId,'重新检查'));}
 }
 export async function memberDeletionProgress(ctx:PageContext,member:string):Promise<Html>{

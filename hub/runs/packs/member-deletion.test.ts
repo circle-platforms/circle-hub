@@ -45,3 +45,9 @@ test('deletion waits for active pre-publication staging and retires journalled c
  await staging;const intent=await preparing;await api.finish(bed.admin,bed.carol.id,intent.operation_id);await assert.rejects(access(directory));await assert.rejects(bed.kit.personalPayloads!.stage(bed.carol.id,hash,async()=>assert.fail('deleted staging cannot run')));
  assert.equal((await bed.kit.store.list({kind:'personal_pack_version'})).items.length,0);
 });
+
+test('a newly frozen private dependency invalidates a deletion preview even without a new private payload',async t=>{
+ const bed=await openPackTestbed({postgres:pg});t.after(()=>bed.close());const pack=skill('synthetic-retention-race'),published=await bed.registry.personal!.publish(bed.carol,(await bed.write(pack)).dir);assert.ok(published.ok);if(!published.ok)return;
+ const api=bed.kit.memberDeletions!,preview=await api.preview(bed.admin,bed.carol.id);await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:{...runRecord,runner:bed.alice.id,sources:[],skills:[{pack:pack.id,version:'1.0.0',space:bed.carol.id,digest:published.version.digest}]}});
+ const fresh=await api.preview(bed.admin,bed.carol.id);assert.deepEqual(fresh.counts,preview.counts);assert.notEqual(fresh.state,preview.state);await assert.rejects(api.prepare(bed.admin,{...preview,operation_id:randomUUID()}),/重新检查/);assert.equal((await bed.kit.principals.get(bed.carol.id))?.disabled,false);
+});

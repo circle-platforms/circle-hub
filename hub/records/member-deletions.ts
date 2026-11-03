@@ -28,14 +28,18 @@ export class PgMemberDeletions {
    WHERE r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM personal_record_bindings q WHERE q.record=r.digest)
    AND public.hub_capture_owner(x.b)=$1 LIMIT 1`,[member],tx);
   if(unscoped.rowCount)throw new ConflictError('私人原文清除准备尚未完成，不能删除成员');
+  try{await this.db.query('SELECT hub_check_member_holders($1)',[member],tx);}catch(cause){throw new ConflictError('已有任务的冻结副本无法核对，不能删除成员',{cause});}
   const scope=(await this.db.query('SELECT epoch FROM personal_spaces WHERE owner=$1',[member],tx)).rows[0];
   const records=(await this.db.query('SELECT b.record,r.kind FROM personal_record_bindings b JOIN records r ON r.digest=b.record WHERE b.owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) ORDER BY b.record',[member],tx)).rows;
   const payloads=(await this.db.query('SELECT epoch,sha256 FROM personal_payloads WHERE owner=$1 ORDER BY epoch,sha256',[member],tx)).rows;
   const objects=(await this.db.query('SELECT o.epoch,o.sha256 FROM personal_objects o WHERE owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(o.owner,o.epoch)) ORDER BY epoch,sha256',[member],tx)).rows;
   const caches=(await this.db.query('SELECT digest FROM personal_cache_installs WHERE owner=$1 ORDER BY digest',[member],tx)).rows.map(row=>String(row.digest));
+  const holders=(await this.db.query(`SELECT 'original' AS category,h.record AS holder,h.sha256 AS node FROM object_holds h JOIN personal_record_bindings b ON b.record=h.sha256 WHERE h.artifact AND b.owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_record_bindings p WHERE p.record=h.record)
+   UNION ALL SELECT 'pack',held_by,sha256 FROM held_object_targets WHERE owner=$1
+   UNION ALL SELECT 'sharing',digest,digest FROM record_index WHERE key IN ('knowledge.share.by','memory.share.by') AND value=$1 ORDER BY category,holder,node`,[member],tx)).rows;
   const counts=MemberDeletionCounts.parse({records:records.length,payloads:payloads.length,objects:objects.length,attributions:records.filter(r=>r.kind==='knowledge_source_attribution').length,archives:records.filter(r=>r.kind==='knowledge_space_source').length,private_versions:records.filter(r=>r.kind==='personal_pack_version').length});
   const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects,caches})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
-  return {member,epoch,purge_manifest,counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
+  return {member,epoch,purge_manifest,counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
  }
  async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#preview(member,tx);});}
  async status(by:Principal,member:string){return this.store.withTransaction(async tx=>{

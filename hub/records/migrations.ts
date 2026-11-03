@@ -1291,6 +1291,44 @@ CREATE TRIGGER object_holds_original AFTER INSERT ON public.object_holds FOR EAC
 DO $holders$ DECLARE h pg_catalog.record;BEGIN FOR h IN SELECT a.record,a.sha256 FROM public.object_holds a WHERE a.artifact AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=a.record) LOOP PERFORM public.hub_keep_capture(h.record,h.sha256,false);END LOOP;END $holders$;
 
 `},
+ {version:22,name:'member_deletion_holders',sql:`CREATE FUNCTION public.hub_check_member_holders(o pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.records r
+ CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS body) b
+ CROSS JOIN LATERAL (SELECT b.body->>'pack_space' AS owner,b.body->>'pack_digest' AS digest UNION ALL SELECT skill->>'space',skill->>'digest' FROM pg_catalog.jsonb_array_elements(CASE WHEN pg_catalog.jsonb_typeof(b.body->'skills')='array' THEN b.body->'skills' ELSE '[]'::pg_catalog.jsonb END) skill) wanted
+ WHERE r.kind='run' AND wanted.owner=o AND NOT EXISTS(SELECT 1 FROM public.run_pack_records h WHERE h.owner=wanted.owner AND h.digest=wanted.digest)) THEN RAISE EXCEPTION 'frozen private version cannot be verified';END IF;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_check_member_holders(pg_catalog.text) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_begin_member_deletion(a pg_catalog.text,o pg_catalog.text,e pg_catalog.text,op pg_catalog.text,m pg_catalog.text,c pg_catalog.jsonb,t pg_catalog.timestamptz,revision pg_catalog.timestamptz)
+ RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE u public.users%ROWTYPE;admin_set_lock CONSTANT pg_catalog.int8:=7301562002;k pg_catalog.text;
+BEGIN
+ IF pg_catalog.jsonb_typeof(c)<>'object' OR c - ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[]<>'{}'::pg_catalog.jsonb THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ FOREACH k IN ARRAY ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[] LOOP
+ IF NOT c ? k OR pg_catalog.jsonb_typeof(c->k)<>'number' OR (c->>k) !~ '^(0|[1-9][0-9]*)$' OR (c->>k)::pg_catalog.int8>9007199254740991 THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ END LOOP;
+ -- Same administrator-set lock as role changes and deactivation.
+ PERFORM pg_catalog.pg_advisory_xact_lock(admin_set_lock);
+ PERFORM 1 FROM public.users WHERE id=a AND role='admin' AND NOT disabled FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='42501';END IF;
+ SELECT * INTO u FROM public.users WHERE id=o FOR UPDATE;
+ IF NOT FOUND OR u.deleted_at IS NOT NULL OR u.updated_at<>revision THEN RAISE EXCEPTION 'member state changed';END IF;
+ IF u.role='admin' AND NOT u.disabled AND NOT EXISTS(SELECT 1 FROM public.users WHERE role='admin' AND NOT disabled AND id<>o) THEN RAISE EXCEPTION 'last active administrator';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,e) ON CONFLICT DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=o AND epoch=e) THEN RAISE EXCEPTION 'epoch changed';END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.owner=o AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready x WHERE x.record=b.record)) THEN RAISE EXCEPTION 'personal transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key='personal.pack.owner' WHERE r.kind='personal_pack_version' AND i.value=o AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=r.digest)) THEN RAISE EXCEPTION 'personal pack transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key IN ('artifact.author','artifact.reader') AND i.value=o
+ CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS b) x
+ WHERE r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings q WHERE q.record=r.digest)
+ AND public.hub_capture_owner(x.b)=o) THEN RAISE EXCEPTION 'private original transfer incomplete';END IF;
+ PERFORM public.hub_check_member_holders(o);
+ INSERT INTO public.member_deletion_intents VALUES(o,op,a,e,t,m,c);
+ UPDATE public.users SET disabled=true,deleted_at=t,password_hash=NULL,password_must_change=false,password_revision=password_revision+1,updated_at=t WHERE id=o;
+ UPDATE public.tokens SET revoked_at=t,revoked_by=a WHERE user_id=o AND revoked_at IS NULL;
+ INSERT INTO public.user_history(user_id,name,role,disabled,changed_by,changed_at,deleted_at) VALUES(o,u.name,u.role,true,a,t,t);
+END $fn$;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -1379,6 +1417,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_begin_member_deletion(text,text,text,text,text,jsonb,timestamptz,timestamptz),hub_finish_member_deletion(text,text),hub_member_layout_conversion() TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_account_scope(text,text),hub_restore_legacy_object(text,text,bytea),hub_finish_independent_objects(text),hub_account_layout_conversion() TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_check_member_holders(text) TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);
       await db.query(`GRANT ${privileges} ON TABLE ${table} TO "${role}"`, [], t);

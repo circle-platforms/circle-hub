@@ -835,3 +835,15 @@ try{
 验证：`node --test --test-concurrency=1 hub/server/cli.test.ts hub/server/console.test.ts hub/server/console-api-write.test.ts hub/server/console/member-deletion.test.ts`，44 通过、0 失败、0 跳过；`tsc --noEmit` 与生成一致性 179 文件通过。PG 18 所有者、环境、锁、diagnostics、迁移和升级指定组正在执行，结果续记。未跑全量 unit／acceptance，截图与新验收尚待第 5～6 步。
 
 第 4 步补充核对：指定 PG 18／environment／ownership／lock-namespaces／diagnostics／迁移及升级组 23 通过、0 跳过；读取 API 和新增删除页面组 8 通过、0 跳过，成员状态同时返回生成代码和界面标签。已将本分支变基到 kw-sync-local 410c9c44，保留 kw-finish-before-sync-test；唯一冲突保留 labelOf 的“个人”及 uiLabelOf 的“私人”两项断言。变基后重新生成：179 文件一致，无生成差异。
+
+### 第 5 步：端到端清除、旧持有者与预检竞争回归
+
+- 新增验收 54，真实密码控制台／MCP／OAuth 与临时 PostgreSQL 验证私人知识、归档、署名、记忆历史、同步暂存、同名新身份及旧凭据失效，团队和其他成员的独立原件与署名保持可读。真实关闭／重新打开 records 后恢复同一失败操作，不重复完成记录。实际冻结私人工作流在删除后仍能完成既有运行，新运行拒绝。
+- 新迁移 22 只增加精确旧冻结持有者核对；不能证明旧运行所需精确包／依赖时，预检和所有者删除函数均阻止，不凭当前版本补造副本。追加 SQL 后审读并更新源文件固定摘要，既有迁移未改。分享和独立持有者变化进入预检 state，即使私人数量和清除摘要不变也拒绝旧确认；清除凭据仍只含实际被清除范围的摘要和数量。
+- 私人观察归档沿用原采集时间，保存原件不伪装成再次读取；删除署名显示不叠加“已停用”。团队署名核对复用 ObjectStore 已有完整性边界，不增加重复 SHA 校验。确认影响说明明确私人工作流／通用技能、新运行资格、待验证、凭据代次和本机副本。
+
+验证：
+
+- 稳定源码完整定向组：records、knowledge、runs/engine、runs/packs、全部 packs/workflow，以及 environment、PG 18 ownership、diagnostics、词表测试，使用 node --test --test-concurrency=4、HUB_UNIT_CONCURRENCY=4 和 CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin。3800 项：3798 通过、2 失败、0 取消、0 跳过，退出 1，不能记为全绿。一处旧 pre-17 夹具只关闭旧持有者触发器，新增存储图仍保留原件；夹具补成同时模拟两个旧触发器缺失，原期望未改，整文件及真实重启组 5 项通过。另一处未改动的 case-review project 纯函数在并发负载下耗时 3289.983 ms 超过原 3000 ms 限制；未改生产代码或阈值，原文件独立执行 49 项全部通过、0 跳过（整文件约 792 ms）。
+- 额外知识私人依据／冻结运行 5 项、观察归档 9 项、迁移 22 与所有者／PG 18／环境／诊断等指定组 32 项、旧冻结缺失／持有者竞争／知识与引擎组 13 项均通过，0 失败、0 跳过。旧冻结缺失探针先实测原实现未拒绝，再由新迁移修复。
+- 受影响验收 12、46～54：node --test --test-concurrency=1，51 通过、0 失败、0 取消、0 跳过，退出 0。实际使用 macOS 沙箱，未弱化判定。没有运行全量 unit／acceptance，也没有部署或真实业务系统操作。后续独立复核补充与最终页面核对另记。
