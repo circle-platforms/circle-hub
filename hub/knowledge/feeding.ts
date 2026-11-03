@@ -385,7 +385,9 @@ export class FeedingLayer {
   const admin=await requireAdmin(this.context,by,'重投影喂入用例'),principal:Principal={id:admin.id,name:admin.name,role:admin.role};
   const report:ReprojectionReport={root:seed.root,line,selected:0,already:0,originals:0,projected:0,pending:[]};
   const pack=await this.context.packs.productById(product);if(!pack?.product.feeding)return report;
-  const fed=(await this.entries(principal,product)).filter(view=>view.body.schema==='fed-case@1'&&view.claim.warrant.producer==='function');
+  const isCase=(body:Record<string,any>)=>body.schema==='fed-case@1';
+  const read=this.context.records.store.findIndexed?await this.frozenEntries(principal,product,Number.MAX_SAFE_INTEGER,isCase,this.visibility(principal)):(await this.entries(principal,product)).filter(view=>isCase(view.body));
+  const fed=read.filter(view=>view.claim.warrant.producer==='function');
   const views=fed.filter(view=>view.validity==='valid');
   if(!views.length)return report;
   const sourceKey=(view:FeedingView)=>view.body.object+'\0'+canonicalize({source:object(view.body.source)?view.body.source:{},node:view.body.node_key??view.body.source?.element??null,external:view.claim.statement.data?.external??null});
