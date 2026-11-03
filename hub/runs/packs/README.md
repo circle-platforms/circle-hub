@@ -352,3 +352,9 @@ publication and discards the private temporary tree. Queued or running samples c
 The registry identifies its team extraction root as shared. Member deletion keeps fresh (under 24 hours) team temporary
 trees of an equal digest, so another publisher's sample check can still promote/discard them; old abandoned team trees
 are swept. Private temporary trees have no age exemption and are purged immediately after account sealing.
+
+
+Serve startup retires orphaned `.tmp-*` extraction stages in the team and private roots before parser refresh or requests,
+regardless of age. Published trees and quarantine stay untouched. New stage names carry a process id: live CLI publishers
+and the current process's active trees are preserved; dead-owner and legacy stages are removed. PID liveness follows the
+platform lock's conservative policy. Failed stage writes clean their partial tree. No paths or names enter cleanup logs.

@@ -3,12 +3,33 @@
 // object digests every time it is used. A tree that no longer matches is moved to <root>/.quarantine and built again from
 // the verified objects. Concurrent extractions of one digest share one build in a process and race safely across processes.
 import { randomBytes } from 'node:crypto';
-import { chmod, lstat, mkdir, rename } from 'node:fs/promises';
+import { chmod, lstat, mkdir, rename, readdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { PackManifest } from '../../../contracts/src/pack.ts';
 import { canonicalBytes, IntegrityError, isSha256, sha256Hex } from '../../records/api.ts';
 import { MANIFEST_FILE } from './directory.ts';
 import { DIRECTORY_MODE, removeTree, verifyTree, writeReadOnlyTree, type ExpectedFile, type TreeFile } from './tree.ts';
+
+const activeTemporaries=new Set<string>();
+/** Serve startup only, before accepting work. Never enter published trees or follow a private-root link. */
+export async function sweepPackStages(root:string):Promise<number>{
+ if(!isAbsolute(root))throw new TypeError('the extraction directory must be an absolute path');
+ let removed=0;
+ try{
+  for(const directory of [root,join(root,'personal')]){
+   let entries:string[];try{const info=await lstat(directory);if(!info.isDirectory()||info.isSymbolicLink())throw new Error('unsafe cache root');entries=await readdir(directory);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')continue;throw error;}
+   for(const name of entries){
+    if(!/^\.tmp-[0-9a-f]{64}-.+$/.test(name))continue;
+    const owner=/^\.tmp-[0-9a-f]{64}-([1-9][0-9]*)-[0-9a-f]{12}$/.exec(name)?.[1];
+    const path=join(directory,name);if(activeTemporaries.has(path))continue;
+    // Independent CLI publishers can survive a service restart. Treat an inaccessible live owner conservatively.
+    if(owner&&Number(owner)!==process.pid){try{process.kill(Number(owner),0);continue;}catch(error){if((error as NodeJS.ErrnoException).code==='EPERM')continue;if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}}
+    await removeTree(path);removed++;
+   }
+  }
+ }catch{throw new IntegrityError('发布暂存清理未完成');}
+ return removed;
+}
 
 /** Where the files of one pack version come from: its manifest and a reader of verified bytes by SHA-256. */
 export interface ExtractionSource {
@@ -73,7 +94,8 @@ export class Extractor {
   }
 
   #temporary(digest: string): string {
-    return join(this.root, `.tmp-${digest}-${randomBytes(6).toString('hex')}`);
+    const directory=join(this.root, `.tmp-${digest}-${process.pid}-${randomBytes(6).toString('hex')}`);
+    activeTemporaries.add(directory);return directory;
   }
 
   /** The verified read-only directory of a pack version, built from its source when absent or when it did not match. */
@@ -114,7 +136,7 @@ export class Extractor {
         // Another process put a tree in place first (rename onto it fails: ENOTEMPTY, EEXIST, or EACCES on macOS for a
         // read-only directory): verify that one on the next round.
         if (!(await exists(target))) throw error;
-      }
+      }finally{activeTemporaries.delete(temporary);}
     }
     const check = await verifyTree(target, expected);
     if (check.problems.length > 0) throw new IntegrityError('解包目录与包摘要不符，重建后仍然不符', { detail: { digest, problems: check.problems } });
@@ -147,7 +169,7 @@ export class Extractor {
     await this.#prepare();
     if (sha256Hex(manifestBytes) !== digest) throw new TypeError('the manifest bytes do not hash to the pack digest');
     const directory = this.#temporary(digest);
-    await writeReadOnlyTree(directory, [{ path: MANIFEST_FILE, bytes: manifestBytes }, ...files]);
+    try{await writeReadOnlyTree(directory, [{ path: MANIFEST_FILE, bytes: manifestBytes }, ...files]);}catch(error){try{await removeTree(directory);}finally{activeTemporaries.delete(directory);}throw error;}
     const target = this.directoryOf(digest);
     let done = false;
     return {
@@ -160,13 +182,13 @@ export class Extractor {
         } catch (error) {
           await removeTree(directory);
           if (!(await exists(target))) throw error;
-        }
+        }finally{activeTemporaries.delete(directory);}
         return target;
       },
       discard: async () => {
         if (done) return;
         done = true;
-        await removeTree(directory);
+        try{await removeTree(directory);}finally{activeTemporaries.delete(directory);}
       },
     };
   }

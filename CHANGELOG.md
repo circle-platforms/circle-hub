@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Remove orphaned personal and team pack staging on service startup while preserving live publishers.
+
 - Preserve fresh shared pack staging during member cleanup without delaying removal of private cache remnants.
 
 - Mask deleted member names in administrator CLI listings while retaining stable member identifiers.

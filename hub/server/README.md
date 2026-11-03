@@ -1154,3 +1154,8 @@ without changing ids or stored tombstones. Pack owners/assignees, lease owners/h
 placeholder with the stable member id, so two deleted identities remain distinguishable without printing stored names.
 Token listings (all accounts or one id) also mask tombstone names, retain member and token ids, and never print token
 secrets. Historical publish-right revocation and assignment removal use the placeholder in their confirmations too.
+
+
+The serving assembly sweeps orphaned pack extraction stages after the vault check and before parser refresh/listening;
+command-time assembly never performs this sweep. Startup logs the removed count only. Cleanup failure stops startup
+with a fixed path-free message, and neither private-root links nor matching stage links are followed outside the roots.
