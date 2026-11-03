@@ -1122,3 +1122,22 @@ CI 优先修正最终验证：
 提交前最后复核：类型检查退出 0；合约生成一致性仍为 179 文件。当前全部修正合并后的两个 CI 文件再跑一次，21 通过、0 失败、0 取消、0 跳过（此前 CI 修正的连续十轮仍全部通过）；完整 .github/checks 再跑 315 通过、0 失败、0 取消、0 跳过。相对本轮起点 94f43b1f，迁移源码及快照无任何差异。差异与暂存检查通过。最后补录后只跑文档专项，随后本机署名提交第 3 项。
 
 本轮三个审查项目均各自提交，另有优先 CI 修正的独立提交。实际最终执行组全部零跳过；没有运行全量 unit／acceptance、Linux isolation、GitHub CI、来源专项或真实业务／模型验证，未执行项不算通过。没有 fetch／push／PR 或部署操作；团队默认 10 GiB 仍按 Claude 的实施要求保留，等待其向所有者确认。截图及合成测试日志只留本机，不纳入 Git。
+
+
+### PR #139 控制台管理页回归修正（Claude 2026-11-03）
+
+来源：Claude 报告 dd950f07 的 console-manage 操作页面测试失败，要求保留 200 期望、增加回归并执行整个管理文件及控制台全组。
+
+- 本机整文件复现为 11 项中 10 通过、1 失败：四个操作页本身均为 200，随后 /console/admin 为 400。99971df1 的团队容量入口直接访问 deps.knowledge.spaces；管理桥的最小测试服务未提供 knowledge，TypeError 被页面边界转换为 400。团队页此前无此依赖，故属于新增空值访问回归。
+- 单独用 test-name-pattern 筛选“四个操作页”时，会跳过前一个创建管理员、修改首次密码并登录的测试，session 为空，确实复现 member 的 303。这个未登录跳转本来就应保留，不是容量页面的新路由设计。未改变任何已有 200 断言、初始化／首次改密测试或认证保护；整文件是此原有顺序夹具的有效运行方式。
+- 团队页统一使用可缺失的 knowledge?.spaces；容量选择、用量与按钮只有端口存在时出现。成员详情元数据也补齐同样的空值保护。存在端口但读取失败的情况不被吞掉，不把不可用用量显示成零，不修改容量规则、合约或迁移。
+- 新独立回归使用临时 PostgreSQL、独立回环监听器和 testConsoleCredentials 对应的合成密码登录，分别覆盖无知识端口与有知识端口但无 spaces。管理员的团队列表、管理页、容量选中地址、成员详情及添加成员页须 200；成员自己的详情须 200，管理员页仍 404；未登录操作页仍 303。两种缺失情况下均不渲染容量数字或调额操作。修复前该回归在 /console/team 实际因 400 而失败。
+- 修复后整份 console-manage 与容量回归文件共 13 通过、0 失败、0 取消、0 跳过；原 console-manage 的 11 项及 200 期望全部通过。完整控制台、类型及平台护栏随后补录。仅在独立克隆提交，不 fetch／push／建 PR。
+
+本次最终验证：
+
+- node --test --test-concurrency=1 hub/server/console-manage.test.ts hub/server/console-team-capacity.test.ts：13 通过、0 失败、0 取消、0 跳过；管理整文件原 11 项全部执行并通过。新回归可独立运行，不依赖管理文件前一项的登录副作用。
+- 完整控制台：用 rg --files hub/server 选择根目录 console*.test.ts 及 console 子目录全部 *.test.ts，显式传入 node --test --test-concurrency=2，共 43 文件、192 通过、0 失败、0 取消、0 跳过，退出 0，约 136 秒；没有只跑新回归代替整组。
+- 平台护栏：node --test --test-concurrency=2 hub/platform/environment.test.ts hub/refs/diagnostics.test.ts hub/platform/ownership.test.ts hub/records/lock-namespaces.test.ts，17 通过、0 失败、0 取消、0 跳过，退出 0。设置 CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin，PG 18 权限及备份组实际执行。
+- 类型检查退出 0；完整 .github/checks 文档／工程检查 315 通过、0 失败、0 取消、0 跳过，退出 0。console-manage.test.ts 相对 dd950f07 无差异，原认证及 200 断言保持。补录后只重跑文档专项与差异检查。
+- 不修改合约、生成物、配置或冻结迁移；没有运行全量 unit／acceptance、引擎／工作流、Linux isolation、GitHub CI、来源专项或真实系统检查。这些未执行项不计为通过，实际执行组零跳过。本次只改可缺失功能的页面保护，没有布局或样式变化，未重拍截图。只在本机署名提交，不 fetch／push／建 PR。

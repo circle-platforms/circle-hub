@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Keep team and member management available when the knowledge service or personal spaces feature is absent.
+
 - Prefer the sharer's own signed original before team and granted equal-byte copies while keeping exact attribution boundaries.
 
 - Bound retained team knowledge and memory with administrator quotas that survive personal purge and reuse member capacity controls.

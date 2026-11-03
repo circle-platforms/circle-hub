@@ -10,7 +10,7 @@ import type {User} from '../../records/api.ts';
 import type {PageContext} from './pages.ts';
 
 export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Array<[string,unknown]>>{
- const spaces=ctx.deps.knowledge.spaces;if(!ctx.admin||!spaces)return [];
+ const spaces=ctx.deps.knowledge?.spaces;if(!ctx.admin||!spaces)return [];
  const usage=await spaces.usage(ctx.principal,user.id);
  const counts=[];
  for(const source of [

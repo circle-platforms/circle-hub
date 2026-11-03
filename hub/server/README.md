@@ -1197,3 +1197,7 @@ MB/GB conversion, CSRF checks and quota action. The team header exposes an Inspe
 reachable when narrow layouts hide the default Inspector. Lowering the limit keeps existing data; later writes can
 retry after an administrator increases capacity. Member views expose neither the control nor team numeric usage,
 and the same restriction is enforced on service reads, writes and capacity-error details.
+
+Team/member management pages omit capacity metadata and controls when a management-only host has no knowledge port
+or has not enabled spaces. Password sign-in and member-management forms remain available; absent capacity is not
+reported as zero usage. Errors from a present capacity service still propagate rather than hiding failed accounting.
