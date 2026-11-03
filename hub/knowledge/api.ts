@@ -75,6 +75,9 @@ export type { KnowledgeCliCommand, KnowledgeCliContext, KnowledgeSyncArgs } from
 export { KNOWLEDGE_SYNC_USAGE, formatSyncReport, knowledgeCliCommand, knowledgeSync, parseKnowledgeSyncArgs } from './cli.ts';
 export type { KnowledgeSeedArgs, SeedReport, SeedRoleName } from './seed.ts';
 export { KNOWLEDGE_SEED_USAGE, formatSeedReport, knowledgeSeed, parseKnowledgeSeedArgs, seedRoles } from './seed.ts';
+export type { KnowledgeReprojectArgs, ReprojectCommandReport } from './reproject.ts';
+export { KNOWLEDGE_REPROJECT_USAGE, formatReprojectReport, knowledgeReproject, parseKnowledgeReprojectArgs } from './reproject.ts';
+export type { ReprojectionReport } from './feeding.ts';
 
 export { LinkReading, relationFacts, resolveLiteral } from './links.ts';
 export type { RelationFacts, RelationNodes, LiteralSource, LinkRequest } from './links.ts';

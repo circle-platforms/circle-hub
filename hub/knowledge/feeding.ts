@@ -21,7 +21,7 @@ import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX,SCHEMAS} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
-import type {KnowledgeContext} from './context.ts';
+import {requireAdmin,type KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
 import {seedlingOfRoot,currentSeedling,seedlingRecord,seedlingName} from './seedling.ts';
 import {KnowledgeError} from './errors.ts';
@@ -107,6 +107,8 @@ const LOG='knowledge.feeding.log',OBJECT='knowledge.feeding.object',USAGE='knowl
 const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
+/** What a fed record states about its capture beside the body; a re-projection names the original record it re-projects. */
+interface Capture {external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment;reprojection_of?:string}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: the canonical statement and its quotations, nothing else. */
@@ -125,7 +127,25 @@ function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
   return out;
 }
 function fail(message:string):never{throw new KnowledgeError(message+'；修正原件或按生成结构修正整份提交后重交，不能猜测补值',{code:'SUBMISSION_SCHEMA_VIOLATION'});}
-export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;}
+export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;
+ /** A re-projection of existing fed records onto a new root: the original record of each object, else the fallback (one of the same capture). */
+ reprojection?:{originals:Record<string,string>;fallback:string;grounds:string[]};}
+/** What a re-projection onto one seedling root found and wrote (counts of distinct fed cases and originals). */
+export interface ReprojectionReport {
+ root:string;line:string;
+ /** Current fed cases bound to the line. */
+ selected:number;
+ /** Of them, cases that already had a projection under the root (per source). */
+ already:number;
+ /** Originals re-read on the observe path. */
+ originals:number;
+ /** Distinct fed cases the re-reads projected onto the root. */
+ projected:number;
+ /** Gaps the re-reads reported, each with its next action. */
+ pending:Array<{source:string;missing:string;next_action:string}>;
+}
+/** At most this many captures one view read queues for re-reading. */
+const REREAD_CAPTURES=20;
 /**
  * What a feeding append writes beside its body, read through the pool just before the caller opens its transaction: the
  * append holds the feeding log lock on that transaction and reads nothing through the pool there (issue #104). `natives` are
@@ -218,11 +238,16 @@ export class FeedingLayer {
   const pack=selectedPack===undefined?await this.context.packs.productById(product):selectedPack,fn=pack?.product.feeding?.normalize_line;if(!pack||!fn)return result;
   const seeds:import('../../contracts/src/knowledge.ts').SeedlingBody[]=[];
   for(const pointer of await this.context.records.pointers.list('seedling/'+product+'/')){if(!pointer.target)continue;const direct=await seedlingRecord(this.context,pointer.target);if(direct){seeds.push(direct);continue;}const rows=await this.context.store.all<unknown>({key:INDEX.seedlingRoot,value:product+'/'+pointer.target,kind:'claim'});let selected:import('../../contracts/src/knowledge.ts').SeedlingBody|undefined;for(const row of rows){const parsed=SeedlingBody.safeParse(row.body);if(row.schema==='seedling@1'&&parsed.success&&seedlingName(product,parsed.data.line)===pointer.name)selected=parsed.data;}if(selected)seeds.push(selected);}
-  const values=[...new Set([...lines,...seeds.map(seed=>seed.line)])].sort();if(values.length>2048)fail('版本线核验超过单文档批量上限；管理员缩小树苗范围后重读');
+  const canonical=await this.normalizeLines(pack,[...lines,...seeds.map(seed=>seed.line)]);for(const line of lines){const value=canonical.get(line);if(value===null||value===undefined)continue;const candidates=seeds.filter(seed=>canonical.get(seed.line)===value);if(new Set(candidates.map(seed=>seed.root)).size>1)fail('同一规范版本线存在冲突树苗，管理员核对后重试');if(candidates.length)result.set(line,candidates[0]);}
+  return result;
+ }
+ /** The product pack's canonical form of each version line (null: the pack's syntax does not accept it); one batch, cached. */
+ private async normalizeLines(pack:ProductHandle,requested:readonly string[]):Promise<Map<string,string|null>>{
+  const fn=pack.product.feeding?.normalize_line;if(!fn)return new Map(requested.map(line=>[line,null]));
+  const values=[...new Set(requested)].sort();if(values.length>2048)fail('版本线核验超过单文档批量上限；管理员缩小树苗范围后重读');
   const key=sha256Hex(canonicalize({pack:pack.digest,fn,values}));let pending=this.normalized.get(key);
   if(!pending){pending=(async()=>{const rows=await feedingFunctionCall(pack.id+'@'+pack.version+'/'+fn.module+'#'+(fn.export??'default'),values,async()=>{const batch=await callPackFunctionBatch({packDir:pack.directory,...fn},values.map(line=>({line})),this.feedingLimits(),this.feedingOptions());for(const row of batch)if(!row.ok)throw row.error;return batch;});const out=new Map<string,string|null>();for(const [i,row]of rows.entries()){if(!row.ok)throw row.error;const output=row.result.output;if(!object(output)||output.line!==null&&typeof output.line!=='string')fail('版本规范化回调没有给出声明值');out.set(values[i],output.line);}return out;})();if(this.normalized.size>=128)this.normalized.delete(this.normalized.keys().next().value!);this.normalized.set(key,pending);pending.catch(()=>this.normalized.delete(key));}
-  const canonical=await pending;for(const line of lines){const value=canonical.get(line);if(value===null||value===undefined)continue;const candidates=seeds.filter(seed=>canonical.get(seed.line)===value);if(new Set(candidates.map(seed=>seed.root)).size>1)fail('同一规范版本线存在冲突树苗，管理员核对后重试');if(candidates.length)result.set(line,candidates[0]);}
-  return result;
+  return pending;
  }
  private async requireLines(product:string,lines:readonly string[],pack?:ProductHandle|null){const found=await this.seedsFor(product,lines,pack);for(const line of new Set(lines))if(!found.has(line))throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});}
  private async seed(product:string,line:string){const seed=await this.seedFor(product,line);if(!seed)throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});return seed;}
@@ -288,11 +313,11 @@ export class FeedingLayer {
   await this.requireLines(scope.product,[...projected.rows.flatMap(row=>row.lines),...(scope.declaredLine?[scope.declaredLine]:[])],pack);
   return projected;
  }
- private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}):ClaimBody{
+ private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:Capture):ClaimBody{
   if(operationRecord(body.schema))return Claim.parse({statement:{text:'Circle 操作记录；等级为声明，不作为核验、评分或放行的证据',data:{feeding:body,actor:by.id,run,key}},grounds,warrant:{producer:'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:'unknown',provenance:'client_captured',marks:['semantics_unasserted']},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
   return Claim.parse({statement:{text:judgment?'客户端带原文引文的喂入主张；语义仍为判断':'按原件结构登记喂入事实',data:{feeding:body,actor:by.id,run,key,...capture,...(metaSource?{meta_source:metaSource}:{}),...(gaps?.length?{missing:gaps}:{})}},grounds,warrant:{producer:judgment?'model':'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:judgment?'judgment':'fact',provenance:body.schema==='fed-note@1'||body.basis==='declared'?'declared':judgment?'declared':'projected',basis_rank:body.basis==='declared'?'rule_over_claims':judgment?'judgment':'rule_over_observation',marks:[]},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
  }
- private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
+ private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:Capture){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
  private key(body:Record<string,any>){const {at:_at,...withoutTime}=body;return sha256Hex(canonicalize(withoutTime));}
  private async usage(principal:Principal,id:string,scope:FeedingScope,tx:Transaction){if(!scope.run)return;const body={schema:'usage@1',object:id,run:scope.run,line:scope.line??null,at:this.context.now().toISOString()};await this.put(body,principal,'hub.feeding@1',[],[id],`usage:${scope.run}:${id}`,[{key:USAGE,value:scope.run},{key:'knowledge.feeding.usage.object',value:id}],tx,false,scope.run);}
  private async todo(principal:Principal,source:Record<string,any>,product:string|null,missing:string,next:string,tx:Transaction,errorDetail?:FeedingErrorDetail){
@@ -337,6 +362,84 @@ export class FeedingLayer {
    let resolve!:(value:FeedingReceipt)=>void;const done=new Promise<FeedingReceipt>(yes=>{resolve=yes;});job={key,captureKey,pack,principal,sha,scope,state:'queued',done,resolve,announced:Promise.resolve()};this.jobs.set(key,job);this.queue.push(job);job.announced=this.jobLifecycleRecord(job,'queued').catch(()=>{});this.pump();
   }
   let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([job.done,new Promise<FeedingReceipt>(yes=>{timer=setTimeout(()=>yes(this.pendingReceipt(sha)),FEEDING_BOUNDS.waitMs);})]);}finally{if(timer)clearTimeout(timer);}
+ }
+ /** Where each fed record's capture is: its source bytes, the capture record among its proofs, its read manifest and metadata. */
+ private async capturesOf(records:ReadonlyArray<{digest:string;claim:ClaimBody}>):Promise<Map<string,{sha:string;sourceRecord:string;external:string|null;readManifest?:string;metaSource?:string}>>{
+  const proofs=await this.recordsByDigest(records.flatMap(record=>record.claim.validity.bound));const out=new Map<string,{sha:string;sourceRecord:string;external:string|null;readManifest?:string;metaSource?:string}>();
+  for(const {digest,claim} of records){
+   const data=object(claim.statement.data)?claim.statement.data:{},body=object(data.feeding)?data.feeding:null,sha=object(body?.source)?body.source.bytes:null;if(typeof sha!=='string')continue;
+   const capture=claim.validity.bound.find(proof=>{const found=proofs.get(proof);return found?.kind==='source_artifact'&&found.body.sha256===sha;});if(!capture)continue;
+   out.set(digest,{sha,sourceRecord:capture,external:typeof data.external==='string'?data.external:null,...(typeof data.read_manifest==='string'?{readManifest:data.read_manifest}:{}),...(typeof data.meta_source==='string'?{metaSource:data.meta_source}:{})});
+  }
+  return out;
+ }
+ /**
+  * Re-projects the current fed cases bound to one version line onto a seedling root. The cases are chosen by their version
+  * bindings (normalized by the product pack) and the current head of their source — a retracted or superseded record is
+  * not chosen — never by which root they were projected under before. Each original is re-read once on the ordinary observe
+  * path under the admin, so the projection, the content object and the bindings are written as any read writes them
+  * (judgment=false, producer function); every row names the original record it re-projects (reprojection_of) and is visible
+  * exactly when that original is. `grounds` (the production's generate action or the seedling record) join each row's grounds.
+  */
+ async reproject(by:Principal,product:string,line:string,seed:{root:string;composition:string},grounds:readonly string[]=[]):Promise<ReprojectionReport>{
+  const admin=await requireAdmin(this.context,by,'重投影喂入用例'),principal:Principal={id:admin.id,name:admin.name,role:admin.role};
+  const report:ReprojectionReport={root:seed.root,line,selected:0,already:0,originals:0,projected:0,pending:[]};
+  const pack=await this.context.packs.productById(product);if(!pack?.product.feeding)return report;
+  const fed=(await this.entries(principal,product)).filter(view=>view.body.schema==='fed-case@1'&&view.claim.warrant.producer==='function');
+  const views=fed.filter(view=>view.validity==='valid');
+  if(!views.length)return report;
+  const sourceKey=(view:FeedingView)=>view.body.object+'\0'+canonicalize({source:object(view.body.source)?view.body.source:{},node:view.body.node_key??view.body.source?.element??null,external:view.claim.statement.data?.external??null});
+  const onRoot=new Set(views.filter(view=>view.body.root===seed.root).map(sourceKey));
+  // A binding is the line one source declares for one content object (its first proof is that source's bytes): content shared
+  // by documents of two lines is re-projected only from the document of this line.
+  const bound=new Map<string,string[]>();
+  for(const id of new Set(views.map(view=>view.body.object as string)))for(const row of await this.all(BINDING,id)){const value=this.body(row),bytes=row.body.validity.bound[0];if(value?.schema!=='version-binding@1'||value.state!=='bound'||typeof value.line!=='string'||typeof bytes!=='string')continue;const key=id+'\0'+bytes,lines=bound.get(key)??[];lines.push(value.line);bound.set(key,lines);}
+  const canonical=await this.normalizeLines(pack,[line,...[...bound.values()].flat()]),target=canonical.get(line)??null;
+  const onLine=(view:FeedingView)=>(bound.get(view.body.object+'\0'+view.body.source?.bytes)??[]).some(value=>value===line||target!==null&&canonical.get(value)===target);
+  const selected=views.filter(onLine);
+  const chosen=new Set(selected.map(view=>view.body.object as string));report.selected=chosen.size;
+  const done=new Set(selected.filter(view=>onRoot.has(sourceKey(view))).map(view=>view.body.object));
+  const open=selected.filter(view=>!onRoot.has(sourceKey(view)));
+  report.already=[...done].filter(id=>!open.some(view=>view.body.object===id)).length;
+  const captures=await this.capturesOf(open.map(view=>({digest:view.record,claim:view.claim})));
+  // One re-read per original (source bytes and external read), from its newest capture; the newest record of each object
+  // in it is the original that object's re-projection names (an older re-projection names its own original).
+  const groups=new Map<string,{capture:NonNullable<ReturnType<typeof captures.get>>;offset:number;originals:Map<string,{record:string;offset:number}>}>();
+  for(const view of open){
+   const capture=captures.get(view.record);if(!capture)continue;
+   const key=capture.sha+'\0'+(capture.external??''),original=typeof view.claim.statement.data?.reprojection_of==='string'?view.claim.statement.data.reprojection_of:view.record;
+   const group=groups.get(key)??{capture,offset:-1,originals:new Map()};if(view.offset>group.offset){group.capture=capture;group.offset=view.offset;}
+   const held=group.originals.get(view.body.object);if(!held||view.offset>held.offset)group.originals.set(view.body.object,{record:original,offset:view.offset});
+   groups.set(key,group);
+  }
+  // A re-read writes every row of the original, a retracted one too: that row names its own original (and stays retracted).
+  for(const view of fed){
+   const external=view.claim.statement.data?.external,group=groups.get(view.body.source?.bytes+'\0'+(typeof external==='string'?external:''));
+   if(!group||group.originals.has(view.body.object))continue;
+   const original=typeof view.claim.statement.data?.reprojection_of==='string'?view.claim.statement.data.reprojection_of:view.record;
+   group.originals.set(view.body.object,{record:original,offset:-1});
+  }
+  const projected=new Set<string>();
+  for(const group of groups.values()){
+   const originals=Object.fromEntries([...group.originals].map(([id,row])=>[id,row.record])),fallback=[...group.originals.values()].sort((a,b)=>b.offset-a.offset)[0]!.record;
+   const receipt=await this.observeSource(principal,group.capture.sha,{product,root:seed.root,composition:seed.composition,line,sourceRecord:group.capture.sourceRecord,...(group.capture.readManifest?{readManifest:group.capture.readManifest}:{}),...(group.capture.metaSource?{metaSource:group.capture.metaSource}:{}),reprojection:{originals,fallback,grounds:[...grounds]}},pack);
+   report.originals++;for(const id of receipt.objects)if(chosen.has(id))projected.add(id);report.pending.push(...receipt.pending);
+  }
+  report.projected=projected.size;
+  return report;
+ }
+ /**
+  * Queues a recorded re-read, under the reader's own account and on the bounded observe path, of the originals behind fed
+  * records that lack a projection under a root. Nothing is projected here; the jobs write what any read writes, and the
+  * caller's view keeps those cases unknown until a later read sees the projections. Returns the number of originals queued.
+  */
+ async rereadRootless(principal:Principal,records:readonly string[],scope:{product:string;root:string;composition:string|null}):Promise<number>{
+  const found=[...(await this.recordsByDigest([...new Set(records)].slice(0,BATCH))).values()].filter(record=>record.kind==='claim'&&Claim.safeParse(record.body).success);
+  const captures=await this.capturesOf(found.map(record=>({digest:record.digest,claim:record.body as ClaimBody})));
+  const jobs=new Map<string,NonNullable<ReturnType<typeof captures.get>>>();
+  for(const capture of captures.values()){const key=capture.sha+'\0'+capture.sourceRecord;if(!jobs.has(key)&&jobs.size<REREAD_CAPTURES)jobs.set(key,capture);}
+  await Promise.all([...jobs.values()].map(capture=>this.observeSourceBounded(principal,capture.sha,{product:scope.product,root:scope.root,composition:scope.composition,sourceRecord:capture.sourceRecord,...(capture.readManifest?{readManifest:capture.readManifest}:{}),...(capture.metaSource?{metaSource:capture.metaSource}:{})}).catch(()=>null)));
+  return jobs.size;
  }
  async drain():Promise<void>{while(this.jobs.size)await Promise.all([...this.jobs.values()].map(job=>job.done));}
  async pending(principal:Principal,run:string):Promise<FeedingReceipt['pending']>{
@@ -410,7 +513,7 @@ export class FeedingLayer {
   for(const row of projection.rows){const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');}
   const committed=await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);
    if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用 start_run 重读此原件，顶层同时写 product 和它所属的 build（不绑定产品线的通用读取包 source-read 也接受这两项），回执不再显示投影进行中后再用；或带一次这样绑定了产品和树苗的运行号 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return true;}
-   for(const row of projection.rows){await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
+   for(const row of projection.rows){const original=scope.reprojection?(scope.reprojection.originals[row.body.object]??scope.reprojection.fallback):null;await this.put(row.body,principal,projection.pack,['src:'+sha,...(scope.reprojection?.grounds??[])],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[]),...(original?[original]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{}),...(original?{reprojection_of:original}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.observed:'+observationKey,body:{action:'read',run:scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+sha],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{receipt:{objects:ids,pending}}},index:[{key:'knowledge.feeding.observed',value:observationKey}]},tx);
    return true;
   });if(!committed)return this.superseded(sha);return {objects:ids,offset:await this.offset(),pending};
@@ -434,7 +537,21 @@ export class FeedingLayer {
  }
  private async uploadedSource(principal:Principal,body:Record<string,any>){const original=(await this.context.records.artifacts.records(body.source.bytes)).find(row=>'upload'in row.body.origin&&row.body.author.user===body.by&&row.body.captured_at===body.at);if(!original)fail('缺少与上传者和采集时刻一致的上传原件');return this.source(principal,body.source.bytes,original.digest);}
  private async visible(id:string,principal:Principal):Promise<boolean>{const rows=await this.all(OBJECT,id);if(!rows.length)return Boolean((await this.context.records.artifacts.source(principal,id,{consumer:'model'}))?.bytes);for(const row of rows)if(await this.recordVisible(row,principal))return true;return false;}
+ /**
+  * The original record a re-projection names, when it is one this re-projection may stand for: a feeding claim of the same
+  * product and source bytes that is not itself a re-projection. A re-projection naming anything else is never visible.
+  */
+ private reprojected(record:StoredRecord<ClaimBody>):string|null{const original=record.body.statement.data?.reprojection_of;return typeof original==='string'?original:null;}
+ private standsFor(record:StoredRecord<ClaimBody>,original:StoredRecord<any>|null|undefined):original is StoredRecord<ClaimBody>{
+  if(!original||original.kind!=='claim'||!Claim.safeParse(original.body).success||this.reprojected(original as StoredRecord<ClaimBody>)!==null)return false;
+  const body=this.body(record),before=this.body(original as StoredRecord<ClaimBody>);
+  return body!==null&&before!==null&&body.product===before.product&&body.source?.bytes===before.source?.bytes;
+ }
+ // A re-projection (reprojection_of) is visible exactly when its original is: the decision is the original's, whoever wrote
+ // the re-projection. recordsVisible makes the same substitution; feeding-reprojection.test.ts keeps the two equivalent.
  private async recordVisible(record:StoredRecord<ClaimBody>,principal:Principal):Promise<boolean>{
+  const original=this.reprojected(record);
+  if(original!==null){const stored=await this.context.records.store.get<any>(original);return this.standsFor(record,stored)?this.recordVisible(stored,principal):false;}
   const account=await this.context.records.principals.get(principal.id);if(!account||account.disabled)return false;const body=this.body(record);if(!body)return false;if(body.schema==='fed-note@1'&&principal.role!=='admin'&&body.by!==principal.id)return false;
   if(body.product&&!await this.reading.mayReadProducts(principal,[body.product]))return false;
   for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;let source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});const run=record.body.statement.data?.run;if(!source&&typeof run==='string'){const scoped=await this.context.records.artifacts.sourceForRun(principal,original.body.sha256,run,{consumer:'model',record:original.digest});if(scoped?.artifact.digest===original.digest)source=scoped;}return Boolean(source?.bytes&&source.readTier==='model_readable');}
@@ -469,6 +586,16 @@ export class FeedingLayer {
  private async recordsVisible(items:ReadonlyArray<{record:StoredRecord<ClaimBody>;body:Record<string,any>|null}>,session:Visibility):Promise<boolean[]>{
   const shown=items.map(()=>false);
   if(!items.length)return shown;
+  // Re-projections are decided as their originals, the same substitution recordVisible makes.
+  const named=items.flatMap(item=>{const original=this.reprojected(item.record);return original===null?[]:[original];});
+  if(named.length){
+   const originals=await this.recordsByDigest(named);
+   const substituted:Array<{record:StoredRecord<ClaimBody>;body:Record<string,any>|null}>=[],at:number[]=[];
+   for(const [index,item] of items.entries()){const original=this.reprojected(item.record);if(original===null){substituted.push(item);at.push(index);continue;}const stored=originals.get(original);if(this.standsFor(item.record,stored)){substituted.push({record:stored,body:this.body(stored)});at.push(index);}}
+   const decided=await this.recordsVisible(substituted,session);
+   for(const [k,index] of at.entries())shown[index]=decided[k];
+   return shown;
+  }
   session.account??=this.context.records.principals.get(session.principal.id).then(account=>Boolean(account&&!account.disabled));
   if(!await session.account)return shown;
   let open:Array<{at:number;record:StoredRecord<ClaimBody>;body:Record<string,any>;next:number}>=[];

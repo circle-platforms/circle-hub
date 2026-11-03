@@ -162,6 +162,9 @@ export async function mergeIndexBindings(ids:readonly string[],label:string,cont
   // Every slice was bound with the same opt-in, so a truncated slice is truncated by unknown entries alone.
   if(unknownEntries > 0){merged.unknown_entries = unknownEntries;merged.unknown_only = true;}else{delete merged.unknown_entries;delete merged.unknown_only;}
   merged.only = [...only].sort(compareText);
+  // Each slice judges only its own requested values; the merged view is complete for all of them only when every slice is.
+  if(pages.every(page => typeof page.only_complete === 'boolean'))merged.only_complete = pages.every(page => page.only_complete === true);
+  else delete merged.only_complete;
   merged.cut_keys = [...cut].sort(compareText);
   merged.notes = [...notes];
   merged.total_keys = Object.keys(merged.keys as object).length;

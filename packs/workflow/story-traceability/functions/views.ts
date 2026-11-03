@@ -58,6 +58,8 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
   if(model.key_space_complete!==undefined&&typeof model.key_space_complete!=='boolean')return failure('视图的 key_space_complete 不是布尔值',fix);
   const scopeComplete=isRecord(model.scope)&&typeof model.scope.complete==='boolean'?model.scope.complete:null;
   if(model.key_space_complete===true&&(Object.hasOwn(model,'only')||model.skipped!==0||model.total_keys!==Object.keys(keys).length||scopeComplete===false))return failure('视图声称键范围完整，但范围、来源或键计数不完整',fix);
+  if(model.only_complete!==undefined&&typeof model.only_complete!=='boolean')return failure('视图的 only_complete 不是布尔值',fix);
+  if(model.only_complete===true&&(!Array.isArray(model.only)||model.skipped!==0||model.total_keys!==Object.keys(keys).length||scopeComplete===false))return failure('视图声称所列取值完整，但没有 only、或范围、来源或键计数不完整',fix);
   let missing = 0;
   for (const list of Object.values(keys)) for (const digest of list) if (entries[digest] === undefined) missing++;
   const warnings: PackWarning[] = [];
@@ -85,6 +87,7 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
     total_entries: model.total_entries as number,
     truncated: model.truncated,
     key_space_complete: typeof model.key_space_complete==='boolean'?model.key_space_complete:null,
+    only_complete: typeof model.only_complete==='boolean'?model.only_complete:null,
     scope_complete: scopeComplete,
     excluded_entries: typeof omitted === 'number' ? omitted : null,
     cut_keys: strings(model.cut_keys),

@@ -106,6 +106,8 @@ test('a seedling merges the three fixed sources into one per-line tree and moves
   assert.equal(result.build, 'Synthetic_10_6_1');
   assert.equal(result.parent, null);
   assert.equal(result.pointer?.moved, true, result.pointer?.reason);
+  // Nothing was fed, and this pack declares no feeding: the re-projection before the move found nothing to do.
+  assert.deepEqual([result.reprojection?.selected, result.reprojection?.originals, result.reprojection_error], [0, 0, null]);
 
   // The three fixed sources, with the original digests and the fixed adoc revision.
   assert.deepEqual(result.origin.map((source) => [source.role, source.producer + '.' + source.slot, source.revision]).sort(), [

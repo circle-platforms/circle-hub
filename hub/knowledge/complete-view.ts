@@ -39,7 +39,7 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
  }
  const delivered=new Set<string>();
  const placements=new Set<string>();
- let first:Extract<ExternalRead,{ok:true}>|null=null,merged:any=null,next:string|null=beginning,disclosed=0;
+ let first:Extract<ExternalRead,{ok:true}>|null=null,merged:any=null,next:string|null=beginning,disclosed=0,narrowedFlags=0;
  const visited=new Set<string>(),inputs:string[]=[];
  while(next!==null){
   if(visited.has(next))return fail('知识视图续读没有前进；请管理员修复页游标后重试',ADMIN_FIX);visited.add(next);
@@ -58,6 +58,7 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
   try{const raw=JSON.parse(Buffer.from(source.bytes).toString('utf8'));const schema=raw.schema==='index-view@1'?IndexView:raw.schema==='facet-view@1'?FacetView:raw.schema==='impact-view@1'?ImpactView:null;
    if(!schema)return read;page=schema.parse(raw);
   }catch{return fail('知识视图页不符合公开结构；请管理员修复视图后重试',ADMIN_FIX);}
+  if(page.schema==='index-view@1'&&typeof page.only_complete==='boolean')narrowedFlags++;
   const pageKeys:string[]=page.schema==='index-view@1'?Object.entries(page.keys).flatMap(([key,values])=>(values as string[]).map(value=>canonicalize([key,value]))):page.schema==='facet-view@1'?page.rows.map((row:any)=>canonicalize(row.values)):[...page.changes.map((change:any)=>'path:'+change.path),...Object.entries(page.entries).filter(([,entry])=>(entry as any).build===null).map(([digest])=>'unversioned:'+digest)];
   if(page.next&&pageKeys.length===0)return fail('知识视图给出了空的续读页，无法推进；请管理员修复分页后重试',ADMIN_FIX);
   for(const key of pageKeys){if(delivered.has(key))return fail('知识视图续读重复交付同一项；请管理员修复游标后重试',ADMIN_FIX);delivered.add(key);}
@@ -87,6 +88,10 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
    // pages without it cannot be upgraded merely because their old truncated flag was false.
    if(typeof page.key_space_complete==='boolean')merged.key_space_complete=!Object.hasOwn(merged,'only')&&merged.skipped===0&&merged.scope?.complete!==false&&Object.keys(merged.keys).length===merged.total_keys;
    else delete merged.key_space_complete;
+   // A narrowed view's last-page flag covers only that page. Every page carried the structural flag, and the bound sequence
+   // is complete: all reported keys are listed, no source was skipped, the scope is complete and no unknown entry was disclosed.
+   if(narrowedFlags===visited.size)merged.only_complete=Object.hasOwn(merged,'only')&&merged.skipped===0&&merged.scope?.complete!==false&&Object.keys(merged.keys).length===merged.total_keys&&disclosed===0;
+   else delete merged.only_complete;
   }
   if(next!==null&&(!next.startsWith('knowledge:')||next.split(':',3).join(':')!==id.split(':',3).join(':')))return fail('知识视图续读跳出了原视图；从首页重新绑定',REBIND_FIX);
   merged.next=next;
