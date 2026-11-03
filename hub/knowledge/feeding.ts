@@ -11,43 +11,73 @@ import {runById,canViewRun} from '../runs/api.ts';
 import {pathSegments} from '../refs/api.ts';
 // Append-only feeding beside immutable tree content. The record insertion sequence is the frozen horizon (gaps are valid).
 import {Claim,type Claim as ClaimBody} from '../../contracts/src/claim.ts';
-import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset} from '../../contracts/src/feeding.ts';
+import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset,type FeedingUsage} from '../../contracts/src/feeding.ts';
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
-import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8} from '../refs/api.ts';
+import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8,type ParsedDocument} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
+import {canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
-import {INDEX} from './store.ts';
+import {INDEX,SCHEMAS} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
 import {completeOperationDevice} from './operation-device.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
-import type {KnowledgeContext} from './context.ts';
+import {requireAdmin,type KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
 import {seedlingOfRoot,currentSeedling,seedlingRecord,seedlingName} from './seedling.ts';
 import {KnowledgeError} from './errors.ts';
+import type {RunRecord} from '../../contracts/src/run.ts';
 const PROJECTION='knowledge.feeding.projection';
+/** Digests or ids per batched query. */
+const BATCH=1000;
+/** The run ids runById looks up; any other value finds no run. */
+const RUN_RECORD_ID=/^run_[0-9a-hjkmnp-tv-z]{26}$/;
 
-interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown }
+/**
+ * One permission evaluation over many feeding records: a frozen cut, a node page or a run's usages. Every check of
+ * recordVisible, the binding proofs and the usage runs is still made per record; only the reads are grouped and the decisions
+ * that do not depend on the record (the account, a product, a capture's read tier, a run's visibility) are made once. A
+ * session never outlives the call that opened it, so each request still decides on the permissions it captured at its start.
+ */
+interface Visibility {
+ principal:Principal;
+ account?:Promise<boolean>;
+ products:Map<string,Promise<boolean>>;
+ captures:Map<string,Promise<{present:boolean;bytes:boolean;readable:boolean}>>;
+ runCaptures:Map<string,Promise<{matches:boolean;readable:boolean}>>;
+ runs:Map<string,Promise<boolean>>;
+}
+function once<T>(cache:Map<string,Promise<T>>,key:string,load:()=>Promise<T>):Promise<T>{let pending=cache.get(key);if(!pending){pending=load();cache.set(key,pending);}return pending;}
+
+interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown; device_observations?: unknown }
 
 function leaseRows(body: LeaseBody | null | undefined): Array<{ lease?: unknown; op?: unknown; keys?: unknown }> {
   return Array.isArray(body?.leases) ? body.leases.filter((row): row is { lease?: unknown; op?: unknown; keys?: unknown } => row !== null && typeof row === 'object') : [];
 }
 
-/** Installed builds of devices this run actually booked (`bed/<bed>/<device>`), read from its frozen manifest. */
+/**
+ * Installed builds of devices this run actually booked (`bed/<bed>/<device>`): what each device showed when the booking
+ * was granted (decision 112). A manifest no longer declares installed builds; a booked device nobody looked at adds none.
+ */
 export function bookedInstalls(body: LeaseBody | null | undefined): string[] {
-  const group = Array.isArray(body?.groups) ? body.groups[0] : undefined;
-  const beds = group !== null && typeof group === 'object' && 'manifest' in group && group.manifest !== null && typeof group.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
-  if (!Array.isArray(beds)) return [];
+  const group = Array.isArray(body?.groups) ? body.groups[0] as { manifest?: unknown; inventory?: unknown } | null : undefined;
+  const beds = group?.manifest !== null && typeof group?.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
+  if (!Array.isArray(beds) || typeof group?.inventory !== 'string') return [];
+  const observed = new Map<string, string>();
+  for (const claim of Array.isArray(body?.device_observations) ? body.device_observations as Array<{ statement?: { data?: { inventory?: unknown; device?: unknown; build?: unknown } }; qualifier?: { provenance?: unknown } }> : []) {
+    const data = claim?.statement?.data;
+    if (claim?.qualifier?.provenance === 'observed' && data?.inventory === group.inventory && typeof data.device === 'string' && typeof data.build === 'string' && data.build.length > 0) observed.set(data.device, data.build);
+  }
   const keys = leaseRows(body).flatMap(row => Array.isArray(row.keys) ? row.keys.filter((key): key is string => typeof key === 'string') : []);
   const out: string[] = [];
   for (const key of keys) {
     const parts = key.split('/');
     if (parts.length !== 3 || parts[0] !== 'bed') continue;
-    const bed = beds.find(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[1]) as { devices?: unknown } | undefined;
-    const devices = Array.isArray(bed?.devices) ? bed.devices : [];
-    const device = devices.find(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[2]) as { installed?: { build?: unknown } } | undefined;
-    if (typeof device?.installed?.build === 'string' && device.installed.build.length > 0) out.push(device.installed.build);
+    const bi = beds.findIndex(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[1]);
+    const devices = bi >= 0 && Array.isArray((beds[bi] as { devices?: unknown }).devices) ? (beds[bi] as { devices: unknown[] }).devices : [];
+    const di = devices.findIndex(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[2]);
+    const build = di >= 0 ? observed.get(`/beds/${bi}/devices/${di}`) : undefined;
+    if (build !== undefined) out.push(build);
   }
   return out;
 }
@@ -78,6 +108,8 @@ const LOG='knowledge.feeding.log',OBJECT='knowledge.feeding.object',USAGE='knowl
 const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
+/** What a fed record states about its capture beside the body; a re-projection names the original record it re-projects. */
+interface Capture {external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment;reprojection_of?:string}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
@@ -106,7 +138,25 @@ function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
   return out;
 }
 function fail(message:string):never{throw new KnowledgeError(message+'；修正原件或按生成结构修正整份提交后重交，不能猜测补值',{code:'SUBMISSION_SCHEMA_VIOLATION'});}
-export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;}
+export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;
+ /** A re-projection of existing fed records onto a new root: the original record of each object, else the fallback (one of the same capture). */
+ reprojection?:{originals:Record<string,string>;fallback:string;grounds:string[]};}
+/** What a re-projection onto one seedling root found and wrote (counts of distinct fed cases and originals). */
+export interface ReprojectionReport {
+ root:string;line:string;
+ /** Current fed cases bound to the line. */
+ selected:number;
+ /** Of them, cases that already had a projection under the root (per source). */
+ already:number;
+ /** Originals re-read on the observe path. */
+ originals:number;
+ /** Distinct fed cases the re-reads projected onto the root. */
+ projected:number;
+ /** Gaps the re-reads reported, each with its next action. */
+ pending:Array<{source:string;missing:string;next_action:string}>;
+}
+/** At most this many captures one view read queues for re-reading. */
+const REREAD_CAPTURES=20;
 /**
  * What a feeding append writes beside its body, read through the pool just before the caller opens its transaction: the
  * append holds the feeding log lock on that transaction and reads nothing through the pool there (issue #104). `natives` are
@@ -126,8 +176,8 @@ export class FeedingLayer {
  private readonly projecting=new Map<string,Promise<Projected>>();
  private readonly normalized=new Map<string,Promise<Map<string,string|null>>>();
  constructor(context:KnowledgeContext,reading:TreeReading){this.context=context;this.reading=reading;}
- async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
- private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
+ async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_READ_FAILED'});return n;}
+ private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_READ_FAILED'});return n;}
  private async all(key:string,value:string,tx?:Transaction){return this.context.store.all<ClaimBody>({key,value,kind:'claim'},tx);}
  private body(record:StoredRecord<ClaimBody>):Record<string,any>|null{const claim=Claim.safeParse(record.body);if(!claim.success||!object(claim.data.statement.data))return null;return KnowledgeStructureSchema.safeParse(claim.data.statement.data.feeding??claim.data.statement.data).data as Record<string,any>??null;}
  private async manifestOrigin(principal:Principal,artifact:SourceArtifact,digest:string){
@@ -152,16 +202,18 @@ export class FeedingLayer {
  }
  /** Recheck the exact capture and read tier at use time without reparsing it. */
  private async sourceAccess(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null){
-  if(record){const captured=await this.context.records.store.get<any>(record);if(captured?.kind!=='source_artifact'||captured.body.sha256!==sha)throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：采集记录与摘要不匹配；原件 ${sha}，记录 ${record}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
+  if(record){const captured=await this.context.records.store.get<any>(record);if(captured?.kind!=='source_artifact'||captured.body.sha256!==sha)throw new KnowledgeError(`喂入来源读取未完成（${stage}）：采集记录与摘要不匹配；原件 ${sha}，记录 ${record}；按本次读取重新绑定`,{code:'SOURCE_READ_FAILED'});}
   let found=await this.context.records.artifacts.source(principal,sha,{consumer:'function',...(record?{record}:{})});
   if(!found&&record&&run){const stored=await runById(this.context.records.store,run);if(stored&&await canViewRun(principal,stored.body,this.context.records.store)&&stored.body.sources.some(binding=>binding.artifact===record&&(!manifest||binding.read_manifest===manifest)&&(()=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha;})())){const scoped=await this.context.records.artifacts.sourceForRun(principal,sha,run,{consumer:'function',record});if(scoped?.artifact.digest===record)found=scoped;}}
-  if(!found?.bytes||found.readTier!=='model_readable')throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：来源不存在、保留中或当前不可读；原件 ${sha}，记录 ${record??'未指定'}，当前档位 ${found?.readTier??'未获读取授权或缺记录'}；核对这条采集记录和读取身份后重读`,{code:'SOURCE_UNAVAILABLE'});
+  // Not found or no permission (D05 R[3], decision 112); bytes held in a lower read tier stay the neutral credential answer.
+  if(!found){const existence=disclosedExistence(principal.id,await this.context.records.artifacts.records(sha));if(existence==='neutral')throw new KnowledgeError(`喂入来源读取未完成（${stage}）：原件 ${sha} 对你不可用；核对这条采集记录后重读`,{code:'SOURCE_UNAVAILABLE'});const exists=existence==='exists';throw new KnowledgeError(exists?`喂入来源读取未完成（${stage}）：原件 ${sha}（记录 ${record??'未指定'}）存在，你没有读取权限；请上传者或管理员分享后重读`:`喂入来源读取未完成（${stage}）：Hub 里没有原件 ${sha}（记录 ${record??'未指定'}）；核对这条采集记录后重读`,{code:exists?'SOURCE_NOT_PERMITTED':'SOURCE_ABSENT'});}
+  if(!found.bytes||found.readTier!=='model_readable')throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：来源保留中或当前不可读；原件 ${sha}，记录 ${record??'未指定'}，当前档位 ${found.readTier}；等管理员核看这份来源后重读`,{code:'SOURCE_UNAVAILABLE'});
   return {...found,bytes:found.bytes};
  }
  private async source(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null):Promise<Source>{
   const found=await this.sourceAccess(principal,sha,record,manifest,stage,run);
   const parsed=await recognizeAsync(this.context.parsers,found.bytes,found.mediaType);if(!parsed)fail('来源格式不能按已声明解析器读取');
-  let external:ReturnType<typeof parseExternal>;try{external=await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined);}catch(error){if(!(error instanceof KnowledgeError))throw error;throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：读取清单与采集记录未核对；原件 ${sha}，记录 ${record??found.artifact.digest}，清单 ${manifest??'未指定'}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
+  let external:ReturnType<typeof parseExternal>;try{external=await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined);}catch(error){if(!(error instanceof KnowledgeError))throw error;throw new KnowledgeError(`喂入来源读取未完成（${stage}）：读取清单与采集记录未核对；原件 ${sha}，记录 ${record??found.artifact.digest}，清单 ${manifest??'未指定'}；按本次读取重新绑定`,{code:'SOURCE_READ_FAILED'});}
   return {artifact:found.artifact,bytes:found.bytes,parser:parserKey(parsed.parser),model:parsed.document.model,external};
  }
  private async metadataSource(principal:Principal,sha:string,record?:string,manifest?:string):Promise<Source>{const source=await this.source(principal,sha,record,manifest,'metadata');const parser=this.context.parsers.get('json@1');if(!parser)fail('缺 JSON 元数据解析器；管理员恢复后重读');return {...source,parser:'json@1',model:(await parseDocument(parser,source.bytes)).model};}
@@ -197,11 +249,16 @@ export class FeedingLayer {
   const pack=selectedPack===undefined?await this.context.packs.productById(product):selectedPack,fn=pack?.product.feeding?.normalize_line;if(!pack||!fn)return result;
   const seeds:import('../../contracts/src/knowledge.ts').SeedlingBody[]=[];
   for(const pointer of await this.context.records.pointers.list('seedling/'+product+'/')){if(!pointer.target)continue;const direct=await seedlingRecord(this.context,pointer.target);if(direct){seeds.push(direct);continue;}const rows=await this.context.store.all<unknown>({key:INDEX.seedlingRoot,value:product+'/'+pointer.target,kind:'claim'});let selected:import('../../contracts/src/knowledge.ts').SeedlingBody|undefined;for(const row of rows){const parsed=SeedlingBody.safeParse(row.body);if(row.schema==='seedling@1'&&parsed.success&&seedlingName(product,parsed.data.line)===pointer.name)selected=parsed.data;}if(selected)seeds.push(selected);}
-  const values=[...new Set([...lines,...seeds.map(seed=>seed.line)])].sort();if(values.length>2048)fail('版本线核验超过单文档批量上限；管理员缩小树苗范围后重读');
+  const canonical=await this.normalizeLines(pack,[...lines,...seeds.map(seed=>seed.line)]);for(const line of lines){const value=canonical.get(line);if(value===null||value===undefined)continue;const candidates=seeds.filter(seed=>canonical.get(seed.line)===value);if(new Set(candidates.map(seed=>seed.root)).size>1)fail('同一规范版本线存在冲突树苗，管理员核对后重试');if(candidates.length)result.set(line,candidates[0]);}
+  return result;
+ }
+ /** The product pack's canonical form of each version line (null: the pack's syntax does not accept it); one batch, cached. */
+ private async normalizeLines(pack:ProductHandle,requested:readonly string[]):Promise<Map<string,string|null>>{
+  const fn=pack.product.feeding?.normalize_line;if(!fn)return new Map(requested.map(line=>[line,null]));
+  const values=[...new Set(requested)].sort();if(values.length>2048)fail('版本线核验超过单文档批量上限；管理员缩小树苗范围后重读');
   const key=sha256Hex(canonicalize({pack:pack.digest,fn,values}));let pending=this.normalized.get(key);
   if(!pending){pending=(async()=>{const rows=await feedingFunctionCall(pack.id+'@'+pack.version+'/'+fn.module+'#'+(fn.export??'default'),values,async()=>{const batch=await callPackFunctionBatch({packDir:pack.directory,...fn},values.map(line=>({line})),this.feedingLimits(),this.feedingOptions());for(const row of batch)if(!row.ok)throw row.error;return batch;});const out=new Map<string,string|null>();for(const [i,row]of rows.entries()){if(!row.ok)throw row.error;const output=row.result.output;if(!object(output)||output.line!==null&&typeof output.line!=='string')fail('版本规范化回调没有给出声明值');out.set(values[i],output.line);}return out;})();if(this.normalized.size>=128)this.normalized.delete(this.normalized.keys().next().value!);this.normalized.set(key,pending);pending.catch(()=>this.normalized.delete(key));}
-  const canonical=await pending;for(const line of lines){const value=canonical.get(line);if(value===null||value===undefined)continue;const candidates=seeds.filter(seed=>canonical.get(seed.line)===value);if(new Set(candidates.map(seed=>seed.root)).size>1)fail('同一规范版本线存在冲突树苗，管理员核对后重试');if(candidates.length)result.set(line,candidates[0]);}
-  return result;
+  return pending;
  }
  private async requireLines(product:string,lines:readonly string[],pack?:ProductHandle|null){const found=await this.seedsFor(product,lines,pack);for(const line of new Set(lines))if(!found.has(line))throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});}
  private async seed(product:string,line:string){const seed=await this.seedFor(product,line);if(!seed)throw new KnowledgeError('版本线 '+line+' 没有树苗；管理员先育苗，再重读原件',{code:'REFERENCE_UNRESOLVED'});return seed;}
@@ -248,7 +305,17 @@ export class FeedingLayer {
    if(result.output.rows.length&&anchor){const origin=anchor.seed.origin.find(row=>row.role==='command-tree');if(origin){const original=await this.commandSource(principal,anchor.seed);if(original.parser!=='xml@1')fail('锁定命令树不是原始 XML');tree={model:original.model,sha256:origin.sha256};result=await project();}}
    if(!object(result.output)||!Array.isArray(result.output.rows)||result.output.rows.length>MAX_FEEDING_ROWS)fail('产品包喂入投影结构不完整或超过单文档上限');
   const rows=result.output.rows as Projection[];
-  for(const row of rows){if(row.missing&&(!Array.isArray(row.missing)||row.missing.length>1000||row.missing.some(gap=>!object(gap)||typeof gap.missing!=='string'||!gap.missing||typeof gap.next_action!=='string'||!gap.next_action)))fail('产品包缺失事实出口不合格式');if(!object(row.body)||!Array.isArray(row.lines)||row.lines.some(line=>typeof line!=='string')||typeof row.selector!=='string'||typeof row.grammar!=='string'||typeof row.conflict!=='boolean')fail('产品包喂入行结构不完整');row.body={...row.body,object:sha256Hex(canonicalize(row.identity))};if(!KnowledgeStructureSchema.safeParse(row.body).success)fail('原件投影不合 knowledge-structure@1；修正类型或缺失字段');}
+  for(const row of rows){
+   if(row.missing&&(!Array.isArray(row.missing)||row.missing.length>1000||row.missing.some(gap=>!object(gap)||typeof gap.missing!=='string'||!gap.missing||typeof gap.next_action!=='string'||!gap.next_action)))fail('产品包缺失事实出口不合格式');
+   if(!object(row.body)||!Array.isArray(row.lines)||row.lines.some(line=>typeof line!=='string')||typeof row.selector!=='string'||typeof row.grammar!=='string'||typeof row.conflict!=='boolean')fail('产品包喂入行结构不完整');
+   row.body={...row.body,object:sha256Hex(canonicalize(row.identity))};
+   if(!KnowledgeStructureSchema.safeParse(row.body).success)fail('原件投影不合 knowledge-structure@1；修正类型或缺失字段');
+   if(row.body.schema==='fed-case@1'){
+    const expected=tree&&typeof tree.sha256==='string'?tree.sha256:null;
+    const mismatch=(Object.hasOwn(row.body,'command_tree_root')&&row.body.command_tree_root!==expected)||(row.body.commands as Array<Record<string,unknown>>).some(identity=>identity.tree_root!==expected);
+    if(mismatch){if((row.missing?.length??0)>=1000)fail('用例的缺失事实超过上限；缩小原件后重读');row.body.commands=[];row.body.command_tree_root=null;row.body.unparsed_steps=Array.isArray(row.body.steps)?row.body.steps.length:0;row.missing=[...row.missing??[],{missing:'用例命令身份与本次锁定命令树不一致',next_action:'包作者核对锁定命令树及完整身份后重新读取；不把不一致的身份当作已知命令'}];}
+   }
+  }
 
    const value:Projected={rows,pack:pack.id+'@'+pack.version,digest:pack.digest,attachment};const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(value)),'application/json');const at=this.context.now().toISOString();
    await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'projected',unique_key:'feeding.projection:'+key,body:{action:'read',run:null,item:null,component:'hub.feeding@2',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{key,sha256:stored.sha256}},index:[{key:PROJECTION,value:key}]});return value;
@@ -257,11 +324,11 @@ export class FeedingLayer {
   await this.requireLines(scope.product,[...projected.rows.flatMap(row=>row.lines),...(scope.declaredLine?[scope.declaredLine]:[])],pack);
   return projected;
  }
- private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}):ClaimBody{
+ private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:Capture):ClaimBody{
   if(operationRecord(body.schema))return Claim.parse({statement:{text:'Circle 操作记录；等级为声明，不作为核验、评分或放行的证据',data:{feeding:body,actor:by.id,run,key}},grounds,warrant:{producer:'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:'unknown',provenance:'client_captured',marks:['semantics_unasserted']},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
   return Claim.parse({statement:{text:judgment?'客户端带原文引文的喂入主张；语义仍为判断':'按原件结构登记喂入事实',data:{feeding:body,actor:by.id,run,key,...capture,...(metaSource?{meta_source:metaSource}:{}),...(gaps?.length?{missing:gaps}:{})}},grounds,warrant:{producer:judgment?'model':'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:judgment?'judgment':'fact',provenance:body.schema==='fed-note@1'||body.basis==='declared'?'declared':judgment?'declared':'projected',basis_rank:body.basis==='declared'?'rule_over_claims':judgment?'judgment':'rule_over_observation',marks:[]},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
  }
- private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
+ private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:Capture){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
  private key(body:Record<string,any>){const {at:_at,...withoutTime}=body;return sha256Hex(canonicalize(withoutTime));}
  private async usage(principal:Principal,id:string,scope:FeedingScope,tx:Transaction){if(!scope.run)return;const body={schema:'usage@1',object:id,run:scope.run,line:scope.line??null,at:this.context.now().toISOString()};await this.put(body,principal,'hub.feeding@1',[],[id],`usage:${scope.run}:${id}`,[{key:USAGE,value:scope.run},{key:'knowledge.feeding.usage.object',value:id}],tx,false,scope.run);}
  private async todo(principal:Principal,source:Record<string,any>,product:string|null,missing:string,next:string,tx:Transaction,errorDetail?:FeedingErrorDetail){
@@ -286,7 +353,8 @@ export class FeedingLayer {
   else {const {bytes:_bytes,revision:_revision,element:_element,...identity}=row.body.source;await this.todoState(sha256Hex(canonicalize({product:scope.product,identity})),true,tx);}
  }
  async sourceLines(principal:Principal,sha:string,scope:FeedingScope):Promise<string[]>{const source=await this.source(principal,sha,scope.sourceRecord,scope.readManifest);const projected=await this.projection(principal,source,{...scope,root:null});return [...new Set(projected.rows.flatMap(row=>row.lines))];}
- private pendingReceipt(sha:string,missing='文档投影进行中（尚未完成，未当作已喂入）',next='继续处理本次运行；后续 get_nodes 会返回进度和喂入清单，Hub 重启后重读该来源续做'):FeedingReceipt{return {objects:[],offset:null,pending:[{source:sha,missing,next_action:next}]};}
+ // Feeding puts a source into the knowledge layer; a run's checks use only the inputs frozen when it started (decision 115).
+ private pendingReceipt(sha:string,missing='这份来源收进知识层的投影进行中（尚未完成，未当作已喂入）；运行的检查只用开运行时冻结的输入，不读这一层',next='不用等它；收录完成后 get_nodes 会返回喂入清单，Hub 重启后重读该来源续做'):FeedingReceipt{return {objects:[],offset:null,pending:[{source:sha,missing,next_action:next}]};}
  private async jobLifecycleRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:'queued'|'running'|'superseded',receipt?:FeedingReceipt){return this.writeJobRecord(job,state,'unknown',receipt);}
  private async jobResultRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:ActionResult,receipt?:FeedingReceipt){return this.writeJobRecord(job,state,state,receipt);}
  private async writeJobRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:string,result:ActionResult,receipt?:FeedingReceipt){const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:job.scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+job.sha],lease:null,started_at:at,ended_at:at,result,error_code:null,acceptance:null,codes:[],detail:{feeding_job:{key:job.key,capture_key:job.captureKey,pack_digest:job.pack?.digest??null,product:job.pack?.product.id??job.scope.product??null,by:job.principal.id,source:job.sha,scope:job.scope,state,pending:receipt?.pending??this.pendingReceipt(job.sha).pending}}},index:[{key:'knowledge.feeding.job',value:job.scope.run??job.principal.id}]});}
@@ -305,6 +373,86 @@ export class FeedingLayer {
    let resolve!:(value:FeedingReceipt)=>void;const done=new Promise<FeedingReceipt>(yes=>{resolve=yes;});job={key,captureKey,pack,principal,sha,scope,state:'queued',done,resolve,announced:Promise.resolve()};this.jobs.set(key,job);this.queue.push(job);job.announced=this.jobLifecycleRecord(job,'queued').catch(()=>{});this.pump();
   }
   let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([job.done,new Promise<FeedingReceipt>(yes=>{timer=setTimeout(()=>yes(this.pendingReceipt(sha)),FEEDING_BOUNDS.waitMs);})]);}finally{if(timer)clearTimeout(timer);}
+ }
+ /** Where each fed record's capture is: its source bytes, the capture record among its proofs, its read manifest and metadata. */
+ private async capturesOf(records:ReadonlyArray<{digest:string;claim:ClaimBody}>):Promise<Map<string,{sha:string;sourceRecord:string;external:string|null;readManifest?:string;metaSource?:string}>>{
+  const proofs=await this.recordsByDigest(records.flatMap(record=>record.claim.validity.bound));const out=new Map<string,{sha:string;sourceRecord:string;external:string|null;readManifest?:string;metaSource?:string}>();
+  for(const {digest,claim} of records){
+   const data=object(claim.statement.data)?claim.statement.data:{},body=object(data.feeding)?data.feeding:null,sha=object(body?.source)?body.source.bytes:null;if(typeof sha!=='string')continue;
+   const capture=claim.validity.bound.find(proof=>{const found=proofs.get(proof);return found?.kind==='source_artifact'&&found.body.sha256===sha;});if(!capture)continue;
+   out.set(digest,{sha,sourceRecord:capture,external:typeof data.external==='string'?data.external:null,...(typeof data.read_manifest==='string'?{readManifest:data.read_manifest}:{}),...(typeof data.meta_source==='string'?{metaSource:data.meta_source}:{})});
+  }
+  return out;
+ }
+ /**
+  * Re-projects the current fed cases bound to one version line onto a seedling root. The cases are chosen by their version
+  * bindings (normalized by the product pack) and the current head of their source — a retracted or superseded record is
+  * not chosen — never by which root they were projected under before. Each original is re-read once on the ordinary observe
+  * path under the admin, so the projection, the content object and the bindings are written as any read writes them
+  * (judgment=false, producer function); every row names the original record it re-projects (reprojection_of) and is visible
+  * exactly when that original is. `grounds` (the production's generate action or the seedling record) join each row's grounds.
+  */
+ async reproject(by:Principal,product:string,line:string,seed:{root:string;composition:string},grounds:readonly string[]=[]):Promise<ReprojectionReport>{
+  const admin=await requireAdmin(this.context,by,'重投影喂入用例'),principal:Principal={id:admin.id,name:admin.name,role:admin.role};
+  const report:ReprojectionReport={root:seed.root,line,selected:0,already:0,originals:0,projected:0,pending:[]};
+  const pack=await this.context.packs.productById(product);if(!pack?.product.feeding)return report;
+  const isCase=(body:Record<string,any>)=>body.schema==='fed-case@1';
+  const read=this.context.records.store.findIndexed?await this.frozenEntries(principal,product,Number.MAX_SAFE_INTEGER,isCase,this.visibility(principal)):(await this.entries(principal,product)).filter(view=>isCase(view.body));
+  const fed=read.filter(view=>view.claim.warrant.producer==='function');
+  const views=fed.filter(view=>view.validity==='valid');
+  if(!views.length)return report;
+  const sourceKey=(view:FeedingView)=>view.body.object+'\0'+canonicalize({source:object(view.body.source)?view.body.source:{},node:view.body.node_key??view.body.source?.element??null,external:view.claim.statement.data?.external??null});
+  const onRoot=new Set(views.filter(view=>view.body.root===seed.root).map(sourceKey));
+  // A binding is the line one source declares for one content object (its first proof is that source's bytes): content shared
+  // by documents of two lines is re-projected only from the document of this line.
+  const bound=new Map<string,string[]>();
+  for(const id of new Set(views.map(view=>view.body.object as string)))for(const row of await this.all(BINDING,id)){const value=this.body(row),bytes=row.body.validity.bound[0];if(value?.schema!=='version-binding@1'||value.state!=='bound'||typeof value.line!=='string'||typeof bytes!=='string')continue;const key=id+'\0'+bytes,lines=bound.get(key)??[];lines.push(value.line);bound.set(key,lines);}
+  const canonical=await this.normalizeLines(pack,[line,...[...bound.values()].flat()]),target=canonical.get(line)??null;
+  const onLine=(view:FeedingView)=>(bound.get(view.body.object+'\0'+view.body.source?.bytes)??[]).some(value=>value===line||target!==null&&canonical.get(value)===target);
+  const selected=views.filter(onLine);
+  const chosen=new Set(selected.map(view=>view.body.object as string));report.selected=chosen.size;
+  const done=new Set(selected.filter(view=>onRoot.has(sourceKey(view))).map(view=>view.body.object));
+  const open=selected.filter(view=>!onRoot.has(sourceKey(view)));
+  report.already=[...done].filter(id=>!open.some(view=>view.body.object===id)).length;
+  const captures=await this.capturesOf(open.map(view=>({digest:view.record,claim:view.claim})));
+  // One re-read per original (source bytes and external read), from its newest capture; the newest record of each object
+  // in it is the original that object's re-projection names (an older re-projection names its own original).
+  const groups=new Map<string,{capture:NonNullable<ReturnType<typeof captures.get>>;offset:number;originals:Map<string,{record:string;offset:number}>}>();
+  for(const view of open){
+   const capture=captures.get(view.record);if(!capture)continue;
+   const key=capture.sha+'\0'+(capture.external??''),original=typeof view.claim.statement.data?.reprojection_of==='string'?view.claim.statement.data.reprojection_of:view.record;
+   const group=groups.get(key)??{capture,offset:-1,originals:new Map()};if(view.offset>group.offset){group.capture=capture;group.offset=view.offset;}
+   const held=group.originals.get(view.body.object);if(!held||view.offset>held.offset)group.originals.set(view.body.object,{record:original,offset:view.offset});
+   groups.set(key,group);
+  }
+  // A re-read writes every row of the original, a retracted one too: that row names its own original (and stays retracted).
+  for(const view of fed){
+   const external=view.claim.statement.data?.external,group=groups.get(view.body.source?.bytes+'\0'+(typeof external==='string'?external:''));
+   if(!group||group.originals.has(view.body.object))continue;
+   const original=typeof view.claim.statement.data?.reprojection_of==='string'?view.claim.statement.data.reprojection_of:view.record;
+   group.originals.set(view.body.object,{record:original,offset:-1});
+  }
+  const projected=new Set<string>();
+  for(const group of groups.values()){
+   const originals=Object.fromEntries([...group.originals].map(([id,row])=>[id,row.record])),fallback=[...group.originals.values()].sort((a,b)=>b.offset-a.offset)[0]!.record;
+   const receipt=await this.observeSource(principal,group.capture.sha,{product,root:seed.root,composition:seed.composition,line,sourceRecord:group.capture.sourceRecord,...(group.capture.readManifest?{readManifest:group.capture.readManifest}:{}),...(group.capture.metaSource?{metaSource:group.capture.metaSource}:{}),reprojection:{originals,fallback,grounds:[...grounds]}},pack);
+   report.originals++;for(const id of receipt.objects)if(chosen.has(id))projected.add(id);report.pending.push(...receipt.pending);
+  }
+  report.projected=projected.size;
+  return report;
+ }
+ /**
+  * Queues a recorded re-read, under the reader's own account and on the bounded observe path, of the originals behind fed
+  * records that lack a projection under a root. Nothing is projected here; the jobs write what any read writes, and the
+  * caller's view keeps those cases unknown until a later read sees the projections. Returns the number of originals queued.
+  */
+ async rereadRootless(principal:Principal,records:readonly string[],scope:{product:string;root:string;composition:string|null}):Promise<number>{
+  const found=[...(await this.recordsByDigest([...new Set(records)].slice(0,BATCH))).values()].filter(record=>record.kind==='claim'&&Claim.safeParse(record.body).success);
+  const captures=await this.capturesOf(found.map(record=>({digest:record.digest,claim:record.body as ClaimBody})));
+  const jobs=new Map<string,NonNullable<ReturnType<typeof captures.get>>>();
+  for(const capture of captures.values()){const key=capture.sha+'\0'+capture.sourceRecord;if(!jobs.has(key)&&jobs.size<REREAD_CAPTURES)jobs.set(key,capture);}
+  await Promise.all([...jobs.values()].map(capture=>this.observeSourceBounded(principal,capture.sha,{product:scope.product,root:scope.root,composition:scope.composition,sourceRecord:capture.sourceRecord,...(capture.readManifest?{readManifest:capture.readManifest}:{}),...(capture.metaSource?{metaSource:capture.metaSource}:{})}).catch(()=>null)));
+  return jobs.size;
  }
  async drain():Promise<void>{while(this.jobs.size)await Promise.all([...this.jobs.values()].map(job=>job.done));}
  async pending(principal:Principal,run:string):Promise<FeedingReceipt['pending']>{
@@ -340,7 +488,7 @@ export class FeedingLayer {
   if(scope.readManifest&&!Sha256.safeParse(scope.readManifest).success)scope={...scope,readManifest:undefined};
   if(scope.run&&!scope.metaSource&&!scope.sourceRecord){const prior=await this.context.store.all<any>({key:'knowledge.feeding.job',value:scope.run,kind:'action'});for(const row of prior){const job=row.body.detail?.feeding_job,old=job?.scope;if(job?.by===principal.id&&job.source===sha&&old?.product===scope.product&&old.root===scope.root&&old.composition===scope.composition)scope={...scope,metaSource:old.metaSource,metaRecord:old.metaRecord,readManifest:old.readManifest,sourceRecord:old.sourceRecord,declaredLine:old.declaredLine};}}
   const source=await this.source(principal,sha,scope.sourceRecord,scope.readManifest,'input_source',scope.run),pending:FeedingReceipt['pending']=[];
-  if(!scope.product){const products=new Set<string>();for(const entry of await this.all('knowledge.feeding.source',sha)){const value=this.body(entry);if(value?.product&&await this.recordVisible(entry,principal))products.add(value.product);}if(products.size===1)scope={...scope,product:[...products][0]};}
+  if(!scope.product){const products=new Set<string>();for(const entry of await this.all('knowledge.feeding.source',sha)){const value=this.body(entry);if(value?.product&&!products.has(value.product)&&await this.recordVisible(entry,principal))products.add(value.product);}if(products.size===1)scope={...scope,product:[...products][0]};}
   if('upload'in source.artifact.body.origin){return this.upload(principal,source.artifact,scope);}
   if(!scope.metaSource)for(const previous of await this.all('knowledge.feeding.source',sha)){const meta=previous.body.statement.data?.meta_source;if(typeof meta==='string'&&await this.recordVisible(previous,principal))scope={...scope,metaSource:meta};}
   if(!source.external&&'generated'in source.artifact.body.origin&&scope.product&&(await this.context.packs.productById(scope.product))?.product.feeding){const receipt=this.pendingReceipt(sha,'来源身份未声明：缺本次生成件对应的读取动作；同内容多个出处不是冲突，不能按摘要反挑一条','经原外部标识重新读取并绑定原件记录与读取清单；旧记录保留，不猜补出处');await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(principal,sha,scope,tx);await this.todo(principal,{system:'capture',document:source.artifact.digest},scope.product!,receipt.pending[0].missing,receipt.pending[0].next_action,tx);});return {...receipt,offset:await this.offset()};}
@@ -355,6 +503,13 @@ export class FeedingLayer {
   const document=await parseDocument(this.context.parsers.get(evidenceParser)!,evidenceSource.bytes);
   const selectors=[...new Set(projection.rows.map(row=>scope.metaSource?'p/ancestors':row.selector))];
   await document.prefetch?.(selectors);
+  const caseRows=projection.rows.filter(row=>row.body.schema==='fed-case@1'&&typeof row.body.node_selector==='string');
+  const caseSelectors=[...new Set(caseRows.map(row=>row.body.node_selector as string))];
+  const caseDocument=scope.metaSource&&caseSelectors.length?await parseDocument(this.context.parsers.get(source.parser)!,source.bytes):document;
+  if(scope.metaSource&&caseSelectors.length)await caseDocument.prefetch?.(caseSelectors);
+  const caseFragments=new Map<string,Awaited<ReturnType<ParsedDocument['locate']>>>();
+  for(const selector of caseSelectors)caseFragments.set(selector,await caseDocument.locate(selector));
+  for(const row of caseRows){const fragment=caseFragments.get(row.body.node_selector as string);if(row.body.node_selector!==row.selector||row.body.node_parser!==source.parser||!fragment||fragment.selector!==row.selector||typeof row.body.title==='string'&&fragment.text!==row.body.title){delete row.body.node_selector;delete row.body.node_parser;delete row.body.node_key;delete row.body.title;delete row.body.path_labels;row.missing=[...row.missing??[],{missing:'用例节点的选择器或标题不能从本次原件核对',next_action:'包作者核对解析器与节点投影后重新读取；不伪造来源引用'}];}}
   const evidenceBySelector=new Map<string,{reference:string;text:string}>();
   let fallback:{reference:string;text:string}|undefined;
   for(const selector of selectors){
@@ -370,8 +525,8 @@ export class FeedingLayer {
   await this.sourceAccess(principal,sha,source.artifact.digest,scope.readManifest,'input_source',scope.run);if(scope.metaSource)await this.sourceAccess(principal,scope.metaSource,evidenceSource.artifact.digest,scope.readManifest,'metadata');
   for(const row of projection.rows){const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');}
   const committed=await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);
-   if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用绑定产品和树苗的运行号重新 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return true;}
-   for(const row of projection.rows){await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
+   if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用 start_run 重读此原件，顶层同时写 product 和它所属的 build（不绑定产品线的通用读取包 source-read 也接受这两项），回执不再显示投影进行中后再用；或带一次这样绑定了产品和树苗的运行号 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return true;}
+   for(const row of projection.rows){const original=scope.reprojection?(scope.reprojection.originals[row.body.object]??scope.reprojection.fallback):null;await this.put(row.body,principal,projection.pack,['src:'+sha,...(scope.reprojection?.grounds??[])],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[]),...(original?[original]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{}),...(original?{reprojection_of:original}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.observed:'+observationKey,body:{action:'read',run:scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+sha],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{receipt:{objects:ids,pending}}},index:[{key:'knowledge.feeding.observed',value:observationKey}]},tx);
    return true;
   });if(!committed)return this.superseded(sha);return {objects:ids,offset:await this.offset(),pending};
@@ -385,7 +540,14 @@ export class FeedingLayer {
   await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.put(body,principal,'hub.upload@1',['src:'+artifact.body.sha256],[artifact.body.sha256,artifact.digest],'note:'+artifact.digest,[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:principal.id}],tx,false,scope.run??null);await this.usage(principal,body.object,scope,tx);});return {objects:[body.object],offset:await this.offset(),pending:[]};
  }
  async freeze(principal:Principal,run:string,root:string|null):Promise<FeedingOffset>{return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);const body={schema:'feeding-offset@1',run,root,offset:await this.offset(tx)} as const;const stored=await this.context.records.store.put({kind:'claim',schema:'feeding-offset@1',provenance:'observed',body,unique_key:'feeding.freeze:'+run,index:[{key:'knowledge.feeding.offset',value:run}]},tx);return stored.body;});}
- async usages(principal:Principal,run:string):Promise<string[]>{const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];const rows=await this.all(USAGE,run);const out:string[]=[];for(const row of rows){const body=this.body(row);if(body&&await this.visible(body.object,principal))out.push(body.object);}for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];}
+ async usages(principal:Principal,run:string):Promise<string[]>{
+  const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];
+  const bodies=(await this.all(USAGE,run)).map(row=>this.body(row));
+  // Each object is checked as visible() checks it, grouped over the run's objects when the store can scan an index in batches.
+  const shown=this.context.records.store.findIndexed?await this.objectsVisible(bodies.flatMap(body=>body?[body.object as string]:[]),this.visibility(principal)):null;
+  const out:string[]=[];for(const body of bodies){if(body&&(shown?shown.get(body.object):await this.visible(body.object,principal)))out.push(body.object);}
+  for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];
+ }
  /**
   * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written (round-five review, item 5).
   * Only the uploader or an admin may. A note written now names its upload record. An older note does not, and is read as
@@ -408,19 +570,174 @@ export class FeedingLayer {
   return object(feeding)&&feeding.schema==='fed-note@1'?feeding:null;
  }
  private async visible(id:string,principal:Principal):Promise<boolean>{const rows=await this.all(OBJECT,id);if(!rows.length)return Boolean((await this.context.records.artifacts.source(principal,id,{consumer:'model'}))?.bytes);for(const row of rows)if(await this.recordVisible(row,principal))return true;return false;}
+ /**
+  * The original record a re-projection names, when it is one this re-projection may stand for: a feeding claim of the same
+  * product and source bytes that is not itself a re-projection. A re-projection naming anything else is never visible.
+  */
+ private reprojected(record:StoredRecord<ClaimBody>):string|null{const original=record.body.statement.data?.reprojection_of;return typeof original==='string'?original:null;}
+ private standsFor(record:StoredRecord<ClaimBody>,original:StoredRecord<any>|null|undefined):original is StoredRecord<ClaimBody>{
+  if(!original||original.kind!=='claim'||!Claim.safeParse(original.body).success||this.reprojected(original as StoredRecord<ClaimBody>)!==null)return false;
+  const body=this.body(record),before=this.body(original as StoredRecord<ClaimBody>);
+  return body!==null&&before!==null&&body.product===before.product&&body.source?.bytes===before.source?.bytes;
+ }
+ // A re-projection (reprojection_of) is visible exactly when its original is: the decision is the original's, whoever wrote
+ // the re-projection. recordsVisible makes the same substitution; feeding-reprojection.test.ts keeps the two equivalent.
  private async recordVisible(record:StoredRecord<ClaimBody>,principal:Principal):Promise<boolean>{
+  const original=this.reprojected(record);
+  if(original!==null){const stored=await this.context.records.store.get<any>(original);return this.standsFor(record,stored)?this.recordVisible(stored,principal):false;}
   const account=await this.context.records.principals.get(principal.id);if(!account||account.disabled)return false;const body=this.body(record);if(!body)return false;if(body.schema==='fed-note@1'&&principal.role!=='admin'&&body.by!==principal.id)return false;
   if(body.product&&!await this.reading.mayReadProducts(principal,[body.product]))return false;
   for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;let source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});const run=record.body.statement.data?.run;if(!source&&typeof run==='string'){const scoped=await this.context.records.artifacts.sourceForRun(principal,original.body.sha256,run,{consumer:'model',record:original.digest});if(scoped?.artifact.digest===original.digest)source=scoped;}return Boolean(source?.bytes&&source.readTier==='model_readable');}
   return false;
  }
- async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound,offset),...await this.changed(body,offset)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
+ private visibility(principal:Principal):Visibility{return {principal,products:new Map(),captures:new Map(),runCaptures:new Map(),runs:new Map()};}
+ /** Verified records by digest, a batch per query; a digest that names no record is absent, as store.get answers null. */
+ private async recordsByDigest(digests:Iterable<string>):Promise<Map<string,StoredRecord<any>>>{
+  const wanted=[...new Set(digests)],out=new Map<string,StoredRecord<any>>();
+  for(let at=0;at<wanted.length;at+=BATCH)for(const [digest,record] of await this.context.records.store.getMany<any>(wanted.slice(at,at+BATCH)))out.set(digest,record);
+  return out;
+ }
+ /** Run records by id in one query per batch: the oldest record under runs.id, the record runById returns. */
+ private async runsById(ids:Iterable<string>):Promise<Map<string,StoredRecord<RunRecord>>>{
+  const wanted=[...new Set(ids)].filter(id=>RUN_RECORD_ID.test(id)),out=new Map<string,StoredRecord<RunRecord>>();
+  for(let at=0;at<wanted.length;at+=BATCH)for(const [id,record] of await this.context.records.store.findFirstMany<RunRecord>({key:'runs.id',values:wanted.slice(at,at+BATCH),kind:'run'}))out.set(id,record);
+  return out;
+ }
+ /** What Artifacts.source answers this reader for one capture, without keeping the bytes. */
+ private capture(session:Visibility,sha:string,record:string){
+  return once(session.captures,sha+'\0'+record,async()=>{const source=await this.context.records.artifacts.source(session.principal,sha,{consumer:'model',record});return {present:source!==null,bytes:Boolean(source?.bytes),readable:Boolean(source?.bytes&&source.readTier==='model_readable')};});
+ }
+ private runCapture(session:Visibility,sha:string,run:string,record:string){
+  return once(session.runCaptures,sha+'\0'+run+'\0'+record,async()=>{const scoped=await this.context.records.artifacts.sourceForRun(session.principal,sha,run,{consumer:'model',record});return {matches:scoped?.artifact.digest===record,readable:Boolean(scoped?.bytes&&scoped.readTier==='model_readable')};});
+ }
+ /**
+  * recordVisible for many records: the same checks in the same order with the same answer per record, read in groups. The
+  * account and every product are checked once; each record reads its bound digests in order up to the first capture of its
+  * own source bytes, one batched query per position, so no record reads a digest its sequential check would not; and each
+  * capture's read tier is decided once.
+  */
+ private async recordsVisible(items:ReadonlyArray<{record:StoredRecord<ClaimBody>;body:Record<string,any>|null}>,session:Visibility):Promise<boolean[]>{
+  const shown=items.map(()=>false);
+  if(!items.length)return shown;
+  // Re-projections are decided as their originals, the same substitution recordVisible makes.
+  const named=items.flatMap(item=>{const original=this.reprojected(item.record);return original===null?[]:[original];});
+  if(named.length){
+   const originals=await this.recordsByDigest(named);
+   const substituted:Array<{record:StoredRecord<ClaimBody>;body:Record<string,any>|null}>=[],at:number[]=[];
+   for(const [index,item] of items.entries()){const original=this.reprojected(item.record);if(original===null){substituted.push(item);at.push(index);continue;}const stored=originals.get(original);if(this.standsFor(item.record,stored)){substituted.push({record:stored,body:this.body(stored)});at.push(index);}}
+   const decided=await this.recordsVisible(substituted,session);
+   for(const [k,index] of at.entries())shown[index]=decided[k];
+   return shown;
+  }
+  session.account??=this.context.records.principals.get(session.principal.id).then(account=>Boolean(account&&!account.disabled));
+  if(!await session.account)return shown;
+  let open:Array<{at:number;record:StoredRecord<ClaimBody>;body:Record<string,any>;next:number}>=[];
+  for(const [at,{record,body}] of items.entries()){
+   if(!body||body.schema==='fed-note@1'&&session.principal.role!=='admin'&&body.by!==session.principal.id)continue;
+   if(body.product&&!await once(session.products,body.product,()=>this.reading.mayReadProducts(session.principal,[body.product])))continue;
+   if(record.body.validity.bound.length)open.push({at,record,body,next:0});
+  }
+  while(open.length){
+   const found=await this.recordsByDigest(open.map(item=>item.record.body.validity.bound[item.next]));
+   const rest:typeof open=[];
+   for(const item of open){
+    const original=found.get(item.record.body.validity.bound[item.next++]);
+    if(original?.kind==='source_artifact'&&original.body.sha256===item.body.source?.bytes){
+     const direct=await this.capture(session,original.body.sha256,original.digest),run=item.record.body.statement.data?.run;
+     if(direct.present)shown[item.at]=direct.readable;
+     else if(typeof run==='string'){const scoped=await this.runCapture(session,original.body.sha256,run,original.digest);shown[item.at]=scoped.matches&&scoped.readable;}
+     continue;
+    }
+    if(item.next<item.record.body.validity.bound.length)rest.push(item);
+   }
+   open=rest;
+  }
+  return shown;
+ }
+ /**
+  * visible() for many object ids. An id without object records asks for its bytes, as visible does; otherwise its records are
+  * checked in order and the first visible one decides, a batched round per position, so no record is checked that the
+  * sequential loop would not check.
+  */
+ private async objectsVisible(ids:readonly string[],session:Visibility):Promise<Map<string,boolean>>{
+  const out=new Map<string,boolean>(),wanted=[...new Set(ids)];
+  if(!wanted.length)return out;
+  const groups=await this.indexed<ClaimBody>(OBJECT,wanted,'claim',Number.MAX_SAFE_INTEGER);
+  let open:Array<{id:string;rows:IndexedRecord<ClaimBody>[];next:number}>=[];
+  for(const id of wanted){
+   const rows=groups.get(id)??[];
+   if(rows.length)open.push({id,rows,next:0});
+   else out.set(id,Boolean((await this.context.records.artifacts.source(session.principal,id,{consumer:'model'}))?.bytes));
+  }
+  while(open.length){
+   const shown=await this.recordsVisible(open.map(item=>({record:item.rows[item.next].record,body:this.body(item.rows[item.next].record)})),session);
+   const rest:typeof open=[];
+   for(const [k,item] of open.entries()){
+    if(shown[k]){out.set(item.id,true);continue;}
+    if(++item.next<item.rows.length)rest.push(item);else out.set(item.id,false);
+   }
+   open=rest;
+  }
+  return out;
+ }
+ async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{
+  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset);
+  const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound,offset),...await this.changed(body,offset)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
+ /** Only records that could be shown on the requested nodes need their sources read and authorized. */
+ async entriesAtNodes(principal:Principal,product:string,root:string,paths:readonly string[],offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{
+  const selected=new Set(paths);if(!selected.size)return [];
+  const relevant=(body:Record<string,any>)=>body.root===root&&(
+   typeof body.path==='string'&&selected.has(body.path)||body.path===null&&selected.has('/')||
+   Array.isArray(body.commands)&&body.commands.some((command:unknown)=>object(command)&&typeof command.path==='string'&&selected.has(command.path))
+  );
+  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset,relevant,this.visibility(principal));
+  return (await this.entries(principal,product,offset)).filter(row=>relevant(row.body));
+ }
+ /** Keep the matched index value: one record can be indexed under more than one object. */
+ private async indexed<B>(key:string,values:readonly string[],kind:RecordKind,through:number):Promise<Map<string,IndexedRecord<B>[]>>{
+  const scan=this.context.records.store.findIndexed;
+  if(!scan)throw new KnowledgeError('缺批量记录索引能力；管理员恢复记录库后重试',{code:'SOURCE_READ_FAILED'});
+  const groups=new Map<string,IndexedRecord<B>[]>(),wanted=[...new Set(values)];
+  for(let start=0;start<wanted.length;start+=128){
+   let cursor:import('../records/api.ts').IndexedCursor|null=null;
+   do{const page:{items:IndexedRecord<B>[];next:import('../records/api.ts').IndexedCursor|null}=await scan.call(this.context.records.store,{key,values:wanted.slice(start,start+128),kind,through,limit:500,cursor}) as {items:IndexedRecord<B>[];next:import('../records/api.ts').IndexedCursor|null};
+    for(const item of page.items){const group=groups.get(item.value)??[];group.push(item as IndexedRecord<B>);groups.set(item.value,group);}cursor=page.next;
+   }while(cursor);
+  }
+  return groups;
+ }
+ /**
+  * Frozen cuts batch immutable index facts but still check every record's present-day read permission: one by one, or with a
+  * session as one grouped evaluation (recordsVisible) with the same answer per record.
+  */
+ private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean,session?:Visibility):Promise<FeedingView[]>{
+  const productRows=(await this.indexed<ClaimBody>('knowledge.feeding.product',[product],'claim',through)).get(product)??[];
+  const candidates:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
+  for(const row of productRows){const body=this.body(row.record);if(body&&(!select||select(body)))candidates.push({row,body});}
+  const shown=session?await this.recordsVisible(candidates.map(({row,body})=>({record:row.record,body})),session):null;
+  const visible:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
+  for(const [at,candidate] of candidates.entries())if(shown?shown[at]:await this.recordVisible(candidate.row.record,principal))visible.push(candidate);
+  const withdrawals=((await this.indexed<ClaimBody>(RETRACT,['1'],'claim',through)).get('1')??[]).map(item=>({item,value:this.body(item.record)}));
+  const heads=await this.indexed<any>('knowledge.feeding.head',visible.flatMap(({body})=>{const key=this.sourceKey(body);return key?[key]:[];}),'action',through);
+  return visible.map(({row,body})=>{
+   const record=row.record,run=typeof record.body.statement.data?.run==='string'?record.body.statement.data.run:null,bound=record.body.validity.bound;
+   const retractions:string[]=[];
+   for(const {item,value} of withdrawals){if(!value)continue;
+    if(value.objects?.some((target:string)=>target===body.object||bound.includes(target))||value.entries?.some((target:string)=>target===record.digest||bound.includes(target))||run!==null&&value.runs?.includes(run))retractions.push(item.record.digest);
+   }
+   const unique=[...new Set(retractions)],key=this.sourceKey(body),history=key?heads.get(key):undefined,head=history?.at(-1)?.record;
+   if(head&&head.body.detail?.object!==body.object)unique.push(head.digest);
+   return {record:record.digest,offset:row.position,body,claim:record.body,validity:unique.length?'invalid':'valid',retractions:unique};
+  });
+ }
  private async withdrawals(id:string,entry:string,run:string|null=null,bound:readonly string[]=[],offset=Number.MAX_SAFE_INTEGER){
   const rows=await this.all(RETRACT,'1'),found:string[]=[];
   for(const row of rows){if(await this.position(row.digest)>offset)continue;const body=this.body(row);if(!body)continue;if(body.objects?.some((target:string)=>target===id||bound.includes(target))||body.entries?.some((target:string)=>target===entry||bound.includes(target))||run!==null&&body.runs?.includes(run))found.push(row.digest);}
   return [...new Set(found)];
  }
- private async retractionTargets(body:FeedingRetraction){for(const id of 'objects'in body?body.objects:[]){if(!(await this.all(OBJECT,id)).length)fail('撤回对象不存在；按喂入清单的对象摘要修正');}for(const id of 'entries'in body?body.entries:[]){const record=await this.context.records.store.get(id);if(!record||!this.body(record as StoredRecord<ClaimBody>)&&!(record.schema==='knowledge-contribution@1'&&object(record.body)&&typeof record.body.feeding_record==='string'))fail('撤回目标不是已登记的喂入或回注条目；按喂入清单中的记录摘要修正');}for(const id of 'runs'in body?body.runs:[]){if(!await runById(this.context.records.store,id))fail('撤回运行不存在');}}
+ /** A knowledge-contribution@1 record, grounded in a feeding record or directly in tree entries and originals. */
+ private contribution(record:StoredRecord<unknown>){return record.kind==='claim'&&record.schema===SCHEMAS.contribution;}
+ private async retractionTargets(body:FeedingRetraction){for(const id of 'objects'in body?body.objects:[]){if(!(await this.all(OBJECT,id)).length)fail('撤回对象不存在；按喂入清单的对象摘要修正');}for(const id of 'entries'in body?body.entries:[]){const record=await this.context.records.store.get(id);if(!record||!this.body(record as StoredRecord<ClaimBody>)&&!this.contribution(record))fail('撤回目标不是已登记的喂入或回注条目；按喂入清单中的记录摘要修正');}for(const id of 'runs'in body?body.runs:[]){if(!await runById(this.context.records.store,id))fail('撤回运行不存在');}}
  /** Same target check as retract, without appending. */
  async screenRetraction(principal:Principal,raw:unknown):Promise<void>{if(principal.role!=='admin')fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);}
  /** Retraction records that already cover this target, using the same match as withdrawals. */
@@ -431,13 +748,21 @@ export class FeedingLayer {
   const stored=await this.context.records.store.get(id);if(!stored)return [];
   const claim=stored as StoredRecord<ClaimBody>;const feeding=this.body(claim);
   if(feeding){const data=claim.body.statement.data;const run=typeof data?.run==='string'?data.run:null;return this.withdrawals(typeof feeding.object==='string'?feeding.object:'',id,run,[...claim.body.validity.bound]);}
-  if(stored.schema==='knowledge-contribution@1'&&object(stored.body)&&typeof stored.body.feeding_record==='string'){
-   const child=await this.context.records.store.get<ClaimBody>(stored.body.feeding_record);const body=child?this.body(child):null;
-   if(child&&body){const data=child.body.statement.data;const run=typeof data?.run==='string'?data.run:null;return this.withdrawals(typeof body.object==='string'?body.object:'',child.digest,run,[...child.body.validity.bound,id]);}
+  if(this.contribution(stored)){
+   if(object(stored.body)&&typeof stored.body.feeding_record==='string'){
+    const child=await this.context.records.store.get<ClaimBody>(stored.body.feeding_record);const body=child?this.body(child):null;
+    if(child&&body){const data=child.body.statement.data;const run=typeof data?.run==='string'?data.run:null;return this.withdrawals(typeof body.object==='string'?body.object:'',child.digest,run,[...child.body.validity.bound,id]);}
+   }
+   // Without a feeding record (grounded in tree entries) only a record that lists the contribution itself covers it.
    return this.withdrawals('',id,null,[]);
   }
   return [];
  }
+ /**
+  * Every digest the entries of a retraction record name. The contribution read side shows a contribution listed here as
+  * retracted itself, with or without a feeding record; callers read it once per view, not once per contribution.
+  */
+ async retractedEntries():Promise<ReadonlySet<string>>{const out=new Set<string>();for(const row of await this.all(RETRACT,'1')){const body=this.body(row);if(Array.isArray(body?.entries))for(const id of body.entries)if(typeof id==='string')out.add(id);}return out;}
  async retract(principal:Principal,raw:unknown):Promise<string>{if(principal.role!=='admin')fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;});}
  private async todoState(key:string,resolved:boolean,tx:Transaction){
   await this.context.records.store.lock('knowledge.feeding.todo:'+key,tx);
@@ -476,7 +801,7 @@ export class FeedingLayer {
   if(locked&&bed&&locked!==bed)return {source:'conflict',run_lock:{build:locked,line},bed_installed:{build:bed,line:null}};
   if(bed)return {source:'bed_installed',build:bed,line};
   if(locked)return {source:'run_lock',build:locked,line};
-  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，台架结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在台架结构里登记在装构建后再交；不要在提交里写版本'};
+  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，预订自动化测试环境时也没有在设备上看到在装构建',next_action:'用锁定了构建的运行重交，或以预订了这台设备的运行作前序再交（预订时 Hub 在设备上看一次装的构建；看不到的原因写在那次预订的结果里）；不要在提交里写版本'};
  }
  private async operationArtifact(principal:Principal,bytes:string,runId:string|null,requested?:unknown):Promise<SourceArtifact>{
   const candidates=(await this.context.records.artifacts.records(bytes)).filter(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||principal.role==='admin'));
@@ -498,7 +823,7 @@ export class FeedingLayer {
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
   for(const key of ['binding','version','build','line','family','by','run','at','object','captured_at_declared','received_at'])if(key in raw){
-   fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+   fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或自动化测试环境在装构建。删掉该字段后重交；这不是终局。`);
   }
   const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
   if(!bytes)fail('操作记录缺上传原件');
@@ -618,14 +943,31 @@ export class FeedingLayer {
  async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));const plans:AppendPlan[]=[];for(const body of bodies)plans.push(await this.planAppend(principal,body,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const [index,body] of bodies.entries())refs.push(await this.appendPrepared(principal,body,plans[index]!,scope,'client-declared-model',tx));return refs;});}
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
-  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,entries=await this.entries(principal,product,ceiling);
-  const objects=new Map<string,KnowledgeStructureObject>(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages=[];
-  for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);}
+  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,batched=offset!==null&&Boolean(this.context.records.store.findIndexed),session=batched?this.visibility(principal):undefined,entries=batched?await this.frozenEntries(principal,product,ceiling,undefined,session):await this.entries(principal,product,ceiling);
+  const objects=new Map<string,KnowledgeStructureObject>(),casesByRoot:NonNullable<FeedingCut['casesByRoot']>=new Map(),builds:NonNullable<FeedingCut['builds']>=[],bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages:FeedingUsage[]=[];
+  for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);if(entry.body.schema==='fed-case@1'&&(entry.body.root===null||typeof entry.body.root==='string')&&entry.claim.warrant.producer==='function'){const cases=casesByRoot.get(entry.body.root)??new Map(),sources=cases.get(entry.body.object)??new Map();const source=object(entry.body.source)?entry.body.source:{},key=canonicalize({source,node:entry.body.node_key??source.element??null,external:entry.claim.statement.data?.external??null});sources.set(key,{body:entry.body,record:entry.record,position:entry.offset});cases.set(entry.body.object,sources);casesByRoot.set(entry.body.root,cases);}
+   if(entry.body.schema==='fed-build@1'&&Array.isArray(entry.body.fixed_bugs)&&entry.body.fixed_bugs.length&&entry.claim.warrant.producer==='function'){const external=entry.claim.statement.data?.external;builds.push({body:entry.body as KnowledgeStructureObject,record:entry.record,position:entry.offset,external:typeof external==='string'?external:null});}}
+  builds.sort((a,b)=>a.position-b.position);
+  if(session){
+   const bound=await this.indexed<ClaimBody>(BINDING,[...objects.keys()],'claim',ceiling);
+   const used=await this.indexed<ClaimBody>('knowledge.feeding.usage.object',[...objects.keys()],'claim',ceiling);
+   // Every proof of every binding is read and every capture among them is asked for, as below; each one once.
+   const proofs=await this.recordsByDigest([...bound.values()].flat().flatMap(item=>item.record.body.validity.bound));
+   const usageBodies=new Map<string,Record<string,any>|null>();for(const item of [...used.values()].flat())usageBodies.set(item.record.digest,this.body(item.record));
+   const runs=await this.runsById([...usageBodies.values()].flatMap(value=>value&&typeof value.run==='string'?[value.run]:[]));
+   for(const id of objects.keys()){retracted.delete(id);const list:VersionBinding[]=[];
+    for(const {record:row} of bound.get(id)??[]){let readable=false;for(const proof of row.body.validity.bound){const original=proofs.get(proof);if(original?.kind==='source_artifact'&&(await this.capture(session,original.body.sha256,proof)).bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}
+    bindings.set(id,list);
+    for(const {record:row} of used.get(id)??[]){const value=usageBodies.get(row.digest);if(!value)continue;const run=typeof value.run==='string'?runs.get(value.run):undefined;if(run&&await once(session.runs,value.run,()=>canViewRun(principal,run.body,this.context.records.store)))usages.push(value as FeedingUsage);}
+    if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
+   }
+   return entries.length?{offset,objects,casesByRoot,builds,bindings,retracted,contradicted,usages}:null;
+  }
   for(const id of objects.keys()){retracted.delete(id);const rows=await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
-   for(const row of await this.all('knowledge.feeding.usage.object',id)){if(await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as import('../../contracts/src/feeding.ts').FeedingUsage);}
+   for(const row of await this.all('knowledge.feeding.usage.object',id)){if(await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as FeedingUsage);}
    if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
   }
-  return entries.length?{offset,objects,bindings,retracted,contradicted,usages}:null;
+  return entries.length?{offset,objects,casesByRoot,builds,bindings,retracted,contradicted,usages}:null;
  }
  async bindingsFor(principal:Principal,id:string,offset=Number.MAX_SAFE_INTEGER){if(!await this.visible(id,principal))return null;const rows=[];for(const record of await this.all(BINDING,id)){if(await this.position(record.digest)>offset||!await this.proofReadable(record,principal))continue;const body=this.body(record);if(body)rows.push({record:record.digest,body,claim:record.body});}const structure=rows.filter(row=>row.body.basis==='source_structure'),declared=rows.filter(row=>row.body.basis==='declared');return {items:rows.sort((a,b)=>Number(a.body.basis==='declared')-Number(b.body.basis==='declared')),conflict:rows.some(row=>row.body.state==='conflict')||declared.some(row=>{const same=structure.filter(source=>source.claim.validity.bound.length===row.claim.validity.bound.length&&source.claim.validity.bound.every((v,i)=>v===row.claim.validity.bound[i]));return same.some(source=>source.body.state==='bound')&&!same.some(source=>source.body.state==='bound'&&source.body.line===row.body.line);}),candidates:[...new Set(rows.flatMap(row=>row.body.state==='conflict'?row.body.candidates:row.body.line?[row.body.line]:[]))]};}
  async refreshRetractionTodos():Promise<void>{

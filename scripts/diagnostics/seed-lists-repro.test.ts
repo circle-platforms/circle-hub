@@ -126,6 +126,8 @@ function fixture(
         sources: [],
         composition_revisions: [],
         pointer: null,
+        reprojection: null,
+        reprojection_error: null,
         missing: [],
         notes: [],
         reason: reportOk ? null : 'famx.adoc.incomplete_group',

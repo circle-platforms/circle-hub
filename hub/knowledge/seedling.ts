@@ -5,7 +5,8 @@
 // itself is the ordinary produceTree over the released build with only the three named producers, so it reuses
 // kb-sections mounting, the kb-adoc models, the content-addressed nodes and the tree_root composition; on top it writes
 // the seedling@1 record (the three sources with their original digests and the fixed adoc revisions, and the parent
-// seedling) and moves the line's seedling pointer by compare-and-set. The old per-build roots are not touched.
+// seedling) and moves the line's seedling pointer by compare-and-set. The old per-build roots are not touched. Between the
+// record and the move, the line's existing fed cases are re-projected onto the new root (FeedingLayer.reproject).
 import type { ProductHandle } from '../ports.ts';
 import { KnowledgeError, describeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
@@ -15,6 +16,8 @@ import { pointerName, INDEX } from './store.ts';
 import type { ProduceResult } from './produce.ts';
 import { SeedlingBody, type SeedlingSource } from '../../contracts/src/knowledge.ts';
 import type { BuildInfo } from '../../contracts/src/product.ts';
+import type { ReprojectionReport } from './feeding.ts';
+import { FeedingFunctionFailure } from './feeding-errors.ts';
 
 /** A producer input the seedling reads one fixed source through. */
 export interface SeedlingRoleRef {
@@ -64,6 +67,10 @@ export interface SeedlingResult {
   reason: string | null;
   /** The underlying production's report (sources, warnings, counts), when one ran. */
   production: ProduceResult | null;
+  /** The re-projection of the line's existing fed cases onto the new root, written before the pointer moved; null when none ran. */
+  reprojection: ReprojectionReport | null;
+  /** Why the re-projection did not complete, when it threw; the pointer still moves and views name the missing projections. */
+  reprojection_error: string | null;
 }
 
 const ROLES = ['app-manual', 'cli-manual', 'command-tree'] as const;
@@ -102,7 +109,7 @@ export async function currentSeedling(context: Pick<KnowledgeContext, 'records' 
 export async function produceSeedling(context: KnowledgeContext, knowledge: Knowledge, product: ProductHandle, input: ProduceSeedlingInput): Promise<SeedlingResult> {
   const productId = product.product.id;
   const fail = (reason: string, build: string | null = null, production: ProduceResult | null = null, parent: string | null = null): SeedlingResult =>
-    ({ ok: false, product: productId, line: input.line, build, root: null, seedling: null, composition: null, origin: [], parent, pointer: null, reason, production });
+    ({ ok: false, product: productId, line: input.line, build, root: null, seedling: null, composition: null, origin: [], parent, pointer: null, reason, production, reprojection: null, reprojection_error: null });
 
   // The three roles must name producer inputs of this pack's versioned scope.
   const declared = new Map(product.product.producers.filter((p) => p.unversioned !== true).map((p) => [p.id, p]));
@@ -182,9 +189,23 @@ export async function produceSeedling(context: KnowledgeContext, knowledge: Know
     { key: INDEX.seedlingRoot, value: `${productId}/${production.root}` },
   ]);
 
+  // The line's existing fed cases are re-projected onto the new root before the pointer names it, so a view over the moved
+  // pointer does not count them as missing a projection. They are chosen by their version bindings and current source
+  // heads; the rows are written by the admin on the ordinary observe path, grounded in the generate action and the seedling.
+  const admin = await requireAdmin(context, input.by, '生产知识树');
+  let reprojection: ReprojectionReport | null = null;
+  let reprojectionError: string | null = null;
+  if (context.feeding) {
+    try {
+      reprojection = await context.feeding.reproject(admin, productId, input.line, { root: production.root, composition: production.composition }, [`rec:${production.action}`, `rec:${seedling.digest}`]);
+    } catch (error) {
+      if (!(error instanceof KnowledgeError) && !(error instanceof FeedingFunctionFailure)) throw error;
+      reprojectionError = error instanceof KnowledgeError ? describeError(error) : error.message;
+    }
+  }
+
   // The current-seedling pointer moves by compare-and-set; the cause is the production's generate action.
   let pointerResult: { moved: boolean; reason: string } | null = null;
-  const admin = await requireAdmin(context, input.by, '生产知识树');
   try {
     if (pointer?.target === production.root) {
       // The pointer already names this tree: not a move (same-target refresh needs its own guard).
@@ -219,5 +240,5 @@ export async function produceSeedling(context: KnowledgeContext, knowledge: Know
     pointerResult = { moved: false, reason: `树苗已产出，移动当前树苗指针时被拒：${describeError(error)}` };
   }
 
-  return { ok: true, product: productId, line: input.line, build: build.name, root: production.root, seedling: seedling.digest, composition: production.composition, origin, parent, pointer: pointerResult, reason: null, production };
+  return { ok: true, product: productId, line: input.line, build: build.name, root: production.root, seedling: seedling.digest, composition: production.composition, origin, parent, pointer: pointerResult, reason: null, production, reprojection, reprojection_error: reprojectionError };
 }

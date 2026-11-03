@@ -255,8 +255,10 @@ catalogs, grounds and provenance.
     the production, by reference, decision 16), so records grow with the builds, not with their lists. A build whose base
     differs from its name is an alias and has no tree; aliases are followed to their final base (at most 8 hops, cycle
     safe, whatever line the base is on) before a root is looked up; names match exactly, else without case when only one
-    spelling exists. Roots are keyed by product and base build, and found by one indexed lookup per base (its newest
-    completed production; a few records read), never by reading every production. A build produced without a build
+    spelling exists. Roots are keyed by product and base build. Build-list reads first discover nonempty index keys in
+    batches of at most 16, with at most two batches in flight; each present key still uses the existing newest-completed
+    per-base reader. A failed batch falls back to those original reads, and no discovery result survives the call. This
+    avoids an individual empty lookup per unproduced base without reading every production. A build produced without a build
     record (not by a sync) gets one in the production's last transaction (`plan` and `sync` null), so every known build has
     a record. `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles. A build whose name or base does not fit
     the build index (well-formed, no NUL, at most 1000 UTF-8 bytes with the product), whose other text cannot be stored or
@@ -298,7 +300,13 @@ catalogs, grounds and provenance.
     after the other. Dry runs store nothing of their own. Text a pack function wrote (the plan note) is cut to storable
     text before it is recorded.
 13. **Reading** (R02, D05 R[3]): a reader is an enabled admin or has a pack that binds the root's product
-    (`PacksPort.readableProducts` of the account as stored now). Absent and forbidden are the same null; the reader is
+    (`PacksPort.readableProducts` of the account as stored now). Inside a request's permission snapshot the port's answer
+    for that account is asked once and reused by every later check of the same account in the same request
+    (`readable-products.ts`, decision 82: a request uses the permissions it started with; a revocation applies from the
+    next request); another account, another request and a read outside any request ask the port again, and a failed
+    answer is not kept. A node page finds the nodes that have contribution records with one batched lookup (a failing
+    batch pages every node on its own) and reads the children of an expanded node in batches of 64 as the walk reaches
+    them; the pages are the same as the per-node reads give. Absent and forbidden are the same null; the reader is
     checked before anything else of a get_nodes request is read. `getNodes` lists each requested path (duplicates
     removed, at most 256 distinct paths, the rest named in the coverage note) and its subtree to `depth` (default 1) in
     pre-order, each node once (a subtree is walked again only with more levels to go, capped at the node's height, so
@@ -835,9 +843,20 @@ Milestone 2:
   documents it cannot handle rare (more than half of a list skipped fails the production); give cases data fields the
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
+- **server (`hub/server/recover-read.ts`)**: replaying a saved `get_nodes` answer for `rec:<contribution record>` rechecks
+  that the record is readable but not its current status (`recordState` answers feeding records only), so an answer saved
+  before a retraction replays its old note under the snapshot label. Comparing `layers.contributions.readView` with the
+  saved status and note, as the tree-page branch already does, would close it; it holds for every contribution status
+  change, feeding-grounded ones included (found by retract-contributions, outside its paths).
 
 
 ## Composition-pinned literal relations (kb-links, first step)
+
+Relation preparation reads tree nodes in batches of at most 128 instead of issuing one indexed read per node. Each node
+uses the same oldest indexed record and digest/shape validation as the single-node reader; missing or invalid records still
+produce the existing repair outcome. After prefetch, relation sources are processed in the original depth-first order,
+including a shared digest reached at more than one path. The computation still examines the full declared relation scope;
+batching reduces storage round trips and does not establish a wall-time bound for an arbitrarily large composition.
 
 The product's optional `links` array declares `id`, a top-level literal `field`, a target `namespace`, generated `link_match`,
 and an `entry_kind` (required for longest-prefix matching). Only declared boolean normalizers are supported: `lowercase`,
@@ -940,7 +959,15 @@ entry edits. Ordinary-field declarations and their counts keep their existing be
 
 ### 撤回喂入条目
 
-管理员执行 `circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>`。`--entry` 可以是喂入条目的记录摘要，也可以是 `knowledge-contribution@1` 回注记录的摘要。三种目标可以混用，每种目标各追加一条 `retraction@1`。撤回不删除、不改写原记录；读侧随后把对应喂入条目标成 `invalid`，把回注标成 `grounds_withdrawn`（根据已撤回）。同一目标已经有撤回记录时不再追加。
+管理员执行 `circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>`。`--entry` 可以是喂入条目的记录摘要，也可以是任一 `knowledge-contribution@1` 回注记录的摘要：带 `feeding_record` 的回注，以及直接以树条目或原件为根据、没有喂入记录的回注（例如两端都是 `tree:` 引用的 `contradicts` 关系）。三种目标可以混用，每种目标各追加一条 `retraction@1`。撤回不删除、不改写原记录；读侧随后把对应喂入条目标成 `invalid`，把回注标成 `grounds_withdrawn`（根据已撤回）。同一目标已经有撤回记录时不再追加。
+
+回注记录本身不写运行。`--run` 因此由命令行经运行服务读这个运行（与 `run show`、`share run` 同一入口），取运行详情列出的每一份已受理校验结果回执里的 `contributions.stored[].record`，并入同一条命令的条目撤回记录，并为每个运行打印一行“运行 … 存下的回注条目 N 个一并列为撤回目标”。不只取最新一份：后一次受理的提交回执只列它自己的条目，已放弃运行的最新结果是管理投影，没有回执；结果按存储原样读取，旧结构的回执也取得到。已覆盖判断按展开后的条目逐个做：以前只记了运行的旧撤回记录仍覆盖运行，再执行同一条命令会追加一条只含未覆盖条目的记录；完全相同的再执行不追加。内容完全相同的回注跨运行共用一条记录，任何一个回执列出它的运行被撤回，这条记录都随之撤回。
+
+读侧：回注自身的记录摘要出现在任一撤回记录的条目里时，节点页（`ContributionLayer.page` 的视图）与单条读取（`readView`，get_nodes 的 `rec:` 读取和历史回答恢复的状态比较都用它）都显示 `grounds_withdrawn`，说明为“这条回注本身已被管理员撤回；历史引文仍保留”，先于喂入记录的判断。撤回记录每次页面调用只读一遍（`FeedingLayer.retractedEntries`），不按回注逐条读。没有列出回注自身时，带喂入记录的回注照旧按喂入记录的状态判断（节点页说明“喂入主张根据已撤回或原件已修订；历史引文仍保留”）。只列运行的撤回记录本身不标记没有喂入记录的回注，要按上面再执行一次命令。
+
+每条新回注都写索引 `knowledge.contribution.run`（首次存下它的运行），不再只限操作记录；目前没有读者。`--run` 仍以回执为准：回执也列出这个索引出现之前存下的回注，以及相同内容的后一次提交共用的记录，索引只记首次存下它的运行。
+
+测试钉住：`hub/knowledge/contribution-retraction.test.ts`（以树条目为根据的矛盾关系按条目撤回后记录不变、读侧显示撤回、另一端不变、再撤回不追加；只记运行的旧撤回之后按回执条目追加一条，再执行不追加），`hub/server/knowledge-retract-cli.test.ts`（`--run` 读每一份已受理回执，`rec:` 读取显示同一说明），`hub/knowledge/operation-records.test.ts`（带喂入记录的回注照旧按喂入记录判断，并由喂入记录和运行覆盖）。
 
 ### 矛盾关系怎样存、怎样查
 
@@ -987,7 +1014,9 @@ not_evaluated，只有适用检查全已评估且没有失效事实才给 valid�
 分面组合超过计算上限、单项超过页预算、JSON 原型保留键无法安全交付时整份拒绝，并给出减少 by、
 fields 或 only 的具体办法。运行输入经 completeKnowledgeView 续读所有页，校验修订、查询范围和前进；
 即使输入带 after 也从首页读全；超过 16 MiB 或仍有未交付内容时要求收窄，绝不绑定尾页或截断页。整份合并也有公开结构上限；同一键
-超过绑定上限时须换用本次条目所需的具体索引字段和取值。源码与测试只用合成资源。
+超过绑定上限时须换用本次条目所需的具体索引字段和取值。视图标识不合语法（例如 only 留空）而读取也拒绝时，completeKnowledgeView
+以输入错误报出语法原因和写法（原因只来自调用方自己写的标识），不回同形的"对你不可用"；读取接受的标识（测试桩认识的）照常绑定。
+源码与测试只用合成资源。
 
 生产器恢复：超时失败不进入跨生产的失败记忆；旧的未带确定原因码的失败记忆也不复用。
 被隔离的超时记 reason_code:timeout、retry:true。单份文档超过批次字节预算时独立调用；沙箱硬输入上限
@@ -1511,3 +1540,175 @@ readable team association, then another currently readable signed private captur
 verification, private-owner locking and the retained team attribution. An equal-byte unsigned capture never inherits
 a declaration; a reusable team or granted copy keeps its actual uploader. Ordinary reads and frozen run bindings keep
 their existing resolution. Rejected/missing choices retain the previous sharing checks and codes.
+
+## Index read omission metadata
+
+Each generated index-view read places two fields in its accompanying `meta` artifact: `index_excluded_entries` is the
+number of distinct entries excluded by the scan for that delivered page, and `index_view_sha256` is the digest of that
+page's original view bytes. Zero is an explicit observation. Other incomplete sources, pagination and per-key cuts retain
+their existing fields; this count does not cover them. The index-view original and its existing byte identity do not change.
+Readers must compare the digest before using the count. A legacy or collated view with absent or mismatched metadata does
+not acquire a zero count by inference; the caller handles the missing fact using its other structural coverage fields.
+
+## Frozen feeding cuts
+
+For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier. This changes query layout only, not historical records or their frozen horizon.
+
+A frozen cut, a `get_nodes` page and a run's usages (the `feeding_objects` of every tool reply on a run) evaluate those
+checks as one group (perf-n-plus-one): every check of the per-record path is still made for every record, in the same
+order and with the same answer per record; only the reads are grouped. A record reads its bound digests in order up to the
+first capture of its own source bytes, one batched query per position, so no record reads a record its sequential check
+would not. Decisions whose inputs do not depend on the record are made once per call: the reader's account, the reader and
+one product, the reader and one capture (the source record a record pins by digest, its bytes and effective read tier),
+the reader and one run. Such a decision applies only to records that cite that same product, capture or run; nothing is
+shared across captures, readers or calls, and the call runs inside the request that captured its permissions, so a
+revocation is seen by the next request. The per-record path stays in place where the store has no batched index scan and
+for live cuts (`cut` without a frozen offset). `feeding-visibility-batch.test.ts` compares the grouped answers with that
+path (cuts, node pages, run usages, and the bytes of facet and index views) for two readers, after a credential
+acceptance is revoked, after the product is revoked and after the account is disabled, and bounds the single-key lookups
+over a fourfold history; on the previous code that bound fails (a frozen cut's lookups grow 720 → 2,880). Synthetic
+measurement (`node tools/feeding-perf.ts`, a seedling root with 35,772 compiled cases and 4,040 fed records from 10
+documents read in 4 runs, a non-admin reader through the real pack registry): a quality-board start_run took 195,035 SQL
+executions before and 1,178 after, a bound facet view 64,849 and 230, a root `get_nodes` page 40,457 and 76, the usages of
+a run with 1,010 fed objects 11,119 and 43, with byte-identical views, pages and usages. This is not a measurement of a
+real deployment.
+
+When an unbound source discovers products from prior feeding records, one currently readable witness establishes each distinct product. Additional records of that same product do not need another visibility check to prove the same existence fact. An unreadable record establishes nothing, so later records of that product are still checked; two distinct readable products remain ambiguous. No other record is made readable by a witness.
+
+Live feeding entry reads, including `get_nodes`, use the same batched retraction and source-head index reads as frozen
+cuts when the store supports them; the previous per-record path remains the fallback. Each record still has its current
+reader and source permission checked separately. A synthetic 40-record regression reproduces 80 per-record retraction
+and source-head reads before the change and at most four after it, while comparing the returned entries with the old
+path. This does not establish that index reads are the only cause of a slow real request.
+
+For `get_nodes`, the batched read selects candidate records by the requested root and the same exact node path or
+declared command path before reading their originals. Every selected record still receives its own current permission,
+source, retraction and frozen-offset checks. A synthetic request for an unrelated node previously read the same source
+40 times and now reads it zero times; the related node still checks all 40 candidates, each against its own capture.
+Since perf-n-plus-one the one capture those 40 candidates share is read once within the call (decision 82: one request,
+reader and consumer reuse the permission they started with), so `feeding-node-select.test.ts` asserts one read pinned to
+that capture where it asserted 40 reads before. A store without batch support uses the earlier per-record path. This is
+not a measurement of total latency on a real document.
+
+Since perf-real-data a node page beside contributions no longer reads per node what the page decides once. The reader's
+readable products are decided once per request (item 13) instead of once per node and per check, which walked the pack
+registry (about 45 index lookups) for every node of the page. One batched lookup finds the nodes whose contribution node
+index holds any record under a product the reader may read (`ContributionLayer.pathsWithRecords`); only those nodes, and a
+node resumed from a contribution cursor, are paged, and every other node gets the empty, complete page that paging it
+answered. The children of a node the walk expands are read in one batch with the same verification and the same oldest
+record as `node()`; a child the batch does not find, or every child when the batch fails, is read on its own, so a missing
+or corrupt record is still reported where the walk reaches it. `node-page-lookups.test.ts` compares pages, cursors and
+contribution continuations with a per-node reference read for three readers and checks that the single-key lookups of a
+page do not grow from 13 to 49 nodes. Still read once per request and not reduced here: the link facts of the whole
+composition (backlinks, about 90 batched reads on a large real root), the frozen feeding index scan, and the entries of an
+inline composition (at most `inlineRows` rows), which carry no content in their rows and are read one by one.
+
+### Feeding cases in views
+
+A feeding cut keeps valid function projections by exact locked root and exact source identity. A later source-only read
+cannot replace a root-specific command projection; projections on different roots stay separate. Facets count the content
+identity once. If multiple sources of that identity disagree on a requested facet field, that identity is omitted from
+that facet, the view is marked truncated, and a note names the missing agreement and the next action.
+
+An index lists each source projection by its immutable claim-record digest, with `rec:<digest>` as its reference and the
+shared content digest in `data.object`; multiple sources can therefore point to one content object without inventing tree
+membership. Tree entries keep their existing tree references. Exact source title, ancestors, parser selector and command-tree
+source are used only when present and verified in that projection. Older records without these fields remain readable and
+must be re-read under the desired locked root when a consumer needs them. A nonempty legacy expectation list without a
+product-declared nonblank flag remains unknown in expectation-count facets; it is not counted as present. A case seen only without a locked root is not
+attached to a version view by this change; it needs a root-bound read. No version inheritance is inferred here.
+When a case has unparsed steps, its complete command set is unknown: the view omits `commands` and `command_identities`
+for that source, and command-dependent facets and indexes are incomplete with a missing fact and next action. This does
+not assert whether the unparsed steps contain commands.
+An index may carry `key_space_complete`: it is true only when the page covers every raw key in the frozen unfiltered
+view, no listed source was skipped, and no known unresolved feeding projection or missing indexed field can add a key.
+A page may have complete keys while some entries under a listed key remain paginated. The flag says nothing about sources
+not observed in that view, and a narrowed view carries `only_complete` instead (see re-projection below); legacy views without the flag
+cannot prove an absent key. When all pages of one frozen index are bound together, the final page must carry the new
+structural flag, the combined keys must cover the reported key count, and the unfiltered source scope must be complete
+before the combined view can assert key-space completeness. A legacy paginated view is not upgraded from its old
+`truncated` flag.
+The view artifact's derived-coverage ancestry still pins the tree and its composition, not the individual feeding source
+artifacts. A credential finding in a feeding field may therefore require source-coverage handling before that view can be
+read, even when the individual feeding record is readable. This limit does not grant access through another capture.
+The shared `ViewEntry` contract also allows record references in impact and links views, but their current producers still
+emit only tree references and regression-scope and maintenance-sweep accept only those. Before adding feeding records to
+an impact view, narrow that shared contract or update the affected consumers together.
+
+### Re-projection when a seedling pointer moves (fed-case-reprojection)
+
+A fed case joins a seedling root only through a projection under that root. `produceSeedling` therefore re-projects the
+line's existing fed cases onto the new root between the seedling@1 claim and the pointer move (`FeedingLayer.reproject`):
+the cases are chosen by their version bindings (a binding counts only for the source it was read from, lines compared by
+the pack's `normalize_line`) and by the current head of their source (retracted or superseded records are not chosen),
+never by the root they were projected under before. Each original is re-read once on the ordinary observe path under the
+seeding admin, so the rows are what any read writes (producer function, judgment false), grounded in the generate action
+and the seedling record. Each row names the original record it re-projects in `reprojection_of`; `recordVisible` and
+`recordsVisible` decide a re-projection as that original, so it is visible exactly when the original is
+(`feeding-reprojection.test.ts` keeps the two equal). The seed report counts the selected, already projected and
+re-projected cases and the originals re-read. `circle-hub knowledge reproject <product> <line>` does the same for a backlog
+onto the line's current seedling. A failed re-projection does not stop the pointer move; the report and the views say what
+is missing.
+
+`fed-case-fields.ts` marks the fed-case@1 fields that do not depend on the root: stories, defects, document and title
+(commands, command_tree_root and path do). For those keys a root-less projection decides `only=` membership, so a case
+none of whose stated values is requested is not unknown; a projection that does not state the field stays unknown.
+Identity fields (stories, defects) match `only=` by normalized id (all-digit literals without leading zeros); every other
+field by its exact text. A case index narrowed by `only=` carries `only_complete`: true when every matching key is listed
+and no skipped source, unresolved projection, conflicting version level or missing indexed field could add one, within a
+complete source scope; a scope without any entry of the kind (nothing fed or produced) is never complete, narrowed or not. `key_space_complete` stays false on narrowed views. The continuation merge and the engine's only=
+slice merge keep `only_complete` true only when every part is.
+
+When cases still lack a projection, the note names the originals (external read, document and case count, at most 20,
+the rest counted) and the exact next call (`start_run` with `source-read` and the view's product and build). The read also
+queues a recorded re-read of those originals under the reader's own account through `observeSourceBounded`; nothing is
+projected in memory, and the view counts the cases unknown until a later read sees the projections. Case views over a
+seedling root list the feeding-layer originals in `scope.fed` with their case, projected and root-less counts. The note
+asking an admin to sync the product line appears only when the product-wide root is missing, and on case views it says
+that this does not affect case projections.
+
+Limits: root-less cases bound to another version line still count as unknown in a view over this root (the view does not
+filter root-less cases by binding), and the re-projection only covers cases bound to the seeded line.
+
+### Fed fixed-bug lists in the defect index (feed-fixed-bugs, decision 94)
+
+A seedling holds only the manual and the command tree, so a build's fixed bugs reach its `kind=defect` index by feeding on
+use. The model's field for a build's fixed-bug list is `fed-build@1.fixed_bugs` (original structural identities, never a
+status; `docs/hub-r4-tasks/kb-feeding.md` §1.4); `fed-defect@1` stays the PLM record, whose `source.system` is `plm`. The cut
+therefore keeps every valid function projection of `fed-build@1` with a non-empty `fixed_bugs` apart (`FeedingCut.builds`):
+the records of one build share its content identity, so `objects` alone would keep only the last of them.
+
+For `kind=defect` on a seedling root the index adds one entry per such record whose `name` is exactly the view's build and
+whose root is the view's root: the entry is the claim record (`rec:<digest>`), `data.object` is the shared build identity,
+`data.bug` the identity's number and `data.system` its system when the identity is written as an external object id
+(`<system>:<type>:<key>`, parsed by the connectors' grammar; any other string is a number without a system), `data.status`
+null and `data.declaration_status` `undeclared`, as a release-notes entry without a structural status. The product pack
+decides how many identities a record holds (the FAMX pack writes one per defect). The latest bytes read of each source page
+under a root decide that page's list, so a changed page does not keep its old numbers. Records of the build projected without
+a root or under another root are not listed; when no record of the same page is under this root they count as unknown
+entries with the next action to re-read under the seedling, as root-less fed cases do; `only=` counts only the selected
+numbers. Frozen offsets, retractions, readable proofs and credential holds are the cut's and the view's, unchanged. An empty
+defect index of a build says, in its feeding note, that the read must name product and build (`source-read` takes both). The
+feeding identity of a view counts these records apart only when there are some, so views without them keep their revision.
+Facets and impact views do not read fed fixed-bug records yet.
+
+### Unknown entries in facet and index views
+
+`truncated` says that something is not in the lists. Two optional fields say whether that is all there is to it, and a
+consumer reads them, never the notes (`contracts/src/views.ts`):
+
+- `unknown_entries: N` (N above zero) — N entries are left out of the lists and counts because a fact the query needs is
+  unknown or their sources disagree (an expectation node never judged, steps that are not complete commands, a case with no
+  projection on the locked seedling, a legacy source). Each entry counts once, whichever of the reasons name it. The notes
+  name the missing fact and the next action; the unknown entries are not zero and not a failure.
+- `unknown_only: true` — the unknown entries are the only reason the view is truncated: no rows are left for a later page and
+  nothing was cut or withheld by a limit or a credential scan hit.
+
+Both are absent when there are no unknown entries, so such a view is byte for byte what it was. `completeKnowledgeView` still
+refuses every truncated last page, with one exception: an input slot that declares `unknown_entries: 'disclose'`
+(`WorkflowInput`, only on a `knowledge:facets` or `knowledge:index` input) gets a last page that says `unknown_only`. The bound
+view then stays `truncated` and carries the count; when several pages are collated, the earlier pages' own flags are spent and
+the last page decides. A pack that opts in must say the unknown entries as unknown, with the missing fact and the next action
+the view's notes name, and must not count them as zero or fail on them. In a facet view `total` counts only the entries in the
+lists, so `total + unknown_entries` is the population of the root for the query. Impact and links views do not carry the fields
+and keep the refusal.
