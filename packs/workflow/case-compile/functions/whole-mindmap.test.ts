@@ -11,9 +11,9 @@ import { AUTOID } from './test-support.ts';
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
 
 const SECOND = '990000000000000032';
-function twoCases(): GenerationInput[] { const first = generationFixture(), second = generationFixture(); second.fields = { ...second.fields, autoid: SECOND, title: '合成用例二' }; return [first, second]; }
+function twoCases(): GenerationInput[] { const first = generationFixture(), second = generationFixture(); second.fields = { ...second.fields, autoid: SECOND, title: '合成用例二', path: ['合成文档', '合成用例二'] }; return [first, second]; }
 const itemOf = (k: number) => 'doc-1:c-' + (k + 1);
-function planSet(inputs: GenerationInput[]) { return inputs.map((input, k) => ({ item: itemOf(k), fields: { autoid: input.fields.autoid, title: input.fields.title, priority: input.fields.priority, steps: input.fields.steps }, plan: input.slots, command_catalog: input.fields.command_catalog, command_identities: input.fields.command_identities })); }
+function planSet(inputs: GenerationInput[]) { return inputs.map((input, k) => ({ item: itemOf(k), fields: { autoid: input.fields.autoid, title: input.fields.title, path: input.fields.path, priority: input.fields.priority, steps: input.fields.steps }, plan: input.slots, command_catalog: input.fields.command_catalog, command_identities: input.fields.command_identities })); }
 function itemInput(inputs: GenerationInput[], bytes: Uint8Array, k: number, data: unknown = inputs[k].slots) {
   const base = workbookCheckInput(bytes);
   return { subject: { ...base.subject, item: itemOf(k), data, fields: inputs[k].fields, plan_set: planSet(inputs) } };
@@ -95,6 +95,23 @@ test('without autoid the run takes every textual-autoid case of the document in 
   const one = projectItems(startInput(twoCaseModel(), { autoid: SECOND })) as { items: Array<{ fields: Record<string, unknown> }> };
   assert.deepEqual(one.items.map((item) => item.fields.autoid), [SECOND]);
   assert.equal(errorCode(startInput(twoCaseModel(), { pipeline: 'recomposed' })), 'case-compile.invalid_parameter');
+});
+
+test('each case carries its mind-map path from the root, and the workbook shows it as AAA>BBB>CCC on the autoid row only', () => {
+  // Issue #144: one group level between the root and the second case.
+  const model = twoCaseModel(); model.nodes[0].children = [1, 7]; model.nodes.push({ text: '合成分组', data: { id: 'group' }, children: [4] });
+  const out = projectItems(startInput(model)) as { items: Array<{ fields: Record<string, unknown> }> };
+  assert.deepEqual(out.items.map((item) => item.fields.path), [['合成文档', '合成标题一'], ['合成文档', '合成分组', '合成标题二']]);
+  const inputs = twoCases(); inputs[1].fields = { ...inputs[1].fields, path: ['合成文档', '合成分组', '合成用例二'] };
+  const bytes = generateWorkbookSet(inputs); const sheet = coreModel(bytes).sheets[0];
+  const d = (row: number) => sheet.rows.find((r) => r.number === row)?.cells.find((c) => c.reference === `D${row}`)?.text;
+  assert.equal(d(4), '合成文档>合成分组>合成用例'); assert.equal(d(9), '合成文档>合成分组>合成用例二');
+  assert.equal(d(6), '合成用例'); assert.equal(d(11), '合成用例二');
+  assert.ok(readWorkbook(coreModel(bytes), inputs).ok);
+  // The reader and the recipe both bind the path: another path reads back as a step mismatch and a recipe mismatch.
+  const other = structuredClone(inputs); other[1].fields.path = ['合成文档', '合成用例二'];
+  const read = readWorkbook(coreModel(bytes), other); assert.ok(!read.ok);
+  if (!read.ok) assert.deepEqual([...new Set(read.problems.map((v) => v.rule))].sort(), ['recipe', 'step']);
 });
 
 test('a workbook of several cases needs the plan run accepted result, and its plans are frozen in item order', () => {

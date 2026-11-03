@@ -583,3 +583,21 @@ second device's peer, covered by the runner's own cleanup, was skipped, its expl
   it, and once every job has an end the booking is released with test-bed release.
 - The confirmation rule no longer quotes one product's command, prompt and answer as examples: the model uses the prompt and
   answer the product declares.
+
+### 3.9.16: the case's mind-map path on its first row, consistent examples, an everyday description (issues #144, #130, #143)
+
+- Column D of each case's first row (the autoid row) is the case's place in the mind map: the texts of the nodes from the
+  root to the case, verbatim, joined by `>` (`AAA>BBB>CCC`); the case's other execution rows keep the case title. The path is
+  projected at start (`fields.path`, along the same children links the extraction walks), carried into the frozen plan set
+  and the recipe digest, and read back by the independent reader. Column D is free text for the runner: InfoTest's runner
+  only logs it per row (`lib/test_xlsx.py` `log_and_check_line`, lines 25–27, called at 1078 and 1093) and shows the C=0
+  row's D as the case description (`get_description`, 862–871); whether a row executes is decided by E–I
+  (`_row_is_non_executable`, 634–640), case selection by A and E (`ifrun`, 840–856). A path
+  text that the generator subset refuses (a leading `=`, a control character, `_xHHHH_`) refuses generation as any cell does.
+- The examples are derived from `examples/case-mindmap.json` by `node testing/examples.ts --write` (upload reference, projected
+  item id, every quote's `src:<sha>/kityminder@1/<selector>`); `examples.test.ts` fails when they drift. An uploaded subject
+  with no document id takes the first case's node id as its document id (`documentIdOf`), so the example item is
+  `fixture-case:fixture-case`; that rule is unchanged here. `start-run.json` names placeholders for product and build.
+- The skill and pack descriptions say in everyday words what the pack does: compile a whole test mind map into an
+  automation-case Excel workbook and run it on the automation test environment, given the mind map's document id on the
+  agile platform.

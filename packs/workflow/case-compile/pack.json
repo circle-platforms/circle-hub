@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.15",
+  "version": "3.9.16",
   "kind": "workflow",
   "dependencies": [
     {
@@ -12,12 +12,12 @@
     }
   ],
   "title": "用例编译",
-  "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、自动化测试环境与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
+  "description": "把一整份测试脑图编译成自动化用例 Excel 工作簿，再交给自动化测试环境执行；需要这份脑图在敏捷平台上的文档号。每个用例的第一行写着它在脑图里的层级（AAA>BBB>CCC），方便人工对照原文。工作簿由客户端生成，Hub 只逐行核对并重算，不生成内容、不调用模型；核对通过不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "a5ac95485849b2fe9d7f6cc36c01c9f5e3875df893822dee40e702b7fbf8672e",
-      "size": 18037
+      "sha256": "1e56e20fcb931638537392cfcb32228a7d0c84b6e5c084f643e685b09132caab",
+      "size": 18150
     },
     {
       "path": "checks.json",
@@ -71,13 +71,13 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "d0fe76cbe89e619b6ff6da4410f7231820a2cedb5904f832941472c92a6fdd06",
-      "size": 645
+      "sha256": "f7747c16ebce06ed8da5cfea7c50cae0febc30651decff1c9f6700ec53dc25d2",
+      "size": 1088
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "5d4bad8d037a29b41415d8e2e0253ac9044bad0dd08ec2b6125af84bd2fbd31e",
-      "size": 3152
+      "sha256": "b76c37ce8b53edbaa834fa3c1ab9106accf87f5d5f1296abce0bdd77592344d7",
+      "size": 3148
     },
     {
       "path": "examples/typed-authority-source.json",
@@ -176,8 +176,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "727e2a6803f1564dc4fe0475f3beedf48e993f921e71d58293f47e63061478ad",
-      "size": 16485
+      "sha256": "2c1a1efc3aab988607fb207d7c248e1d3241ec4798bb21e6e2f7f923ac19f783",
+      "size": 17304
     },
     {
       "path": "functions/generated/command-grammar.ts",
@@ -206,8 +206,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "47742cf0669b67c813fb63e9c150809a805f3bb3ada569ec27378786294745db",
-      "size": 21912
+      "sha256": "26873b62a889007575e105d689cb8d0f7eed9319ba7ce00f114de32879be4133",
+      "size": 22678
     },
     {
       "path": "functions/quote-width.ts",
@@ -276,8 +276,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "524d43e7998db4b10527be470b39b4a98058dc256ebb145169acf91856a7cf60",
-      "size": 23363
+      "sha256": "e5dfbb8f3bcead227795e13f0a3b34a54507d756b1c8aeaecdfec36f3c522f8b",
+      "size": 23486
     },
     {
       "path": "functions/xlsx-model.ts",
@@ -371,8 +371,8 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "3e7d28b8aa36f35aad4076ff68d54ee2cf82e0429343d7edd7fd47488b456a2d",
-      "size": 39653
+      "sha256": "753c62d75e301de87138f6c6054ed9b5061c75c1c5fe5d0efbc65cee149911da",
+      "size": 39775
     },
     {
       "path": "samples/negative/typed-effect-budget.json",
@@ -411,8 +411,8 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "e258e2a7086a1d790c3f60e6dd5898297089d7ccbc508b44501dc74e7512daa6",
-      "size": 39657
+      "sha256": "16467455e086ac2d1dbff78bcad6c3838ce681d443ea6bf975df177ec8a653c2",
+      "size": 39779
     },
     {
       "path": "samples/positive/quote.json",
@@ -486,8 +486,8 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "3a66bad252091388e74aa08c5dc791930d6d85f1d47b075902ca8e07c8cf4eca",
-      "size": 39607
+      "sha256": "85f9728aa83a5fe781576e11e62fe848e762b5fff081b61b7d04a9b3026f3854",
+      "size": 39729
     },
     {
       "path": "samples/positive/typed-effect-budget.json",
@@ -526,8 +526,8 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "f230cd10f315ac73a884561486bcf8762935b313c6ab1b91e118f4f97a77c98e",
-      "size": 39611
+      "sha256": "200786cf5d905fd058abe0d2da4926d663bf444972aa9e2f1e829df539f86a14",
+      "size": 39733
     },
     {
       "path": "slots.schema.json",
@@ -626,7 +626,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "0ef17d45da6289e149fc3562f4b022ffabcf4c73809e6685dcd902b776dce28d",
+      "sha256": "6424b85c5430f3f3796c09bb8226885eccd9ce8f6925ef093da64e41819a49a3",
       "size": 556
     },
     {
@@ -641,8 +641,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "63f07a2e1a48f172c03d78493b53a928bebebd9d4e250e9e5207890d1f261a70",
-      "size": 11364
+      "sha256": "4ee5b1c08ad2fc7064dbdb9c383734313f18cf25b9d47b420c36fe53c7939458",
+      "size": 11438
     },
     {
       "path": "tools/normalize-mindmap.ts",

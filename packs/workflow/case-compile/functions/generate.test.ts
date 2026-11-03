@@ -74,9 +74,9 @@ test('multiple expectations follow the same command before the next step', () =>
   assert.equal(rows[4].cells.find((c) => c.reference === 'G5')?.text, input.slots.expects[0].text);
   assert.equal(rows[5].cells.find((c) => c.reference === 'G6')?.text, '设置成功');
 });
-test('SpreadsheetML escape-looking text is refused with a fixed reason', () => { const input=generationFixture(); input.fields.title='_x0041_'; assert.throws(()=>generateWorkbook(input),(e:unknown)=>e instanceof GenerationError&&e.rule==='xstring_escape'); });
+test('SpreadsheetML escape-looking text is refused with a fixed reason', () => { const input=generationFixture(); input.fields.title='_x0041_'; input.fields.path=['合成文档','_x0041_']; assert.throws(()=>generateWorkbook(input),(e:unknown)=>e instanceof GenerationError&&e.rule==='xstring_escape'); });
 for (const [name, change] of Object.entries({
-  autoid: (v: any) => { v.fields.autoid = Number(v.fields.autoid); }, codec: (v: any) => { v.slots.steps[0].args = ['k=value']; }, seat: (v: any) => { v.profile.device_count = 0; }, after: (v: any) => { v.slots.expects[0].after = 3; }, formula: (v: any) => { v.fields.title = '=unsafe'; v.fields.steps = []; }, control: (v: any) => { v.fields.title = 'a\u0001b'; v.fields.steps = []; }, version: (v: any) => { v.generator = 'fixture-old'; },
+  autoid: (v: any) => { v.fields.autoid = Number(v.fields.autoid); }, codec: (v: any) => { v.slots.steps[0].args = ['k=value']; }, seat: (v: any) => { v.profile.device_count = 0; }, after: (v: any) => { v.slots.expects[0].after = 3; }, formula: (v: any) => { v.fields.title = '=unsafe'; v.fields.path = ['合成文档', '=unsafe']; v.fields.steps = []; }, control: (v: any) => { v.fields.title = 'a\u0001b'; v.fields.path = ['合成文档', 'a\u0001b']; v.fields.steps = []; }, path: (v: any) => { delete v.fields.path; }, path_end: (v: any) => { v.fields.path = ['合成文档', '别的用例']; }, version: (v: any) => { v.generator = 'fixture-old'; },
 })) test(`generation refuses with a location: ${name}`, () => { const input = generationFixture(); change(input); assert.throws(() => generateWorkbook(input), (e: unknown) => e instanceof GenerationError && e.pointer.startsWith('/')); });
 test('changing a quote or replacement changes bytes even when execution text stays the same', () => {
   const first = generationFixture(); const digest = hash(generateWorkbook(first));
