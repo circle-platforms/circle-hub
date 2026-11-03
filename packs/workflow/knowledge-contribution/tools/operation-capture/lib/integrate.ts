@@ -163,6 +163,16 @@ function checkTargetTokens(rows: readonly Prepared[], token: string): void {
   need(!JSON.stringify(rows).includes(token), 'credential_in_request', '提案含当前 Hub 令牌；删掉令牌后重交');
 }
 
+/** Only validated proposal fields enter this identity; the raw text itself never enters the key. */
+function proposalDigest(rows:Prepared[]):string {
+  return sha256(canonical(rows.map(row=>{
+    const common={capture:row.capture.capture.output.sha256,kind:row.kind,path:row.path,statement:row.statement};
+    if(row.kind==='observation')return {...common,action:row.action!,quote:row.result!};
+    if(row.kind==='procedure')return {...common,goal:row.goal!,steps:row.steps!};
+    return {...common,phenomenon:row.phenomenon!,suggestion:row.suggestion!,quote:row.quote!};
+  })));
+}
+
 export async function submitProposals(session: string, proposalPath: string, product: string, build: string | undefined, model: string) {
   const settings = await readSettings(session);
   need(settings?.enabled, 'sharing_disabled', '本会话未开启共享');
@@ -186,7 +196,7 @@ export async function submitProposals(session: string, proposalPath: string, pro
     const input = { reference: `src:${row.capture.capture.output.sha256}`, artifact: row.capture.upload!.source.artifact! };
     return [canonical(input), input];
   })).values()];
-  const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, session, subject, product, build: build ?? null, originals }));
+  const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, skill_version: GENERATED.version, session, subject, product, build: build ?? null, model, originals, proposal_digest: proposalDigest(rows) }));
   const started = await allowed(() => hub.call('start_run', {
     pack: PACK,
     product,

@@ -1,13 +1,13 @@
 ---
 name: operation-capture
-description: 在用户明确开启共享的 Circle 会话里，由工具后钩子脱敏、保存并自动上传完整工具输出，再把模型提炼的观察、步骤或教训带逐字引文交回注运行。用于沉淀做过的操作；不用于生成事实、推断版本或采集未开启共享的会话。
+description: 在用户明确开启共享的客户端会话里，由工具后钩子脱敏、保存并自动上传完整工具输出，再把模型提炼的观察、步骤或教训带逐字引文交回注运行。用于沉淀做过的操作；不用于生成事实、推断版本或采集未开启共享的会话。
 ---
 
 # 操作采集与整合
 
 本技能目前只支持 macOS 和 Linux：Circle Hub 及其任务包暂不支持 Windows，在 Windows 上命令直接报错，钩子不采集。
 
-先用 `/skill operation-capture` 加载本技能；只安装或只读 SKILL.md 不会启动钩子。共享默认关闭，每个会话单独开启。技能不读 Circle 密钥库、环境密钥或真实配置，不上传人的说法、模型转述或其他工具原文。
+先用 `/skill operation-capture` 加载本技能；只安装或只读 SKILL.md 不会启动钩子。共享默认关闭，每个会话单独开启。技能不读客户端密钥库、环境密钥或真实配置，不上传人的说法、模型转述或其他工具原文。
 
 ## 1. 用户开启本会话
 
@@ -17,7 +17,7 @@ description: 在用户明确开启共享的 Circle 会话里，由工具后钩�
 node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地址> --token-file <令牌文件>
 ```
 
-明文 HTTP 只许本机回环假 Hub。状态保存在 Circle home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按 Circle 默认 home；去空白、`~` 展开和 realpath 与 Circle 一致。技能须安装在该 home 的 `skills/operation-capture/`，因为 Circle 不向钩子提供技能目录。
+明文 HTTP 只许本机回环假 Hub。状态保存在客户端 home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按客户端默认 home；去空白、`~` 展开和 realpath 与客户端一致。技能须安装在该 home 的 `skills/operation-capture/`；通用安装根是 `~/.agents/skills/operation-capture/`，因为客户端不向钩子提供技能目录。
 
 开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。钩子显式传递 `captured_at`；旧客户端缺这个声明时记录仍保留，视图注明采集时间未声明，上传时刻不当作采集时刻。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
 
@@ -46,7 +46,7 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 
 ## 3. 模型只写三类提案
 
-写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行或它接续的预订冻结了台架清单时，Hub 按清单核对；只有一个台架含该设备时补上台架，同名设备在几个台架里就写明 `bed`。记录只写设备和台架，不写租约。提案任何文字都不得含当前 Hub 令牌，含了就在开运行前被拒。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
+写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行或它接续的预订冻结了自动化测试环境清单时，Hub 按清单核对；只有一个自动化测试环境含该设备时补上 `bed`，同名设备在几个自动化测试环境里就写明 `bed`。记录只写设备和自动化测试环境，不写租约。提案任何文字都不得含当前 Hub 令牌，含了就在开运行前被拒。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
 
 - observation：`statement`、`action`、`quote`；quote 为 `{line: 行号, text: 逐字引文}`。
 - procedure：`statement`、`goal`、`steps`；每步为 `{text: 步骤, quote: {line, text}}`。
@@ -80,3 +80,5 @@ node <技能目录>/operation.ts submit --session <会话号> --proposals <提�
 ```
 
 脚本核验整份清单和全部引文，上传普通工作清单，开 `knowledge-contribution` 回注运行，再从运行回答取 `product/root` 形成 `code=assertion` 和对应的 `fed-*@1` 结构。Hub 自己填写版本、对象、上传者和时间。未受理时按原回执修正，退出码非零；不得把未入层条目说成已回注。回执追加保留，不覆盖。
+
+启动幂等键包含本版技能、模型身份和已核验提案内容的摘要：同一上下文原样重试只在 Hub 为该键记录的幂等有效期内沿用原运行（默认 24 小时），不同提案分别开运行。有效期之后，相同提案也可能开出新运行；先查原回执和运行，结果未知时由管理员核对，不要盲目重交。旧版技能已经提交过或结果未知的提案，不要用新版盲目重交；必要时用原版本恢复，不能确认就保留未知。
