@@ -54,7 +54,7 @@ test('real PLM projection feeds workflow non-scalar counts without hand-written 
   const { boundView, indexViewOf } = await import('../../workflow/traceability/functions/test-support.ts');
   const output=storiesProject({external:{type:'stories',key:'21+22'},original:'detail',responses:{detail:{json:{code:1000,data:[{id:21,status:{value:'synthetic'},stage:['synthetic']},{id:22,status:null,stage:null}]}}}}) as {artifacts:Array<{json:unknown}>};
   assert.ok(output.artifacts,'a non-scalar field must not discard the batch');
-  const projected=project({inputs:[boundView('stories',output.artifacts[0].json as Record<string,unknown>,'plm:stories:21+22'),boundView('cases',indexViewOf('case','stories',[]))]}) as any;
+  const projected=project({inputs:[boundView('stories',output.artifacts[0].json as Record<string,unknown>,'plm:stories:21+22'),boundView('cases',{...indexViewOf('case','stories',[]),key_space_complete:true})]}) as any;
   assert.ok(!projected.error,JSON.stringify(projected.error));
   const [total]=counts({subject:{items:projected.items,context:{groups:projected.groups}}});
   assert.equal(total.data?.status_nonscalar,1);assert.equal(total.data?.stage_nonscalar,1);
