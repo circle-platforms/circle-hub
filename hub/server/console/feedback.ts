@@ -1,7 +1,7 @@
 // Success messages after a console action: what was done, written as a fact (shared design system, 文字), never a
 // generic "done". They are set only after the action returned; a refused action shows its own error page instead.
 import { emptyAction } from './html.ts';
-import { KnowledgeGranteeSchema, uiLabelOf, type KnowledgeShareStatus } from '../../../contracts/generated/vocabulary.ts';
+import { KnowledgeGranteeSchema, isKnowledgeGrantAction, uiLabelOf, type KnowledgeShareStatus, type KnowledgeView } from '../../../contracts/generated/vocabulary.ts';
 
 /** The empty list of shares to the team, the same wherever it appears. */
 export const NO_TEAM_SHARES = { title: '还没有分享到团队的内容', text: '我的已验证条目分享到团队后，每次检查的结果列在这里。', action: emptyAction('/console/knowledge', '打开我的知识', { scope: 'personal' }) };
@@ -27,8 +27,8 @@ function grantNotice(action: string, values: Values): string {
 }
 
 /** The message for a knowledge, memory or personal-pack action that returned; null when the action names none. */
-export function actionNotice(area: 'knowledge' | 'memory' | 'packs', action: string, values: Values, upload?: { name: string }): string | null {
-  if (action === 'grant' || action === 'revoke') return grantNotice(action, values);
+export function actionNotice(area: KnowledgeView | 'packs', action: string, values: Values, upload?: { name: string }): string | null {
+  if (isKnowledgeGrantAction(action)) return grantNotice(action, values);
   if (area === 'memory') {
     if (action !== 'write') return null;
     const enabled = values.get('enabled');
