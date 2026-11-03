@@ -5,6 +5,7 @@ export {
   HUB_CONFIG_VARIABLES,
   PLATFORM_ONLY_VARIABLES,
   PLATFORM_VARIABLES,
+  RETIRED_VARIABLES,
   retiredEnvironmentKeys,
   unknownHubVariables,
 } from './environment.ts';
@@ -14,8 +15,8 @@ export {
   APPLICATION_ROLE,
   DATABASE_NAME,
   DATABASE_PORT,
-  DEFAULT_KEYCHAIN_ACCOUNT,
-  DEFAULT_KEYCHAIN_SERVICE,
+  DEFAULT_KEY_ACCOUNT,
+  DEFAULT_KEY_SERVICE,
   DEFAULT_PORT,
   OPERATOR_TOKEN_ACCOUNT,
   readSettings,
@@ -36,20 +37,6 @@ export {
   type PostgresControl,
   type PostgresStatus,
 } from './postgres.ts';
-export {
-  deploymentKeychainNames,
-  keychainKeyProvider,
-  keychainStore,
-  KEY_BYTES,
-  OPERATOR_TOKEN_ITEM,
-  VAULT_KEY_ITEM,
-  type DeploymentKeychainNames,
-  type KeychainItem,
-  type KeychainItemName,
-  type KeychainOptions,
-  type KeychainStore,
-  type KeyProvider,
-} from './keychain.ts';
 export { BACKUP_SCHEMA, MANIFEST_FILE, backupPath, createBackup, listBackups, pruneBackups, verifyBackup, type BackupManifest } from './backup.ts';
 export { TABLE_DIGEST } from './sql.ts';
 export { restoreBackup, setAside, type RestoreReport } from './restore.ts';
@@ -71,7 +58,20 @@ export { rehearse, type RehearsalReport } from './rehearse.ts';
 export { verifyPostgres, type VerifyResult } from './verify.ts';
 export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type PlatformIo } from './cli.ts';
 export { fdIsKeyPipe, liveKeyPipe, readKeyStdin, type KeyPipe } from './key-transfer.ts';
-export { ensureHubDatabase, hubKeyProvider } from './service.ts';
-export { fileKeyStore, fileKeyProvider, type FileKeyOptions } from './file-key.ts';
+export { deploymentKeyNames, ensureHubDatabase, hubKeyProvider } from './service.ts';
+export {
+  fileKeyProvider,
+  fileKeyStore,
+  KEY_BYTES,
+  keyDirectory,
+  OPERATOR_TOKEN_ITEM,
+  VAULT_KEY_ITEM,
+  type DeploymentKeyNames,
+  type FileKeyOptions,
+  type KeyItem,
+  type KeyItemName,
+  type KeyProvider,
+  type KeyStore,
+} from './file-key.ts';
 export { RENEW_WITHIN_DAYS, daysLeft, readServerTls, tlsPaths, type ServerTls, type TlsPaths } from './tls.ts';
 export { runCommand, type CommandResult, type CommandRunner } from './process.ts';

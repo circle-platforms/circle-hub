@@ -234,7 +234,9 @@ describe('the macOS-only paths run outside pull requests', () => {
     const install = all.find((s) => s.includes('brew install postgresql@18'));
     assert.ok(install !== undefined && /timeout-minutes: \d+/.test(install), 'the PostgreSQL 18 client install is bounded');
     assert.ok(install.includes('CIRCLE_HUB_LIBPQ_BIN=$bin'), 'the platform tests are pointed at it');
-    assert.ok(all.some((s) => s.includes('id: ready') && s.includes('osIsolationAvailable()') && s.includes('/usr/bin/security')), 'missing isolation fails the job');
+    assert.ok(all.some((s) => s.includes('id: ready') && s.includes('osIsolationAvailable()')), 'missing isolation fails the job');
+    // Decision 137: the Hub no longer uses the keychain, so the job neither needs nor checks the security tool.
+    assert.ok(!MACOS.includes('/usr/bin/security'), 'no keychain tool check');
   });
 
   for (const [kind, log] of [

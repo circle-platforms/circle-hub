@@ -1,11 +1,11 @@
 // Moves the vault master key through a pipe: `circle-hub key export --confirm | ssh <host> circle-hub key import`.
 // The bytes are the raw 32-byte key, never hex, never a command argument, never an environment value, and never a
 // regular file. A terminal or a file redirect is refused before the key is read. The destination store's write refuses
-// to replace an existing key (the macOS keychain store, or the Linux file store of the same KeychainStore interface).
+// to replace an existing key (the key file of file-key.ts, on every platform).
 import { fstatSync } from 'node:fs';
 import type { Readable, Writable } from 'node:stream';
 import { PlatformError } from './errors.ts';
-import { KEY_BYTES, type KeychainStore } from './keychain.ts';
+import { KEY_BYTES, type KeyStore } from './file-key.ts';
 
 /** How export and import reach the process streams. Tests supply the pipe ends; they are not the line-oriented stdout. */
 export interface KeyPipe {
@@ -85,7 +85,7 @@ export function writeKeyStdout(value: Uint8Array, output: Writable = process.std
 }
 
 /** Writes the raw key to the pipe. Refuses before reading when the pipe is not a pipe or --confirm was not given. */
-export async function exportVaultKey(store: KeychainStore, pipe: KeyPipe, confirmed: boolean): Promise<void> {
+export async function exportVaultKey(store: KeyStore, pipe: KeyPipe, confirmed: boolean): Promise<void> {
   if (!confirmed || !pipe.stdoutIsPipe || pipe.writeKeyBytes === undefined) throw exportRefused();
   let key: Uint8Array | undefined;
   try {
@@ -100,7 +100,7 @@ export async function exportVaultKey(store: KeychainStore, pipe: KeyPipe, confir
 }
 
 /** Reads a raw key from the pipe and stores it. An existing key is left as it is. The buffer is wiped either way. */
-export async function importVaultKey(store: KeychainStore, pipe: KeyPipe): Promise<void> {
+export async function importVaultKey(store: KeyStore, pipe: KeyPipe): Promise<void> {
   if (!pipe.stdinIsPipe || pipe.readKeyBytes === undefined) throw importRefused();
   let received: Uint8Array | undefined;
   try {

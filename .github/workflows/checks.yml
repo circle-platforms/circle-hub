@@ -1,12 +1,12 @@
 name: Hub checks
 
 # Synthetic fixtures and scripted models only: no job reaches a real system, a real model endpoint or a secret.
-# Ubuntu has no sandbox-exec, keychain or launchd, so the tests that need them skip here; the unit jobs install the PostgreSQL 18
+# Ubuntu has no sandbox-exec, plutil or launchd, so the tests that need them skip here; the unit jobs install the PostgreSQL 18
 # client so that backup, restore and deploy run. The tests of the pack sandbox run in the Linux isolation jobs, which install
 # bubblewrap and AppArmor and load the Hub's policy; every other job has no isolation and skips them. The job summary lists
 # every skip; a skip is not a pass. The sharded test jobs also list their slowest files there, from the junit report their
 # runner writes (JUNIT_REPORT), to compare with the measured durations that balance the shards, and keep that report for 14
-# days. The macOS paths (sandbox-exec, the keychain, plutil, launchd) run in macos.yml on every push to main, nightly and on
+# days. The macOS paths (sandbox-exec, plutil, launchd) run in macos.yml on every push to main, nightly and on
 # demand, and in the local macOS run of each phase (AGENTS.md).
 
 on:

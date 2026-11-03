@@ -19,7 +19,11 @@
 
 按 [Hub r4 架构](hub-r4-architecture.md)，任务包里的函数在受限的子进程里运行（由 rules 包实现，待复核）：Node 权限模型禁止写文件和起子进程，只许读解压后的包；架构简报记录了在 Node 24.17 上核实过权限模型不限制网络，所以子进程另在 macOS `sandbox-exec` 下运行并禁止网络；另有时间、内存和输入输出大小的限制。在 Linux 上，这一层是 bubblewrap 加管理员装载的 Hub AppArmor 策略（见 [rules 包说明](https://github.com/circle-platforms/circle-hub/blob/main/hub/rules/README.md)）。没有可用的操作系统隔离的地方默认拒绝运行包内函数（`SANDBOX_UNAVAILABLE`）。其他平台上的等价隔离尚未确定。
 
-公开 CI 在 Ubuntu 上运行。单元测试任务从 PostgreSQL 的 apt 源安装 18 版客户端，所以备份、恢复和部署的用例在那里运行。包内函数的沙箱用例，包括对真实监听的本机服务器验证的断网，由 `Linux isolation` 任务运行：每个拉取请求和每次推送到 main 都会触发，它安装 bubblewrap 和 AppArmor，为本任务的 Node 生成并装载 Hub 的 AppArmor 策略，隔离不可用就直接失败，然后运行按跳过条件从源码选出的单元和验收测试文件。它不改 `kernel.apparmor_restrict_unprivileged_userns`，启动器策略自带的 `userns` 规则已经够用。其他单元和验收任务没有隔离，这些用例在那里跳过。Ubuntu 上没有 `sandbox-exec`、钥匙串和 launchd，所以 `sandbox-exec` 本身、钥匙串、plutil 和 launchd 的检查在 Ubuntu 上跳过。这些用例由 `macOS-only paths` 工作流在 `macos-15` 上运行，沙箱用例也在那里经 `sandbox-exec` 再跑一遍：每次推送到 main、每晚一次，也可以手动触发；拉取请求不触发它，它也不是必需检查。所以拉取请求的检查是 bubblewrap 与 AppArmor 下沙箱的证据，但不是 `sandbox-exec`、钥匙串、plutil 和 launchd 的证据。跳过不算通过；每个阶段仍在本机 macOS 上完整运行一次，命令、计数和跳过的用例记在 [Hub r4 进度](hub-r4-progress.md)里。CI 的任务摘要列出每个跳过的用例。
+公开 CI 在 Ubuntu 上运行。单元测试任务从 PostgreSQL 的 apt 源安装 18 版客户端，所以备份、恢复和部署的用例在那里运行。包内函数的沙箱用例，包括对真实监听的本机服务器验证的断网，由 `Linux isolation` 任务运行：每个拉取请求和每次推送到 main 都会触发，它安装 bubblewrap 和 AppArmor，为本任务的 Node 生成并装载 Hub 的 AppArmor 策略，隔离不可用就直接失败，然后运行按跳过条件从源码选出的单元和验收测试文件。它不改 `kernel.apparmor_restrict_unprivileged_userns`，启动器策略自带的 `userns` 规则已经够用。其他单元和验收任务没有隔离，这些用例在那里跳过。Ubuntu 上没有 `sandbox-exec`、plutil 和 launchd，所以 `sandbox-exec` 本身、plutil 和 launchd 的检查在 Ubuntu 上跳过；密钥文件在每个平台上都一样，它们的用例在那里运行。这些用例由 `macOS-only paths` 工作流在 `macos-15` 上运行，沙箱用例也在那里经 `sandbox-exec` 再跑一遍：每次推送到 main、每晚一次，也可以手动触发；拉取请求不触发它，它也不是必需检查。所以拉取请求的检查是 bubblewrap 与 AppArmor 下沙箱的证据，但不是 `sandbox-exec`、plutil 和 launchd 的证据。跳过不算通过；每个阶段仍在本机 macOS 上完整运行一次，命令、计数和跳过的用例记在 [Hub r4 进度](hub-r4-progress.md)里。CI 的任务摘要列出每个跳过的用例。
+
+## 密钥存放
+
+所有者 2026-11-03 定下（决定 137）：Hub 不再使用 macOS 钥匙串。macOS 和 Linux 一样，密钥库主密钥和操作令牌各是数据根 `keys` 目录下的一个 32 字节文件（目录 0700，文件 0600，属于服务账户），不进备份。`CIRCLE_HUB_KEYCHAIN_SERVICE` 和 `CIRCLE_HUB_KEYCHAIN_ACCOUNT` 已停用：进程里设了其中任何一个（空值也算）就不启动，并说明密钥现在在哪里。部署设置保留 `keychain_service` 和 `keychain_account` 两个字段，现在用来给密钥文件命名，所以回滚到的发布读的还是同一份设置文件。密钥还在钥匙串里的 macOS 部署，在运行含这项改动的发布之前先把它移出来：用先前发布的 `circle-hub key export --confirm` 通过管道交给新发布的 `circle-hub key import`，然后运行 `circle-hub operator-token reissue`。
 
 ## 合约
 
@@ -68,3 +72,4 @@
 - 2026-10-22：Circle 一行写明修改 Circle 需要所有者明确授权和范围；恢复“Ubuntu CI 跳过的隔离与平台用例不算通过”的说明，改按重建后的沙箱、钥匙串、launchd 和备份恢复写；写明各包改了自己的合约文件后由谁重新生成。
 - 2026-10-29：CI 说明改为现状：Ubuntu 单元测试任务安装 PostgreSQL 18 客户端，备份、恢复和部署在那里运行；需要 macOS 的用例由不在拉取请求上触发的 `macOS-only paths` 工作流运行。
 - 2026-10-29：包内函数的沙箱用例改由 `Linux isolation` 任务在每个拉取请求上以 bubblewrap 与 AppArmor 运行；隔离一节写明 Linux 上的这一层。
+- 2026-11-03：加“密钥存放”一节（决定 137：不再用 macOS 钥匙串，每个平台都用密钥文件，`CIRCLE_HUB_KEYCHAIN_SERVICE` 和 `_ACCOUNT` 停用）；CI 说明不再把钥匙串列为只在 macOS 上运行的路径。

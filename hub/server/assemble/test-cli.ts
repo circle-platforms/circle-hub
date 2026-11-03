@@ -87,8 +87,8 @@ export async function openCliHarness(): Promise<CliHarness> {
           const out: string[] = [];
           const err: string[] = [];
           const io: CliIo = { stdout: (line) => out.push(line), stderr: (line) => err.push(line), env: { ...env, ...extraEnv }, cwd: scratch };
-          // The built-in commands never reach the owner's keychain: an empty store unless the test gives its own.
-          const empty = memoryOperatorTokens(null, '测试的空钥匙串');
+          // The built-in commands never reach the owner's token file: an empty store unless the test gives its own.
+          const empty = memoryOperatorTokens(null, '测试的空令牌存储');
           const code = await main(argv, { io, keyProvider: () => key, ownerRole: postgres.config.user, operatorTokens: () => empty, ...overrides });
           printed.push(...out, ...err);
           return { code, out, err, text: [...out, ...err].join('\n') };

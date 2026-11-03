@@ -267,7 +267,7 @@ export type { CommandAssembleFunction, CommandIo } from '../api.ts';
 
 /**
  * The assembly of one CLI command (AssemblyModule.assembleCommand, the server core's `ctx.deps()` for `run show`): no vault
- * master key needed (a run is read without one; a locked keychain or a missing key does not refuse a read-only command), no
+ * master key needed (a run is read without one; an unreadable or missing key does not refuse a read-only command), no
  * sandbox-exec probe, no start-up notices, and the operator's log lines (a connector or registry event) go to the CLI's
  * standard error, made safe for a terminal.
  */

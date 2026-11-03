@@ -34,7 +34,7 @@ bash install.sh --dry-run --version <x.y.z>  # the installer's plan, changing no
 node tools/build-bundle.ts --platform darwin-arm64 --out <dir>   # build one release bundle
 ```
 
-Tests start a temporary PostgreSQL from `embedded-postgres` (via `hub/testing/postgres.ts`). Backup/restore/deploy, `sandbox-exec` network denial, keychain and launchd tests need macOS and/or libpq (`pg_dump`/`pg_restore` of PG 18; `brew install libpq` or `CIRCLE_HUB_LIBPQ_BIN`) and skip elsewhere — a skip is not a pass; report skips explicitly. Never run `npm install` in a task worktree.
+Tests start a temporary PostgreSQL from `embedded-postgres` (via `hub/testing/postgres.ts`). Backup/restore/deploy, `sandbox-exec` network denial and launchd tests need macOS and/or libpq (`pg_dump`/`pg_restore` of PG 18; `brew install libpq` or `CIRCLE_HUB_LIBPQ_BIN`) and skip elsewhere — a skip is not a pass; report skips explicitly. Never run `npm install` in a task worktree.
 
 ## Architecture
 
@@ -48,7 +48,7 @@ Packages under `hub/` with a strict dependency direction (cross-package calls go
 - `refs`: reference resolution, deterministic parsers, verbatim quote check. `rules`: interpreters and the sandbox that runs pack functions (child process, Node permission model plus macOS `sandbox-exec` network denial).
 - `runs`: pack loading, run engine, validation, per-(item, requirement, layer) terminal state and partitions. Unknown stays unknown, never failure or success.
 - `knowledge`: tree, roots, producers, placement. `connectors`: read-only access to business systems (GET / allow-listed read routes only).
-- `server`: MCP endpoint, console, `circle-hub` CLI (`bin/circle-hub`). `platform`: keychain, launchd, PG lifecycle, backup/restore.
+- `server`: MCP endpoint, console, `circle-hub` CLI (`bin/circle-hub`). `platform`: key files (the vault master key and the operator token under `<data root>/keys`, on every platform; no macOS keychain), launchd/systemd, PG lifecycle, backup/restore.
 - `packs/` holds product / workflow / system packs; **core code must not name any product, command or customer** — product content lives in packs. `tests/fixtures` and `scripts/real/` (owner-run, read-only against real systems) are the only places real-system structure appears.
 - `foundation/circle` (public source baseline) is frozen: do not edit, run or import it. `references/` now holds only its SHA manifest (`npm run verify:references` checks the 287 files); the archive of the preceding platform was removed from this public repository on 2026-10-30 and must not be added back. The earlier implementation is readable via `git show ca66002:<path>`; copy and adapt, never import.
 

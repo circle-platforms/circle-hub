@@ -21,7 +21,7 @@ test('records verify decrypts every vault entry and prints only the count', asyn
   const assembly = async (): Promise<AssemblyModule> => ({
     assemble: () => { throw new Error('records verify does not assemble a server'); },
     registerCommands(register) {
-      for (const command of adminCommands({ tokens: () => memoryOperatorTokens(null, '测试的空钥匙串') })) register(command);
+      for (const command of adminCommands({ tokens: () => memoryOperatorTokens(null, '测试的空令牌存储') })) register(command);
     },
   });
   const verified = await admin.run(['records', 'verify', '--vault'], { assembly });

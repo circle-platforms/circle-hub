@@ -15,7 +15,7 @@ before(async()=>{postgres=await startPostgres({socket:true,passwordless:true});s
   cwd:records.dataDir,
   env:{CIRCLE_HUB_DATA_DIR:records.dataDir,CIRCLE_HUB_LOG_DIR:records.dataDir+'/logs',CIRCLE_HUB_HOST:'127.0.0.1',CIRCLE_HUB_PORT:'0',
     ...(records.database.host.startsWith('/') ? {CIRCLE_HUB_DATABASE_SOCKET_DIR:records.database.host} : {CIRCLE_HUB_DATABASE_HOST:records.database.host}),CIRCLE_HUB_DATABASE_PORT:String(records.database.port),
-    CIRCLE_HUB_DATABASE_NAME:records.database.database,CIRCLE_HUB_DATABASE_USER:records.database.user,CIRCLE_HUB_KEYCHAIN_SERVICE:'circle-hub-test'},
+    CIRCLE_HUB_DATABASE_NAME:records.database.database,CIRCLE_HUB_DATABASE_USER:records.database.user},
   overrides:{keyProvider:()=>records.keyProvider},
 })});});after(async()=>{try{await server?.close();}finally{await postgres?.stop();}});
 interface Reply {status:number;body:string;headers:Record<string,string|string[]|undefined>}

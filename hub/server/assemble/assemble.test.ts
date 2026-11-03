@@ -1,16 +1,16 @@
 // The assembly at start-up: the order of serve (retired names, configuration, records without migrating, then the assembly,
 // then listening) and its failure modes (a retired variable, an unmigrated database, no vault key in a file or in the
-// keychain, with the restore advice when the vault holds entries, a wrong key), a real start that serves the six tools over
-// the real packages, the command-time assembly (no key, no notice), and the call notes (the engine's reasons in the call's
-// note and the operator's log, connector failures only and capped). A temporary socket-only PostgreSQL; no real keychain
-// (a fake security tool), no network beyond loopback.
+// platform's key file, with the restore advice when the vault holds entries, a wrong key), a real start that serves the six
+// tools over the real packages, the command-time assembly (no key, no notice), and the call notes (the engine's reasons in
+// the call's note and the operator's log, connector failures only and capped). A temporary socket-only PostgreSQL; temporary
+// data roots only, no network beyond loopback.
 import assert from 'node:assert/strict';
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { VAULT_KEY_ITEM, hubKeyProvider, type CommandRunner } from '../../platform/api.ts';
+import { VAULT_KEY_ITEM, hubKeyProvider, keyDirectory } from '../../platform/api.ts';
 import { checkVaultKey } from '../../records/api.ts';
 import { FileKeyProvider, openRecords } from '../../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
@@ -60,17 +60,12 @@ function spyAssembly(): { load: () => Promise<AssemblyModule>; loaded: number; a
   return spy;
 }
 
-/** A fake security tool: every call recorded; `find-generic-password` answers "not found" (44) unless told otherwise. */
-function fakeSecurity(answer: (args: readonly string[]) => { code: number; stdout?: string; stderr?: string } | undefined = () => undefined) {
-  const calls: { args: string[]; input: string }[] = [];
-  const runner: CommandRunner = async (_command, args, options = {}) => {
-    calls.push({ args: [...args], input: options.input ?? '' });
-    const given = answer(args);
-    if (given !== undefined) return { stdout: '', stderr: '', ...given };
-    if (args[0] === 'find-generic-password') return { code: 44, stdout: '', stderr: 'The specified item could not be found in the keychain.' };
-    return { code: 1, stdout: '', stderr: 'unexpected call' };
-  };
-  return { runner, calls };
+/** The key files of a data root; none when the directory does not exist. */
+async function keyFiles(dataDir: string): Promise<string[]> {
+  return readdir(keyDirectory(dataDir)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
 }
 
 describe('start-up order and failure modes', () => {
@@ -117,21 +112,18 @@ describe('start-up order and failure modes', () => {
     await assert.rejects(access(deployment.key.path), 'the key file was not created');
   });
 
-  test('serve with the platform keychain provider and no keychain item stops and never adds one', async () => {
+  test('serve with the platform key file provider and no key file stops and never creates one', async () => {
     const deployment = await harness.deployment();
-    const security = fakeSecurity();
     const result = await deployment.run(['serve'], {
       assembly: realAssembly,
-      keyProvider: (env) => hubKeyProvider(env, { runner: security.runner, platform: 'darwin' }),
+      keyProvider: (env) => hubKeyProvider(env),
       stopSignal: stopSoon,
     });
     assert.equal(result.code, 1, result.text);
     // The platform names its item (VAULT_KEY_ITEM.label): the server's test follows the label, not a spelling of it.
     assert.ok(result.text.includes(`没有${VAULT_KEY_ITEM.label}`), result.text);
     assert.match(result.text, /key init/);
-    assert.ok(security.calls.length > 0, 'the keychain was asked');
-    assert.ok(security.calls.every((call) => call.args[0] === 'find-generic-password'), 'only reads: no add, no -i');
-    assert.ok(security.calls.every((call) => call.input === ''), 'nothing was written to the tool');
+    assert.deepEqual(await keyFiles(deployment.dataDir), [], 'no key file was created');
   });
 
   test('a vault that holds entries is never told to create a key: the restore advice replaces the provider\'s key init', async () => {
@@ -142,18 +134,17 @@ describe('start-up order and failure modes', () => {
     } finally {
       await kit.close();
     }
-    // The keychain item is gone (another Mac, a reset keychain); the sealed entry proves a key existed.
-    const security = fakeSecurity();
+    // The key file is gone (another machine, a reset keys directory); the sealed entry proves a key existed.
     const result = await deployment.run(['serve'], {
       assembly: realAssembly,
-      keyProvider: (env) => hubKeyProvider(env, { runner: security.runner, platform: 'darwin' }),
+      keyProvider: (env) => hubKeyProvider(env),
       stopSignal: stopSoon,
     });
     assert.equal(result.code, 1, result.text);
     assert.match(result.text, new RegExp(`密钥库主密钥不可用，Hub 不启动：.*没有${VAULT_KEY_ITEM.label}`));
-    assert.match(result.text, /处理：密钥库里已有用原来的主密钥封存的条目：恢复原来的钥匙串项；不要运行 circle-hub key init/);
+    assert.match(result.text, /处理：密钥库里已有用原来的主密钥封存的条目：恢复原来的主密钥文件（circle-hub key export --confirm \| circle-hub key import）；不要运行 circle-hub key init/);
     assert.doesNotMatch(result.text, /先运行 circle-hub key init/);
-    assert.ok(security.calls.every((call) => call.args[0] === 'find-generic-password'), 'only reads');
+    assert.deepEqual(await keyFiles(deployment.dataDir), [], 'only read: no key file was created');
   });
 
   test('a key that does not open the vault stops the assembly', async () => {
@@ -242,7 +233,6 @@ function configOf(kit: { dataDir: string; database: HubConfig['database']; confi
     host: '127.0.0.1',
     port: 0,
     database: kit.database,
-    keychain: { service: 'circle-hub-test', account: 'vault' },
     limits: { ...kit.config.limits },
   };
 }

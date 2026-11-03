@@ -43,10 +43,6 @@ const EXPECTED_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 		<string>circle_hub</string>
 		<key>CIRCLE_HUB_DATA_DIR</key>
 		<string>/synthetic-homes/someone/Library/Application Support/circle-hub</string>
-		<key>CIRCLE_HUB_KEYCHAIN_ACCOUNT</key>
-		<string>vault-master-key</string>
-		<key>CIRCLE_HUB_KEYCHAIN_SERVICE</key>
-		<string>circle-hub</string>
 		<key>CIRCLE_HUB_PORT</key>
 		<string>7420</string>
 		<key>HOME</key>

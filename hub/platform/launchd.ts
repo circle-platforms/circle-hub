@@ -1,6 +1,6 @@
 // The user LaunchAgent that keeps `circle-hub serve` running, managed with launchctl bootstrap, bootout and kickstart in
-// the gui/<uid> domain (the login session, where the login keychain is unlocked). Tests generate plists and use a fake
-// runner; they never call launchctl.
+// the gui/<uid> domain (the login session of the deployment's account). Tests generate plists and use a fake runner; they
+// never call launchctl.
 import { realpath, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -89,8 +89,6 @@ export function serviceEnvironment(layout: Layout, settings: PlatformSettings, i
     [PLATFORM_VARIABLES.databasePort]: String(identity.database.port),
     [PLATFORM_VARIABLES.databaseName]: identity.database.name,
     [PLATFORM_VARIABLES.databaseUser]: identity.database.role,
-    [PLATFORM_VARIABLES.keychainService]: settings.keychainService,
-    [PLATFORM_VARIABLES.keychainAccount]: settings.keychainAccount,
     HOME: identity.home,
     PATH: SERVICE_PATH,
     USER: identity.user,

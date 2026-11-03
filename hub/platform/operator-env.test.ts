@@ -22,7 +22,7 @@ test('an operator command gets the service environment of the deployment its dat
     const got = await operatorEnvironment({ [PLATFORM_VARIABLES.dataDir]: d.root });
     assert.equal(got[PLATFORM_VARIABLES.port], '7433');
     assert.equal(got[PLATFORM_VARIABLES.databaseUser], 'circle_hub');
-    assert.equal(got[PLATFORM_VARIABLES.keychainService], 'circle-hub');
+    assert.equal(got.CIRCLE_HUB_KEYCHAIN_SERVICE, undefined, 'the retired keychain names are never passed on');
     assert.ok(got[PLATFORM_VARIABLES.databaseSocketDir]?.startsWith(d.root));
     assert.equal(got[PLATFORM_VARIABLES.dataDir], undefined, 'a name the caller set is not returned');
     assert.ok(Object.keys(got).every((name) => name.startsWith('CIRCLE_HUB_')), 'only CIRCLE_HUB_* names, never PATH, HOME or USER');

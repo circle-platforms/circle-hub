@@ -1,13 +1,13 @@
 import {knowledgeMessage} from './capacity.ts';
 // The administrator commands the assembly registers with the server CLI: pack, resource, secret, knowledge, init-admin and
 // operator-token. Every command that changes state acts as the admin of the operator token: CIRCLE_HUB_TOKEN, or when it is
-// not set the keychain item of the deployment (account operator-token beside the vault master key, hub/platform
-// keychainStore); anything else is refused. The server CLI's built-in state-changing commands use the same rule
+// not set the private key file of the deployment (account operator-token beside the vault master key, hub/platform
+// fileKeyStore, on every platform since decision 137); anything else is refused. The server CLI's built-in state-changing commands use the same rule
 // (operatorAdmin, operatorAct). Read-only commands, the server CLI's included (operatorViewer), act as the token's account
 // when there is a token (`--as` must then name that account), else as the acting admin (`--as`, or the only enabled one); a
-// keychain item that cannot be read only costs a notice. Reads are not an access boundary: without any token they act as
-// the only admin. A lost or dead item is replaced without a token by `operator-token reissue`: a new token of an enabled
-// admin goes straight into the item and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
+// token file that cannot be read only costs a notice. Reads are not an access boundary: without any token they act as
+// the only admin. A lost or dead token file is replaced without a token by `operator-token reissue`: a new token of an
+// enabled admin goes straight into the file and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
@@ -32,7 +32,7 @@ import { packChanges, unruledShapes, parsePackRef, type PackProblem, type Publis
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
 import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
-import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, fileOperatorTokens, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
+import { OPERATOR_TOKEN_VARIABLE, deploymentKeyService, fileOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { initialPassword, validPassword } from '../records/api.ts';
 import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
@@ -42,8 +42,8 @@ import { CliError, UsageError } from './errors.ts';
 
 export interface AdminCommandOptions {
   /**
-   * Where the operator token is kept when CIRCLE_HUB_TOKEN is not set; default the macOS keychain item of the deployment.
-   * `service` is the deployment's keychain service, resolved as the vault master key's (deploymentKeychainService).
+   * Where the operator token is kept when CIRCLE_HUB_TOKEN is not set; default the deployment's private key file
+   * (fileOperatorTokens). `service` is the deployment's key service, resolved as the vault master key's (deploymentKeyService).
    */
   tokens?: (config: HubConfig, service: string) => OperatorTokenStore;
   /** Reads a secret value for `secret set`; default standard input (no echo on a terminal). */
@@ -64,23 +64,21 @@ export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-us
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
-export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，密码从标准输入读取或随机生成；操作令牌存进钥匙串，不显示';
+export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，密码从标准输入读取或随机生成；操作令牌存进私有密钥文件，不显示';
 export const OPERATOR_TOKEN_USAGE =
-  'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖 | remove --confirm-only-operator-token   Linux 仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
+  'operator-token set   从标准输入读一个启用中的管理员的令牌，存进私有密钥文件（账户 operator-token）；令牌文件丢失时用，已有的不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进私有密钥文件，不显示；已有的不覆盖 | remove --confirm-only-operator-token   仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
 
 const USER_ID = /^usr_[0-9a-z]{26}$/;
 /** Label of a token `operator-token reissue` issues (shown by `token list`). */
 const REISSUE_LABEL = '操作令牌（重新签发）';
-/** The break-glass path: a new admin token straight into the keychain item, without any token. */
+/** The break-glass path: a new admin token straight into the token file, without any token. */
 const REISSUE = 'circle-hub operator-token reissue';
-/** What to do when the keychain item's token no longer works (revoked, its account disabled or no longer an admin). */
-const DEAD_ITEM = `在“钥匙串访问”里删掉这个项，再运行 ${REISSUE}（给一位启用中的管理员签发新令牌存进钥匙串，不显示；有几位管理员时加 --as <管理员>）`;
-
-const removeItemHint = (store: OperatorTokenStore): string => store.remove ? '运行 circle-hub operator-token remove --confirm-only-operator-token（仅删除本地操作令牌，不改密钥库主密钥；不会撤销数据库令牌）' : '在“钥匙串访问”里删掉这个项';
-const deadItemHint = (store: OperatorTokenStore): string => store.remove ? `${removeItemHint(store)}，再运行 ${REISSUE}（有几位管理员时加 --as <管理员>）` : DEAD_ITEM;
+/** How to remove the local operator token that no longer works (revoked, its account disabled or no longer an admin). */
+const REMOVE_ITEM = '运行 circle-hub operator-token remove --confirm-only-operator-token（仅删除本地操作令牌，不改密钥库主密钥；不会撤销数据库令牌）';
+const DEAD_ITEM = `${REMOVE_ITEM}，再运行 ${REISSUE}（有几位管理员时加 --as <管理员>）`;
 
 /**
- * How to give one command a token other than the keychain item's. Not exported: serve refuses to start while the variable
+ * How to give one command a token other than the token file's. Not exported: serve refuses to start while the variable
  * is set, and a token kept in a shell's environment reaches everything that shell starts.
  */
 const ONE_COMMAND_TOKEN = `只给这一条命令一个令牌：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>（先用 read -rs T 读入，令牌不进命令历史）；不要 export ${OPERATOR_TOKEN_VARIABLE}：serve 见到它会拒绝启动，留在 shell 里的令牌也会传给这个 shell 启动的每个程序`;
@@ -172,12 +170,12 @@ class Session {
     return this.#leases;
   }
 
-  /** The operator token item of this deployment: its keychain service is resolved as the vault master key's. */
+  /** The operator token file of this deployment: its key service is resolved as the vault master key's. */
   tokens(): Promise<OperatorTokenStore> {
     this.#tokens ??= (async () => {
       const config = this.config();
-      const service = await deploymentKeychainService(this.ctx.io.env, config.keychain.service);
-      return this.options.tokens?.(config, service) ?? (process.platform === 'linux' ? fileOperatorTokens(config.dataDir, service) : keychainOperatorTokens({ service }));
+      const service = await deploymentKeyService(this.ctx.io.env);
+      return this.options.tokens?.(config, service) ?? fileOperatorTokens(config.dataDir, service);
     })();
     return this.#tokens;
   }
@@ -192,14 +190,14 @@ class Session {
     return this.#hub;
   }
 
-  /** The operator token: CIRCLE_HUB_TOKEN, else the keychain item; null when there is none. */
+  /** The operator token: CIRCLE_HUB_TOKEN, else the token file; null when there is none. */
   async operatorToken(): Promise<string | null> {
     if (this.envToken !== null) return this.envToken;
     const store = await this.tokens();
     try {
       return await store.read();
     } catch (error) {
-      throw new CliError(`读不出${store.where}里的操作令牌：${messageOf(error)}`, `${hintOf(error) ?? '在这台 Mac 的登录会话里解锁钥匙串后重试'}；或者${ONE_COMMAND_TOKEN}`);
+      throw new CliError(`读不出${store.where}里的操作令牌：${messageOf(error)}`, `${hintOf(error) ?? '检查数据根的 keys 目录（当前服务账户拥有，权限 0700，文件 0600）后重试'}；或者${ONE_COMMAND_TOKEN}`);
     }
   }
 
@@ -216,7 +214,7 @@ class Session {
       if(!requireAdmin)throw new CliError('这个命令会改变运行状态，需要有效操作令牌',`通过 ${OPERATOR_TOKEN_VARIABLE} 提供运行者本人或管理员的令牌；不采用只读命令的身份回退`);
       throw new CliError(
         '这个命令会改变 Hub 的状态，要管理员令牌，没有找到',
-        `已有管理员而钥匙串项丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin <名字> 建立；或者${ONE_COMMAND_TOKEN}`,
+        `已有管理员而操作令牌文件丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin <名字> 建立；或者${ONE_COMMAND_TOKEN}`,
       );
     }
     const principal = await kit.principals.authenticate(`Bearer ${token}`);
@@ -224,7 +222,7 @@ class Session {
       if(!requireAdmin)throw new CliError('操作令牌无效或账号已停用','用运行者本人或管理员的有效令牌重试');
       const hint =
         this.envToken === null
-          ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${deadItemHint(await this.tokens())}`
+          ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${DEAD_ITEM}`
           : `给这条命令一个启用中的管理员的有效令牌（${OPERATOR_TOKEN_VARIABLE}）`;
       throw new CliError('令牌无效，或者不属于启用中的管理员；这个命令只有管理员能执行', hint);
     }
@@ -239,7 +237,7 @@ class Session {
     const lost =
       this.envToken !== null
         ? `${OPERATOR_TOKEN_VARIABLE} 给这条命令的管理员令牌现在已不能用（令牌已撤销或账号已停用）`
-        : `${(await this.tokens()).where}里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：${deadItemHint(await this.tokens())}`;
+        : `${(await this.tokens()).where}里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：${DEAD_ITEM}`;
     return {
       admin,
       noticeIfLost: async () => {
@@ -250,9 +248,9 @@ class Session {
   }
 
   /**
-   * Who a read-only command reads as: the account of the operator token (CIRCLE_HUB_TOKEN, else the keychain item), with
-   * `--as` allowed only when it names that account; without a token `--as` or the only enabled admin. A keychain item
-   * that cannot be read (a locked keychain) is said on stderr and the command reads as if there were none.
+   * Who a read-only command reads as: the account of the operator token (CIRCLE_HUB_TOKEN, else the token file), with
+   * `--as` allowed only when it names that account; without a token `--as` or the only enabled admin. A token file that
+   * cannot be read (wrong owner or permissions) is said on stderr and the command reads as if there were none.
    */
   async viewer(as: string | undefined, quietTokenRead = false): Promise<Principal> {
     let token = this.envToken;
@@ -261,7 +259,7 @@ class Session {
     if (token === null) {
       const store = await this.tokens();
       source = `${store.where}里的操作令牌`;
-      hint = `${removeItemHint(store)}后，只读命令按 --as 或唯一启用的管理员读取；改变状态的命令要的新操作令牌用 ${REISSUE} 签发`;
+      hint = `${REMOVE_ITEM}后，只读命令按 --as 或唯一启用的管理员读取；改变状态的命令要的新操作令牌用 ${REISSUE} 签发`;
       try {
         token = await store.read();
       } catch (error) {
@@ -765,8 +763,8 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         session.out('还没有资源');
         return 0;
       }
-      // The login column is read from the vault, which needs the master key: asked once for the whole listing, so a locked
-      // keychain costs one refusal, not one per resource.
+      // The login column is read from the vault, which needs the master key: asked once for the whole listing, so an
+      // unreadable key costs one refusal, not one per resource.
       const keyProblem = listings.some((resource) => resource.enabled) ? await vaultKeyProblem(hub.records) : null;
       for (const resource of listings) {
         const fields = [resource.id, resource.name, resource.system_pack, labelOf('environment', resource.environment as Environment), resource.enabled ? '启用' : '停用'];
@@ -989,7 +987,7 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
 // ---------------------------------------------------------------- init-admin
 
 /**
- * Stores a token nobody has seen in the operator token item. When the write fails the token is revoked, so that no token
+ * Stores a token nobody has seen in the operator token file. When the write fails the token is revoked, so that no token
  * exists that nobody can account for; the message says what happened (`done` first) and the hint how to go on. Neither
  * names a command that needs the token that could not be stored.
  */
@@ -1005,11 +1003,11 @@ async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pi
       revoked = false;
       why = `（${messageOf(failure)}）`;
     }
-    // A write whose read-back failed may still have left the item behind.
+    // A write whose read-back failed may still have left the file behind.
     const left = await store.present().catch(() => false);
     const stored = `${done}，但令牌没能存进${store.where}：${messageOf(error)}`;
-    const remove = left ? (store.remove ? `${removeItemHint(store)}；` : '钥匙串里留下了这个项，先在“钥匙串访问”里删掉它；') : '';
-    const again = store.remove ? `${remove}确认私有密钥目录可用后，用 ${REISSUE} --as ${admin.name} 签发新令牌存进${store.where}（不显示）` : `${remove}钥匙串能用后（例如解锁了钥匙串）用 ${REISSUE} --as ${admin.name} 签发新令牌存进钥匙串（不显示）`;
+    const remove = left ? `${REMOVE_ITEM}；` : '';
+    const again = `${remove}确认私有密钥目录可用后，用 ${REISSUE} --as ${admin.name} 签发新令牌存进${store.where}（不显示）`;
     if (revoked) throw new CliError(`${stored}。这个令牌已撤销，没有显示`, again);
     throw new CliError(`${stored}。这个没有显示过的令牌 ${token.id} 没能确认已经撤销${why}`, `${again}；再用 circle-hub token revoke ${token.id} 撤销这个没有显示过的令牌`);
   }
@@ -1024,31 +1022,31 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
   if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
     throw new CliError(
       '已经有管理员；init-admin 只建第一位管理员',
-      `给用户签发令牌用 circle-hub token issue <用户>（以钥匙串里的操作令牌执行）；操作令牌丢了（钥匙串项丢失，或它的令牌已撤销）就用 ${REISSUE}`,
+      `给用户签发令牌用 circle-hub token issue <用户>（以私有密钥文件里的操作令牌执行）；操作令牌丢了（令牌文件丢失，或它的令牌已撤销）就用 ${REISSUE}`,
     );
   }
   const store = await session.tokens();
   if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌`, `它属于另一个 Hub 时先${removeItemHint(store)}，再运行 init-admin`);
+    throw new CliError(`${store.where}里已经有操作令牌`, `它属于另一个 Hub 时先${REMOVE_ITEM}，再运行 init-admin`);
   }
   const { user, token } = await decided(() => kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:supplied === ''}));
   await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`);
   session.out(`已建立第一位管理员 ${user.name}（${user.id}）；它的令牌 ${token.id} 已存进${store.where}，没有显示`);
   if (supplied === '') { session.out('初始密码（仅显示一次，首次登录必须修改）：'); session.out(password); }
-  session.out('之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个钥匙串项读管理员令牌，不用另外给出令牌');
+  session.out('之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个操作令牌文件读管理员令牌，不用另外给出令牌');
   return 0;
 }
 
 // ---------------------------------------------------------------- operator-token
 
 /**
- * `operator-token set`: a lost keychain item (another Mac, a reset keychain) is replaced by a token of an enabled admin read
+ * `operator-token set`: a lost token file (another machine, a reset data root) is replaced by a token of an enabled admin read
  * from standard input (never argv or the environment), checked against the records before it is stored, never shown.
  * `operator-token reissue [--as <admin>]`: the same without any token in hand (the break-glass path): a new token of an
  * enabled admin (`--as`, or the only one) is issued and goes straight into the item, never shown; when it cannot be stored
- * it is revoked. Neither ever overwrites an item: one that no longer works is removed in Keychain Access first. The reissue
+ * it is revoked. Neither ever overwrites a token file: one that no longer works is removed first (`operator-token remove`). The reissue
  * needs no token because the CLI is no access boundary against whoever can run it against the database (that account can
- * change the database directly); what it gives exists only in the deployment's keychain item.
+ * change the database directly); what it gives exists only in the deployment's token file.
  */
 async function operatorTokenCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
@@ -1056,7 +1054,6 @@ async function operatorTokenCommand(session: Session, args: readonly string[]): 
   if (sub === 'remove') {
     const {values} = parse(rest, {'confirm-only-operator-token':{type:'boolean'}}, 0);
     const store = await session.tokens();
-    if (!store.remove) throw new CliError('此存储不支持操作令牌文件删除', '在“钥匙串访问”里仅删除操作令牌项');
     if (values['confirm-only-operator-token'] !== true) throw new UsageError('仅删除本地操作令牌文件须加 --confirm-only-operator-token；不会撤销数据库令牌或改动密钥库主密钥');
     session.out('先停止 Hub 服务并核对旧令牌；删除本地文件不会阻止运行中读取者或撤销旧令牌，恢复后用 token list 和 token revoke 核对并撤销旧令牌');
     session.out(await store.remove() ? '已删除本地操作令牌文件；密钥库主密钥未改动，数据库令牌未撤销' : '本地操作令牌文件本来就不存在；密钥库主密钥未改动');
@@ -1068,7 +1065,7 @@ async function operatorTokenCommand(session: Session, args: readonly string[]): 
   const kit = await session.records();
   const store = await session.tokens();
   if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它不能用了就先${removeItemHint(store)}，再运行 circle-hub operator-token set`);
+    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它不能用了就先${REMOVE_ITEM}，再运行 circle-hub operator-token set`);
   }
   const read = session.options.readSecret ?? ((label: string) => readSecretFromStdin(label));
   // A Hub token has no white space; a pasted line may.
@@ -1076,8 +1073,8 @@ async function operatorTokenCommand(session: Session, args: readonly string[]): 
   const principal = tokenBytes(token) === null ? null : await kit.principals.authenticate(`Bearer ${token}`);
   if (principal === null || principal.role !== 'admin') {
     throw new CliError(
-      '这个令牌无效，或者不属于启用中的管理员，没有存进钥匙串',
-      `给一个启用中的管理员的有效令牌；手里没有的话，用 ${REISSUE} 给一位启用中的管理员签发新令牌，直接存进钥匙串（不显示）`,
+      '这个令牌无效，或者不属于启用中的管理员，没有存进操作令牌文件',
+      `给一个启用中的管理员的有效令牌；手里没有的话，用 ${REISSUE} 给一位启用中的管理员签发新令牌，直接存进操作令牌文件（不显示）`,
     );
   }
   await store.write(token);
@@ -1090,7 +1087,7 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
   const kit = await session.records();
   const store = await session.tokens();
   if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它还能用就不用重新签发；不能用了（令牌已撤销、账号已停用）就先${removeItemHint(store)}，再运行 ${REISSUE}`);
+    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它还能用就不用重新签发；不能用了（令牌已撤销、账号已停用）就先${REMOVE_ITEM}，再运行 ${REISSUE}`);
   }
   // Who: `--as`, or the only enabled admin (records keeps at least one enabled admin).
   const admin = await session.ctx.actingAdmin(values.as);
@@ -1098,7 +1095,7 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
   const done = `已为管理员 ${admin.name}（${admin.id}）签发新的操作令牌 ${token.id}`;
   await storeUnseen(kit, store, admin, token, done);
   session.out(`${done}，存进了${store.where}，没有显示；之后改变状态的命令从这里读它`);
-  session.out(`原来的操作令牌如果还有效（例如还留在另一台 Mac 的钥匙串里），用 circle-hub token list ${admin.name} 查看，用 circle-hub token revoke <令牌编号> 撤销`);
+  session.out(`原来的操作令牌如果还有效（例如还留在另一台机器的令牌文件里），用 circle-hub token list ${admin.name} 查看，用 circle-hub token revoke <令牌编号> 撤销`);
   return 0;
 }
 
@@ -1503,7 +1500,7 @@ function terminalSafeError(error: unknown): unknown {
 }
 
 /**
- * The enabled admin of the operator token (CIRCLE_HUB_TOKEN, else the keychain item), for any state-changing CLI command,
+ * The enabled admin of the operator token (CIRCLE_HUB_TOKEN, else the token file), for any state-changing CLI command,
  * the server CLI's built-in ones included. It takes CIRCLE_HUB_TOKEN out of the environment object (no child process this
  * command starts gets it); before or after `ctx.config()`, which accepts the name for commands.
  */

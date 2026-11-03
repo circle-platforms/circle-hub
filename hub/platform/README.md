@@ -6,8 +6,8 @@ Decision 83's second-round release-workflow approval aligns the fresh-runner ins
 `--admin-user` supplies a synthetic account, `--password-stdin` reads its password, and the HTTPS check requires the
 username/password login form. Local static and dry-run checks do not establish a successful deployed install or CI run.
 
-Persistent single-machine deployment of the Hub on macOS: the data root, a socket-only PostgreSQL from the pinned
-embedded-postgres binaries, the deployment's keychain items (the vault master key and the operator token), backups and
+Persistent single-machine deployment of the Hub on macOS and Linux: the data root, a socket-only PostgreSQL from the pinned
+embedded-postgres binaries, the deployment's key files (the vault master key and the operator token), backups and
 restores with SHA-256 manifests, the user LaunchAgent for `circle-hub serve`, deploy with automatic recovery, rollback,
 and a backup rehearsal. The Hub runs as the
 invoking user and listens on loopback by default; an internal listener requires explicit settings. Model: the deployment decisions in `docs/hub-r4-architecture.md` (section 1
@@ -120,7 +120,7 @@ name). Every directory is 0700.
 | `releases/<id>/` | one deployed copy per commit with its own `node_modules` and `release.json`; `releases/deployments.jsonl` |
 | `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
 | `current` | relative symlink to `releases/<id>` |
-| `config/platform.json` | the deployment instance (`circle-hub-platform@2`): environment class, HTTP port, database name, role and socket port, keychain service and account, backups kept, optional node path |
+| `config/platform.json` | the deployment instance (`circle-hub-platform@2`): environment class, HTTP port, database name, role and socket port, key service and account (fields `keychain_service`, `keychain_account`), backups kept, optional node path |
 | `runtime/` | the installer's unpacked bundles (`bundles/<name>-<full commit>/`, with older version-only directories retained) and `node`, a compatibility link updated after successful deploy; service definitions use the fixed bundle Node path |
 | `tls/` | the built-in HTTPS: the private certificate authority and the server certificate it signed (`tls init`); never backed up |
 | `set-aside/<time>-<reason>/` | data moved out of the way by a failed deploy, a rollback or a failed restore; never deleted automatically |
@@ -171,7 +171,7 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    operator's shell (checked: a read-only `PGOPTIONS` broke `CREATE ROLE`, `PGSSLNEGOTIATION=direct` and
    `PGREPLICATION=database` broke every connection). PostgreSQL tools get a minimal environment without `PG*`.
 3. **Deployment instance** (D01 R[6]): `config/platform.json` is written once by `init` and is the only source of the HTTP
-   port, the database name, role and socket port, and the keychain service and account. `init` takes them from its flags
+   port, the database name, role and socket port, and the key service and account. `init` takes them from its flags
    and from the `CIRCLE_HUB_*` variables set at that moment, then pins them. Afterwards a variable may repeat a value but
    never change it: one that disagrees is refused with its name and both values. An `@1` file (without database names) is
    read with the names it implied (`circle_hub`, `circle_hub`, 5432) and never rewritten. The application role of a new
@@ -179,52 +179,52 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    hub/config accepts more, so `init` refuses the rest before anything is written. A file pinned earlier with another name
    is still read (status, backup, `db`), but `deploy` refuses it before anything runs and prints the `ALTER ROLE … RENAME`
    that fixes it.
-4. **Keychain**: a deployment has two generic password items under one keychain service, each holding 32 bytes as 64
-   hexadecimal characters: the vault master key (service `circle-hub`, account `vault-master-key`, both pinned per
-   deployment) and the operator token of the server's administrator commands (the same service, account
-   `operator-token`, `OPERATOR_TOKEN_ACCOUNT`). That account is reserved, because the two would be one item: `init`
-   refuses it for the vault master key (`CIRCLE_HUB_KEYCHAIN_ACCOUNT=operator-token`). Settings that name it anyway
-   (edited by hand, or written by an earlier version) are refused before any `security` call by `key init|status`,
-   `hubKeyProvider` and `deploymentKeychainNames` (`status` shows the reason in its key line), and before anything stops
-   or launchctl runs by `deploy`, `rollback` and `service install|start` (`keychainNamesFor` in `context.ts`): `serve`
-   refuses that key, so a deploy would fail only after the service stopped, a rollback after the data moved, and an
-   installed service would be restarted by launchd every 10 s. `service stop`, `uninstall` and `status` still work.
-   `keychainKeyProvider` refuses the account whatever its `item` says (it always reads the vault master key), and
-   `keychainStore` refuses it together with `VAULT_KEY_ITEM`. **Names**: one rule, `settingsKeychainNames`, gives both
-   items (`{ vaultKey, operatorToken }`, each `{ service, account, item }`, ready to spread into `keychainStore`) from a
-   data root's settings, for the platform's commands (`keychainFor`; data root `CIRCLE_HUB_DATA_DIR`, else the default
-   root) and for `deploymentKeychainNames(env)`, the resolver of a process whose data root `CIRCLE_HUB_DATA_DIR` names
-   (the server; `hubKeyProvider(env)` resolves through it, so the vault key and the operator token cannot diverge): that
-   root's settings when it has them (a disagreeing `CIRCLE_HUB_KEYCHAIN_SERVICE` or `_ACCOUNT` is refused, as
-   everywhere); a root without settings (a development root) takes the variables (checked against the keychain name
-   rule, refused by name), else the defaults. Without `CIRCLE_HUB_DATA_DIR` (or with it empty) it refuses instead of
-   reading the default root, as `ensureHubDatabase` refuses: so for a data root with settings the two paths name the
-   same items, and otherwise one of them refuses. It reads the settings file only and never asks the keychain.
-   **Writing**: `keychainStore().write(value)` copies the bytes the view really holds (`new Uint8Array(value)`: a
-   subclass that misreports `byteLength` or `length` changes nothing), takes exactly 32 of them (anything else is
-   refused before any call), refuses an existing item (and runs `add-generic-password` without `-U`, so an item that
-   appeared meanwhile makes `security` fail with 45 instead of being replaced; the integration test checks this on the
-   real tool), sends the value only through stdin of `security -i`, never a command line, then reads it back and
-   compares in constant time. The caller's bytes are left as they are; the store's own copies (the copy it writes, the
-   decoded read-back and the array the read-back returns) are zeroed. The hexadecimal input line and the tool's output
-   are strings and cannot be zeroed. `init()` is `write` of 32 random bytes. Reading never creates an item; any error is
-   fatal; tool output is scrubbed of anything key-shaped. **Messages** name the item (`item`; the constants are in
-   `keychain-items.ts`): `VAULT_KEY_ITEM` "密钥库主密钥" (密钥库 is the design standard's term for the vault,
-   `docs/design/object-standard.md`) with its hints, `key init` when missing and why it is never replaced;
-   `OPERATOR_TOKEN_ITEM` "操作令牌" without hints, the server decides its advice. Without `item` a store names the
-   operator token for its reserved account and otherwise a neutral "钥匙串项" without advice; `keychainKeyProvider`
-   always names the vault master key. Every platform message that names either item, the CLI's included, takes the
-   label from these constants. Every `security` call has a 60 s limit: a locked keychain waits for
-   its unlock dialog, and a server stuck there would never be restarted by launchd; a timeout says to unlock the keychain.
-   `keychainKeyProvider` (and `hubKeyProvider(env)`) implement the records package's `KeyProvider` and cache the key per
-   process. Neither item is in backups.
-   **Boundary**: `add-generic-password` without `-T` trusts the program that created the item, `/usr/bin/security`, so
-   any process running as the deployment user can read either item without a prompt
-   (`security find-generic-password -s circle-hub -a vault-master-key -w`; the keychain integration test reads it back
-   exactly so). The keychain keeps the values out of backups, out of files and away from other accounts; it does not keep
-   them away from code running as the same user, for example a dependency's install script during `deploy`. The
-   security CLI offers no narrower access list for an unattended service; a dedicated keychain with its own password and auto-lock
-   would need an unlock step after every login.
+4. **Key files** (decision 137, 2026-11-03: the Hub no longer uses the macOS keychain): on macOS as on Linux a
+   deployment has two 32-byte key files under `<data root>/keys` (`file-key.ts`): the vault master key (service
+   `circle-hub`, account `vault-master-key`, both pinned per deployment in the settings fields `keychain_service` and
+   `keychain_account`, whose names predate the decision and stay, so a release rolled back to reads the same settings
+   file) and the operator token of the server's administrator commands (the same service, account `operator-token`,
+   `OPERATOR_TOKEN_ACCOUNT`). A file is named by the SHA-256 of its service and account, never by its contents. The
+   directory must be owned by the service account with mode 0700, each file by the service account with mode 0600 and one
+   link, the data root itself private; this is checked on every access, a symbolic link or a FIFO is refused without
+   blocking, and a file of the wrong length is reported as an interrupted write with a safe recovery. That account is
+   reserved, because the two would be one file: `init` refuses it for the vault master key. Settings that name it anyway
+   (edited by hand, or written by an earlier version) are refused before any file is touched by `key init|status`,
+   `hubKeyProvider` and `deploymentKeyNames` (`status` shows the reason in its key line), and before anything stops or
+   launchctl runs by `deploy`, `rollback` and `service install|start` (`keyNamesFor` in `context.ts`): `serve` refuses
+   that key, so a deploy would fail only after the service stopped, a rollback after the data moved, and an installed
+   service would be restarted by launchd every 10 s. `service stop`, `uninstall` and `status` still work.
+   `fileKeyProvider` always reads the vault master key, and `fileKeyStore` refuses the reserved account together with
+   `VAULT_KEY_ITEM`. **Names**: one rule, `settingsKeyNames`, gives both keys (`{ vaultKey, operatorToken }`, each
+   `{ service, account, item }`, ready to spread into `fileKeyStore`) from a data root's settings, for the platform's
+   commands (`keyStoreFor`; data root `CIRCLE_HUB_DATA_DIR`, else the default root) and for `deploymentKeyNames(env)` in
+   `service.ts`, the resolver of a process whose data root `CIRCLE_HUB_DATA_DIR` names (the server; `hubKeyProvider(env)`
+   resolves through it, so the vault key and the operator token cannot diverge): that root's settings when it has them;
+   a root without settings (a development root) takes the defaults. Without `CIRCLE_HUB_DATA_DIR` (or with it empty) it
+   refuses instead of reading the default root, as `ensureHubDatabase` refuses. **Retired names**:
+   `CIRCLE_HUB_KEYCHAIN_SERVICE` and `CIRCLE_HUB_KEYCHAIN_ACCOUNT` are no longer read; a platform command or a server
+   that has either set, even empty, refuses to start and says that the keys are files under `$CIRCLE_HUB_DATA_DIR/keys`
+   (`RETIRED_VARIABLES` in `environment.ts`, kept equal to hub/config's `RETIRED_NAMES` by a test). The service
+   environment no longer carries them. **Writing**: `write(value)` copies the bytes the view really holds, takes exactly
+   32 of them, creates the file with `O_EXCL | O_NOFOLLOW` and mode 0600 (an existing key is never replaced), syncs it,
+   then reads it back and compares in constant time; a failed write removes its partial file. The caller's bytes are
+   left as they are; the store's own copies are zeroed. `init()` is `write` of 32 random bytes. Reading never creates a
+   key. **Messages** name the key (`item`; the constants are in `file-key.ts`): `VAULT_KEY_ITEM` "密钥库主密钥"
+   (密钥库 is the design standard's term for the vault, `docs/design/object-standard.md`) with its hints, `key init`
+   when missing and why it is never replaced; `OPERATOR_TOKEN_ITEM` "操作令牌" without hints, the server decides its
+   advice. Without `item` a store names the operator token for its reserved account and otherwise a neutral "密钥"
+   without advice. `fileKeyProvider` (and `hubKeyProvider(env)`) implement the records package's `KeyProvider` and cache
+   the key per process. Neither key is in backups (the rehearsal scans every backup file for both values, raw and
+   hexadecimal). **Boundary**: the file permissions keep the keys away from other accounts, out of backups and out of
+   the configuration; they do not keep them away from code running as the service account, for example a dependency's
+   install script during `deploy`, exactly as the keychain item did before (it trusted `/usr/bin/security`, which any
+   process of the same user could run without a prompt). **Moving an existing macOS deployment**: a deployment whose
+   vault master key is still in the keychain moves it before it runs a release with this change: the earlier release's
+   `circle-hub key export --confirm` piped into the new release's `circle-hub key import`, then
+   `circle-hub operator-token reissue` (the operator token is never exported). The keychain items are left as they were;
+   the owner removes them once the move is confirmed. The deploy itself must run on the new code (`install.sh` or the
+   new checkout's `circle-hub deploy`): an earlier platform writes the retired names into the service environment, so the
+   new release's migration refuses to start and the deploy rolls back.
 5. **Backups** (`circle-hub-backup@3`): one `REPEATABLE READ` transaction refuses an application role that owns anything,
    large objects and default privileges included, or holds more than its grants (decision 12; objects it owned would
    belong to the restoring superuser role after a restore, without the privileges their owner had, and its default
@@ -276,12 +276,13 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    privileges and own nothing. A restore that fails half way stops the cluster and moves its partial state to
    `set-aside/`, so the root is empty again for a retry.
 7. **launchd**: `~/Library/LaunchAgents/io.github.circle-platforms.circle-hub.plist`, domain `gui/<uid>` (the login
-   session, where the login keychain is unlocked), RunAtLoad, KeepAlive, ThrottleInterval 10, ExitTimeOut 30, Umask 077,
+   session of the deployment's account), RunAtLoad, KeepAlive, ThrottleInterval 10, ExitTimeOut 30, Umask 077,
    logs in `logs/`. `ProgramArguments` = node, `current/bin/circle-hub`, `serve`; the node path is the settings' `node`, or
    Homebrew's stable symlink when it is this Node, or this Node; it must be Node 24+. The environment holds only names
    hub/config reads, all explicit and taken from the deployment settings: `CIRCLE_HUB_DATA_DIR`, `_PORT`,
-   `_DATABASE_SOCKET_DIR`, `_DATABASE_PORT`, `_DATABASE_NAME`, `_DATABASE_USER`, `_KEYCHAIN_SERVICE`,
-   `_KEYCHAIN_ACCOUNT`, plus `PATH`, `HOME`, `USER`. `_DATABASE_USER` is the application role: `serve` (no `--migrate`)
+   `_DATABASE_SOCKET_DIR`, `_DATABASE_PORT`, `_DATABASE_NAME`, `_DATABASE_USER`, plus `PATH`, `HOME`, `USER` (the
+   retired `_KEYCHAIN_SERVICE` and `_KEYCHAIN_ACCOUNT` are no longer written; a plist installed by an earlier version
+   that still has them makes `serve` refuse to start until `service install` or a deploy writes the new one). `_DATABASE_USER` is the application role: `serve` (no `--migrate`)
    connects as it and only verifies the migrations. `service install` and `start` refuse settings that give the vault
    master key the operator token's account (decision 4) before launchctl runs. `service stop` is `bootout` (it starts
    again at the next login or `service start`). Failure paths that must keep the service stopped unload it and remove the plist, so the next login
@@ -335,14 +336,13 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    unchanged, and check that the role owns nothing and is still refused
    (42501) DELETE, TRUNCATE, DROP, ALTER and DISABLE TRIGGER on both tables and CREATE TABLE; the root is removed unless
    `--keep` (its read-only directories are made writable first, `removeTree` in `files.ts`).
-   **Key loss**: when `security` is available, creates a temporary keychain file under the throwaway root,
-   with a one-off service and two random 32-byte items (vault key and operator token). Every security invocation explicitly
-   targets that file, including cleanup. Scans every backup file for either value as raw bytes and lowercase/uppercase
-   hex; any occurrence rejects the rehearsal without displaying the value. Deletes both items before restore, checks
-   that neither is restored, moves the restored vault to `set-aside/<time>-key-loss/vault` and creates a fresh master key.
-   The report lists item count, backup hits, remaining items and moved vault file count. If security is absent, key loss
-   is explicitly skipped, not passed; the other comparisons still run. The temporary keychain is deleted even with
-   `--keep` and on failure. This does not exercise a real deployment or the login keychain.
+   **Key loss**: on every platform (decision 137), creates the two key files (vault key and operator token, a one-off
+   service, random 32 bytes each) under the throwaway root's `keys/`, as a deployment has them. Scans every backup file
+   for either value as raw bytes and lowercase/uppercase hex; any occurrence rejects the rehearsal without displaying the
+   value. Deletes both files before restore, checks that neither is restored, moves the restored vault to
+   `set-aside/<time>-key-loss/vault` and creates a fresh master key. The report lists the key file count, backup hits,
+   remaining files and moved vault file count. Both key files are deleted even with `--keep` and on failure. No host
+   tool but PostgreSQL's runs; this does not exercise a real deployment's keys.
 11. **One lock** (`run/platform.lock`) serialises deploy, rollback, backup and restore. It holds `<pid> <token>`, is
    created complete (written beside it, then hard-linked), and a lock of a dead process is taken over only by the one
    taker that holds `platform.lock.break`, and only while it still holds exactly the dead content. A lock that cannot be
@@ -427,7 +427,7 @@ node --test "hub/platform/**/*.test.ts"
 node scripts/verify-postgres.ts
 ```
 
-Unit tests inject runners (fake `security`, `launchctl`, `npm`, `git`, PostgreSQL tools). Integration tests start real
+Unit tests inject runners (fake `launchctl`, `systemctl`, `npm`, `git`, PostgreSQL tools; `security` is refused). Integration tests start real
 clusters from the pinned binaries in temporary roots (`lifecycle`, `sql`, `service`, `cli`, `verify`, `rehearse`,
 `roles`, `ownership`, `backup-live`, `deploy-system`); the backup and restore cases skip with a message only when
 `pg_dump`/`pg_restore` are absent. Every synthetic table is created by the superuser role, which grants the application
@@ -444,23 +444,18 @@ exact file patterns, and backs up a root holding synthetic extracted pack trees 
 then restores it into a new empty root (no `packs/` appears) and, after `setAside`, into the same root (the trees are
 unchanged); `rehearse` also has a case where a file appears in `packs/` during the restore and the rehearsal reports
 exactly that; `restore` checks the same with fake tools; `files` runs eight processes against one dead lock and removes
-read-only trees without following links; `bin` runs a copy of `bin/circle-hub` against stub CLI modules. `keychain`
-checks `write` (stdin only, the order status, add, read-back; an existing item, a racing duplicate, a wrong size, a
-view that misreports its size, a read-back that differs or is missing, every copy zeroed, the read-back's included),
-the item-named messages (the neutral default included), the reserved account in `keychainStore` and
-`keychainKeyProvider`, and `deploymentKeychainNames` (settings, variables, defaults, no data root, a disagreeing or
-malformed variable, the reserved account, the same item as `hubKeyProvider`) with a fake `security`. Keychain
-integration uses a temporary keychain file made with `security create-keychain` (not on the search list, deleted
-afterwards), for `init`, for `write` of an operator token beside the vault master key, and for a write that lost a race
-(the check answers "not found" once, then the real `add-generic-password` without `-U` fails with 45 and the first
-value stays); a guard
-in `test-support.ts` fails any `security` call that does not name it and any real `launchctl` call. `deploy` and
-`rollback` refuse reserved settings before their host does anything, and `service install|start` before launchctl runs
-(`cli.test.ts`, without a cluster). No test touches the
-login keychain, `~/Library`, the user's launchd domain or the network (only loopback servers the tests start).
+read-only trees without following links; `bin` runs a copy of `bin/circle-hub` against stub CLI modules. `file-key`
+checks private, separate key files that read exact bytes and are never replaced, refuses insecure permissions, symbolic
+links and a substituted FIFO (without blocking), reports an interrupted write, removes concurrently without hiding other
+failures, and checks that `keyStoreFor` uses the same files on `darwin` and `linux` without running any command;
+`key-transfer` moves a key between two key files through a pipe only, `service` resolves `hubKeyProvider` and
+`deploymentKeyNames` from the settings or the defaults, and `cli` runs `key init|status` and the `--set-aside-vault`
+recovery on key files. A guard in `test-support.ts` fails any `security`, `launchctl` or `systemctl` call that a test
+does not answer itself. `deploy` and `rollback` refuse reserved settings before their host does anything, and
+`service install|start` before launchctl runs (`cli.test.ts`, without a cluster). No test touches the owner's data root
+or keys, `~/Library`, the user's launchd domain or the network (only loopback servers the tests start).
 `environment.test.ts` reads hub/config's public `HUB_ENVIRONMENT` (test only) to keep the platform's copy of the names
-equal, and checks that its descriptions of the keychain names say what the platform does (both items under one service,
-the account the vault master key may not use).
+equal, and checks that the retired keychain names refuse to start, saying where the keys are now.
 
 ## Deviations from the brief
 
@@ -481,25 +476,10 @@ the account the vault master key may not use).
   (`platformEnvironment`); `serve --migrate-only` migrates as the operating-system account's role and grants
   `CIRCLE_HUB_DATABASE_USER`; `serve` calls `ensureHubDatabase` and builds the vault with `hubKeyProvider`; `GET /healthz`
   answers `{"status":"ok","release":…}`.
-- **server assembly** (`hub/server/assemble/operator-token.ts`, `cli-admin.ts` and their tests): what its README asked of
-  this package is here; adopting it is the assembly's change. (1) `deploymentKeychainNames(env)` replaces
-  `deploymentKeychainService(env, fallback)`: `.operatorToken` is `{ service, account: 'operator-token', item }`, from the
-  same settings, variables and defaults as the vault master key (the fallback argument goes away). Unlike
-  `deploymentKeychainService`, it refuses an unset or empty `CIRCLE_HUB_DATA_DIR` (decision 4); every assembly caller
-  loads the configuration first, which requires it. (2) `keychainStore({ ...operatorToken }).write(tokenBytes(token))`
-  replaces the `security -i` write in `keychainOperatorTokens` (the input line is the same,
-  `add-generic-password -s … -a … -w <hex>[ "<keychain>"]`), and with it `runTool` and `securityEnvironment`; a test that
-  manages a throwaway keychain can use the exported `runCommand`. (3) Without `item`, a store names "操作令牌" only on
-  the account `operator-token`; on any other account (`keychainOperatorTokens` takes an `account` option) it says the
-  neutral "钥匙串项" without advice, never the vault master key or `key init`. `aboutToken` replaces 保险库主密钥, which
-  no platform message says any more, so it changes nothing; it can go together with passing `item: OPERATOR_TOKEN_ITEM`
-  (or spreading `deploymentKeychainNames(env).operatorToken`), which names the operator token on every account. (4)
-  `OPERATOR_TOKEN_ACCOUNT` is exported; `operator-token.ts` repeats the value. `toolEnvironment` is not exported: once
-  `runTool` goes, nothing in the assembly sets a child's environment (`runCommand` defaults to it). (5) The vault master
-  key is now "密钥库主密钥" in every platform message, so `assemble.test.ts:133` and `:156` (`/没有保险库主密钥/`) fail
-  and should match `没有密钥库主密钥`; `cli-admin.test.ts:460` and `:466` (`doesNotMatch(/保险库主密钥/)`) now pass
-  whatever happens and should say `/密钥库主密钥/` to keep guarding; the comment at `operator-token.test.ts:105` (the
-  platform's message and `key init` advice "are the vault key's") no longer holds.
+- **server assembly** (`hub/server/assemble/operator-token.ts`, `cli-admin.ts` and their tests): the earlier list of
+  keychain needs is superseded by decision 137 (2026-11-03): the operator token is `fileOperatorTokens` over this
+  package's `fileKeyStore` on every platform, `deploymentKeyService(env)` resolves its service as `deploymentKeyNames`
+  does, and `keychainOperatorTokens`, `runTool` and the `security -i` write are gone.
 - **records (hub/config, hub/records)**: (1) and (2) of the earlier list are done (the keychain default is
   `vault-master-key` on both sides; `CIRCLE_HUB_LIBPQ_BIN` is tolerated). (3) The retired-name guard and
   the list of names exist twice (`hub/config/{retired,names}.ts` and `hub/platform/environment.ts`, which may import only
@@ -520,27 +500,25 @@ the account the vault master key may not use).
   (decision 3), and the `ownership` test keeps its rule equal to `grantRuntime`'s. (8) The server's database pool
   (`hub/records/db.ts`, `createPool`) sets `options` and `client_encoding` but not `sslnegotiation` or `replication`, so
   a hand-run `serve` still takes `PGSSLNEGOTIATION` and `PGREPLICATION` from the shell (both broke every connection
-  here; see `sessionConfig` in `sql.ts`). (9) hub/config accepts keychain names of 1 to 100 characters
-  (`KEYCHAIN_NAME` in `index.ts`), the platform 1 to 64 (`KeychainName`, also the settings schema), so a
-  `CIRCLE_HUB_KEYCHAIN_SERVICE` of 65 to 100 characters passes `loadConfig` and is then refused by
-  `deploymentKeychainNames`; one rule would refuse it at start. (10) `loadConfig` (`index.ts`, not this package's: it
-  owns `hub/config` names only) accepts `CIRCLE_HUB_KEYCHAIN_ACCOUNT=operator-token`, which `hubKeyProvider` then refuses
-  at the first key use; refusing it there would stop `serve` at configuration. The descriptions in `names.ts` now say that
-  the service holds both items and that this account is reserved. The wording is aligned: the platform says
-  密钥库主密钥 too (the assembly's tests, see above).
+  here; see `sessionConfig` in `sql.ts`). (9) and (10), about the keychain names hub/config read,
+  are resolved by decision 137: hub/config no longer reads `CIRCLE_HUB_KEYCHAIN_SERVICE` or `_ACCOUNT` and refuses to
+  start when either is set (`RETIRED_NAMES`), and the key names come only from the deployment settings (`KeyName`, 1 to
+  64 characters) or the defaults. The wording is aligned: the platform says 密钥库主密钥 too.
 - **integrator**: add `"verify:postgres": "node scripts/verify-postgres.ts"` to `package.json` (CI's acceptance job calls
   it).
 - **acceptance**: check that every key of `serviceEnvironment(...)` is accepted by hub/config's `loadConfig`.
 
 ### Recovering after irreversible key loss
 
-Stop the service. Prefer restoring the original keychain items: a new key cannot decrypt the existing vault.
+Stop the service. Prefer restoring the original key file (`circle-hub key export --confirm | circle-hub key import` from
+wherever it still is): a new key cannot decrypt the existing vault.
 If the original master key cannot be recovered, run `circle-hub key init --set-aside-vault` after stopping the service. It takes the platform lock, refuses a loaded service, an occupied configured port or an existing key, moves only `vault/` to a unique `set-aside/<timestamp>-key-loss/vault`, recreates an empty 0700 vault and initializes the key. The database and objects stay in place and old sealed files remain in the archive. Then run
-`circle-hub operator-token reissue` (only when the operator token item is also missing), then
+`circle-hub operator-token reissue` (only when the operator token file is also missing), then
 `circle-hub secret import --env-file <file> --key <KEY>=<NAME>… --reason <note>` to reimport the named credentials,
-and start the service. Without `--set-aside-vault`, `key init` refuses a nonempty vault before any keychain operation. Resource definitions remain
+and start the service. Without `--set-aside-vault`, `key init` refuses a nonempty vault before any key file is written. Resource definitions remain
 in the database and `resource list` still works without the vault key. The platform rehearsal covers keys and backup;
-the server assembly's synthetic file-key and temporary-keychain tests cover reimport and a fresh login.
+the server assembly's two key-loss tests (a records file key, and the platform's key files) cover reimport and a fresh
+login.
 
 Before starting after a backup restore, inspect `secret list` and the latest setting time of every named secret. If its issuer rotated or revoked it after that restore point, run `secret set --name <NAME> --reason <note>` or `secret unset --name <NAME> --reason <note>` before starting. Replacing the vault key does not restore encrypted entries; a registered version with no entry remains unavailable until a new named import.
 
@@ -552,18 +530,18 @@ the destination to prove the source is independent. `deploy-system.test.ts` alre
 the pre-deploy database snapshot and the previous `current` release are restored, including removal of the failed
 migration's mark. Its launchctl and npm boundaries are simulated.
 
-The `synthetic keychain loss` case in `../server/assemble/cli-admin.test.ts` uses an in-memory security protocol and a
-real temporary platform-managed database. It loses both items, runs service stop, `key init --set-aside-vault`,
+The `platform key file loss` case in `../server/assemble/cli-admin.test.ts` uses the platform's key files and a real
+temporary platform-managed database. It loses both key files, runs service stop, `key init --set-aside-vault`,
 `operator-token reissue` and `secret import`, verifies a fresh connector login, and starts the actual Hub on a temporary
 loopback port with health 200. This recreates named credentials under a new key; it does not decrypt the archived vault
-or recover the lost original key. `rehearse.test.ts` also exercises the rehearsal with a synthetic security executable
-and in-memory items. No installed security tool is executed by either new case.
+or recover the lost original key. `rehearse.test.ts` also runs the rehearsal with a recording runner and checks that no
+`security`, `launchctl` or `systemctl` call was made.
 
 For a run that must not reach host state, preload `testing/synthetic-only.ts`. It rejects host security/launchctl calls,
-port 7420 and common filesystem access to the default persistent data root, host keychains and LaunchAgents. It also
-suppresses user libpq password/service configuration for platform subprocesses. This is a test tripwire, not an OS
-sandbox; the isolated fixtures and the explicit omission of real-keychain cases remain necessary. Keep the existing
-real temporary-keychain integration tests, but do not count them as passed when they are omitted under this policy.
+port 7420 and common filesystem access to the default persistent data root, host keychains and LaunchAgents (the Hub no
+longer uses the keychain, so any security call is unexpected; the tripwire stays so that no verification can reach the
+owner's credential stores). It also suppresses user libpq password/service configuration for platform subprocesses. This
+is a test tripwire, not an OS sandbox; the isolated fixtures remain necessary.
 
 The launchd plist tests prove RunAtLoad/KeepAlive declarations and simulated service commands, not a machine reboot.
 Actual reboot recovery requires an operator observation. This branch records no new observation of a persistent service.
@@ -652,7 +630,7 @@ unit, acceptance, Linux, real-key or migration validation is claimed for this sy
 32+1-byte overflow, short/oversized input, delayed and absent output callbacks, broken pipes, input timeout, raw binary child
 pipes, argv/environment/temp-file disclosure checks, empty/missing/corrupt vaults and read-only verification.
 
-Linux keychainFor now selects the merged fileKeyStore. End-to-end Linux server assembly must still be verified against that
+Linux keychainFor now selects the merged fileKeyStore (since decision 137 every platform does, through `keyStoreFor`). End-to-end Linux server assembly must still be verified against that
 same store (including the actual service user and data root); a successful key import alone does not establish runtime vault
 wiring. Real migration decryption requires the explicit vault verification on the restored ciphertext with the imported key.
 No real keys, environment files, credential stores or business systems were accessed. Independent review and all execution
@@ -671,7 +649,7 @@ and missing callbacks, EPIPE and unknown destination state. No full suite, accep
 Earlier targeted evidence: the 7 file-key tests and 12 vault tests passed; the initial 6-file run totaled 67 passed and 1 failed
 because the old assertion did not account for the new existing-key preflight. That assertion was corrected to compare the
 call count immediately before/after refused transport; its test now passes in the final 6-test command above.
-Static wiring is aligned: Linux keychainFor selects fileKeyStore and hubKeyProvider selects fileKeyProvider using the same
+Static wiring is aligned (since decision 137 on every platform, `keyStoreFor`): Linux keychainFor selects fileKeyStore and hubKeyProvider selects fileKeyProvider using the same
 resolved deployment root and vault key names. Actual service-user production execution remains unverified. The owner canceled
 backup/rehearsal work; the integrator performs the final authorized real pipe. No agent accessed real keys or target systems.
 

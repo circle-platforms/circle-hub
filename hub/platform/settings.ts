@@ -9,7 +9,7 @@ import { EnvironmentSchema, labelOf, type Environment } from '../../contracts/ge
 import { PLATFORM_VARIABLES, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
 import { writeFileExclusive } from './files.ts';
-import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM } from './keychain-items.ts';
+import { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, KeyName, OPERATOR_TOKEN_ACCOUNT, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM } from './file-key.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import { isIP } from 'node:net';
 import type { Layout } from './layout.ts';
@@ -18,13 +18,7 @@ export const SETTINGS_SCHEMA = 'circle-hub-platform@2';
 /** Earlier format without database names; read with the defaults it implied. */
 const SETTINGS_SCHEMA_V1 = 'circle-hub-platform@1';
 export const DEFAULT_PORT = 7420;
-export const DEFAULT_KEYCHAIN_SERVICE = 'circle-hub';
-export const DEFAULT_KEYCHAIN_ACCOUNT = 'vault-master-key';
-/**
- * Keychain account of the operator token item, beside the vault master key under the deployment's keychain service.
- * Reserved: the vault master key may not use it, or the two would be one keychain item.
- */
-export const OPERATOR_TOKEN_ACCOUNT = 'operator-token';
+export { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, KeyName, OPERATOR_TOKEN_ACCOUNT } from './file-key.ts';
 export const DEFAULT_BACKUPS_KEEP = 14;
 export const DATABASE_NAME = 'circle_hub';
 /**
@@ -37,7 +31,6 @@ export const DATABASE_PORT = 5432;
 export const SERVICE_LABEL = 'io.github.circle-platforms.circle-hub';
 
 const Port = z.number().int().min(1024).max(65535);
-export const KeychainName = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/);
 /** Same rule as hub/config for database and role names. */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$-]{0,62}$/;
 const Identifier = z.string().regex(IDENTIFIER);
@@ -84,8 +77,10 @@ export const PlatformSettingsFile = z
     proxy_peer: z.string().optional(),
     https_host: z.string().optional().describe('listen address of the built-in HTTPS; loopback when left out'),
     https_port: Port.optional().describe('the built-in HTTPS listens only when this is set'),
-    keychain_service: KeychainName,
-    keychain_account: KeychainName,
+    // The names of the deployment's key files (file-key.ts). They keep the names of the format, which predates decision
+    // 137: an applied settings format does not change, and a release rolled back to reads the same file.
+    keychain_service: KeyName,
+    keychain_account: KeyName,
     database: DatabaseSettings,
     backups_keep: z.number().int().min(1).max(365),
     node: z.string().startsWith('/').optional().describe('absolute path of the Node 24 binary the service runs'),
@@ -115,8 +110,8 @@ const PlatformSettingsFileV1 = z
     schema: z.literal(SETTINGS_SCHEMA_V1),
     environment: EnvironmentSchema,
     port: Port,
-    keychain_service: KeychainName,
-    keychain_account: KeychainName,
+    keychain_service: KeyName,
+    keychain_account: KeyName,
     backups_keep: z.number().int().min(1).max(365),
     node: z.string().startsWith('/').optional(),
   })
@@ -140,8 +135,10 @@ export interface PlatformSettings {
   proxyPeer?: string;
   /** The built-in HTTPS listener; absent when HTTPS is off. */
   https?: { host: string; port: number };
-  keychainService: string;
-  keychainAccount: string;
+  /** The key service of the deployment's key files (settings field keychain_service). */
+  keyService: string;
+  /** The vault master key's account (settings field keychain_account); the operator token's is OPERATOR_TOKEN_ACCOUNT. */
+  keyAccount: string;
   database: DatabaseNames;
   backupsKeep: number;
   node?: string;
@@ -161,8 +158,8 @@ export function newSettingsFile(input: {
   proxyPeer?: string;
   httpsHost?: string;
   httpsPort?: number;
-  keychainService?: string;
-  keychainAccount?: string;
+  keyService?: string;
+  keyAccount?: string;
   backupsKeep?: number;
   database?: Partial<DatabaseNames>;
 }): PlatformSettingsFile {
@@ -176,8 +173,8 @@ export function newSettingsFile(input: {
     ...(input.proxyPeer ? { proxy_peer: input.proxyPeer } : {}),
     ...(input.httpsHost ? { https_host: input.httpsHost } : {}),
     ...(input.httpsPort !== undefined ? { https_port: input.httpsPort } : {}),
-    keychain_service: input.keychainService ?? DEFAULT_KEYCHAIN_SERVICE,
-    keychain_account: input.keychainAccount ?? DEFAULT_KEYCHAIN_ACCOUNT,
+    keychain_service: input.keyService ?? DEFAULT_KEY_SERVICE,
+    keychain_account: input.keyAccount ?? DEFAULT_KEY_ACCOUNT,
     database: {
       name: input.database?.name ?? DATABASE_NAME,
       role: input.database?.role ?? APPLICATION_ROLE,
@@ -186,7 +183,7 @@ export function newSettingsFile(input: {
     backups_keep: input.backupsKeep ?? DEFAULT_BACKUPS_KEEP,
   });
   if (!parsed.success) {
-    throw new PlatformError(`部署设置的取值不对（字段：${parsed.error.issues.map((issue) => issue.path.join('.') || '(根)').join('、')}）`, `钥匙串名只能含字母、数字、点、下划线和连字符；数据库名是字母或下划线开头的标识符；${APPLICATION_ROLE_RULE}`);
+    throw new PlatformError(`部署设置的取值不对（字段：${parsed.error.issues.map((issue) => issue.path.join('.') || '(根)').join('、')}）`, `密钥名只能含字母、数字、点、下划线和连字符；数据库名是字母或下划线开头的标识符；${APPLICATION_ROLE_RULE}`);
   }
   if (!APPLICATION_ROLE_NAME.test(parsed.data.database.role)) {
     throw new PlatformError(`部署设置的取值不对（字段：database.role）：${parsed.data.database.role}`, APPLICATION_ROLE_RULE);
@@ -194,7 +191,7 @@ export function newSettingsFile(input: {
   if (parsed.data.keychain_account === OPERATOR_TOKEN_ACCOUNT) {
     throw new PlatformError(
       `部署设置的取值不对（字段：keychain_account）：账户 ${OPERATOR_TOKEN_ACCOUNT} 留给${OPERATOR_TOKEN_ITEM.label}，${VAULT_KEY_ITEM.label}不能用它`,
-      `给 ${PLATFORM_VARIABLES.keychainAccount} 另选一个名字，或不设它（默认 ${DEFAULT_KEYCHAIN_ACCOUNT}）`,
+      `另选一个名字，或用默认的 ${DEFAULT_KEY_ACCOUNT}`,
     );
   }
   return parsed.data;
@@ -271,8 +268,7 @@ function checkDatabaseLocation(layout: Layout | undefined, env: NodeJS.ProcessEn
 
 /**
  * The settings of `file`. Every CIRCLE_HUB_* variable that names one of them must agree with the file; one that
- * disagrees is refused with its name, so a stray shell variable can never point a command at another port, database
- * or keychain item. With `layout`, the socket directory variable must be that data root's.
+ * disagrees is refused with its name, so a stray shell variable can never point a command at another port or database. With `layout`, the socket directory variable must be that data root's.
  */
 export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessEnv = process.env, layout?: Layout): PlatformSettings {
   const database: DatabaseNames = { port: file.database.socket_port, name: file.database.name, role: file.database.role };
@@ -288,8 +284,6 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
   agree(PLATFORM_VARIABLES.proxyPeer, file.proxy_peer ?? '');
   agree(PLATFORM_VARIABLES.httpsPort, file.https_port === undefined ? '' : String(file.https_port));
   agree(PLATFORM_VARIABLES.httpsHost, file.https_port === undefined ? '' : file.https_host ?? '127.0.0.1');
-  agree(PLATFORM_VARIABLES.keychainService, file.keychain_service);
-  agree(PLATFORM_VARIABLES.keychainAccount, file.keychain_account);
   agree(PLATFORM_VARIABLES.databaseName, database.name);
   agree(PLATFORM_VARIABLES.databaseUser, database.role);
   agree(PLATFORM_VARIABLES.databasePort, String(database.port));
@@ -308,8 +302,8 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
     ...(file.proxy_origin ? { proxyOrigin: file.proxy_origin } : {}),
     ...(file.proxy_peer ? { proxyPeer: file.proxy_peer } : {}),
     ...(file.https_port !== undefined ? { https: { host: file.https_host ?? '127.0.0.1', port: file.https_port } } : {}),
-    keychainService: file.keychain_service,
-    keychainAccount: file.keychain_account,
+    keyService: file.keychain_service,
+    keyAccount: file.keychain_account,
     database,
     backupsKeep: file.backups_keep,
     ...(file.node ? { node: file.node } : {}),

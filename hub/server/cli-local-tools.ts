@@ -1,4 +1,4 @@
-// Local client commands: no database, keychain, MCP, or execution of downloaded code.
+// Local client commands: no database, key files, MCP, or execution of downloaded code.
 import { request as httpRequest, Agent as HttpAgent, type IncomingMessage } from 'node:http';
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises';

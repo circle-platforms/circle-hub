@@ -392,7 +392,7 @@ describe('deploy flow', () => {
     try {
       const layout = layoutAt(root);
       await ensureLayout(layout);
-      // Edited by hand, or written by an earlier platform version's init with CIRCLE_HUB_KEYCHAIN_ACCOUNT=operator-token:
+      // Edited by hand, or written by an earlier platform version's init with the retired CIRCLE_HUB_KEYCHAIN_ACCOUNT:
       // serve refuses it, so a deploy could only fail after the service stopped, and a rollback after the data moved.
       await writeFile(settingsPath(layout), JSON.stringify({ ...newSettingsFile({ environment: 'test' }), keychain_account: OPERATOR_TOKEN_ACCOUNT }));
       const { runner, calls } = recordingRunner(() => undefined, { real: false });
@@ -407,8 +407,8 @@ describe('deploy flow', () => {
         [rollingBack, () => rollback(context, rollingBack)],
       ] as const) {
         await assert.rejects(operation(), (error: unknown) => {
-          assert.equal((error as Error).message, `部署设置（${settingsPath(layout)}）里密钥库主密钥的钥匙串账户是 operator-token：这个账户留给操作令牌，两者会成为同一个钥匙串项，不执行`);
-          assert.match(hintOf(error), /^把部署设置里的 keychain_account 改成另一个名字（例如 vault-master-key）/);
+          assert.equal((error as Error).message, `部署设置（${settingsPath(layout)}）里密钥库主密钥的密钥账户是 operator-token：这个账户留给操作令牌，两者会成为同一个密钥文件，不执行`);
+          assert.match(hintOf(error), /^把部署设置里的 keychain_account 改回 circle-hub init 写下的名字（默认 vault-master-key）/);
           return true;
         });
         assert.deepEqual(host.calls, [], 'the host was never asked to do anything');

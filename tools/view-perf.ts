@@ -1,4 +1,4 @@
-// Synthetic, reproducible cold-process view benchmark. No deployment, environment files or keychain.
+// Synthetic, reproducible cold-process view benchmark. No deployment, environment files or key files.
 // Usage: node tools/view-perf.ts /tmp/view-perf-run [--unplaced] [--profile] [--budget]
 // --pressure is a diagnostic collection experiment only; it is not used by runtime code or budget acceptance.
 import assert from 'node:assert/strict';

@@ -8,9 +8,10 @@
 # against the SHA-256 list of the GitHub release, and sets the Hub up with its own commands: init (HTTP on loopback, HTTPS
 # on the given address), key init, tls init, deploy --bundle, and init-admin with a password on stdin when no admin exists. The first
 # administrator supplies a username and an optional password. Run again to upgrade: deploy backs up, migrates and
-# rolls back on failure. macOS: the current user, a LaunchAgent and the login keychain. Linux: a dedicated `circle-hub`
-# account with its systemd user service (lingering), bubblewrap and the Hub's AppArmor policy for the pack sandbox;
-# root (sudo) is needed for those steps only. Nothing else on the machine is changed.
+# rolls back on failure. macOS: the current user and a LaunchAgent. Linux: a dedicated `circle-hub` account with its
+# systemd user service (lingering), bubblewrap and the Hub's AppArmor policy for the pack sandbox; root (sudo) is needed
+# for those steps only. On both, the vault master key and the operator token are private files under the data root's keys
+# directory (decision 137: no keychain). Nothing else on the machine is changed.
 set -euo pipefail
 set +x
 

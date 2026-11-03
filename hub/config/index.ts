@@ -4,8 +4,8 @@ import { HUB_ENVIRONMENT, HUB_PREFIX, isHubEnvironmentName, isPlatformOnlyName }
 import { assertNoRetiredEnvironment } from './retired.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 
-export { HUB_ENVIRONMENT, HUB_PREFIX, PLATFORM_ONLY_ENVIRONMENT, RETIRED_PREFIX, isHubEnvironmentName, isPlatformOnlyName } from './names.ts';
-export type { HubEnvironmentName, PlatformOnlyName } from './names.ts';
+export { HUB_ENVIRONMENT, HUB_PREFIX, PLATFORM_ONLY_ENVIRONMENT, RETIRED_NAMES, RETIRED_PREFIX, isHubEnvironmentName, isPlatformOnlyName, isRetiredName } from './names.ts';
+export type { HubEnvironmentName, PlatformOnlyName, RetiredName } from './names.ts';
 export { HubEnvironmentError, assertNoRetiredEnvironment, retiredEnvironmentKeys } from './retired.ts';
 
 export interface DatabaseConfig {
@@ -47,7 +47,6 @@ export interface HubConfig {
   /** The Hub's own HTTPS listener (its certificate and key are in <dataDir>/tls); absent when HTTPS is off. */
   https?: { host: string; port: number };
   database: DatabaseConfig;
-  keychain: { service: string; account: string };
   limits: Limits;
 }
 
@@ -78,12 +77,14 @@ const REQUEST_MAX = 512 * MIB;
 /** macOS sun_path holds 104 bytes including the terminating NUL. */
 const SOCKET_PATH_MAX = 103;
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$-]{0,62}$/;
-const KEYCHAIN_NAME = /^[A-Za-z0-9._-]{1,100}$/;
 const SECRET_LIKE = /PASSWORD|PASSWD|SECRET|TOKEN|CREDENTIAL|PRIVATE|API_KEY/;
 
-export const DEFAULT_KEYCHAIN_SERVICE = 'circle-hub';
-/** The keychain account of the vault master key; the platform package and the brief use the same name. */
-export const DEFAULT_KEYCHAIN_ACCOUNT = 'vault-master-key';
+/**
+ * The key names of a data root without deployment settings (a development root): they name its key files, the vault
+ * master key's and, beside it under the same service, the operator token's. The platform package uses the same names.
+ */
+export const DEFAULT_KEY_SERVICE = 'circle-hub';
+export const DEFAULT_KEY_ACCOUNT = 'vault-master-key';
 
 export class HubConfigError extends Error {
   readonly problems: readonly string[];
@@ -210,11 +211,6 @@ export function loadConfig(
   const database = named('CIRCLE_HUB_DATABASE_NAME', 'circle_hub', IDENTIFIER);
   const user = named('CIRCLE_HUB_DATABASE_USER', 'circle_hub', IDENTIFIER);
 
-  const keychain = {
-    service: named('CIRCLE_HUB_KEYCHAIN_SERVICE', DEFAULT_KEYCHAIN_SERVICE, KEYCHAIN_NAME),
-    account: named('CIRCLE_HUB_KEYCHAIN_ACCOUNT', DEFAULT_KEYCHAIN_ACCOUNT, KEYCHAIN_NAME),
-  };
-
   const syncRequestsPerMinute=integer('CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE',DEFAULT_LIMITS.syncRequestsPerMinute,1,10000)??DEFAULT_LIMITS.syncRequestsPerMinute;
   const maxSyncBatchBytes=integer('CIRCLE_HUB_SYNC_MAX_BATCH_BYTES',DEFAULT_LIMITS.maxSyncBatchBytes,1024,64*MIB)??DEFAULT_LIMITS.maxSyncBatchBytes;
   const maxUploadBytes = integer('CIRCLE_HUB_MAX_UPLOAD_BYTES', DEFAULT_LIMITS.maxUploadBytes, ...UPLOAD_RANGE) ?? DEFAULT_LIMITS.maxUploadBytes;
@@ -244,7 +240,6 @@ export function loadConfig(
     port,
     ...(https ? { https } : {}),
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
-    keychain,
     limits: { syncRequestsPerMinute,maxSyncBatchBytes,maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes,maxMemorySpaceDocuments },
   };
 }

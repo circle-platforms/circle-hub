@@ -593,7 +593,7 @@ test('administrator knowledge view and original export operate against the synth
   const options={token:bed.hub.admin.token,product:bed.product.line,build:bed.site.RELEASED,out:join(dir,'out')};
   const context=(token:string,stdout:string[]):CliContext=>({
     io:{cwd:dir,stdout:s=>stdout.push(s),stderr:()=>{},env:{CIRCLE_HUB_TOKEN:token}},
-    config:()=>({...kit.config,database:db,dataDir:kit.dataDir,logDir:join(kit.dataDir,'logs'),host:'127.0.0.1',port:0,keychain:{service:'synthetic',account:'synthetic'}}),
+    config:()=>({...kit.config,database:db,dataDir:kit.dataDir,logDir:join(kit.dataDir,'logs'),host:'127.0.0.1',port:0}),
     records:async()=>kit,deps:async()=>{throw new Error('unused');},actingAdmin:async()=>bed.hub.admin.principal,
   });
   const commands=adminCommands();
