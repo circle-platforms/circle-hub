@@ -182,3 +182,14 @@ test('batched record pages, counts and entry headers read logical personal paylo
  const fresh=await store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{space:owner.id,at,text:'synthetic-fresh'},index:[{key:query.key,value:query.value}]});
  assert.deepEqual((await store.findBatch!([query]))[0].items.map(r=>r.digest),[team.digest,fresh.digest]);
 });
+
+test('space header filtering does not hide a missing active personal payload as an empty candidate set',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {user:owner}=await kit.principals.bootstrapAdmin('synthetic-missing-payload');
+ const row=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{space:owner.id,at:'2026-11-03T02:00:00.000Z',text:'synthetic missing active body'}});
+ const {Database,createPool}=await import('./db.ts');const db=new Database(createPool(kit.database));t.after(()=>db.end());await db.query('DELETE FROM personal_payloads WHERE owner=$1',[owner.id]);
+ const query={digests:[row.digest],spaces:[owner.id],reader:owner.id,offset:0,limit:1};
+ await assert.rejects(kit.store.get(row.digest),IntegrityError);
+ await assert.rejects(kit.store.entryCandidates!(query),IntegrityError);
+ const epoch=(await kit.personalPayloads!.scope(owner.id)).epoch;await kit.personalPayloads!.purge(owner,epoch);
+ assert.deepEqual(await kit.store.entryCandidates!(query),{items:[],total:0},'a completed purge, unlike lost active bytes, is ordinary absence');
+});

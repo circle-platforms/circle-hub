@@ -227,7 +227,10 @@ export class PgRecordStore implements RecordStore {
     const result=await this.#db.query<{items:{index:number;at:string}[];total:string;legacy:string[]}>(`WITH headers AS MATERIALIZED (
       SELECT (wanted.n-1)::int AS n,r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
       FROM unnest($1::text[], $4::text[]) WITH ORDINALITY AS wanted(digest,space,n) JOIN hub_read_records() r ON r.digest=wanted.digest
-      WHERE r.kind='knowledge_space_entry' AND (wanted.space IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=wanted.space)
+      WHERE r.kind='knowledge_space_entry' AND (wanted.space IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=wanted.space
+        OR (replace(r.body,'\\u0000','\\uFFFD')::json->>'owner'=wanted.space
+          AND replace(r.body,'\\u0000','\\uFFFD')::json->>'record'=r.digest
+          AND replace(r.body,'\\u0000','\\uFFFD')::json->>'personal_payload' IS NOT NULL))
         AND ($5::text IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=$5 OR replace(r.body,'\\u0000','\\uFFFD')::json->>'sync_private' IS DISTINCT FROM 'true')
     ), selected AS (SELECT n,at FROM headers ORDER BY at COLLATE "C" DESC NULLS FIRST,n OFFSET $2 LIMIT $3)
     SELECT (SELECT count(*) FROM headers)::text AS total,
@@ -235,6 +238,7 @@ export class PgRecordStore implements RecordStore {
       ARRAY(SELECT digest FROM headers WHERE at IS NULL) AS legacy`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit,query.spaces??query.digests.map(()=>null),query.reader??null],tx);
     const row=result.rows[0];
     if(row.legacy.length){
+      // An active capsule without its body must reach verified hydration and fail integrity, never look like empty space.
       const times=await this.entryTimes(query.digests,tx);
       const bodies=query.spaces||query.reader?await this.getMany<{space:string;sync_private?:boolean}>(query.digests,tx):null;
       const ordered=query.digests.flatMap((digest,index)=>times.has(digest)&&(!query.spaces||bodies?.get(digest)?.body.space===query.spaces[index])&&(!query.reader||bodies?.get(digest)?.body.space===query.reader||!bodies?.get(digest)?.body.sync_private)?[{index,at:times.get(digest)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
