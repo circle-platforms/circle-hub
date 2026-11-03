@@ -12,6 +12,16 @@
       "many": false
     },
     {
+      "slot": "defect_list",
+      "role": "subject",
+      "description": "按条件列出的缺陷：PLM 查询服务的缺陷列表（plm:bug-list:<条件>，条件写成 名=值，多个用 & 连接，值做 URI 编码；名取 product、status、severity、assignedTo、openedBy、lastEditedDate_start、lastEditedDate_end，每个最多一次，至少一个；例如经办人是 alice 的激活缺陷写 plm:bug-list:assignedTo=alice&status=active）。列表接口不分页，回答带过滤条件和行数；空列表只说明读取时刻按这些条件没有匹配",
+      "accepts": [
+        "plm:bug-list"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
       "slot": "story",
       "role": "subject",
       "description": "需求详情：PLM 查询服务的需求记录（plm:story:<编号>）",

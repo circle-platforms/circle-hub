@@ -9,12 +9,12 @@
   - 通用技能包：解释工件格式的能力，可安装，不随 Hub 发布；
   - 按编号读平台原件、在任意工作里单独核对，都是通用技能包，不是核心缺口。
 - `docs/hub-r5-brief.md` 工作项 A5（负责人：agy）：
-  - 通用技能包 source-read：每个系统路由一个输入（缺陷、需求、构建、脑图、构建页、手册文件、SVN 文件），零要求项，start_run 返回原件引用、投影、版本绑定、矛盾计数；
+  - 通用技能包 source-read：每个系统路由一个输入（缺陷、需求、构建、脑图、构建页、手册文件、SVN 文件），零要求项，目标是提供原件引用、投影、版本绑定、矛盾计数；当前投影可能异步，不能把零要求项当成投影完成；
   - 不改核心。
 
 ## 契约与文件结构
 
-- `workflow.json`：声明 7 个可选输入槽位（`defect`、`story`、`build`、`mindmap`、`build_page`、`manual_file`、`svn_file`），不绑定产品线（`product: { catalogs: [] }`），投影指向 `functions/project.ts`；
+- `workflow.json`：声明 8 个可选输入槽位（`defect`、`defect_list`、`story`、`build`、`mindmap`、`build_page`、`manual_file`、`svn_file`），不绑定产品线（`product: { catalogs: [] }`），投影指向 `functions/project.ts`；
 - `requirements.json`：零要求项（`requirements: []`）；
 - `checks.json`：零检查项（`checks: []`）；
 - `slots.schema.json`：空槽位模式；
@@ -24,6 +24,12 @@
 ## 限制与规矩
 
 1. 纯只读访问：通过系统包连接器读取外部原件，Hub 不发任何写请求；
-2. 零要求项生产运行：运行为只读事实型（生产运行），Hub 在 `start_run` 时直接完成原件抓取与校验，不需要模型后续 `submit_result`；
+2. 零要求项生产运行：Hub 在 `start_run` 时抓取原件，不需要模型后续 `submit_result`；喂入投影可能继续在后台执行，须按回执披露进行中或缺失事实，不以零要求项推断投影完成；
 3. 合成数据：测试只使用合成数据（产品 Meridian、lumen-api，地址 192.0.2.0/24），不连接真实设备或外部平台；
 4. 改动重签：修改包内声明文件后必须运行 `node packs/workflow/source-read/pack-files.ts --write` 重新计算散列并写入 `pack.json`。
+
+同一来源相同的 `feeding_pending` 文案可能去重，不能将文案里的数字相加当成受影响步骤总数；需要计数时以逐条可读记录为准。
+
+## 合线（0.1.5，2026-11-04）
+
+私有集成线在本包上另发了 0.1.2–0.1.4，main 当时是 0.1.1，同号的版本字节不同。本版把集成线的改动带进 main，main 已有的修正保留，版本号高于两边已发布的版本。带进来的改动：读不到时分清没有和没有权限；按白名单过滤条件一次只读 GET 列出 PLM 缺陷，并写明条数和列表不能证明什么；中文里 bed 改称自动化测试环境（决定 110）；按根保留的喂入视图。
