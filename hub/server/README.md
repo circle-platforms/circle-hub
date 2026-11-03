@@ -855,8 +855,8 @@ hub/platform's peer map). When the owner and the runtime role are the same, it m
 - The run page shows each submission up to 256 Ki characters; the rest stays in its record.
 
 - **Circle 技能主目录的边界**（`scripts/real/circle-home.ts --profile skills`）：glob 守卫在执行前核对路径；判定与实际 glob 之间仍有时间窗口，只有能够创建软链接或改名目录的进程才能利用它。这个主目录的信任前提是：只安装集成者按包清单摘要核过、并通过下述检查的技能代码。模型的直接写文件、改名工具均被拒；execute 仅放行这些已安装脚本的路径和限定参数，不是通用命令入口。脚本的摘要核对及安装由集成者负责。
-  安装前须对发布目录运行 `node scripts/real/skill-script-safety.ts <发布目录>…` 的清单扫描；它核对原始文件摘要，覆盖脚本、辅助模块和内联技能钩子，拒绝建链接、目录改名、保留链接的复制，以及无法静态核对的代码入口。`scripts/real/skill-script-safety.test.ts` 测试这个门禁。新增调用须由集成者显式复核；登记绑定文件路径、具体调用及整个所在方法的源码片段摘要，片段变化即失效，不按函数名整体放行。
-  Jev 的普通临时文件原子替换由集成者在 2026-10-24 单独复核：它不能创建软链接，目标是目录时 rename 失败。外部进程不在这个专用主目录的威胁模型里。仓库测试自动发现包清单中带客户端 tools 的包，并扫描清单里的全部脚本和辅助模块、内联技能钩子；必须包含 case-compile 的客户端工具和 Jev 所在的 knowledge-contribution 包，缺包或空覆盖都会失败。每条调用点登记也必须在扫描范围内恰好用到一次。运行 `node --test --test-concurrency=1 scripts/real/circle-home.test.ts scripts/real/skill-script-safety.test.ts` 核对这条边界。
+  安装前须对发布目录运行 `node scripts/real/skill-script-safety.ts <发布目录>…` 的清单扫描；它核对原始文件摘要，覆盖客户端脚本、它们引用的辅助模块和内联技能钩子，拒绝建链接、目录改名、保留链接的复制，以及无法静态核对的代码入口。`scripts/real/skill-script-safety.test.ts` 测试这个门禁。新增调用须由集成者显式复核；登记绑定文件路径、具体调用及整个所在方法的源码片段摘要，片段变化即失效，不按函数名整体放行。
+  Jev 的普通临时文件原子替换由集成者在 2026-10-24 单独复核：它不能创建软链接，目标是目录时 rename 失败。外部进程不在这个专用主目录的威胁模型里。仓库测试自动发现包清单中带客户端 tools 的包，并扫描客户端入口（`tools/` 下的脚本和内联技能钩子）以及它们按相对路径引用到的全部模块；只在 Hub 沙箱里运行、没有客户端脚本引用的 `functions/` 模块不在这道门禁里，由 Hub 的包沙箱约束；客户端脚本引用了清单外或无法解析的模块仍判为不通过；必须包含 case-compile 的客户端工具和 Jev 所在的 knowledge-contribution 包，缺包或空覆盖都会失败。每条调用点登记也必须在扫描范围内恰好用到一次。运行 `node --test --test-concurrency=1 scripts/real/circle-home.test.ts scripts/real/skill-script-safety.test.ts` 核对这条边界。
 
 ## Tests
 
