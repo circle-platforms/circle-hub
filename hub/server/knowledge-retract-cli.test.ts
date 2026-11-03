@@ -8,6 +8,7 @@ import { formatKnowledgeRetract, knowledgeRetract } from '../knowledge/api.ts';
 import { makeWorld, catalogXml, BASE_CATALOG } from '../knowledge/test-support.ts';
 import { newId, type Principal, type RecordStore, type StoredRecord } from '../records/api.ts';
 import { createRunsService } from '../runs/engine/api.ts';
+import { osIsolationAvailable } from '../rules/api.ts';
 import { FakeWorkflowStore } from '../runs/engine/testing/workflows.ts';
 import { startPostgres } from '../testing/postgres.ts';
 import type { CliContext, ServerDeps } from './api.ts';
@@ -77,7 +78,8 @@ test('knowledge retract --run turns the contributions its run stored into entrie
   const original = (await w.knowledge.store.composition(produced.composition!))!.sources[0].sha256;
   const workflows = new FakeWorkflowStore();
   await workflows.add(fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
-  const service = createRunsService({ records: w.kit, packs: w.packs, knowledge: w.knowledge, external: w.external, workflows, parsers: createDefaultRegistry() });
+  // Isolated where the operating system offers it (macOS, the Linux isolation jobs); the unisolated synthetic path elsewhere.
+  const service = createRunsService({ sandbox: { requireOsIsolation: await osIsolationAvailable() }, records: w.kit, packs: w.packs, knowledge: w.knowledge, external: w.external, workflows, parsers: createDefaultRegistry() });
   const manifest = await w.kit.artifacts.ingest({ bytes: new TextEncoder().encode(JSON.stringify({ items: [{ id: 'relation', title: 'relation' }] })), mediaType: 'application/json', origin: { upload: { session: call.sessionId, message: null } }, author: { user: w.admin.id }, provenanceType: 'declared', visibility: { readers: [w.admin.id], admins: true, packs: [], shareable: false } });
   const started = await service.startRun(w.admin, { pack: 'knowledge-contribution', product: 'Acme', build: build.name, inputs: { subject: { reference: `src:${manifest.body.sha256}` }, originals: { reference: `src:${original}` } } }, call);
   assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
