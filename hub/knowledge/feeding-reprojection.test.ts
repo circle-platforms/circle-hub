@@ -266,3 +266,18 @@ test('narrowed completeness survives multi-page continuation and only= slices on
   assert.equal(paged.only_complete, true);
   assert.equal(paged.keys['033001']?.length, 40);
 });
+
+test('a root without any case entry proves no story absence, narrowed or not', { timeout: 300_000 }, async (t) => {
+  const pg = await startPostgres();
+  t.after(() => pg.stop());
+  const w = await world(pg, false, undefined, TREE);
+  t.after(async () => { await w.knowledge.feeding!.drain(); await w.close(); });
+  // Nothing was fed and the root holds no case: the version has no case knowledge at all.
+  const narrowed = await index(w, 'kind=case&key=stories&only=99999');
+  assert.equal(narrowed.only_complete, false, narrowed.notes.join('\n'));
+  const whole = await index(w, 'kind=case&key=stories');
+  assert.notEqual(whole.key_space_complete, true, whole.notes.join('\n'));
+  const output = project({ inputs: [boundView('stories', { stories: [{ id: '99999', status: 'synthetic' }], unread: [] }, 'plm:stories:99999'), boundView('cases', narrowed)] }) as { error?: { code: string; fix: string } };
+  assert.equal(output.error?.code, 'story-traceability.invalid_input');
+  assert.match(output.error!.fix, /去掉无法确定的编号 99999/);
+});

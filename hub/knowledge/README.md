@@ -1295,7 +1295,7 @@ none of whose stated values is requested is not unknown; a projection that does 
 Identity fields (stories, defects) match `only=` by normalized id (all-digit literals without leading zeros); every other
 field by its exact text. A case index narrowed by `only=` carries `only_complete`: true when every matching key is listed
 and no skipped source, unresolved projection, conflicting version level or missing indexed field could add one, within a
-complete source scope. `key_space_complete` stays false on narrowed views. The continuation merge and the engine's only=
+complete source scope; a scope without any entry of the kind (nothing fed or produced) is never complete, narrowed or not. `key_space_complete` stays false on narrowed views. The continuation merge and the engine's only=
 slice merge keep `only_complete` true only when every part is.
 
 When cases still lack a projection, the note names the originals (external read, document and case count, at most 20,

@@ -1190,6 +1190,7 @@ export class KnowledgeViews {
     // A build's fed fixed-bug records join the defect entries of its seedling root, as fed cases join its case entries.
     const fedDefects=at.seedling&&kind==='defect'&&feeding?.cut?fedDefectRows(at.root,at.build,feeding.cut):null;
     const rootless=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,only):null;
+    const knownRootless=rootless===null?0:only===null?rootless.missing:rootlessCases(feeding!.cut!,at.root).missing;
     const unrooted=rootless?rootless.missing:(fedDefects?.unrooted.filter(row=>indexKeys(row.content.data,key).some(pick)).length??0);
     // Position membership is collected before the index-key filter; the count covers every entry of the kind.
     const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
@@ -1397,7 +1398,9 @@ export class KnowledgeViews {
       const undelivered=page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0;
       const unknownEntries=unrooted+unknownEntryIds.size;
       const truncated=undelivered || unknownEntries>0;
-      const narrowedComplete=skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
+      // A scope without a single entry of the kind, and no fed case with a root-less projection, has no knowledge of the
+      // kind (never fed, never produced): nothing is complete there.
+      const narrowedComplete=(ofKind>0||knownRootless>0)&&skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
       const keySpaceComplete=only===null&&narrowedComplete;
       const discloseKeySpace=kind==='case'&&(Boolean(feeding?.cut)||keyFactsUnknown>0||!truncated||keySpaceComplete);
       const answer: IndexView = {
