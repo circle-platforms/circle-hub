@@ -3,6 +3,8 @@
 // two seconds). The lamps follow the session: unlit until the folder is trusted, blinking
 // while it loads, green once loaded, red for an extension that failed.
 import type { AgentRuntime } from '../runtime.js';
+import type { Message } from '../types.js';
+import { rowText } from './conversation_tree.js';
 import type { CircleSettings } from '../settings.js';
 import { isReady } from '../settings.js';
 import { currentBranch } from '../git_info.js';
@@ -12,6 +14,7 @@ import {
   age,
   type WelcomeInfo,
   type WelcomeItem,
+  type WelcomeRecent,
 } from '../ink/components/welcome.js';
 import {
   folderInventory,
@@ -31,10 +34,29 @@ export interface WelcomeInput {
   settingUp?: boolean;
 }
 
+export function lastVisibleReply(messages: readonly Message[]): string {
+  let last = '';
+  for (const message of messages) {
+    if (
+      message.internal ||
+      (message.role !== 'assistant' && message.role !== 'user') ||
+      (message.role === 'assistant' && message.tool_calls?.length)
+    )
+      continue;
+    const text = rowText(
+      message.role === 'user'
+        ? message.display || message.content
+        : message.content,
+    );
+    if (text) last = text;
+  }
+  return last;
+}
+
 export class WelcomeState {
   private key?: string;
   private items: FolderItem[] = [];
-  private recent: [string, string][] = [];
+  private recent: WelcomeRecent[] = [];
   private more = 0;
   private branchAt = 0;
   private branchName = '';
@@ -63,12 +85,11 @@ export class WelcomeState {
       runtime?.store
         .list(this.workspace)
         .filter((session) => session.id !== runtime.session.id) ?? [];
-    this.recent = saved
-      .slice(0, 3)
-      .map((session) => [
-        session.title || '(untitled)',
-        age(session.updated, now),
-      ]);
+    this.recent = saved.slice(0, 3).map((session) => ({
+      title: session.title || '(untitled)',
+      age: age(session.updated, now),
+      last: lastVisibleReply(runtime!.store.messages(session.id)),
+    }));
     this.more = Math.max(0, saved.length - 3);
   }
 

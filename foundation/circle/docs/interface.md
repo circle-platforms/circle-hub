@@ -71,14 +71,17 @@ Every session starts with a welcome block at the top of the conversation. It is 
 
    recent
    why does the export test fail on windows?    2h
+     last: The path separator is the cause.
    add the sheet diff to compile-excel          1d
+     last: Added the diff and its regression tests.
    clean up the adapters folder                 3d
+     last: Removed the unused adapter.
    … +6 more · /resume
 ```
 
 - **The logo** is Circle's rainbow ring, three rows tall, drawn with the sextant block characters of Unicode 13 (a font without them shows boxes instead). Beside it: the version, the model and the endpoint it runs on (`not connected yet` while setup is asking), the folder and its git branch.
 - **What the folder brings**: its instruction files (`AGENTS.md`, `CLAUDE.md` and the like), skills (including `.agents/skills` up to the git root), custom commands, extensions and project settings. Each row has a lamp: unlit before you trust the folder, yellow and blinking while Circle loads it, green once loaded. The extensions row turns red when one failed to load, with the reason under it. Only what the folder itself holds is listed, not your own skills, commands or extensions. A folder that holds none of these shows no rows.
-- **recent**: the folder's three most recently used other sessions and how long ago. More are folded into `… +N more · /resume`.
+- **recent**: the folder's three most recently used other sessions and how long ago. Under each title, `last:` previews the last visible user or assistant message on that session's current branch; it is not a generated task summary. More are folded into `… +N more · /resume`.
 
 The welcome is not part of the conversation's record: it is not saved and not exported, and `/new` draws a fresh one. Your first message goes right under it. Once the welcome scrolls away, the header takes over the version, model and folder.
 

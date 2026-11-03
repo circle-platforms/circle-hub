@@ -36,7 +36,8 @@ import {
 } from '../src/tui/status_rows.js';
 import { agentRows, jobRows, stripHeader } from '../src/tui/strip_rows.js';
 import { TurnStatus } from '../src/tui/turn_status.js';
-import { WelcomeState } from '../src/tui/welcome_state.js';
+import { lastVisibleReply, WelcomeState } from '../src/tui/welcome_state.js';
+import { CheckpointStore } from '../src/checkpoint_store.js';
 import { SessionApp } from '../src/tui/session_app.js';
 import { AgentRuntime } from '../src/runtime.js';
 import { defaultSettings, trustFolder } from '../src/settings.js';
@@ -433,8 +434,12 @@ function welcomeInfo(over: Partial<WelcomeInfo> = {}): WelcomeInfo {
       { kind: 'settings', text: '.circle/settings.json', state: 'none' },
     ],
     recent: [
-      ['why does the export test fail on windows?', '2h'],
-      ['clean up', '3d'],
+      {
+        title: 'why does the export test fail on windows?',
+        age: '2h',
+        last: 'The path separator is the cause.',
+      },
+      { title: 'clean up', age: '3d', last: '' },
     ],
     more: 6,
     ...over,
@@ -490,6 +495,12 @@ test('the welcome block draws the ring in its own colours, lamps that follow the
       plain.find((row) => row.includes('clean up'))!,
       /clean up +3d$/,
     );
+    assert.ok(
+      plain.some((row) =>
+        row.includes('last: The path separator is the cause.'),
+      ),
+    );
+    assert.equal(plain.filter((row) => row.includes('last:')).length, 1);
     assert.equal(plain.at(-1), '');
     const waiting = welcomeRows(
       90,
@@ -564,6 +575,50 @@ test('the welcome lists what the folder brings, unlit until trusted, blinking wh
     trusted: true,
   });
   assert.deepEqual(empty.items, []);
+});
+
+test('recent previews use the last visible message on the selected branch', (t) => {
+  assert.equal(
+    lastVisibleReply([
+      { id: 'u', role: 'user', content: 'raw', display: '**Shown** request' },
+      { id: 'hidden', role: 'assistant', content: 'hidden', internal: 'note' },
+      {
+        id: 'call',
+        role: 'assistant',
+        content: 'not a reply',
+        tool_calls: [{ id: 'c', name: 'read_file', args: {} }],
+      },
+      { id: 'tool', role: 'tool', content: 'tool result' },
+      { id: 'empty', role: 'assistant', content: '  ' },
+      {
+        id: 'a',
+        role: 'assistant',
+        content:
+          '## Result\nUse `path` and [the guide](https://example.com).\nNext line.',
+      },
+      { id: 'next', role: 'user', content: 'One more question' },
+    ]),
+    'One more question',
+  );
+  assert.equal(
+    lastVisibleReply([{ id: 'hidden', role: 'system', content: 'hidden' }]),
+    '',
+  );
+  const store = new CheckpointStore();
+  t.after(() => store.close());
+  const session = store.create('/project', 'test');
+  const root = store.append(session.id, [
+    { id: 'u', role: 'user', content: 'start' },
+  ]);
+  const selected = store.append(session.id, [
+    { id: 'a', role: 'assistant', content: 'selected branch' },
+  ]);
+  store.select(session.id, root);
+  store.append(session.id, [
+    { id: 'b', role: 'assistant', content: 'other branch' },
+  ]);
+  store.select(session.id, selected);
+  assert.equal(lastVisibleReply(store.messages(session.id)), 'selected branch');
 });
 
 test('thinking rows have no background on a dark theme and on a light one', () => {
