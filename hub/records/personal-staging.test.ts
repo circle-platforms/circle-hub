@@ -4,6 +4,7 @@ import {openTestRecords} from '../testing/records.ts';
 import {barrier} from '../testing/member-freeze.ts';
 import {PgPersonalPayloads} from './personal-payloads.ts';
 import {sha256Hex} from './digest.ts';
+import {LimitError} from './errors.ts';
 
 test('ten extractions reserve at most two connections and queued checks reserve none',async t=>{
  const kit=await openTestRecords();t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic-stage-admin');
@@ -26,7 +27,8 @@ test('ten extractions reserve at most two connections and queued checks reserve 
  }));
  const all=Promise.allSettled(checks);
  try{await checksEntered.promise;assert.equal(max,2);assert.equal(payloads.db.pool.totalCount,payloads.db.pool.idleCount,'sandbox admission owns no pooled transaction');assert.ok(await kit.principals.get(admin.id));}finally{checksRelease.release();await all;}
- assert.equal(checked,11);assert.equal(max,2);assert.ok((await all).every(result=>result.status==='fulfilled'));
+ assert.equal(checked,10);assert.equal(max,2);assert.equal((await all).filter(result=>result.status==='fulfilled').length,10);
+ const refused=(await all).filter(result=>result.status==='rejected');assert.equal(refused.length,1);assert.ok(refused[0].reason instanceof LimitError);
  await assert.rejects(payloads.withStagingSlot(admin.id,async()=>{throw new Error('synthetic check failure');}),/synthetic check failure/);
  assert.equal(await payloads.withStagingSlot(admin.id,async()=>42),42,'failure releases the member slot');
 });

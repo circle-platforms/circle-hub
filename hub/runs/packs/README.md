@@ -358,3 +358,7 @@ Serve startup retires orphaned `.tmp-*` extraction stages in the team and privat
 regardless of age. Published trees and quarantine stay untouched. New stage names carry a process id: live CLI publishers
 and the current process's active trees are preserved; dead-owner and legacy stages are removed. PID liveness follows the
 platform lock's conservative policy. Failed stage writes clean their partial tree. No paths or names enter cleanup logs.
+
+Private check/publication waiting is bounded too: two queued per member, eight overall. The existing one-per-member,
+two-overall execution bound stays. Overflow never starts the publisher's directory read, validators or extractor; callers release the
+unpacked upload in their existing awaited `finally`. No new refusal code or permission rule is introduced.

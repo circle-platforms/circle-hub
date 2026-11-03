@@ -1047,3 +1047,8 @@ Cache root registration marks shared team extraction roots separately. Deletion 
 those shared roots a 24-hour grace period, including independent publishers in another process; stale shared remnants
 remain removable. Private roots have no grace: even fresh failed/unpublished private trees are removed after the account
 is sealed. Published team and exact frozen-run caches still follow the existing independent-holder checks.
+
+
+Staging admission also bounds waiting work: at most two queued jobs per member and eight in the records kit, in addition
+to its two running jobs (one per member). Overflow rejects immediately with the existing `LimitError`, no protocol code,
+and a bounded busy message. Refusal owns no connection or queue entry; completing/failing work releases its slot.

@@ -1159,3 +1159,9 @@ secrets. Historical publish-right revocation and assignment removal use the plac
 The serving assembly sweeps orphaned pack extraction stages after the vault check and before parser refresh/listening;
 command-time assembly never performs this sweep. Startup logs the removed count only. Cleanup failure stops startup
 with a fixed path-free message, and neither private-root links nor matching stage links are followed outside the roots.
+
+
+A full private publication queue returns HTTP 429 with “发布校验繁忙，请稍后重试”, using `LimitError` without a new protocol
+code. Upload refusal awaits deletion of the unpacked root before replying; accepted work still follows the checked
+30-minute stage/confirmation flow. Queue admission is two running overall, one per member, plus eight waiting overall
+and two waiting per member. A refused request neither occupies a slot nor waits for another publication to finish.

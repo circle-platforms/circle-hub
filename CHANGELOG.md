@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Bound waiting private publication requests and return busy feedback after releasing rejected uploads.
+
 - Remove orphaned personal and team pack staging on service startup while preserving live publishers.
 
 - Preserve fresh shared pack staging during member cleanup without delaying removal of private cache remnants.

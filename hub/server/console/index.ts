@@ -879,6 +879,9 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     }
   } catch (error) {
     if(error instanceof KnowledgeError&&error.code){result=spaceActionFailure(ctx,error);}
+    else if(error instanceof LimitError&&isKnowledgeAction&&segments[0]==='packs'){
+      result={status:429,body:page(ctx.chrome('发布校验未完成',{active:'packs'}),html`<p class="error">${error.message}</p><p>${link('/console/packs/-/publish','返回发布列表')}</p>`)};
+    }
     else if(error instanceof UploadError&&isKnowledgeAction){result={status:400,body:page(ctx.chrome('原文上传未完成'),html`<p class="error">${error.message}</p>`)};}
     else if (error instanceof RecordsError && (error.code === null||isKnowledgeAction&&error.code==='CREDENTIAL_IN_UPLOAD') && !(error.name === 'IntegrityError')) {
       result = { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">${error.message}</p>`) };
