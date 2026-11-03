@@ -22,21 +22,21 @@ export function ownershipPlan(beds:ManifestBed[],params:Normalized,frozen:Frozen
  {ok:true;fields:OwnershipFields;request:OwnershipRequest}|{ok:false;failure:PlanFailure}{
   const fail=(code:string,message:string,fix:string):{ok:false;failure:PlanFailure}=>({ok:false,failure:{code,message,fix}});
   const bed=beds.find(b=>b.name===params.bed);
-  if(!bed)return fail('test-bed.unknown_bed','当前清单里没有这个台架','bed 写当前清单里的台架名');
+  if(!bed)return fail('test-bed.unknown_bed','当前清单里没有这个自动化测试环境','bed 写当前清单里的自动化测试环境名');
   if(!frozen||!Array.isArray(frozen.registrations))return fail('test-bed.no_ownership','缺少冻结的登记表','请管理员启用登记视图后重开这次运行');
   const prefix=`bed/${bed.name}/`;const registered=frozen.registrations.find(row=>row.prefix===prefix);
   let request:OwnershipRequest;let keys:string[]=[];let conclusion:string;
   if(params.action==='register'){
-    if(frozen.registrations.some(row=>row.prefix.startsWith(prefix)||prefix.startsWith(row.prefix)))return fail('test-bed.already_owned','这个台架已经有主人','请管理员核对并纠正登记，不要重复登记');
+    if(frozen.registrations.some(row=>row.prefix.startsWith(prefix)||prefix.startsWith(row.prefix)))return fail('test-bed.already_owned','这个自动化测试环境已经有主人','请管理员核对并纠正登记，不要重复登记');
     request={op:'register',prefix};conclusion=`登记 ${bed.name} 到你名下`;
   }else if(params.action==='unregister'){
-    if(!registered?.mine)return fail('test-bed.not_owner','这个台架不是你登记的','由登记主人或管理员带理由注销');
+    if(!registered?.mine)return fail('test-bed.not_owner','这个自动化测试环境不是你登记的','由登记主人或管理员带理由注销');
     request={op:'unregister',prefix,reason:params.reason};conclusion=`注销你登记的 ${bed.name}（理由：${params.reason}）`;
   }else{
-    if(!registered?.mine)return fail('test-bed.not_owner','这个台架不是你登记的','由登记主人强制释放，或请管理员处置');
-    if(params.devices?.some(name=>!bed.devices.some(device=>device.name===name)))return fail('test-bed.bad_devices','设备不在这个台架的清单里','devices 写这个台架里的设备名');
+    if(!registered?.mine)return fail('test-bed.not_owner','这个自动化测试环境不是你登记的','由登记主人强制释放，或请管理员处置');
+    if(params.devices?.some(name=>!bed.devices.some(device=>device.name===name)))return fail('test-bed.bad_devices','设备不在这个自动化测试环境的清单里','devices 写这个自动化测试环境里的设备名');
     keys=params.devices?params.devices.map(name=>prefix+name):frozen.entries.filter(row=>row.key.startsWith(prefix)&&(row.until===null||Date.parse(row.until)>Date.parse(frozen.now))).map(row=>row.key).sort();
-    if(!keys.length||keys.some(key=>!frozen.entries.some(row=>row.key===key&&(row.until===null||Date.parse(row.until)>Date.parse(frozen.now)))))return fail('test-bed.not_occupied','要释放的键没有当前占用','重新搜索台架，核对当前占用后再决定');
+    if(!keys.length||keys.some(key=>!frozen.entries.some(row=>row.key===key&&(row.until===null||Date.parse(row.until)>Date.parse(frozen.now)))))return fail('test-bed.not_occupied','要释放的键没有当前占用','重新搜索自动化测试环境，核对当前占用后再决定');
     request={op:'force_release',keys,reason:params.reason};conclusion=`强制释放 ${bed.name}：${keys.join('、')}（理由：${params.reason}）`;
   }
   return {ok:true,fields:{action:params.action,bed:bed.name,keys,reason:params.reason,conclusion},request};

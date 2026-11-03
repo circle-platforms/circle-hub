@@ -48,7 +48,7 @@ describe('matchNeed without a build requirement', () => {
     assert.equal(a.devicesOk, true);
     assert.match(a.conclusion, /^Hub 记录里空闲（未排除本地操作）$/);
     assert.equal(b.devicesOk, false);
-    assert.match(b.conclusion, /需要 1 台路由器，台架里有 0 台/);
+    assert.match(b.conclusion, /需要 1 台路由器，自动化测试环境里有 0 台/);
   });
   it('a needed device leased until 10:30: the bed matches with that earliest-free time', () => {
     const leases = { 'bed/bed-a/router0': { until: '2026-10-22T10:30:00.000Z' } };
@@ -76,8 +76,8 @@ describe('matchNeed without a build requirement', () => {
   it('a bed without the needed device counts says what is missing', () => {
     const bigger = { devices: [{ type: 'load-balancer', count: 1 }, { type: 'router', count: 2 }], hours: 1 };
     const answer = matchNeed(beds, bigger, noInstalled, {}, noLeases, NOW);
-    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要 2 台路由器，台架里有 1 台/);
-    assert.match(answer.find((b) => b.bed === 'bed-b')!.conclusion, /需要 2 台路由器，台架里有 0 台/);
+    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要 2 台路由器，自动化测试环境里有 1 台/);
+    assert.match(answer.find((b) => b.bed === 'bed-b')!.conclusion, /需要 2 台路由器，自动化测试环境里有 0 台/);
   });
 });
 
@@ -96,26 +96,27 @@ describe('matchNeed with a build requirement', () => {
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'match');
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildSource, 'declared');
   });
-  it('a different base build: mismatch, the conclusion says 需要升级', () => {
+  it('a different base build: mismatch, the conclusion says what is installed and what is wanted, never to upgrade', () => {
     const installed: Record<string, Installed> = { 'bed/bed-a/afamx0': { build: 'Rel_FAMX_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
     const answer = matchNeed(beds, buildNeed, installed, {}, noLeases, NOW);
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'mismatch');
-    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要升级/);
+    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /要的是/);
+    assert.doesNotMatch(answer.find((b) => b.bed === 'bed-a')!.conclusion, /升级/);
   });
   it('a declared record is shown as declared and unchecked (声明，未核对), on a match and on a mismatch', () => {
     const match = matchNeed(beds, buildNeed, { 'bed/bed-a/afamx0': { build: 'Rel_FAMX_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } }, {}, noLeases, NOW);
     assert.match(match.find((b) => b.bed === 'bed-a')!.conclusion, /构建一致（Rel_FAMX_10_6_1_8，声明，未核对）/);
     const mismatch = matchNeed(beds, buildNeed, { 'bed/bed-a/afamx0': { build: 'Rel_FAMX_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } }, {}, noLeases, NOW);
-    assert.match(mismatch.find((b) => b.bed === 'bed-a')!.conclusion, /构建不一致（装的是 Rel_FAMX_10_6_1_9，需要升级到 Rel_FAMX_10_6_1_8，声明，未核对）/);
+    assert.match(mismatch.find((b) => b.bed === 'bed-a')!.conclusion, /构建不一致（装的是 Rel_FAMX_10_6_1_9，要的是 Rel_FAMX_10_6_1_8，声明，未核对）/);
   });
   it('no install record at all: unknown, never mismatch; source none', () => {
     const answer = matchNeed(beds, buildNeed, noInstalled, {}, noLeases, NOW);
     const a = answer.find((b) => b.bed === 'bed-a')!;
     assert.equal(a.buildOk, 'unknown');
     assert.equal(a.buildSource, 'none');
-    assert.doesNotMatch(a.conclusion, /需要升级/);
+    assert.doesNotMatch(a.conclusion, /要的是|升级/);
   });
-  it('no bed matches the required build: unknown names the version line, each deciding device and the exit; per-bed fields stay', () => {
+  it('no bed matches the required build: unknown names the build, each deciding device and exits someone can take; per-bed fields stay', () => {
     const need = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_9' };
     const installed: Record<string, Installed> = { 'bed/bed-a/afamx0': { build: 'Rel_FAMX_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
     const matches = matchNeed(beds, need, installed, {}, noLeases, NOW);
@@ -124,10 +125,12 @@ describe('matchNeed with a build requirement', () => {
     const gap = unmatchedBuildExit(beds, need, installed, {}, noLeases, NOW, matches);
     assert.ok(gap);
     assert.equal(gap.verdict, 'unknown');
-    assert.match(gap.missing, /没有任何台架的在装构建匹配版本线 Rel_FAMX_10_6_1_9/);
-    assert.match(gap.missing, /bed-a\/afamx0 装的是 Rel_FAMX_10_6_1_8/);
-    assert.match(gap.missing, /缺在装构建记录：bed-b\/lb0/);
-    assert.equal(gap.fix, '管理员在清单登记在装构建，或把某台升级到该构建后重试');
+    assert.match(gap.missing, /没有任何自动化测试环境最近一次观察到装的是 Rel_FAMX_10_6_1_9（构建名或它的基础构建逐字相等才算；观察只对它被观察的时刻成立）/);
+    assert.match(gap.missing, /最近一次观察到的是别的构建：bed-a\/afamx0 装的是 Rel_FAMX_10_6_1_8/);
+    assert.doesNotMatch(gap.missing, /版本线/, 'a different build is not called a different version line');
+    assert.match(gap.missing, /没有观察记录：bed-b\/lb0/);
+    assert.equal(gap.fix, '要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次');
+    assert.doesNotMatch(gap.fix, /升级到|先升级|把某台升级/);
     const matched = matchNeed(beds, { ...need, build: 'Rel_FAMX_10_6_1_8' }, installed, {}, noLeases, NOW);
     assert.equal(unmatchedBuildExit(beds, { ...need, build: 'Rel_FAMX_10_6_1_8' }, installed, {}, noLeases, NOW, matched), null);
   });

@@ -26,16 +26,16 @@ const MANIFEST = {
   ],
 };
 
-function inputOf(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }> } = {}): unknown {
+function inputOf(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }>; observations?: unknown[] } = {}): unknown {
   return {
     inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: options.manifest ?? MANIFEST, meta: null }],
     parameters,
-    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [], registrations: [] } },
+    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [], registrations: [] }, ...(options.observations ? { observations: options.observations } : {}) },
   };
 }
 
 /** The subject the check sees, from a real projection output, optionally edited before freezing. */
-function subjectOf(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }>; edit?: (fields: Record<string, unknown>) => void } = {}): unknown {
+function subjectOf(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }>; observations?: unknown[]; edit?: (fields: Record<string, unknown>) => void } = {}): unknown {
   const out = project(inputOf(parameters, options)) as { items: Array<{ id: string; label: string; location: { parser: string; selector: string }; fields: Record<string, unknown> }>; groups: Array<Record<string, unknown>> };
   assert.ok(Array.isArray(out.items), JSON.stringify(out).slice(0, 300));
   const items = out.items.map((item, at) => {
@@ -161,38 +161,41 @@ describe('bedOutcomes refute and unknown', () => {
     beds: [
       {
         name: 'bed-a',
-        devices: [{ name: 'afamx0', type: 'load-balancer', ipv4: ['192.0.2.10/26', '192.0.2.74/26'], ipv6: [], installed: { build: 'Rel_FAMY_10_6_1_8', base: 'Rel_FAMX_10_6_1_8' } }],
+        devices: [{ name: 'afamx0', type: 'load-balancer', ipv4: ['192.0.2.10/26', '192.0.2.74/26'], ipv6: [] }],
         services: [],
         reserved: [],
       },
     ],
   };
+  // What the device showed (decision 112): the check recomputes from the same frozen observations as the projection.
+  const OBSERVED = [{ inventory: 'a'.repeat(64), device: '/beds/0/devices/0', label: 'bed-a/afamx0', build: 'Rel_FAMY_10_6_1_8', base: 'Rel_FAMX_10_6_1_8', values: ['Rel_FAMY_10_6_1_8'], observed_at: '2026-10-21T12:00:00.000Z', run: 'run_synthetic', job: null, reference: `src:${'b'.repeat(64)}` }];
 
   it('search with no matching build appends an unknown that names the missing install and the exit', () => {
-    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED }));
+    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED, observations: OBSERVED }));
     assert.equal(outcomes[0].verdict, 'support');
     const gap = outcomes.at(-1);
     assert.ok(gap);
     assert.equal(gap.verdict, 'unknown');
     assert.equal(gap.reason, 'missing_input');
-    assert.match(gap.missing ?? '', /版本线 Rel_FAMX_10_6_1_9/);
-    assert.match(gap.statement, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
-    assert.equal(gap.data?.next_action, '管理员在清单登记在装构建，或把某台升级到该构建后重试');
+    assert.match(gap.missing ?? '', /最近一次观察到装的是 Rel_FAMX_10_6_1_9/);
+    assert.ok(gap.statement.endsWith(`。下一步：要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次`));
+    assert.equal(gap.data?.next_action, '要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次');
+    assert.ok(gap.grounds.length > 0, 'the unknown cites the inventory beds it compared');
   });
 
-  it('search with a build requirement: support naming 声明，未核对, refute on a tampered build verdict', () => {
+  it('search with a build requirement: support naming the observation and its moment, refute on a tampered build verdict', () => {
     const parameters = { need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_8' } };
-    const good = bedOutcomes(subjectOf(parameters, { manifest: DECLARED }));
+    const good = bedOutcomes(subjectOf(parameters, { manifest: DECLARED, observations: OBSERVED }));
     assert.equal(good[0].verdict, 'support');
-    assert.match(good[0].statement, /声明，未核对/);
-    const bad = bedOutcomes(subjectOf(parameters, { manifest: DECLARED, edit: (fields) => void (fields.build_ok = 'unknown') }));
+    assert.match(good[0].statement, /观察于 2026-10-21T12:00:00.000Z/);
+    const bad = bedOutcomes(subjectOf(parameters, { manifest: DECLARED, observations: OBSERVED, edit: (fields) => void (fields.build_ok = 'unknown') }));
     assert.equal(bad[0].verdict, 'refute');
     assert.equal(bad[0].code, 'test-bed.search_mismatch');
     assert.match(bad[0].statement, /build_ok/);
   });
 
   it('refutes a facts item with a tampered installed list', () => {
-    const outcomes = bedOutcomes(subjectOf({ action: 'facts' }, { manifest: DECLARED, edit: (fields) => void (fields.installed = []) }));
+    const outcomes = bedOutcomes(subjectOf({ action: 'facts' }, { manifest: DECLARED, observations: OBSERVED, edit: (fields) => void (fields.installed = []) }));
     assert.equal(outcomes[0].verdict, 'refute');
     assert.equal(outcomes[0].code, 'test-bed.facts_mismatch');
     assert.match(outcomes[0].statement, /installed/);

@@ -396,7 +396,7 @@ export function judgeBedSurface(declaration: unknown, bed: unknown, reads: reado
       const sets = new Map<string, Set<string>>();
       for (const field of probe.fields) {
         const baseline = baselineOf(field, bed, probe.manifest_device);
-        if (!baseline) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 缺少冻结基线`, next: '下一步：核对冻结台架的接口或基线配置后再派发' };
+        if (!baseline) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 缺少冻结基线`, next: '下一步：核对冻结自动化测试环境的接口或基线配置后再派发' };
         sets.set(field.name, new Set(baseline));
       }
       const byField = new Map<string, string[]>();
@@ -442,7 +442,7 @@ export function judgeBedSurface(declaration: unknown, bed: unknown, reads: reado
     const sets = new Map<string, Set<string>>();
     for (const field of probe.fields) {
       const baseline = baselineOf(field, bed, probe.manifest_device);
-      if (!baseline) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 缺少冻结基线`, next: '下一步：核对冻结台架的接口或基线配置后再派发' };
+      if (!baseline) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 缺少冻结基线`, next: '下一步：核对冻结自动化测试环境的接口或基线配置后再派发' };
       sets.set(field.name, new Set(baseline));
     }
     const byField = new Map<string, string[]>();

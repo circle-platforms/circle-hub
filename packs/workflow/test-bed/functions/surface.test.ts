@@ -126,7 +126,7 @@ describe('facts recompute the declaration', () => {
     assert.equal(bedOutcomes(subject)[0]?.verdict, 'support');
     const parsed = parseManifest(manifest);
     assert.equal(parsed.ok, true);
-    if (parsed.ok) assert.equal(factsFields(parsed.beds, undefined, { declaration, probes: {} })[0]?.surface?.occupancy, 'unknown');
+    if (parsed.ok) assert.equal(factsFields(parsed.beds, { installed: {}, builds: {} }, undefined, { declaration, probes: {} })[0]?.surface?.occupancy, 'unknown');
     const lied = structuredClone(subject) as { items: Array<{ fields: Record<string, unknown> }> };
     (lied.items[0].fields.surface as { occupancy: string }).occupancy = 'occupied';
     assert.equal(bedOutcomes(lied)[0]?.code, 'test-bed.facts_mismatch');
