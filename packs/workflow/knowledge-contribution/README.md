@@ -129,6 +129,8 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 技能位于 `tools/operation-capture`，自成一体，Node 24 直接运行，只用内置模块和 fetch；目前只支持 macOS 和 Linux。安装时把清单所列的该目录原样复制到目标 Circle home 的 `skills/operation-capture/`，不要复制成整个回注包，也不要改写 `hooks.json`、`egress.json` 或 `generated.json`。官方核验命令是 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录> --skill operation-capture`；它核大小、SHA-256、缺项、额外文件和链接，Jev 不带 `--skill` 的原命令不变。
 
+1.3.19 只随模型 37 重新生成：fed-case@1 加了 10 个可选字段（源节点上下文、命令树摘要与作者声明的需求、缺陷编号），`slots.schema.json` 和 `tables/knowledge-structure.json` 里的结构跟着变；旧记录不带这些字段照样有效，包内函数不变。
+
 1.3.18 只更新扫描镜像：base64 段改为单遍线性切分，切出的段与原正则逐一相同，单段约 6 MB 起不再栈溢出（#153）；扫描器仍为 `credential-scan@3`，发现不变。
 
 1.3.17 补齐独立采集锁恢复的逐调用点审查，登记在 `scripts/real/skill-script-safety.ts`；仅核准 `clearStaleLock` 在同一私有锁目录内隔离所有者文件的原子移动，固定整个函数片段、调用、复核人及日期，不放行其他 rename。保留本轮修复竞争的原子移动及其确定性回归；1.3.16 的扫描镜像缓冲区优化一并包含。安装快照版本与发布清单同步更新，门禁仍逐文件核对原字节。
@@ -145,7 +147,7 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
 
-先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.18；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.19；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
 
 默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。请求记录与未提交的判断记录留在 Circle 的工作目录内，不在仓库；submit 才上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
 

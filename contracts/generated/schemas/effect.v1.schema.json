@@ -252,6 +252,7 @@
                 "QUOTE_MISMATCH",
                 "SOURCE_UNPARSEABLE",
                 "SOURCE_UNAVAILABLE",
+                "SOURCE_NOT_PERMITTED",
                 "IDEMPOTENCY_MISMATCH",
                 "IDENTITY_UNMAPPED",
                 "RUN_SUPERSEDED",
