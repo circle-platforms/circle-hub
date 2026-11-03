@@ -825,3 +825,13 @@ try{
 复核中保留的失败：限定 substring 的 FROM 语法导致 4 项小组 2 失败，改用限定函数的逗号参数；独立组合同时合法持有全局字节，纠正探针错误的“文件必不存在”断言；新 HTTP 探针实测只读 API 的 POST 为 405，按实际无执行的协议断言；新增缓存并发探针原先仅观察停用的 SQL，现显式观察删除的 FOR UPDATE。生产拒收／旧结果期望未改。
 
 已通过的复核：署名／purge／升级 8 项；来源归档／新删除／私人包 22 项；冻结／能力／读权组 17 项；所有者函数与独立持有者及新 HTTP 组 12 项；缓存边界及固定迁移 6 项；命令／控制台组 44 项，均无跳过。文档检查 315 通过。最终完整定向组与验收结果后续续记。
+
+### 第 4 步：管理员命令、只读预检与身份墓碑
+
+- `user delete` 仅接受稳定成员编号。默认／dry-run 只读检查，显示数量及绑定 state／epoch／operation-id 的确认命令；确认才封闭账户并清除。范围变化拒绝旧命令，已封闭的同一操作可由仍启用管理员重试并返回原完成记录。检查和结果 JSON 没有私人正文、名称、路径或凭据；最后启用管理员保护沿用原端口。
+- 团队 Inspector 使用既有 AppShell、Inspector、Dialog 和只读 GET 预检，确认页面只给实际管理员命令，没有删除 POST、MCP 工具或命令桥动作。已封闭未完成显示“等待清除中”及同操作重试，完成才显示私人内容已清除。墓碑页面隐藏启用、重置、发布权、容量和令牌操作；直接容量写入也拒绝已删除身份。
+- 团队内容的成员显示统一经生成 account_status.deleted，旧记录的身份与历史字节不改。界面采用“私人”用语，记录轴仍按记录用语。同步的 410c9c44 词表测试将在下一次变基合入，分别核对 labelOf 与 uiLabelOf。
+
+验证：`node --test --test-concurrency=1 hub/server/cli.test.ts hub/server/console.test.ts hub/server/console-api-write.test.ts hub/server/console/member-deletion.test.ts`，44 通过、0 失败、0 跳过；`tsc --noEmit` 与生成一致性 179 文件通过。PG 18 所有者、环境、锁、diagnostics、迁移和升级指定组正在执行，结果续记。未跑全量 unit／acceptance，截图与新验收尚待第 5～6 步。
+
+第 4 步补充核对：指定 PG 18／environment／ownership／lock-namespaces／diagnostics／迁移及升级组 23 通过、0 跳过；读取 API 和新增删除页面组 8 通过、0 跳过，成员状态同时返回生成代码和界面标签。已将本分支变基到 kw-sync-local 410c9c44，保留 kw-finish-before-sync-test；唯一冲突保留 labelOf 的“个人”及 uiLabelOf 的“私人”两项断言。变基后重新生成：179 文件一致，无生成差异。

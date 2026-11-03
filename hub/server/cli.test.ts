@@ -637,3 +637,18 @@ describe('commands of other packages', () => {
     assert.match(typo.text, /CIRCLE_HUB_TOKN 不是 circle-hub 的配置项/);
   });
 });
+
+test('member deletion commands are read-only until confirmed, compare the preview and replay the same digest-only operation',async()=>{
+ const env=await migrated(),kit=await openRecords(loadServerConfig(env),{migrate:false});
+ try{
+  const {user:admin,token}=await kit.principals.bootstrapAdmin('合成删除管理员'),member=await kit.principals.createUser(admin,'合成待删除成员'),operator=tokensIn(memoryOperatorTokens(token.token,'synthetic deletion operator'));
+  const first=await kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:member.id,markdown:'合成命令清除正文'}}),before=await kit.store.watermark!();
+  assert.equal((await run(['user','delete',member.name],env,operator)).code,2);
+  const check=await run(['user','delete',member.id,'--dry-run','--json'],env,operator);assert.equal(check.code,0,check.text);const old=JSON.parse(check.out[0]);assert.equal(await kit.store.watermark!(),before);assert.equal((await kit.principals.get(member.id))?.disabled,false);assert.doesNotMatch(check.text,/合成命令清除正文/);
+  const execute=(p:any)=>run(['user','delete',member.id,'--confirm','--json','--operation-id='+p.operation_id,'--expected-state='+p.preview.state,'--epoch='+p.preview.epoch],env,operator);
+  await kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:member.id,markdown:'合成检查后的修改'}});assert.equal((await execute(old)).code,1);assert.equal((await kit.principals.get(member.id))?.disabled,false);
+  const fresh=JSON.parse((await run(['user','delete',member.id,'--dry-run','--json'],env,operator)).out[0]),done=await execute(fresh);assert.equal(done.code,0,done.text);const receipt=JSON.parse(done.out[0]);assert.equal(await kit.store.get(first.digest),null);assert.ok((await kit.principals.get(member.id))?.deleted_at);assert.doesNotMatch(done.text,/合成命令清除正文|合成检查后的修改/);
+  const replay=await run(['user','delete',member.id,'--confirm','--json','--operation-id='+fresh.operation_id],env,operator);assert.equal(replay.code,0,replay.text);assert.deepEqual(JSON.parse(replay.out[0]),receipt);assert.equal((await kit.store.list({kind:'member_deletion'})).items.length,1);
+  assert.equal((await run(['user','enable',member.id],env,operator)).code,1);assert.equal((await run(['user','delete',admin.id,'--dry-run'],env,operator)).code,1);
+ }finally{await kit.close();}
+});

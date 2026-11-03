@@ -1113,3 +1113,19 @@ accepted. Exact finite decimal backfill preserves old non-MB quotas without roun
 extra client `bytes` field has no authority. Existing session, current-admin, CSRF and Origin checks apply. Lowering the
 limit preserves content and shares; the Dialog explains that later writes stop until capacity is available. This is the
 logical retained knowledge/original/version and memory charge, not filesystem free space or active context quota.
+
+### Permanent member deletion
+
+`circle-hub user delete <member-id> --dry-run --json` reads the exact current deletion scope and returns a confirmation
+command. Execution requires `--confirm`, that operation id, the checked state and epoch. An intervening write invalidates
+the check. After preparation has sealed the account, a live administrator can retry `user delete <member-id>
+--operation-id=<id> --confirm`; the same operation returns its existing digest-only completion receipt. The last active
+administrator cannot be deleted. Names are not accepted as deletion targets, avoiding accidental deletion of a fresh
+same-name identity.
+
+The password-console team Inspector links to a GET-only deletion preview and shared Dialog. It shows counts and the
+command without private names, paths or bodies; the console has no direct deletion POST or command bridge action.
+`GET /console/api/members/<id>/deletion` exposes only the same administrator preview/progress. A sealed unfinished
+operation displays waiting and recovery instructions, never a false success. Deleted identities use the generated
+account-status interface label throughout team provenance and member views, retain deletion time, and offer no reset,
+re-enable, quota or token controls. Team content and exact already-authorized frozen copies keep their original rights.

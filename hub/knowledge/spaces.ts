@@ -181,7 +181,7 @@ export class KnowledgeSpaces {
       fail('SOURCE_UNAVAILABLE');
     const body = SpaceQuotaBody.parse({ space, bytes, by: by.id, at: this.#ctx.now().toISOString() });
     await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
-      by=await lockActive(this.#ctx,by,tx);if(by.role!=='admin')fail('SOURCE_UNAVAILABLE'); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
+      by=await lockActive(this.#ctx,by,tx);if(by.role!=='admin'||(await this.#ctx.records.principals.get(space))?.deleted_at)fail('SOURCE_UNAVAILABLE'); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
   }
   async grants(by: Principal): Promise<SpaceGrantBody[]> {
     by = await this.#user(by);
