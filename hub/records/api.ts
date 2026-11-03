@@ -26,7 +26,7 @@ export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
 export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
 export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
-export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
+export { recordIntegrityNotes, noteRecordIntegrity, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
 export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
@@ -236,8 +236,8 @@ export interface ListQuery extends PageQuery {
 }
 
 export interface RecordStore {
-  /** Knowledge candidate timestamps only; callers authorize snapshot rows and verify selected bodies before display. */
-  entryCandidates?(query:{digests:readonly string[];offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>;
+  /** Knowledge candidate timestamps, optionally restricted to matching space headers; callers authorize snapshot rows and verify selected bodies before display. */
+  entryCandidates?(query:{digests:readonly string[];spaces?:readonly string[];offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>;
   entryTimes?(digests:readonly string[],tx?:Transaction):Promise<Map<string,string>>;
   countIndexedBatch?(queries:readonly {index:readonly IndexEntry[];kind?:RecordKind;since?:string;cap?:number}[],tx?:Transaction):Promise<{count:number;capped:boolean}[]>;
   /** Native batches of the existing indexed page operation, preserving each query's cursor/order and verification. */

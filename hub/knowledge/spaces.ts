@@ -6,7 +6,7 @@ import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } f
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { withReadScope,scopedRecordStore,memoReadPort, canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
+import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
@@ -471,7 +471,8 @@ export class KnowledgeSpaces {
     if (record?.kind !== 'knowledge_space_entry')
       return null;
     const body = SpaceEntryBody.parse(record.body);
-    return body.entry === row.entry && sha256Hex(canonicalize(body.content)) === row.entry ? body : null;
+    if(body.entry!==row.entry||sha256Hex(canonicalize(body.content))!==row.entry){noteRecordIntegrity(record.id,record.digest,'知识条目内容与摘要不一致');return null;}
+    return body;
   }
   async entry(by: Principal, root: string, path: string, digest: string): Promise<SpaceEntryView | null> {
     return (await this.entries(by,root,[{path,entry:digest}]))[0]??null;
@@ -497,22 +498,22 @@ export class KnowledgeSpaces {
     });
   }
   /** Page the authorized timestamp candidates before loading entry bodies; equal times keep snapshot iteration order. */
-  async recent(by:Principal,scope:KnowledgeSearchScope='all',limit=100):Promise<{items:SpaceEntryView[];total:number;total_is_upper_bound:boolean}>{
+  async recent(by:Principal,scope:KnowledgeSearchScope='all',limit=100):Promise<{items:SpaceEntryView[];total:number}>{
     if(!Number.isSafeInteger(limit)||limit<1||limit>100)fail('SPACE_ENTRY_INVALID');
     return withReadScope(async()=>{
       const visible=await this.visible(by,scope,undefined,{initialize:false});
-      const candidates=visible.flatMap(s=>s.version.body.entries.filter(row=>s.paths.some(path=>withinSpacePath(row.path,path))).map(row=>({root:s.version.root,row})));
+      const candidates=visible.flatMap(s=>s.version.body.entries.filter(row=>s.paths.some(path=>withinSpacePath(row.path,path))).map(row=>({root:s.version.root,space:s.space,row})));
       const store=this.#ctx.records.store;
       const digests=candidates.map(c=>c.row.record);
       let fallback:{index:number;at:string}[]|undefined;
       if(!store.entryCandidates){
-        const times=store.entryTimes?await store.entryTimes(digests):new Map([...await store.getMany<SpaceEntryBody>(digests)].filter(([,r])=>r.kind==='knowledge_space_entry').map(([id,r])=>[id,SpaceEntryBody.parse(r.body).at]));
-        fallback=candidates.flatMap((c,index)=>times.has(c.row.record)?[{index,at:times.get(c.row.record)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
+        const records=await store.getMany<SpaceEntryBody>(digests);
+        fallback=candidates.flatMap((c,index)=>{const r=records.get(c.row.record);return r?.kind==='knowledge_space_entry'&&r.body.space===c.space?[{index,at:SpaceEntryBody.parse(r.body).at}]:[];}).sort((a,b)=>b.at.localeCompare(a.at));
       }
       const items:SpaceEntryView[]=[];let total=0,offset=0;
       while(items.length<limit){
-        const page=store.entryCandidates?await store.entryCandidates({digests,offset,limit:limit-items.length}):{items:fallback!.slice(offset,offset+limit-items.length),total:fallback!.length};
-        // Off-page bodies have not passed entries(); the candidate count is an upper bound, independent of page size.
+        const page=store.entryCandidates?await store.entryCandidates({digests,spaces:candidates.map(c=>c.space),offset,limit:limit-items.length}):{items:fallback!.slice(offset,offset+limit-items.length),total:fallback!.length};
+        // Space headers are filtered before counting. Content integrity is checked on hydration and reported separately.
         total=page.total;if(!page.items.length)break;offset+=page.items.length;
         const selected=page.items.map(item=>({candidate:candidates[item.index],at:item.at}));
         const groups=new Map<string,typeof selected>();for(const item of selected){const rows=groups.get(item.candidate.root)??[];rows.push(item);groups.set(item.candidate.root,rows);}
@@ -521,7 +522,7 @@ export class KnowledgeSpaces {
         for(const item of selected){const view=loaded.get(item);if(view){if(view.body.at!==item.at)fail('SPACE_ENTRY_INVALID');items.push(view);}}
         if(offset>=page.total)break;
       }
-      return {items,total,total_is_upper_bound:total>0};
+      return {items,total};
     });
   }
   /** Cleared personal dependencies also invalidate indirect team grounds without changing their records. */

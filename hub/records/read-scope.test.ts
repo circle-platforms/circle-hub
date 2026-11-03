@@ -80,6 +80,17 @@ test('candidate entry times read only the canonical header, tolerate unrelated e
  const invalid=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{at:'invalid'}});await assert.rejects(kit.store.entryTimes!([invalid.digest]),IntegrityError);
 });
 
+test('entry candidate counts filter each expected space header before limit and preserve NUL bodies',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+ const at='2026-11-03T02:00:00.000Z';
+ const own=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{at,space:'own',content:'synthetic\0text'}});
+ const foreign=await kit.store.put({kind:'knowledge_space_entry',schema:'synthetic-header@1',provenance:'declared',body:{at,space:'foreign'}});
+ const digests=[foreign.digest,own.digest,own.digest],spaces=['own','own','foreign'];
+ assert.deepEqual(await kit.store.entryCandidates!({digests,spaces,offset:0,limit:1}),{items:[{index:1,at}],total:1});
+ assert.deepEqual(await kit.store.entryCandidates!({digests,spaces,offset:1,limit:100}),{items:[],total:1});
+ await assert.rejects(kit.store.entryCandidates!({digests,spaces:[],offset:0,limit:1}),TypeError);
+});
+
 test('queued reads on both sides of a write all settle and the later reads do not reuse its old value',{timeout:5000},async()=>{
  let n=0;const id='a'.repeat(64),record=()=>({digest:id,body:{n}}),page=()=>({items:[record()],next:null});
  const store={getMany:async()=>new Map([[id,record()]]),get:async()=>record(),findBatch:async(queries:unknown[])=>queries.map(()=>page()),find:async()=>page(),countIndexedBatch:async(queries:unknown[])=>queries.map(()=>({count:n,capped:false})),countIndexed:async()=>({count:n,capped:false}),put:async()=>{n=1;return record();}} as unknown as RecordStore;

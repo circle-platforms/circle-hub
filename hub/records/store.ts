@@ -220,21 +220,23 @@ export class PgRecordStore implements RecordStore {
     return input.map(q=>{const count=counts.get(q.n)??0;return {count,capped:count>=q.cap};});
   }
 
-  async entryCandidates(query:{digests:readonly string[];offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>{
+  async entryCandidates(query:{digests:readonly string[];spaces?:readonly string[];offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>{
     const limit=pageLimit(query.limit);if(!Number.isSafeInteger(query.offset)||query.offset<0)throw new TypeError('entry offset must be a nonnegative safe integer');
+    if(query.spaces&&query.spaces.length!==query.digests.length)throw new TypeError('entry spaces must match candidate digests');
     if(!query.digests.length)return {items:[],total:0};
     const result=await this.#db.query<{items:{index:number;at:string}[];total:string;legacy:string[]}>(`WITH headers AS MATERIALIZED (
       SELECT (wanted.n-1)::int AS n,r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
-      FROM unnest($1::text[]) WITH ORDINALITY AS wanted(digest,n) JOIN hub_read_records() r ON r.digest=wanted.digest
-      WHERE r.kind='knowledge_space_entry'
+      FROM unnest($1::text[], $4::text[]) WITH ORDINALITY AS wanted(digest,space,n) JOIN hub_read_records() r ON r.digest=wanted.digest
+      WHERE r.kind='knowledge_space_entry' AND (wanted.space IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=wanted.space)
     ), selected AS (SELECT n,at FROM headers ORDER BY at COLLATE "C" DESC NULLS FIRST,n OFFSET $2 LIMIT $3)
     SELECT (SELECT count(*) FROM headers)::text AS total,
       COALESCE((SELECT json_agg(json_build_object('index',n,'at',at) ORDER BY at COLLATE "C" DESC NULLS FIRST,n) FROM selected),'[]'::json) AS items,
-      ARRAY(SELECT digest FROM headers WHERE at IS NULL) AS legacy`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit],tx);
+      ARRAY(SELECT digest FROM headers WHERE at IS NULL) AS legacy`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit,query.spaces??query.digests.map(()=>null)],tx);
     const row=result.rows[0];
     if(row.legacy.length){
       const times=await this.entryTimes(query.digests,tx);
-      const ordered=query.digests.flatMap((digest,index)=>times.has(digest)?[{index,at:times.get(digest)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
+      const bodies=query.spaces?await this.getMany<{space:string}>(query.digests,tx):null;
+      const ordered=query.digests.flatMap((digest,index)=>times.has(digest)&&(!query.spaces||bodies?.get(digest)?.body.space===query.spaces[index])?[{index,at:times.get(digest)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
       return {items:ordered.slice(query.offset,query.offset+limit),total:ordered.length};
     }
     for(const item of row.items)if(!IsoTime.safeParse(item.at).success)throw new IntegrityError('知识条目时间字段不完整');

@@ -1341,7 +1341,9 @@ source failure. Every source byte stream is still inspected, every distinct grou
 semantics are preserved. Synthetic regression: 2 and 12 distinct originals both require 4 SQL statements for the parallel
 read, with exact-capture, owner/grantee/admin isolation, mutable-byte isolation and later revocation checks.
 
-The recent-page `total` is a candidate upper bound (`total_is_upper_bound` for nonempty sets), not a validated count.
-Only the displayed bodies pass entries() and its space/content guards. Rejecting a loaded row does not selectively
-subtract it from an otherwise unvalidated total. The console labels this number 至多 and explains it in a tooltip;
-changing the page limit cannot change its meaning or silently count a foreign/invalid body as readable knowledge.
+The recent-page `total` counts matching kind/space headers inside the currently authorized snapshot paths. SQL drops
+cross-space candidates before counting or paging; fallback stores apply the same header filter. The console displays an
+ordinary exact count. Selected bodies still pass strict parsing and content hashing: content-hash
+mismatches are omitted and recorded in the bounded maintenance integrity diagnostics (identifiers and fixed explanation,
+never private text). Such damaged records can remain in the header count until integrity checking reports them; this is
+an integrity incident, not normal visibility uncertainty, and does not authorize hydrating every off-page body.

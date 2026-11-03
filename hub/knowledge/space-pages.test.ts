@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {makeWorld,startPostgres} from './test-support.ts';
-import {withReadScope,type RecordStore} from '../records/api.ts';
+import {recordIntegrityNotes,withReadScope,type RecordStore} from '../records/api.ts';
 import {Database} from '../records/db.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
@@ -16,7 +16,7 @@ test('recent knowledge pages sort before body hydration, keep tie order and hydr
  const page=await spaces.recent(w.user,'personal',100);assert.equal(page.total,125);assert.deepEqual(page.items.map(v=>v.row.entry),expected.slice(0,100).map(v=>v.entry));assert.equal(read.size,100,'off-page bodies are not hydrated');
  await spaces.grant(w.user,{path:'/shared',audience:'member',member:w.outsider.id});
  const shared=await spaces.recent(w.outsider,'shared',7);assert.equal(shared.total,written.filter(r=>r.path==='/shared').length);assert.deepEqual(shared.items.map(v=>v.row.entry),expected.filter(r=>r.path==='/shared').slice(0,7).map(r=>r.entry));assert.ok(shared.items.every(v=>v.cited_count===null));
- await spaces.grant(w.user,{path:'/shared',audience:'member',member:w.outsider.id,revoke:true});assert.deepEqual(await spaces.recent(w.outsider,'shared',7),{items:[],total:0,total_is_upper_bound:false});
+ await spaces.grant(w.user,{path:'/shared',audience:'member',member:w.outsider.id,revoke:true});assert.deepEqual(await spaces.recent(w.outsider,'shared',7),{items:[],total:0});
  const duplicate=await spaces.recent(w.user,'personal',7);assert.deepEqual(duplicate.items.map(v=>v.row.entry),expected.slice(0,7).map(r=>r.entry));
  const current=(await spaces.current(w.user.id))!;const refs=current.body.entries.slice(0,4).map(row=>({path:row.path,entry:row.entry}));
  const batch=await spaces.entries(w.user,current.root,refs);assert.deepEqual(batch,await Promise.all(refs.map(row=>spaces.entry(w.user,current.root,row.path,row.entry))));
@@ -36,7 +36,7 @@ test('same-size knowledge pages use bounded SQL after off-page growth and retain
  try{await withReadScope(async()=>assert.ok((await spaces.recent(w.user,'personal',5)).items.every(v=>v.cited_count===null)));}finally{store.countIndexed=counts;}
 });
 
-test('recent counts remain explicit upper bounds when off-page candidates are cross-space or have an invalid content hash',async t=>{
+test('recent excludes cross-space headers from exact counts and reports content integrity incidents on hydration',async t=>{
  for(const which of ['cross-space','invalid-content']){
   const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!;
   for(let n=0;n<6;n++)await spaces.write(w.user,{kind:'observation',statement:'合成可读条目 '+n,path:'/notes'});
@@ -49,8 +49,11 @@ test('recent counts remain explicit upper bounds when off-page candidates are cr
   }
   await w.kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{...root.body,parent:root.root,entries:[...root.body.entries,{...bad,path:'/notes'}]},index:[{key:'knowledge.space.version',value:w.user.id}]});
   const small=await spaces.recent(w.user,'personal',5),wide=await spaces.recent(w.user,'personal',100);
-  assert.equal(small.total,7);assert.equal(wide.total,7,'loading more rows must not turn a candidate count into an inconsistent exact count');
-  assert.equal(small.total_is_upper_bound,true);assert.equal(wide.total_is_upper_bound,true);
+  const expected=which==='cross-space'?6:7;
+  assert.equal(small.total,expected);assert.equal(wide.total,expected);
+  if(which==='invalid-content')assert.ok(recordIntegrityNotes().entries.some(note=>note.digest===bad.record&&note.explanation==='知识条目内容与摘要不一致'));
+  const native=w.kit.store.entryCandidates;w.kit.store.entryCandidates=undefined;
+  try{assert.deepEqual(await spaces.recent(w.user,'personal',100),wide);}finally{w.kit.store.entryCandidates=native;}
   assert.equal(small.items.length,5);assert.equal(wide.items.length,6);assert.ok(wide.items.every(row=>row.body.space===w.user.id));
   assert.ok(!JSON.stringify(wide.items).includes('合成另一个成员的私人条目'));
  }
