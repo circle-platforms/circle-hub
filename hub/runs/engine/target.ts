@@ -55,6 +55,32 @@ function withBuilds(builds: readonly KnownBuild[], what: string, claim: Omit<Ext
   return [options, { ...claim, options_coverage }];
 }
 
+/**
+ * What a build refusal says when it has no build to list (issue 131, D05 R[8]): never "pick one listed below" over an empty
+ * list. The missing fact is which builds the knowledge base lacks; the next step, when someone can take it, is the
+ * administrator's knowledge sync, which reads the build sources the product pack declares (product.json `sync`) and
+ * produces the roots. A product pack without that declaration gives the Hub no source of builds: the step is then its
+ * owner's, who declares one and publishes the pack, and the code's generic fix (resolve_reference) is never the answer.
+ */
+function noBuildToList(product: ProductHandle, known: readonly KnownBuild[], line: string | undefined): { fix?: string; missing: string } {
+  const pid = product.product.id;
+  const scope = line === undefined ? `产品线 ${pid}` : `产品线 ${pid} 版本线 ${line}`;
+  const inScope = line === undefined ? known : known.filter((b) => b.line === line);
+  const elsewhere = [...new Set(known.map((b) => b.line))].sort(compareLines);
+  const lacking = inScope.length > 0
+    ? `${scope}已知的 ${inScope.length} 个构建都还没有知识根，所在版本线也没有树苗根`
+    : known.length === 0
+      ? `${scope}在知识库里一个构建也没有：这条产品线还没有同步出构建`
+      : `${scope}在知识库里没有构建（这条产品线已知的 ${known.length} 个构建在版本线 ${elsewhere.slice(0, 20).join('、')}${elsewhere.length > 20 ? ` 等 ${elsewhere.length} 条` : ''}）`;
+  if (product.product.sync === undefined) return {
+    missing: `${lacking}；产品包 ${product.id}@${product.version} 没有声明构建同步（product.json 的 sync），Hub 没有读出这条产品线构建的来源`,
+    fix: `由产品包负责人在 product.json 里声明 sync（构建来源的起始页和计划函数）并发布新版本（circle-hub pack publish），再由管理员同步这条产品线（circle-hub knowledge sync）`,
+  };
+  const name = product.product.names[0] ?? pid;
+  const command = `circle-hub knowledge sync --product ${/[\s'"]/.test(name) ? JSON.stringify(name) : name}${line === undefined ? '' : ` --line ${line}`}`;
+  return { missing: lacking, fix: `由管理员同步这条产品线（${command}）：它从产品包声明的构建来源读出构建并产出知识根，同步报告逐个写明没产出根的构建和原因；同步后用报告里的构建名重试` };
+}
+
 /** Version lines newest first: dotted parts compared as numbers when both are numbers, a missing part counting as 0. */
 function compareLines(a: string, b: string): number {
   const pa = a.split('.');
@@ -160,7 +186,8 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     if (!ok) {
       if (unbound && !declaredTarget) throw unresolved('/product', '这个任务包不绑定产品线，不写 build 时不能指定产品', [], '去掉 product 参数；要按某个构建读取并锁定它的知识根时，product 和 build 两项都写');
       const options = namesOf(unbound ? (await packs.products()).filter((p) => readable.has(p.product.id)) : await eligible());
-      throw unresolved('/product', `产品“${input.product}”不是这个任务包能用的产品线`, options, options.length > 0 ? '改用下面列出的产品名称之一（同一产品线的任何名称都可以）' : undefined);
+      // With no product line to list, the answer says which fact is missing instead of pointing at an empty list (issue 131).
+      throw unresolved('/product', `产品“${input.product}”不是这个任务包能用的产品线`, options, options.length > 0 ? '改用下面列出的产品名称之一（同一产品线的任何名称都可以）' : undefined, options.length > 0 ? {} : { missing: `已安装的产品包里没有这个任务包能用、你又能读的产品线（共查 ${(await packs.products()).length} 个产品包）；产品包由管理员安装和分配` });
     }
     product = named;
     declaredProduct = true;
@@ -240,11 +267,18 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
         collected_at: at,
         coverage: { complete: true, examined: all.length, total: all.length, note: '名字或别名不分大小写逐字相等才算，不按部分文字或版本号猜' },
       });
-      throw unresolved('/build', `产品线 ${pid} 里没有名字或别名是“${input.build}”的构建`, options, '把 build 改成下面列出的一个名字，照原样抄写', extra);
+      const message = `产品线 ${pid} 里没有名字或别名是“${input.build}”的构建`;
+      if (options.length === 0) {
+        const empty = noBuildToList(product, all, requestedLine);
+        throw unresolved('/build', message, options, empty.fix, { ...extra, missing: empty.missing });
+      }
+      throw unresolved('/build', message, options, '把 build 改成下面列出的一个名字，照原样抄写', extra);
     }
     if (input.version !== undefined && found.line !== input.version) {
       const [options, extra] = withBuilds(await withRoot(), `版本线 ${input.version} 里可以锁定知识根的构建`, { warrant: NAME_RULE, provenance: 'projected', collected_at: at });
-      throw unresolved('/build', `构建“${input.build}”属于版本线 ${found.line}，不在版本线 ${input.version} 里`, options, '去掉 version，或把 build 改成下面列出的一个名字', extra);
+      const message = `构建“${input.build}”属于版本线 ${found.line}，不在版本线 ${input.version} 里`;
+      if (options.length === 0) throw unresolved('/build', message, options, `去掉 version，按构建 ${input.build} 自己的版本线 ${found.line} 运行`, { ...extra, missing: noBuildToList(product, await allKnown(), input.version).missing });
+      throw unresolved('/build', message, options, '去掉 version，或把 build 改成下面列出的一个名字', extra);
     }
     build = found;
     buildName = input.build;
@@ -254,8 +288,15 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     const candidates = await withRoot();
     const line = input.version !== undefined ? `版本线 ${input.version} ` : '';
     if (candidates.length === 0) {
-      const [all, extra] = withBuilds((await allKnown()).filter(b => input.version === undefined || b.line === input.version), `${line}已知的构建（都还没有知识根）`, { provenance: 'projected', collected_at: at });
-      throw unresolved(input.version !== undefined ? '/version' : '/build', `产品线 ${pid} ${line}下没有已产出知识根的构建`, all, '换一个版本线；要这条版本线的知识，请管理员同步这条产品线（circle-hub knowledge sync）', extra);
+      const known = await allKnown();
+      const [all, extra] = withBuilds(known.filter(b => input.version === undefined || b.line === input.version), `${line}已知的构建（都还没有知识根）`, { provenance: 'projected', collected_at: at });
+      const where = input.version !== undefined ? '/version' : '/build';
+      const message = `产品线 ${pid} ${line}下没有已产出知识根的构建`;
+      if (all.length === 0) {
+        const empty = noBuildToList(product, known, input.version);
+        throw unresolved(where, message, all, empty.fix, { ...extra, missing: empty.missing });
+      }
+      throw unresolved(where, message, all, '换一个版本线；要这条版本线的知识，请管理员同步这条产品线（circle-hub knowledge sync）', extra);
     }
     const select = product.product.select_build;
     if (select !== undefined) {
@@ -308,6 +349,10 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   }
   if (root === null) {
     const [options, extra] = withBuilds(await withRoot(), '可以锁定知识根的构建', { provenance: 'projected', collected_at: at });
+    if (options.length === 0) {
+      const empty = noBuildToList(product, await allKnown(), build.line);
+      throw unresolved('/build', `构建 ${buildName} 还没有知识根`, options, empty.fix, { ...extra, missing: empty.missing });
+    }
     throw unresolved('/build', `构建 ${buildName} 还没有知识根`, options, '换下面列出的一个构建；要这个构建的知识，请管理员同步这条产品线（circle-hub knowledge sync）', extra);
   }
   const ground = treeReference(root.root, '/');

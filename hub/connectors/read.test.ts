@@ -771,3 +771,97 @@ for (const refusals of [1, 2] as const) {
     assert.doesNotMatch(exit.fix, /系统包负责人/);
   });
 }
+
+/** A record of the same bytes that a newer scanner wrote with a hit: the newest scanner's scans of the bytes decide (B02 R[4]). */
+async function newerScannerHit(w: World, artifact: SourceArtifact): Promise<void> {
+  const version = Number(/@([0-9]+)$/.exec(artifact.body.scan.scanner)?.[1] ?? 0) + 1;
+  await w.k.records.store.put({ kind: 'source_artifact', schema: 'source_artifact@1', provenance: 'observed', index: [{ key: 'artifact.sha256', value: artifact.body.sha256 }], body: {
+    ...artifact.body,
+    read_tier: 'retain_only',
+    visibility: { readers: [], admins: true, packs: [], shareable: false },
+    scan: { scanner: `credential-scan@${version}`, inspected: true, clean: false, findings: [{ detector: 'password_assignment', offset: 0, line: 1, column: 1 }], truncated: false },
+  } });
+}
+
+async function nestedEntry(w: World, manifest: string): Promise<ReadManifest['reads'][number]> {
+  return (await w.k.records.store.get<ReadManifest>(manifest))!.body.reads[0];
+}
+
+test('issue 109: an answer another record of its bytes holds back reaches no function; the effective tier decides, not the record the read wrote', async (t) => {
+  let projections = 0;
+  const wrapped: PackFunctionRunner = async (target, input, kind) => {
+    if (kind === 'project') projections += 1;
+    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
+  };
+  const w = await world(t, { callFunction: wrapped });
+  const id = 'manual:rows:manuals/line-2.1/cli.md';
+  const first = success(await w.k.connectors.reader.read(id, w.ctx));
+  assert.equal(projections, 1);
+  const original = first.artifacts[0].artifact;
+  assert.equal(original.body.read_tier, 'model_readable');
+  await newerScannerHit(w, original);
+  // The read stores the same answer again; its own record says model_readable, the bytes are retain_only.
+  const reason = failure(await w.k.connectors.reader.read(id, w.ctx), /SOURCE_CREDENTIAL/);
+  assert.ok(reason.includes(original.body.sha256), 'the reason names the held answer');
+  assert.equal(projections, 1, 'the projection never sees the held answer');
+});
+
+test('issue 109: a cached nested read is checked again against the effective tier; a newer scanner hit ends the entry', async (t) => {
+  const inputs: unknown[] = [];
+  const wrapped: PackFunctionRunner = async (target, input, kind) => {
+    inputs.push(input);
+    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
+  };
+  const w = await world(t, { callFunction: wrapped });
+  const subtrees = () => w.agile.count('/agile/get_child_node_task/');
+  const first = success(await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx));
+  const tree = (await w.k.records.store.get<ReadManifest>((await nestedEntry(w, first.manifest)).manifest!))!;
+  const subtree = tree.body.requests.find((request) => request.key === 'subtree')!;
+  const held = (await w.k.records.store.get<SourceArtifact['body']>(subtree.artifact!)) as unknown as SourceArtifact;
+  const cached = success(await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx));
+  assert.equal((await nestedEntry(w, cached.manifest)).cached, true, 'served from the cache while nothing changed');
+  assert.equal(subtrees(), 1);
+  await newerScannerHit(w, held);
+  inputs.length = 0;
+  const again = await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx);
+  const entry = await nestedEntry(w, (again as { manifest: string }).manifest);
+  assert.equal(entry.cached, false, 'the entry is not served once its bytes are held');
+  assert.equal(entry.ok, false, 'the tree read again fails on its held original');
+  assert.equal(subtrees(), 2, 'the tree is read again');
+  assert.ok(!JSON.stringify(inputs).includes('030：演示测试项目'), 'no function gets the held tree content');
+});
+
+test('issue 109: a cached nested read whose accepted findings are revoked is not served again', async (t) => {
+  const secret = 'FtpSynthetic7834';
+  const inputs: unknown[] = [];
+  const wrapped: PackFunctionRunner = async (target, input, kind) => {
+    inputs.push(input);
+    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
+  };
+  const w = await world(t, { callFunction: wrapped });
+  w.fixture.trees['7714'][0].children.push({ label: `password = ${secret}`, id: '8999', cases: [], children: [] });
+  const subtrees = () => w.agile.count('/agile/get_child_node_task/');
+  const read = () => w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx);
+  const first = await read();
+  assert.equal((await nestedEntry(w, (first as { manifest: string }).manifest)).ok, false, 'the tree answer is held for its finding');
+  for (const bytes of (await w.k.allObjects()).filter((value) => value.includes(secret))) {
+    const records = await w.k.records.artifacts.records(sha256Hex(bytes));
+    if (records.some((record) => 'read' in record.body.origin)) await w.k.records.artifacts.acceptFindings(w.k.admin, sha256Hex(bytes), '合成目录树中的虚构示例');
+  }
+  const accepted = success(await read());
+  assert.equal((await nestedEntry(w, accepted.manifest)).ok, true);
+  const cached = success(await read());
+  assert.equal((await nestedEntry(w, cached.manifest)).cached, true, 'the accepted tree is cached');
+  const before = subtrees();
+  for (const bytes of (await w.k.allObjects()).filter((value) => value.includes(secret))) {
+    const records = await w.k.records.artifacts.records(sha256Hex(bytes));
+    if (records.some((record) => record.body.scan.accepted !== undefined)) await w.k.records.artifacts.revokeFindings(w.k.admin, sha256Hex(bytes));
+  }
+  inputs.length = 0;
+  const revoked = await read();
+  const entry = await nestedEntry(w, (revoked as { manifest: string }).manifest);
+  assert.equal(entry.cached, false, 'a revoked acceptance ends the entry');
+  assert.equal(entry.ok, false);
+  assert.equal(subtrees(), before + 1);
+  assert.ok(!JSON.stringify(inputs).includes(secret), 'no function gets the formerly accepted content');
+});
