@@ -22,7 +22,9 @@ const cases:Array<[string,(c:C,d:any)=>void|Promise<void>]>=[
  ['result.run',c=>{c.detail.latest!.result.run='run_'+'1'.repeat(26);}],
  ['result.errors',c=>{c.detail.latest!.result.errors.push({code:'SOURCE_UNAVAILABLE',message:'private-source-marker'});}],
  ['result.partitions',c=>{c.detail.latest!.result.partitions.rejected.push({item:'private-source-marker'} as any);}],
- ['run.items',c=>{c.detail.run.items.push({...c.detail.run.items[0],id:'other-synthetic'});}],
+ ['run.items',c=>{c.detail.run.items=[];}],
+ ['proof.fields.items',c=>{c.detail.run.items.push({...c.detail.run.items[0],id:'other-synthetic'});c.detail.latest!.result.partitions.delivered.push({...c.detail.latest!.result.partitions.delivered[0],item:'other-synthetic'});}],
+ ['run.items.dynamic',c=>{c.detail.run.items.push({...c.detail.run.items[0],id:'other-synthetic'});c.detail.latest!.result.partitions.delivered.push({...c.detail.latest!.result.partitions.delivered[0],item:'other-synthetic'});data(c).autoids=[...data(c).autoids,'other-synthetic-id'];return changeWorkflow(c,workflow=>{workflow.requirements[0].layers=[...(workflow.requirements[0].layers??['static']),'dynamic'];workflow.requirements[0].observation='dispatch@1';});}],
  ['result.coverage',c=>{c.detail.latest!.result.partitions.delivered[0].item='other-synthetic';}],
  ['requirements.0',c=>{c.detail.latest!.result.partitions.delivered[0].requirements[0].status='pending';}],
  ['requirements.1',c=>changeWorkflow(c,workflow=>{workflow.requirements.push({...workflow.requirements[0],key:'synthetic-run',target:'run'});})],
@@ -84,4 +86,16 @@ test('unexpected release exceptions are hashed and the public boundary message s
  const c=await setup();t.after(()=>c.close());const prepared=await gate(c);
  const result=await checkEffectBoundary({...prepared.context,release:async()=>{throw new Error('private-source-marker');},lease:async()=>({ok:true}),content:async()=>true,audience:async()=>true});
  assert.ok(!result.ok);assert.equal(result.code,'EFFECT_RELEASE_UNMET');assert.ok(!result.message.includes('private-source-marker'));assert.equal(result.admin_checks![0].condition,'release.execution');assert.ok(!JSON.stringify(result).includes('private-source-marker'));
+});
+// Decision 104: one verification run may carry several items when the proof names one dispatched id per item.
+test('a verification run of several items releases when the proof names one dispatched id per item',async t=>{
+ const c=await setup();t.after(()=>c.close());
+ c.detail.run.items.push({...c.detail.run.items[0],id:'other-synthetic'});
+ c.detail.latest!.result.partitions.delivered.push({...structuredClone(c.detail.latest!.result.partitions.delivered[0]),item:'other-synthetic'});
+ data(c).autoids=[...data(c).autoids,'other-synthetic-id'];
+ for(const item of c.detail.latest!.result.partitions.delivered)(item.requirements[0].claims[0].statement.data as any).autoids=data(c).autoids;
+ const result=await inspectInput(c.admin,c.run,c.executor.definition,c.kit,c.runs,c.workflows,c.now());
+ assert.ok(result.input,JSON.stringify(result.checks.filter(check=>check.satisfied!==true)));
+ assert.deepEqual(result.input!.items,data(c).autoids);
+ assert.equal(result.input!.item,c.detail.run.items[0].id);
 });

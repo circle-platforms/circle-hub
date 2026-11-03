@@ -20,6 +20,14 @@ export class ExecutorCredentialError extends ExecutorAccessError {
     constructor(id: string, name?: string, fact?:string) { super(fact??(name ? `密钥 ${name} 没有可用的当前设置；未发请求` : `执行器 ${id} 还没有 credential 引用；未发请求`), name ? `circle-hub secret set --name ${name}，然后重做原操作` : `在定义里加 credential 引用后 circle-hub executor update ${id} <定义文件>；原来的钥匙会迁移过去`); }
 }
 export function executorConsumer(d: ExecutorDefinition | ExecutorSource) { return { definition: d.id!, item: 'credential', sends_to: sha256Hex(canonicalBytes({ endpoint: d.endpoint, ca: d.ca })) }; }
+/** An executor describes how to reach the bed, not which build it should run (decision 120): the build the devices run is what
+ * they report, and only a run's locked build is compared against it. Refused when written; a definition registered before the
+ * rule still reads, and the dispatcher never takes these values from it. */
+function refuseBuildBaseline(input: unknown): void {
+    const context = input !== null && typeof input === 'object' ? (input as Record<string, unknown>).precheck_context : undefined;
+    for (const key of ['build', 'build_base']) if (context !== null && typeof context === 'object' && Object.hasOwn(context, key))
+        throw new Error(`执行器定义不带构建：删掉 precheck_context.${key}。设备装的构建以设备自述为准，只有运行锁定的构建才拿来比对（决定 120）`);
+}
 interface UpdateGuard {
     digest: string;
     source: ExecutorSource;
@@ -59,12 +67,13 @@ export class ExecutorRegistry {
     constructor(records: RecordsKit) { this.records = records; }
     async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || user.role !== 'admin')
         throw new Error('只有启用中的管理员能操作执行器和作业'); }
-    async add(by: Principal, input: unknown): Promise<RegisteredExecutor> { await this.admin(by); return this.configure(by, this.validate({ ...input as object, id: newId('exe') })); }
+    async add(by: Principal, input: unknown): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); return this.configure(by, this.validate({ ...input as object, id: newId('exe') })); }
     async update(by: Principal, id: string, input: unknown): Promise<RegisteredExecutor> {
         await this.admin(by);
         const current = await this.readSource(id);
         if (!current)
             throw new Error('执行器对你不可用');
+        refuseBuildBaseline(input);
         const source = this.validate({ ...input as object, id });
         const rebind = current.source.target !== source.target || current.source.endpoint !== source.endpoint || current.source.ca !== source.ca || canonicalize([...current.source.resources].sort()) !== canonicalize([...source.resources].sort());
         let previousTarget = current.source.target;
@@ -129,6 +138,8 @@ export class ExecutorRegistry {
     async get(id: string, snapshot?: VariableSnapshot): Promise<RegisteredExecutor | null> { const current = await this.readSource(id); if (!current)
         return null; const resolved = await resolveExecutor(this.records, current.source, snapshot); return { ...current, ...resolved, resolved_digest: sha256Hex(canonicalBytes(resolved.definition)) }; }
     async sources(by: Principal) {await this.admin(by);return this.internalSources();}
+    /** Every enabled executor that declares version probes and an inventory, read without borrowing a caller's privileges: for the Hub's own device observations (decision 112). */
+    async probed(): Promise<RegisteredExecutor[]> { const sources = await this.internalSources(); const entries = await Promise.all(sources.map(e => this.get(e.id))); return entries.filter((e): e is RegisteredExecutor => e !== null && e.definition.enabled && e.definition.probes !== undefined && typeof e.definition.manifest_sha256 === 'string'); }
     private async internalSources() { const ids = new Set<string>(); let cursor: string | null = null; do {
         const page = await this.records.authorizations.history({ permission: 'resource_config', limit: 500, cursor });
         for (const r of page.items)

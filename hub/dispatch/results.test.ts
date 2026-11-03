@@ -114,3 +114,35 @@ test('certified owned reports become qualified judgments only after per-seat pro
     assert.equal(value.rows[0].dynamic_terminal,outcome==='good'?'pass':'fail');assert.equal(value.rows[0].qualifier.nature,'judgment');assert.equal(value.rows[0].accepted_as_fact,false);
   }
 });
+
+test('a row that did not pass names its log and device sessions as sources its runner reads; a passing row names none', async t => {
+  for (const outcome of ['good', 'bad']) {
+    const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome, log: `synthetic log ${outcome}`, sessions: { 'device-a.txt': 'synthetic session', 'device-b.txt': '' } }] } : value }); t.after(() => c.close());
+    await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
+    await c.freezeExecutor();
+    const state = await c.service.dispatch(c.admin, c.run, c.executor.id); const row = (await report(c, state.result!)).rows[0];
+    if (outcome === 'good') { assert.equal(row.evidence, undefined, JSON.stringify(row)); continue; }
+    // An empty session names no source; the raw report stays readable by functions only.
+    assert.match(row.evidence.log, /^src:[a-f0-9]{64}$/); assert.deepEqual(Object.keys(row.evidence.sessions), ['device-a.txt']);
+    const text = async (reader: typeof c.owner, reference: string) => { const source = await c.kit.artifacts.source(reader, reference.slice(4)); return source?.bytes ? new TextDecoder().decode(source.bytes) : null; };
+    assert.equal(await text(c.owner, row.evidence.log), 'synthetic log bad'); assert.equal(await text(c.owner, row.evidence.sessions['device-a.txt']), 'synthetic session');
+    const other = await c.kit.principals.createUser(c.admin, '其他合成用户');
+    assert.equal(await text(other, row.evidence.log), null);
+  }
+});
+
+test('a session name that is no valid source name still saves the session under a positional name and the job completes', async t => {
+  const long = 'x'.repeat(301);
+  const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'bad\u0007name': 'synthetic bell session', [long]: 'synthetic long session' } }] } : value }); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
+  await c.freezeExecutor();
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective', JSON.stringify(state)); assert.ok(state.result);
+  const row = (await report(c, state.result!)).rows[0];
+  // The row keeps the names the target reported; the sources take positional names.
+  assert.deepEqual(Object.keys(row.evidence.sessions).sort(), ['bad\u0007name', long].sort());
+  for (const [index, name] of ['bad\u0007name', long].entries()) {
+    const source = await c.kit.artifacts.source(c.owner, row.evidence.sessions[name].slice(4));
+    assert.equal(source?.artifact.body.name, `session-${index + 1}.txt`);
+  }
+});

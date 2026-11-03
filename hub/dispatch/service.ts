@@ -13,10 +13,11 @@ import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type Qu
 import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import {Redactor} from '../connectors/api.ts';
 import {resolveExecutor} from './source.ts';
-import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret } from './executors.ts';
+import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
-import type { BuildKnowledge } from './probes.ts';
+import { probeValues, type BuildKnowledge, type SeatEcho } from './probes.ts';
+import { DeviceObservation } from '../../contracts/src/pack.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
@@ -57,6 +58,9 @@ import {
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
+
+/** Index of device observations: the inventory digest and the device's JSON Pointer in it, newest first (decision 112). */
+const OBSERVATION_KEY = 'dispatch.device_observation';
 /** Only validated generated outcomes can prove a submission retry is safe. */
 function retrySafeOutcome(value:unknown):boolean {
   if(!isEffectOutcome(value))return false;
@@ -75,7 +79,7 @@ export interface DispatchOptions {
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus {report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus {report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
 interface Heartbeat {stop:()=>Promise<void>;held:()=>boolean;lastConfirmedAt:()=>number|null;}
 interface LeaseClock {at:number;mono:number;ttl:number;}
@@ -93,6 +97,49 @@ function precheckIssues(events:readonly Event[]):NonNullable<JobStatus['failed_c
     const d=e.body.detail;if(typeof d.missing_fact!=='string')return [];
     return [{step:typeof d.step==='string'?d.step:String(d.phase),...(typeof d.seat==='string'?{seat:d.seat}:{}),...(typeof d.check==='string'?{check:d.check}:{}),missing_fact:d.missing_fact,next_action:typeof d.next_action==='string'?d.next_action:'管理员核对附加只读来源及期望条件声明，补齐来源与期望事实后再采证'}];
   });
+}
+/** Values only a run supplies (decision 120): the executor describes how to reach the bed, not which build it should run, so
+ * a definition's precheck context never stands in for them (one registered before the rule keeps parsing; its build is not read). */
+const RUN_LOCKED = new Set(['build', 'build_base']);
+function environmentOf(context: Readonly<Record<string, unknown>>): Record<string, unknown> { return Object.fromEntries(Object.entries(context).filter(([key]) => !RUN_LOCKED.has(key))); }
+/** The values only a run supplies that a declared value is bound to. */
+function runBound(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(runBound);
+  if (value === null || typeof value !== 'object') return [];
+  const o = value as Record<string, unknown>;
+  return Object.keys(o).length === 1 && typeof o.$value === 'string' ? (RUN_LOCKED.has(o.$value) ? [o.$value] : []) : Object.values(o).flatMap(runBound);
+}
+/** What a precheck without a run's locked build only recorded: each seat's version report and the conditions bound to the build. */
+function precheckUnjudged(events:readonly Event[]):NonNullable<JobStatus['unjudged']> {
+  return events.flatMap((e):NonNullable<JobStatus['unjudged']>=>{
+    const d=e.body.detail;
+    if(d.phase==='device_probe' && d.judged===false)return [{step:'device_probe',...(typeof d.seat==='string'?{seat:d.seat}:{}),...(typeof d.check==='string'?{check:d.check}:{})}];
+    if((d.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(d.phase))) && Array.isArray(d.conditions))return (d.conditions as Array<Record<string,unknown>|null>).filter(c=>c?.judged===false && typeof c.pointer==='string').map(c=>({step:String(d.phase),pointer:String(c!.pointer)}));
+    return [];
+  });
+}
+/** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them (CES reports a
+ * failed bed check as it is). */
+class LeaseCoverageError extends Error {
+  missing: string[];
+  constructor(missing: string[]) { super('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验'); this.missing = missing; }
+}
+/** Another job holds the physical target. The message names the jobs and the administrator's commands (the CLI shows it);
+ * the Hub's own dispatch tells the runner only that the target is occupied, since those jobs may be other users'. */
+export class TargetOccupiedError extends Error {
+  readonly jobs: readonly string[];
+  constructor(jobs: readonly string[], message: string) { super(message); this.jobs = jobs; }
+}
+/** The at-most-once guard (V07): these bytes were already dispatched by `job`; `ended` when that job reached its end. */
+export class AlreadyDispatchedError extends Error {
+  readonly job: string;
+  readonly ended: boolean;
+  constructor(job: string, ended: boolean, message: string) { super(message); this.job = job; this.ended = ended; }
+}
+/** The fixed labels of the release checks that do not hold. Fields carry digests only, so the labels disclose no value. */
+function unmetReleaseLabels(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): string[] {
+  const checks = [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
+  return [...new Set(checks.filter((check) => check.satisfied !== true).map((check) => check.label))];
 }
 export class DispatchService {
   readonly options: DispatchOptions;
@@ -127,7 +174,7 @@ export class DispatchService {
     const failedConditions=events.flatMap(e=>Array.isArray(e.body.detail.conditions)?e.body.detail.conditions.filter(object).filter(c=>c.matched===false && typeof c.pointer==='string' && typeof c.operator==='string').map(c=>({pointer:String(c.pointer),operator:String(c.operator)})):[]);
     const lastCredential=[...events].reverse().find(e=>e.body.detail.phase==='session_unavailable'||e.body.detail.phase==='credential_used');
     const gap=!riskDisposed&&lastCredential?.body.detail.phase==='session_unavailable'?lastCredential.body.detail:undefined;
-    const failedChecks=precheckIssues(events);
+    const failedChecks=precheckIssues(events),unjudged=precheckUnjudged(events);
     // Manifest devices that are not declared dispatch targets: listed by manifest position and declared type, never probed
     // and never dispatched to (P07 R[1], C07 R[4]).
     const unprobed=[...events].reverse().find(e=>Array.isArray(e.body.detail.unprobed_non_targets))?.body.detail.unprobed_non_targets as Array<{index:number;type:string|null}>|undefined;
@@ -137,7 +184,7 @@ export class DispatchService {
     if(typeof note==='string'){try{const bytes=await this.options.records.objects.get(note);if(!bytes||sha256Hex(bytes)!==note)throw new Error('missing');adminRelease=JSON.parse(new TextDecoder().decode(bytes)).checks;}catch{adminReleaseMissing=true;}}
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=roundRecords(events).filter(e=>typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
-    return { job,...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
+    return { job,...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:pendingReport&&!unknown&&!missingReceipt?{next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:`circle-hub job resume ${job}；只读补报告，不重交`}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
@@ -273,7 +320,7 @@ export class DispatchService {
     const booked = booking ? await this.options.runs.getRun(by, booking) : null;
     if (booking && !booked) throw new Error('预订运行对你不可用');
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()), input: null,
-      user: booked?.run.runner ?? by.id, resources: [], context: { ...d.precheck_context, ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
+      user: booked?.run.runner ?? by.id, resources: [], context: { ...environmentOf(d.precheck_context), ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
     await this.assertNoSecrets(binding);
     await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, read_only: true });
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
@@ -303,7 +350,7 @@ export class DispatchService {
     await this.assertNoSecrets(d);
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
-    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:d.precheck_context};
+    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:environmentOf(d.precheck_context)};
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
@@ -348,7 +395,50 @@ export class DispatchService {
     await this.unknown(binding,fact,sources,{request_id:intent.body.detail.request_id,next_action:`请管理员 ${by.id} 核对该请求的审计、收尾和设备现场；读取通道需修复时先修复后运行 circle-hub job resume ${binding.job}，再用 circle-hub job dispose ${binding.job} 具名处置；不得重跑 conformance 或重交`});
   }
 
-  async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void): Promise<JobStatus> {
+  /** Decision 105 (model W03, D06): once the runner's submission is accepted and the release conditions hold, the Hub starts the
+   * hub_template job itself for the runner's run; a named administrator stays responsible for an unknown outcome. Exactly one
+   * enabled executor of the run's pack must release; none or several start nothing and say why. The byte and budget guards of
+   * dispatch refuse a repeat, so an accepted submission dispatches at most once. */
+  /**
+   * The Hub's own dispatch of an accepted run for its runner (decision 105). The reasons are the runner's: release checks
+   * that do not hold are named by their fixed labels; what only an administrator can see or do goes to the administrator
+   * log, errors included, and the answer says the administrator has it.
+   */
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
+    const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
+    if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
+    const detail = await this.options.runs.getRun(admin, run);
+    if (!detail?.run.runner) return { started: false, reason: '运行不可读或没有发起用户' };
+    const log = (what: string, text: string) => { try { this.options.adminLog?.({ traceId: null, run, what: `hub dispatch ${what}`, detail: this.redactor.maskText(text).slice(0, 2000) }); } catch { /* the log never decides the answer */ } };
+    const described = (error: unknown) => error instanceof Error ? error.message : String(error);
+    const pack = detail.run.pack.split('@')[0];
+    const candidates = (await this.registry.list(admin)).filter((e) => e.definition.enabled && e.definition.proof.package === pack);
+    const released: typeof candidates = [], unmet = new Set<string>();
+    for (const candidate of candidates) {
+      try {
+        const explanation = await this.explainRelease(admin, run, candidate.id);
+        if (explanation.satisfied) { released.push(candidate); continue; }
+        const labels = unmetReleaseLabels(explanation); for (const label of labels) unmet.add(label);
+        log('release unmet', `${candidate.id}: ${labels.join('；')}`);
+      } catch (error) { unmet.add('放行核对出错'); log('release error', `${candidate.id}: ${described(error)}`); }
+    }
+    if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，等管理员指定执行器（已记下）` }; }
+    if (!released.length) return { started: false, reason: candidates.length ? `放行条件尚未全部满足：${[...unmet].join('、')}；能在提交、计划或预订上补齐的补齐后原样重交，其余等管理员处理（已记下）` : '没有为该任务包登记的启用执行器，Hub 没有派发；等管理员登记执行器' };
+    const chosen = released[0];
+    try {
+      const status = await this.dispatch(admin, run, chosen.id, (job) => onReserved?.(job, chosen.id), { initiatedBy: detail.run.runner });
+      return { started: true, executor: chosen.id, status };
+    } catch (error) {
+      log('error', `${chosen.id}: ${described(error)}`);
+      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交'
+        : error instanceof AlreadyDispatchedError
+          // The same bytes are dispatched at most once (V07): that is the runner's matter, not the administrator's.
+          ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后开新运行` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
+          : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
+    }
+  }
+
+  async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void, options: { initiatedBy?: string } = {}): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
     if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
@@ -357,7 +447,7 @@ export class DispatchService {
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (registrationMissing(d).filter(name=>name!=='environment').length) throw new Error(`派发登记缺事实：${registrationMissing(d).filter(name=>name!=='environment').join('、')}；请先 precheck 采证、转换并发布清单，再 update 补齐`);
     const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,recheck:this.options.recheckChecks,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
-    const provisional:JobBinding={run,job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
+    const provisional:JobBinding={run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
     const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
     const input=preflight.input;
     const previous = await this.options.records.store.getByKey('action', `dispatch.bytes:${input.sha256}`);
@@ -371,11 +461,11 @@ export class DispatchService {
     for (const prior of attempts) {
       const priorJob = String(prior.body.detail.job); const priorEvents = await this.journal.events(priorJob);
       const end = eventOf(priorEvents,'complete'); const pinned = await this.journal.binding(priorJob);
-      if (!end || isFrozen(priorEvents) || !(retrySafeOutcome(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
+      if (!end || isFrozen(priorEvents) || !(retrySafeOutcome(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new AlreadyDispatchedError(priorJob, !!end && !isFrozen(priorEvents), `这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
-    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch{return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE','缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
+    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch(error){const missing=error instanceof LeaseCoverageError?error.missing:[];return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE',missing.length?`缺少覆盖派发窗口的同血缘资源租约：${missing.join('、')}；执行器的目标是这些键所在的整个自动化测试环境，在本运行的预订谱系里取得全部键后重开计划与核验`:'缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
@@ -413,7 +503,7 @@ export class DispatchService {
       let fresh:HolderSnapshot[];try{fresh=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch{throw new EffectBoundaryError(deny(5,'LEASE_EXPIRED','资源租约已到期或不再覆盖窗口；请恢复租约并重证基线'));}
       if (!this.sameFences(initial, fresh)) throw new EffectBoundaryError(deny(5,'FENCING_STALE','派发前围栏已变；请重新证明基线'));
       const currentProof = await verifyInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
-      if(!same({...input,result:null},{...currentProof,result:null}))throw new InputVerificationError('只读核对期间核验数据已改变；请按当前核验结果重新派发，尚未提交');
+      if(!same({...input,result:null},{...currentProof,result:null}))throw new InputVerificationError('只读核对期间这个运行的最新核验结果改变了，没有提交');
       const notAfter = new Date(this.now().getTime() + d.submit_timeout_ms).toISOString();
       const sequence = attempts.length ? Number(attempts[0].body.detail.sequence) : (await this.options.records.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [input.lineage] })).filter(e => (e.body as Record<string, unknown>)?.detail && ((e.body as { detail: Record<string, unknown> }).detail.phase === 'intent')).length + 1;
       const key = attempts.length ? String(attempts[0].body.detail.intent_key) : digestOfValue([input.lineage, input.item, d.proof.slot, multi ? round : sequence]);
@@ -508,7 +598,7 @@ export class DispatchService {
         await this.unknown(binding, '回执请求身份与意图不符；须按原请求记录核对，不能重交', [answer.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
       }
       if(requestSnapshot.request_identity && !sameRequestIdentity(requestSnapshot.request_identity,requestIdentity(answer.value,d.receipt.identity,d.reconciliation?.time_scale_ms))) {
-        await this.unknown(binding,'投递回答的日志身份、记账起点或完整主体与投递前快照不一致；缺少原投递归属事实',[answer.source],{next_action:`请管理员 ${binding.initiated_by} 人工核对原投递事实、日志迁移和调用身份；不得重交`});return this.status(by,binding.job);
+        await this.unknown(binding,'投递回答的日志身份、记账起点或完整主体与投递前快照不一致；缺少原投递归属事实',[answer.source],{next_action:`请管理员 ${binding.acting_by ?? binding.initiated_by} 人工核对原投递事实、日志迁移和调用身份；不得重交`});return this.status(by,binding.job);
       }
       if (!accepted) {
         if (await this.refused(binding,d,session,answer,remote)) return this.status(by,binding.job);
@@ -793,7 +883,7 @@ export class DispatchService {
     // that check must either be observed as a blocker or invalidate our CAS head.
     const history=await this.options.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.phase',values:['reservation']});
     const blocked=await this.journal.blockers(binding.executor,definition.target,new URL(definition.endpoint).origin,binding.resources);
-    if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new Error(`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
+    if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new TargetOccupiedError(blocked,`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
     const identities=[['executor',binding.executor],['target',definition.target],['origin',new URL(definition.endpoint).origin]].map(digestOfValue).sort();
     await this.options.records.store.withTransaction(async tx => {
@@ -814,7 +904,9 @@ export class DispatchService {
   }
   private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
     const rows = await this.options.leases.holderSnapshot(keys);
-    if (rows.length !== keys.length || rows.some(r => r.released || r.user !== user || !ancestors.includes(r.run) || (r.expires_at !== null && Date.parse(r.expires_at) <= this.now().getTime() + requiredMs))) throw new Error('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验');
+    const held = (key: string) => rows.some(r => r.key === key && !r.released && r.user === user && ancestors.includes(r.run) && (r.expires_at === null || Date.parse(r.expires_at) > this.now().getTime() + requiredMs));
+    const missing = keys.filter(key => !held(key));
+    if (rows.length !== keys.length || missing.length) throw new LeaseCoverageError(missing.length ? missing : keys);
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
@@ -876,6 +968,34 @@ export class DispatchService {
   }
 
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, build_base:binding.input?.build_base ?? binding.context?.build_base, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
+  /**
+   * Where the evidence of every row that did not pass is: the log and the per-device sessions the target reported for it, at
+   * the result's declared pointers, each saved on its own and readable by the runner (CES hands the model the failed checks
+   * and the session dumps of every non-pass case to attribute the failure). The raw report stays readable by functions only;
+   * a session the credential scan holds back leaves the other sessions and the verdicts readable.
+   */
+  private async failureEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<Map<string, { log?: string; sessions?: Record<string, string> }>> {
+    const found = new Map<string, { log?: string; sessions?: Record<string, string> }>();
+    if (!d.result.log && !d.result.sessions) return found;
+    // A session name that is no valid source name (empty, over 300 characters, control characters) gets a positional one,
+    // and a piece that cannot be saved is logged and left out: this runs after the receipt, so it must not stall the job.
+    const sourceName = (name: string, index: number) => name.length > 0 && name.length <= 300 && !/\p{Cc}/u.test(name) && name.isWellFormed() ? name : `session-${index + 1}.txt`;
+    const save = async (text: string, name: string): Promise<string | undefined> => {
+      try { return `src:${(await this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [response.source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name })).body.sha256}`; }
+      catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'failure evidence ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
+    };
+    for (const id of items) {
+      const { row, reported } = reportOutcome(response.value, d, id);
+      if (reported === 'pass' || !object(row)) continue;
+      const log = d.result.log ? at(row, d.result.log) : undefined;
+      const sessions = d.result.sessions ? at(row, d.result.sessions) : undefined;
+      const evidence: { log?: string; sessions?: Record<string, string> } = {};
+      if (typeof log === 'string' && log) { const saved = await save(log, 'log.txt'); if (saved) evidence.log = saved; }
+      if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(text, sourceName(name, index)); if (saved) (evidence.sessions ??= {})[name] = saved; }
+      if (evidence.log || evidence.sessions) found.set(id, evidence);
+    }
+    return found;
+  }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
     return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
       const captured = await this.journal.raw(binding, bytes, operation, complete);
@@ -923,11 +1043,14 @@ export class DispatchService {
   private async assessConditions(binding:JobBinding,conditions:ExecutorDefinition['conditions'],response:Exchange,context:Record<string,unknown>,phase:string):Promise<boolean> {
     const checks=conditions.map(c=>{
       const operator=Object.hasOwn(c,'equals')?'equals':c.at_least!==undefined?'at_least':'sha256';
+      const declared=operator==='equals'?c.equals:operator==='at_least'?c.at_least:c.sha256;
+      // Bound to a value only a run supplies while none is locked (a precheck without a run): recorded, not judged (decision 120).
+      if(runBound(declared).some(key=>context[key]===undefined))return {pointer:c.pointer,operator,expected_sha256:null,matched:null,judged:false};
       let expected:unknown;let matched=false;
-      try{expected=bind(operator==='equals'?c.equals:operator==='at_least'?c.at_least:c.sha256,context);matched=this.conditions([c],response.value,context);}catch{}
+      try{expected=bind(declared,context);matched=this.conditions([c],response.value,context);}catch{}
       return {pointer:c.pointer,operator,expected_sha256:expected===undefined?null:digestOfValue(expected),matched};
     });
-    const matched=checks.length>0 && checks.every(c=>c.matched);
+    const matched=checks.length>0 && checks.every(c=>c.matched===true || 'judged' in c);
     await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
     return matched;
   }
@@ -941,7 +1064,97 @@ export class DispatchService {
   private async probeSeats(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string,unknown>): Promise<boolean> {
     if (!d.probes) return false;
     const { assessProbes } = await import('./probes.ts');
-    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep);
+    // What the version probe saw before a dispatch is also the device's latest observation (decision 112).
+    const observed = d.manifest_sha256 ? (echo: SeatEcho) => this.recordObservation({ inventory: d.manifest_sha256!, ...echo, run: null, job: binding.job, executor: binding.executor, product: d.precheck_context?.product }).then(() => undefined) : undefined;
+    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed);
+  }
+
+  /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
+  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> {
+    const now = this.now().toISOString();
+    const build = input.values.length === 1 ? input.values[0]! : null;
+    // The echoed name is resolved to its knowledge-base build (aliases followed), so a reader compares builds, not spellings.
+    const known = build !== null && typeof input.product === 'string' && this.options.knowledge ? await this.options.knowledge.resolveBuild(input.product, build).catch(() => null) : null;
+    const observation = DeviceObservation.parse({
+      inventory: input.inventory, device: input.device, label: input.label, build, base: known?.base ?? null, values: input.values.slice(0, 20), observed_at: now, run: input.run, job: input.job, reference: input.reference,
+      ...(build === null ? { note: input.values.length > 1 ? `版本探针抽到 ${input.values.length} 个值，不是唯一的一个` : '版本探针的回显里没有抽到构建' } : {}),
+    });
+    await this.options.records.store.put<ActionBody>({
+      kind: 'action', schema: 'action@1', provenance: 'observed', created_at: now,
+      body: { action: 'validate', run: input.run, item: null, inputs: [input.reference], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, observation } },
+      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' }],
+    });
+    return observation;
+  }
+
+  /** The newest observation of every version-probe seat of every enabled executor (decision 112); a seat never looked at is absent. */
+  async latestDeviceObservations(): Promise<DeviceObservation[]> {
+    const out: DeviceObservation[] = [];
+    for (const registered of await this.registry.probed()) {
+      const d = registered.definition;
+      for (const seat of d.probes!.seats) {
+        const found = (await this.options.records.store.find<ActionBody>({ kind: 'action', key: OBSERVATION_KEY, value: `${d.manifest_sha256}#${seat.manifest.device}`, limit: 1, newestFirst: true })).items[0];
+        const parsed = DeviceObservation.safeParse((found?.body.detail as { observation?: unknown } | undefined)?.observation);
+        if (parsed.success) out.push(parsed.data);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Looks at the installed build of devices a booking was just granted (decision 112): for each enabled executor bound to the
+   * same inventory, the version-probe seats that point at a requested device are probed read-only inside one short gateway
+   * lease; nothing is dispatched. Each observation is recorded and returned; what could not be looked at is said in `missing`.
+   */
+  async observeDevices(by: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }> {
+    const pending = new Map(targets.map((t) => [`${t.inventory}#${t.device}`, t]));
+    const observed: DeviceObservation[] = [];
+    const problems: string[] = [];
+    for (const registered of await this.registry.probed()) {
+      const d = registered.definition;
+      const seats = d.probes!.seats.filter((seat) => pending.has(`${d.manifest_sha256}#${seat.manifest.device}`));
+      if (!seats.length) continue;
+      try {
+        for (const o of await this.observeSeats(by, run, registered, seats, pending)) observed.push(o);
+      } catch (error) {
+        this.options.adminLog?.({ traceId: null, run, what: 'device_observation', detail: `executor ${registered.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
+        problems.push(`执行器 ${registered.id} 这次没能连上设备（原因在管理员记录里）`);
+      }
+      for (const seat of seats) pending.delete(`${d.manifest_sha256}#${seat.manifest.device}`);
+    }
+    for (const t of pending.values()) problems.push(`${t.label}：没有绑定同一份清单、指向这台设备的执行器版本探针`);
+    return { observed, missing: problems.length ? problems.join('；') : null };
+  }
+
+  private async observeSeats(by: Principal, run: string, registered: RegisteredExecutor, seats: NonNullable<ExecutorDefinition['probes']>['seats'], targets: ReadonlyMap<string, { label: string }>): Promise<DeviceObservation[]> {
+    const d = registered.definition;
+    const binding: JobBinding = {
+      job: newJob(), initiated_by: by.id, executor: registered.id, executor_digest: registered.resolved_digest, executor_source_digest: registered.digest, variables: registered.variables,
+      scope: { target: d.target, origin: new URL(d.endpoint).origin }, target_key: digestOfValue([...d.resources].sort()), input: null, user: by.id, resources: [],
+      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), manifest_sha256: d.manifest_sha256 },
+    };
+    await this.assertNoSecrets(binding);
+    const material = await this.secret(binding, d);
+    if (material === null) throw new Error('执行器凭据不可用');
+    const client = this.session(binding, d, material);
+    let lease: RemoteLease | undefined;
+    let stop = async () => {};
+    try {
+      await client.connect();
+      lease = await this.acquire(binding, d, client, this.context(binding));
+      stop = this.heartbeat(binding, d, client, lease).stop;
+      const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
+      const out: DeviceObservation[] = [];
+      for (const seat of seats) {
+        const response = await client.declaredRead(d.probes!.call, { ...context, command: seat.version.command, seat_index: seat.index }, `observe.${seat.index}.version`);
+        const label = targets.get(`${d.manifest_sha256}#${seat.manifest.device}`)?.label ?? seat.seat;
+        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product }));
+      }
+      return out;
+    } finally {
+      await stop();
+      if (lease) await this.release(binding, client, lease);
+    }
   }
   private async frozenValue(binding: JobBinding, d: ExecutorDefinition, pointer: string): Promise<unknown> {
     if (!d.manifest_sha256) return undefined;
@@ -974,7 +1187,7 @@ export class DispatchService {
       input: null,
       user: by.id,
       resources: [],
-      context: { ...d.precheck_context, target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) },
+      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) },
     };
     await this.assertNoSecrets(binding);
     const material = await this.secret(binding, d);
@@ -1242,7 +1455,7 @@ export class DispatchService {
     if (!spec) return;
     const bed = spec.bed ? await this.frozenValue(binding, d, spec.bed) : undefined;
     const name = spec.bed ? bedName(bed) : binding.executor;
-    if (spec.bed && !name) throw new PrecheckFactError('冻结清单里没有声明的台架对象或台架名', '管理员核对床面指针和已发布的台架清单，补齐台架名后再派发；尚未提交');
+    if (spec.bed && !name) throw new PrecheckFactError('冻结清单里没有声明的自动化测试环境对象或自动化测试环境名', '管理员核对床面指针和已发布的自动化测试环境清单，补齐自动化测试环境名后再派发；尚未提交');
     const bedNameOrExecutor = name ?? binding.executor;
     const reads = await this.readBed(binding, d, client, context, 'pre');
 
@@ -1613,6 +1826,7 @@ export class DispatchService {
     const ownershipObservation={declared:!!attribution,certified:ownershipCertified,matched:ownershipMatched,consistent:!ownershipConflict,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:ownershipReason===undefined?null:ownershipReason,source:response.source};
     const admin=binding.acting_by ?? binding.initiated_by;
     const ownershipFailure=!attribution?{missing_fact:'执行器尚未声明本次结果的归属字段和唯一归属值',next_action:`请管理员 ${admin} 核对 ${response.source} 并登记 result.ownership 的字段、唯一归属值及原因指针声明；本作业保留无判定，不重交`}:!ownershipMatched?{missing_fact:'本结果未报告声明的唯一归属；具体原因见归属观察及原件',next_action:`请管理员 ${admin} 依据 ${response.source} 检查原派发日志、收集器目录和保留证据，恢复归属或登记该版本的能力缺口；本作业保留无判定，不重交`}:ownershipConflict?{missing_fact:'本结果的唯一归属值与原因字段相互矛盾，不能采用为归属事实',next_action:`请管理员 ${admin} 依据 ${response.source} 核对目标协议实现及报告归属，修复肯定值与原因的矛盾或登记能力缺口；本作业保留无判定，不重交`}:{missing_fact:'本结果的归属值相符，但当前目标版本的归属前提尚未认证',next_action:`请管理员 ${admin} 复核 ${response.source} 的归属证据，为该目标版本登记 result_ownership 认证；认证用于后续核验，本作业保留无判定，不重交`};
+    const evidence = await this.failureEvidence(binding, d, response, input.items);
     const projected = input.items.map(id => {
       const resolution=reportOutcome(response.value,d,id),{row,reported}=resolution;
       if(!resolution.check.resolved)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'result interpretation '+binding.job,detail:JSON.stringify(resolution.check)});}catch{}
@@ -1620,7 +1834,7 @@ export class DispatchService {
       const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:resolution.matches === 1,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:options?.execution?.continuity??(!drift&&!leaseInterrupted)},input.judgments?.length?['conditional_on_judgment']:[]);
       const gaps=disposition.dynamic_terminal==='no_verdict'?unmetPremises(disposition.missing_facts,ownershipUnmet(ownershipObservation,ownershipFailure)):[];
       const named=gaps.length?{missing_fact:gaps.map(gap=>gap.missing_fact).join('；'),next_action:gaps.map(gap=>gap.next_action).join('；')}:{missing_fact:'动态完整性事实尚不齐全；见 missing_facts 和下一步',next_action:'管理员按 unmet_premises 补齐所列前提；本结果保留无判定，不重交'};
-      return {item:id,reported_terminal:reported,...disposition,report_check:resolution.check,...(input.judgments?.length?{judgment_premises:input.judgments}:{}),...(disposition.dynamic_terminal==='no_verdict'?{unmet_premises:gaps,...(!resolution.check.resolved?{missing_fact:resolution.check.missing_fact!,next_action:resolution.check.next_action!}:!ownership?ownershipFailure:named)}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
+      return {item:id,reported_terminal:reported,...disposition,report_check:resolution.check,...(evidence.has(id)?{evidence:evidence.get(id)}:{}),...(input.judgments?.length?{judgment_premises:input.judgments}:{}),...(disposition.dynamic_terminal==='no_verdict'?{unmet_premises:gaps,...(!resolution.check.resolved?{missing_fact:resolution.check.missing_fact!,next_action:resolution.check.next_action!}:!ownership?ownershipFailure:named)}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
     });
     const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
       ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),
@@ -1805,7 +2019,7 @@ export class DispatchService {
     catch { throw new EffectBoundaryError(deny(5, 'LEASE_EXPIRED', '资源租约已到期或不再覆盖窗口；请恢复租约并重证基线')); }
     if (!this.sameFences(initial, fresh)) throw new EffectBoundaryError(deny(5, 'FENCING_STALE', '派发前围栏已变；请重新证明基线'));
     const currentProof = await verifyInput(by, run, d, this.options.records, this.options.runs, this.options.workflows, this.now());
-    if (!same({ ...input, result: null }, { ...currentProof, result: null })) throw new InputVerificationError('只读核对期间核验数据已改变；请按当前核验结果重新派发，尚未提交');
+    if (!same({ ...input, result: null }, { ...currentProof, result: null })) throw new InputVerificationError('只读核对期间这个运行的最新核验结果改变了，没有提交');
     const notAfter = new Date(this.now().getTime() + d.submit_timeout_ms).toISOString();
     const sequence = (await this.options.records.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [input.lineage] })).filter(event => (event.body as { detail?: { phase?: string } }).detail?.phase === 'intent').length + 1;
     const attempt = 1;

@@ -28,7 +28,15 @@ export type AcquireOutcome =
       /** The fencing token after this operation: monotonic per key row, 1 on a fresh acquire. */
       token: number;
     }
-  | { ok: false; code: 'LEASE_UNAVAILABLE' | 'LEASE_PREFIX' | 'LEASE_TTL' | 'LEASE_EXPIRED'; message: string; earliestFree?: string };
+  | { ok: false; code: 'LEASE_UNAVAILABLE' | 'LEASE_PREFIX' | 'LEASE_TTL' | 'LEASE_EXPIRED'; message: string; earliestFree?: string; holder?: TakenBy };
+
+/** Who holds a taken key: the run and user of the row and when they took it (test-bed search shows the same to others). */
+export interface TakenBy {
+  key: string;
+  run: string;
+  user: string;
+  acquired_at: string;
+}
 
 export type ChangeOutcome =
   | { ok: true; lease: string; until: string | null; token: number }
@@ -130,7 +138,8 @@ export class LeaseService {
           );
           if (inserted.rows.length === 0) {
             const busy = await this.#earliestFree(key, tx);
-            throw new RefusedLease({ ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${key} 上有未到期的占用`, ...(busy === null ? {} : { earliestFree: busy }) });
+            const holder = await this.#takenBy(key, tx);
+            throw new RefusedLease({ ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${key} 上有未到期的占用`, ...(busy === null ? {} : { earliestFree: busy }), ...(holder === null ? {} : { holder }) });
           }
           rows.push({ key, token: Number(inserted.rows[0].token) });
         }
@@ -390,6 +399,12 @@ export class LeaseService {
       tx,
     );
     return rows.rows;
+  }
+
+  async #takenBy(key: string, tx: PgTransaction): Promise<TakenBy | null> {
+    const row = await this.#db.query<{ run_id: string; user_id: string; acquired_at: Date }>(`SELECT run_id, user_id, acquired_at FROM leases WHERE key = $1 AND released_at IS NULL`, [key], tx);
+    const found = row.rows[0];
+    return found === undefined ? null : { key, run: found.run_id, user: found.user_id, acquired_at: found.acquired_at.toISOString() };
   }
 
   async #earliestFree(key: string, tx: PgTransaction): Promise<string | null> {

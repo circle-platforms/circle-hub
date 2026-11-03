@@ -41,10 +41,16 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  add('result.errors','核验结果没有未消除错误',result?result.errors.length===0:null,[f('result.errors',[],result?.errors,result?result.errors.length===0:null)]);
  add('result.partitions','所有条目都在交付分区',result?Object.entries(result.partitions).every(([key,list])=>key==='delivered'||list.length===0):null,Object.entries(result?.partitions??{}).filter(([key])=>key!=='delivered').map(([key,list])=>f('result.partitions.'+key,[],list,list.length===0)));
  const projected=detail?.run.items.map(item=>item.id).sort();
- add('run.items','核验运行明确且只有一个目标条目',detail?projected!.length===1:null,[f('run.items.length',1,projected?.length,detail?projected!.length===1:null)]);
+ add('run.items','核验运行有明确的目标条目',detail?projected!.length>=1:null,[f('run.items.length','at_least_one',projected?.length,detail?projected!.length>=1:null)]);
  add('result.coverage','交付结果覆盖投影条目',result&&projected?canonicalize(projected)===canonicalize(result.partitions.delivered.map(item=>item.item).sort()):null,[f('result.partitions.delivered.items',projected,result?.partitions.delivered.map(item=>item.item).sort(),result&&projected?canonicalize(projected)===canonicalize(result.partitions.delivered.map(item=>item.item).sort()):null)]);
  const required=workflow?.requirements.filter(requirement=>requirement.required)??[];
  if(!workflow)add('requirements.available','必需要求项声明可读取',null);
+ // Several items share one job (decision 104). A dispatch-observed dynamic layer is projected onto the verification item, so
+ // until a declared item map exists such a workflow stays one item per verification run.
+ if(detail&&projected!.length>1){
+  const dynamicObserved=!!workflow?.requirements.some(requirement=>(requirement.layers??[]).includes('dynamic')&&requirement.observation==='dispatch@1');
+  add('run.items.dynamic','多条目核验运行的任务包没有派发观察的动态层',workflow?!dynamicObserved:null,[f('workflow.requirements.dynamic_dispatch',false,dynamicObserved,workflow?!dynamicObserved:null)]);
+ }
  for(const [index,requirement] of required.entries()){
   const values=requirement.target==='item'?result?.partitions.delivered.map(item=>item.requirements.find(row=>row.requirement===requirement.key)?.status):result?.cross_item.filter(claim=>claim.requirement===requirement.key);
   const pass=!!values?.length&&(requirement.target==='item'?values.every(value=>value==='satisfied'):(values as Claim[]).every(claim=>validClaim(claim,now)));
@@ -70,7 +76,7 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  const data=claims[0]?.statement.data,planRun=at(data,d.proof.plan_run),sha256=at(data,d.proof.sha256),ids=at(data,d.proof.items),target=at(data,d.proof.target),manifest=at(data,d.proof.manifest_sha256),build=at(data,d.proof.build),generator=at(data,d.proof.generator);
  const hasData=consistent;
  add('proof.plan_run','产物的计划运行等于本运行前驱',hasData?typeof planRun==='string'&&!!planRun&&planRun===detail?.run.predecessor:null,[f('proof.plan_run',detail?.run.predecessor,planRun,hasData?typeof planRun==='string'&&!!planRun&&planRun===detail?.run.predecessor:null)]);
- const shapes:Array<[string,unknown,string,boolean]>=[['sha256',sha256,'sha256',typeof sha256==='string'&&isSha256(sha256)],['items',ids,'single_unique_nonempty_string',Array.isArray(ids)&&ids.length===1&&ids.every(value=>typeof value==='string'&&!!value&&value.length<=200)&&new Set(ids).size===ids.length],['target',target,'string',typeof target==='string'],['manifest_sha256',manifest,'sha256',typeof manifest==='string'&&isSha256(manifest)],['build',build,'nonempty_string',typeof build==='string'&&!!build],['generator',generator,'present_nonnull',generator!==undefined&&generator!==null]];
+ const shapes:Array<[string,unknown,string,boolean]>=[['sha256',sha256,'sha256',typeof sha256==='string'&&isSha256(sha256)],['items',ids,'unique_nonempty_strings_one_per_item',Array.isArray(ids)&&ids.length>=1&&ids.length===(detail?.run.items.length??-1)&&ids.every(value=>typeof value==='string'&&!!value&&value.length<=200)&&new Set(ids).size===ids.length],['target',target,'string',typeof target==='string'],['manifest_sha256',manifest,'sha256',typeof manifest==='string'&&isSha256(manifest)],['build',build,'nonempty_string',typeof build==='string'&&!!build],['generator',generator,'present_nonnull',generator!==undefined&&generator!==null]];
  for(const [key,value,shape,pass] of shapes)add('proof.fields.'+key,'派发身份字段符合声明形状',hasData?pass:null,[f('proof.'+key,shape,value,hasData?pass:null)]);
  const sourceHas=(sha:unknown,slot?:string)=>typeof sha==='string'&&!!detail?.run.sources.some(source=>{try{const ref=parseReference(source.reference);return ref.scheme==='src'&&ref.sha256===sha&&(slot===undefined||source.slot===slot&&source.role==='artifact_under_verification');}catch{return false;}});
  add('proof.artifact_slot','核验字节绑定在声明的待核验产物槽',hasData?sourceHas(sha256,d.proof.slot):null,[f('proof.slot',d.proof.slot,detail?.run.sources.filter(source=>source.slot===d.proof.slot).map(source=>({slot:source.slot,role:source.role,reference:source.reference})),hasData?sourceHas(sha256,d.proof.slot):null)]);
