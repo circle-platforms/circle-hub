@@ -109,3 +109,53 @@ test('the build basis says the scope the default chose from and which root the r
   assert.match(text, /另有 2 个可以锁定知识根的未发布构建不参加默认选择，要用它们就在 build 里写名字/);
   assert.match(text, /锁定的是版本线 10\.9 的树苗根 aaaaaaaaaaaa，这个根产自构建 Beta_MERIDIAN_10_9_0_585；这个构建另有同步根 ffffffffffff，没有锁定/);
 });
+
+// Issue 131: a product line with no build to list never answers "pick one listed below"; it says which fact is missing and,
+// when the product pack declares where builds come from, the administrator's sync that would give them.
+const syncing = { ...product, product: { ...product.product, sync: { start: [{ external: 'buildsite:index:/' }], plan: { module: 'functions/sync.ts' } } } } as unknown as ProductHandle;
+
+function withProduct(ctx: EngineContext, handle: ProductHandle): EngineContext {
+  const packs = { async readableProducts() { return new Set(['meridian']); }, async productByName() { return handle; }, async productById() { return handle; }, async products() { return [handle]; } };
+  return { ...ctx, deps: { ...ctx.deps, packs } } as unknown as EngineContext;
+}
+
+test('issue 131: a named build on a line with no builds says the build list is missing and gives the sync, no empty list', async () => {
+  const error = await refusalOf(withProduct(context([], new Set()), syncing), 'Rel_MERIDIAN_10_6_1_57');
+  assert.equal(error.code, 'REFERENCE_UNRESOLVED');
+  assert.equal(error.path, '/build');
+  assert.equal(error.options, undefined, 'no options when nothing can be listed');
+  assert.equal(error.options_coverage, undefined);
+  assert.deepEqual({ ...error.coverage, note: undefined }, { complete: true, examined: 0, total: 0, note: undefined });
+  assert.match(error.missing ?? '', /产品线 meridian在知识库里一个构建也没有/);
+  assert.match(error.fix ?? '', /由管理员同步这条产品线（circle-hub knowledge sync --product Meridian）/);
+  const line = errorLine(error);
+  assert.doesNotMatch(line, /下面列出/);
+  assert.match(line, /缺失事实：产品线 meridian在知识库里一个构建也没有/);
+});
+
+test('issue 131: without a declared build source the missing fact names it and the step is the pack owner\'s', async () => {
+  const error = await refusalOf(context([], new Set()), 'Rel_MERIDIAN_10_6_1_57');
+  assert.match(error.fix ?? '', /由产品包负责人在 product\.json 里声明 sync/);
+  assert.doesNotMatch(error.fix ?? '', /resolve_reference/);
+  assert.match(error.missing ?? '', /产品包 meridian@1\.0\.0 没有声明构建同步（product\.json 的 sync）/);
+  assert.doesNotMatch(errorLine(error), /下面列出/);
+});
+
+test('issue 131: builds that exist but none with a root, and the default choice over no builds, say so instead of listing nothing', async () => {
+  const named = await refusalOf(withProduct(context([build('Rel_MERIDIAN_10_7_0_61', '10.7', false)], new Set()), syncing), 'no-such-build');
+  assert.equal(named.options, undefined);
+  assert.match(named.missing ?? '', /已知的 1 个构建都还没有知识根/);
+  assert.match(named.fix ?? '', /circle-hub knowledge sync --product Meridian/);
+  try {
+    await resolveTarget(withProduct(context([], new Set()), syncing), user, workflow, StartRunInput.parse({ pack: 'synthetic', product: 'Meridian', version: '10.6', inputs: {} }), AT, 'synthetic');
+    assert.fail('no build to lock is refused');
+  } catch (error) {
+    assert.ok(error instanceof Refusal, String(error));
+    const refusal = error.errors[0]!;
+    assert.equal(refusal.path, '/version');
+    assert.equal(refusal.options, undefined);
+    assert.match(refusal.missing ?? '', /产品线 meridian 版本线 10\.6在知识库里一个构建也没有/);
+    assert.match(refusal.fix ?? '', /circle-hub knowledge sync --product Meridian --line 10\.6/);
+    assert.doesNotMatch(refusal.fix ?? '', /换一个版本线/);
+  }
+});
