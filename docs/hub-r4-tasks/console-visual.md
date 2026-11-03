@@ -1072,3 +1072,5 @@ Claude 转交独立审查（针对 `54b6649c`）：未发现授权回归。确�
 审查确认前述三个低项已闭合，`02a25641` / `dfb31c8e` / `35f34d74` 未发现授权回归；资源路径的 traversal、query、case、double slash、%00、HEAD/POST/If-None-Match 探针也通过。新增发现分别补回归与提交，不改变前述同步基线或迁移。
 
 参数键与延迟调用现在使用同一份调用时快照：plain JSON 校验/键生成后立即复制参数，再把副本交给微任务和 find/count 批次及其 scalar fallback。无效参数与显式事务仍走原始非缓存路径；不缓存跨请求授权。新增回归先复现 echo 与 find 的 alice → bob 污染，再验证嵌套数组、循环复用查询、count 索引、泛型 findMany、原生批次与 fallback，以及后续同键读取。`memoReadValue` 的 loader 是可信控制流，其捕获输入由调用方冻结；引擎 queryRead 原有完整快照保留。
+
+find 的键现覆盖全部经校验的查询字段，不再只取六项后执行完整对象。已知默认值仍归一化，顶层字段顺序固定；同一个归一化快照用于 key、原生批次与 fallback。未来 JSON 字段回归先复现不同 subject 的键碰撞，再验证字段区分与已知默认值/成员顺序仍共用读取，不引入无关重复查询。

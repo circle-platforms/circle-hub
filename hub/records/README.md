@@ -924,3 +924,7 @@ before the deferred method or batch can run. Find/count batches and scalar fallb
 mutating or reusing the caller's query cannot change an existing proof under its old key. Unsupported arguments and
 transaction calls still bypass memoization. Trusted memoReadValue loaders remain responsible for their captured inputs;
 queryRead already freezes its complete encoded input before supplying the loader.
+
+Find keys cover the entire validated query, including future JSON fields. Known default aliases remain normalized;
+top-level field order is canonical for this field-based API. The batch and fallback receive exactly that normalized
+snapshot, so a new field cannot influence execution while being omitted from the cache identity.

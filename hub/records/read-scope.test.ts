@@ -211,3 +211,15 @@ test('queued record reads freeze nested arguments for native batches, scalar fal
   });
  }
 });
+
+test('find memo keys include future JSON fields and keep normalized known-field aliases',async()=>{
+ for(const native of [true,false]){
+  let calls=0;const find=async(q:any)=>{calls++;return {items:[{body:{subject:q.future?.subject??'none'}}],next:null};};
+  const store={find,...(native?{findBatch:async(qs:any[])=>Promise.all(qs.map(find))}:{})} as unknown as RecordStore;
+  await withReadScope(async()=>{
+   const scoped=scopedRecordStore(store),base={key:'synthetic.future',value:'same'},alice={...base,future:{subject:'alice'}},bob={...base,future:{subject:'bob'}};
+   const pages=await Promise.all([scoped.find<any>(alice),scoped.find<any>(bob)]);assert.deepEqual(pages.map(p=>p.items[0].body.subject),['alice','bob']);assert.equal(calls,2);
+   assert.equal((await scoped.find<any>({future:{subject:'alice'},newestFirst:false,cursor:null,limit:50,value:'same',key:base.key,kind:undefined} as any)).items[0].body.subject,'alice');assert.equal(calls,2,'known defaults and object member order do not create extra queries');
+  });
+ }
+});

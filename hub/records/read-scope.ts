@@ -39,7 +39,13 @@ function memoKey(value:unknown):string|null{
  };
  try{return JSON.stringify(encode(value));}catch{return null;}
 }
-const findKey=(query:FindQuery)=>memoKey([query])===null?null:memoKey([query.kind,query.key,query.value,query.limit??50,query.cursor??null,query.newestFirst===true]);
+/** Key and execute every validated field, retaining known defaults and deterministic top-level member order. */
+function findInput(query:FindQuery):{id:string;query:FindQuery}|null{
+ if(memoKey([query])===null)return null;
+ const snapshot=clone(query),fields={...snapshot,kind:snapshot.kind,limit:snapshot.limit??50,cursor:snapshot.cursor??null,newestFirst:snapshot.newestFirst===true};
+ const input:FindQuery={key:snapshot.key,value:snapshot.value,...Object.fromEntries(Object.entries(fields).sort(([a],[b])=>a<b?-1:a>b?1:0))};
+ return {id:memoKey([input])!,query:input};
+}
 /** Loader is control flow, not a memo argument. Only its explicit data key is memoized, within the caller's owner/scope. */
 export async function memoReadValue<T>(owner:object,key:readonly unknown[],load:()=>Promise<T>):Promise<T>{
  const scope=scopes.getStore(),id=memoKey(key);if(!scope?.active||id===null)return load();
@@ -85,7 +91,7 @@ export function scopedRecordStore(store:RecordStore):RecordStore{
  const clear=()=>{for(const invalidate of scope.clearers)invalidate();};
  const proxy=new Proxy(store,{get(target,key){
   if(key==='get')return async(id:string,tx?:unknown)=>{if(tx||typeof id!=='string'||!scope.active||scopes.getStore()!==scope)return target.get(id,tx as never);let value=gets.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingGets.set(id,{resolve,reject});if(pendingGets.size===1)queueMicrotask(()=>{void flushGets();});});gets.set(id,value);value.catch(()=>{if(gets.get(id)===value)gets.delete(id);});}return clone(await value);};
-  if(key==='find')return async(query:FindQuery,tx?:unknown)=>{if(tx||!scope.active||scopes.getStore()!==scope)return target.find(query,tx as never);const id=findKey(query);if(id===null)return target.find(query,tx as never);let value=finds.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingFinds.set(id,{query:clone(query),resolve,reject});if(pendingFinds.size===1)queueMicrotask(()=>{void flushFinds();});});finds.set(id,value);value.catch(()=>{if(finds.get(id)===value)finds.delete(id);});}return clone(await value);};
+  if(key==='find')return async(query:FindQuery,tx?:unknown)=>{if(tx||!scope.active||scopes.getStore()!==scope)return target.find(query,tx as never);const input=findInput(query);if(input===null)return target.find(query,tx as never);const id=input.id;let value=finds.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingFinds.set(id,{query:input.query,resolve,reject});if(pendingFinds.size===1)queueMicrotask(()=>{void flushFinds();});});finds.set(id,value);value.catch(()=>{if(finds.get(id)===value)finds.delete(id);});}return clone(await value);};
   if(key==='countIndexed'&&target.countIndexed)return async(query:CountQuery,tx?:unknown)=>{if(tx||!scope.active||scopes.getStore()!==scope)return target.countIndexed!(query,tx as never);const id=memoKey([query]);if(id===null)return target.countIndexed!(query,tx as never);let value=counts.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingCounts.set(id,{query:clone(query),resolve,reject});if(pendingCounts.size===1)queueMicrotask(()=>{void flushCounts();});});counts.set(id,value);value.catch(()=>{if(counts.get(id)===value)counts.delete(id);});}return clone(await value);};
   const method=Reflect.get(target,key,target);if(typeof method!=='function')return method;
   if(['put','addIndex','withTransaction'].includes(String(key)))return(...args:unknown[])=>{clear();const result=method.apply(target,args);return Promise.resolve(result).finally(clear);};
