@@ -450,13 +450,46 @@ function pathLiterals(text:string,visit:(literal:Literal)=>boolean):void{
   if(!visit({start:match.index,end:match.index+match[0].length,value:views.join('\n')}))return;
  }
 }
+/** The standard and URL-safe base64 alphabet: A-Z, a-z, 0-9, `+`, `/`, `_` and `-`. */
+function isBase64Char(c:number):boolean{return c>=65&&c<=90||c>=97&&c<=122||c>=48&&c<=57||c===43||c===47||c===95||c===45;}
+/**
+ * The spans the pattern /[A-Za-z0-9+/_-]{24,}(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9+/_-]{2,})*={0,2}/g matches, found in one forward
+ * pass: a run of at least 24 alphabet characters, continuation lines of at least two (blanks around the line break
+ * allowed) and up to two `=`. Every quantifier is greedy and what follows it cannot start with what it repeats, so a
+ * match is the longest such text and a continuation line that fails is left out whole; V8 still kept a backtracking
+ * entry per repeated character and overflowed its stack on one run of about 6 MB (#153). Each character is read at most three times; `work`, when given, gets the count.
+ */
+export function base64Spans(text:string,visit:(start:number,end:number)=>boolean,work?:{reads:number}):void{
+ const length=text.length;let reads=0;
+ const run=(from:number)=>{let k=from;while(k<length){reads++;if(!isBase64Char(text.charCodeAt(k)))break;k++;}return k;};
+ const blanks=(from:number)=>{let k=from;while(k<length){reads++;const c=text.charCodeAt(k);if(c!==32&&c!==9)break;k++;}return k;};
+ try{
+  for(let i=0;i<length;){
+   reads++;if(!isBase64Char(text.charCodeAt(i))){i++;continue;}
+   const start=i;let end=run(i+1);
+   if(end-start<24){i=end;continue;}
+   for(;;){
+    let k=blanks(end);
+    if(k<length&&text.charCodeAt(k)===13)k++;
+    if(k>=length||text.charCodeAt(k)!==10)break;
+    reads++;k=blanks(k+1);
+    const next=run(k);if(next-k<2)break;
+    end=next;
+   }
+   for(let pad=0;pad<2&&end<length&&text.charCodeAt(end)===61;pad++){reads++;end++;}
+   if(!visit(start,end))return;
+   i=end;
+  }
+ }finally{if(work)work.reads+=reads;}
+}
 function base64Literals(text:string,visit:(literal:Literal)=>boolean):void{
- for(const match of text.matchAll(/[A-Za-z0-9+/_-]{24,}(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9+/_-]{2,})*={0,2}/g)){
-  const value=match[0].replace(/[ \t\r\n]/g,''),bytes=Buffer.from(value,'base64url');
-  if(bytes.toString('base64url')!==value.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''))continue;
-  const sample=bytes.subarray(0,SAMPLE_BYTES);if(isContainer(bytes)||controlShare(sample)>BINARY_CONTROL_SHARE&&!nulPattern(sample).length)continue;
-  for(const view of decode(bytes).views)if(!visit({start:match.index,end:match.index+match[0].length,value:view.text}))return;
- }
+ base64Spans(text,(start,end)=>{
+  const literal=text.slice(start,end),value=literal.replace(/[ \t\r\n]/g,''),bytes=Buffer.from(value,'base64url');
+  if(bytes.toString('base64url')!==value.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''))return true;
+  const sample=bytes.subarray(0,SAMPLE_BYTES);if(isContainer(bytes)||controlShare(sample)>BINARY_CONTROL_SHARE&&!nulPattern(sample).length)return true;
+  for(const view of decode(bytes).views)if(!visit({start,end,value:view.text}))return false;
+  return true;
+ });
 }
 
 /** Hits in `text`; a hit inside an escaped string is reported at the string's opening quote. */
