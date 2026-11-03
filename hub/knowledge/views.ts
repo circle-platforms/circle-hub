@@ -10,11 +10,12 @@
 //     the same entries; impact stays the entries on changed paths
 // Products resolve by id or any name, builds of any name family through their aliases to the root they use. The answer is
 // canonical JSON with deterministic list order, sized exactly against the byte budget, checked against its schema and stored
-// as the original of the read (equal content, equal bytes); the revision is built from the root digests. A reader who may
-// not read the product, an unknown product or build and a malformed id give ok:false with the real reason for the admin log
-// (callers show the neutral SOURCE_UNAVAILABLE, D05 R[3]); a root without entries of the asked kind is a valid answer with a
+// as the original of the read (equal content, equal bytes); the revision is built from the root digests. A malformed id is a
+// caller mistake with the way to write it; an unknown product or build, or a build without a root, is SOURCE_ABSENT; a reader
+// who may not read the product gets SOURCE_NOT_PERMITTED (D05 R[3], decision 112); a root without entries of the asked kind is a valid answer with a
 // note, and so is a root whose listed sources were not all used: what they would give is unknown, never absent.
-import { ENTRY_KIND, EntryKindSchema, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import { DeclarationStatusSchema, ENTRY_KIND, EntryKindSchema, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import { parseExternal } from '../connectors/api.ts';
 import { RunId, Sha256, Versioned } from '../../contracts/src/common.ts';
 import {
   DataFieldName,
@@ -36,11 +37,12 @@ import { readRootNote } from './root-note.ts';
 import {KnowledgeError} from './errors.ts';
 import {seedlingOfRoot} from './seedling.ts';
 import type { FeedingCut } from './feeding-types.ts';
+import { onlyMatcher, rootIndependentField, rootIndependentValues } from './fed-case-fields.ts';
 
 /** The feeding-layer context a view read carries: the run's frozen cut (null offset: everything now in the layer). */
-type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null };
+type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null; identity: string | null };
 import { sha256Hex, canonicalBytes, canonicalByteLength, createCanonicalEncoder, canonicalize, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
-import { pathSegments, treeReference } from '../refs/api.ts';
+import { pathSegments, srcFragment, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { LinkReading,RelationReadError,LinkRefusal } from './links.ts';
 import { CompositionView } from './composition.ts';
@@ -50,7 +52,8 @@ import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, type EntryContent } from './digest.ts';
 import {requestKnowledgeFact} from './requests.ts';
 import {documentScope} from './scope.ts';
-import type {KnowledgeViewScope,ScopedDocument} from '../../contracts/src/views.ts';
+import type {FedScope,KnowledgeViewScope,ScopedDocument} from '../../contracts/src/views.ts';
+import {MAX_FED_SCOPE_DOCUMENTS} from '../../contracts/src/views.ts';
 import {keepProblemRows} from './problem-journal.ts';
 import { describeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
@@ -79,7 +82,15 @@ export type ViewRequest =
   | { type: 'links'; product: string; build: string; prefix: string; target: string | null; rule: string | null; composition: string | null; cursor: string | null; limit: number; revision: string | null }
   | { type: 'index'; after?: string | null; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
 
-type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
+/** A failure may name the required query parameters the id lacks (`missing`), for a caller that wants to say how to write it. */
+type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string; missing?: readonly string[] };
+/** How to write a view id, for a caller whose id is malformed. */
+const VIEW_WRITING = '照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；改好后重读';
+/** A build the Hub does not have, or one without a knowledge root yet, with who can change that. */
+interface ViewAbsence { absent: string; fix: string }
+const absentRead = (id: string, why: ViewAbsence): ExternalRead => ({ ok: false, id, reason: why.absent, inputError: { code: 'SOURCE_ABSENT', message: why.absent, fix: why.fix } });
+const productAbsent = (product: string) => ({ code: 'SOURCE_ABSENT' as const, message: `Hub 里没有产品 ${cutText(product, 80)}`, fix: '核对产品名（产品 id 或任一名字）后重读' });
+const productForbidden = (product: string) => ({ code: 'SOURCE_NOT_PERMITTED' as const, message: `产品 ${product} 的知识存在，你没有读取权限`, fix: '请管理员给你分配一个绑定这条产品线的任务包后重读' });
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {
@@ -139,6 +150,18 @@ function kindsOf(values: string[], what: string): Parsed<EntryKind[]> {
   return { ok: true, value: out.sort(compareText) };
 }
 
+/**
+ * How to write one knowledge view id, taken from the grammar `parseViewId` enforces: the view, placeholders for the product and
+ * the build(s), and the required query parameters. Null for a type that is no knowledge view.
+ */
+export function viewIdExample(type: string): string | null {
+  if (!Object.hasOwn(QUERY, type)) return null;
+  const view = type as keyof typeof QUERY;
+  const builds = view === 'impact' ? '<起始构建>..<目标构建>' : '<构建>';
+  const required = (QUERY[view].required as readonly string[]).map((name) => `${name}=<${name}>`);
+  return `knowledge:${view}:<产品>:${builds}${required.length > 0 ? `?${required.join('&')}` : ''}`;
+}
+
 /** Parses a knowledge view id; the reason says what is wrong (for the admin log). */
 export function parseViewId(id: string): Parsed<ViewRequest> {
   if (typeof id !== 'string' || id.length > 8192) return { ok: false, reason: '不是外部对象标识' };
@@ -181,7 +204,8 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
       query.set(name, values as string[]);
     }
   }
-  for (const name of QUERY[view].required as readonly string[]) if (!query.has(name)) return { ok: false, reason: `视图 ${view} 要有参数 ${name}` };
+  const missing = (QUERY[view].required as readonly string[]).filter((name) => !query.has(name));
+  if (missing.length > 0) return { ok: false, reason: `视图 ${view} 要有参数 ${missing.join('、')}`, missing };
   const one = (name: string): Parsed<string> => {
     const values = query.get(name) ?? [];
     return values.length === 1 ? { ok: true, value: values[0] } : { ok: false, reason: `参数 ${name} 只能有一个取值` };
@@ -285,7 +309,7 @@ function facetValues(data: Record<string, unknown>, field: string, odd: { count:
 }
 
 /** One entry of a kind, once: a placed row keeps its path; an unplaced row is cited at the root (K01 R[4]). */
-type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean; root?:string; unversioned?:boolean };
+type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean; root?:string; unversioned?:boolean; reference?:string|null };
 type ScopeRoot = {root:string;composition:string};
 
 /**
@@ -356,10 +380,132 @@ function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-/** Fed cases bound to this seedling root, projected onto the same case fields a sync-root entry carries into a facet. */
-function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
+/** A view's feeding cut is separate from the tree digest and depends on the current reader's readable records. */
+function feedingIdentity(cut:FeedingCut,reader:string):string {
+  const objects=[...cut.objects.entries()].map(([id,body])=>cut.casesByRoot===undefined?[id,body]:[id,body.schema]).sort((a,b)=>compareText(String(a[0]),String(b[0])));
+  const cases=[...cut.casesByRoot?.entries()??[]].flatMap(([root,byObject])=>[...byObject.entries()].flatMap(([id,bySource])=>[...bySource.entries()].map(([source,value])=>canonicalize([root,id,source,value.record,value.position])))).sort(compareText);
+  const bindings=[...cut.bindings.entries()].map(([id,values])=>[id,values.map(value=>canonicalize({state:value.state,line:value.line,candidates:value.candidates})).sort(compareText)]).sort((a,b)=>compareText(String(a[0]),String(b[0])));
+  // Records of one build share its content identity, so each fed-build record counts apart; absent, the identity is as before.
+  const builds=(cut.builds??[]).map(row=>canonicalize([row.record,row.position])).sort(compareText);
+  return sha256Hex(canonicalize({reader,offset:cut.offset,objects,cases,...(builds.length?{builds}:{}),bindings,retracted:[...cut.retracted].sort(compareText),contradicted:[...cut.contradicted].sort(compareText)}));
+}
+
+/** One original whose fed cases lack a projection under the queried root: its document, capture and the cases' records. */
+export interface RootlessOriginal { document: string | null; sha256: string | null; external: string | null; cases: number; records: string[] }
+/** `elsewhere`: fed cases of the cut projected only under other roots, neither under the queried root nor root-less. */
+export interface RootlessCases { missing: number; originals: RootlessOriginal[]; elsewhere: number }
+
+/**
+ * Whether a root-less projection can be left out of an `only=` view: for a root-independent field (stories, defects,
+ * document, title) the root-less projection states the same values as a projection under any root, so a case none of
+ * whose stated values is requested cannot carry one. A field the projection does not state, or a field that depends on
+ * the root (commands, path), keeps the case unknown.
+ */
+function outsideOnly(body: Record<string, unknown>, key: string | undefined, selects: ((value: string) => boolean) | null): boolean {
+  if (selects === null || !rootIndependentField(key)) return false;
+  const values = rootIndependentValues(body, key);
+  return values !== null && !values.some(selects);
+}
+
+/** The external read a cut's case source key names (canonical {source,node,external}), or null. */
+function externalOfSourceKey(sourceKey: string): string | null {
+  try { const parsed = JSON.parse(sourceKey) as { external?: unknown }; return typeof parsed.external === 'string' ? parsed.external : null; } catch { return null; }
+}
+
+export function rootlessCases(cut:FeedingCut,root:string,key?:string,only?:readonly string[]|ReadonlySet<string>|null):RootlessCases {
+  const rooted=cut.casesByRoot?.get(root),unrooted=cut.casesByRoot?.get(null);
+  const selects=key===undefined||only===undefined||only===null?null:onlyMatcher(key,only);
+  const originals=new Map<string,RootlessOriginal>();
+  const note=(body:Record<string,unknown>,external:string|null,recordDigest:string|null)=>{
+    const source=record(body.source),document=typeof source?.document==='string'?source.document:null,sha=typeof source?.bytes==='string'?source.bytes:null;
+    const at=canonicalize([sha,document,external]);let row=originals.get(at);
+    if(!row){row={document,sha256:sha,external,cases:0,records:[]};originals.set(at,row);}
+    row.cases++;if(recordDigest!==null)row.records.push(recordDigest);
+  };
+  let missing=0;
+  // A case projected only under another root is not silently left out: it is counted and named in the view's note.
+  const elsewhere=new Set<string>();
+  if(cut.casesByRoot){
+    for(const [other,byObject] of cut.casesByRoot){
+      if(other===null||other===root)continue;
+      for(const [id,sources] of byObject){
+        if(rooted?.has(id)||unrooted?.has(id))continue;
+        if([...sources.values()].every(projection=>outsideOnly(projection.body,key,selects)))continue;
+        elsewhere.add(id);
+      }
+    }
+    for(const [id,sources] of unrooted??[]){
+      const rootSources=rooted?.get(id);
+      for(const [sourceKey,projection] of sources){
+        if(rootSources?.has(sourceKey))continue;
+        if(outsideOnly(projection.body,key,selects))continue;
+        missing++;note(projection.body,externalOfSourceKey(sourceKey),projection.record);break;
+      }
+    }
+  }else{
+    for(const [id,object] of cut.objects){
+      if(object.schema!=='fed-case@1'||object.root===root)continue;
+      if(outsideOnly(object,key,selects))continue;
+      if(object.root!==null){elsewhere.add(id);continue;}
+      missing++;note(object,null,null);
+    }
+  }
+  const sorted=[...originals.values()].sort((a,b)=>compareText(a.document??'',b.document??'')||compareText(a.sha256??'',b.sha256??'')||compareText(a.external??'',b.external??''));
+  return {missing,originals:sorted,elsewhere:elsewhere.size};
+}
+
+/** The note for fed cases projected only under other roots of the cut; an administrator re-projects the line. */
+function elsewhereNote(count: number, kind: EntryKind, root: string, product: string, where: string): string {
+  return `另有 ${count} 个${labelOf('entry_kind', kind)}只有别的树苗根上的投影，没有所查树苗 ${root.slice(0, 12)} 的投影，未计入${where}；这件事交给管理员：用 circle-hub knowledge reproject ${product} <版本线> 把这条版本线的喂入用例重投影到当前根，之后重读本视图`;
+}
+
+/**
+ * The feeding-layer originals behind the fed cases of a case view over a seedling root, with case counts: cases projected
+ * onto the root and cases with only a root-less projection (unknown to the view until re-read). Read from the view's cut.
+ */
+export function fedScope(cut: FeedingCut, root: string): FedScope | null {
+  if (!cut.casesByRoot) return null;
+  const rows = new Map<string, { external: string | null; sha256: string; document: string | null; projected: Set<string>; rootless: Set<string> }>();
+  const add = (id: string, sourceKey: string, body: Record<string, unknown>, which: 'projected' | 'rootless'): void => {
+    const source = record(body.source), sha = typeof source?.bytes === 'string' ? source.bytes : null;
+    if (sha === null) return;
+    const external = externalOfSourceKey(sourceKey), document = typeof source?.document === 'string' ? source.document : null;
+    const at = canonicalize([sha, document, external]);
+    let row = rows.get(at);
+    if (!row) { row = { external, sha256: sha, document, projected: new Set(), rootless: new Set() }; rows.set(at, row); }
+    row[which].add(id);
+  };
+  const rooted = cut.casesByRoot.get(root);
+  for (const [id, sources] of rooted ?? []) for (const [sourceKey, value] of sources) add(id, sourceKey, value.body, 'projected');
+  for (const [id, sources] of cut.casesByRoot.get(null) ?? []) for (const [sourceKey, value] of sources) if (!rooted?.get(id)?.has(sourceKey)) add(id, sourceKey, value.body, 'rootless');
+  const documents = [...rows.values()].map((row) => {
+    const rootless = [...row.rootless].filter((id) => !row.projected.has(id)).length;
+    return { external: row.external, sha256: row.sha256, document: row.document, cases: row.projected.size + rootless, projected: row.projected.size, rootless };
+  }).sort((a, b) => compareText(a.document ?? '', b.document ?? '') || compareText(a.sha256, b.sha256) || compareText(a.external ?? '', b.external ?? ''));
+  const sum = (field: 'cases' | 'projected' | 'rootless') => documents.reduce((n, row) => n + row[field], 0);
+  return { root, originals: documents.length, cases: sum('cases'), projected: sum('projected'), rootless: sum('rootless'), documents: documents.slice(0, MAX_FED_SCOPE_DOCUMENTS) };
+}
+
+/** At most this many originals are named in a note; the rest are counted. */
+const NAMED_ORIGINALS = 20;
+
+/**
+ * The note for fed cases without a projection under the queried root: which originals, how many cases each, that the
+ * Hub queued a recorded re-read under the reader's own account, and the exact call that re-reads one by hand.
+ */
+function rootlessNote(rootless: RootlessCases, kind: EntryKind, root: string, product: string, build: string, where: string): string {
+  const named = rootless.originals.slice(0, NAMED_ORIGINALS).map((row) => `${row.external ?? (row.sha256 ? `src:${row.sha256}` : '（来源未记录）')}${row.document ? `（文档 ${cutText(row.document, 80)}` : '（'}，${row.cases} 个${labelOf('entry_kind', kind)}${row.sha256 && row.external ? `，src:${row.sha256}` : ''}）`);
+  const rest = rootless.originals.length - named.length;
+  const list = named.length ? `：原件 ${named.join('、')}${rest > 0 ? ` 等，另有 ${rest} 份原件` : ''}` : '';
+  return `${rootless.missing} 个${labelOf('entry_kind', kind)}缺所查树苗 ${root.slice(0, 12)} 的投影，未计入${where}${list}；Hub 已按你的账号排队重读这些原件并按本根投影（有界后台任务，完成与否以喂入回执为准）。下一步：稍后重读本视图；仍缺时用 start_run 重读原件：pack 写 source-read，顶层写 product ${product} 和 build ${build}，把上列外部标识放进接受它的输入槽`;
+}
+
+/** Facets count content once; indexes preserve the separately citable sources of that content. */
+function fedCaseRows(root: string, cut: FeedingCut, sourceEntries=false): KindEntry[] {
   const rows: KindEntry[] = [];
-  for (const object of cut.objects.values()) {
+  const cases=cut.casesByRoot?.get(root);
+  const objects=cut.casesByRoot===undefined?[...cut.objects.values()].map(body=>({body,record:null,position:0})):[...cases?.values()??[]].flatMap(sources=>{const values=[...sources.values()].sort((a,b)=>a.position-b.position);return sourceEntries?values:values.slice(-1);});
+  for (const {body:object,record:recordDigest} of objects) {
     if (object.schema !== 'fed-case@1' || object.root !== root) continue;
     const declaration = record(object.resource_declaration);
     const declared = declaration?.status === 'declared';
@@ -368,21 +514,44 @@ function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
     const lines = Array.isArray(object.document_lines) ? object.document_lines.filter((line): line is string => typeof line === 'string') : [];
     const steps = Array.isArray(object.steps) ? object.steps : [];
     const first = steps.map(record).find((step) => step !== null && typeof step.text === 'string');
+    const source=record(object.source),identities=Array.isArray(object.commands)?object.commands.map(record).filter((value):value is Record<string,unknown>=>value!==null):[];
+    const paths=[...new Set(identities.flatMap(value=>typeof value.path==='string'?[value.path]:[]))].sort(compareText);
+    const treeRoots=[...new Set(identities.flatMap(value=>typeof value.tree_root==='string'?[value.tree_root]:[]))];
+    let rawResource:unknown;
+    if(typeof declaration?.raw_json==='string')try{rawResource=JSON.parse(declaration.raw_json);}catch{/* The stored declaration stays unknown. */}
+    const tags=Array.isArray(rawResource)?rawResource.filter((value):value is string=>typeof value==='string'):[];
+    const resourceEmpty=declaration?.present===false?true:Array.isArray(rawResource)?rawResource.length===0:rawResource!==undefined?false:null;
+    const caseLocation=typeof source?.bytes==='string'&&typeof object.node_parser==='string'&&typeof object.node_selector==='string'?srcFragment(source.bytes,object.node_parser,object.node_selector):null;
     rows.push({
-      entry: object.object,
+      entry: sourceEntries&&recordDigest!==null?recordDigest:object.object,
       path: typeof object.path === 'string' ? object.path : '/',
       unplaced: object.path === null,
       root,
       unversioned: false,
+      reference: recordDigest===null?null:`rec:${recordDigest}`,
       content: {
         kind: 'case',
         statement: first && typeof first.text === 'string' ? first.text : '',
         data: {
-          line: lines,
-          has_expected: expects.length > 0,
+          line: lines.length===1?lines[0]:null,
+          ...(lines.length>1?{line_candidates:lines}:{}),
+          module: typeof object.module==='string'?object.module:null,
+          has_expected: typeof object.has_expected==='boolean'?object.has_expected:expects.length===0?false:null,
           test_type_status: declared ? 'declared' : 'undeclared',
           negative: declared ? types.includes('negative') : null,
-          commands: Array.isArray(object.commands) ? object.commands : [],
+          object: object.object,
+          ...(typeof source?.document==='string'?{document:source.document}:{}),
+          ...(typeof object.node_key==='string'?{node:object.node_key}:{}),
+          ...(typeof object.title==='string'?{title:object.title}:{}),
+          ...(Array.isArray(object.path_labels)?{path_labels:object.path_labels}:{}),
+          ...(Array.isArray(object.stories)?{stories:object.stories}:{}),
+          ...(Array.isArray(object.defects)?{defects:object.defects}:{}),
+          ...(caseLocation?{case_location:caseLocation}:{}),
+          ...(typeof source?.bytes==='string'?{source_sha256:source.bytes}:{}),
+          ...(object.unparsed_steps===0?{commands:paths,command_identities:identities}:{}),
+          command_tree_root: typeof object.command_tree_root==='string'?object.command_tree_root:treeRoots.length===1?treeRoots[0]:null,
+          ...(typeof object.unparsed_steps==='number'?{unparsed_steps:object.unparsed_steps}:{}),
+          ...(declaration?{...(rawResource!==undefined?{tags}:{}),resource_empty:resourceEmpty,tag_valid:Array.isArray(declaration.violations)?declaration.violations.length===0:null}:{}),
         },
         applicability: null,
       },
@@ -391,8 +560,51 @@ function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
   return rows;
 }
 
-function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false): ViewEntry {
-  return { ...(unversioned ? {root,build:null} : {}), entry: digest, kind: EntryKindSchema.parse(content.kind), statement: content.statement, data: content.data, reference: treeReference(root, path, digest) };
+/**
+ * The defect entries the feeding layer gives one build: every valid function projection of fed-build@1 with fixed bugs whose
+ * name is exactly this build (fixed_bugs are the build's original structural defect identities, never a status). A record is
+ * one entry cited by its claim record; an identity written as an external object id names its system and number. The latest
+ * bytes of each source page decide that page's list. Records of the build projected under another root, or none, are not
+ * listed: counted (`unrooted`) when the page has no projection under this root, as root-less fed cases are.
+ */
+function fedDefectRows(root: string, build: string, cut: FeedingCut): { rows: KindEntry[]; unrooted: KindEntry[] } {
+  type Row = NonNullable<FeedingCut['builds']>[number];
+  const own = (cut.builds ?? []).filter(row => row.body.name === build).sort((a, b) => a.position - b.position);
+  // A source page apart from its bytes, and the bytes of one read of it.
+  const page = (row: Row): string => { const { bytes: _bytes, ...rest } = record(row.body.source) ?? {}; return canonicalize({ page: rest, external: row.external }); };
+  const bytes = (row: Row): unknown => record(row.body.source)?.bytes;
+  const latest = new Map<string, unknown>();
+  for (const row of own) latest.set(canonicalize([row.body.root, page(row)]), bytes(row));
+  const current = own.filter(row => latest.get(canonicalize([row.body.root, page(row)])) === bytes(row));
+  const rootedPages = new Set(current.filter(row => row.body.root === root).map(page));
+  const entry = (row: Row): KindEntry => {
+    const identities = (row.body.fixed_bugs as unknown[]).filter((value): value is string => typeof value === 'string');
+    const parsed = identities.map(value => { const external = parseExternal(value); return external ? { bug: external.key, system: external.system } : { bug: value, system: null }; });
+    const systems = [...new Set(parsed.map(value => value.system))];
+    const source = record(row.body.source);
+    return {
+      entry: row.record, path: '/', unplaced: true, root, unversioned: false, reference: `rec:${row.record}`,
+      content: { kind: 'defect', statement: '', applicability: null, data: {
+        bug: parsed.length === 1 ? parsed[0].bug : parsed.map(value => value.bug),
+        ...(systems.length === 1 && systems[0] !== null ? { system: systems[0] } : {}),
+        status: null,
+        declaration_status: DeclarationStatusSchema.enum.undeclared,
+        build,
+        line: typeof row.body.line === 'string' ? row.body.line : null,
+        fixed_bugs: identities,
+        object: row.body.object,
+        ...(typeof source?.bytes === 'string' ? { source_sha256: source.bytes } : {}),
+      } },
+    };
+  };
+  return {
+    rows: current.filter(row => row.body.root === root).map(entry),
+    unrooted: current.filter(row => row.body.root !== root && !rootedPages.has(page(row))).map(entry),
+  };
+}
+
+function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false, reference?: string): ViewEntry {
+  return { ...(unversioned ? {root,build:null} : {}), entry: digest, kind: EntryKindSchema.parse(content.kind), statement: content.statement, data: content.data, reference: reference??treeReference(root, path, digest) };
 }
 
 /** Exact bytes of one member `"<key>":<value>,` of an object in the canonical answer (the last member has no comma: one byte to spare). */
@@ -500,21 +712,23 @@ export class KnowledgeViews {
    * are counted apart and never enter version differences; a fed kind the roots hold nothing of falls back to the
    * layer, and when the layer holds nothing either, the view says so plainly and names the way in (used = fed).
    */
-  async #feedingNotes(product: string, context: ExternalReadContext | undefined, kindEmpty: readonly EntryKind[], rootCaseCount: number, feeding: FeedingNotes | null = null): Promise<string[]> {
+  async #feedingNotes(product: string, context: ExternalReadContext | undefined, kindEmpty: readonly EntryKind[], rootCaseCount: number, feeding: FeedingNotes | null = null, build?: string): Promise<string[]> {
     void product; void context; void rootCaseCount;
-    if (feeding === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层还没有记录；在运行里经 Hub 读到或上传后即进入喂入层`);
+    // A build's defects come from its fixed-bug list (fed-build@1); the read that feeds it must name product and build.
+    const way = (kind: EntryKind): string => kind === 'defect' && build !== undefined ? `；构建 ${build} 的缺陷来自它的修复清单：用 start_run 读这份原件，顶层同时写 product 和 build ${build}（不绑定产品线的通用读取包 source-read 也接受这两项），回执完成后再读本视图` : '';
+    if (feeding === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层还没有记录；在运行里经 Hub 读到或上传后即进入喂入层${way(kind)}`);
     const cut = feeding.cut;
-    if (cut === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层为空；在运行里经 Hub 读到或上传后即进入`);
+    if (cut === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层为空；在运行里经 Hub 读到或上传后即进入${way(kind)}`);
     const notes: string[] = [];
     let undeclared = 0;
     for (const bindings of cut.bindings.values()) if (bindings.some((binding) => binding.state === 'undeclared')) undeclared++;
     if (undeclared > 0) notes.push(`喂入层里 ${undeclared} 个对象版本未声明，单列计数，不进版本差`);
     if (cut.contradicted.size > 0) notes.push(`喂入层里 ${cut.contradicted.size} 个对象有矛盾（contradicts），单列`);
     for (const kind of kindEmpty) {
-      const inLayer = kind === 'case' ? cut.objects.size : 0;
+      const inLayer = kind === 'case' ? [...cut.objects.values()].filter(object=>object.schema==='fed-case@1').length : 0;
       notes.push(inLayer > 0
         ? `根里没有${labelOf('entry_kind', kind)}种类的条目；喂入层（冻结序号之前）有 ${inLayer} 个对象，按锁定树苗 + 喂入层读`
-        : `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：根和喂入层都没有；在运行里经 Hub 读到或上传后即进入喂入层`);
+        : `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：根和喂入层都没有；在运行里经 Hub 读到或上传后即进入喂入层${way(kind)}`);
     }
     return notes;
   }
@@ -583,10 +797,12 @@ export class KnowledgeViews {
     return summary===null ? {} : {unversioned_entries:summary.totals.entries,unversioned_documents:summary.totals.documents};
   }
 
-  #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null): string {
+  #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null, kind?: EntryKind): string {
+    // Fed cases are projected onto the version root; the product-wide root adds only its own entries.
+    const cases = kind === 'case' ? '；不分版本的根只补它自己的条目，不影响用例投影' : '';
     if(summary===null)return scopeLocked
-      ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）'
-      : '这条产品线还没有不分版本的根；下一步：同步这条产品线';
+      ? `本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时请管理员先同步这条产品线）${cases}`
+      : `这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）${cases}`;
     let note=`不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
     if(summary.skipped_sources>0){
       const producers=[...new Set((scope?.body.skipped??[]).map(row=>row.producer))].sort(compareText);
@@ -639,7 +855,7 @@ export class KnowledgeViews {
     };
     const nodes = (await this.#reading.changedNodes(from.root, to.root)) ?? [];
     const [fromComposition, toComposition] = pinned?[pinned.from,pinned.to]:await Promise.all([this.#buildView(product,from),this.#buildView(product,to)]);
-    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],scope:scope?.record??null,exclude:[...exclude].sort()});
+    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
     const budget = this.#budget(pinned?.reserve);
     interface Item {
       position:number;
@@ -851,11 +1067,13 @@ export class KnowledgeViews {
     const summary = await this.#scopeSummary(scope, [kind], undefined, scopePlaced === null ? undefined : row => {
       if (!row.unplaced) scopePlaced.add(row.entry);
     });
-    const page=pageState(after,{product,at,kind,by,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort()});
+    const page=pageState(after,{product,at,kind,by,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
     const seen = new Set<string>();
     const counts = new Map<string, { values: FacetValue[]; count: number; unversioned: number }>();
     const empty = Object.fromEntries(by.map(field => [field, 0]));
     const odd = { count: 0 };
+    const rootless=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root):null;
+    const unrooted=rootless?.missing??0;
     const limit = Math.max(1, this.#context.limits.facetCombinations);
     let cut = 0;
     let unlisted = 0;
@@ -885,7 +1103,19 @@ export class KnowledgeViews {
     if (composition !== null || scope !== null) {
       for await (const row of scopedEntries(composition, scope, kind)) take(row);
     }
-    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut)) take(row);
+    let feedingConflicts=0,feedingUnknown=0,feedingCommandsUnknown=0;
+    if (at.seedling && kind === 'case' && feeding?.cut) {
+      const groups=new Map<string,KindEntry[]>();
+      for(const row of fedCaseRows(at.root,feeding.cut,true)){const id=row.content.data.object;if(typeof id!=='string')continue;const group=groups.get(id)??[];group.push(row);groups.set(id,group);}
+      for(const [id,group] of groups){
+        if(group.some(row=>Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1)){feedingConflicts++;continue;}
+        if(by.includes('has_expected')&&group.some(row=>typeof row.content.data.has_expected!=='boolean')){feedingUnknown++;continue;}
+        if((by.includes('commands')||by.includes('command_identities'))&&group.some(row=>typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0)){feedingCommandsUnknown++;continue;}
+        const signature=(row:KindEntry)=>canonicalize(by.map(field=>facetValues(row.content.data,field,{count:0}).map(value=>canonicalize(value)).sort()));
+        if(new Set(group.map(signature)).size!==1){feedingConflicts++;continue;}
+        const selected=group.find(row=>!row.unplaced)??group[0];take({...selected,entry:id,unplaced:group.every(row=>row.unplaced)});
+      }
+    }
     const compareRows = (a: FacetValue[], b: FacetValue[]): number => {
       for (let i = 0; i < a.length; i++) {
         const c = compareValues(a[i], b[i]);
@@ -919,6 +1149,14 @@ export class KnowledgeViews {
     const skipped = skippedNote(at, composition);
     if (skipped !== null) notes.push(skipped);
     if (at.seedlingNote) notes.push(at.seedlingNote);
+    if(feedingConflicts)notes.push(`${feedingConflicts} 个喂入对象的多个来源在请求字段上不一致，未计入本页；缺少一致的来源事实，下一步由来源维护者核对后重新读取`);
+    if(feedingUnknown)notes.push(`${feedingUnknown} 个用例缺期望节点的结构判定，未计入本页；下一步用新版产品包按锁定树苗重读原件`);
+    if(feedingCommandsUnknown)notes.push(`${feedingCommandsUnknown} 个用例缺完整命令身份，未计入命令分面；下一步核对锁定命令树或补完整命令后重读，不把未知当作没有命令`);
+    if(rootless&&unrooted)notes.push(`${rootlessNote(rootless,kind,at.root,product,at.build,'本页')}；不把未核命令当作没有命令`);
+    if(rootless?.elsewhere)notes.push(elsewhereNote(rootless.elsewhere,kind,at.root,product,'本页'));
+    // truncated says something is not in the lists; unknown_entries and unknown_only say whether that is all there is to it.
+    const undelivered = page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0;
+    const unknownEntries = feedingConflicts + feedingUnknown + feedingCommandsUnknown + unrooted;
     const view: FacetView = {
       schema: 'facet-view@1',
       next: page.offset+rows.length<all.length?page.next(page.offset+rows.length):null,
@@ -930,9 +1168,11 @@ export class KnowledgeViews {
       rows,
       total: seen.size,
       totals: { empty, entry_counts: entryCounts, ...this.#scopeCounts(summary) },
-      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
+      truncated: undelivered || unknownEntries > 0,
+      ...(unknownEntries > 0 ? { unknown_entries: unknownEntries } : {}),
+      ...(unknownEntries > 0 && !undelivered ? { unknown_only: true as const } : {}),
       skipped: skippedCount(composition) + skippedCount(scope),
-      notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
+      notes: [...notes,this.#scopeNote(summary,scopeLocked,scope,kind)],
     };
     if(rows.length===0&&page.offset<all.length)throw new ImpactRefusal('单行分面超过视图页上限；减少 by 字段后重读');
     return conforming(FacetView, view, 'facet-view@1');
@@ -959,11 +1199,20 @@ export class KnowledgeViews {
     };
     const composition = pinned===undefined?await this.#buildView(product,at):pinned.composition;
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
-    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort()});
-    const onlySet = only === null ? null : new Set(only);
+    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
+    // Identity fields (stories, defects) match a requested value by normalized id, every other field by its exact text.
+    const selects = onlyMatcher(key, only);
+    const pick = (value: string): boolean => selects === null || selects(value);
+    // A fed row whose root-independent indexed field states none of the requested values cannot carry one of them.
+    const selectedFed = (data: Record<string, unknown>): boolean => selects === null || !rootIndependentField(key) || !Object.hasOwn(data, key) || indexKeys(data, key).some(selects);
+    // A build's fed fixed-bug records join the defect entries of its seedling root, as fed cases join its case entries.
+    const fedDefects=at.seedling&&kind==='defect'&&feeding?.cut?fedDefectRows(at.root,at.build,feeding.cut):null;
+    const rootless=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,only):null;
+    const knownRootless=rootless===null?0:only===null?rootless.missing:rootlessCases(feeding!.cut!,at.root).missing;
+    const unrooted=rootless?rootless.missing:(fedDefects?.unrooted.filter(row=>indexKeys(row.content.data,key).some(pick)).length??0);
     // Position membership is collected before the index-key filter; the count covers every entry of the kind.
     const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
-    const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(value => onlySet === null || onlySet.has(value)), scopePlaced === null ? undefined : row => {
+    const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(pick), scopePlaced === null ? undefined : row => {
       if (!row.unplaced) scopePlaced.add(row.entry);
     });
     const budget = this.#budget(pinned?.reserve);
@@ -984,24 +1233,31 @@ export class KnowledgeViews {
       if (row.path !== previousPath || row.root !== previousRoot) { previousPath = row.path; previousRoot = row.root!; referencePrefix = treeReference(row.root!, row.path, row.entry).slice(0, -64); }
       if (row.content.kind !== previousKind) { previousKind = row.content.kind; parsedKind = EntryKindSchema.parse(row.content.kind); }
       const content = slim(row.content);
-      return { ...(row.unversioned ? { root: row.root!, build: null } : {}), entry: row.entry, kind: parsedKind, statement: content.statement, data: content.data, reference: referencePrefix + row.entry };
+      return { ...(row.unversioned ? { root: row.root!, build: null } : {}), entry: row.entry, kind: parsedKind, statement: content.statement, data: content.data, reference: row.reference??referencePrefix + row.entry };
     };
     let ofKind = 0;
     let unplacedCount = 0;
+    let feedingRecords=0,keyFactsUnknown=0;
+    // The entries left out of the answer for an unknown fact, each once whichever counters name it.
+    const unknownEntryIds=new Set<string>();
+    const feedingObjects=new Set<string>();
     const excluded = new Map<string, string>();
     const seenScope = scope === null ? null : new Set<string>();
     const absorb = (row: KindEntry): void => {
+        if(row.reference===null)throw new ImpactRefusal('缺喂入用例对应的可引用记录；请维护者补完整记录后重读索引');
         if (seen.has(row.entry)) return;
         seen.add(row.entry);
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
-        const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
+        if(kind==='case'&&['stories','defects','commands','command_identities'].includes(key)&&!Array.isArray(row.content.data[key])){keyFactsUnknown++;unknownEntryIds.add(row.entry);}
+        const values = indexKeys(row.content.data, key).filter(pick);
         if (values.length === 0) return;
+        if(typeof row.reference==='string'&&row.reference.startsWith('rec:')){feedingRecords++;if(typeof row.content.data.object==='string')feedingObjects.add(row.content.data.object);}
         const value = projected(row);
         const serialized = encoder.text(value);
         const entryBytes = (entryKeyBytes ??= encoder.size(row.entry) + 2) + Buffer.byteLength(serialized);
         carriers.set(row.entry, entryBytes);
-        if (exclude.has(row.entry)) excluded.set(row.entry, treeReference(row.root!, row.path, row.entry));
+        if (exclude.has(row.entry)) excluded.set(row.entry, row.reference??treeReference(row.root!, row.path, row.entry));
         else {
           // Cache an ordered prefix of index values rather than whichever paths happened to be scanned first.
           // This bounds retained candidate bytes; final selection and the second-scan fallback below stay unchanged.
@@ -1046,7 +1302,15 @@ export class KnowledgeViews {
         absorb({ entry, path, content, unplaced, root: source.body.root, unversioned: source === scope });
       }, validatedParts);
     }
-    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut)) absorb(row);
+    let feedingConflicts=0,feedingCommandsUnknown=0;
+    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut,true)) {
+      if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(selectedFed(row.content.data)){feedingConflicts++;unknownEntryIds.add(row.entry);}continue;}
+      const needsCommands=key==='commands'||key==='command_identities'||fields===null||fields.includes('commands')||fields.includes('command_identities');
+      const selectedDocument=selectedFed(row.content.data);
+      if(needsCommands&&selectedDocument&&typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0){feedingCommandsUnknown++;unknownEntryIds.add(row.entry);}
+      absorb(row);
+    }
+    for (const row of fedDefects?.rows ?? []) absorb(row);
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     interface Kept {
       value: string;
@@ -1087,17 +1351,24 @@ export class KnowledgeViews {
     if (wanted.size > 0 && (composition !== null || scope !== null)) {
       for await (const row of scopedEntries(composition, scope, kind)) {
         if (!wanted.has(row.entry)) continue;
-        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned)));
+        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned, row.reference??undefined)));
         wanted.delete(row.entry);
         if (wanted.size === 0) break;
       }
     }
     if (wanted.size > 0 && at.seedling && kind === 'case' && feeding?.cut) {
-      for (const row of fedCaseRows(at.root, feeding.cut)) {
+      for (const row of fedCaseRows(at.root, feeding.cut,true)) {
         if (!wanted.has(row.entry)) continue;
-        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned)));
+        if(row.reference===null)throw new ImpactRefusal('缺喂入用例对应的可引用记录；请维护者补完整记录后重读索引');
+        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned, row.reference??undefined)));
         wanted.delete(row.entry);
       }
+    }
+    for (const row of fedDefects?.rows ?? []) {
+      if (wanted.size === 0) break;
+      if (!wanted.has(row.entry)) continue;
+      held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned, row.reference??undefined)));
+      wanted.delete(row.entry);
     }
     if(wanted.size>0)throw new Error('第二遍读取缺少不可变索引条目');
     // The selection is fixed. Drop unselected serialized candidates before materializing the answer.
@@ -1108,13 +1379,20 @@ export class KnowledgeViews {
       if (entry === undefined) { const bytes = held.get(digest)!; entry = JSON.parse(Buffer.from(bytes).toString('utf8')) as ViewEntry; this.#entryBytes.set(entry, bytes); decoded.set(digest, entry); held.delete(digest); }
       return entry;
     }
-    const feedingNotes: string[] = ofKind === 0 && feeding !== null ? await this.#feedingNotes(product, feeding.context, [kind], 0, feeding) : [];
+    // Root-less fixed-bug records are said by the unrooted note; the empty-layer note would deny them.
+    const feedingNotes: string[] = ofKind === 0 && feeding !== null && !(fedDefects !== null && unrooted > 0) ? await this.#feedingNotes(product, feeding.context, [kind], 0, feeding, at.build) : [];
     const notes = (count: number): string[] => {
       const out: string[] = [];
       if (ofKind === 0) { out.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`); out.push(...feedingNotes); }
-      else if (keys.size === 0) out.push(`没有${labelOf('entry_kind', kind)}条目在数据字段 ${key} 上有${only === null ? '取值' : '所列的取值'}`);
+      else if (keys.size === 0) out.push(`${feedingCommandsUnknown||feedingConflicts||unrooted?'当前没有可列出的':'没有'}${labelOf('entry_kind', kind)}条目在数据字段 ${key} 上有${only === null ? '取值' : '所列的取值'}`);
+      if(feedingRecords)out.push(`喂入索引列出 ${feedingRecords} 条来源记录、${feedingObjects.size} 个内容身份；同一内容的多个出处分别引用记录，data.object 是共享身份`);
+      if(feedingConflicts)out.push(`${feedingConflicts} 条用例来源的版本层有冲突，未计入本索引；下一步由来源维护者核对目录后重读`);
+      if(feedingCommandsUnknown)out.push(`${feedingCommandsUnknown} 条用例来源缺完整命令身份，不能认为命令集合为空；下一步核对锁定命令树或补完整命令后重读`);
+      if(keyFactsUnknown)out.push(`${keyFactsUnknown} 个用例缺少索引字段 ${key} 的结构事实，不能据此判断键不存在；下一步由作者补声明或用新版生产器重读原件`);
+      if(unrooted)out.push(rootless?rootlessNote(rootless,kind,at.root,product,at.build,'本索引'):`${unrooted} 个${labelOf('entry_kind', kind)}缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
+      if(rootless?.elsewhere)out.push(elsewhereNote(rootless.elsewhere,kind,at.root,product,'本索引'));
       if (only !== null) {
-        const absent = only.filter((value) => !keys.has(value));
+        const absent = only.filter((value) => { const match = onlyMatcher(key, [value])!; for (const listed of keys.keys()) if (match(listed)) return false; return true; });
         if (absent.length > 0 && keys.size > 0) out.push(`这些取值没有条目：${cutText(absent.slice(0, 20).join('、'), 500)}${absent.length > 20 ? ` 等 ${absent.length} 个` : ''}`);
       }
       const perKeyCut = kept.slice(0, count).filter((item) => item.cut).length;
@@ -1128,7 +1406,7 @@ export class KnowledgeViews {
       const skipped = skippedNote(at, composition);
       if (skipped !== null) out.push(skipped);
       if (at.seedlingNote) out.push(at.seedlingNote);
-      out.push(this.#scopeNote(summary,scopeLocked,scope));
+      out.push(this.#scopeNote(summary,scopeLocked,scope,kind));
       return out;
     };
     const build = (count: number): IndexView => {
@@ -1136,6 +1414,14 @@ export class KnowledgeViews {
       const entries: Record<string, ViewEntry> = {};
       const digests = items.flatMap(item => item.fresh).sort(compareText);
       if (!encodedOnly) for (const digest of digests) entries[digest] = decode(digest);
+      const undelivered=page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0;
+      const unknownEntries=unrooted+unknownEntryIds.size;
+      const truncated=undelivered || unknownEntries>0;
+      // A scope without a single entry of the kind, and no fed case with a root-less projection, has no knowledge of the
+      // kind (never fed, never produced): nothing is complete there.
+      const narrowedComplete=(ofKind>0||knownRootless>0)&&skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&!rootless?.elsewhere&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
+      const keySpaceComplete=only===null&&narrowedComplete;
+      const discloseKeySpace=kind==='case'&&(Boolean(feeding?.cut)||keyFactsUnknown>0||!truncated||keySpaceComplete);
       const answer: IndexView = {
         schema: 'index-view@1',
         next: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available?page.next(page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)):null,
@@ -1150,10 +1436,14 @@ export class KnowledgeViews {
         keys: Object.fromEntries(items.map((item) => [item.value, item.listed])),
         entries,
         ...(only !== null ? { only: [...new Set(only)].sort(compareText) } : {}),
+        ...(only !== null && kind === 'case' ? { only_complete: narrowedComplete } : {}),
         cut_keys: items.filter((item) => item.cut).map((item) => item.value),
+        ...(discloseKeySpace?{key_space_complete:keySpaceComplete}:{}),
         total_keys: keys.size,
         total_entries: carriers.size,
-        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0,
+        truncated,
+        ...(unknownEntries > 0 ? { unknown_entries: unknownEntries } : {}),
+        ...(unknownEntries > 0 && !undelivered ? { unknown_only: true as const } : {}),
         skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };
@@ -1177,6 +1467,13 @@ export class KnowledgeViews {
     return view;
   }
 
+  /** Whether the reader is an enabled Hub account; a refusal to anyone else stays neutral (the identity class). */
+  async #activeReader(principal: { id: string } | null | undefined): Promise<boolean> {
+    if (typeof principal?.id !== 'string') return false;
+    const account = await this.#context.records.principals.get(principal.id);
+    return account !== null && !account.disabled;
+  }
+
   /** ExternalReaderPort.read for a knowledge view id: never throws, ok:false with the real reason for the admin log. */
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     const startedAt = this.#context.now().toISOString();
@@ -1193,7 +1490,8 @@ export class KnowledgeViews {
 
   async #readLinks(bare:string,request:Extract<ViewRequest,{type:'links'}>,context:ExternalReadContext,startedAt:string):Promise<ExternalRead>{
     const handle=await this.#packs.productById(request.product)??await this.#packs.productByName(request.product);
-    if(!handle||!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不存在或不可读'};
+    if(!handle)return {ok:false,id:bare,reason:'产品不存在',inputError:productAbsent(request.product)};
+    if(!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不可读',...(await this.#activeReader(context.principal)?{inputError:productForbidden(handle.product.id)}:{})};
     const scopeLocked=Boolean(context.run)||request.cursor!==null;
     let scopeRoot=await this.#scope(handle.product.id,context);
     let pageCursor=request.cursor, cursorComposition:string|undefined, savedScopeCut:number|undefined;
@@ -1300,28 +1598,30 @@ export class KnowledgeViews {
   async #read(id: string, context: ExternalReadContext, startedAt: string): Promise<ExternalRead> {
     const parsed = parseViewId(id);
     const bare = splitRevision(id).body;
-    if (!parsed.ok) return { ok: false, id: bare, reason: parsed.reason };
+    if (!parsed.ok) return { ok: false, id: bare, reason: parsed.reason, inputError: { message: parsed.reason, fix: VIEW_WRITING } };
     const request = parsed.value;
     if(request.type==='links')return this.#readLinks(bare,request,context,startedAt);
     const handle = (await this.#packs.productById(request.product)) ?? (await this.#packs.productByName(request.product));
-    if (handle === null) return { ok: false, id: bare, reason: `没有产品 ${cutText(request.product, 80)}` };
+    if (handle === null) return { ok: false, id: bare, reason: `没有产品 ${cutText(request.product, 80)}`, inputError: productAbsent(request.product) };
     const product = handle.product.id;
     const principal = context.principal;
-    if (!(await this.#reading.mayReadProducts(principal, [product]))) return { ok: false, id: bare, reason: `账号 ${principal?.id ?? '（无）'} 不能读产品 ${product} 的知识` };
+    // A disabled or unknown account is the identity class: the caller keeps the neutral answer (D05 R[3]).
+    if (!(await this.#reading.mayReadProducts(principal, [product]))) return { ok: false, id: bare, reason: `账号 ${principal?.id ?? '（无）'} 不能读产品 ${product} 的知识`, ...(await this.#activeReader(principal) ? { inputError: productForbidden(product) } : {}) };
     const pins=new Map<string,CompositionView>();
     let reserve=VIEW_MARGIN;
     const additional=context.run?undefined:await this.#context.additionalScopeRoots?.(product);
     const scopeRoot = await this.#scope(product,context,additional);
-    const resolve = async (name: string): Promise<At | string> => {
+    // A build the Hub does not have, or one without a root yet, is absent (D05 R[3]); the fix says who can change that.
+    const resolve = async (name: string): Promise<At | ViewAbsence> => {
       const named = await this.#builds.named(product, name);
       if (named === null) {
         const candidates = await this.#builds.candidates(product,name);
         if(candidates.length>1)throw new BuildNameRefusal(`构建名字的大小写有歧义，候选：${candidates.map(build=>build.name).join('、')}；请使用候选的完整原样构建名重读`);
-        return `产品 ${product} 没有构建 ${cutText(name,80)}`;
+        return { absent: `Hub 里没有产品 ${product} 的构建 ${cutText(name,80)}`, fix: '核对构建名（名字或别名不分大小写逐字相等才算）；构建清单里没有它时，由管理员同步这条产品线的构建（circle-hub knowledge sync）后重读' };
       }
       const chosen = this.#readRoot ? await this.#readRoot(product, { build: name }) : null;
       const root = chosen?.info ?? (this.#readRoot ? null : await this.#builds.rootOfBuild(product, name));
-      if (root === null) return `构建 ${named.name} 还没有知识树的根`;
+      if (root === null) return { absent: `Hub 里还没有构建 ${named.name} 的知识树根`, fix: '由管理员为这个构建育苗或同步知识（circle-hub knowledge sync）后重读；也可以换一个已有知识根的构建' };
       const seedlingNote = readRootNote(chosen);
       const locked=context.composition && context.build===named.name ? await this.#context.store.composition(context.composition) : null;
       const useLocked = Boolean(locked && locked.product===product);
@@ -1347,19 +1647,22 @@ export class KnowledgeViews {
     let key: string;
     let compute: (exclude: ReadonlySet<string>) => Promise<ImpactView | FacetView | IndexView>;
     let title: string;
+    // A case view over a seedling root: its fed cases' originals join the scope, and root-less ones are queued for re-reading.
+    let caseAt: At | null = null;
     if (request.type === 'impact') {
       const from = await resolveOnce(request.from);
-      if (typeof from === 'string') return { ok: false, id: bare, reason: from };
+      if ('absent' in from) return absentRead(bare, from);
       const to = await resolveOnce(request.to);
-      if (typeof to === 'string') return { ok: false, id: bare, reason: to };
+      if ('absent' in to) return absentRead(bare, to);
       roots = [from.root, to.root];
       key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog, after:request.after??null });
       compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolveOnce(request.build);
-      if (typeof at === 'string') return { ok: false, id: bare, reason: at };
+      if ('absent' in at) return absentRead(bare, at);
       roots = [at.root];
+      if (request.kind === 'case' && at.seedling) caseAt = at;
       if (request.type === 'facets') {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by, after:request.after??null });
         compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
@@ -1375,13 +1678,14 @@ export class KnowledgeViews {
       if (reader === undefined) return null;
       const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
       if (handle === null) return null;
-      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
+      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if('absent' in at||!await seedlingOfRoot(this.#context,product,at.root))return null;}
       const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
       if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
-      return { context, cut: await reader.cut(handle.product.id, offset,context.principal) };
+      const cut=await reader.cut(handle.product.id, offset,context.principal);
+      return { context, cut, identity:cut===null?null:feedingIdentity(cut,principal.id) };
     })();
-    key = canonicalize({request:key,scope:scopeRoot});
-    const revision = scopeRoot === null ? roots.join('..') : request.type === 'impact' ? [roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot}))].join('..') : sha256Hex(canonicalize({root:roots[0],scope:scopeRoot}));
+    key = canonicalize({request:key,scope:scopeRoot,feeding:feeding?.identity??null});
+    const revision = feeding?.identity ? request.type==='impact'?[roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot,feeding:feeding.identity}))].join('..'):sha256Hex(canonicalize({root:roots[0],scope:scopeRoot,feeding:feeding.identity})) : scopeRoot === null ? roots.join('..') : request.type === 'impact' ? [roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot}))].join('..') : sha256Hex(canonicalize({root:roots[0],scope:scopeRoot}));
     if (request.revision !== null && request.revision !== revision) return { ok: false, id: bare, reason: `要求修订 ${cutText(request.revision, 140)}，现在是 ${revision}` };
     const compositions=[...new Map([...pins.values()].map(composition=>[composition.record,composition])).values()];
     key=canonicalize({query:key,compositions:compositions.map(composition=>composition.record)});
@@ -1441,6 +1745,14 @@ export class KnowledgeViews {
       const question=await requestKnowledgeFact(this.#context,{kind:'clarification',subject:`知识范围核对 ${sha256Hex(canonicalize(rawScope.roots))}`,missing:'缺少额外根覆盖清单，不能确定这些未入当前根的来源是否已由其他根覆盖',action,inputs});
       scoped.request={...question,action};
     }
+    if(caseAt&&feeding?.cut){
+      const fed=fedScope(feeding.cut,caseAt.root);if(fed)scoped.fed=fed;
+      // Root-less cases are re-read under the reader's own account through the bounded observe path: recorded, never
+      // projected in memory here. The view itself still counts them unknown until a later read sees the projections.
+      const layer=this.#context.feeding;
+      const rootless=rootlessCases(feeding.cut,caseAt.root,request.type==='index'?request.key:undefined,request.type==='index'?request.only:null);
+      if(layer&&this.#context.feedingReader===layer&&rootless.missing>0)await layer.rereadRootless(principal,rootless.originals.flatMap(row=>row.records),{product,root:caseAt.root,composition:caseAt.composition??null});
+    }
     reserve=Math.max(VIEW_MARGIN,canonicalBytes(scoped).byteLength+16*1024);
     key=canonicalize({query:key,scope:sha256Hex(canonicalBytes(scoped))});
     const credentialRefusal=async(held:SourceArtifact,references:string[]):Promise<ExternalRead>=>{
@@ -1478,7 +1790,11 @@ export class KnowledgeViews {
     const flagged = flaggedParts(view, coverage, part => part instanceof Uint8Array ? part : this.#entryBytes.get(part as ViewEntry) ?? canonicalBytes(part), encoded);
     const originalReferences=view.schema==='facet-view@1'?[]:Object.values(view.entries).map(entry=>entry.reference);
     if(request.after&&flagged.excluded.size>0)return credentialRefusal(await ingest(originalBytes ?? this.#bytes(view)),originalReferences);
-    if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
+    let indexExcludedEntries = 0;
+    if (flagged.excluded.size > 0) {
+      if (view.schema === 'index-view@1') indexExcludedEntries = flagged.excluded.size;
+      view = await compute(flagged.excluded);
+    }
     const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number, fallback = 0): void => {
       const unit = value.schema === 'facet-view@1' ? '计数行' : '条目';
       if (covered > 0) value.notes.push(`有 ${covered} 个${unit}的凭据命中由来源的受理覆盖；每次读取重新核对受理仍有效`);
@@ -1487,6 +1803,7 @@ export class KnowledgeViews {
     };
     if(flagged.excluded.size>0&&view.next){view.next=null;view.notes.push('本页有未受理凭据，先由管理员处理这些来源或用 only 收窄；处理后从首页重读，不沿偏移后的页继续');}
     view.scope=scoped;
+    if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete){view.key_space_complete=false;if(view.only_complete!==undefined)view.only_complete=false;}
     const finalEncoded = view.schema === 'index-view@1' ? this.#encodedIndexes.get(view) : undefined;
     const finalKeys = finalEncoded ? new Set(finalEncoded.keys()) : partKeys(view);
     const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
@@ -1499,9 +1816,11 @@ export class KnowledgeViews {
     // Keys or other surrounding content can add hits beyond the per-part budget.
     // Fall back once to the previous safe omission behavior, never scan every prefix.
     if (artifact.body.scan.truncated && flagged.eligible.size > 0) {
+      if (view.schema === 'index-view@1') indexExcludedEntries = flagged.allHits.size;
       view = await compute(flagged.allHits);
       annotate(view,0,flagged.limited.size,covered);
       view.scope=scoped;
+      if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete){view.key_space_complete=false;if(view.only_complete!==undefined)view.only_complete=false;}
       if(view.next)view.next=continuationId(bare,view.next,revision);
       bytes = this.#bytes(view);
       large = tooLarge(bytes);
@@ -1512,7 +1831,8 @@ export class KnowledgeViews {
       return credentialRefusal(artifact,originalReferences);
     }
     const meta = await this.#context.records.artifacts.ingest({
-      bytes: canonicalBytes({ title, view: request.type, product, roots, revision }),
+      bytes: canonicalBytes({ title, view: request.type, product, roots, revision,
+        ...(view.schema === 'index-view@1' ? { index_excluded_entries: indexExcludedEntries, index_view_sha256: artifact.body.sha256 } : {}) }),
       mediaType: 'application/json',
       origin,
       derivedCoverage:coverage,

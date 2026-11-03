@@ -26,7 +26,7 @@ test('sharing never opens an ordinary predecessor start gate and a result cannot
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const draft=await h.start();await h.submit(draft.run,[h.proposal]);await h.kit.authorizations.share(h.admin,draft.run,[h.bob.id]);
  const request=(await createRequestService(h.kit).all(draft.run)).find(row=>row.declaration)!;
  const dir=await copy(t,'criterion-owner-only',workflow=>{delete workflow.predecessor_access;delete workflow.criterion_review;});const flow=await h.workflows.add(dir);h.workflows.assign(h.bob.id,flow.pack.id);
- const denied=await h.service.startRun(h.bob,{pack:flow.pack.id,predecessor:draft.run,inputs:{declaration:{reference:'rec:'+request.source}}},h.call());assert.equal(denied.call_result,'error');assert.ok(denied.errors.some(error=>error.code==='SOURCE_UNAVAILABLE'));
+ const denied=await h.service.startRun(h.bob,{pack:flow.pack.id,predecessor:draft.run,inputs:{declaration:{reference:'rec:'+request.source}}},h.call());assert.equal(denied.call_result,'error');assert.ok(denied.errors.some(error=>error.code==='SOURCE_NOT_PERMITTED'),JSON.stringify(denied.errors));
  const source=fileURLToPath(new URL('../../../packs/workflow/criterion-review/',import.meta.url));const actual=await h.workflows.add(source);h.workflows.assign(h.admin.id,actual.pack.id);const result=await h.service.getResult(h.alice,draft.run);
  const wrong=await h.service.startRun(h.admin,{pack:actual.pack.id,predecessor:draft.run,inputs:{declaration:{reference:'rec:'+result!.record}}},h.call());assert.equal(wrong.call_result,'error');assert.ok(wrong.errors.some(error=>error.message.includes('提交记录')));
 });

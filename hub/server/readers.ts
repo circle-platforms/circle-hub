@@ -8,13 +8,14 @@ import type { ContributionLayer } from '../knowledge/api.ts';
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
 import { canSeeRun } from '../runs/engine/api.ts';
 import type { RunsService } from '../ports.ts';
-import { IntegrityError } from '../records/api.ts';
+import { IntegrityError, disclosedExistence, recordExistence } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
 import type { RecordRead, RecordReader, SourceRead, SourceReader } from '../refs/api.ts';
 
 /**
  * A source read of stored bytes for refs: only what the read tier lets through. A withheld source (retain_only) is read
- * with null bytes, so refs answers it with its note (B02 R[4]) by its own rule; absent and forbidden are null.
+ * with null bytes, so refs answers it with its note (B02 R[4]) by its own rule; absent and forbidden are null, and `exists`
+ * tells the two apart.
  */
 export function sourceReaderFor(
   records: RecordsKit,
@@ -35,6 +36,11 @@ export function sourceReaderFor(
         throw new IntegrityError('有权来源未返回原件字节');
       }
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
+    },
+    // Whether the Hub holds the source at all, so refs tells absent from forbidden (D05 R[3], decision 112).
+    async exists(sha256): Promise<boolean | null> {
+      const existence = disclosedExistence(principal.id, await records.artifacts.records(sha256));
+      return existence === 'neutral' ? null : existence === 'exists';
     },
   };
 }
@@ -94,6 +100,11 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
         return null;
       }
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
+    },
+    async exists(digest): Promise<boolean | null> {
+      const stored = await records.store.get(digest);
+      const existence = await recordExistence(records.store, principal.id, stored);
+      return existence === 'neutral' ? null : existence === 'exists';
     },
   };
 }

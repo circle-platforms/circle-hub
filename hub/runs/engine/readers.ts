@@ -8,7 +8,7 @@ import type { ProducerKind } from '../../../contracts/generated/vocabulary.ts';
 import {parseReference} from '../../refs/api.ts';
 import type {SourceBinding} from '../../../contracts/src/run.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
-import { runIsSharedWith } from '../../records/api.ts';
+import { disclosedExistence, recordExistence, requestRead, runIsSharedWith } from '../../records/api.ts';
 import type { Artifacts, Principal, RecordStore } from '../../records/api.ts';
 import type { ReaderIdentity, RecordReader, SourceReader } from '../../refs/api.ts';
 import { SCHEMAS, runById, actionOfSubmission } from './store.ts';
@@ -39,9 +39,20 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
   return {
     async read(sha256, reader) {
       const pins=[...new Set((bindings??[]).flatMap(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact?[binding.artifact]:[];}))];
-      const source = pins.length?await artifacts.source(principalOf(reader),sha256,{consumer,record:pins[0]})??(reader.run?await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer,record:pins[0]}):null):await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
-      if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
-      return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
+      return requestRead(reader.user,JSON.stringify([consumer,sha256,reader.role,reader.run??null,pins[0]??null]),async()=>{
+        const source = pins.length?await artifacts.source(principalOf(reader),sha256,{consumer,record:pins[0]})??(reader.run?await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer,record:pins[0]}):null):await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
+        if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
+        const scan=source.artifact?.body?.scan;
+        // Accepted findings can come from a different capture of the same bytes, so never cache them as clean.
+        const cacheable=source.acceptance===undefined&&scan?.inspected===true&&!scan.truncated&&scan.findings.length===0;
+        return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier, cacheable };
+      },source=>source?.cacheable ? source.bytes?.byteLength??0 : -1);
+    },
+    // Whether the Hub holds the source at all, so refs tells absent from forbidden (D05 R[3], decision 112).
+    // Another account's personal copies stay neutral (null), D05 R[3].
+    async exists(sha256) {
+      const existence = disclosedExistence('', await artifacts.records(sha256));
+      return existence === 'neutral' ? null : existence === 'exists';
     },
   };
 }
@@ -83,6 +94,10 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
         if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
       }
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
+    },
+    async exists(digest) {
+      const existence = await recordExistence(store, '', await store.get(digest));
+      return existence === 'neutral' ? null : existence === 'exists';
     },
   };
 }

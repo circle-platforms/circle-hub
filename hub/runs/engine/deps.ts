@@ -1,7 +1,8 @@
+import type { DeviceObservation } from '../../../contracts/src/pack.ts';
 import type { ContributionLayer } from '../../knowledge/api.ts';
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
-import type { Principals, RecordsKit } from '../../records/api.ts';
+import type { Principal, Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
 import type { LeaseService } from '../../leases/service.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
@@ -19,7 +20,15 @@ export interface AdminLogEntry {
 
 export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
-  dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string):Promise<import('../../dispatch/api.ts').RunJob[]>; reconcile(by:import('../../records/api.ts').Principal,job:string):Promise<import('../../dispatch/api.ts').JobStatus> };
+  dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string):Promise<import('../../dispatch/api.ts').RunJob[]>; reconcile(by:import('../../records/api.ts').Principal,job:string):Promise<import('../../dispatch/api.ts').JobStatus>;
+    /** The jobs of each run dispatch jobs are bound to; without it scheduled maintenance visits every run each pass. */
+    runs?():Promise<ReadonlyMap<string,readonly string[]>>;
+    /** Decision 105 (W03): for an accepted run with a hub_template effect row, report the jobs bound to the run, or, when there
+     * is none and the result is ready (every item delivered, no error), let the Hub dispatch and report the reserved job. */
+    accepted?(run:string,ready:boolean):Promise<Array<{job?:string;executor?:string;result?:string;text:string}>>;
+    /** The run's jobs that have not ended and their notes, or null. While one runs, a different submission is stored but not
+     * validated, so the run's latest accepted result (what the job verifies again before its submit) stays the one it took. */
+    inFlight?(run:string):Promise<{jobs:string[];notes:Array<{job?:string;executor?:string;result?:string;text:string}>}|null> };
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;
@@ -48,6 +57,11 @@ export interface RunsEngineDeps {
   leases?: LeaseService;
   /** Trusted, read-only unfinished jobs by resource key; no fencing data leaves this port. */
   leaseJobs?: (keys: readonly string[]) => Promise<Array<{ key: string; job: string }>>;
+  /** What devices behind leases showed (decision 112): the newest observation of each probed seat, and a look at booked devices. */
+  observations?: {
+    latest(): Promise<DeviceObservation[]>;
+    observe(user: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }>;
+  };
 }
 
 export const ENGINE_COMPONENT = 'runs.engine@1';

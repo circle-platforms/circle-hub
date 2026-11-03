@@ -142,7 +142,7 @@ describe('get_nodes under load', () => {
 });
 
 describe('tree references', () => {
-  test('a mistyped path or entry in a root the reader may read is REFERENCE_UNRESOLVED; for an outsider SOURCE_UNAVAILABLE', async (t) => {
+  test('a mistyped path or entry in a root the reader may read is REFERENCE_UNRESOLVED; for an outsider SOURCE_NOT_PERMITTED, an unknown root SOURCE_ABSENT', async (t) => {
     const w = await produced(t);
     const ctx = (user: { id: string; role: PermissionRole }) => ({ reader: { user: user.id, role: user.role }, parsers: createDefaultRegistry(), trees: w.knowledge.treeReader() });
     const cases = [`tree:${w.root}/commands/system/rebot`, `tree:${w.root}/commands/system/reboot@${'d'.repeat(64)}`];
@@ -150,10 +150,10 @@ describe('tree references', () => {
       const mine = await resolveReference(reference, ctx(w.user));
       assert.equal(!mine.resolved && mine.code, 'REFERENCE_UNRESOLVED', reference);
       const theirs = await resolveReference(reference, ctx(w.outsider));
-      assert.equal(!theirs.resolved && theirs.code, 'SOURCE_UNAVAILABLE', reference);
+      assert.equal(!theirs.resolved && theirs.code, 'SOURCE_NOT_PERMITTED', reference);
     }
     const unknown = await resolveReference(`tree:${'c'.repeat(64)}/commands`, ctx(w.admin));
-    assert.equal(!unknown.resolved && unknown.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(!unknown.resolved && unknown.code, 'SOURCE_ABSENT');
   });
 
   test('a root two builds share is grounded in both compositions; a reader bound to one composition gets its sources only', async (t) => {

@@ -6,7 +6,7 @@ export type { RecordedRequest, StubHandler, StubReply, StubServer } from './stub
 export { PAGE_SIZE, agileFixture, mindMap, passwordDigest, startAgileStub } from './agile.ts';
 export type { AgileOptions, AgileStub, AgileTreeNode } from './agile.ts';
 
-export { PLM_BUGS, PLM_BUILDS, PLM_PRODUCTS, PLM_STORIES, startPlmStub } from './plm.ts';
+export { PLM_BUGS, PLM_BUILDS, PLM_BUILD_RECORDS, PLM_PRODUCTS, PLM_STORIES, startPlmStub } from './plm.ts';
 export type { PlmOptions, PlmStub } from './plm.ts';
 
 export { BUILDS, buildSiteFiles, commandTree, startBuildSiteStub } from './buildsite.ts';

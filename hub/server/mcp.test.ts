@@ -145,6 +145,26 @@ describe('initialize and tools/list', () => {
     }
   });
 
+  test('submit_result is an open-world, destructive and still idempotent call for a caller whose pack makes the Hub dispatch', async () => {
+    const packs = [...defaultPacks(), fakeWorkflowPack('template-dispatch', '合成模板派发', ['application/json'], { hubTemplate: true })];
+    const other = await createTestServer({ postgres, packs });
+    try {
+      const dispatching = await other.createUser('模板派发');
+      await other.assign(dispatching.principal, 'template-dispatch');
+      const client = await other.client(dispatching.token);
+      const submit = (await client.listTools()).tools.find((t) => t.name === 'submit_result')!;
+      assert.deepEqual(submit.annotations, { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: true });
+      await client.close();
+      const plain = await other.createUser('普通');
+      await other.assign(plain.principal, 'local-review');
+      const second = await other.client(plain.token);
+      assert.deepEqual((await second.listTools()).tools.find((t) => t.name === 'submit_result')!.annotations, PUBLISHED.find((t) => t.name === 'submit_result')!.annotations);
+      await second.close();
+    } finally {
+      await other.close();
+    }
+  });
+
   test('start_run is open-world for a caller whose pack binds expected sources at start_run, whatever its inputs accept', async () => {
     const packs = [...defaultPacks(), fakeWorkflowPack('expected-review', '合成期望来源评审', ['application/json'], { expectedSources: true })];
     const other = await createTestServer({ postgres, packs });
@@ -191,6 +211,75 @@ describe('initialize and tools/list', () => {
 });
 
 describe('list_task_packs', () => {
+  test('the MCP text can reach every assigned pack across a budget-truncated list', async () => {
+    const packs = Array.from({ length: 80 }, (_, i) => {
+      const pack = fakeWorkflowPack(`sample-${String(i).padStart(3, '0')}`, '合成任务', ['application/json']);
+      return { ...pack, summary: { ...pack.summary!, description: '合成说明'.repeat(100) } };
+    });
+    const other = await createTestServer({ postgres, packs });
+    try {
+      const user = await other.createUser('合成列表用户');
+      for (const pack of packs) await other.assign(user.principal, pack.id);
+      const client = await other.client(user.token);
+      // Every choice is on the first page whatever the budget (A05 R[1], decision 113): one index row per pack.
+      const first = await client.call('list_task_packs', { kind: 'workflow' });
+      assert.deepEqual([...(first.content[0].text ?? '').matchAll(/^- (sample-\d{3})@\S+ \| /gm)].map((match) => match[1]!), packs.map((pack) => pack.id), 'the index lists all 80');
+      assert.deepEqual((first.structuredContent.index as { pack: string }[]).map((row) => row.pack.split('@')[0]), packs.map((pack) => pack.id));
+      const found: string[] = [];
+      let offset = 0;
+      for (let page = 0; page < 20; page++) {
+        const result = await client.call('list_task_packs', { kind: 'workflow', offset });
+        const text = result.content[0].text ?? '';
+        assert.ok(text.length <= 30_000);
+        assert.equal([...text.matchAll(/^- (sample-\d{3})@\S+ \| /gm)].length, 80, 'every page repeats the whole index');
+        found.push(...[...text.matchAll(/^- (sample-\d{3})@\S+ (?!\| )/gm)].map((match) => match[1]!));
+        const next = text.match(/list_task_packs (\{[^}]+\})/);
+        if (!next) break;
+        const args = JSON.parse(next[1]!) as { kind: string; offset: number };
+        assert.equal(args.kind, 'workflow');
+        assert.ok(args.offset > offset);
+        offset = args.offset;
+      }
+      assert.deepEqual(found, packs.map((pack) => pack.id));
+      const exact = await client.call('list_task_packs', { pack_id: 'sample-079' });
+      assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['sample-079']);
+      assert.match(exact.content[0].text ?? '', /输入 subject/);
+      await client.close();
+    } finally {
+      await other.close();
+    }
+  });
+
+  test('filters an assigned pack by exact ID and continues from an offset without revealing unassigned packs', async () => {
+    const client = await connect(await person(['review', 'local-review']));
+    const all = await client.call('list_task_packs', { kind: 'workflow' });
+    const ids = (all.structuredContent.packs as { id: string }[]).map((pack) => pack.id);
+    assert.equal(ids.length, 2);
+    const exact = await client.call('list_task_packs', { pack_id: 'review' });
+    assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['review']);
+    assert.match(exact.content[0].text ?? '', /review@/);
+    const prefix = await client.call('list_task_packs', { pack_id: 'revie' });
+    assert.deepEqual(prefix.structuredContent.packs, []);
+    const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
+    assert.deepEqual(incompatibleKind.structuredContent.packs, []);
+    const continued = await client.call('list_task_packs', { kind: 'workflow', offset: 1 });
+    assert.deepEqual((continued.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ids.slice(1));
+    const pastEnd = await client.call('list_task_packs', { offset: 99 });
+    assert.deepEqual(pastEnd.structuredContent.packs, []);
+    const invalidOffset = await client.call('list_task_packs', { offset: -1 });
+    assert.equal(invalidOffset.isError, true);
+    assert.equal(firstError(invalidOffset).path, '/offset');
+    await client.close();
+
+    const limited = await connect(await person(['review']));
+    const unavailable = await limited.call('list_task_packs', { pack_id: 'local-review' });
+    const absent = await limited.call('list_task_packs', { pack_id: 'not-a-pack' });
+    assert.deepEqual(unavailable.structuredContent.packs, []);
+    assert.deepEqual(absent.structuredContent.packs, []);
+    assert.deepEqual(comparable(unavailable), comparable(absent));
+    await limited.close();
+  });
+
   test('lists the assigned workflow packs, filters by kind and refuses bad arguments with the empty shape', async () => {
     const user = await person(['review', 'local-review']);
     const client = await connect(user);
@@ -648,9 +737,9 @@ describe('paging through the server', () => {
       const mixed = await client.call('get_nodes', { reference, cursor, [key]: value });
       assert.deepEqual([firstError(mixed).code, firstError(mixed).path], ['SUBMISSION_SCHEMA_VIOLATION', `/${key}`], key);
     }
-    // A cursor never reveals whether a reference it does not belong to exists: absent and forbidden stay alike.
+    // A cursor for a reference the Hub does not hold: the reference is answered as absent (D05 R[3], decision 112).
     const absent = await client.call('get_nodes', { reference: `src:${'f'.repeat(64)}`, cursor });
-    assert.equal(firstError(absent).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     await client.close();
   });
 
@@ -855,7 +944,7 @@ describe('start_run with the engine\'s detail', () => {
 });
 
 describe('records by reference', () => {
-  test('records decide a source artifact for admins too: one read with a person\'s own credential looks absent to an admin', async () => {
+  test('records decide a source artifact for admins too: one read with a person\'s own credential stays neutral to an admin', async () => {
     const owner = await person();
     const personal = await server.records.artifacts.ingest({
       bytes: Buffer.from(`个人凭据读到的页面 ${counter}`),
@@ -868,8 +957,10 @@ describe('records by reference', () => {
     const admin = await connect(server.admin);
     const byRecord = await admin.call('get_nodes', { reference: `rec:${personal.digest}` });
     const absent = await admin.call('get_nodes', { reference: `rec:${'d'.repeat(64)}` });
+    // A read with a person's own credential is that person's content: neutral to anyone else, admins included, while an
+    // unknown digest is absent (D05 R[3], model 37).
     assert.equal(firstError(byRecord).code, 'SOURCE_UNAVAILABLE');
-    assert.deepEqual(comparable(byRecord), comparable(absent), 'admins:false and absent look the same');
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     assert.equal(firstError(await admin.call('get_nodes', { reference: `src:${personal.body.sha256}` })).code, 'SOURCE_UNAVAILABLE', 'the bytes agree');
     const ownerClient = await connect(owner);
     const own = await ownerClient.call('get_nodes', { reference: `rec:${personal.digest}#/sha256` });
@@ -895,7 +986,7 @@ describe('records by reference', () => {
     assert.equal(own.isError, false);
     assert.equal((own.structuredContent.content as { text: string }).text, run);
     const otherClient = await connect(await person());
-    assert.equal(firstError(await otherClient.call('get_nodes', { reference: `rec:${stored.digest}` })).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(await otherClient.call('get_nodes', { reference: `rec:${stored.digest}` })).code, 'SOURCE_NOT_PERMITTED');
     await ownerClient.close();
     await otherClient.close();
   });
@@ -907,9 +998,9 @@ describe('records by reference', () => {
     const admin = await connect(server.admin);
     const ownerClient = await connect(owner);
     assert.equal((await admin.call('get_nodes', { reference: `rec:${candidate.digest}` })).isError,false);
-    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${candidate.digest}#/statement` })).code,'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${candidate.digest}#/statement` })).code,'SOURCE_NOT_PERMITTED');
     assert.equal((await admin.call('get_nodes', { reference: `rec:${observation.digest}` })).isError, false);
-    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${observation.digest}` })).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(await ownerClient.call('get_nodes', { reference: `rec:${observation.digest}` })).code, 'SOURCE_NOT_PERMITTED');
     await admin.close();
     await ownerClient.close();
   });
@@ -948,7 +1039,7 @@ describe('batches and notes', () => {
     const user = await person(['review']);
     const client = await connect(user);
     const absent = await client.call('get_nodes', { root: 'e'.repeat(64), paths: [`/${'a'.repeat(296)}😀`] });
-    assert.equal(firstError(absent).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     server.fakes.runs.script.failNext('startRun', Object.assign(new Error('read failed at\u0000offset 7\ud800'), { code: 'SOURCE_UNAVAILABLE' }));
     assert.equal(firstError(await client.call('start_run', { pack: 'review', inputs: {} })).code, 'SOURCE_UNAVAILABLE');
     const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 20 })).items;
@@ -1007,7 +1098,7 @@ describe('batches and notes', () => {
       return append(input);
     };
     try {
-      assert.equal(firstError(await client.call('get_nodes', { run: 'run_7zzzzzzzzzzzzzzzzzzzzzzzzz' })).code, 'SOURCE_UNAVAILABLE');
+      assert.equal(firstError(await client.call('get_nodes', { run: 'run_7zzzzzzzzzzzzzzzzzzzzzzzzz' })).code, 'SOURCE_ABSENT');
     } finally {
       Reflect.deleteProperty(callLog, 'append');
     }
@@ -1020,7 +1111,7 @@ describe('batches and notes', () => {
 });
 
 describe('neutral answers', () => {
-  test('absent equals forbidden: the same neutral answer and empty shape for every tool', async () => {
+  test('absent and forbidden are told apart for every tool, with the same empty shape otherwise (D05 R[3], decision 112)', async () => {
     const owner = await person(['review']);
     const other = await person(['local-review']);
     const stranger = await person([]);
@@ -1044,22 +1135,27 @@ describe('neutral answers', () => {
       [otherClient, 'resolve_reference', { run: run.run, text: '合成用例一' }, { run: absentRun, text: '合成用例一' }],
       [otherClient, 'submit_result', { run: run.run, model: 'm', items: [] }, { run: absentRun, model: 'm', items: [] }],
     ];
+    // Beyond the error itself, both answers have the tool's empty shape.
+    const shape = (result: ToolCallResult) => ({ isError: result.isError, structured: { ...result.structuredContent, trace: 'TRACE', errors: undefined } });
     for (const [client, tool, forbidden, absent] of pairs) {
       const a = await client.call(tool, forbidden);
       const b = await client.call(tool, absent);
+      const at = `${tool} ${JSON.stringify(forbidden).slice(0, 60)}`;
       assert.equal(a.isError, true, `${tool} forbidden is an error`);
-      assert.equal(firstError(a).code, 'SOURCE_UNAVAILABLE', `${tool} ${JSON.stringify(forbidden).slice(0, 60)}`);
-      assert.equal(firstError(a).message, '对你不可用');
-      assert.deepEqual(comparable(a), comparable(b), `${tool}: forbidden and absent look the same`);
+      assert.equal(firstError(a).code, 'SOURCE_NOT_PERMITTED', at);
+      assert.match(firstError(a).message, /存在，你没有读取权限$/, at);
+      assert.equal(firstError(b).code, 'SOURCE_ABSENT', `${tool} ${JSON.stringify(absent).slice(0, 60)}`);
+      assert.match(firstError(b).message, /^Hub 里没有/, at);
+      assert.deepEqual(shape(a), shape(b), `${tool}: the same empty shape`);
     }
-    // A user's call-log record is not readable by reference: absent and forbidden alike.
+    // A user's call-log record exists and is not readable by reference.
     const ownLine = (await server.records.callLog.query(other.principal, { limit: 1 })).items[0];
     const lineAnswer = await otherClient.call('get_nodes', { reference: `rec:${ownLine.digest}` });
-    assert.equal(firstError(lineAnswer).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(lineAnswer).code, 'SOURCE_NOT_PERMITTED');
     await Promise.all([ownerClient, otherClient, strangerClient].map((c) => c.close()));
   });
 
-  test('the real reason of a neutral answer is in the admin note only', async () => {
+  test('the private reason behind a refused read is in the admin note only', async () => {
     const owner = await person(['review']);
     const other = await person(['review']);
     const ownerClient = await connect(owner);
@@ -1067,7 +1163,7 @@ describe('neutral answers', () => {
     const reference = String((await upload(ownerClient, MINDMAP)).structuredContent.reference);
     const run = (await startRun(ownerClient, reference)).structuredContent.run as { run: string };
     const answer = await otherClient.call('get_nodes', { run: run.run });
-    assert.equal(firstError(answer).code, 'SOURCE_UNAVAILABLE');
+    assert.equal(firstError(answer).code, 'SOURCE_NOT_PERMITTED');
     assert.doesNotMatch(JSON.stringify(answer), /not visible|absent/);
     const adminView = await server.records.callLog.query(server.admin.principal, { userId: other.user.id, tool: 'get_nodes' });
     assert.match((adminView.items[0].admin_reasons ?? []).join('\n'), /not visible/);

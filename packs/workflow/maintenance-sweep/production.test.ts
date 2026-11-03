@@ -227,7 +227,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     const refused = await hub.service.startRun(hub.bob, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW }, facets: { external: FACETS } } }, call());
     assert.deepEqual(
       refused.errors.map((error) => error.code),
-      ['SOURCE_UNAVAILABLE'],
+      ['SOURCE_NOT_PERMITTED'],
     );
   });
 });

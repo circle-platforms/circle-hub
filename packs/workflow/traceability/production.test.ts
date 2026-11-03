@@ -198,7 +198,7 @@ describe('a production run of traceability', { skip }, () => {
     const refused = await hub.service.startRun(hub.bob, { pack: 'traceability', inputs: { defects: { external: DEFECTS_ID }, cases: { external: CASES_ID } } }, call());
     assert.deepEqual(
       refused.errors.map((e) => e.code),
-      ['SOURCE_UNAVAILABLE'],
+      ['SOURCE_NOT_PERMITTED'],
     );
     const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'traceability', inputs: { defects: { external: DEFECTS_ID }, cases: { external: CASES_ID } } }, call());
     const run = detail.answer.run!;

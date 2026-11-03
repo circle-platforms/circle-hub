@@ -312,7 +312,7 @@ characters, else `sha256:<hex>` (the call log's rule, so runs and call-log lines
 
 Semantics owned by the server:
 
-- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind`.
+- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind` and, when supplied, an exact `pack_id`. The optional zero-based `offset` continues that same filtered list. When descriptions exceed the text budget, the answer supplies the next offset and retains the filters; an unknown or unassigned ID produces the same empty list. The list is live, so an assignment or publication change between pages can change positions.
 - `upload_file`: `file_path` is base64, decoded strictly (canonical padding; a second spelling of the same bytes is
   refused); the cap is `min(limits.maxUploadBytes, MAX_UPLOAD_BYTES)`, checked before decoding; the media type is the
   argument's (validated like records), else by the file name's extension, else sniffed (JSON, HTML, XML, UTF-8 text,
@@ -339,6 +339,21 @@ Semantics owned by the server:
   never split a character), is no page position: the first page is shown and the text says so. An empty partition or item
   list (every item delivered leaves three partitions empty) reads as its head, `条目 0 个`.
   Neither run, root nor reference is a schema violation.
+- `get_nodes {call_query: {start_run: <original arguments>}}` or `{call_query: {get_nodes: <original arguments>}}`
+  checks the authenticated caller's current-process calls and recent completion logs without reissuing the call. Only an
+  argument digest, trace and start time are held while the call runs; the last 500 log lines and at most 20 matching
+  entries are shown, with truncation disclosed. When known, `call_query.trace` narrows the candidates. Matching arguments
+  alone do not prove which of several calls timed out; an absent entry also does not prove a failure or that the request
+  never arrived. A completed visible start names its run and production-result records for `get_nodes` to read under
+  current permissions. A future successful `get_nodes` response can be retained in memory for at most 10 minutes within
+  a 64 MiB budget. With a unique trace, the caller may retrieve that historical snapshot only after the current source
+  and dynamic-record visibility checks succeed. A tree check is limited to 512 source captures and 100 each of included
+  contributions and feeding records; unsupported or unverifiable cases stay unknown with a re-read exit. A `rec:` read
+  of a feeding record is recovered only while that record is still valid and its current state equals the saved
+  `structure.feeding_state`; after a retraction or a revised original it stays unknown, like a tree page. Original
+  responses lost before this feature, expired or evicted entries, and process restarts cannot be recovered from the cache.
+  Restart also loses the in-flight index; the durable call log remains. The recovered text is labeled as the original
+  call's snapshot and may differ from current knowledge.
 - `start_run`: `ServerDeps.runsDetail.startRunDetailed` when the assembly gives it (the answer, the run record digest, the
   production result, the evidence gaps for the text), else `RunsService.startRun`.
 - `resolve_reference`, `submit_result`: `RunsService`; a `submit_result` answer that carries a result also gets its stored
@@ -723,7 +738,7 @@ circle-hub pack|resource|secret|knowledge|init-admin|operator-token … # regist
 circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>
 ```
 
-`knowledge retract` is an administrator command (the operator token, same as `knowledge sync`). It appends one `retraction@1` per target kind through `FeedingLayer.retract`. A retraction does not delete or rewrite the original record; the read side then shows the grounds as withdrawn. A target that already has a retraction record is not appended again.
+`knowledge retract` is an administrator command (the operator token, same as `knowledge sync`). It appends one `retraction@1` per target kind through `FeedingLayer.retract`. A retraction does not delete or rewrite the original record; the read side then shows the grounds as withdrawn. A target that already has a retraction record is not appended again. `--entry` takes a feeding record or any knowledge contribution record, including one grounded directly in tree entries. `--run` also lists, as entries of the same command, the contribution records the run's accepted results stored (`contributions.stored`), and prints how many it added; a run an older record retracted alone gets one entries record when the command is run again.
 
 Records commands open the records as the runtime role without migrating. **State-changing built-ins** (`user create`
 once an admin exists, `user disable|enable`, `token issue|revoke`) act as the enabled admin of the **operator token**,
@@ -963,11 +978,15 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 
 `/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和下架状态；版本必须带 tools/。无权、不存在、下架、没有工具、清单外路径、穿越路径和编码斜杠的回答字节相同。真实原因只写在管理员日志：版本不存在、未分配、已下架、账号停用、没有本地工具、清单外路径、路径含 `..`、编码或保留字符、版本引用格式不对，各记各的。同一进程里，一个用户和一个版本在一分钟内复用已经核对过的解包，避免按文件把整包再哈希一遍；这一分钟里每次请求仍问分配和下架，发出去的那个文件仍重算 SHA-256。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
 
+`/run-export/<运行>`（决定 104）把运行、最近一次已受理结果和该结果的原样提交以规范 JSON 交给运行发起人和管理员，供客户端在本地生成产物；`/run-export/<运行>/sources/<sha256>` 返回绑定在该运行上的一份原件的原字节（`artifacts.sourceForRun`：只给运行可见者、只给绑定的原件、只在读取层级允许时给字节），带 Content-Digest。每次请求先核 Bearer 令牌，只接受 GET 和 HEAD；别人的运行、未绑定的原件和形状不对的路径都答 404，没有已受理提交时答 409。每次请求写一行调用日志（工具名 run-export），不含令牌和正文。
+
 发送前重新核对摘要和大小，存储被改动时不给文件字节并记管理员日志；调用日志只留包号、引用及路径的摘要与长度，不留令牌、文件内容或原路径。下发不改写、不重新打包；客户端运行结果仅为“客户端预览”，Hub 沙箱中的重算核验算数。Circle 没有为此新增界面。
 
 客户端用 `circle-hub local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <地址>]` 安装。令牌仅从标准输入读取，不接受令牌参数或环境令牌，不打开数据库或密钥文件；没有部署锁时只允许回环，已有数据根的部署设置可锁定内网 IP 和端口，环境冲突或指定不同地址在读令牌之前拒绝。下载直连该字面 IP，不走环境代理、不跟随重定向；内网 HTTP 明文令牌可能被网络观察者看到。先钉住规范清单的包号，再按清单下载全部原文件并重算大小、摘要及响应完整性头；同级私有临时目录全部通过后才改名，任一失败清理临时产物。SIGINT 和 SIGTERM 会删掉这份临时目录。上次安装留下的锁目录，以及所属进程已经不在的临时目录，由下一次安装清掉；所属进程还在的临时目录留着。已有目标相同时答“已安装”，不同时拒绝，不覆盖。改名撞上已有目录时，按那份目录再核对一次。连不上 Hub、令牌无效、版本不可用、完整性不符和本地写失败，各有自己的下一步，不都说成 pack.json。
 
 `circle-hub local-tools verify <目录> --digest <包号>` 必须带包号。先比目录里 pack.json 的 SHA-256 和这个包号，不等就失败；再按 pack.json 重算每个文件，指出第一处不符的路径并列出多出的文件。只读，不联网，拒绝链接。清单里某个文件的摘要或大小不符时，报的是这个文件的路径。它也能核对集成者手工安装的完整清单目录。同步修改清单和文件会得到另一个包号，用发布时的包号核，这一份过不了。输出只含包号、版本、文件数、字节数及不符路径，不含文件正文或令牌。没有运行任何下载代码。
+
+客户端中立契约（任何 MCP 客户端同样适用，不只 Circle）：`list_task_packs` 的每个包带 `digest`，带 `tools/` 的包还带 `local_tools`（文件清单和钉到 id@version、包号的安装命令，不带令牌）；`start_run` 的回答为本次冻结的版本重复同一披露。没有 `circle-hub` CLI 的客户端按同一协议直连本出口：`GET /local-tools/<包>@<版本>` 取规范清单、核对包号，再逐文件取原字节、核对大小与 SHA-256，全部通过才改名落盘。建议安装根用通用的技能目录 `~/.agents/skills/<包>/`（保留清单相对路径，含 SKILL.md 与 pack.json），Circle 与 DeepSeek Harness 都读这个目录。包规程里的 `%HUB_URL%` 是 Hub 的 MCP 端点基址、`%HUB_TOKEN%` 是 Bearer 令牌：客户端在本地工具执行时展开，模型只写名字，令牌的值不进模型参数、结果、日志或 Git；没有这两个占位符的客户端用自己的等价机制。本地工具是包作者发布的代码，Hub 只做静态扫描不是沙箱，客户端安装与执行前由人审阅并放行。本地跑出来的结果只是“客户端预览”，算数的是 Hub 的重算核验；产物生成所需的在运行、已受理结果、原样提交和绑定原件字节走 `/run-export/<运行>`（决定 104）。支持 macOS 和 Linux，Windows 不做。
 
 读取说明收尾（hub-read-absence）：管理员备注上限 2,000 字，MCP 当前只写理由条数和管理员详情入口，不拼接理由原文。MCP 把每条完整理由分别交给 CallLog，迁移 4 的 call_reasons 在同一调用事务中一次批量写入；管理员查询与控制台“完整理由”展示它们，普通读者、调用记录正文和 JSONL 均不带完整理由。理由按序、只追加，重复 span 不重写；NUL 与不成对代理项先规范化。结果记录引用重查两次仍缺时，给出的是缺少引用这一事实，不改已经算出的校验结果；同一提交再交可恢复引用而不多算修复轮。缺陷计数的持久口径是上述 metric=1 理由行数，按追踪／运行归属查询，不另向模型回显内部异常。
 

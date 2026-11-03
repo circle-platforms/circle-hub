@@ -304,7 +304,7 @@ describe('a production run of case-location', { skip }, () => {
     const refused = await hub.service.startRun(hub.bob, { pack: 'case-location', inputs: ALL }, call());
     assert.deepEqual(
       refused.errors.map((e) => e.code),
-      ['SOURCE_UNAVAILABLE'],
+      ['SOURCE_NOT_PERMITTED'],
     );
     const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'case-location', product: 'FAMY', inputs: { documents: [external('24001')] } }, call());
     const run = detail.answer.run!;

@@ -166,6 +166,8 @@ export class FakeKnowledge implements KnowledgePort {
   treeReader(): TreeReader {
     return {
       hasRoot: (root: string) => Object.values(BUILDS).some((builds) => builds.some((b) => b.root === root)),
+      // Every reader may read every root here, so a root exists exactly when it is readable (D05 R[3]).
+      rootExists: (root: string) => Object.values(BUILDS).some((builds) => builds.some((b) => b.root === root)),
       read(root: string, path: string, _entry: string | null, _reader: ReaderIdentity): TreeRead | null {
         if (!Object.values(BUILDS).some((builds) => builds.some((b) => b.root === root))) return null;
         const words = path === '/' ? [] : path.slice(1).split('/').map((s) => decodeURIComponent(s));

@@ -247,7 +247,7 @@ describe('a production run of regression-scope', { skip }, () => {
     const refused = await hub.service.startRun(hub.bob, { pack: 'regression-scope', inputs: { impact: { external: REVIEW }, facets: { external: FACETS } } }, call());
     assert.deepEqual(
       refused.errors.map((error) => error.code),
-      ['SOURCE_UNAVAILABLE'],
+      ['SOURCE_NOT_PERMITTED'],
     );
   });
 });

@@ -85,7 +85,7 @@ export async function narrowIndexId(slot:WorkflowInput,id:string,inputs:Record<s
     const loaded = await load(pinned);
     if(!loaded.ok)return loaded;
     raw = loaded.keys;
-    if(raw.length === 0)return {ok:false,message:'该构建的缺陷索引没有编号',fix:'先生产该构建的修复清单（fixed-bugs 缺陷条目或发布页）再开始；不要向用户索取编号'};
+    if(raw.length === 0)return {ok:false,message:'该构建的缺陷索引没有编号：知识根和喂入层里都没有这个构建修复清单的缺陷身份',fix:`先经 Hub 读该构建的修复清单原件：start_run 的 pack 写 source-read，顶层同时写 product ${parsed.value.product} 和 build ${parsed.value.build}（两项都写，读到的原件才按这个构建进喂入层），输入槽和外部标识照本任务包说明里读修复清单的那一步写，不要换成别的读取槽；回执不再显示投影进行中后再开始本运行；读取回执写明原件缺失的事实时按回执处理，不重复读取；不要向用户索取编号`};
   }else{
     const found = identifiersOf(inputs,declared.only_from.slot);
     if(!found.ok)return found;
@@ -120,12 +120,12 @@ function fail(id:string,message:string,fix:string):ExternalRead {
 }
 
 /** Reads each only= slice and stores one index view. One slice is the caller's job. */
-export async function mergeIndexBindings(ids:readonly string[],label:string,context:ExternalReadContext,external:ExternalReaderPort,records:Records):Promise<ExternalRead> {
+export async function mergeIndexBindings(ids:readonly string[],label:string,context:ExternalReadContext,external:ExternalReaderPort,records:Records,options:{unknownEntries?:'disclose'}={}):Promise<ExternalRead> {
   let first:Extract<ExternalRead,{ok:true}> | null = null;
   const pages:Record<string,unknown>[] = [];
   const sources:string[] = [];
   for(const id of ids){
-    const read = await completeKnowledgeView(id,context,external,records);
+    const read = await completeKnowledgeView(id,context,external,records,options);
     if(!read.ok)return read;
     if(first === null)first = read;
     else if(read.revision !== first.revision)return fail(label,'知识视图分段读取时修订改变；从首页重新绑定','重新开始这次运行');
@@ -140,8 +140,11 @@ export async function mergeIndexBindings(ids:readonly string[],label:string,cont
   const notes = new Set<string>();
   const cut = new Set<string>();
   const only = new Set<string>();
+  let unknownEntries = 0;
   for(const page of pages){
     if(page.truncated === true)merged.truncated = true;
+    // The unknown entries of a query do not depend on its only= slice: every slice names the same entries.
+    if(typeof page.unknown_entries === 'number')unknownEntries = Math.max(unknownEntries,page.unknown_entries);
     for(const note of Array.isArray(page.notes) ? page.notes : [])if(typeof note === 'string')notes.add(note);
     for(const key of Array.isArray(page.cut_keys) ? page.cut_keys : [])if(typeof key === 'string')cut.add(key);
     for(const value of Array.isArray(page.only) ? page.only : [])if(typeof value === 'string')only.add(value);
@@ -156,7 +159,12 @@ export async function mergeIndexBindings(ids:readonly string[],label:string,cont
     }
   }
   notes.add(`only 超出单条标识长度，已按 ${ids.length} 段读取后合并`);
+  // Every slice was bound with the same opt-in, so a truncated slice is truncated by unknown entries alone.
+  if(unknownEntries > 0){merged.unknown_entries = unknownEntries;merged.unknown_only = true;}else{delete merged.unknown_entries;delete merged.unknown_only;}
   merged.only = [...only].sort(compareText);
+  // Each slice judges only its own requested values; the merged view is complete for all of them only when every slice is.
+  if(pages.every(page => typeof page.only_complete === 'boolean'))merged.only_complete = pages.every(page => page.only_complete === true);
+  else delete merged.only_complete;
   merged.cut_keys = [...cut].sort(compareText);
   merged.notes = [...notes];
   merged.total_keys = Object.keys(merged.keys as object).length;

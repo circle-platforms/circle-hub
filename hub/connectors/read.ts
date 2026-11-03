@@ -5,11 +5,13 @@
 // function (sandboxed) to derive artifacts such as `content` and `meta`; and stores a read manifest, the B05 action record
 // of the read. Nested reads (another external object the planner needs, such as the folder tree above a document) are served
 // from a cache per resource configuration, pack, reader and object until they expire or the planner asks for a refresh once;
-// top-level reads only refresh an entry a nested read made, and the cache is bounded by bytes.
-// Read tier (B02 R[4]): an answer stored at retain_only (a credential hit no acceptance covers, or the echo of a credential
-// value the Hub sent, which this engine stores at retain_only itself) reaches no function: its view has no json, text or
-// model and `ok: false` (SOURCE_CREDENTIAL); as the original it fails the read with its digest. A derived artifact stored
-// at retain_only gives nested readers no content. A planned request that would carry a sent credential value is refused.
+// top-level reads only refresh an entry a nested read made, and the cache is bounded by bytes. A cache entry is served only
+// while every record its read stored or used is held from functions exactly as it was, under the reader's effective tier.
+// Read tier (B02 R[4]): an answer whose effective tier is retain_only (a credential hit no acceptance covers in any record
+// of the same bytes, or the echo of a credential value the Hub sent, which this engine stores at retain_only itself)
+// reaches no function: its view has no json, text or model and `ok: false` (SOURCE_CREDENTIAL); as the original it fails
+// the read with its digest. A derived artifact held the same way gives nested readers no content. A planned request that
+// would carry a sent credential value is refused.
 // Visibility of what a read stores (B02 R[3], D01 R[4]; milestone 1 has shared service credentials only): the reader and
 // admins, never shareable.
 import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
@@ -17,7 +19,7 @@ import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry}
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import { parseDocument, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
-import type { Artifacts, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
+import type { Artifacts, Principal, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
 import { canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
 import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
@@ -125,12 +127,19 @@ interface ResponseState {
   view: ReadResponse;
   url: string | null;
   artifact: SourceArtifact | null;
+  /** No function may have the stored answer under the reader's effective read tier (B02 R[4]). */
+  held?: boolean;
 }
 
-/** A stored answer and whether the engine itself kept it retain_only because it echoes a credential value the Hub sent. */
+/**
+ * A stored answer, whether the engine itself kept it retain_only because it echoes a credential value the Hub sent, and
+ * whether no function may have it under the reader's effective read tier: every record of the bytes decides, not only the
+ * one this read wrote (B02 R[4]).
+ */
 interface Stored {
   artifact: SourceArtifact;
   echoed: boolean;
+  held: boolean;
 }
 
 /** A path as a manifest entry records it: as sent, or for a longer refused one its start and the digest of the whole. */
@@ -204,6 +213,9 @@ function stringMap(value: Record<string, string> | undefined, key: string): Reco
   return value === undefined ? undefined : Object.fromEntries(Object.entries(value).map(([k, v]) => [k, v.replaceAll('{id}', key)]));
 }
 
+/** What a function is told of a request that failed for a credential or login reason (D05 R[3], decision 112). */
+const NEUTRAL_PHASE_MESSAGE = '应答对你不可用（原因只记在管理员记录里）';
+
 function zodProblem(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
   return error.issues
     .slice(0, 3)
@@ -234,6 +246,11 @@ export class ReadEngine {
   readonly #adminReasons = new WeakMap<ConnectorError, string>();
   readonly #o: ReadEngineOptions;
   readonly #cache = new Map<string, CacheEntry>();
+  /**
+   * Every record a successful read stored or used (answers, derived artifacts, nested artifacts) and whether it was held
+   * from the functions then: what a cache hit rechecks.
+   */
+  readonly #used = new WeakMap<object, { artifact: SourceArtifact; held: boolean }[]>();
   #cacheBytes = 0;
 
   constructor(options: ReadEngineOptions) {
@@ -263,6 +280,17 @@ export class ReadEngine {
     return user.id;
   }
 
+  /**
+   * Whether no pack function may have these bytes for this reader under the effective read tier (B02 R[4]): every record
+   * of the same bytes counts (a newer scanner's hit in another record, an acceptance revoked since), not only the record
+   * a read wrote or found; a record the reader may not read is held too.
+   */
+  async #held(principal: Principal | null, artifact: SourceArtifact): Promise<boolean> {
+    if (principal === null) return true;
+    const source = await this.#o.artifacts.source(principal, artifact.body.sha256, { consumer: 'function', record: artifact.digest });
+    return source === null || source.bytes === null;
+  }
+
   async #execute(
     runtime: ResourceRuntime,
     read: ReadDeclaration,
@@ -273,6 +301,9 @@ export class ReadEngine {
     depth: number,
   ): Promise<ReadOutcome> {
     const startedAt = this.#o.now().toISOString();
+    const principal = await this.#o.principals.get(reader);
+    /** Records of this read no function may have under the effective tier: answers and derived artifacts. */
+    const heldRecords = new Set<string>();
     const visibility: Visibility = { readers: [reader], admins: true, packs: [], shareable: false };
     const responses = new Map<string, ResponseState>();
     const echoedArtifacts=new Set<string>();
@@ -296,7 +327,17 @@ export class ReadEngine {
     // Plan order, not completion order: the read functions get the same input whatever order the answers arrived in.
     const order: string[] = [];
     const nestedOrder: string[] = [];
-    const views = (): Record<string, ReadResponse> => Object.fromEntries(order.flatMap((key) => (responses.has(key) ? [[key, responses.get(key)!.view]] : [])));
+    // A function, and so whoever reads what it projects, is told of a request that failed for a credential or login reason, or
+    // whose answer was held for suspected credentials, only that it is not available (D05 R[3], decision 112). The stored view
+    // and the administrator's reason keep the detail.
+    const forFunction = (state: ResponseState): ReadResponse => {
+      const error = state.view.error;
+      if (state.view.ok || error === null || error === undefined) return state.view;
+      const hidden = Object.hasOwn(CONNECTOR_ERRORS, error.code) && readExit(error.code as ConnectorErrorCode).caller === null;
+      const neutral = hidden || state.held === true;
+      return neutral ? { ...state.view, error: { ...error, message: NEUTRAL_PHASE_MESSAGE } } : state.view;
+    };
+    const views = (): Record<string, ReadResponse> => Object.fromEntries(order.flatMap((key) => (responses.has(key) ? [[key, forFunction(responses.get(key)!)]] : [])));
     const nestedViews = (): Record<string, NestedRead> => Object.fromEntries(nestedOrder.flatMap((key) => (nested.has(key) ? [[key, nested.get(key)!.view]] : [])));
 
     const store = async (exchange: HttpExchange, key: string): Promise<Stored> => {
@@ -320,15 +361,17 @@ export class ReadEngine {
           ...(echoed ? { readTier: RETAIN_ONLY } : {}),
         });
         if(echoed){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,route:exchange.route.id,status:exchange.status,record:artifact.digest});}
-        return { artifact, echoed };
+        const held = echoed || artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
+        if (held) heldRecords.add(artifact.digest);
+        return { artifact, echoed, held };
       } catch (error) {
         throw new ConnectorError('STORE_FAILED', `保存路由 ${exchange.route.id} 的应答失败`, { cause: error, detail: { route: exchange.route.id } });
       }
     };
 
-    /** The view of an answer stored retain_only: what was received, never what it says. */
+    /** The view of an answer no function may have under the effective tier: what was received, never what it says. */
     const withheld = (route: string, path: string, query: Record<string, string>, exchange: HttpExchange, stored: Stored, failed: ConnectorError | null): ReadResponse | null => {
-      if (stored.artifact.body.read_tier !== RETAIN_ONLY) return null;
+      if (!stored.held) return null;
       const why = stored.echoed ? '含有 Hub 发出的凭据或令牌' : '有凭据扫描命中';
       const code: ConnectorErrorCode = failed?.code ?? 'SOURCE_CREDENTIAL';
       const said = failed === null ? '' : `${CONNECTOR_ERRORS[failed.code]}；`;
@@ -461,7 +504,7 @@ export class ReadEngine {
           size: received?.exchange.bytes.byteLength ?? null,
           media_type: received?.exchange.serverMediaType ?? null,
           etag: received?.stored.echoed?null:received?.exchange.etag ?? null,
-          ...(received && received.stored.artifact.body.read_tier!==RETAIN_ONLY?this.#location(received.exchange):{}),
+          ...(received && !received.stored.held?this.#location(received.exchange):{}),
           artifact: received?.stored.echoed?null:received?.stored.artifact.digest ?? null,
           after_login: afterLogin,
         });
@@ -478,7 +521,7 @@ export class ReadEngine {
           if (got === null) throw new ConnectorError('STORE_FAILED', `路由 ${route.id} 的应答没有保存`);
           let view: ReadResponse = withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
           if (view.ok && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
-          responses.set(planned.key, { view, url: reply.url, artifact: got.stored.artifact });
+          responses.set(planned.key, { view, url: reply.url, artifact: got.stored.artifact, held: got.stored.held });
           entries.push(entry(view.ok, view.ok ? null : (view.error?.code ?? 'SOURCE_MALFORMED')));
         } catch (error) {
           const failed = asConnectorError(error, 'SOURCE_UNREACHABLE', 'transport');
@@ -486,7 +529,7 @@ export class ReadEngine {
           const got = received as { exchange: HttpExchange; stored: Stored } | null;
           if (got !== null) {
             const view = withheld(route.id, path, query, got.exchange, got.stored, failed) ?? this.#view(route.id, path, query, got.exchange, failed);
-            responses.set(planned.key, { view, url: got.exchange.url, artifact: got.stored.artifact });
+            responses.set(planned.key, { view, url: got.exchange.url, artifact: got.stored.artifact, held: got.stored.held });
           } else {
             responses.set(planned.key, {
               view: { ok: false, route: route.id, path, query, status: null, media_type: null, size: null, sha256: null, etag: null, error: { code: failed.code, message: this.#o.redactor.text(failed.message) } },
@@ -598,7 +641,7 @@ export class ReadEngine {
       let requestCount = 0;
       let nestedCount = 0;
       for (let round = 1; round <= MAX_READ_ROUNDS && !done; round++) {
-        const plan = await this.#plan(runtime, read, subject, args, round, views(), nestedViews());
+        const plan = await this.#plan(runtime, read, subject, args, round, views(), nestedViews(), warnings);
         // The original: what the planner names, else the first request of the first round that has one.
         if (plan.original !== undefined) original = plan.original;
         else if (original === null) original = plan.requests[0]?.key ?? null;
@@ -632,7 +675,7 @@ export class ReadEngine {
         // No response is invented: this sentinel names no original, and no successful projection or artifact is accepted.
         if (order.length === 0 && nestedOrder.length === 0 && read.project !== undefined) {
           try {
-            const projected = await this.#project(runtime, read, subject, args, 'unavailable', views(), nestedViews());
+            const projected = await this.#project(runtime, read, subject, args, 'unavailable', views(), nestedViews(), warnings);
             if ('error' in projected) this.#adminReasons.set(failed, this.#o.redactor.text(`${projected.error.code}：${projected.error.message}`));
           } catch (error) {
             if (error instanceof ConnectorError) this.#adminReasons.set(failed, this.#adminReason(error));
@@ -650,7 +693,7 @@ export class ReadEngine {
       content = first.view.json !== undefined ? first.view.json : (first.view.text ?? null);
       complete = [...responses.keys()].every(key=>covered(key)) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
-        const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews());
+        const projected = await this.#project(runtime, read, subject, args, original, views(), nestedViews(), warnings);
         if ('error' in projected && read.absent_codes?.includes(projected.error.code) && [...responses.values()].every(state=>state.view.ok || state.view.error?.code==='SOURCE_ABSENT')) {
           throw new ConnectorError('SOURCE_ABSENT','投影按声明确认本对象缺席',{layer:'plugin',detail:{absence_responses:order}});
         }
@@ -712,8 +755,10 @@ export class ReadEngine {
           }
           if(this.#o.redactor.echoedIn(bytesOf,derived.media_type)){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,artifact:derived.name,record:artifact.digest});throw new ConnectorError('SOURCE_CREDENTIAL','派生件含有 Hub 凭据回显，原件身份仅供管理员私审');}
           artifacts.push({ name: derived.name, artifact });
-          // A derived artifact stored retain_only (the scanner flagged what the projection made) gives no content.
-          const kept = artifact.body.read_tier === RETAIN_ONLY;
+          // A derived artifact no function may have under the effective tier (the scanner flagged what the projection made)
+          // gives no content.
+          const kept = artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
+          if (kept) heldRecords.add(artifact.digest);
           if (kept && warnings.length < 50) warnings.push(`派生件 ${derived.name} 按“${labelOf('read_tier', RETAIN_ONLY)}”保存（凭据），嵌套读取拿不到它的内容`);
           const value = kept ? null : derived.json !== undefined ? derived.json : valueOf(bytesOf, derived.media_type);
           if (derived.name === 'content') content = value;
@@ -737,18 +782,18 @@ export class ReadEngine {
       try {
         if(!keys.length || keys.some(key=>typeof key!=='string' || !responses.has(key)))throw new ConnectorError('PROJECTION_FAILED','缺席观察没有指向本次读取的应答',{layer:'plugin'});
         const states=keys.map(key=>responses.get(key as string)!);
-        if(states.some(state=>!state.artifact || state.artifact.body.read_tier===RETAIN_ONLY || (!state.view.ok && !(state.view.error?.code==='SOURCE_ABSENT' && (state.view.status===404 || state.view.status===410)))))throw new ConnectorError('PROJECTION_FAILED','缺席根据未读到或不可读；恢复该来源后重读，不能把读不到算成没有',{layer:'plugin'});
+        if(states.some(state=>!state.artifact || state.held===true || (!state.view.ok && !(state.view.error?.code==='SOURCE_ABSENT' && (state.view.status===404 || state.view.status===410)))))throw new ConnectorError('PROJECTION_FAILED','缺席根据未读到或不可读；恢复该来源后重读，不能把读不到算成没有',{layer:'plugin'});
         absent=SourceAbsent.parse({code:'SOURCE_ABSENT',system:subject.system,object:subject.id,observed_at:this.#o.now().toISOString(),responses:keys});
         content={...absent,message:`系统 ${subject.system} 里没有 ${subject.id}（读于 ${absent.observed_at}）`};
         const inputs=[...new Set(states.map(state=>`src:${state.artifact!.body.sha256}`))];
         const observation=await this.#o.artifacts.ingest({bytes:canonicalBytes(content),mediaType:'application/json',origin:{generated:{generator:'hub.source-absence@1',inputs,read_back:null}},derivedSources:inputs.map(ref=>ref.slice(4)),author:{user:null},provenanceType:'projected',visibility,name:'content',capturedAt:absent.observed_at});
-        if(observation.body.read_tier===RETAIN_ONLY)throw new ConnectorError('SOURCE_CREDENTIAL','缺席观察被凭据扫描保留；请管理员处理后重读');
+        if(observation.body.read_tier===RETAIN_ONLY || await this.#held(principal, observation))throw new ConnectorError('SOURCE_CREDENTIAL','缺席观察被凭据扫描保留；请管理员处理后重读');
         artifacts=[{name:'original',artifact:states[0].artifact!},{name:'content',artifact:observation}];
         meta=null;complete=true;failure=null;revision=null;
       } catch(error) {absent=undefined;failure=asConnectorError(error,'PROJECTION_FAILED');}
     }
 
-    const disclosable=echoedArtifacts.size===0 && ![...responses.values()].some(state=>state.artifact?.body.read_tier===RETAIN_ONLY) && !artifacts.some(entry=>entry.artifact.body.read_tier===RETAIN_ONLY);
+    const disclosable=echoedArtifacts.size===0 && ![...responses.values()].some(state=>state.held===true) && !artifacts.some(entry=>entry.artifact.body.read_tier===RETAIN_ONLY || heldRecords.has(entry.artifact.digest));
     // Interpreting a held envelope can itself produce an error containing its text. That text belongs only in
     // the protected original, never in the manifest, diagnostic message or a public protocol error.
     if(failure && !disclosable && (failure.code!=='SOURCE_CREDENTIAL' || echoedArtifacts.size>0)) {
@@ -760,6 +805,10 @@ export class ReadEngine {
     const total = order.length + nestedOrder.length;
     const incompleteNested=[...nested].filter(([,state])=>!state.view.ok || state.view.coverage?.complete===false).map(([external])=>external);
     if(incompleteNested.length && !note)note=`嵌套来源尚未完整：${incompleteNested.slice(0,10).join('、')}；恢复失败来源后重读本对象，再确认完整范围`;
+    // Which responses the count leaves out, by request key and route, with the reason a pack function is given for them
+    // (held and hidden classes neutral): coverage names what is missing (A05 R[1], decision 113).
+    const unread=order.filter(key=>!covered(key) && !absent?.responses?.includes(key));
+    if(unread.length){const said=`没有读进的应答 ${unread.length} 个：${unread.slice(0,10).map(key=>{const state=responses.get(key);const route=entries.find(entry=>entry.key===key)?.route;return `${key}${route?`（路由 ${route}）`:''}：${state===undefined?'没有发出':forFunction(state).error?.message??'没有读进'}`;}).join('；')}`;note=note?`${said}；${note}`:said;}
     const ok = failure === null;
     const manifest: ReadManifest = {
       action: 'read',
@@ -840,7 +889,14 @@ export class ReadEngine {
       const command = depth === 0 ? adminCommand(readExit(final.code).admin, runtime.resource.id, secretNamesOf(runtime.resource.credentials)) : '';
       return { ok: false, external: subject.id, code: final.code, disclosable, message:this.#o.redactor.text(final.message), reason: command === '' ? admin : `${admin}；下一步：${command}`, manifest: digest,...(redirect?{redirect}:{}),...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
-    return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}) };
+    const succeeded: ReadOutcome = { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}) };
+    const used = new Map<string, { artifact: SourceArtifact; held: boolean }>();
+    for (const state of responses.values()) if (state.artifact) used.set(state.artifact.digest, { artifact: state.artifact, held: state.held === true });
+    for (const { artifact } of artifacts) used.set(artifact.digest, { artifact, held: artifact.body.read_tier === RETAIN_ONLY || heldRecords.has(artifact.digest) || used.get(artifact.digest)?.held === true });
+    // A nested read's artifacts reached the functions only as the nested read gave them; that read held what it held.
+    for (const state of nested.values()) for (const artifact of state.artifacts) if (!used.has(artifact.digest)) used.set(artifact.digest, { artifact, held: await this.#held(principal, artifact) });
+    this.#used.set(succeeded, [...used.values()]);
+    return succeeded;
   }
 
   /** A nested or top-level read of another object, from the cache unless refreshed or expired. */
@@ -859,10 +915,31 @@ export class ReadEngine {
     const key = this.#cacheKey(runtime, reader, target);
     const ttl = this.#o.nestedCacheMs ?? 3_600_000;
     const hit = this.#cache.get(key);
-    if (!refresh && hit !== undefined && Date.now() - hit.at < ttl) return { ...hit.outcome, cached: true };
+    // A hit is checked again against the reader's effective read tier of every record its read stored or used (B02 R[4]):
+    // a newer scanner's hit in another record of the bytes, a revoked acceptance or a lost permission since the entry was
+    // kept ends the entry, and the object is read again instead.
+    if (!refresh && hit !== undefined && Date.now() - hit.at < ttl) {
+      if (await this.#cacheable(reader, hit.outcome)) return { ...hit.outcome, cached: true };
+      this.#forget(key);
+    }
     const outcome = await this.#execute(runtime, read, target, {}, context, reader, depth);
-    if (outcome.ok) this.#remember(key, outcome);
+    if (outcome.ok && await this.#cacheable(reader, outcome)) this.#remember(key, outcome);
     return { ...outcome, cached: false };
+  }
+
+  /**
+   * An outcome the cache may serve: every record the read stored or used (each answer the functions saw, each derived and
+   * nested artifact) is still held from the functions exactly when it was held then under the reader's effective tier.
+   * A record held since (a newer scanner's hit, a revoked acceptance, a lost permission) ends the entry, and so does one
+   * released since, whose content the cached outcome lacks.
+   */
+  async #cacheable(reader: string, outcome: Extract<ReadOutcome, { ok: true }>): Promise<boolean> {
+    const used = this.#used.get(outcome);
+    if (used === undefined) return false;
+    const principal = await this.#o.principals.get(reader);
+    if (principal === null || principal.disabled) return false;
+    for (const { artifact, held } of used) if ((await this.#held(principal, artifact)) !== held) return false;
+    return true;
   }
 
   /** Top level: a read the caller asked for (never from the cache); it refreshes an entry a nested read made, never adds one. */
@@ -871,7 +948,10 @@ export class ReadEngine {
       const reader = await this.#reader(context);
       const outcome = await this.#execute(runtime, read, subject, args, context, reader, 0);
       const key = this.#cacheKey(runtime, reader, subject);
-      if (outcome.ok && this.#cache.has(key)) this.#remember(key, outcome);
+      if (outcome.ok && this.#cache.has(key)) {
+        if (await this.#cacheable(reader, outcome)) this.#remember(key, outcome);
+        else this.#forget(key);
+      }
       return outcome;
     } catch (error) {
       const failure = asConnectorError(error, 'STORE_FAILED');
@@ -921,6 +1001,7 @@ export class ReadEngine {
     round: number,
     responses: Record<string, ReadResponse>,
     reads: Record<string, NestedRead>,
+    warnings: string[],
   ): Promise<ReadPlanOutput> {
     if (read.request !== undefined) {
       const request = read.request;
@@ -940,7 +1021,7 @@ export class ReadEngine {
       };
     }
     const input = { round, external: subject, args, settings: runtime.resource.settings, responses, reads };
-    const output = await this.#call(runtime, read.plan!, input, 'plan');
+    const output = await this.#call(runtime, read.plan!, input, 'plan', warnings);
     const parsed = ReadPlanOutput.safeParse(output);
     if (!parsed.success) throw new ConnectorError('PLAN_INVALID', `规划函数第 ${round} 轮的输出不符合 read-plan-output@1：${zodProblem(parsed.error)}`, { layer: 'plugin' });
     return parsed.data;
@@ -954,23 +1035,43 @@ export class ReadEngine {
     original: string,
     responses: Record<string, ReadResponse>,
     reads: Record<string, NestedRead>,
+    warnings: string[],
   ): Promise<ReadProjectionOutput> {
     const input = { external: subject, args, settings: runtime.resource.settings, responses, reads, original };
-    const output = await this.#call(runtime, read.project!, input, 'project');
+    const output = await this.#call(runtime, read.project!, input, 'project', warnings);
     const parsed = ReadProjectionOutput.safeParse(output);
     if (!parsed.success) throw new ConnectorError('PROJECTION_FAILED', `投影函数的输出不符合 read-projection-output@1：${zodProblem(parsed.error)}`, { layer: 'plugin' });
     return parsed.data;
   }
 
-  async #call(runtime: ResourceRuntime, ref: { module: string; export?: string }, input: unknown, kind: 'plan' | 'project'): Promise<unknown> {
+  async #call(runtime: ResourceRuntime, ref: { module: string; export?: string }, input: unknown, kind: 'plan' | 'project', warnings: string[]): Promise<unknown> {
+    const target = { packDir: runtime.pack.directory, module: ref.module, ...(ref.export === undefined ? {} : { export: ref.export }) };
+    const retried: { first?: SandboxError } = {};
     try {
-      return await this.#o.callFunction({ packDir: runtime.pack.directory, module: ref.module, ...(ref.export === undefined ? {} : { export: ref.export }) }, input, kind);
+      try {
+        return await this.#o.callFunction(target, input, kind);
+      } catch (error) {
+        // A sandbox that could not run or watch the function says nothing about the function (decision 114, D05 R[3]: a reader
+        // error is retried inside the service first). Pack functions have no effects, so one more call is safe.
+        if (!(error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE')) throw error;
+        retried.first = error;
+        const output = await this.#o.callFunction(target, input, kind);
+        if (warnings.length < 50) warnings.push(`系统包函数 ${ref.module} 第一次没能在沙箱里运行完（${typeof error.detail.reason === 'string' ? error.detail.reason : error.code}），服务内重试一次成功`);
+        return output;
+      }
     } catch (error) {
       if (error instanceof ConnectorError) throw error;
       const code = error instanceof SandboxError ? error.code : error instanceof RangeError ? 'INPUT_TOO_LARGE' : 'FUNCTION_ERROR';
       const reason = error instanceof SandboxError && typeof error.detail.reason === 'string' ? `，${error.detail.reason}` : '';
       const what = error instanceof SandboxError ? SANDBOX_ERRORS[error.code] : '函数调用无效';
-      const failed: ConnectorErrorCode = kind === 'plan' ? 'FUNCTION_FAILED' : 'PROJECTION_FAILED';
+      const unavailable = error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE';
+      const failed: ConnectorErrorCode = unavailable ? 'SANDBOX_UNAVAILABLE' : kind === 'plan' ? 'FUNCTION_FAILED' : 'PROJECTION_FAILED';
+      if (unavailable && retried.first !== undefined) {
+        const earlier = typeof retried.first.detail.reason === 'string' ? retried.first.detail.reason : 'SANDBOX_UNAVAILABLE';
+        const failure = new ConnectorError(failed, `系统包函数 ${ref.module} 两次都没能在沙箱里运行完（${code}${reason}；第一次 ${earlier}）：${what}`, { layer: 'plugin', detail: { module: ref.module, sandbox: code, attempts: 2 } });
+        if (typeof error.detail.message === 'string' && error.detail.message.trim() !== '') this.#adminReasons.set(failure, this.#o.redactor.text(error.detail.message));
+        throw failure;
+      }
       const failure = new ConnectorError(failed, `系统包函数 ${ref.module} 失败（${code}${reason}）：${what}`, { layer: 'plugin', detail: { module: ref.module, sandbox: code } });
       if (error instanceof SandboxError && typeof error.detail.message === 'string' && error.detail.message.trim() !== '') {
         this.#adminReasons.set(failure, this.#o.redactor.text(error.detail.message));

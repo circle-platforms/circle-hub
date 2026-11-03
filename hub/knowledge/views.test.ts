@@ -14,7 +14,7 @@ import type { Principal } from '../records/api.ts';
 import { parserKey, recognize } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledgeReader, routeKnowledgeViews } from './api.ts';
-import { parseViewId } from './views.ts';
+import { parseViewId, viewIdExample } from './views.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, extraProducer, makeWorld, mindMap, startPostgres, type World } from './test-support.ts';
 
 let postgres: TemporaryPostgres;
@@ -153,7 +153,7 @@ describe('the impact view (impact-view@1)', () => {
     ]);
     assert.deepEqual(view.totals, { changed_paths: 4, attached_from: 3, attached_to: 4 });
     assert.equal(view.truncated, false);
-    assert.deepEqual(view.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
+    assert.deepEqual(view.notes, ['这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）']);
     // Every entry named once; references of the later root, or of the earlier one for an entry only there.
     assert.deepEqual(Object.keys(view.entries), sorted(def(b, 'disk list'), def(b, 'net arp'), def(a, 'net trace <host:string>'), def(a, 'system reboot <delay:int>'), def(b, 'system reboot <delay:int>'), c1, c3, c5, c6));
     assert.equal(view.entries[c5].reference, `tree:${f.roots.b}/commands/disk/list@${c5}`);
@@ -582,6 +582,27 @@ describe('the attached_fields parameter of the impact view', () => {
     );
   });
 
+  test('viewIdExample shows how to write each view from the grammar the parser enforces, and every example parses once its placeholders are filled', () => {
+    assert.equal(viewIdExample('facets'), 'knowledge:facets:<产品>:<构建>?kind=<kind>&by=<by>');
+    assert.equal(viewIdExample('index'), 'knowledge:index:<产品>:<构建>?kind=<kind>&key=<key>');
+    assert.equal(viewIdExample('impact'), 'knowledge:impact:<产品>:<起始构建>..<目标构建>');
+    assert.equal(viewIdExample('links'), 'knowledge:links:<产品>:<构建>');
+    assert.equal(viewIdExample('graph'), null);
+    assert.equal(parseViewId(`knowledge:facets:acme:${B}?kind=case&by=module`).ok, true);
+  });
+
+  test('parseViewId names, as structure, the required parameters an id lacks, and only for that failure', () => {
+    const none = parseViewId(`knowledge:facets:acme:${B}`);
+    assert.equal(none.ok, false);
+    assert.deepEqual(none.ok ? null : none.missing, ['kind', 'by']);
+    const one = parseViewId(`knowledge:index:acme:${B}?kind=case`);
+    assert.deepEqual(one.ok ? null : one.missing, ['key']);
+    const unknown = parseViewId(`knowledge:facets:acme:${B}?kind=case&by=module&variant=x`);
+    assert.equal(unknown.ok, false);
+    assert.equal(unknown.ok ? null : unknown.missing, undefined, 'an unknown parameter is not a missing one');
+    assert.equal(parseViewId(`knowledge:facets:acme:${B}?kind=case&by=module`).ok, true);
+  });
+
   test('parseViewId accepts attached_fields on the impact view only, deduped and sorted; rejects bad names', () => {
     const parsed = parseViewId(`knowledge:impact:acme:${A}..${B}?attached_fields=title,document,document`);
     assert.ok(parsed.ok);
@@ -660,7 +681,13 @@ describe('ids, readers and stored answers', () => {
     await f.w.kit.principals.setDisabled(f.w.admin, gone.id, true);
     assert.match(await refusal(good, gone), /不能读产品/);
     assert.match(await refusal(`knowledge:facets:nothing:${B}?kind=case&by=module`), /没有产品 nothing/);
-    assert.match(await refusal('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), /没有构建 Rel_NONE_9_9_9/);
+    assert.match(await refusal('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), /没有产品 acme 的构建 Rel_NONE_9_9_9/);
+    // Who is told what (D05 R[3], decision 112): an enabled reader gets absent or not permitted; a disabled account gets nothing.
+    const told = async (id: string, principal: Principal = f.w.user) => { const read = await f.read(id, principal); return read.ok ? null : read.inputError?.code ?? null; };
+    assert.equal(await told(good, f.w.outsider), 'SOURCE_NOT_PERMITTED');
+    assert.equal(await told(good, gone), null);
+    assert.equal(await told(`knowledge:facets:nothing:${B}?kind=case&by=module`), 'SOURCE_ABSENT');
+    assert.equal(await told('knowledge:facets:acme:Rel_NONE_9_9_9?kind=case&by=module'), 'SOURCE_ABSENT');
     const malformed: Array<[string, RegExp]> = [
       ['knowledge:facets:acme', /不是知识视图的标识/],
       [`knowledge:graph:acme:${B}`, /没有叫 graph 的知识视图/],

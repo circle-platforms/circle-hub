@@ -245,6 +245,43 @@ test('a stored record whose bytes were altered behind the triggers is refused on
   await assert.rejects(kit.store.find({ key: 'test.key', value: 'v' }), IntegrityError);
 });
 
+test('a record read and remembered as verified is still refused once its bytes change behind the triggers', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const record = await kit.store.put({ kind: 'claim', schema: 'claim@1', provenance: 'observed', body: { verdict: 'refute', remembered: true }, index: [{ key: 'test.remembered', value: 'v' }] });
+  assert.deepEqual((await kit.store.get(record.digest))?.body, { verdict: 'refute', remembered: true });
+  assert.deepEqual((await kit.store.get(record.digest))?.body, { verdict: 'refute', remembered: true }, 'an unchanged row reads the same');
+  const client = new pg.Client({ ...kit.database, ssl: false });
+  await client.connect();
+  try {
+    await client.query("SET session_replication_role = 'replica'");
+    await client.query(`UPDATE records SET body = '{"verdict":"support","remembered":true}' WHERE digest = $1`, [record.digest]);
+  } finally {
+    await client.end();
+  }
+  await assert.rejects(kit.store.get(record.digest), IntegrityError);
+  await assert.rejects(kit.store.find({ key: 'test.remembered', value: 'v' }), IntegrityError);
+});
+
+test('lastPositions gives the newest append position of each value under the keys, in one query', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const put = (n: number, index: Array<{ key: string; value: string }>) => kit.store.put({ kind: 'claim', schema: 'claim@1', provenance: 'observed', body: { n }, index });
+  await put(1, [{ key: 'test.pos.a', value: 'one' }]);
+  await put(2, [{ key: 'test.pos.b', value: 'one' }]);
+  await put(3, [{ key: 'test.pos.a', value: 'two' }]);
+  await put(4, [{ key: 'test.pos.other', value: 'one' }]);
+  const first = await kit.store.lastPositions!({ keys: ['test.pos.a', 'test.pos.b'], values: ['one', 'two', 'three'] });
+  assert.deepEqual([...first.keys()].sort(), ['one', 'two'], 'a value without entries is absent');
+  assert.ok(first.get('one')! < first.get('two')!, 'the entry under another key does not count');
+  await put(5, [{ key: 'test.pos.b', value: 'one' }]);
+  const second = await kit.store.lastPositions!({ keys: ['test.pos.a', 'test.pos.b'], values: ['one', 'two'] });
+  assert.ok(second.get('one')! > second.get('two')!, 'a newer entry moves the position');
+  assert.equal(second.get('two'), first.get('two'));
+  await assert.rejects(kit.store.lastPositions!({ keys: ['Bad Key'], values: ['one'] }), TypeError);
+  assert.equal((await kit.store.lastPositions!({ keys: [], values: ['one'] })).size, 0);
+});
+
 test('find pages through an index entry in insertion order, either way, with an optional kind filter', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
@@ -376,11 +413,19 @@ test('batch first matches equal oldest per-value reads, including duplicates, mi
 });
 
 test('the pool never falls back to a password file or PG* variables when the server asks for a password', async () => {
-  const { password: _password, ...withoutPassword } = postgres.config;
-  const db = new Database(createPool(withoutPassword, 1));
+  // A cluster of its own: the refused client keeps its socket, so the server backend stays in authentication until
+  // authentication_timeout (60 s). On the shared unit cluster that backend holds every DROP DATABASE of every other test
+  // file (each waits for all backends to absorb a barrier); stopping a private cluster ends it at once.
+  const own = await startPostgres({ private: true });
   try {
-    await assert.rejects(db.query('SELECT 1'), /密码只经密钥库提供/);
+    const { password: _password, ...withoutPassword } = own.config;
+    const db = new Database(createPool(withoutPassword, 1));
+    try {
+      await assert.rejects(db.query('SELECT 1'), /密码只经密钥库提供/);
+    } finally {
+      await db.end();
+    }
   } finally {
-    await db.end();
+    await own.stop();
   }
 });

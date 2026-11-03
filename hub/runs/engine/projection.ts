@@ -21,7 +21,7 @@ import type { ItemProjection, SourceBinding } from '../../../contracts/src/run.t
 import { digestOf, type Principal, type VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, prefetchReferences, resolveReference, srcFragment } from '../../refs/api.ts';
-import { callPackFunction } from '../../rules/api.ts';
+import { SandboxError, callPackFunction } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError } from './errors.ts';
 import {isPersonalSpace,personalExternalAllowed,personalCapabilityError} from '../packs/personal-capabilities.ts';
@@ -38,6 +38,8 @@ export interface Projection {
   warnings: PackWarning[];
   /** The lease operations the run asks the Hub to perform before it is stored (absent when the function asked for none). */
   leaseRequests: LeaseRequest[];
+  /** Devices the Hub looks at once the acquire is granted (workflow context observations, decision 112). */
+  observe: Array<{ inventory: string; device: string; label: string }>;
 }
 
 function refusal(path: string, message: string, fix: string, note: string | null = null): Refusal {
@@ -58,9 +60,21 @@ export async function projectItems(
   const fn = workflow.workflow.projection;
   const input = ProjectionInput.parse({ inputs: bound.map((b) => b.input), parameters, context });
   let output: unknown;
+  const call = async () => (await callPackFunction({ packDir: workflow.pack.directory, module: fn.module, export: fn.export }, input, ctx.deps.sandboxLimits, ctx.deps.sandbox)).output;
   try {
-    output = (await callPackFunction({ packDir: workflow.pack.directory, module: fn.module, export: fn.export }, input, ctx.deps.sandboxLimits, ctx.deps.sandbox)).output;
+    try {
+      output = await call();
+    } catch (error) {
+      // The sandbox could not run or watch the function: that says nothing about the pack (decision 114). Pack functions have
+      // no effects, so the Hub tries once more before it answers (D05 R[3]: a reader error is retried inside the service first).
+      if (!(error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE')) throw error;
+      ctx.log({ traceId, run: null, what: `projection ${fn.module}`, detail: `retried once after ${describe(error)}` });
+      output = await call();
+    }
   } catch (error) {
+    if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE') {
+      throw refusal(path, 'Hub 的沙箱这次没能运行任务包的投影函数（不是函数的错）', 'Hub 已在服务内重试过一次；原样重开运行；连续出现时请 Hub 管理员检查沙箱的进程观测、系统负载和隔离', `projection ${fn.module}: ${describe(error)}`);
+    }
     throw refusal(path, '任务包的投影函数没有给出条目（函数出错，详情在管理员日志里）', '请联系任务包作者', `projection ${fn.module}: ${describe(error)}`);
   }
   const parsed = ProjectionOutput.safeParse(output);
@@ -71,14 +85,22 @@ export async function projectItems(
     const e = parsed.data.error;
     const namespaced = e.code.startsWith(`${workflow.pack.id}.`) && e.code.length > workflow.pack.id.length + 1;
     const documents = e.documents && e.documents.length > 0 ? `（${e.documents.join('、')}）` : '';
+    // The refusal keeps the claim fields the pack gave (grounds, rule, qualifier, missing fact, hypotheses: D05 R[8]).
+    const { code: _code, message: _message, fix: _fix, documents: _documents, pointer, ...given } = e;
+    // The pack may say where in the call the problem is (decision 114); only a place in this call's own arguments is used.
+    const at = pointer !== undefined && /^\/(parameters|inputs)(\/|$)/.test(pointer) ? pointer : path;
+    // Every pack refusal names the rule that decided it; a pack that does not say gives its function at its version.
+    const claim = { ...given, warrant: given.warrant ?? `${workflow.pack.id}@${workflow.pack.version} ${fn.module}` };
     throw new Refusal([
       namespaced
-        ? { code: e.code, message: `${e.message}${documents}`, fix: e.fix, path }
-        : protocolError('SUBMISSION_SCHEMA_VIOLATION', `${e.code}：${e.message}${documents}`, { path, fix: e.fix }),
+        ? { code: e.code, message: `${e.message}${documents}`, fix: e.fix, path: at, ...claim }
+        : protocolError('SUBMISSION_SCHEMA_VIOLATION', `${e.code}：${e.message}${documents}`, { path: at, fix: e.fix, ...claim }),
     ]);
   }
   const { items: projected, warnings } = parsed.data;
   const leaseRequests = parsed.data.lease_requests ?? [];
+  const observe = parsed.data.observe ?? [];
+  if (observe.length > 0 && !(workflow.workflow.context ?? []).includes('observations')) throw refusal(path, '投影要 Hub 观察设备，但任务包没有要 observations 上下文', '请联系任务包作者：要观察设备的工作流在 context 里写上 observations', 'observe without the observations context');
   const groups = parsed.data.groups ?? [];
   const seen = new Set<string>();
   for (const item of projected) {
@@ -141,7 +163,7 @@ export async function projectItems(
     items.push({ id: item.id, label: item.label, ...(item.summary !== undefined ? { summary: item.summary } : {}), location: located[0], fields: item.fields, digest });
   }
   if (warnings.length > 0) ctx.log({ traceId, run: null, what: 'projection warnings', detail: JSON.stringify(warnings).slice(0, 2000) });
-  return { items, projected, groups, warnings, leaseRequests };
+  return { items, projected, groups, warnings, leaseRequests, observe };
 }
 
 /** An expected source that could not be bound; the real reason goes to the admin log only. */

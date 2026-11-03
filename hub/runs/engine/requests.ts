@@ -12,7 +12,7 @@ import {requestReadable} from './grounds.ts';
 import {queryRead} from './query-scope.ts';
 import { runById, keyOwner } from './store.ts';
 import { createRequestService, type RequestBody, type RequestView } from '../../requests/api.ts';
-export { createRequestService, RequestBodySchema } from '../../requests/api.ts';
+export { createRequestService, RequestBodySchema, requestKey, requestKeyOf } from '../../requests/api.ts';
 export type { RequestBody, RequestView } from '../../requests/api.ts';
 function service(ctx:EngineContext){return createRequestService(ctx.deps.records,ctx.now,{canReadRun:async(by,run)=>{const stored=await runById(ctx.deps.records.store,run);return stored!==null&&canSeeRun(by,stored.body);}});}
 export const putRequest=(ctx:EngineContext,input:RequestBody)=>service(ctx).write(input);

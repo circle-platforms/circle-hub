@@ -8,7 +8,7 @@ import type { RootSource } from '../../contracts/src/knowledge.ts';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES, type CoreViolationCode, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { labelOf, type ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, SourceArtifact, Transaction, StoredRecord } from '../records/api.ts';
-import { digestOf, scanForCredentials, sha256Hex } from '../records/api.ts';
+import { digestOf, disclosedExistence, scanForCredentials, sha256Hex } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathSegments, quoteMatches } from '../refs/api.ts';
 import type { KnowledgeContext } from './context.ts';
 import { CompositionView } from './composition.ts';
@@ -19,6 +19,7 @@ import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './dec
 import { operationIdentity, operationRecord, reproductionLease, type AppendPlan } from './feeding.ts';
 import { operationDeviceNote } from './operation-device.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
+import { readableProducts } from './readable-products.ts';
 
 export interface ContributionScope {
   run?:string;classifications?:readonly string[];
@@ -36,6 +37,10 @@ export interface ContributionOrigin {
 }
 export type PreparedContribution = Omit<KnowledgeContributionBody, 'submitted_at' | 'run' | 'submission' | 'session' | 'model'>;
 interface GroundState {visible:boolean;held:boolean}
+/** Shared by the views of one page call: tree digests, endpoint digests, ground states and the retracted entries. */
+interface ViewCache {digests:Map<string,string|null>;endpoints:Map<string,Promise<string|null>>;readable:Map<string,Promise<GroundState>>;retracted?:Promise<ReadonlySet<string>>}
+/** The note of a contribution an administrator's retraction@1 lists among its entries: no longer valid, never deleted. */
+const RETRACTED = '这条回注本身已被管理员撤回；历史引文仍保留';
 interface Preparation {
   composition: CompositionView;
   compositions: CompositionView[];
@@ -105,10 +110,10 @@ export class ContributionLayer {
   readonly #preparations = new WeakMap<ContributionScope, Map<string, Promise<Preparation>>>();
   constructor(context: KnowledgeContext, reading: TreeReading) { this.#context = context; this.#reading = reading; }
 
-  /** Every reader, including an admin, passes the product reader port. No run-admin bypass. */
+  /** Every reader, including an admin, passes the product reader port (decided once per request). No run-admin bypass. */
   async mayRead(product: string, reader: Principal): Promise<boolean> {
     const account = await this.#context.records.principals.get(reader.id);
-    return account !== null && !account.disabled && (await this.#context.packs.readableProducts(account)).has(product);
+    return account !== null && !account.disabled && (await readableProducts(this.#context.packs, account)).has(product);
   }
 
   async #custodian(reader: Principal): Promise<Principal> {
@@ -222,7 +227,8 @@ export class ContributionLayer {
       let shas: string[] = [];
       if (ref.scheme === 'src') {
         const actual=await this.#context.records.artifacts.readable(reader,ref.sha256);
-        if(actual===null)return fail('引用的原件当前不可读；恢复读取权限后重交','SOURCE_UNAVAILABLE');
+        // Not found or no permission (D05 R[3], decision 112).
+        if(actual===null){const existence=disclosedExistence(reader.id,await this.#context.records.artifacts.records(ref.sha256));if(existence==='neutral')return fail(`引用的原件 ${ref.sha256} 对你不可用；核对引用，或换一份你能读的原件后重交`,'SOURCE_UNAVAILABLE');const exists=existence==='exists';return fail(exists?`引用的原件 ${ref.sha256} 存在，你没有读取权限；请上传者或管理员分享后重交`:`Hub 里没有引用的原件 ${ref.sha256}；先用 upload_file 上传，再按它返回的引用重交`,exists?'SOURCE_NOT_PERMITTED':'SOURCE_ABSENT');}
         if(actual.body.provenance_type==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或教训，或改引锁定根里的原文。');
         await inspect(actual); // distinguish a session declaration from an outside-root Hub original
         shas = [ref.sha256];
@@ -252,7 +258,7 @@ export class ContributionLayer {
         const source = originals.get(sha);
         if (source === undefined) return refuse("core.contribution.source_outside_root", OUTSIDE);
         const record = await this.#context.records.store.get(source.artifact);
-        if (record?.kind !== 'source_artifact') return fail('来源记录不可读', 'SOURCE_UNAVAILABLE');
+        if (record?.kind !== 'source_artifact') return fail('原件的来源记录找不到；请管理员从备份恢复后重交', 'SOURCE_INTEGRITY_UNPROVEN');
         let promise = lineage.get(record.digest);
         if (promise === undefined) { promise = inspect(record as SourceArtifact); lineage.set(record.digest, promise); }
         await promise;
@@ -308,7 +314,12 @@ export class ContributionLayer {
       return fragment === null ? null : sha256Hex(fragment.text);
     })());
     const fragment = await fragments.get(input.path)!;
-    if (fragment === null) return fail('被归位节点此刻不可读，须恢复节点读取后重交', 'SOURCE_UNAVAILABLE');
+    if (fragment === null) {
+      const trees = this.#reading.treeReader({composition:composition.record});
+      if (await trees.hasRoot?.(input.root, { user: reader.id, role: reader.role })) return fail(`知识树根 ${input.root} 里没有路径 ${input.path}；按 get_nodes 给出的路径重交`, 'REFERENCE_UNRESOLVED');
+      const exists = await trees.rootExists?.(input.root);
+      return exists === undefined || exists === null ? fail('被归位节点此刻读不到；请管理员按管理员记录恢复读取后重交', 'SOURCE_UNAVAILABLE') : fail(exists ? `知识树根 ${input.root} 存在，你没有读取权限；请管理员给你分配绑定这条产品线的任务包后重交` : `Hub 里没有知识树根 ${input.root}；按 get_nodes 给出的根重交`, exists ? 'SOURCE_NOT_PERMITTED' : 'SOURCE_ABSENT');
+    }
     return { layer: 'contribution', product: scope.product, root: input.root, path: input.path,
       cited_fragment: fragment, kind: input.kind, statement: input.statement, source,
       ...(applicabilityClaim===undefined?{}:{applicability_claim:applicabilityClaim}),
@@ -350,10 +361,13 @@ export class ContributionLayer {
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
     const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
     const lease=operation?plan?.lease??null:null;
+    // knowledge.contribution.run names the run that first stored the record; nothing reads it yet. A run's contributions
+    // are the records its accepted receipts list (knowledge retract --run), which include records stored before this index
+    // and records an identical later submission of another run shares.
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},
-        ...(operation?[{key:'knowledge.contribution.run',value:origin.run}]:[]),
+        {key:'knowledge.contribution.run',value:origin.run},
         ...(lease?[{key:'knowledge.contribution.lease',value:lease}]:[])], tx)).digest;
   }
 
@@ -409,15 +423,37 @@ export class ContributionLayer {
     const record=await this.#context.records.store.get(digest);const body=record===null?null:KnowledgeStore.contributionOf(record);
     if(body===null||!(await this.mayRead(body.product,reader)))return null;
     const state=await this.#groundsState(body,reader,new Map());if(!state.visible)return null;
+    if(state.held)return this.#withheld(digest,body);
+    if((await this.#retracted()).has(digest))return {record:digest,contribution:body,status:'grounds_withdrawn',note:noteWithDevice(body,RETRACTED)};
     const feedingState=body.feeding_record?await this.#context.feeding?.recordState(body.feeding_record,reader,digest):null;
-    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:noteWithDevice(body,feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null)};
+    return {record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:noteWithDevice(body,feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null)};
   }
+
+  /** The record digests retraction records list as entries; empty without a feeding layer, which holds every retraction. */
+  #retracted():Promise<ReadonlySet<string>>{return this.#context.feeding?.retractedEntries()??Promise.resolve(new Set<string>());}
 
   async has(root:string,reader:Principal):Promise<boolean>{
     for(const product of await this.#reading.productsOfRoot(root))if(await this.mayRead(product,reader)){
       if((await this.#context.store.records.find({key:INDEX.contribution,value:product,kind:'claim',limit:1})).items.length>0)return true;
     }
     return false;
+  }
+
+  /**
+   * The paths among `paths` whose node index holds at least one record under a product of the root this reader may read,
+   * found with one batched lookup instead of one per path. page() of any other path reads no record and answers an empty,
+   * complete page; a path in the answer is paged as before.
+   */
+  async pathsWithRecords(root:string,paths:readonly string[],reader:Principal):Promise<Set<string>>{
+    const products:string[]=[];for(const product of [...await this.#reading.productsOfRoot(root)].sort())if(await this.mayRead(product,reader))products.push(product);
+    const pathOfValue=new Map<string,string>();
+    for(const path of new Set(paths))for(const product of products)pathOfValue.set(digestOf({product,path}),path);
+    const values=[...pathOfValue.keys()],found=new Set<string>();
+    // The batch verifies the oldest record of every path asked, which the per-node page may never reach; when it fails for any
+    // reason every path is paged on its own as before, so a corrupt record is reported where its page is read.
+    try{for(let at=0;at<values.length;at+=256)for(const value of (await this.#context.store.records.findFirstMany({key:'knowledge.contribution.node',values:values.slice(at,at+256),kind:'claim'})).keys())found.add(pathOfValue.get(value)!);}
+    catch{return new Set(paths);}
+    return found;
   }
 
   /** Keyset page of the node index. Query size and returned bytes are bounded even when source ACLs hide rows. */
@@ -429,7 +465,7 @@ export class ContributionLayer {
     const encode=()=>at>=products.length?null:Buffer.from(JSON.stringify({q,p:products[at],c:cursor})).toString('base64url');
     const limit=Math.min(MAX_NODE_CONTRIBUTIONS,Math.max(1,options.limit??MAX_NODE_CONTRIBUTIONS));
     const budget=Math.max(0,options.bytes??this.#context.limits.pageBytes);let bytes=0,scanned=0;
-    const cache={digests:new Map<string,string|null>(),endpoints:new Map<string,Promise<string|null>>(),readable:new Map<string,Promise<GroundState>>()};
+    const cache:ViewCache={digests:new Map(),endpoints:new Map(),readable:new Map()};
     const items:KnowledgeContributionPageView[]=[];
     const deferred = () => ({items,next:encode()});
     while(at<products.length&&items.length<limit&&scanned<MAX_NODE_CONTRIBUTIONS*4){
@@ -466,7 +502,7 @@ export class ContributionLayer {
     return items;
   }
 
-  async #views(root:string,records:StoredRecord[],reader:Principal,cache:{digests:Map<string,string|null>;endpoints:Map<string,Promise<string|null>>;readable:Map<string,Promise<GroundState>>}):Promise<KnowledgeContributionView[]>{
+  async #views(root:string,records:StoredRecord[],reader:Principal,cache:ViewCache):Promise<KnowledgeContributionView[]>{
     const out: KnowledgeContributionView[] = [];
     const {digests,endpoints,readable}=cache;
     for (const record of records) {
@@ -474,6 +510,8 @@ export class ContributionLayer {
       if (body === null) continue;
       const state=await this.#groundsState(body,reader,readable);if(!state.visible)continue;
       if(state.held){out.push(this.#withheld(record.digest,body));continue;}
+      // The retraction records are read once for the whole page call, not once per contribution.
+      if((await (cache.retracted??=this.#retracted())).has(record.digest)){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:noteWithDevice(body,RETRACTED)});continue;}
       if(body.feeding_record&&(await this.#context.feeding?.recordState(body.feeding_record,reader,record.digest))?.validity==='invalid'){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:noteWithDevice(body,'喂入主张根据已撤回或原件已修订；历史引文仍保留')});continue;}
       if (!digests.has(body.path)) {
         const fragment = await this.#reading.treeReader().read(root, body.path, null, { user: reader.id, role: reader.role });

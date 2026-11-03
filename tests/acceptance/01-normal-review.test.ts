@@ -92,7 +92,7 @@ describe('scenario 1: a normal review', () => {
     assert.equal(run.unversioned_root,undefined);
     assert.equal(scopeBasis.statement.data?.root,null);
     assert.equal(scopeBasis.statement.data?.composition,null);
-    assert.equal(scopeBasis.statement.text,'这条产品线还没有不分版本的根；下一步：同步这条产品线');
+    assert.equal(scopeBasis.statement.text,'这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）');
     // Sources: the subject and explicitly declared story/bug; prose creates no search identities.
     const roles = run.sources.map((s) => [(s.external ?? '').split('@')[0].split(':').slice(0, 2).join(':'), s.role]);
     assert.deepEqual(roles.filter(([k]) => k === 'agile:mindmap'), [['agile:mindmap', 'subject']]);

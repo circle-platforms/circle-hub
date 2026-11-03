@@ -184,6 +184,31 @@ test('retracting a pitfall contribution marks only that entry and leaves the tre
   assert.match(formatKnowledgeRetract(repeat)[0], /这些目标已撤回（撤回记录 [0-9a-f]{12}），没有追加/);
 });
 
+test('a feeding-grounded contribution keeps its feeding note and stays covered by its feeding record and its run', {skip}, async t => {
+  const ctx = await world(t);
+  const answer = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
+  assert.equal(answer.result?.contributions?.stored.length, 1, JSON.stringify(answer.errors));
+  const contribution = answer.result!.contributions!.stored[0].record;
+  const feedingRecord = ((await ctx.w.kit.store.get(contribution))!.body as {feeding_record?: string}).feeding_record;
+  assert.ok(feedingRecord);
+  const feeding = ctx.w.knowledge.feeding!, layer = ctx.w.knowledge.layers.contributions, at = '2026-10-31T09:00:00.000Z';
+  const first = await knowledgeRetract(feeding, ctx.w.admin, {entries:[feedingRecord], runs:[], objects:[], reason:'合成撤回喂入', at});
+  assert.deepEqual(first.appended.map(row => row.kind), ['entries']);
+  const single = await layer.readView(contribution, ctx.w.admin);
+  assert.equal(single?.status, 'grounds_withdrawn');
+  // main's operation records also say when their capture time was not declared.
+  assert.match(single?.note ?? '', /^根据已失效；查看喂入撤回和来源修订记录；采集时间未声明/);
+  const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/system/show'], depth:0}, ctx.w.admin);
+  const view = page!.nodes[0].contributions!.map(row => KnowledgeContributionView.parse(row)).find(row => row.record === contribution);
+  assert.equal(view?.status, 'grounds_withdrawn');
+  assert.match(view?.note ?? '', /^喂入主张根据已撤回或原件已修订；历史引文仍保留；采集时间未声明/);
+  // Its own digest is covered through its feeding record; listed beside its run, as --run lists it, through the run record.
+  assert.deepEqual((await knowledgeRetract(feeding, ctx.w.admin, {entries:[contribution], runs:[], objects:[], reason:'合成撤回喂入', at})).appended, []);
+  const byRun = await knowledgeRetract(feeding, ctx.w.admin, {entries:[], runs:[ctx.run.run], objects:[], reason:'合成撤回运行', at});
+  assert.deepEqual(byRun.appended.map(row => row.kind), ['runs']);
+  assert.deepEqual((await knowledgeRetract(feeding, ctx.w.admin, {entries:[contribution], runs:[ctx.run.run], objects:[], reason:'合成撤回运行', at})).appended, []);
+});
+
 test('a declaration-grade operation record is refused as the ground of another submission', {skip}, async t => {
   const ctx = await world(t);
   const answer = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);

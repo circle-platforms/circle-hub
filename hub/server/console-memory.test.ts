@@ -73,5 +73,6 @@ test('memory refusal audits and unchanged receipts are absent through every gene
   assert.equal(await recordReader(store).read(audit.digest,identity),null);
   assert.equal(await recordReaderFor(w.hub.records,w.hub.hub.runs,principal).read(audit.digest,identity),null);
  }
- for(const client of [w.client,w.admin])for(const audit of audits){const hidden=await client.call('get_nodes',{reference:'rec:'+audit.digest}),missing=await client.call('get_nodes',{reference:'rec:'+'f'.repeat(64)});assert.equal(hidden.isError,true);assert.deepEqual(hidden.out.errors?.map(e=>e.code),missing.out.errors?.map(e=>e.code));assert.ok(!JSON.stringify(hidden.out).includes('positions'));}
+ for(const client of [w.client,w.admin])for(const audit of audits){const hidden=await client.call('get_nodes',{reference:'rec:'+audit.digest}),missing=await client.call('get_nodes',{reference:'rec:'+'f'.repeat(64)});assert.equal(hidden.isError,true);// Memory audits are personal content: neutral, while an unknown digest is absent (D05 R[3], model 37).
+assert.deepEqual(hidden.out.errors?.map(e=>e.code),['SOURCE_UNAVAILABLE']);assert.deepEqual(missing.out.errors?.map(e=>e.code),['SOURCE_ABSENT']);assert.ok(!JSON.stringify(hidden.out).includes('positions'));}
 });

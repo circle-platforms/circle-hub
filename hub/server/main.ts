@@ -172,7 +172,6 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     const assembly = await (options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>))();
     const deps = await assembly.assemble(config, records);
     maintenance=deps.maintenance;
-    await maintenance?.startMaintenance();
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
     app = createApp(deps, { log: operatorLog, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
@@ -180,8 +179,15 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     io.stdout(`circle-hub 在 ${info.url} 上监听${app.release === null ? '' : `（发布 ${app.release}）`}`);
     if (info.https) io.stdout(`内置 HTTPS：${info.https.url}`);
     options.onListening?.(info);
+    // The first maintenance pass runs while serving, as every later one does: it reads every run and request, which on a
+    // large store takes minutes, and listening only after it kept the service down that long at every start.
+    const started = Date.now();
+    void maintenance?.startMaintenance().then(
+      () => operatorLog(`首轮运行维护完成，用时 ${((Date.now() - started) / 1000).toFixed(1)} 秒`),
+      (error: unknown) => operatorLog(`首轮运行维护失败（服务继续运行，每分钟重试）：${describeError(error)}`),
+    );
   } catch (error) {
-    await maintenance?.stopMaintenance().catch(() => {});
+    await maintenance?.stopMaintenance({ abort: true }).catch(() => {});
     await app?.close().catch(() => {});
     await records.close().catch(() => {});
     if (isAssemblyMissing(error)) {
@@ -200,7 +206,8 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   try {
     const signal = await (options.stopSignal ?? defaultStop)();
     io.stdout(`收到${typeof signal === 'string' ? ` ${signal}` : '停止请求'}，正在停止：等进行中的请求结束`);
-    await maintenance?.stopMaintenance();
+    // A maintenance pass in progress stops at its next run; the next start goes on from there.
+    await maintenance?.stopMaintenance({ abort: true }).catch((error: unknown) => operatorLog(`停止运行维护时出错：${describeError(error)}`));
     await running.close();
     // Pack-function children still running after the requests ended are stopped (hub/rules README).
     stopAll();

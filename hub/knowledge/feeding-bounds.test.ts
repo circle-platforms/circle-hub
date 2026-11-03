@@ -17,7 +17,7 @@ test('40 FAMX cases and 20 seed lines take three sandbox processes per document;
  await layer.observeSource(w.user,w.document.body.sha256,w.scope);assert.equal(w.calls(),3,'same digest does not reproject');
  const restarted=new FeedingLayer(w.knowledge.__context,layer.reading);await restarted.observeSource(w.user,w.document.body.sha256,w.scope);assert.equal(w.calls(),4,'restart reads the persisted document projection; only a fresh seed normalization batch runs');
  // Metadata and the frozen composition remain part of identity; the cache must never cross their boundary.
- const changed=await w.kit.artifacts.ingest({bytes:Buffer.from(JSON.stringify({id:'SYN-DOC',ancestors:['rel_famx_10_9']})),mediaType:'application/json',origin:{read:{object:'agile:mindmap:SYN-DOC'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});
+ const changed=await w.kit.artifacts.ingest({bytes:Buffer.from(JSON.stringify({id:'SYN-DOC',root:{id:'synthetic-root',title:w.product.product.names[0]},ancestors:['rel_famx_10_9']})),mediaType:'application/json',origin:{read:{object:'agile:mindmap:SYN-DOC'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});
  await layer.observeSource(w.user,w.document.body.sha256,{...w.scope,metaSource:changed.body.sha256});assert.equal(w.calls(),7,'changed metadata gets its own document projection and normalization');
 });
 test('slow document projection returns a pending receipt in a bounded slice and shares one in-flight job',async t=>{

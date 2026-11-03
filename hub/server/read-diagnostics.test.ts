@@ -15,7 +15,7 @@ test('an authorized run without a root gets a correction instead of a neutral de
  const answer=await call({knowledge:{},runs:{getRun:async()=>({run:{target_basis:[]}})}},{run:'run_01hzzzzzzzzzzzzzzzzzzzzzza'});
  assert.equal(answer.errors[0].code,'SUBMISSION_SCHEMA_VIOLATION');assert.equal(answer.errors[0].path,'/run');assert.match(answer.errors[0].message,/没有锁定知识根/);
 });
-test('authorized knowledge diagnostics reach the caller at their argument path; no permission stays neutral',async()=>{
+test('authorized knowledge diagnostics reach the caller at their argument path; without an existence probe a refused page stays neutral',async()=>{
  const answer=await call({knowledge:{getNodes:async()=>{throw new KnowledgeError('游标失效；从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});}}},{root,cursor:'bad'});
  assert.equal(answer.errors[0].code,'REFERENCE_UNRESOLVED');assert.equal(answer.errors[0].path,'/cursor');assert.match(answer.errors[0].message,/游标/);
  const neutral=await call({knowledge:{getNodes:async()=>null}},{root,cursor:'bad'});assert.equal(neutral.errors[0].code,'SOURCE_UNAVAILABLE');

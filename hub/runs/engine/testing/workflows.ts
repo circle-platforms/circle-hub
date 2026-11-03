@@ -7,8 +7,9 @@ import { join } from 'node:path';
 import { ChecksFile, LedgerFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../../contracts/src/pack.ts';
 import type { PackSummary } from '../../../../contracts/src/run.ts';
 import { digestOf, type Principal } from '../../../records/api.ts';
-import type { LoadedWorkflow, WorkflowStore } from '../../../ports.ts';
+import type { LoadedWorkflow, WorkflowAbsence, WorkflowStore } from '../../../ports.ts';
 import { requirementSummary } from '../start.ts';
+import { localToolsOf } from '../../packs/ports.ts';
 
 export class FakeWorkflowStore implements WorkflowStore {
   owner: string | null;
@@ -74,6 +75,18 @@ export class FakeWorkflowStore implements WorkflowStore {
     return selected;
   }
 
+  /** Why forUser had nothing, as the pack registry answers it (D05 R[3], decision 112). */
+  async absence(user: Principal, ref: string): Promise<WorkflowAbsence | null> {
+    const at = ref.indexOf('@');
+    const id = at < 0 ? ref : ref.slice(0, at);
+    const version = at < 0 ? null : ref.slice(at + 1);
+    const versions = this.#versions.get(id) ?? [];
+    if (versions.length === 0 || version !== null && !versions.some((v) => v.pack.version === version)) return 'unknown';
+    if (this.#withdrawn.has(id)) return 'withdrawn';
+    if (user.role !== 'admin' && !this.#assigned.get(user.id)?.has(id)) return 'unassigned';
+    return null;
+  }
+
   async byDigest(digest: string): Promise<LoadedWorkflow | null> {
     return this.#byDigest.get(digest) ?? null;
   }
@@ -83,6 +96,7 @@ export class FakeWorkflowStore implements WorkflowStore {
     for (const [id, versions] of this.#versions) {
       const latest = await this.forUser(user, id);
       if (latest === null || versions.length === 0) continue;
+      const tools = localToolsOf({ id: latest.pack.id, version: latest.pack.version, digest: latest.pack.digest, manifest: latest.manifest });
       out.push({
         pack: `${latest.pack.id}@${latest.pack.version}`,
         id: latest.pack.id,
@@ -90,10 +104,12 @@ export class FakeWorkflowStore implements WorkflowStore {
         kind: latest.pack.kind,
         title: latest.manifest.title,
         description: latest.manifest.description,
+        digest: latest.pack.digest,
         products: [],
         inputs: latest.workflow.inputs,
         parameters: latest.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
         requirements: latest.requirements.map(t=>requirementSummary(t,latest.ledger,latest.checks,`${latest.pack.id}@${latest.pack.version}`)),
+        ...(tools !== null ? { local_tools: tools } : {}),
       });
     }
     return out;

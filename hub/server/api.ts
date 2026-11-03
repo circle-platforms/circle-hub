@@ -114,6 +114,8 @@ export interface AppOptions {
   maxInflightBodyBytes?: number;
   /** Intervals and limits of the console's live updates (console/live.ts DEFAULT_LIVE_OPTIONS). */
   live?: Partial<import('./console/live.ts').LiveOptions>;
+  /** Long tool calls: response head after `headersAfterMs`, then a space every `keepaliveMs`; default 20 s and 30 s. */
+  keepalive?: { headersAfterMs: number; keepaliveMs: number };
 }
 
 export interface ListenInfo {

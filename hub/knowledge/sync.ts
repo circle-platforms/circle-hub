@@ -8,7 +8,7 @@ import {knowledgeSourceLoader,reconcileCredentialRequests} from './credential-po
 // unchanged build is skipped), resumable (every production or failure is a generate action; a rerun skips what is done),
 // bounded (concurrency, per-build bytes, rounds and reads) and reported per build.
 import { z } from 'zod';
-import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
+import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import {resolveProductVariables,sameVariableUses,productionVariableUses} from './variables.ts';
 import {emptyScopeNote} from './empty-scope.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';
@@ -317,7 +317,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
       report.builds.push({
         ...base,
         outcome: target===null?'failed':'skipped',
-        reason: target === null ? `别名，基于 ${build.base}；这个基础构建不在计划里，也不在知识库里` : `别名，使用 ${build.base} 的树`,
+        reason: target === null ? `别名，基于 ${build.base}；这个基础构建不在计划里，也不在知识库里；下一步：由产品包作者核对构建站列表和基础构建引用，修正计划后重新同步这条版本线（${syncAgain(product, build.line)}）` : `别名，使用 ${build.base} 的树`,
       });
       continue;
     }
@@ -375,8 +375,12 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     }
     const root=await builds.rootOfBuild(productId,row.name);
     if(root===null){
-      row.outcome='failed';row.reason=`基础构建 ${row.base} 没有形成可用根；已登记核对请求，修复来源或计划后重新同步`;
-      await requestKnowledgeFact(context,{kind:'repair',subject:`${productId}/${row.base}`,missing:'别名依赖的基础构建没有可用根',action:'管理员核对基础构建的同步失败动作，恢复来源或请包作者修正计划后重新同步',inputs:planAction?[`rec:${planAction}`]:[]});
+      // The alias fails for its base's reason (issue 31): the base's own row of this sync, else its last recorded failure,
+      // passed on with the step that gives the base a root; the alias then uses the base's tree on the same rerun.
+      const cause=await aliasBaseCause(context,productId,row,report.builds,syncAgain(product,row.line));
+      row.outcome='failed';row.reason=`基础构建 ${row.base} 没有形成可用根：${cause.fact}；下一步：${cause.next}；已登记核对请求`;
+      if(cause.code)row.reason_code=cause.code;
+      await requestKnowledgeFact(context,{kind:'repair',subject:`${productId}/${row.base}`,missing:`别名 ${row.name} 依赖的基础构建 ${row.base} 没有可用根：${cutText(cause.fact,500)}`,action:cutText(cause.next,500),inputs:[...(planAction?[`rec:${planAction}`]:[]),...cause.inputs]});
     }
   }
 
@@ -416,6 +420,49 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     }
   }
   return finish();
+}
+
+/** The command that syncs one version line of this product again. */
+function syncAgain(product: ProductHandle, line: string): string {
+  const name = product.product.names[0] ?? product.product.id;
+  return `circle-hub knowledge sync --product ${/[\s'"]/.test(name) ? JSON.stringify(name) : name} --line ${line}`;
+}
+
+/**
+ * Why an alias's base build has no root, as the facts of this sync and the store give it (issue 31): the base's own row of
+ * this report (a failure with its reason and code, or a build the plan listed without a readable source), else the base's
+ * last recorded failure, else that the plan did not list it at all. Each comes with the step that gives the base a root.
+ */
+async function aliasBaseCause(context: KnowledgeContext, product: string, alias: SyncBuildReport, rows: readonly SyncBuildReport[], again: string): Promise<{ fact: string; next: string; code?: ProtocolCode; inputs: string[] }> {
+  const base = rows.find((row) => row.name === alias.base);
+  if (base?.outcome === 'failed') return {
+    fact: `这次同步里它失败了（${cutText(base.reason, 600)}）`,
+    next: `${base.reason_code === 'SOURCE_ABSENT' ? '构建来源确定没有它要的内容，由产品包作者核对计划给它列出的来源' : '按基础构建那一行的原因修复'}后重新同步这条版本线（${again}），别名随后使用它的树`,
+    ...(base.reason_code === undefined ? {} : { code: base.reason_code }),
+    inputs: [],
+  };
+  if (base?.outcome === 'registered') return {
+    fact: '计划没有给它列出可读的来源，只登记了名字',
+    next: `由产品包作者核对计划为什么没给它列出来源（构建站上缺它的命令树时就是来源缺失），修正计划后重新同步这条版本线（${again}）`,
+    inputs: [],
+  };
+  if (base !== undefined) return {
+    fact: `这次同步对它的结果是“${cutText(base.reason, 600)}”，别名仍解析不到根`,
+    next: `管理员核对别名到基础构建的登记和这条版本线的当前根后重新同步（${again}）`,
+    inputs: [],
+  };
+  const failure = (await context.store.buildFailures(product, { name: alias.base })).at(-1);
+  if (failure !== undefined) return {
+    fact: `它不在这次的计划里；知识库里它最近一次没产出根是 ${failure.body.ended_at}（rec:${failure.digest}${failure.body.error_code ? `，${failure.body.error_code}` : ''}）`,
+    next: `管理员按那条失败动作恢复来源，或请产品包作者让计划列出基础构建，然后重新同步这条版本线（${again}）`,
+    ...(typeof failure.body.error_code === 'string' && Object.hasOwn(PROTOCOL_CODES, failure.body.error_code) ? { code: failure.body.error_code as ProtocolCode } : {}),
+    inputs: [`rec:${failure.digest}`],
+  };
+  return {
+    fact: '它不在这次的计划里，知识库里也没有它的根和失败记录',
+    next: `由产品包作者核对构建站列表和计划，让计划列出基础构建，然后重新同步这条版本线（${again}）`,
+    inputs: [],
+  };
 }
 
 async function processOwnTree(

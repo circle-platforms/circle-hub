@@ -1,7 +1,7 @@
 // The ports runs-packs provides (hub/ports.ts) over the registry: PacksPort (packs and the active product lines),
 // WorkflowStore (what a run needs of a workflow pack) and PackCatalogPort (the console listing). Absent, unassigned,
 // withdrawn and unknown give the same null or empty answer; the account is re-read on every call.
-import type { PackSummary } from '../../../contracts/src/run.ts';
+import type { LocalToolsSummary, PackSummary } from '../../../contracts/src/run.ts';
 import type { LoadedWorkflow, PackCatalogPort, PackHandle, PackListing, PacksPort, ProductHandle, WorkflowAbsence, WorkflowStore } from '../../ports.ts';
 import {withReadScope} from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
@@ -28,10 +28,26 @@ export function boundProducts(declarations: WorkflowDeclarations, active: readon
   });
 }
 
+/**
+ * The client-installable tools of one pack version, or null when it ships none (script-distribution, step 2): every tools/
+ * file of the manifest plus the install command pinned to this id@version and digest. The command carries no token; the
+ * client supplies its own credentials when it downloads from /local-tools.
+ */
+export function localToolsOf(info: Pick<PackVersionInfo, 'id' | 'version' | 'digest' | 'manifest'>): LocalToolsSummary | null {
+  const files = info.manifest.files.filter((file) => file.path.startsWith('tools/')).map((file) => ({ path: file.path, sha256: file.sha256, size: file.size }));
+  if (files.length === 0) return null;
+  return {
+    count: files.length,
+    files,
+    install: `circle-hub local-tools install ${info.id}@${info.version} --digest ${info.digest} --into <目录>`,
+  };
+}
+
 /** The list_task_packs entry of a workflow version. */
-export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclarations, bound: readonly ActiveProduct[]): PackSummary {
+export function packSummary(info: Pick<PackVersionInfo, 'id' | 'version' | 'kind' | 'title' | 'description' | 'digest' | 'manifest' | 'space'>, declarations: WorkflowDeclarations, bound: readonly ActiveProduct[]): PackSummary {
   const names: string[] = [];
   for (const b of bound) for (const name of b.product.names) if (!names.includes(name)) names.push(name);
+  const tools = localToolsOf(info);
   return {
     ...(info.space?{space:info.space}:{}),
     pack: `${info.id}@${info.version}`,
@@ -40,6 +56,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
     kind: info.kind,
     title: info.title,
     description: info.description,
+    digest: info.digest,
     products: names,
     inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many, ...(i.default_from_predecessor?{default_from_predecessor:{...i.default_from_predecessor}}:{}), ...(i.from_runs?{from_runs:{...i.from_runs}}:{}), ...(i.index_default?{index_default:structuredClone(i.index_default)}:{}) })),
     parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
@@ -65,6 +82,8 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
       // The most rounds any repair row of the requirement allows (W02 F[7]); 0 without repair rows.
       repair_rounds: Math.max(0, ...r.error_handling.map((row) => row.max_rounds ?? 0)),
     })),
+    ...((declarations.workflow.context ?? []).length > 0 ? { run_context: { parts: [...declarations.workflow.context!], ...(declarations.workflow.leases ? { lease_prefix: declarations.workflow.leases.prefix } : {}) } } : {}),
+    ...(tools !== null ? { local_tools: tools } : {}),
   };
 }
 
@@ -150,16 +169,27 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const info = await registry.resolve(ref);
       return info === null || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest) ? null : load(info);
     },
+    async skillForTools(user: Principal, ref: string) {
+      const account = await registry.account(user);
+      const parsed = parsePackRef(ref);
+      if (account === null || parsed?.version == null || !(await registry.canUse(account.id, parsed.id))) return null;
+      const info = await registry.resolve(ref);
+      if (info === null || info.kind !== 'skill' || !(await registry.installedSkills()).some(p => p.info.digest === info.digest)) return null;
+      const opened = await registry.open(info.digest);
+      return opened === null ? null : { pack: opened.handle, manifest: structuredClone(info.manifest) };
+    },
     async absence(user: Principal, ref: string, space?:string): Promise<WorkflowAbsence | null> {
       if(space&&space!=='team'){const parsed=parsePackRef(ref);if(!parsed||!await registry.personal?.mayUse(user,space,parsed.id))return 'unassigned';const rows=await registry.personal!.versions(space,parsed.id);const hit=rows.find(v=>!parsed.version||v.version===parsed.version);return !hit?'unknown':hit.withdrawn?'withdrawn':null;}
       const account = await registry.account(user);
       if (account === null) return 'disabled';
       const parsed = parsePackRef(ref);
-      if (parsed?.version == null) return 'unknown';
-      const info = await registry.getVersion(parsed.id, parsed.version);
-      if (info === null) return 'unknown';
+      if (parsed === null) return 'unknown';
+      // A bare id names the newest version that is not withdrawn; with every version withdrawn there is none to use.
+      const info = parsed.version === null ? await registry.latestVersion(parsed.id) : await registry.getVersion(parsed.id, parsed.version);
+      if (info === null) return parsed.version === null && (await registry.publications(parsed.id)).length > 0 ? 'withdrawn' : 'unknown';
       if (info.withdrawn) return 'withdrawn';
-      if (!(await registry.canUse(account.id, parsed.id)) || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'unassigned';
+      if (info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'uninstalled';
+      if (!(await registry.canUse(account.id, parsed.id))) return 'unassigned';
       return null;
     },
     async publicationOf(digest: string,space?:string): Promise<string | null> {return (space&&space!=='team'?await registry.personal?.byDigest(space,digest):await registry.byDigest(digest))?.record??null;},
@@ -192,7 +222,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
   };
 }
 
-function skillSummary(info:PackVersionInfo):PackSummary{return {...(info.space?{space:info.space}:{}),pack:info.id+'@'+info.version,id:info.id,version:info.version,kind:info.kind,title:info.title,description:info.description,products:[],inputs:[],parameters:[],requirements:[]};}
+function skillSummary(info:PackVersionInfo):PackSummary{return {...(info.space?{space:info.space}:{}),pack:info.id+'@'+info.version,id:info.id,version:info.version,kind:info.kind,title:info.title,description:info.description,digest:info.digest,products:[],inputs:[],parameters:[],requirements:[]};}
 
 function listing(info: PackVersionInfo, active: boolean, assigned?: string[]): PackListing {
   const out: PackListing = {

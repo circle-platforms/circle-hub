@@ -186,11 +186,11 @@ test('a verdict inconsistent with the dispositions is a violation routed into re
   assert.deepEqual(partial.errors, []);
 });
 
-test('a handover record the caller may not read is unavailable; a verifier cannot cite records outside the run', { skip }, async () => {
+test('a handover record the caller may not read is not permitted; a verifier cannot cite records outside the run', { skip }, async () => {
   h.workflows.assign(h.bob.id, 'toy-verify');
   const bobMap = await h.upload(h.bob, toyMap(standardDocument()));
   const theirs = await h.service.startRun(h.bob, { pack: 'toy-verify', product: 'Meadow', inputs: { draft: { reference: handover }, map: { reference: bobMap } } }, h.call());
-  assert.deepEqual(theirs.errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/inputs/draft']]);
+  assert.deepEqual(theirs.errors.map((e) => [e.code, e.path]), [['SOURCE_NOT_PERMITTED', '/inputs/draft']]);
   h.workflows.unassign(h.bob.id, 'toy-verify');
   const run = await verification('sess-verify-6');
   const args = verdicts(run, VERIFIER);

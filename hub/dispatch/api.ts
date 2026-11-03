@@ -9,7 +9,8 @@ export { observationHashes, rpcResponse, toolContent } from './observations.ts';
 
 export type { BuildKnowledge } from './probes.ts';
 
-export { readRunJobs, type RunJob } from './read-runs.ts';
+export { dispatchedRuns, readRunJobs, type RunJob } from './read-runs.ts';
+export { acceptedDispatch, runInFlight, type DispatchNote } from './accepted.ts';
 export type { EnvironmentJob, EnvironmentFacts } from './environment.ts';
 export { dispatchCallTiming, readEnvironmentCalls, ENVIRONMENT_SCAN_LIMIT, ENVIRONMENT_WINDOW_MS, type EnvironmentCalls } from './environment-statistics.ts';
 export {ExecutorSource,resolveExecutorValues} from './source.ts';

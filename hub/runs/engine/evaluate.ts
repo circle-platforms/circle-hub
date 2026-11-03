@@ -18,7 +18,7 @@ import type { RequirementResult, ValidationResult } from '../../../contracts/src
 import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
-import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
+import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext, type Unresolved } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { mapLimited, receivedDigest } from './util.ts';
 import { getInterpreter } from '../../rules/api.ts';
@@ -227,6 +227,7 @@ export function runContextOf(run: RunRecord): RunContext {
     groups: run.groups ?? [],
     ...(run.builds !== undefined ? { builds: run.builds } : {}),
     ...(run.lease_context !== undefined ? { leases: contextLeasesOf(run) } : {}),
+    ...(run.observation_context !== undefined ? { observations: run.observation_context } : {}),
   };
 }
 
@@ -252,7 +253,10 @@ export interface ReplayedChecks {outcomes:Record<string,CheckOutcome[]>;retryAtt
 export function evaluate(ctx:EngineContext,input:EvaluationInput & {replayChecks:ReadonlySet<string>}):Promise<ReplayedChecks>;
 export function evaluate(ctx:EngineContext,input:EvaluationInput):Promise<Evaluation>;
 export async function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
-  const { run, workflow, submission } = input;
+  const { run, workflow } = input;
+  const model=input.submission?.model??input.origin?.model;
+  if(input.submission!==null && !model)throw new Error('提交缺少已声明的模型身份，不能生成判断');
+  const submission=input.submission===null?null:{...input.submission,model:model!};
   const accountAuthors=workflow.requirements.some(t=>t.independence_by_account)?await authorAccountsOf(ctx,run.predecessor):null;
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
     .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
@@ -392,12 +396,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       pending = (async () => {
         try {
           const parsed = parseReference(reference);
+          // Absent and not permitted are determinate answers (D05 R[3]): kept as they are and not retried.
+          const reasonOf = (r: { reason?: Unresolved['reason']; code: Unresolved['code'] }) => r.reason ?? (r.code === 'REFERENCE_UNRESOLVED' || r.code === 'SOURCE_ABSENT' || r.code === 'SOURCE_NOT_PERMITTED' ? r.code : 'SOURCE_UNAVAILABLE');
           const result = await retryRead(() => readReference(reference,parsed), result => result.resolved ? null
-            : { reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE'), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
+            : { reason: reasonOf(result), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
               if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
             });
           if (!result.resolved) {
-            return { resolved: false, text: null, reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE') };
+            return { resolved: false, text: null, reason: reasonOf(result) };
           }
           if (result.text === null) {
             return { resolved: true, text: null, reason: result.readTier === 'retain_only' ? 'credential_unreadable' as const : 'missing_input' as const };
@@ -526,7 +532,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
   const collectQuotedReferences = (value: unknown): void => {
     if (typeof value === 'string' && value.length <= MAX_REFERENCE_LENGTH && /^(?:src|tree|entry|rec):/.test(value)) {
-      readBudget.reserve(value);
+      // A production run's subject is the Hub's own projection and can quote more references than one evaluation may read (the
+      // rows of a large command diff). Those past the budget are not warmed: a check that needs their text sees them as
+      // unavailable, an honest unknown, and a check that does not need them is unaffected; the budget stays the bound on what is
+      // read. A model submission keeps failing closed: unread quotations are never taken as passed.
+      try { readBudget.reserve(value); }
+      catch (error) { if (submission === null && error instanceof HubReadFailure) return; throw error; }
       quotedReferences.add(value);
     } else if (Array.isArray(value)) {
       for (const item of value) collectQuotedReferences(item);
@@ -740,7 +751,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         const selection=(await callPackFunction({packDir:workflow.pack.directory,...check.catalog_select!},raw,ctx.deps.sandboxLimits,sandboxFor('catalog_select',check.catalog_select!.module,it.id))).output;
         if(!isObject(selection)||typeof selection.base!=='string'||!Array.isArray(selection.lines)||selection.lines.length>128||selection.lines.some(line=>typeof line!=='string'||Buffer.byteLength(line)>8192))throw new RangeError('目录选择必须声明路径和至多 128 条完整命令，每条至多 8192 字节；拆分计划后重核');
         return run.root?ctx.deps.knowledge.catalog(run.root,check.catalog!,selection as {base:string;lines:string[]}):null;
-      })().catch(error=>{onError(error,'catalog selection');selectionMissing.set(key,error instanceof RangeError?error.message:'缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替');return null;});selectedViews.set(key,pending);}
+      })().catch(error=>{onError(error,'catalog selection');selectionMissing.set(key,error instanceof RangeError?error.message:error instanceof SandboxError&&error.code==='SANDBOX_UNAVAILABLE'?'缺所选命令目录：Hub 的沙箱这次没能运行目录选择函数（不是目录、计划或包的错），已在服务内重试过；原样重交再核':'缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替');return null;});selectedViews.set(key,pending);}
       view=await pending;
     }
     return {...raw,...(check.catalog?{catalog:view?.entries()??[],catalog_complete:view?.complete??false,...(selectionMissing.has(selectionKey(check,it.id))?{catalog_missing:selectionMissing.get(selectionKey(check,it.id))}:{})}:{})};

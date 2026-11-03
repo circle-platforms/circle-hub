@@ -207,9 +207,11 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   assert.ok(stored && 'statement' in stored.contribution);
   const feeding = stored.contribution.feeding as { binding?: { source?: string; build?: string; bed_installed?: { build?: string }; run_lock?: { build?: string } } } | undefined;
   assert.ok(feeding?.binding);
-  assert.equal(feeding.binding.source, 'conflict');
-  assert.equal(feeding.binding.bed_installed?.build, ticketBuild);
-  assert.equal(feeding.binding.run_lock?.build, bed.site.RELEASED);
+  // Decision 120: the bed's declared build is no baseline, so without a device observation of the installed build the
+  // operation is bound by the run's lock (the observed-build conflict comes with the test-bed pack's device reads).
+  assert.equal(feeding.binding.source, 'run_lock');
+  assert.equal(feeding.binding.bed_installed, undefined);
+  assert.equal(feeding.binding.build, bed.site.RELEASED, "the run's locked build");
   const linked = await bed.hub.records.store.find({ key: 'knowledge.contribution.lease', value: lease.lease, kind: 'claim', limit: 5 });
   assert.ok(linked.items.some((row) => row.digest === stored.record));
 

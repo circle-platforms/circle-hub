@@ -15,6 +15,8 @@ import { knowledgeSourceLoader } from './credential-policy.ts';
 import { bindDirectorySources, declaredDirectory } from './directory-sources.ts';
 import { produceSeedling, seedlingName, type SeedlingResult } from './seedling.ts';
 import { resolveProductVariables } from './variables.ts';
+import type { ReprojectionReport } from './feeding.ts';
+import { reprojectionLines } from './reproject.ts';
 
 export const KNOWLEDGE_SEED_USAGE = 'knowledge seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run]';
 
@@ -76,6 +78,9 @@ export interface SeedReport {
   /** Non-blocking facts of the seed (an optional source not read while its declared directory root covers the role). */
   notes: string[];
   reason: string | null;
+  /** The re-projection of the line's fed cases onto the new root, before the pointer moved (null: none ran). */
+  reprojection: ReprojectionReport | null;
+  reprojection_error: string | null;
 }
 
 /** Parses the arguments after `knowledge seed`. Throws KnowledgeError with the usage on anything unknown or missing. */
@@ -225,6 +230,7 @@ function blank(product: ProductHandle, line: string, dryRun: boolean): SeedRepor
   return {
     ok: false, product: product.product.id, pack: `${product.id}@${product.version}`, line, build: null, dry_run: dryRun,
     root: null, seedling: null, composition: null, sources: [], composition_revisions: [], pointer: null, missing: [], notes: [], reason: null,
+    reprojection: null, reprojection_error: null,
   };
 }
 
@@ -417,6 +423,8 @@ async function finish(context: KnowledgeContext, report: SeedReport, result: See
   report.seedling = result.seedling;
   report.composition = result.composition;
   report.reason = result.reason;
+  report.reprojection = result.reprojection;
+  report.reprojection_error = result.reprojection_error;
   if (result.origin.length > 0) {
     report.sources = result.origin.map((source) => ({
       role: source.role, label: LABEL[source.role], producer: source.producer, slot: source.slot,
@@ -452,6 +460,7 @@ export function formatSeedReport(report: SeedReport): string {
   if (report.pointer !== null) {
     lines.push(report.pointer.moved ? `指针：${report.pointer.from ?? '（无）'} → ${report.pointer.to}（${report.pointer.reason}）` : `指针：${report.pointer.reason}`);
   }
+  lines.push(...reprojectionLines(report.reprojection, report.reprojection_error));
   for (const missing of report.missing) {
     lines.push(`缺 ${missing.label}（${missing.role}）：${missing.detail}`);
     lines.push(`下一步：${missing.next}`);

@@ -1,7 +1,7 @@
 import {groundsAudience} from './grounds.ts';
 
 import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
-import {submissionOrigin} from './independence.ts';
+import {effectiveSubmission,submissionOrigin,type EffectiveSubmission} from './independence.ts';
 import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
 import { abandonDecision } from './management.ts';
 import { isReason } from '../../../contracts/generated/vocabulary.ts';
@@ -29,11 +29,11 @@ import type { SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { PARTITION, type Acceptance } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, LimitError, recordExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import { describe, protocolError, unavailableError } from './errors.ts';
+import { describe, missingError, protocolError, unavailableError } from './errors.ts';
 import { evaluate, type RuntimeAdmission } from './evaluate.ts';
 import { buildScope, createResolver, recordBytes, resolveSubmission } from './exact.ts';
 import type { AuthorOrigin, ProducerOrigin } from './independence.ts';
@@ -47,6 +47,7 @@ import {
   actionsOf,
   isVerbatimObject,
   keyOwner,
+  latestAccepted,
   putAction,
   putResult,
   putSubmission,
@@ -110,7 +111,7 @@ export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
-    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED') continue;
+    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED' || action.body.detail.refusal === 'dispatch_in_flight') continue;
     const { submission, repair } = action.body.detail;
     if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
@@ -176,7 +177,10 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
   if (stored === null || !canSeeRun(user, stored.body)) {
     const named = runId === null ? null : clipText(runId, 64);
     ctx.log({ traceId: call.traceId, run: named, what: 'submit_result', detail: named === null ? 'no run id in the arguments' : `run ${named} is unknown or not visible to ${user.id}` });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+    if (named === null) return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SUBMISSION_SCHEMA_VIOLATION', '提交里没有运行号 run', { path: '/run', fix: '写上 start_run 返回的运行号后重交' })] };
+    // A run of another account's personal workflow stays neutral (D05 R[3]).
+    if (stored !== null && await recordExistence(store, user.id, stored) === 'neutral') return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [missingError(stored !== null, '/run', `运行 ${named}`, stored !== null ? '只能向你自己的运行提交；要接着做，用 start_run 开你自己的运行' : '核对运行号；运行号来自 start_run 的回答')] };
   }
   return ctx.lock(`submit:${stored.body.run}`, async () => {
     try{return await submitLocked(ctx,user,args,call,stored,refresh);}
@@ -185,11 +189,13 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
       ctx.log({traceId:call.traceId,run:stored.body.run,what:'submit_result interrupted',detail:describe(error)});
       const received=receivedDigest(args);
       const record=await submissionByDigest(ctx.deps.records.store,stored.body.run,received.digest);
+      const parsed=Submission.safeParse(args),effective=parsed.success?effectiveSubmission(parsed.data,stored.body,sessionOf(call)):null;
+      const declaredModel=effective?.model??(typeof args.model==='string'?args.model:null);
       if(error instanceof HubReadFailure){
-        if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[error.reason],result:'error',errorCode:error.reason,detail:{hub_error:true,source:error.reference,reason:error.reason,retry_attempts:error.attempts,submission:received.digest,session:sessionOf(call),model:typeof args.model==='string'?args.model:null,repair:[],result:null,fix:error.fix}});
+        if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[error.reason],result:'error',errorCode:error.reason,detail:{hub_error:true,source:error.reference,reason:error.reason,retry_attempts:error.attempts,submission:received.digest,session:sessionOf(call),model:declaredModel,repair:[],result:null,fix:error.fix}});
         return {call_result:'error',acceptance:'not_accepted',errors:[protocolError('SOURCE_UNAVAILABLE',error.message,{fix:error.fix})]};
       }
-      if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{hub_error:true,submission:received.digest,session:sessionOf(call),model:typeof args.model==='string'?args.model:null,repair:[],result:null,fix:'Hub 将在启动和每分钟自动重验，最多三次；也可带同一会话原样重交，不需要修改提交'}});
+      if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{hub_error:true,submission:received.digest,session:sessionOf(call),model:declaredModel,repair:[],result:null,fix:'Hub 将在启动和每分钟自动重验，最多三次；也可带同一会话原样重交，不需要修改提交'}});
       return {call_result:'error',acceptance:'not_accepted',errors:[{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带同一会话原样重交，不需要修改提交'}]};
     }
   });
@@ -202,11 +208,11 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const run = stored.body;
   const received = receivedDigest(args);
   const sessionNow = sessionOf(call);
-  const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
-
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.
   const parsed = received.canonical ? Submission.safeParse(args) : null;
+  const effective = parsed?.success ? effectiveSubmission(parsed.data,run,sessionNow) : null;
+  const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : effective?.model ?? null;
   const existing = await submissionByDigest(store, run.run, received.digest);
   const kept: Kept =
     existing !== null
@@ -221,11 +227,11 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(repeat);}
+  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(repeat), call.traceId);}
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:answerOf(previous.body);}
+  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(previous.body), call.traceId);}
 
-  const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
+  const model = parsed?.success ? effective?.model ?? null : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
   const action = (input: { acceptance: Acceptance | null; codes: string[]; repair: string[]; result: string | null; actionResult?: 'error'; errorCode?: string; extra?: Record<string, unknown> }) =>
     putAction(store, {
@@ -274,10 +280,22 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):frozenWorkflow;
   if (workflow === null) {
     ctx.log({ traceId: call.traceId, run: run.run, what: 'submit_result', detail: `pack version ${run.pack} (${run.pack_digest}) is no longer loadable` });
-    await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+    await action({ acceptance: 'not_accepted', codes: ['SOURCE_READ_FAILED'], repair: [], result: null });
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_READ_FAILED', `运行 ${run.run} 锁定的任务包版本 ${run.pack} 读不出来`, { path: '/run', fix: '请管理员从备份恢复这个任务包版本后原样重交' })] };
   }
-  if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[unavailableError('/inputs')]};
+  // A job of the run that has not ended verifies the run's latest accepted result again before its submit. While it runs,
+  // the same submission reads progress from the stored result, and a different one is kept as received but not validated,
+  // so the job goes on (CES reads a running task by its id and never resubmits it).
+  if (!refresh && workflow.effects?.some((row) => row.trigger === 'hub_template') && ctx.deps.dispatch?.inFlight) {
+    const flight = await ctx.deps.dispatch.inFlight(run.run);
+    if (flight !== null) {
+      const dispatched = await latestAccepted(store, run.run);
+      if (dispatched !== null && dispatched.body.submission === received.digest) return { ...answerOf(dispatched.body), dispatch: flight.notes };
+      await action({ acceptance: 'not_accepted', codes: ['IDEMPOTENCY_MISMATCH'], repair: [], result: null, extra: { refusal: 'dispatch_in_flight', jobs: flight.jobs } });
+      return { call_result: 'error', acceptance: 'not_accepted', dispatch: flight.notes, errors: [protocolError('IDEMPOTENCY_MISMATCH', `运行 ${run.run} 的派发作业 ${flight.jobs.join('、')} 还在进行；这次提交与派发所用的那次不同，已原样保存但没有核验，派发不受影响`, { path: '/run', fix: '读进展：逐字原样重交派发时的那次提交；要改内容，等作业结束后开新的核验运行' })] };
+    }
+  }
+  if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[missingError(true,'/inputs','这次判据复核的来源记录','请复核请求的发起人或管理员把来源分享给你')]};
   const priorMaterial=workflow.workflow.incremental_submissions===true&&existing===null?(await store.find({key:INDEX.submissionRun,value:run.run,kind:'submission',newestFirst:true,limit:2})).items.find(r=>r.digest!==record.digest)?.body??null:null;
   const incrementalGrowth=workflow.workflow.incremental_submissions===true&&existing===null&&parsed?.success===true&&firstDeclarationGrowth(priorMaterial,args);
   const roundsUsed = await roundsUsedOf(ctx, run.run);
@@ -288,7 +306,10 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     if (early !== null) {
       const errors = withRounds(workflow, args, [early], roundsUsed);
       outcome = { result: notAccepted(base, errors), problems: requirementsOf(errors) };
-    } else if (parsed?.success === true) outcome = await validate(base, parsed.data, [], null);
+    } else if (parsed?.success === true && effective === null) {
+      const error=protocolError('SUBMISSION_SCHEMA_VIOLATION','本次提交没有可沿用或显式声明的模型身份',{path:'/model_identity',fix:'本会话显式声明 model_identity，或带原先声明身份的同一 Circle 会话重交'});
+      outcome={result:notAccepted(base,[error]),problems:new Set()};
+    } else if (parsed?.success === true && effective !== null) outcome = await validate(base, effective, [], null);
     else outcome = await validatePartial(base, args, parsed?.error ?? null);
   } catch (error) {
     if (!(error instanceof HubReadFailure)) throw error;
@@ -296,7 +317,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       actionResult: 'error', errorCode: error.reason,
       extra: { hub_error: true, source: error.reference, reason: error.reason, retry_attempts: error.attempts,
         message: error.message, fix: error.fix } });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })] };
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SOURCE_READ_FAILED', error.message, { fix: error.fix })] };
   }
   const sessionMissing = session === null && workflow.requirements.some(t => t.independent_of !== undefined&&!t.independence_by_account);
   if (sessionMissing) {
@@ -316,7 +337,29 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     result: saved.result.digest,
     extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
-  return answerOf(saved.result.body);
+  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId);
+}
+
+/** Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row carries the jobs the Hub dispatched
+ * for it. An accepted answer whose result is ready lets the Hub dispatch when the run has no job yet; a repeat of the same
+ * submission reads the jobs' progress. Ready is every item delivered without error with every release requirement of the
+ * hub_template rows that the item lists satisfied, so a run whose artifact is not verified yet (a plan run) does not try. */
+async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null): Promise<SubmitAnswer> {
+  if (answer.acceptance !== 'accepted' || !answer.result || !ctx.deps.dispatch?.accepted) return answer;
+  const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
+  const rows = workflow?.effects?.filter((row) => row.trigger === 'hub_template') ?? [];
+  if (!rows.length) return answer;
+  const result = answer.result;
+  const release = new Set(rows.flatMap((row) => row.release.requirements));
+  const released = result.partitions.delivered.every((item) => item.requirements.every((row) => !release.has(row.requirement) || row.status === 'satisfied'));
+  const ready = result.errors.length === 0 && Object.entries(result.partitions).every(([key, list]) => key === 'delivered' || list.length === 0) && result.partitions.delivered.length === run.items.length && released;
+  try {
+    const notes = await ctx.deps.dispatch.accepted(run.run, ready);
+    return notes.length ? { ...answer, dispatch: notes } : answer;
+  } catch (error) {
+    ctx.log({ traceId, run: run.run, what: 'hub dispatch', detail: describe(error) });
+    return { ...answer, dispatch: [{ text: 'Hub 读取或发起派发时出错，没有派发；等管理员处理（已记下）后原样重交' }] };
+  }
 }
 
 /** What a validation of one submission is made from. */
@@ -333,7 +376,7 @@ interface Basis {
 }
 
 interface Validated {
-  criterionChanges?:Array<{index:number;change:import('../../../contracts/src/criterion.ts').CriterionChange}>;
+  criterionChanges?:import('./exact.ts').AcceptedCriterionChange[];
   runtimeAdmission?:RuntimeAdmission[];
   result: ValidationResult;
   /** Requirements whose problems in this submission count as a repair round. */
@@ -507,7 +550,7 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
     });
   }
   const model = typeof args.model === 'string' && args.model.length > 0 ? args.model : UNDECLARED_MODEL;
-  const partial: Submission = { run: base.run.run, model, items, ...(cross.length > 0 ? { cross_item: cross } : {}) };
+  const partial: EffectiveSubmission = { run: base.run.run, model, items, ...(cross.length > 0 ? { cross_item: cross } : {}) };
   const checked = await validate(base, partial, issues.length > 0 ? issues : [protocolError('SUBMISSION_SCHEMA_VIOLATION', '提交的结构不对', { path: '' })], positions);
   return checked;
 }
@@ -531,7 +574,7 @@ export function runtimeCheckProblems(workflow: LoadedWorkflow, items: readonly {
   return errors;
 }
 
-async function validate(base: Basis, submission: Submission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
+async function validate(base: Basis, submission: EffectiveSubmission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
   const { ctx, user, call, run, workflow, roundsUsed } = base;
   const capability=workflow.workflow.contribution;
   const attribute=(errors:ProtocolError[])=>errors.map(error=>{
@@ -593,7 +636,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const declarations = new Set((run.outputs?.tasks ?? []).map(output => output.id));
   for (const [i, output] of (submission.task_outputs ?? []).entries()) if (!declarations.has(output.output)) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', '按任务的产出未在任务包里声明', {path:pointerOf('task_outputs',i,'output'),fix:'请任务包维护人在 workflow.outputs.tasks 声明该产出，或从 task_outputs 移除后重交'}));
   const exact = await resolveSubmission(scope, resolver, workflow, run.items, submission);
-  const origin: ProducerOrigin = submissionOrigin(submission,[run.session ?? null, sessionOf(call)]);
+  const origin: ProducerOrigin = submissionOrigin(submission,[run.session ?? null, sessionOf(call)],run,sessionOf(call));
   const author: AuthorOrigin | null = await authorOriginOf(ctx, run);
   const moved = (errors: ProtocolError[]): ProtocolError[] => errors.map((e) => (positions === null || e.path === undefined ? e : { ...e, path: remap(e.path, positions) }));
   // Partial-schema errors already carry original argument positions and rounds.

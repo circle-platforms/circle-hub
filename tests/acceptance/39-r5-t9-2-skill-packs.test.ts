@@ -76,7 +76,7 @@ test('mindmap, xlsx, xml and html skills are named when missing and old referenc
     const missing = await resolveReference(reference, { parsers, reader: { user: bed.bob.id, role: 'user' }, sources: { read } });
     assert.equal(missing.resolved, false, pack);
     if (missing.resolved) return;
-    assert.equal(missing.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(missing.code, 'SOURCE_READ_FAILED');
     assert.match(missing.message, new RegExp(spec.parser.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.match(missing.message, /下一步/);
     await bed.registry.install(bed.admin, `${pack}@${published.version}`);

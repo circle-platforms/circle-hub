@@ -22,6 +22,7 @@ import { PackStaging } from './console/staging.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
+import { handleRunExport, runExportTarget } from './run-export.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
@@ -107,7 +108,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const secureRequest = (request: IncomingMessage): boolean => encrypted(request) || (proxyAuthority !== null
     && request.headers.host?.toLowerCase() === proxyAuthority
     && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)) };
+  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
   const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
@@ -144,6 +145,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     }
     const url = target.url;
     if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
+    if (runExportTarget(request.url)) return handleRunExport(request, response, deps, log);
     if (url.pathname === '/healthz') {
       request.resume();
       if (request.method !== 'GET' && request.method !== 'HEAD') return sendText(response, 405, '只接受 GET', { allow: 'GET, HEAD' });

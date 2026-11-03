@@ -100,7 +100,9 @@ Before schema diagnostics or any external read, the entry point scans the comple
    `selectCandidate` in `target.ts`) or the documented default `runs.newest_released@1` (newest
    released build of the requested line with a root) chooses (projected), with its basis text and alternatives. Unknown builds,
    builds of another line and lines without a root are `REFERENCE_UNRESOLVED` with the existing builds as options. The run
-   records the root; the composition digest is in the build basis claim.
+   records the root; the composition digest is in the build basis claim. Within one start, the unfiltered build list is reused
+   for selection, exact-name resolution and the optional frozen build context; seedling lookups are memoized by exact line.
+   Neither cache crosses calls, and the selected build's root is still resolved before it is locked.
 4. **Hub record inputs** (handover, B03 R[3]-R[4]): the bound bytes are the canonical JSON of the record envelope (so their
    SHA-256 is the record digest), or of the value its pointer names, stored as a generated artifact readable by the caller;
    `BoundInput.meta` names the record. The receiver gets the record as a source; no carry-over is offered across a handover.
@@ -665,6 +667,13 @@ rewrite requests or old results. `getRun`/`listRequests` apply run visibility be
 rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
 hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
 
+Maintenance also checks accepted historical results whose layer already contains a complete named request exit. If the
+corresponding item/requirement request is absent, it uses the ordinary routing rules on a detached result copy to append
+the request with the recorded missing fact, audience, source and deadline. Existing or answered requests are retained,
+independent gaps are kept, and the old result is never rewritten. Non-request exits are not turned into human requests.
+For older results without those fields, the already-created repair requests are looked up by their existing exact
+identity in batches; repeated maintenance does not refresh their deadlines or issue one lookup per historical layer.
+
 Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
 `output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.
 Every distinct unknown is retained in layer gaps even beside a settled violation. `pending_unknown` is an optional
@@ -673,8 +682,13 @@ additional item count, never a partition; the primary-terminal partitions remain
 these layers inherit its named exit and identify the requirement and repair path. No dependency is inferred from prose.
 
 New runs freeze a finite submission deadline (explicit future `submission_due`, otherwise 24 hours after start).
-The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and drains it before
-closing records; command-only assemblies do not start maintenance. An expired run with no accepted submission gets
+The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and asks a pass in progress
+to stop at its next run before closing records (serve listens first and starts maintenance in the background); command-only
+assemblies do not start maintenance. Scheduled passes are incremental: they remember, per run, the newest append position
+among its records, its predecessor's and its dispatch jobs' events (`RecordStore.lastPositions`), and visit a run only when
+that moved or its submission deadline passed since the last visit. The first pass after a start and one every half hour
+(`FULL_PASS_MS`) visit every run, for what no record of the run shows (a moved knowledge root, a disabled account); an
+explicit `maintain()` visits every run unless called with `incremental: true`. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.
@@ -843,7 +857,7 @@ prerequisite and the exact bound byte identities. The successor verification, no
 
 A same-owner, same-pack successor stops replaying old submissions but never discards a trusted host-recovery gap. Maintenance appends a named administrator request and a system-input projection immediately, preserving the old result bytes and the actual retry count. A later trusted parent-success validation in that run or a same-pack successor answers the host-repair request; creating a successor alone never does. Unanswered requests keep their run open even after supersession.
 
-Maintenance compares every unanswered request deadline with its clock. Expiry appends a separate named administrator clarification that cites the original request, with a new finite deadline; repeated passes reuse that escalation. An expired escalation advances in the same way. Originals are immutable, and actual original answers propagate through escalation references. Run listings expose overdue_requests separately, including superseded runs with unanswered requests; the console shows their original deadlines in a separate table.
+Maintenance compares every unanswered request deadline with its clock. Expiry appends a separate named administrator clarification that cites the original request, with a new finite deadline; repeated passes reuse that escalation. An expired escalation that names an active administrator is not escalated again (decision 101): a further escalation would name the same audience and next action, and before the decision each unanswered request added one record a day (17,807 of 21,855 requests on the production data of 2026-10-30). It stays listed as overdue under its own deadline and advances only when its administrator is disabled or loses the role. Originals are immutable, and actual original answers propagate through escalation references. Run listings expose overdue_requests separately, including superseded runs with unanswered requests; the console shows their original deadlines in a separate table.
 
 ## Shared read access
 
@@ -918,6 +932,9 @@ run. Current summaries do not acquire a dependency on reloading the package; lis
 
 `criterion_changes` declares a proposed replacement without changing bound source bytes. The Hub resolves the criterion and
 all grounds and checks their quotes before accepting the submission; source-role errors refuse only that declaration.
+The criterion must be an expected fragment (A03 R[0]). A ground may be an expected fragment or quote the judged subject's
+original (A03 R[3]); a subject ground is marked by its position in the judgment request and its awaiting step. Every
+misplaced fragment is named with its role at its own pointer.
 For a W10 tree criterion or quote, every provenance fragment must be a src reference whose exact digest is bound as expected
 in this run. Missing provenance, an unbound original or any mixed non-expected original locally refuses the declaration.
 The general tree citation role stays unchanged. This uses parsed reference syntax and explicit source bindings, without text

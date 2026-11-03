@@ -446,6 +446,102 @@
             "action"
           ],
           "additionalProperties": false
+        },
+        "fed": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "The seedling root the fed cases join"
+            },
+            "originals": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cases": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "projected": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rootless": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "documents": {
+              "maxItems": 200,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "external": {
+                    "description": "The external read the projections were made from; null when the records name none",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "Digest of the captured original"
+                  },
+                  "document": {
+                    "description": "The document identity the projections state",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cases": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Distinct fed cases of this original that join the queried root or have only a root-less projection"
+                  },
+                  "projected": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Of those, cases projected onto the queried root"
+                  },
+                  "rootless": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "Of those, cases with a root-less projection and none under the queried root: unknown to the view until re-read"
+                  }
+                },
+                "required": [
+                  "external",
+                  "sha256",
+                  "document",
+                  "cases",
+                  "projected",
+                  "rootless"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Originals sorted by document, sha256 and external; at most MAX_FED_SCOPE_DOCUMENTS, the totals count all"
+            }
+          },
+          "required": [
+            "root",
+            "originals",
+            "cases",
+            "projected",
+            "rootless",
+            "documents"
+          ],
+          "additionalProperties": false,
+          "description": "Feeding-layer originals behind the fed cases of a case view over a seedling root, read at the view's feeding cut; composition sources stay in listed_documents"
         }
       },
       "required": [
@@ -625,6 +721,17 @@
     },
     "truncated": {
       "type": "boolean"
+    },
+    "unknown_entries": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "description": "Entries left out of the lists and counts because a fact this query needs is unknown or their sources disagree; each is named in the notes with the next action. Absent when none"
+    },
+    "unknown_only": {
+      "type": "boolean",
+      "const": true,
+      "description": "True when the unknown entries are the only reason this view is truncated: nothing was cut or withheld. Absent otherwise"
     },
     "skipped": {
       "type": "integer",

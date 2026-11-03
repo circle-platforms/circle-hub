@@ -35,6 +35,11 @@ test('an only the caller already wrote is left alone, and an empty fix list is n
   assert.equal(empty.ok, false);
   if (empty.ok) return;
   assert.match(empty.fix, /不要向用户索取编号/);
+  // The one step that works: a read of the build's fixed-bug list that names the view's product and build.
+  assert.match(empty.message, /缺陷索引没有编号/);
+  assert.match(empty.fix, /start_run 的 pack 写 source-read，顶层同时写 product famx 和 build Rel_FAMX_10_6_1_57/);
+  // The slot and the external form are the pack's: a model left to guess picked another system's read slot (T2-4, 10-30).
+  assert.match(empty.fix, /输入槽和外部标识照本任务包说明里读修复清单的那一步写/);
 });
 
 test('story identifiers already on the input become only, and none leaves the cases id', async () => {

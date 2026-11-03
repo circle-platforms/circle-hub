@@ -13,7 +13,7 @@ test('standalone precheck acquires, reads and releases without an intent or subm
 });
 
 test('failed read-only precheck releases the lease and records not-dispatched, never unknown', async t => {
-  const c = await setup({ mode: 'build' }); t.after(() => c.close());
+  const c = await setup({ mode: 'seats' }); t.after(() => c.close());
   const state = await c.service.precheck(c.admin, c.executor.id);
   assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false);
   assert.ok(c.calls.includes('close_slot'));

@@ -427,6 +427,27 @@ describe('start_run text', () => {
     });
   }
 
+  test('the inputs that accept the type of a read source follow the sources (decision 113)', () => {
+    const accepted_by = [{ type: 'toy:mindmap', inputs: [{ pack: 'toy-review@1.0.0', slot: 'map', role: 'subject' }, { pack: 'toy-compile@2.0.0', slot: 'subject', role: 'subject' }] }];
+    const lines = linesOf(toolText('start_run', startAnswer(runOf(items(3)), { accepted_by })));
+    const at = indexOf(lines, (l) => l.startsWith('接受这类对象的任务包输入'));
+    assert.ok(at > indexOf(lines, (l) => l === '来源：') && at < indexOf(lines, (l) => l.startsWith('条目（')), 'after the sources, before the items');
+    assert.equal(lines[at + 1], '- toy:mindmap：toy-review@1.0.0 输入 map（被判对象）；toy-compile@2.0.0 输入 subject（被判对象）');
+    assert.equal(indexOf(linesOf(toolText('start_run', startAnswer(runOf(items(3))))), (l) => l.startsWith('接受这类对象的任务包输入')), -1, 'nothing said without accepting inputs');
+  });
+
+  test('a run of a pack that ships tools/ names the local tools and the install command once, after the facts of the run', () => {
+    const install = `circle-hub local-tools install toy-review@1.0.0 --digest ${'a'.repeat(64)} --into <目录>`;
+    const local_tools = { count: 1, files: [{ path: 'tools/fetch-run.ts', sha256: 'b'.repeat(64), size: 81 }], install };
+    const withTools = linesOf(toolText('start_run', startAnswer(runOf(items(3)), { local_tools })));
+    const at = indexOf(withTools, (l) => l.startsWith('本地工具 1 个'));
+    assert.ok(at > 0, withTools.join('\n'));
+    assert.equal(withTools[at], `本地工具 1 个（客户端按包号核对后安装）；安装：${install}`);
+    assert.ok(at < indexOf(withTools, (l) => l === '规程：'), 'before the procedure');
+    const without = toolText('start_run', startAnswer(runOf(items(3))));
+    assert.equal(indexOf(linesOf(without), (l) => l.startsWith('本地工具')), -1, 'a pack without tools/ says nothing');
+  });
+
   test('the example skeleton parses with Submission once its lists are filled, and the slot records validate against the slot schema', () => {
     const run = runOf(items(62));
     const text = toolText('start_run', startAnswer(run));
@@ -1089,6 +1110,7 @@ function packOf(i: number): PackSummary {
     kind: 'workflow',
     title: `合成工作流 ${i}`,
     description: '评审合成的思维导图（合成）',
+    digest: `${String(i)}${'0'.repeat(64)}`.slice(0, 64),
     products: ['Meadow', 'Lawn'],
     inputs: [
       { slot: 'map', role: 'subject', description: '被评审的思维导图', accepts: ['application/json', 'toy:mindmap'], required: true, many: false },
@@ -1104,6 +1126,55 @@ function packOf(i: number): PackSummary {
 }
 
 describe('list_task_packs, upload_file and resolve_reference texts', () => {
+  test('a truncated task-pack list names an advancing offset with the same filters', () => {
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE });
+    const text = toolText('list_task_packs', answer, { packList: { offset: 7, kind: 'workflow' } });
+    withinBudget(text, 'task-pack continuation');
+    const match = noteOf(text)?.match(/list_task_packs (\{[^}]+\})/);
+    assert.ok(match, 'the omitted packs have a tool-based continuation');
+    const next = JSON.parse(match[1]!) as { kind: string; offset: number };
+    assert.equal(next.kind, 'workflow');
+    assert.ok(next.offset > 7 && next.offset < 307);
+    assert.match(noteOf(text)!, /\/console\/packs/);
+  });
+
+  test('every pack is in the index whatever the offset, then the declared run context, then the details (decision 113)', () => {
+    const index = [0, 1, 2].map((i) => ({ pack: packOf(i).pack, title: packOf(i).title, kind: 'workflow' as const }));
+    const context = {
+      leases: [{ prefix: 'rig/', packs: ['toy-pack-1@1.0.1', 'toy-pack-2@1.0.2'], registrations: [{ prefix: 'rig/r1/', mine: true }, { prefix: 'rig/r2/', mine: false }], held: [{ key: 'rig/r2/dev-a', since: '2026-01-01T00:00:00.000Z', until: null, run: RUN, jobs: ['job-1'], mine: false }] }],
+      observations: [{ label: 'r1/dev-a', build: 'Toy_1_0_7', base: 'Toy_1_0_7', observed_at: '2026-01-02T00:00:00.000Z', packs: ['toy-pack-1@1.0.1'] }, { label: 'r1/dev-b', build: null, base: null, observed_at: '2026-01-02T00:00:00.000Z', packs: ['toy-pack-1@1.0.1'] }],
+    };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(2)], index, context, trace: TRACE });
+    const lines = linesOf(toolText('list_task_packs', answer, { packList: { offset: 2 } }));
+    assert.equal(lines[0], '可用的工作流 3 个；详情从第 3 个起');
+    const at = (head: string) => indexOf(lines, (l) => l.startsWith(head));
+    assert.ok(at('索引（3 个') < at('运行上下文（') && at('运行上下文（') < at('详情（'), lines.join('\n'));
+    assert.deepEqual(lines.slice(at('索引（3 个') + 1, at('索引（3 个') + 4), ['- toy-pack-0@1.0.0 | 合成工作流 0 | 工作流', '- toy-pack-1@1.0.1 | 合成工作流 1 | 工作流', '- toy-pack-2@1.0.2 | 合成工作流 2 | 工作流']);
+    assert.ok(lines.includes(`- 租约前缀 rig/（toy-pack-1@1.0.1、toy-pack-2@1.0.2 用）：已登记的前缀 rig/r1/（你登记的）、rig/r2/（有主人）；占用中的键 1 个：rig/r2/dev-a（运行 ${RUN}，起于 2026-01-01T00:00:00.000Z，未结束的作业 job-1）`), lines.join('\n'));
+    assert.ok(lines.includes('- 设备最近一次观察（toy-pack-1@1.0.1 的上下文；只对观察时刻成立）：r1/dev-a 构建 Toy_1_0_7，观察于 2026-01-02T00:00:00.000Z；r1/dev-b 没有抽到构建，观察于 2026-01-02T00:00:00.000Z'));
+    assert.ok(lines.includes('- toy-pack-2@1.0.2 合成工作流 2（工作流）：评审合成的思维导图（合成）'), 'the details of the page');
+    const unread = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1)], index: index.slice(1, 2), trace: TRACE }), { packList: { offset: 0, contextUnread: true } }));
+    assert.ok(unread.includes('运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'), 'a context that could not be read is said, not left out');
+  });
+
+  test('an oversized single pack does not suggest the same exact query in a loop', () => {
+    const pack = packOf(1);
+    const oversized = { ...pack, inputs: Array.from({ length: 300 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}` })) };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE });
+    const text = toolText('list_task_packs', answer, { packList: { offset: 0, packId: pack.id } });
+    withinBudget(text, 'oversized task pack');
+    assert.match(noteOf(text)!, /单个工作流详情超出回答预算/);
+    assert.doesNotMatch(noteOf(text)!, /list_task_packs/);
+  });
+
+  test('a knowledge view input is shown in the form its parser requires, not as a bare number', () => {
+    const pack = packOf(1);
+    const view = { ...pack, inputs: [{ slot: 'facets', role: 'subject' as const, description: '结构计数视图', accepts: ['knowledge:facets'], required: true, many: false }] };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [view], trace: TRACE });
+    const lines = linesOf(toolText('list_task_packs', answer));
+    assert.ok(lines.includes('  输入 facets（被判对象，必填）：结构计数视图；接受 knowledge:facets；写法 {"external":"knowledge:facets:<产品>:<构建>?kind=<kind>&by=<by>"}'), lines.join('\n'));
+  });
+
   test('every pack with its inputs, parameters and an example start_run call that parses with StartRunInput and names a product', () => {
     const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1), packOf(2)], trace: TRACE });
     const text = toolText('list_task_packs', answer);
@@ -1130,6 +1201,15 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     const many = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE }));
     withinBudget(many, '300 packs');
     assert.match(noteOf(many)!, /\/console\/packs/);
+  });
+
+  test('a pack that ships tools/ shows one local-tools line with the digest-pinned install command; a pack without none', () => {
+    const install = `circle-hub local-tools install toy-pack-1@1.0.1 --digest ${'a'.repeat(64)} --into <目录>`;
+    const tools = { count: 2, files: [{ path: 'tools/fetch-run.ts', sha256: 'b'.repeat(64), size: 81 }, { path: 'tools/generate-workbook.ts', sha256: 'c'.repeat(64), size: 97 }], install };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [{ ...packOf(1), local_tools: tools }, packOf(2)], trace: TRACE });
+    const lines = linesOf(toolText('list_task_packs', answer));
+    assert.ok(lines.includes(`  本地工具 2 个；安装：${install}；清单见 structuredContent`), lines.join('\n'));
+    assert.equal(lines.filter((l) => l.startsWith('  本地工具')).length, 1, 'only the pack with tools/ carries the line');
   });
 
   test('an upload with a large structure summary stays within the budget and points at the source', () => {

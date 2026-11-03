@@ -39,7 +39,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
       assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.errors[0].code, 'REFERENCE_UNRESOLVED');
       assert.ok(reads >= 4, 'prefetch and later resolves each recheck current authorization; a previous absence is not an authorization cache'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
     }
-    if (mode === 'recover') assert.ok(reads > 3, 'after bounded recovery every later resolution rechecks current authorization');
+    if (mode === 'recover') assert.equal(reads, 3, 'after bounded recovery the successful read is reused within this request');
     else assert.equal(reads, 3, 'a failed prefetch retries only three times before reporting an unfinished Hub check');
     if (mode === 'recover') {
       assert.equal(answer.acceptance, 'accepted'); assert.equal(answer.result?.rounds.used, 0);
@@ -49,7 +49,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.ok(h.logs.some(entry => entry.detail.includes('SOURCE_RETRYABLE')));
     assert.ok(h.logs.every(entry => !entry.detail.includes('SyntheticPrivateReadFailure')), 'admin diagnostics do not contain untrusted source error text');
     assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.result, undefined);
-    assert.deepEqual(answer.errors.map(error => error.code), ['SOURCE_UNAVAILABLE']);
+    assert.deepEqual(answer.errors.map(error => error.code), ['SOURCE_READ_FAILED']);
     assert.ok(answer.errors.every(error => error.rounds_left === undefined && error.requirement === undefined));
     assert.match(answer.errors[0].fix ?? '', /管理员.*恢复/);
     let saved = await actions(); assert.equal(saved.length, 1);
@@ -63,7 +63,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.equal(saved[0].body.detail.hub_error, true); assert.deepEqual(saved[0].body.detail.repair, []);
     assert.equal((await h.kit.store.find({ key: INDEX.resultRun, value: run.run, kind: 'validation_result' })).items.length, 0);
     const again = await h.service.submitResult(h.alice, submission, h.call());
-    assert.equal(again.errors[0].code, 'SOURCE_UNAVAILABLE'); assert.equal(reads, 6);
+    assert.equal(again.errors[0].code, 'SOURCE_READ_FAILED'); assert.equal(reads, 6);
     assert.equal((await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' })).items.length, 1);
     broken = false;
     const modelError = await h.service.submitResult(h.alice, submission, h.call());

@@ -406,14 +406,15 @@ test('a run superseded by a newer revision answers RUN_SUPERSEDED; the submissio
   assert.equal(later.acceptance, 'accepted');
 });
 
-test('absent and forbidden runs give the same answer', { skip }, async () => {
+test('an absent run, a run of someone else and a submission without a run are told apart (D05 R[3], decision 112)', { skip }, async () => {
   const run = await draft();
   const unknown = await h.service.submitResult(h.alice, { ...submission(run), run: 'run_01m5h9zh07x7amhg4bwmye5yhw' }, h.call());
   const forbidden = await h.service.submitResult(h.bob, submission(run), h.call());
   const malformed = await h.service.submitResult(h.alice, { items: [] }, h.call());
-  assert.deepEqual(unknown, forbidden);
-  assert.deepEqual(malformed, forbidden);
-  assert.deepEqual(forbidden, { call_result: 'error', acceptance: 'not_accepted', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix, path: '/run' }] });
+  assert.deepEqual(unknown.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/run', 'Hub 里没有运行 run_01m5h9zh07x7amhg4bwmye5yhw']]);
+  assert.deepEqual(forbidden.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_NOT_PERMITTED', '/run', `运行 ${run.run} 存在，你没有读取权限`]]);
+  assert.deepEqual(malformed.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/run']]);
+  for (const answer of [unknown, forbidden, malformed]) assert.equal(answer.acceptance, 'not_accepted');
   valid(forbidden);
   // nothing of bob's was stored on alice's run
   const stored = await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' });
@@ -565,7 +566,7 @@ test('a stored submission belongs to the run it was stored for, whatever keys it
       h.service.startRun(user, { pack: 'toy-verify', product: 'Meadow', version: '3.2', inputs: { draft: { reference: `rec:${record.digest}` }, map: { reference: mapRef } } }, h.call());
     // alice reads her own record (and her projection refuses it: no draft items); bob cannot read it
     assert.deepEqual((await bind(h.alice, map)).errors.map((e) => e.code), ['toy-verify.empty_draft']);
-    assert.deepEqual((await bind(h.bob, bobMap)).errors.map((e) => [e.code, e.path]), [['SOURCE_UNAVAILABLE', '/inputs/draft']]);
+    assert.deepEqual((await bind(h.bob, bobMap)).errors.map((e) => [e.code, e.path]), [['SOURCE_NOT_PERMITTED', '/inputs/draft']]);
   } finally {
     h.workflows.unassign(h.bob.id, 'toy-review');
     h.workflows.unassign(h.bob.id, 'toy-verify');

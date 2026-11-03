@@ -20,3 +20,9 @@ test('a unique rejected effect row is named at the action and parameter gates',a
  const {ctx}=context();ctx.write.signing='own_credential';const denied=await checkEffectBoundary(ctx);assert.ok(!denied.ok);assert.equal(denied.row,row.id);assert.deepEqual(denied.requirements,row.release.requirements);
  ctx.write.signing='service_on_behalf';ctx.parameterPolicy=async()=>false;const outside=await checkEffectBoundary(ctx);assert.ok(!outside.ok);assert.equal(outside.code,'EFFECT_PARAMETER_OUT_OF_RANGE');assert.equal(outside.row,row.id);
 });
+test('a policy recheck that reached no conclusion is not reported as a refusal of the plan or the pack (decision 116)',async()=>{
+ const {ctx}=context();ctx.policies=async()=>'unknown';
+ const result=await checkEffectBoundary(ctx);assert.ok(!result.ok);assert.equal(result.code,'PACK_POLICY_DENIED');
+ assert.match(result.message,/有检查没出结论/);assert.match(result.message,/不是计划、工作簿或包被驳回/);assert.doesNotMatch(result.message,/请修正/);
+ ctx.policies=async()=>false;const refused=await checkEffectBoundary(ctx);assert.ok(!refused.ok);assert.match(refused.message,/重核未通过；请修正后重核/);
+});

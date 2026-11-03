@@ -56,7 +56,7 @@ test('T7-4 author-only sample marks and withdrawn-rule labels remain visible wit
  await bed.hub.hub.registry.assign(bed.hub.admin.principal,bed.reviewer.user.id,id);
 await bed.hub.hub.registry.retire(bed.hub.admin.principal,id,version,'合成规则撤回');
  const refused=await client.call('start_run',{pack:run.pack,product:bed.second.names[0],version:'2.1',inputs:{subject:{reference:subject}}});
- assert.equal(refused.isError,true);assert.ok(refused.out.errors.some(error=>error.code==='SOURCE_UNAVAILABLE'));
+ assert.equal(refused.isError,true);assert.ok(refused.out.errors.some(error=>error.code==='SOURCE_ABSENT'&&/已下架/.test(error.message)),JSON.stringify(refused.out.errors));
  assert.equal(JSON.stringify((await bed.hub.records.store.get(record))!.body),before,'withdrawal never edits the stored conclusion');
  const reread=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,run.run))!;
  assert.equal(reread.rule_withdrawn,true);assert.equal(reread.latest!.record,record);assert.equal(JSON.stringify(reread.latest!.result),before);

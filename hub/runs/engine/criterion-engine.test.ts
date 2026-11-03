@@ -6,7 +6,7 @@ test('criterion role rejection leaves the submitted draft and its original check
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());
  const run=await h.start();const answer=await h.submit(run.run,[{...h.proposal,criterion:h.subject+'/json@1/p/value'},h.proposal]);
  assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
- assert.ok(answer.errors.some(e=>e.code==='core.criterion.source_role_mismatch'&&e.path==='/criterion_changes/0'));
+ assert.ok(answer.errors.some(e=>e.code==='core.criterion.source_role_mismatch'&&e.path==='/criterion_changes/0/criterion'));
  const result=await h.service.getResult(h.alice,run.run);assert.ok(result);
  assert.ok(Object.values(result.result.partitions).flat().some(item=>item.requirements.some(requirement=>requirement.status!=='satisfied')));
 });

@@ -17,6 +17,8 @@ import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import type { ClientDeclaration } from '../../contracts/src/spaces.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
+import { beginObservedCall } from './inflight-calls.ts';
+import { retainReadReply } from './read-replies.ts';
 import { bearerToken } from './token-echo.ts';
 
 export interface McpOptions {
@@ -27,7 +29,15 @@ export interface McpOptions {
   budget: BodyBudget;
   /** The resource metadata URL an unauthenticated answer names (RFC 9728 5.1), for the MCP standard authorization. */
   resourceMetadata?: (request: IncomingMessage) => string;
+  /**
+   * A tool call that is still working after `headersAfterMs` gets its response head sent, then one space every `keepaliveMs`
+   * (insignificant whitespace before the JSON body), so a client that gives up on a silent connection (Node's fetch waits
+   * 300 s for headers and between body chunks) keeps waiting for a call that needs minutes.
+   */
+  keepalive?: { headersAfterMs: number; keepaliveMs: number };
 }
+
+const KEEPALIVE = { headersAfterMs: 20_000, keepaliveMs: 30_000 } as const;
 
 /** Same body for missing, unknown, revoked and disabled tokens. */
 const UNAUTHENTICATED = '需要有效的 Bearer 令牌';
@@ -253,6 +263,7 @@ async function answer(
 ): Promise<void> {
   const { deps } = options;
   const own = isRequest(parsed) ? { key: idKey(parsed.id), state: stateOf(parsed, started) } : null;
+  let finishObserved:(()=>void)|undefined;
   const states: CallState[] = own === null ? [] : [own.state];
   const stateFor = (requestId: string | number): CallState => {
     if (own !== null && own.key === idKey(requestId)) return own.state;
@@ -294,9 +305,33 @@ async function answer(
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
     const args = isPlainObject(state.args) ? state.args : message.params.arguments;
-    return guarded(state, () => callTool(deps, call, message.params.name, args));
+    if ((message.params.name==='start_run'||message.params.name==='get_nodes') && !(message.params.name==='get_nodes' && isPlainObject(args) && Object.hasOwn(args,'call_query'))) {
+      finishObserved=beginObservedCall(deps,principal.id,message.params.name,state.args,traceId);
+    }
+    const result=await guarded(state, () => callTool(deps, call, message.params.name, args));
+    if(message.params.name==='get_nodes' && !(isPlainObject(args)&&Object.hasOwn(args,'call_query')) && !result.isError){
+      retainReadReply(deps,principal.id,state.args,traceId,result.structuredContent);
+    }
+    return result;
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const keepalive = options.keepalive ?? KEEPALIVE;
+  let early = false;
+  let ticker: NodeJS.Timeout | undefined;
+  const opening = isRequest(parsed) && parsed.method === 'tools/call'
+    ? setTimeout(() => {
+        if (response.headersSent || response.destroyed || response.writableEnded) return;
+        early = true;
+        setCommonHeaders(response);
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.flushHeaders();
+        ticker = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) response.write(' ');
+        }, keepalive.keepaliveMs);
+        ticker.unref();
+      }, keepalive.headersAfterMs)
+    : undefined;
+  opening?.unref();
   try {
     await server.connect(transport);
     // The Host header passed the allow-list already; the path is always /mcp (an absolute-form target is not reused).
@@ -327,19 +362,28 @@ async function answer(
       for (const state of states) state.callResult ??= 'error';
     }
     // Streamable HTTP sessions: the Hub stays stateless but issues an Mcp-Session-Id at a successful initialize, so a
-    // client's declared clientInfo is bound to the writes it makes in that session and to no other client's.
-    const issued = own?.state.method === 'initialize' && reply.status < 400 && own.state.callResult === 'ok' ? randomUUID() : null;
+    // client's declared clientInfo is bound to the writes it makes in that session and to no other client's. A head that
+    // already went out early (keepalive) cannot carry one.
+    const issued = !early && own?.state.method === 'initialize' && reply.status < 400 && own.state.callResult === 'ok' ? randomUUID() : null;
     for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null);
-    setCommonHeaders(response);
-    const headers: Record<string, string> = {};
-    reply.headers.forEach((value, name) => {
-      headers[name] = value;
-    });
-    if (issued !== null) headers['mcp-session-id'] = issued;
-    headers['content-length'] = String(Buffer.byteLength(text));
-    response.writeHead(reply.status, headers);
-    response.end(text);
+    if (early) {
+      // The head (HTTP 200, JSON) went out while the call worked; the body follows the keepalive spaces.
+      response.end(text);
+    } else {
+      setCommonHeaders(response);
+      const headers: Record<string, string> = {};
+      reply.headers.forEach((value, name) => {
+        headers[name] = value;
+      });
+      if (issued !== null) headers['mcp-session-id'] = issued;
+      headers['content-length'] = String(Buffer.byteLength(text));
+      response.writeHead(reply.status, headers);
+      response.end(text);
+    }
   } finally {
+    if (opening !== undefined) clearTimeout(opening);
+    if (ticker !== undefined) clearInterval(ticker);
+    finishObserved?.();
     await transport.close().catch(() => {});
     await server.close().catch(() => {});
   }

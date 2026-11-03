@@ -37,6 +37,55 @@ function fields(audience: string, source: string): Omit<RequestBody, 'run' | 'pa
   return { kind: 'repair', audience, due: '2026-10-26T00:00:00.000Z', missing: '合成缺口：缺少版本号', next_action: '补上版本号后原样重交', source, code: 'missing_input' };
 }
 
+/** An answer appended directly, the way criterion changes append further answers to one request. */
+async function appendAnswer(request: string, answer: string, detail: Record<string, unknown> = { request, answer }): Promise<void> {
+  const at = NOW.toISOString();
+  await kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: at, body: { action: 'validate', run: null, item: null, inputs: [`rec:${request}`, `rec:${answer}`], component: 'synthetic-answers@1', lease: null, started_at: at, ended_at: at, result: 'completed', error_code: null, acceptance: null, codes: [], detail }, index: [{ key: 'runs.request.answer', value: request }] });
+}
+
+/** The record store with its `find` calls counted by index key. */
+function countingFinds(): { store: TestRecordsKit['store']; finds: string[] } {
+  const finds: string[] = [];
+  const store = new Proxy(kit.store, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (property === 'find') return (query: { key?: string }, tx?: unknown) => { finds.push(query.key ?? ''); return (value as (...args: unknown[]) => unknown).call(target, query, tx); };
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return { store, finds };
+}
+
+test('a listing reads the answers of a page at once and keeps the newest answer of each request', async () => {
+  const { alice } = await once();
+  const run = newId('run');
+  const made = [];
+  for (let i = 0; i < 6; i++) made.push(await createRequestService(kit, clock).write({ ...fields(alice.id, await sourceRecord(`page-${i}`)), run, missing: `合成缺口：第 ${i} 项` }));
+  const first = await sourceRecord('answer-first');
+  const second = await sourceRecord('answer-second');
+  await createRequestService(kit, clock).answer(made[0]!.digest, first);
+  await appendAnswer(made[1]!.digest, first);
+  await appendAnswer(made[1]!.digest, second);
+  const counted = countingFinds();
+  const listed = new Map((await createRequestService({ store: counted.store }, clock).all(run)).map((view) => [view.record, view.answered_by]));
+  assert.equal(listed.get(made[0]!.digest), first);
+  assert.equal(listed.get(made[1]!.digest), second, 'the newest of two answers, as the lookup per request read it');
+  for (const request of made.slice(2)) assert.equal(listed.get(request.digest), null);
+  assert.equal(counted.finds.filter((key) => key === 'runs.request.answer').length, 0, 'the answers of the page are read at once');
+});
+
+test('an answer without its request in the detail is still found, by the lookup per request', async () => {
+  const { alice } = await once();
+  const run = newId('run');
+  const request = await createRequestService(kit, clock).write({ ...fields(alice.id, await sourceRecord('legacy-answer')), run });
+  const answer = await sourceRecord('legacy-answer-source');
+  await appendAnswer(request.digest, answer, { answer });
+  const counted = countingFinds();
+  const [view] = await createRequestService({ store: counted.store }, clock).all(run);
+  assert.equal(view?.answered_by, answer);
+  assert.ok(counted.finds.includes('runs.request.answer'), 'the page fell back to the lookup per request');
+});
+
 test('a write is validated, and the same problem again keeps its first deadline and record', async () => {
   const { alice } = await once();
   const requests = createRequestService(kit, clock);

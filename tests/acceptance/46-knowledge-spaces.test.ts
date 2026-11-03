@@ -316,6 +316,8 @@ test('private input labels follow actual reader rights and automatic production 
     assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
   }
   assert.equal((await hub.records.store.list({kind:'run',limit:500})).items.length,before,'a refused automatic result does not leave its run');
+  // An unassigned team pack is answered as not permitted at /pack first (D05 R[3], model 37); assigned, the private input stays neutral.
+  await hub.assignPack(hub.admin.principal,LOCATE_PACK);
   const adminInput=await admin.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'rec:'+source.digest}}});assert.equal(adminInput.out.errors[0]?.code,'SOURCE_UNAVAILABLE');
   const ordinary=await hub.records.artifacts.ingest({bytes,mediaType:'application/json',name:'synthetic-common-map.json',origin:{upload:{session:null,message:null}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:true}});
   const allowed=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}});assert.equal(allowed.isError,false,allowed.text);assert.ok(allowed.out.run);

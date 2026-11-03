@@ -12,7 +12,7 @@ import type { PackSummary } from '../contracts/src/run.ts';
 import type { ProductDeclaration, KnownBuild } from '../contracts/src/product.ts';
 import type { ProtocolError } from '../contracts/src/common.ts';
 import type { RunRecord, RunRecordView } from '../contracts/src/run.ts';
-import type { ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
+import type { PackContextView, ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
 import type { ValidationResult } from '../contracts/src/validation.ts';
 import type { Acceptance } from '../contracts/generated/vocabulary.ts';
 import type { Page, Principal, SourceArtifact } from './records/api.ts';
@@ -76,7 +76,8 @@ export interface LoadedWorkflow {
 }
 
 /** Why forUser had no workflow. null from absence means the version is published, assigned and not withdrawn. */
-export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled';
+/** `uninstalled`: a skill pack version that exists and is not installed on this Hub (installation is Hub-wide, not per user). */
+export type WorkflowAbsence = 'unknown' | 'unassigned' | 'uninstalled' | 'withdrawn' | 'disabled';
 
 /** What the engine needs of the pack registry (provided by runs/packs, consumed by runs/engine and the server). */
 export interface WorkflowStore {
@@ -85,6 +86,8 @@ export interface WorkflowStore {
   publicationOf?(digest: string, space?: string): Promise<string | null>;
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
   forUser(user: Principal, ref: string, space?: string): Promise<LoadedWorkflow | null>;
+  /** Installed skill packages may expose local tools without declaring a workflow method. */
+  skillForTools?(user: Principal, ref: string): Promise<Pick<LoadedWorkflow, 'pack' | 'manifest'> | null>;
   /**
    * Admin-log reason when forUser returned null. Does not extract the pack. null means the version is published, assigned
    * and not withdrawn, so the caller has another reason (for example the manifest has no tools/).
@@ -140,7 +143,10 @@ export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
-  | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
+  | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: InputError };
+
+/** A caller-input problem of a read, with the claim fields its answer carries (D05 R[8]): grounds, qualifier, the missing fact. */
+export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses'>;
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
@@ -204,7 +210,7 @@ export type RunSummary=Pick<RunDetail,'run'|'latest'|'production'|'management'>;
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
   listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
-  /** Absent and forbidden give the same SOURCE_UNAVAILABLE answer with the tool's empty shape. */
+  /** An absent pack or predecessor answers SOURCE_ABSENT, one the user may not use SOURCE_NOT_PERMITTED (D05 R[3]), with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
   /** `args` are the raw arguments of the call: they are stored as received before anything else (W07). */
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<Untraced<z.infer<typeof SubmitResultOutput>>>;
@@ -215,8 +221,16 @@ export interface RunsService {
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
+  /** Decision 104: what a client needs to generate from its own run without an administrator export: the run, its latest
+   * accepted result and that result's submission as stored. Only the runner and administrators; null when absent or forbidden. */
+  exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
+  /**
+   * list_task_packs (decision 113): what the run context of these listed packs would hold now — the lease view of each declared
+   * prefix and the newest device observations; null when none of them declares the leases or observations context.
+   */
+  packContext?(user: Principal, packs: ReadonlyArray<Pick<PackSummary, 'pack' | 'run_context'>>): Promise<PackContextView | null>;
 }
 
 // ---------------------------------------------------------------- read-only listings for the console
@@ -387,5 +401,5 @@ export interface EffectRegistryPort {
 
 /** Pure re-evaluation of named frozen-package checks; it cannot store submissions or spend repair rounds. */
 export interface EffectCheckReplay {
- (input:{run:string;submission:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
+ (input:{run:string;submission:string;result?:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
 }
