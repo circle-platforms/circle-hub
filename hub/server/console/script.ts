@@ -1,4 +1,4 @@
-// Fixed, hash-allowed live enhancement. Automatic reads never count as session activity.
+// Fixed, SRI-pinned live enhancement. Automatic reads never count as session activity.
 // A page selection restarts its subscription; typing, pending forms and open dialogs hold their module.
 export const LIVE_SCRIPT = `(() => {
  let stop = () => {};

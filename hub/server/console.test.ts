@@ -1,3 +1,4 @@
+import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS} from './console/html.ts';
 import {CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE} from './console/assets.ts';
 // The console: every account signs in with its password, never a token (with the Origin a browser derives under the pages' Referrer-Policy), cookie flags, CSRF
@@ -149,10 +150,10 @@ describe('sign-in', () => {
     assert.match(csp, /style-src 'self'(?:;|$)/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.match(csp, /form-action 'self'/);
-    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'only the fixed live and theme scripts by hash');
+    assert.match(csp, /script-src 'nonce-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'response nonce and the bootstrap hash');
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
-    assert.ok(page.body.includes(THEME_TAGS));
-    assert.doesNotMatch(page.body.replace(THEME_TAGS, ''), /<script/i);
+    assert.ok(withoutNonces(page.body).includes(THEME_TAGS));
+    assert.doesNotMatch(withoutNonces(page.body).replace(THEME_TAGS, ''), /<script/i);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     const login = cookieHeader(page, 'circle_hub_login') ?? '';
     assert.match(login, /; Path=\/console\/login; HttpOnly; SameSite=Strict; Max-Age=900$/);
@@ -355,13 +356,13 @@ describe('pages', () => {
     const forbidden = await get(`/console/runs/${run}`, session);
     const absent = await get('/console/runs/run_7zzzzzzzzzzzzzzzzzzzzzzzzz', session);
     assert.equal(forbidden.status, 404);
-    assert.equal(forbidden.body, absent.body);
+    assert.equal(withoutNonces(forbidden.body),withoutNonces(absent.body));
     assert.ok(forbidden.body.includes(NEUTRAL));
     assert.ok(!(await get('/console/runs', session)).body.includes(run), 'a user lists only their own runs');
     for (const path of ['/console/__proto__', '/console/constructor', '/console/knowledge/__proto__', '/console/runs/a/b']) {
       const reply = await get(path, session);
       assert.equal(reply.status, 404, path);
-      assert.equal(reply.body, absent.body, path);
+      assert.equal(withoutNonces(reply.body),withoutNonces(absent.body), path);
     }
     const admin = await signIn(server.admin.token);
     assert.equal((await get(`/console/runs/${run}`, admin)).status, 200, 'admins see every run');
@@ -393,7 +394,7 @@ describe('pages', () => {
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
-    assert.equal(hidden.body, missing.body);
+    assert.equal(withoutNonces(hidden.body),withoutNonces(missing.body));
     assert.equal((await get(`/console/knowledge/diff?from=${ROOT_1}&to=${ROOT_2}`, strangerSession)).status, 404);
     assert.equal((await get('/console/knowledge/product?id=line-a', strangerSession)).status, 404);
   });
@@ -494,7 +495,7 @@ test('full administrator reasons are escaped in console details and unavailable 
 describe('immutable console assets',()=>{
  test('anonymous clients receive exact hashed bytes, immutable caching and conditional GET without a session',async()=>{
   for(const value of [CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE]){
-   const reply=await send(value.path);assert.equal(reply.status,200);assert.equal(reply.body,value.body);
+   const reply=await send(value.path);assert.equal(reply.status,200);assert.equal(withoutNonces(reply.body),withoutNonces(value.body));
    assert.equal(reply.headers['content-type'],value.type);assert.equal(reply.headers['cache-control'],'public, max-age=31536000, immutable');
    assert.equal(reply.headers['set-cookie'],undefined);assert.equal(reply.headers['x-content-type-options'],'nosniff');
    assert.equal(reply.headers['content-length'],String(Buffer.byteLength(value.body)));
@@ -510,7 +511,7 @@ describe('immutable console assets',()=>{
   const user=await person();
   for(const reply of [await send('/console/login'),await send('/console/not-a-page',{headers:{cookie:await signIn(user.token)}})]){
    assert.ok(reply.body.includes(`href="${CONSOLE_CSS.path}" integrity="${CONSOLE_CSS.integrity}"`));
-   assert.ok(reply.body.includes(THEME_TAGS));assert.doesNotMatch(reply.body,/<style\b|\sstyle=|\sonclick=/i);
+   assert.ok(withoutNonces(reply.body).includes(THEME_TAGS));assert.doesNotMatch(reply.body,/<style\b|\sstyle=|\sonclick=/i);
    assert.doesNotMatch(String(reply.headers['content-security-policy']),/unsafe|\*/);
   }
  });

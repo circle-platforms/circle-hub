@@ -435,7 +435,8 @@ the ordering explanation is a title hint. The walkthrough task page records each
 Server-rendered HTML uses only fixed same-origin assets under `/console/assets/<sha256>.css|js`. The in-memory
 allowlist serves exact UTF-8 bytes without authentication, session activity or database reads, with SRI, ETag, nosniff,
 GET/HEAD and one-year immutable caching; unknown paths and query variants are not files. Pages allow `style-src 'self'`
-and only three fixed script hashes (deferred theme/interactions, optional live module, tiny inline pre-paint bootstrap),
+and a fresh 144-bit response nonce on the fixed external theme/interactions and live tags, plus the tiny inline
+pre-paint bootstrap hash. External scripts keep SRI; authorization does not depend on external CSP hash-source support,
 with `default-src 'none'`, no unsafe-inline/eval, `connect-src 'self'`, `img-src 'self'`, `form-action 'self'`,
 `frame-ancestors 'none'` and `base-uri 'none'`. Login, setup, authorization and error pages share the stylesheet/bootstrap;
 only live pages load the live module. The bootstrap restores storage with system fallback before styles can paint.
@@ -547,7 +548,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   connections page (column 近 24 小时读取) and the overview's systems card show it, naming the window; `partial` reads
   “至少 N 次”, and null 暂不可用.
 - **Live updates** (`console/live.ts`, decision 78; owner-confirmed item 7: no build step, so the script is an inline
-  JavaScript module allowed by its hash): `GET /console/api/stream[?events=a,b]` is a server-sent event stream on the
+  JavaScript module allowed by its response nonce and pinned by SRI): `GET /console/api/stream[?events=a,b]` is a server-sent event stream on the
   pages' session (401 in JSON without one, 400 for an unknown event name; `retry: 5000`; a heartbeat every 25 s that
   re-authenticates the session's token, so a revoked token, a disabled account or a closed session ends the stream; at
   most 4 streams per session and 200 in all, the excess 429; `close()` ends every stream before the app drains its

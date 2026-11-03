@@ -1074,3 +1074,7 @@ Claude 转交独立审查（针对 `54b6649c`）：未发现授权回归。确�
 参数键与延迟调用现在使用同一份调用时快照：plain JSON 校验/键生成后立即复制参数，再把副本交给微任务和 find/count 批次及其 scalar fallback。无效参数与显式事务仍走原始非缓存路径；不缓存跨请求授权。新增回归先复现 echo 与 find 的 alice → bob 污染，再验证嵌套数组、循环复用查询、count 索引、泛型 findMany、原生批次与 fallback，以及后续同键读取。`memoReadValue` 的 loader 是可信控制流，其捕获输入由调用方冻结；引擎 queryRead 原有完整快照保留。
 
 find 的键现覆盖全部经校验的查询字段，不再只取六项后执行完整对象。已知默认值仍归一化，顶层字段顺序固定；同一个归一化快照用于 key、原生批次与 fallback。未来 JSON 字段回归先复现不同 subject 的键碰撞，再验证字段区分与已知默认值/成员顺序仍共用读取，不引入无关重复查询。
+
+CSP 补充采用逐响应 nonce：在统一 sendHtml 边界为两个固定外部 SRI script 标签及 script-src 加入 18 个密码学随机字节（144 bit），引导脚本仍按固定哈希在样式前执行。外部脚本不再依赖 CSP3 对 external hash-source 的支持，也未加入 script-src self/unsafe-inline/eval。CSS、资源字节/路径/缓存与授权页的 form-action 目标保持原规则；登录、设置、错误页同样处理。回归固定 nonce 轮换、header/tag 一致、长度、SRI、引导顺序、授权回调和缓存资源字节；原“无权/不存在”内容相等性只排除 nonce 熵，其余字节仍比较。探针仍核固定摘要路径及 SRI，新增当前响应 nonce 校验，并保持相同内容的证据摘要稳定。
+
+nonce 方案在同样的临时 loopback Hub / 合成会话及隔离浏览器目录上复核：Chromium 155.0.8059.84、WebKit 26.5、Firefox 157.0 均通过主题切换、14 天时间范围的局部导航（保留原 document）、实时订阅和事件后刷新；正常阶段 CSP 违规与 pageerror 均为 0。另主动追加无授权内联脚本与携带上次登录响应 nonce 的外部脚本，三个引擎均拦截。WebKit 截图工具自身会注入临时样式并产生 style-src 事件，因此截图放在应用策略验证之后，未放宽 style-src 或忽略应用事件。定向 CSP/页面检查 94 通过，补充 nonce/证据摘要/搜索/投影回归 17 通过；全量及最终重测继续在后文记录。

@@ -107,10 +107,11 @@ function externalAddresses(body:string,scriptingEnabled:boolean):number {
   return count;
 }
 
-/** A hash alone never allows an arbitrary URL: external scripts also bind path, SRI and empty element text. */
+/** A hash alone never allows an arbitrary URL: external scripts also bind path, SRI, the response nonce and empty element text. */
 function allowedScripts(body: string, csp: string): number {
   const directive = csp.split(';').map((part) => part.trim()).find((part) => /^script-src\s/i.test(part)) ?? '';
   const hashes = new Set([...directive.matchAll(/'sha256-([A-Za-z0-9+/=]+)'/g)].map((match) => match[1]));
+  const nonces=new Set([...directive.matchAll(/'nonce-([A-Za-z0-9+/=]+)'/g)].map(match=>match[1]));
   let count = 0;
   const pending:DefaultTreeAdapterMap['node'][]=[parse(body)];
   while(pending.length){
@@ -123,7 +124,7 @@ function allowedScripts(body: string, csp: string): number {
     const digest=/^\/console\/assets\/([a-f0-9]{64})\.js$/.exec(src)?.[1];
     if(!digest||text!=='')continue;
     const hash=Buffer.from(digest,'hex').toString('base64');
-    if(attrs.get('integrity')===`sha256-${hash}`&&hashes.has(hash))count++;
+    if(attrs.get('integrity')===`sha256-${hash}`&&(hashes.has(hash)||nonces.has(attrs.get('nonce')??'')))count++;
   }
   return count;
 }
@@ -133,6 +134,9 @@ export function summarizePage(body: string, csp = ''): PageMetrics {
   // Session nonces are not page content; leave every other byte in the evidence digest unchanged.
   const stableBody=body.replace(/<input\b[^>]*>/gi,tag=>/(?:\s)name\s*=\s*["']csrf["']/i.test(tag)
     ? tag.replace(/(\bvalue\s*=\s*)(["'])(.*?)\2/i,(_all,prefix:string,quote:string)=>`${prefix}${quote}[csrf]${quote}`) : tag);
+  const sources=csp.split(';').map(part=>part.trim()).find(part=>/^script-src\s/i.test(part))??'';
+  const nonces=new Set([...sources.matchAll(/'nonce-([A-Za-z0-9+/=]+)'/g)].map(match=>match[1]));
+  const content=stableBody.replace(/<script\b[^>]*>/gi,tag=>tag.replace(/\s+nonce=(["'])([^"']*)\1/gi,(all,quote,value)=>nonces.has(value)?'':all));
   return {
     scripts: (body.match(/<script\b/gi) ?? []).length - allowedScripts(body, csp),
     externalAddresses: Math.max(externalAddresses(body,true),externalAddresses(body,false)),
@@ -140,7 +144,7 @@ export function summarizePage(body: string, csp = ''): PageMetrics {
       const content = match[1].replace(/<thead\b[^>]*>[\s\S]*?<\/thead>/gi, '');
       return [...content.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].filter((row) => /<td\b/i.test(row[1])).length;
     }),
-    sha256: createHash('sha256').update(stableBody, 'utf8').digest('hex').slice(0, 12),
+    sha256: createHash('sha256').update(content, 'utf8').digest('hex').slice(0, 12),
   };
 }
 

@@ -100,7 +100,7 @@ test('the CSP pins every script by hash and permits only the same-origin stylesh
   const themeHash = createHash('sha256').update(THEME_BOOTSTRAP, 'utf8').digest('base64');
   assert.equal(THEME_SCRIPT_HASH, themeHash);
   const scriptSrc = /script-src ([^;]*)/.exec(CONTENT_SECURITY_POLICY)?.[1]?.trim();
-  assert.equal(scriptSrc, `'${CONSOLE_LIVE.integrity}' '${CONSOLE_THEME.integrity}' 'sha256-${themeHash}'`);
+  assert.equal(scriptSrc, `'sha256-${themeHash}'`);
   assert.ok(CONTENT_SECURITY_POLICY.includes("connect-src 'self'"));
   assert.doesNotMatch(CONTENT_SECURITY_POLICY, /unsafe|\*/);
   const themeOnly = (doc: string, label: string) => {

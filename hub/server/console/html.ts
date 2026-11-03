@@ -3,7 +3,7 @@
 // Content-Security-Policy. Dynamic values only ever go into element text or double-quoted attributes; links are built
 // from fixed paths and encoded query parameters. Every page of a signed-in account has the side navigation of the design
 // canvas; all pages have the theme script, and only pages with live modules have the live script.
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { KnowledgeSearchScopeSchema, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { LiveEventName } from './live.ts';
 import { LIVE_SCRIPT } from './script.ts';
@@ -103,23 +103,31 @@ export function pre(value: unknown): Html {
 
 export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
 export const THEME_SCRIPT_HASH = createHash('sha256').update(THEME_BOOTSTRAP, 'utf8').digest('base64');
-export const THEME_TAGS=`<script data-console-theme>${THEME_BOOTSTRAP}</script><script defer src="${CONSOLE_THEME.path}" integrity="${CONSOLE_THEME.integrity}" crossorigin="anonymous"></script>`;
+const THEME_RUNTIME_TAG=`<script defer src="${CONSOLE_THEME.path}" integrity="${CONSOLE_THEME.integrity}" crossorigin="anonymous"></script>`;
+export const THEME_TAGS=`<script data-console-theme>${THEME_BOOTSTRAP}</script>${THEME_RUNTIME_TAG}`;
 export const LIVE_TAG=`<script type="module" src="${CONSOLE_LIVE.path}" integrity="${CONSOLE_LIVE.integrity}" crossorigin="anonymous"></script>`;
 
 /**
- * No framing or third-party assets: the fixed same-origin stylesheet, scripts pinned by SRI/CSP hashes, its event
+ * No framing or third-party assets: the fixed same-origin stylesheet, external scripts pinned by SRI and a response nonce, the hash-allowed bootstrap, its event
  * stream and page fetches to this server, the console's own icon (favicon.svg) and forms to this console.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "style-src 'self'",
-  `script-src '${CONSOLE_LIVE.integrity}' '${CONSOLE_THEME.integrity}' 'sha256-${THEME_SCRIPT_HASH}'`,
+  `script-src 'sha256-${THEME_SCRIPT_HASH}'`,
   "connect-src 'self'",
   "img-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
 ].join('; ');
+
+/** Final response boundary: grant this response's nonce only to our two fixed SRI script tags. */
+export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):{text:string;policy:string}{
+ const nonce=randomBytes(18).toString('base64');
+ const tag=(source:string)=>source.replace('<script ',`<script nonce="${nonce}" `);
+ return {text:body.text.replaceAll(THEME_RUNTIME_TAG,tag(THEME_RUNTIME_TAG)).replaceAll(LIVE_TAG,tag(LIVE_TAG)),policy:policy.replace('script-src ',`script-src 'nonce-${nonce}' `)};
+}
 
 /** The eight places; only the current place may expand its authorized navigation. */
 export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings';

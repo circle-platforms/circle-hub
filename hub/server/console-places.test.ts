@@ -1,3 +1,4 @@
+import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // The seven places of the redesigned console (proposal decisions 3 and 6 of 2026-10-31) over HTTP with the fake services:
 // every page of an administrator and of a member answers with the side navigation, interface terms only, no style attribute
@@ -94,7 +95,7 @@ async function runWithResult(user: TestUser): Promise<string> {
 function assertPage(reply: Reply, path: string): void {
   assert.equal(reply.status, 200, `${path}: ${reply.body.slice(0, 300)}`);
   assert.match(String(reply.headers['content-security-policy']), /default-src 'none'/, path);
-  assert.doesNotMatch(reply.body.replace(LIVE_TAG, '').replace(THEME_TAGS, ''), /<script/i, path);
+  assert.doesNotMatch(withoutNonces(reply.body).replace(LIVE_TAG, '').replace(THEME_TAGS, ''), /<script/i, path);
   assert.doesNotMatch(reply.body, /\sstyle=/i, `${path}: a style attribute would be refused by the CSP`);
   assert.match(reply.body, /<nav class="ch-nav" aria-label="主导航">/, path);
   for (const place of ['总览', '任务', '知识库', uiLabelOf('pack_kind', 'workflow'), '连接', '记录', '团队', '设置']) assert.ok(reply.body.includes(`<span>${place}</span>`), `${path}: ${place}`);
@@ -366,11 +367,11 @@ test('contextual system and call inspectors only select rows in the authorized p
  assert.equal(records.status,200);assert.match(records.body,/aria-label="详情"/);assert.match(records.body,/class="is-selected" aria-selected="true"/);
  assert.ok(records.body.includes('run='+run+'&amp;call='));assert.match(records.body,/返回记录/);
  const hidden=await get('/console/records?call='+call.digest,other),missing=await get('/console/records?call='+'0'.repeat(64),other);
- assert.equal(hidden.status,404);assert.equal(hidden.body,missing.body);
+ assert.equal(hidden.status,404);assert.equal(withoutNonces(hidden.body),withoutNonces(missing.body));
  const [resource]=await server.deps.resources.list(server.admin.principal);
  assert.equal((await get('/console/connections?system='+encodeURIComponent(resource.id),admin)).status,200);
  const refused=await get('/console/connections?system='+encodeURIComponent(resource.id),other),absent=await get('/console/connections?system=synthetic-missing',other);
- assert.equal(refused.status,404);assert.equal(refused.body,absent.body);
+ assert.equal(refused.status,404);assert.equal(withoutNonces(refused.body),withoutNonces(absent.body));
  const complete=await get('/console/runs/'+run+'?view=record',await signIn(author.token));
  assert.match(complete.body,/data-without-inspector/);assert.match(complete.body,/完整记录/);assert.doesNotMatch(complete.body,/class="ch-app[^\"]*is-detail/);
 });
@@ -391,7 +392,7 @@ test('member and Circle selection moves exact administrative targets to danger c
  const selected=await get('/console/team/'+other.user.id,admin);assert.match(selected.body,/aria-selected="true"/);assert.match(selected.body,/class="ch-btn ch-btn--danger" href="#cmd-user-disable-/);
  const circle=await get('/console/team?circle='+token.id,admin);assert.match(circle.body,/class="ch-btn ch-btn--danger" href="#cmd-token-revoke-/);assert.ok(circle.body.includes('circle-hub token revoke '+token.id));
  assert.equal((await server.records.principals.get(other.user.id))?.disabled,false);assert.equal((await server.records.principals.tokens(other.user.id)).find(t=>t.id===token.id)?.revoked_at,null);
- for(const path of ['/console/team','/console/connections']){const hidden=await get(path+'?circle='+token.id,mine),absent=await get(path+'?circle=synthetic-missing',mine);assert.equal(hidden.status,404);assert.equal(hidden.body,absent.body);}
+ for(const path of ['/console/team','/console/connections']){const hidden=await get(path+'?circle='+token.id,mine),absent=await get(path+'?circle=synthetic-missing',mine);assert.equal(hidden.status,404);assert.equal(withoutNonces(hidden.body),withoutNonces(absent.body));}
 });
 
 test('record periods constrain the list and chart together, and an unresolved member never contributes other accounts to statistics',async t=>{

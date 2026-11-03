@@ -1,3 +1,4 @@
+import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 import {THEME_BOOTSTRAP} from './console/theme.ts';
 // The console's live updates over HTTP with the fake services: GET /console/api/stream on the session of the pages, events
@@ -401,26 +402,27 @@ describe('the module script', () => {
     assert.match(scripts[0][0], /^<script data-console-theme>/);
     assert.equal(scripts[0][1], THEME_BOOTSTRAP);
     assert.equal(createHash('sha256').update(scripts[0][1]).digest('base64'), THEME_SCRIPT_HASH);
-    assert.ok(overview.body.includes(THEME_TAGS));
+    assert.ok(withoutNonces(overview.body).includes(THEME_TAGS));
     assert.equal(scripts[1][1], '');
-    assert.equal(scripts[2][0], LIVE_TAG);
+    assert.equal(withoutNonces(scripts[2][0]), LIVE_TAG);
     const hash = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
     assert.equal(hash, SCRIPT_HASH);
     const csp = String(overview.headers['content-security-policy']);
-    assert.equal(csp, CONTENT_SECURITY_POLICY);
-    assert.ok(csp.includes(`script-src 'sha256-${hash}'`));
+    assert.equal(csp.replace(/ 'nonce-[A-Za-z0-9+/=]+'/g,''), CONTENT_SECURITY_POLICY);
     assert.ok(csp.includes(`'sha256-${THEME_SCRIPT_HASH}'`));
+    const nonce=/script-src 'nonce-([A-Za-z0-9+/]{24})'/.exec(csp)?.[1];assert.ok(nonce);
+    assert.ok(scripts.slice(1).every(script=>script[0].includes(`nonce="${nonce}"`)));
     assert.ok(csp.includes("connect-src 'self'"));
     assert.doesNotMatch(csp, /unsafe|\*/);
     assert.match(overview.body, /<p class="live-state" id="live-state" role="status" hidden><\/p>/);
     assert.match(overview.body, /data-live="task\.updated"/);
     const records = await send(server.port, '/console/records', { headers: { cookie: session } });
     assert.equal(records.status, 200);
-    assert.doesNotMatch(records.body.replace(THEME_TAGS, ''), /<script/i);
-    assert.ok(records.body.includes(THEME_TAGS));
+    assert.doesNotMatch(withoutNonces(records.body).replace(THEME_TAGS, ''), /<script/i);
+    assert.ok(withoutNonces(records.body).includes(THEME_TAGS));
     const login = await send(server.port, '/console/login');
-    assert.doesNotMatch(login.body.replace(THEME_TAGS, ''), /<script/i);
-    assert.ok(login.body.includes(THEME_TAGS));
+    assert.doesNotMatch(withoutNonces(login.body).replace(THEME_TAGS, ''), /<script/i);
+    assert.ok(withoutNonces(login.body).includes(THEME_TAGS));
   });
 
   test('the script parses as a JavaScript module and names only the stream of this console', async () => {

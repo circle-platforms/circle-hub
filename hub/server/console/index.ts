@@ -24,7 +24,7 @@ import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPag
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { handleApiWrite } from './api-write.ts';
-import { CONTENT_SECURITY_POLICY, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
+import { CONTENT_SECURITY_POLICY, secureConsoleResponse, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
 import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
@@ -83,13 +83,14 @@ const HOME = '/console/overview';
 
 function sendHtml(response: ServerResponse, status: number, body: Html, headers: Record<string, string | string[]> = {}): void {
   setCommonHeaders(response);
-  const text = body.text;
+  const custom= headers['content-security-policy'];
+  const secured=secureConsoleResponse(body,typeof custom==='string'?custom:CONTENT_SECURITY_POLICY),text=secured.text;
   response.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
-    'content-security-policy': CONTENT_SECURITY_POLICY,
     'cross-origin-opener-policy': 'same-origin',
     'content-length': String(Buffer.byteLength(text)),
     ...headers,
+    'content-security-policy': secured.policy,
   });
   response.end(text);
 }

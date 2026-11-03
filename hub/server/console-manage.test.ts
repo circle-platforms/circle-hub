@@ -18,6 +18,7 @@ import type { CommandBridge, CommandInput } from './command-bridge.ts';
 import { manifestDigest } from '../runs/api.ts';
 import { ACTIONS } from './console/manage.ts';
 import { NEUTRAL } from './console/pages.ts';
+import { withoutNonces } from './console/testing-security.ts';
 import { issueSetupCode } from './setup-code.ts';
 
 interface User { id: string; name: string; role: 'user' | 'admin'; disabled: boolean; created_at: string }
@@ -431,7 +432,7 @@ test('only the administrator who staged a pack can publish or discard it; any ot
   const unknown = await send('POST', '/console/admin/do/pack-publish', { cookie: dave, body: form({ csrf: daveCsrf, stage: 'x'.repeat(24) }) });
   const foreign = await send('POST', '/console/admin/do/pack-publish', { cookie: dave, body: form({ csrf: daveCsrf, stage: id }) });
   assert.equal(foreign.status, 404);
-  assert.equal(foreign.body.replace(/name="csrf" value="[^"]+"/g, ''), unknown.body.replace(/name="csrf" value="[^"]+"/g, ''), 'someone else\'s stage reads like an unknown one');
+  assert.equal(withoutNonces(foreign.body).replace(/name="csrf" value="[^"]+"/g, ''), withoutNonces(unknown.body).replace(/name="csrf" value="[^"]+"/g, ''), 'someone else\'s stage reads like an unknown one');
   assert.equal((await send('POST', '/console/admin/do/pack-discard', { cookie: dave, body: form({ csrf: daveCsrf, stage: id }) })).status, 404);
   assert.ok(!(await send('GET', '/console/operations/pack', { cookie: dave })).body.includes(id), 'and is not listed for them');
   assert.equal(calls.length, 1, 'only the check ran');

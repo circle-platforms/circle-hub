@@ -1,3 +1,4 @@
+import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS} from './console/html.ts';
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
@@ -101,7 +102,7 @@ test('production visibility, neutral refusals, admin and list filters', async ()
   const missing = await send(`/console/results/run_${'z'.repeat(26)}`, cookie);
   for (const id of [other, review, 'bad', `run_${'z'.repeat(26)}`]) {
     const page = await send(`/console/results/${id}`, cookie);
-    assert.equal(page.status, 404); assert.equal(page.body, missing.body); assert.ok(page.body.includes(NEUTRAL));
+    assert.equal(page.status, 404); assert.equal(withoutNonces(page.body),withoutNonces(missing.body)); assert.ok(page.body.includes(NEUTRAL));
   }
   const list = await send('/console/results?pack=facts&build=synthetic-10.7', cookie);
   assert.equal(list.status, 200); assert.ok(list.body.indexOf(own) < list.body.indexOf(earlier)); assert.ok(list.body.includes(own)); assert.ok(!list.body.includes(other)); assert.ok(!list.body.includes(review));
@@ -116,7 +117,7 @@ test('security gates and immediate revocation apply to result pages', async () =
   const user = await server.createUser('安全'); const id = await start(user); const cookie = await login(user);
   const path = `/console/results/${id}`; const page = await send(path, cookie);
   assert.equal(page.status, 200); assert.match(String(page.headers['content-security-policy']), /default-src 'none'/);
-  assert.match(page.body, /&lt;script&gt;合成名称&lt;\/script&gt;/); assert.doesNotMatch(page.body.replace(THEME_TAGS, ''), /<script\b|(?:src|href)="https?:/i);
+  assert.match(page.body, /&lt;script&gt;合成名称&lt;\/script&gt;/); assert.doesNotMatch(withoutNonces(page.body).replace(THEME_TAGS, ''), /<script\b|(?:src|href)="https?:/i);
   assert.equal((await send(path, cookie, 'POST')).status, 405);
   assert.equal((await send(path, cookie, 'GET', '', { host: '192.0.2.1' })).status, 403);
   assert.equal((await send(path, cookie, 'GET', '', { origin: 'http://192.0.2.1' })).status, 403);

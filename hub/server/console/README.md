@@ -72,5 +72,11 @@ the public token metadata for their already authorized member IDs, then resolve 
 devices. Disabled owners and revoked devices are still filtered at the original view boundary; Inspector actions and
 confirmations are unchanged. Workflow audience names share one current member list per request. Both page GET and
 read-only JSON GET own a read scope; POST and the long-lived event stream do not inherit one. Synthetic regressions
-include an ordinary reader's own-device boundary and immediate next-request revocation. Inline styles, scripts and
-strict CSP are unchanged (P2 deferred).
+include an ordinary reader's own-device boundary and immediate next-request revocation.
+
+Fixed content-hashed CSS/JS assets retain immutable caching and SRI. At sendHtml, each HTML response gets a fresh
+144-bit nonce on its two recognized external script tags and in script-src; the pre-paint inline bootstrap keeps its
+fixed hash. No script-src self/unsafe-inline/eval is added. Styles, login/error pages and authorized form targets remain
+intact. Template comparisons omit only nonce entropy, while policy regressions verify exact header/tag matching,
+rotation, SRI, and rejection of absent/stale nonces. The page probe accepts only fixed asset paths with matching SRI
+and an allowed hash or response nonce, retaining unknown script/nonce bytes in evidence.
