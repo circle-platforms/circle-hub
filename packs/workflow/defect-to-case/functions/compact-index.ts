@@ -37,11 +37,51 @@ export interface CompactCaseIndex {
   sourceTruncated?: boolean;
   sourceSkipped?: number;
   invalidMetadata?: boolean;
+  /** The source view's unknown_entries: cases left out because a fact the query needs is unknown. Absent when none. */
+  unknownEntries?: number;
+  /** The source view says those unknown entries are the only reason it is truncated (index-view unknown_only). */
+  unknownOnly?: true;
+  /** The source view's notes, verbatim, kept with unknownOnly: they name the missing fact and the next action. */
+  sourceNotes?: string[];
+  /** The source view's unknown_entries or unknown_only is malformed or contradicts its truncated flag. */
+  invalidUnknown?: true;
   notes: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export interface UnknownEntriesFacts {
+  /** A positive count when the view carries a well-formed unknown_entries, else null. */
+  entries: number | null;
+  /** True only for a truncated view whose unknown entries are the only reason it is truncated. */
+  only: boolean;
+  /** A present field is malformed: unknown_entries not a positive integer or on a view that is not truncated, unknown_only not true or without a count. */
+  invalid: boolean;
+}
+
+/**
+ * Reads index-view@1 unknown_entries and unknown_only. Absent fields are the old view; notes are never read here.
+ * unknown_only says nothing else was cut, so the listed keys and entries must be all the view counts; a view whose lists
+ * fall short of total_keys/total_entries or that names cut keys is not taken as truncated by unknown entries alone.
+ */
+export function unknownEntriesOf(view: unknown): UnknownEntriesFacts {
+  const model = isRecord(view) ? view : {};
+  const hasEntries = Object.hasOwn(model, 'unknown_entries');
+  const hasOnly = Object.hasOwn(model, 'unknown_only');
+  const count = model.unknown_entries;
+  const entries = hasEntries && Number.isSafeInteger(count) && (count as number) > 0 ? (count as number) : null;
+  const invalid = (hasEntries && (entries === null || model.truncated !== true)) || (hasOnly && (model.unknown_only !== true || entries === null));
+  const keys = isRecord(model.keys) ? model.keys : null;
+  const listed = new Set(keys === null ? [] : Object.values(keys).flatMap((digests) => (Array.isArray(digests) ? digests.filter((digest) => typeof digest === 'string') : [])));
+  const uncut = keys !== null && model.total_keys === Object.keys(keys).length && model.total_entries === listed.size && (!Array.isArray(model.cut_keys) || model.cut_keys.length === 0);
+  return { entries: invalid ? null : entries, only: !invalid && model.unknown_only === true && uncut, invalid };
+}
+
+/** The source view's notes as people read them: kept verbatim, never parsed. */
+function notesOf(model: Record<string, unknown>): string[] {
+  return Array.isArray(model.notes) ? model.notes.filter((note): note is string => typeof note === 'string') : [];
 }
 
 export function isCompactIndex(value: unknown): value is CompactCaseIndex {
@@ -118,6 +158,7 @@ export function buildCompactIndex(
   // A present field is authoritative, including an empty array. Malformed fields cannot fall back to the URI.
   const only = hasOnly ? onlyField ?? [] : onlyOfExternal(external);
   const sourceTruncated = model.truncated === true;
+  const unknown = unknownEntriesOf(model);
   const returnedKeys = new Set(isRecord(model.keys) ? Object.keys(model.keys).map(normalizeCommand) : []);
   const sourceSkipped = typeof model.skipped === 'number' ? model.skipped : 0;
   // Complete views omit requested keys with no cases; only incomplete coverage makes absence unknown.
@@ -252,7 +293,7 @@ export function buildCompactIndex(
 
   let dropped = total - keptCount;
   // Neither narrowing nor an explicit request proves that an omitted bucket is empty.
-  let complete = !invalidMetadata && dropped === 0 && !sourceTruncated && sourceSkipped === 0 && missingKeys.length === 0;
+  let complete = !invalidMetadata && !unknown.invalid && dropped === 0 && !sourceTruncated && sourceSkipped === 0 && missingKeys.length === 0;
 
   const notes: string[] = [];
   if (!hasOnly || !hasCutKeys) {
@@ -277,9 +318,13 @@ export function buildCompactIndex(
       ? `源视图 cut_keys 标明 ${cappedKeys.length} 个键的条目被每键上限截断`
       : `${cappedKeys.length} 个键的条目正好列到每键上限 ${MAX_INDEX_PER_KEY} 个，可能被截断`);
   }
-  if (missingKeys.length > 0) notes.push(`源视图缺少请求的键：${missingKeys.join('、')}；请重新读取这些键`);
+  if (unknown.invalid) notes.push('源视图的 unknown_entries 或 unknown_only 字段形状无效或与 truncated 矛盾，无法证明索引完整');
+  if (missingKeys.length > 0 && !unknown.only) notes.push(`源视图缺少请求的键：${missingKeys.join('、')}；请重新读取这些键`);
   if (sourceTruncated) {
-    notes.push('源用例索引已被截断');
+    // Unknown entries are cases whose facts are missing, not cases that do not exist: never counted as zero.
+    notes.push(unknown.only
+      ? `源用例索引只因 ${unknown.entries} 个用例缺查询所需的事实而截断，这些用例未列入，不能当作没有用例${missingKeys.length > 0 ? `；请求的键 ${missingKeys.join('、')} 在已列出的用例里没有条目` : ''}`
+      : '源用例索引已被截断');
   }
 
   const candidate: CompactCaseIndex = {
@@ -296,6 +341,9 @@ export function buildCompactIndex(
     sourceTruncated,
     sourceSkipped,
     invalidMetadata,
+    ...(unknown.entries !== null ? { unknownEntries: unknown.entries } : {}),
+    ...(unknown.only ? { unknownOnly: true as const, sourceNotes: notesOf(model) } : {}),
+    ...(unknown.invalid ? { invalidUnknown: true as const } : {}),
     notes,
   };
 

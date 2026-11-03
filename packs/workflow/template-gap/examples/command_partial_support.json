@@ -297,7 +297,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234"
         },
@@ -323,7 +324,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2"
         },
@@ -349,7 +351,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80"
         },
@@ -375,7 +378,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f"
         },
@@ -401,7 +405,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
         },
@@ -427,7 +432,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf"
         },
@@ -453,7 +459,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60"
         },
@@ -479,7 +486,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210"
         },
@@ -505,7 +513,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287"
         }
@@ -516,7 +525,8 @@
         "commands",
         "command_identities",
         "title",
-        "path_labels"
+        "path_labels",
+        "command_tree_root"
       ],
       "only": [
         "900001"
@@ -826,7 +836,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234"
         },
@@ -852,7 +863,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2"
         },
@@ -878,7 +890,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80"
         },
@@ -904,7 +917,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f"
         },
@@ -930,7 +944,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
         },
@@ -956,7 +971,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf"
         },
@@ -982,7 +998,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60"
         },
@@ -1008,7 +1025,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210"
         },
@@ -1034,7 +1052,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287"
         }
@@ -1045,7 +1064,8 @@
         "commands",
         "command_identities",
         "title",
-        "path_labels"
+        "path_labels",
+        "command_tree_root"
       ],
       "only": [
         "900001"
@@ -1659,7 +1679,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80": {
@@ -1685,7 +1706,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287": {
@@ -1711,7 +1733,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234": {
@@ -1737,7 +1760,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210": {
@@ -1763,7 +1787,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf": {
@@ -1789,7 +1814,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60": {
@@ -1815,7 +1841,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f": {
@@ -1841,7 +1868,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4": {
@@ -1867,7 +1895,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           }
         },
@@ -1880,7 +1909,7 @@
           "未归位条目 3 个，标在根下"
         ]
       },
-      "index_reference": "src:8eb40519c78309e5cf56389ba07f7b5fa9862d3499825eda5ae0eada2aae4e9d",
+      "index_reference": "src:a683970c64d17f6a2e39655d4801220df6c2dfed3c0c13959eb3fe7524ca4738",
       "scope": [
         "900001"
       ],
@@ -2503,7 +2532,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80": {
@@ -2529,7 +2559,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287": {
@@ -2555,7 +2586,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234": {
@@ -2581,7 +2613,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210": {
@@ -2607,7 +2640,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf": {
@@ -2633,7 +2667,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60": {
@@ -2659,7 +2694,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f": {
@@ -2685,7 +2721,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           },
           "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4": {
@@ -2711,7 +2748,8 @@
                   "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                   "parameters": []
                 }
-              ]
+              ],
+              "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
             }
           }
         },
@@ -2724,7 +2762,7 @@
           "未归位条目 3 个，标在根下"
         ]
       },
-      "index_reference": "src:86317a494c040e9695822bb3e7882701bb68321df4c5d1e77e2aa60de547246e",
+      "index_reference": "src:06838797e1ca9dd68e505ff2a7c4254b81eade16cc0b18614890f9c558cb7542",
       "scope": [
         "900001"
       ],
