@@ -90,7 +90,7 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
  assert.equal(confirmed.status,303,confirmed.body);
  const history=await browser.get(String(confirmed.headers.location));assert.match(history.body,/SHARE_UNVERIFIED/);assert.match(history.body,/已拒收/);
  const receipts=await hub.hub.knowledge.spaces!.shareHistory(owner.principal);
- assert.equal(receipts.items.find(receipt=>receipt.source.entry===second.entry)?.status,'merged','another selected entry is rechecked and merged independently');
+ assert.equal(receipts.items.find(receipt=>receipt.source?.entry===second.entry)?.status,'merged','another selected entry is rechecked and merged independently');
 });
 
 test('workflow grants reuse the dialog, hide unavailable team publication and expose no personal external actions', {skip},async()=>{

@@ -104,7 +104,10 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
   const notices=await criterionNotices(ctx,stored.body);
   const withdrawn=await withdrawalState(ctx,results.map(row=>row.body),user,true);
-  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  // The reader may already read this run; the purge facts name only its own sources, never another account's content.
+  const purged=await ctx.deps.records.personalPayloads?.purgedRunOriginals(stored.digest)??[];
+  const grounds_purged=purged.length?stored.body.sources.flatMap(source=>{const hit=purged.find(row=>row.artifact===source.artifact);return hit?[{reference:source.reference,at:hit.at}]:[];}):[];
+  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 

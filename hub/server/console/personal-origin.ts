@@ -9,6 +9,8 @@ export function personalOriginCleared(ctx:PageContext,root:string):Promise<boole
  let found=cache.get(root);if(!found){found=ctx.deps.records.personalPayloads?.cleared(root)??Promise.resolve(false);cache.set(root,found);}return found;
 }
 export const clearedPersonalFolder=()=>uiLabelOf('sync_field','cleared_personal_folder');
+/** A single-item share (owner ruling 1, issue 141) came from a client-local entry the Hub never held. */
+export const singleItemOrigin=()=>uiLabelOf('sync_field','single_item_share');
 export async function originReference(ctx:PageContext,reference:string){
  const parsed=parseReference(reference);
  return parsed.scheme==='tree'&&await personalOriginCleared(ctx,parsed.root)?clearedPersonalFolder():code(reference);

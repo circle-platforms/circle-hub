@@ -1,10 +1,10 @@
 // Personal HTTP sync contracts. These schemas are deliberately absent from MCP tool inputs.
 import {z} from 'zod';
 import {Sha256,IsoTime,Versioned,PackVersion} from './common.ts';
-import {Ground} from './reference.ts';
+import {Ground,TreePath} from './reference.ts';
 import {SpaceEntryContent} from './spaces.ts';
 import {PackManifest} from './pack.ts';
-import {SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,MemoryStatusSchema,KnowledgeEntryStatusSchema,PackKindSchema} from '../generated/vocabulary.ts';
+import {SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,MemoryStatusSchema,KnowledgeEntryStatusSchema,KnowledgeShareStatusSchema,PackKindSchema} from '../generated/vocabulary.ts';
 import {PROTOCOL_CODES} from '../generated/protocol.ts';
 export const PERSONAL_SYNC_LIMITS=Object.freeze({objectBytes:8*1024*1024,chunkBytes:1024*1024,batchObjects:64,pageItems:500,sessionSeconds:86400,purgeConfirmationSeconds:600});
 const Id=z.uuid();
@@ -39,7 +39,10 @@ export const PersonalSyncUpload=z.strictObject({schema:z.literal('personal-sync-
 export const PersonalSyncCommit=z.strictObject({schema:z.literal('personal-sync-commit@1'),...Operation,expected_state:Sha256,base_snapshot:Sha256.nullable(),snapshot:Sha256});
 export const PersonalSyncModeCheck=z.strictObject({mode:SyncModeSchema});
 export const PersonalSyncModeChange=z.strictObject({...Operation,mode:SyncModeSchema,expected_state:Sha256,check:Sha256.nullable(),confirm_purge:z.boolean()}).refine(v=>v.mode!==SyncModeSchema.enum.local||(v.confirm_purge&&v.check!==null),'local mode requires a checked purge');
-export const PersonalSyncState=z.strictObject({epoch:Id,mode:SyncModeSchema,status:SyncStatusSchema,state_version:Sha256,snapshot:Sha256.nullable(),last_synced_at:IsoTime.nullable(),used_bytes:z.number().int().nonnegative(),capacity_bytes:z.number().int().nonnegative(),limits:z.strictObject({object_bytes:z.number().int().positive(),batch_bytes:z.number().int().positive(),batch_objects:z.number().int().positive().max(64),page_items:z.number().int().positive().max(500),session_seconds:z.number().int().positive()})});
+export const PersonalSyncState=z.strictObject({epoch:Id,mode:SyncModeSchema,status:SyncStatusSchema,state_version:Sha256,snapshot:Sha256.nullable(),last_synced_at:IsoTime.nullable(),used_bytes:z.number().int().nonnegative(),capacity_bytes:z.number().int().nonnegative(),limits:z.strictObject({object_bytes:z.number().int().positive(),batch_bytes:z.number().int().positive(),batch_objects:z.number().int().positive().max(64),page_items:z.number().int().positive().max(500),session_seconds:z.number().int().positive()}),
+ // Capability `first-sync-notice`: true while no client of this account has ever uploaded, committed, aborted or changed
+ // the mode on this server, in any epoch. A client shows its first-connection notice before the first upload.
+ never_synced:z.boolean().optional()});
 export const PersonalSyncInventory=z.strictObject({snapshot:Sha256,objects:z.array(PersonalSyncDescriptor).max(500),next:Text.max(4000).nullable()});
 export const PersonalSyncTransfer=z.strictObject({objects:z.array(z.strictObject({id:Sha256,bytes_base64:PersonalSyncBase64})).max(64),missing:Batch});
 const Counts=z.strictObject({accepted:z.number().int().nonnegative(),existing:z.number().int().nonnegative(),downloaded:z.number().int().nonnegative(),bytes:z.number().int().nonnegative()});
@@ -67,7 +70,9 @@ export const PERSONAL_SYNC_SCHEMAS={'personal-sync-object@1':PersonalSyncObject,
 
 export const PersonalSyncAbort=z.strictObject({...Operation});
 export const PersonalSyncSessionReply=z.strictObject({session_id:Id,expires_at:IsoTime,state:PersonalSyncState,inventory_cursor:Text.max(4000).nullable()});
-export const PersonalSyncModeImpact=z.strictObject({check:Sha256,expected_state:Sha256,mode:SyncModeSchema,personal_bytes:z.number().int().nonnegative(),directory_grants:z.number().int().nonnegative(),pending_shares:z.number().int().nonnegative().nullable(),team_copies_preserved:z.number().int().nonnegative()});
+export const PersonalSyncModeImpact=z.strictObject({check:Sha256,expected_state:Sha256,mode:SyncModeSchema,personal_bytes:z.number().int().nonnegative(),directory_grants:z.number().int().nonnegative(),pending_shares:z.number().int().nonnegative().nullable(),team_copies_preserved:z.number().int().nonnegative(),
+ // Additive: run-held copies of this epoch's originals that the purge removes, and the runs whose grounds become unavailable.
+ run_held_originals:z.number().int().nonnegative().optional(),affected_runs:z.number().int().nonnegative().optional()});
 Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-abort@1':PersonalSyncAbort,'personal-sync-session-reply@1':PersonalSyncSessionReply,'personal-sync-mode-impact@1':PersonalSyncModeImpact});
 export const PersonalSyncHttpProtocol=z.strictObject({schema:z.literal('personal-sync-http@1'),routes:z.strictObject(Object.fromEntries(Object.entries(PERSONAL_SYNC_HTTP_ROUTES).map(([key,route])=>[key,z.strictObject({method:z.literal(route.method),path:z.literal(route.path)})])))});
 Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-http@1':PersonalSyncHttpProtocol});
@@ -78,7 +83,7 @@ export const PersonalSyncModeResult=z.strictObject({state:PersonalSyncState,rece
 Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-mode-result@1':PersonalSyncModeResult});
 
 /** Capability names a server advertises in its discovery document. A client uses only advertised ones. */
-export const PERSONAL_SYNC_CAPABILITIES=Object.freeze({errorDetail:'error-detail',purgeConfirmation:'purge-confirmation'} as const);
+export const PERSONAL_SYNC_CAPABILITIES=Object.freeze({errorDetail:'error-detail',purgeConfirmation:'purge-confirmation',shareSingleItem:'share-single-item',firstSyncNotice:'first-sync-notice'} as const);
 /** MCP capability names: which tool and argument a client uses for a team-side operation, so it need not hard-code them. */
 export const KNOWLEDGE_MCP_CAPABILITIES=Object.freeze({teamMemoryRead:'team-memory-read',entryShare:'entry-share',memoryShare:'memory-share'} as const);
 const CapabilityName=z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
@@ -95,3 +100,22 @@ export const KnowledgeSyncDiscovery=z.strictObject({
  mcp:z.strictObject({endpoint:HttpUrl,capabilities:z.record(CapabilityName,McpToolUse)}).optional(),
 });
 Object.assign(PERSONAL_SYNC_SCHEMAS,{'knowledge-sync-discovery@1':KnowledgeSyncDiscovery});
+
+/**
+ * Capability `share-single-item`: routes added beside the frozen v1 route table (`http.json` stays unchanged). The
+ * template stays fixed relative to the sync base like every v1 route.
+ */
+export const PERSONAL_SYNC_CAPABILITY_ROUTES={share:{method:'POST',path:'/api/sync/v1/share'}} as const;
+/**
+ * Capability `share-single-item`: share one team-marked entry and only its own sources without a server copy of the
+ * personal space (the account may be in mode `local`). `team_mark: true` repeats the client-local team mark the account
+ * holder set on that item; it is not part of any object and does not change object IDs. `objects` holds exactly the
+ * entry revision `item`, its quotation bytes, and the source revisions and chunks its `source` grounds name.
+ */
+export const PersonalSyncShare=z.strictObject({schema:z.literal('personal-sync-share@1'),...Operation,team_mark:z.literal(true),item:Sha256,path:TreePath,team_path:TreePath.optional(),
+ objects:z.array(z.strictObject({id:Sha256,bytes_base64:PersonalSyncBase64})).min(1).max(PERSONAL_SYNC_LIMITS.batchObjects)}).refine(v=>new Set(v.objects.map(o=>o.id)).size===v.objects.length,'unique objects');
+/** The recorded share receipt: `merged` names the team entry; `rejected` names a registered code. */
+export const PersonalSyncShareResult=z.strictObject({operation_id:Key,epoch:Id,request:Sha256,item_id:Id,object:Sha256,status:KnowledgeShareStatusSchema,
+ code:z.string().refine(s=>Object.hasOwn(PROTOCOL_CODES,s)).nullable(),message:z.string().max(2000),team_root:Sha256.nullable(),reference:Ground.nullable(),record:Sha256,at:IsoTime})
+ .refine(v=>v.status==='merged'?v.code===null&&v.reference!==null&&v.team_root!==null:v.code!==null&&v.reference===null&&v.team_root===null,'merged receipts name the team entry; rejected receipts a code');
+Object.assign(PERSONAL_SYNC_SCHEMAS,{'personal-sync-share@1':PersonalSyncShare,'personal-sync-share-result@1':PersonalSyncShareResult});

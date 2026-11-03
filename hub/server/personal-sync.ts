@@ -2,14 +2,15 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncError,personalSyncErrorStatus,personalSyncErrorDetail} from '../../contracts/src/sync.ts';
+import {PERSONAL_SYNC_HTTP_ROUTES,PERSONAL_SYNC_CAPABILITY_ROUTES,PersonalSyncError,personalSyncErrorStatus,personalSyncErrorDetail} from '../../contracts/src/sync.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {ActionKindSchema,SyncModeSchema} from '../../contracts/generated/vocabulary.ts';
 import {RecordsError,parseStrictJson,sha256Hex,type Principal} from '../records/api.ts';
 import {KnowledgeError} from '../knowledge/api.ts';
 import type {ServerDeps} from './api.ts';
 import {readBody,mediaTypeOf,setCommonHeaders,originAllowed,type BodyBudget} from './http.ts';
-const routes=PERSONAL_SYNC_HTTP_ROUTES;
+// The frozen v1 table plus the capability routes advertised in the discovery document (share-single-item).
+const routes={...PERSONAL_SYNC_HTTP_ROUTES,...PERSONAL_SYNC_CAPABILITY_ROUTES};
 type Route=keyof typeof routes;
 /** Index of the sync audit by request id: entries a commit projects name that request as their session. */
 export const SYNC_AUDIT_REQUEST_KEY='personal.sync.http.request';
@@ -95,6 +96,7 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
    case 'commit':result=await sync.commit(principal,id!,body,requestId);break;
    case 'abort':result=await api.abort(principal,id!,body);break;
    case 'modeCheck':result=await sync.modeCheck(principal,body);break;
+   case 'share':result=await sync.shareItem(principal,body,requestId);break;
    case 'mode':{
     // A Bearer token alone never purges: the owner confirms the recorded request in the console, then the client's
     // identical retry replays the receipt (capability purge-confirmation).
@@ -109,7 +111,7 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
   if(route==='download')counts.bytes=(result as {objects:Array<{bytes_base64:string}>}).objects.reduce((n,o)=>n+Buffer.from(o.bytes_base64,'base64').length,0);
   // Refuse delivery of private batches after purge or token revocation, even when the work completed meanwhile.
   const finalIdentity=await authenticate!.call(deps.records.principals,request.headers.authorization);if(!finalIdentity||finalIdentity.token_id!==identity.token_id){await error(401,'SOURCE_UNAVAILABLE',{'www-authenticate':'Bearer'});return;}
-  if(epoch&&route!=='mode'&&!modeReceipt){const latest=await api.state(principal);if(latest.epoch!==epoch)throw new RecordsError(PROTOCOL_CODES.SYNC_EPOCH_CHANGED.when,{code:'SYNC_EPOCH_CHANGED'});if(latest.mode!==SyncModeSchema.enum.hub)throw new RecordsError(PROTOCOL_CODES.SYNC_MODE_LOCAL.when,{code:'SYNC_MODE_LOCAL'});}
+  if(epoch&&route!=='mode'&&!modeReceipt){const latest=await api.state(principal);if(latest.epoch!==epoch)throw new RecordsError(PROTOCOL_CODES.SYNC_EPOCH_CHANGED.when,{code:'SYNC_EPOCH_CHANGED'});if(route!=='share'&&latest.mode!==SyncModeSchema.enum.hub)throw new RecordsError(PROTOCOL_CODES.SYNC_MODE_LOCAL.when,{code:'SYNC_MODE_LOCAL'});}
   await send(200,result,{},null);
  }catch(cause){
   const code=cause instanceof z.ZodError?'SYNC_OBJECT_INVALID':(cause instanceof RecordsError||cause instanceof KnowledgeError)&&cause.code?cause.code:'SOURCE_RETRYABLE';

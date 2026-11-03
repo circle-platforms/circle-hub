@@ -5,7 +5,7 @@ import {lockActive} from './active-account.ts';
 import {historyUsage,capacityUsage,requireCapacity,chargedBytes,safeBytes,type CapacityUsage} from './capacity.ts';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
-import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
+import { SpaceId, SpaceEntryInput, SpaceEntryContent, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
@@ -25,6 +25,17 @@ const GRANT_KEY = 'knowledge.space.grant';
 const SOURCE_KEY = 'knowledge.space.source';
 const ATTRIBUTION_KEY = 'knowledge.source.attribution.capture';
 const QUOTA_KEY = 'knowledge.space.quota';
+/** Receipt indexes of single-item shares: the operation key (account, epoch and operation) and the account's item. */
+export const SINGLE_SHARE_OPERATION_KEY = 'knowledge.share.operation';
+export const SINGLE_SHARE_ITEM_KEY = 'knowledge.share.item';
+/** One entry revision and the originals that came with it (sync capability share-single-item). */
+export interface SingleItemShare {
+  item_id: string; object: string; epoch: string; operation: string; request: string; path: string; team_path?: string;
+  content: unknown;
+  /** `source` names a raw SHA-256 of `sources`; `entry` marks a ground on another local entry, which is refused. */
+  grounds: Array<{ reference?: string; quotation: string; source?: string; entry?: true }>;
+  sources: Map<string, { bytes: Uint8Array; name: string | null; mediaType: string }>;
+}
 const active = (row: SpaceRow) => row.status === 'verified' || row.status === 'unverified';
 export const withinSpacePath = (path: string, parent: string) => parent === '/' || path === parent || path.startsWith(parent + '/');
 function fail(code: ProtocolCode, message: string = PROTOCOL_CODES[code].when): never { throw new KnowledgeError(message, { code }); }
@@ -855,6 +866,104 @@ export class KnowledgeSpaces {
       }
       const rows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row);
       const team=await this.#save('team',previous,[...rows,{path:teamPath,entry:input.entry,record:record.digest,status:'verified'}],previous.body.directories,by,'提交共享',Buffer.byteLength(canonicalize(body)),tx,sourceRecords);
+      return receipt('merged',null,'',team);
+    }));
+  }
+  /**
+   * Owner ruling 1 on issue 141 (sync capability share-single-item): one team-marked entry and only its own sources arrive
+   * in one request, without any server copy of the personal space. The same checks as share() run in the same order on
+   * the request bytes; only a merged share stores anything besides its receipt (the team entry and team-held copies).
+   */
+  async shareSingle(by:Principal,input:SingleItemShare,session:string|null=null):Promise<KnowledgeShareReceipt>{
+    by=await this.#user(by);const teamPath=pathCheck(input.team_path??input.path),localPath=pathCheck(input.path);
+    let safeTargetPath=true;
+    try{this.#scan(teamPath);}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')safeTargetPath=false;else throw error;}
+    const content=SpaceEntryContent.parse(input.content),entry=sha256Hex(canonicalize(content));
+    const existing=input.grounds.flatMap(ground=>ground.source===undefined&&ground.reference!==undefined?[ground.reference]:[]);
+    await this.ensure(by,'team');
+    const owners=await this.#sharingOwners(by,existing);
+    return this.#write('team',()=>this.#ctx.records.store.withTransaction(async tx=>{
+      for(const space of [...new Set([by.id,...owners])].sort())await this.#ctx.records.store.lock('knowledge-space:'+space,tx);
+      await this.#ctx.records.store.lock('knowledge-space:team',tx);
+      by=await lockActive(this.#ctx,by,tx,[...owners]);
+      const prior=(await this.#ctx.records.store.find({kind:'knowledge_share',key:SINGLE_SHARE_OPERATION_KEY,value:input.operation,limit:1},tx)).items[0];
+      if(prior){const body=KnowledgeShareBody.parse(prior.body);if(body.by!==by.id||body.single_item?.request!==input.request)fail('IDEMPOTENCY_MISMATCH');return {record:prior.digest,...body};}
+      const currentOwners=await this.#sharingOwners(by,existing);
+      if([...currentOwners].some(owner=>owner!==by.id&&!owners.has(owner)))fail('SOURCE_UNAVAILABLE');
+      const previous=await this.current('team',tx);if(!previous)fail('SHARE_GROUND_UNRESOLVED');
+      const at=this.#ctx.now().toISOString(),uploaded=[...input.sources.keys()].sort();
+      const single={item_id:input.item_id,object:input.object,team_mark:true as const,epoch:input.epoch,operation:input.operation,request:input.request,path:localPath,sources:uploaded};
+      const receipt=async(status:KnowledgeShareBody['status'],code:ProtocolCode|null,message:string,team:SpaceVersion|null):Promise<KnowledgeShareReceipt>=>{
+        const body=KnowledgeShareBody.parse({single_item:single,by:by.id,at,session,status,code,message,...(safeTargetPath?{target_path:teamPath}:{}),team_root:team?.root??null,reference:team?refOf(team.root,teamPath,entry):null});
+        const record=await this.#ctx.records.store.put({kind:'knowledge_share',schema:'knowledge-share@1',provenance:'declared',body,index:[{key:'knowledge.share.by',value:by.id},{key:'knowledge.share.entry',value:by.id+'/'+entry},{key:SINGLE_SHARE_OPERATION_KEY,value:input.operation},{key:SINGLE_SHARE_ITEM_KEY,value:by.id+'/'+input.item_id}]},tx);
+        return {record:record.digest,...body};
+      };
+      const sources=new Map<string,{sha256:string;artifact:string;size:number;attribution?:string;team?:boolean}>(),grounds:SpaceEntryBody['grounds']=[];
+      let replacement:SpaceRow|undefined;
+      try{
+        // Same order as #inspectSharing: verified grounds, resolution, verbatim quotation, eligibility, duplicates, credentials.
+        if(!input.grounds.length)fail('SHARE_UNVERIFIED');
+        if(input.grounds.some(ground=>ground.entry))fail('SHARE_GROUND_UNRESOLVED','单条分享只上传这一条及其来源；依据另一条本机条目的，先分享那一条');
+        if(await this.hasWithdrawnGrounds(existing))fail('GROUNDS_WITHDRAWN');
+        const read=async(hash:string)=>{const sent=input.sources.get(hash);if(!sent)return this.#sharingSource(by,hash,tx);const scan=scanForCredentials(sent.bytes),readable=scan.inspected&&!scan.truncated;return {bytes:readable?sent.bytes:null,size:sent.bytes.length,mediaType:sent.mediaType,readTier:readable?'model_readable' as const:'retain_only' as const};};
+        const resolved=[];
+        for(const ground of input.grounds){
+          const result=await resolveReference(ground.reference!,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read}});
+          if(!result.resolved&&result.code==='TEAM_PARSER_REQUIRED')fail(result.code);
+          if(!result.resolved||!result.readable)fail('SHARE_GROUND_UNRESOLVED');resolved.push(result);
+        }
+        for(const [index,ground] of input.grounds.entries())if(verifyQuote(resolved[index],ground.quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
+        for(const ground of input.grounds){
+          let reference=ground.reference!;
+          if(ground.source!==undefined){grounds.push({reference,quotation:ground.quotation});continue;}
+          await this.#shareSource(by,reference,sources,new Set(),0,undefined,tx);const ref=parseReference(reference);
+          if(ref.scheme==='tree'){
+            const version=await this.version(ref.root);
+            if(version&&version.body.space!=='team'){
+              const team=(previous.body.entries).find(row=>row.entry===ref.entry&&active(row));
+              if(!team)fail('SHARE_GROUND_UNREADABLE');reference=refOf(previous.root,team.path,team.entry);
+            }else for(const reader of (await this.#ctx.records.principals.list?.()??fail('SHARE_GROUND_UNREADABLE')).filter(user=>!user.disabled)){
+              const read=await this.treeReader().read(ref.root,ref.path,ref.entry??null,{user:reader.id,role:reader.role});if(!read||read.readTier!=='model_readable')fail('SHARE_GROUND_UNREADABLE');
+            }
+          }
+          grounds.push({reference,quotation:ground.quotation});
+        }
+        if(withinSpacePath(teamPath,PRODUCTS_PATH))fail('SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录');
+        if(new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[])).size>100)fail('SPACE_ENTRY_INVALID');
+        // Only this account's earlier single-item share of the same item is replaced; another submitter's entry never is.
+        for(const record of await this.#ctx.records.store.findMany({kind:'knowledge_share',key:SINGLE_SHARE_ITEM_KEY,values:[by.id+'/'+input.item_id]},tx)){
+          const body=KnowledgeShareBody.parse(record.body);if(body.by!==by.id||body.status!=='merged'||!body.reference)continue;const ref=parseReference(body.reference);if(ref.scheme!=='tree')continue;
+          const row=previous.body.entries.find(row=>row.entry===ref.entry&&active(row)),old=row?await this.#entry(row,tx):null;if(row&&old?.by===by.id&&!old.shared_from)replacement=row;
+        }
+        if(previous.body.entries.some(row=>row.entry===entry&&row.record!==replacement?.record))fail('SHARE_DUPLICATE');
+        const readable=await this.#ctx.packs.readableProducts(by);
+        for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===entry))fail('SHARE_DUPLICATE');
+        try{this.#scan(teamPath);this.#scan({content,grounds});for(const sent of input.sources.values()){this.#scan({name:sent.name});this.#inspectSource(sent.bytes);}for(const source of sources.values()){const bytes=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
+      }catch(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
+      const body=SpaceEntryBody.parse({space:'team',entry,content,grounds,status:'verified',by:by.id,at,session,replaces:replacement?.entry??null,...([...sources.values()].some(source=>source.attribution)?{source_attributions:[...new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[]))]}:{})});
+      const plannedRows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row),facts=await this.capacityFacts('team',tx),sent=[...input.sources.values()];
+      const added=[...sources.values()].reduce((sum,source)=>sum+BigInt(source.size),0n)+sent.reduce((sum,source)=>sum+BigInt(source.bytes.length),0n);
+      const planned=this.#draft('team',previous,[...plannedRows,{path:teamPath,entry,record:'0'.repeat(64),status:'verified'}],previous.body.directories,by,'提交共享',safeBytes(BigInt(chargedBytes(body))+added),[...previous.body.sources,...[...sources.values(),...sent].map(()=>'0'.repeat(64))],undefined,facts.knowledge);
+      requireCapacity(facts,planned.used_bytes-facts.knowledge,{admin:by.role==='admin'});
+      const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:body.entry},{key:'knowledge.space.entry_owner',value:'team'}]},tx);
+      const sourceRecords=[...previous.body.sources];
+      const associate=async(sha256:string,artifact:string,size:number,attribution?:string)=>{const stored=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:SpaceSourceBody.parse({sha256,artifact,size,...(attribution?{attribution}:{}),space:'team',path:teamPath,by:by.id,at}),index:[{key:SOURCE_KEY,value:'team'},{key:'knowledge.space.source_hash',value:sha256}]},tx);sourceRecords.push(stored.digest);};
+      for(const [sha256,original] of input.sources){
+        // The uploader's own declaration (team_mark) covers the team-held copy; nothing personal is stored.
+        const copy=await this.#ctx.records.artifacts.ingest({bytes:original.bytes,mediaType:original.mediaType,name:original.name,origin:{upload:{session,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',readTier:'model_readable',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}},tx);
+        if(copy.body.sha256!==sha256)fail('SHARE_GROUND_UNRESOLVED');await associate(sha256,copy.digest,original.bytes.length);
+      }
+      for(const source of sources.values()){
+        let artifact=source.artifact;
+        if(source.attribution&&!source.team){
+          const original=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!original?.bytes)fail('SHARE_GROUND_UNRESOLVED');
+          const metadata=original.artifact.body;
+          const alias=await this.#ctx.records.artifacts.ingest({bytes:original.bytes,mediaType:metadata.media_type,name:metadata.name,origin:metadata.origin,author:metadata.author,provenanceType:'declared',capturedAt:metadata.captured_at,readTier:'model_readable',visibility:{readers:[...new Set([by.id,metadata.author.user!])],admins:true,packs:[],shareable:false}},tx);artifact=alias.digest;
+        }
+        await associate(source.sha256,artifact,source.size,source.attribution);
+      }
+      const rows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row);
+      const team=await this.#save('team',previous,[...rows,{path:teamPath,entry,record:record.digest,status:'verified'}],previous.body.directories,by,'提交共享',Buffer.byteLength(canonicalize(body)),tx,sourceRecords);
       return receipt('merged',null,'',team);
     }));
   }

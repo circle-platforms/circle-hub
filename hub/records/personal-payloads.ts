@@ -103,6 +103,14 @@ export class PgPersonalPayloads {
  async cleared(digest:string,tx?:Transaction):Promise<boolean>{
   return (await this.db.query('SELECT 1 FROM personal_record_bindings b JOIN personal_purges p ON (p.owner,p.epoch)=(b.owner,b.epoch) WHERE b.record=$1',[digest],tx)).rowCount===1;
  }
+ /**
+  * Run-held copies of originals this run holds that a purge removed (owner ruling 3, issue 141): metadata only, for a
+  * caller that already authorized reading the run. The capture record and its digest stay; only the bytes are gone.
+  */
+ async purgedRunOriginals(run:string,tx?:Transaction):Promise<Array<{artifact:string;sha256:string;at:string}>>{
+  const rows=await this.db.query('SELECT DISTINCT p.artifact,p.sha256,p.at FROM run_original_purges p JOIN object_holds h ON h.sha256=p.artifact AND h.artifact WHERE h.record=$1 ORDER BY p.artifact',[run],tx);
+  return rows.rows.map(row=>({artifact:String(row.artifact),sha256:String(row.sha256),at:iso(row.at)}));
+ }
  async inspect(digest:string,tx?:Transaction){
   const row=(await this.db.query('SELECT r.*,b.owner,b.epoch,b.sha256,b.bytes,b.marker,b.proof,EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=b.owner AND x.epoch=b.epoch) AS cleared FROM records r JOIN personal_record_bindings b ON b.record=r.digest WHERE r.digest=$1',[digest],tx)).rows[0];
   if(!row)return null;

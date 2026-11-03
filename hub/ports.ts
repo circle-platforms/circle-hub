@@ -182,6 +182,11 @@ export interface RunDetail {
   rule_withdrawn?: true;
   grounds_withdrawn?: string[];
   grounds_withdrawn_hidden_count?:number;
+  /**
+   * Run sources whose run-held personal copy a purge removed (owner ruling 3, issue 141): the grounds are unavailable for
+   * the registered reason GROUNDS_PURGED. Live read qualifier; the run and result records are unchanged.
+   */
+  grounds_purged?:Array<{reference:string;at:string}>;
   management?:{record:string;disposition:'abandon';result:string|null};
   run: RunRecordView;
   submissions: RunSubmissionView[];

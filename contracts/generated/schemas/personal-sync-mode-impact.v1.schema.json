@@ -43,6 +43,16 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "run_held_originals": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "affected_runs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     }
   },
   "required": [

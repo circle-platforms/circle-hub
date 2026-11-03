@@ -74,14 +74,23 @@ test('rendered personal forms cannot restore purged text after resuming a new ep
  assert.equal((await hub.hub.knowledge.memory.items(owner.principal,'personal')).length,0);assert.equal((await hub.hub.knowledge.spaces!.search(owner.principal,'合成不得恢复','personal')).matches.length,0);
 });
 
-test('a personal run keeps its independently held original after purge without widening reader rights',async t=>{
+test('a purge also removes the personal original a run cited; the run shows its grounds as unavailable with the reason',async t=>{
  const hub=await createTestHub({repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false});t.after(()=>hub.close());const owner=await hub.createUser('合成运行原件作者'),other=await hub.createUser('合成无关原件成员'),client=await connect(hub,owner.token);t.after(()=>client.close());
  const {mkdtemp,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{join}=await import('node:path'),{writePack,workflowPack}=await import('../../hub/runs/packs/testing/builder.ts');const directory=await mkdtemp(join(tmpdir(),'synthetic-run-originals-'));t.after(()=>rm(directory,{recursive:true,force:true}));
  const pack=workflowPack({id:'synthetic-run-original',product:{catalogs:[]}});pack.files['knowledge.json']={schema:'knowledge@1',requires:[]};const written=await writePack(join(directory,'review'),pack);assert.ok((await hub.hub.registry.personal!.publish(owner.principal,written.dir)).ok);
  const bytes=Buffer.from(JSON.stringify({items:[{id:'a',fields:{title:'合成运行独立持有'}}]})),source=await hub.hub.knowledge.spaces!.importFile(owner.principal,bytes,'application/json','synthetic-run.json','/private'),initial=await hub.records.personalSync!.state(owner.principal);
  assert.equal(await hub.records.artifacts.mayDeclareUpload(owner.principal,source.digest),false);const run=await client.call('start_run',{pack:pack.id,pack_space:owner.user.id,inputs:{target:{reference:'src:'+source.body.sha256,artifact:source.digest}}});assert.equal(run.isError,false,run.text);
  const stored=(await hub.records.store.find<{sources:Array<{artifact?:string;upload_declaration?:{by:string}}>}>({kind:'run',key:'runs.id',value:run.out.run!.run,limit:1})).items[0];assert.equal(stored.body.sources.find(s=>s.artifact===source.digest)?.upload_declaration,undefined);
- await hub.records.personalPayloads!.purge(owner.principal,initial.epoch);assert.equal(await hub.hub.knowledge.spaces!.current(owner.user.id),null);const retained=await hub.records.artifacts.sourceForRun(owner.principal,source.body.sha256,run.out.run!.run,{record:source.digest});assert.deepEqual(Buffer.from(retained?.bytes??[]),bytes);assert.equal(await hub.records.artifacts.sourceForRun(hub.admin.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null);assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.out.run!.run),null);assert.equal(await hub.records.artifacts.sourceForRun(other.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null);assert.equal(await hub.records.artifacts.mayDeclareUpload(owner.principal,source.digest),false);
+ // Owner ruling 3 (issue 141): the pre-check and the console confirmation name the run-held copy and the affected run.
+ const impact=await hub.hub.knowledge.personalSync!.modeCheck(owner.principal,{mode:'local'});assert.equal(impact.run_held_originals,1);assert.equal(impact.affected_runs,1);
+ const {openConsole}=await import('./support/console.ts'),browser=await openConsole(hub,owner.token),confirm=await browser.get('/console/knowledge?scope=personal&sync=local');assert.equal(confirm.status,200);
+ assert.match(confirm.body.replace(/<[^>]+>/g,''),/运行引用过的 1 份私人原文一并清除；1 次运行的根据将标为“根据不可用”，原因：运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除/);assert.match(confirm.body,/data-purge-run-citations/);
+ await hub.records.personalPayloads!.purge(owner.principal,initial.epoch);assert.equal(await hub.hub.knowledge.spaces!.current(owner.user.id),null);
+ assert.equal(await hub.records.artifacts.sourceForRun(owner.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null,'the run-held copy is gone');assert.equal(await hub.records.objects.get(source.body.sha256),null);
+ const detail=await hub.hub.runs.getRun(owner.principal,run.out.run!.run);assert.deepEqual(detail?.grounds_purged?.map(row=>row.reference),['src:'+source.body.sha256]);
+ assert.deepEqual((await hub.records.store.get(stored.digest))?.body,stored.body,'the run record is unchanged');
+ const page=await browser.get('/console/runs/'+run.out.run!.run);assert.equal(page.status,200);assert.match(page.body,/data-grounds-purged><strong>根据不可用<\/strong>；运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除（1 项来源）/);
+ assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.out.run!.run),null);assert.equal(await hub.records.artifacts.sourceForRun(other.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null);assert.equal(await hub.records.artifacts.mayDeclareUpload(owner.principal,source.digest),false);
 });
 
 test('HTTP sync commits personal memory for six-tool readers and mode receipts survive purge and a fresh epoch',async t=>{

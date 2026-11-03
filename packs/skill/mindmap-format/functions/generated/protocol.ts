@@ -271,6 +271,10 @@ export const PROTOCOL_CODES = {
   "SYNC_PURGE_CONFIRMATION_REQUIRED": {
     "when": "清除 Hub 上的私人空间需要本人在控制台确认",
     "fix": "10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试"
+  },
+  "GROUNDS_PURGED": {
+    "when": "运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除",
+    "fix": "由原文所有者重新上传后重新运行；原有回执和摘要保留"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

@@ -1391,6 +1391,50 @@ BEGIN
  INSERT INTO public.user_history(user_id,name,role,disabled,changed_by,changed_at,deleted_at) VALUES(o,u.name,u.role,true,a,t,t);
 END $fn$;
 `},
+ // Owner ruling 3 on issue 141: a purge of a personal epoch also removes the run-held copies of that epoch's originals.
+ // The purge row is the append-only receipt; run records and capture records keep their digests.
+ {version:24,name:'run_original_purges',sql:`CREATE TABLE public.run_original_purges(
+ artifact pg_catalog.text NOT NULL REFERENCES public.records(digest),
+ held_by pg_catalog.text NOT NULL REFERENCES public.records(digest),
+ owner pg_catalog.text NOT NULL REFERENCES public.users(id),
+ epoch pg_catalog.text NOT NULL,
+ sha256 pg_catalog.text NOT NULL CHECK(sha256 ~ '^[0-9a-f]{64}$'),
+ at pg_catalog.timestamptz NOT NULL,
+ PRIMARY KEY(artifact)
+);
+CREATE INDEX run_original_purges_owner ON public.run_original_purges(owner,epoch);
+${APPEND_ONLY('run_original_purges')}
+CREATE FUNCTION public.hub_guard_run_originals() RETURNS pg_catalog.trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF TG_OP='DELETE' AND CURRENT_USER=pg_catalog.pg_get_userbyid((SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.run_originals'::pg_catalog.regclass))
+ AND EXISTS(SELECT 1 FROM public.run_original_purges p WHERE p.artifact=OLD.artifact AND p.held_by=OLD.held_by) THEN RETURN OLD;END IF;
+ RAISE EXCEPTION 'append-only table %: % rejected',TG_TABLE_NAME,TG_OP USING ERRCODE='HU001';
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_guard_run_originals() FROM PUBLIC;
+DROP TRIGGER run_originals_append_only ON public.run_originals;
+CREATE TRIGGER run_originals_append_only BEFORE UPDATE OR DELETE ON public.run_originals FOR EACH ROW EXECUTE FUNCTION public.hub_guard_run_originals();
+-- Independent copies of the epoch's originals held for runs (the run, its claims, submissions and results). Copies a
+-- team knowledge source holds are the team's own and stay.
+CREATE FUNCTION public.hub_run_citations(o pg_catalog.text,e pg_catalog.text) RETURNS TABLE(artifact pg_catalog.text,held_by pg_catalog.text,sha256 pg_catalog.text)
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+ SELECT t.artifact,t.held_by,t.sha256 FROM public.original_targets t JOIN public.records v ON v.digest=t.held_by AND v.kind<>'knowledge_space_source'
+ WHERE t.owner=o AND t.epoch=e AND NOT EXISTS(SELECT 1 FROM public.run_original_purges p WHERE p.artifact=t.artifact)
+$fn$;
+REVOKE ALL ON FUNCTION public.hub_run_citations(pg_catalog.text,pg_catalog.text) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_finish_independent_objects(target_owner pg_catalog.text DEFAULT NULL) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ INSERT INTO public.held_objects SELECT t.sha256,t.held_by,p.data FROM public.held_object_targets t JOIN public.personal_objects o ON (o.owner,o.epoch,o.sha256)=(t.owner,t.epoch,t.sha256) JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.held_objects h WHERE h.sha256=t.sha256) ON CONFLICT DO NOTHING;
+ INSERT INTO public.run_originals SELECT t.artifact,t.held_by,t.sha256,t.body,p.data FROM public.original_targets t JOIN public.personal_objects o ON (o.owner,o.epoch,o.sha256)=(t.owner,t.epoch,t.sha256) JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.run_originals h WHERE h.artifact=t.artifact) AND NOT EXISTS(SELECT 1 FROM public.run_original_purges x WHERE x.artifact=t.artifact) ON CONFLICT DO NOTHING;
+ IF EXISTS(SELECT 1 FROM public.held_object_targets t WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.held_objects h WHERE h.sha256=t.sha256)) OR EXISTS(SELECT 1 FROM public.original_targets t WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.run_originals h WHERE h.artifact=t.artifact) AND NOT EXISTS(SELECT 1 FROM public.run_original_purges x WHERE x.artifact=t.artifact)) THEN RAISE EXCEPTION 'independent original transfer incomplete';END IF;
+END $fn$;
+CREATE OR REPLACE FUNCTION public.hub_purge_personal(o pg_catalog.text,e pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ PERFORM 1 FROM public.personal_spaces WHERE owner=o AND epoch=e FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='P0002';END IF;
+ INSERT INTO public.run_original_purges(artifact,held_by,owner,epoch,sha256,at) SELECT c.artifact,c.held_by,o,e,c.sha256,pg_catalog.now() FROM public.hub_run_citations(o,e) c ON CONFLICT DO NOTHING;
+ DELETE FROM public.run_originals h USING public.run_original_purges p WHERE p.artifact=h.artifact AND p.held_by=h.held_by AND p.owner=o AND p.epoch=e;
+ PERFORM public.hub_finish_independent_objects(o);PERFORM public.hub_clear_personal_payloads(o,e);UPDATE public.personal_spaces SET mode='local' WHERE owner=o AND epoch=e;
+END $fn$;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -1414,6 +1458,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   personal_sync_aborts:'SELECT, INSERT',
   personal_sync_mode_operations:'SELECT, INSERT',
   run_originals:'SELECT',
+  run_original_purges:'SELECT',
   object_holds:'SELECT',
   personal_spaces:'SELECT, INSERT',
   personal_payloads:'SELECT, INSERT',
@@ -1480,6 +1525,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     await db.query(`GRANT EXECUTE ON FUNCTION hub_begin_member_deletion(text,text,text,text,text,jsonb,timestamptz,timestamptz),hub_finish_member_deletion(text,text),hub_member_layout_conversion() TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_account_scope(text,text),hub_restore_legacy_object(text,text,bytea),hub_finish_independent_objects(text),hub_account_layout_conversion() TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_check_member_holders(text) TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_run_citations(text,text) TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);
       await db.query(`GRANT ${privileges} ON TABLE ${table} TO "${role}"`, [], t);

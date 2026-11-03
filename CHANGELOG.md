@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Apply the owner's rulings on issue 141: share one team-marked entry with only its sources from 仅保存在本机 (sync capability `share-single-item`), report `never_synced` for a first-connection notice (`first-sync-notice`), purge the run-held copies of purged personal originals and mark those runs' grounds 根据不可用, and hand a deleted member's private workflows and skills to the deleting administrator.
+
 - Scan base64 runs of any length in one linear pass, so an upload with a base64 run of about 6 MB or more gets its credential scan instead of a stack overflow (#153).
 
 - Keep the vault master key and the operator token in private files under the data root on macOS as on Linux, retire `CIRCLE_HUB_KEYCHAIN_SERVICE` and `CIRCLE_HUB_KEYCHAIN_ACCOUNT` (a process that sets either refuses to start and says where the keys are), and run the key tests on Ubuntu (decision 137). A macOS deployment whose key is still in the keychain moves it with the earlier release's `key export --confirm` piped into the new release's `key import`, then `operator-token reissue`.

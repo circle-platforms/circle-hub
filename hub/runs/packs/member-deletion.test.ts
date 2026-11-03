@@ -12,13 +12,26 @@ import {Database,createPool} from '../../records/db.ts';
 let pg:Awaited<ReturnType<typeof startPostgres>>;before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());
 const skill=(id:string):PackDescription=>({id,version:'1.0.0',kind:'skill',title:'合成删除技能',description:'合成独立归属',files:{'SKILL.md':'# 合成成员私人步骤\n\n只核对合成输入。','skill.json':{schema:'skill@1',parsers:[]}}});
 async function remove(bed:Awaited<ReturnType<typeof openPackTestbed>>){const api=bed.kit.memberDeletions!,preview=await api.preview(bed.admin,bed.carol.id),intent=await api.prepare(bed.admin,{...preview,operation_id:randomUUID()});return api.finish(bed.admin,bed.carol.id,intent.operation_id);}
-test('local-only mode keeps installed private skills; member deletion removes unheld manifests, files, indices and caches',async t=>{
+test('local-only mode keeps installed private skills; member deletion hands them to the deleting administrator and removes the member namespace',async t=>{
  const bed=await openPackTestbed({postgres:pg});t.after(()=>bed.close());const personal=bed.registry.personal!,pack=skill('synthetic-delete-private'),result=await personal.publish(bed.carol,(await bed.write(pack)).dir);assert.ok(result.ok);if(!result.ok)return;
  const opened=await personal.open(bed.carol.id,result.version.digest);assert.ok(opened);const state=await bed.kit.personalSync!.state(bed.carol);await bed.kit.personalPayloads!.purge(bed.carol,state.epoch);assert.ok(await personal.resolve(bed.carol,bed.carol.id,pack.id));
- const receipt=await remove(bed);assert.equal(receipt.counts.private_versions,1);assert.equal(await personal.resolve(bed.alice,bed.carol.id,pack.id),null);assert.equal(await personal.open(bed.carol.id,result.version.digest),null);await assert.rejects(access(opened.handle.directory));
+ // Owner ruling 4 (issue 141): the preview names the receiving administrator and the versions that move.
+ const preview=await bed.kit.memberDeletions!.preview(bed.admin,bed.carol.id);assert.deepEqual(preview.handover,{to:bed.admin.id,items:[{pack:pack.id,version:'1.0.0',kind:'skill',title:pack.title,digest:result.version.digest,status:'transfer'}]});
+ const receipt=await remove(bed);assert.equal(receipt.counts.private_versions,1);assert.equal(await personal.resolve(bed.alice,bed.carol.id,pack.id),null);assert.equal(await personal.open(bed.carol.id,result.version.digest),null);
+ const moved=await personal.resolve(bed.admin,bed.admin.id,pack.id);assert.ok(moved,'the administrator now owns the exact version');assert.equal(moved.digest,result.version.digest);assert.equal(moved.publisher,bed.admin.id);assert.deepEqual(moved.report,result.version.report);
+ const reopened=await personal.open(bed.admin.id,result.version.digest);assert.ok(reopened);await access(join(reopened.handle.directory,'SKILL.md'));
+ assert.equal(await personal.resolve(bed.alice,bed.admin.id,pack.id),null,'grants do not move with the version');
+ const transfers=await bed.kit.store.findMany<{from?:string;space:string;source:string;target:string}>({kind:'personal_pack_transfer',key:'personal.pack.handover.from',values:[bed.carol.id]});assert.equal(transfers.length,1);assert.equal(transfers[0].body.from,bed.carol.id);assert.equal(transfers[0].body.space,bed.admin.id);assert.equal(transfers[0].body.target,moved.record);
  const db=new Database(createPool(bed.kit.database));t.after(()=>db.end());assert.equal((await db.query('SELECT count(*)::int n FROM personal_payloads WHERE owner=$1',[bed.carol.id])).rows[0].n,0);
  assert.equal((await db.query("SELECT count(*)::int n FROM record_index i JOIN personal_record_bindings b ON b.record=i.digest WHERE b.owner=$1 AND i.key IN ('personal.pack.id','personal.pack.grant','personal.pack.retired')",[bed.carol.id])).rows[0].n,0);
- for(const hash of [result.version.digest,...result.version.manifest.files.map(file=>file.sha256)]){assert.equal(await bed.kit.objects.get(hash),null);await assert.rejects(access(join(bed.kit.dataDir,'objects',hash.slice(0,2),hash.slice(2))));}
+ for(const hash of [result.version.digest,...result.version.manifest.files.map(file=>file.sha256)])assert.ok(await bed.kit.objects.get(hash),'the administrator holds its own copy of each file');
+});
+test('a version the administrator already uses differently is not transferred and is listed as a conflict',async t=>{
+ const bed=await openPackTestbed({postgres:pg});t.after(()=>bed.close());const personal=bed.registry.personal!,pack=skill('synthetic-handover-conflict');
+ const theirs=await personal.publish(bed.carol,(await bed.write(pack)).dir),mine=await personal.publish(bed.admin,(await bed.write({...pack,files:{...pack.files,'SKILL.md':'# 管理员自己的合成技能\n\n内容不同。'}})).dir);assert.ok(theirs.ok&&mine.ok);if(!theirs.ok||!mine.ok)return;
+ const other=await personal.publish(bed.carol,(await bed.write(skill('synthetic-handover-free'))).dir);assert.ok(other.ok);
+ const preview=await bed.kit.memberDeletions!.preview(bed.admin,bed.carol.id);assert.deepEqual(preview.handover?.items.map(item=>[item.pack,item.status]),[['synthetic-handover-conflict','conflict'],['synthetic-handover-free','transfer']]);
+ await remove(bed);assert.equal((await personal.resolve(bed.admin,bed.admin.id,pack.id))?.digest,mine.version.digest,'the administrator keeps their own version');assert.ok(await personal.resolve(bed.admin,bed.admin.id,'synthetic-handover-free'));
 });
 test('frozen exact workflow and skill closures survive deletion for the existing run but cannot be resolved for new work',async t=>{
  const bed=await openPackTestbed({postgres:pg});t.after(()=>bed.close());const personal=bed.registry.personal!,dependency=skill('synthetic-frozen-dependency');const sk=await personal.publish(bed.carol,(await bed.write(dependency)).dir);assert.ok(sk.ok);if(!sk.ok)return;

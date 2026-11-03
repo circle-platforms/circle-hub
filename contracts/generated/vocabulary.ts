@@ -63,7 +63,7 @@ export const AXES = {
   account_status: { label: '账户状态', owner: 'R01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'deleted', label: '已删除' }] },
   account_display_name: { label: '账户显示名称', owner: 'R01', values: [{ code: 'deleted_member', label: '已删除的成员' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
-  validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
+  validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'grounds_purged', label: '根据不可用' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
   qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }, { code: 'legacy_keyword_rules', label: '旧规则（关键词）' }, { code: 'possible_credentials', label: '可能含凭据' }] },
   reason: { label: '未知与未完成的原因', ui: '原因', owner: 'V03', values: [{ code: 'no_check', label: '未装检查', ui: '未配置检查' }, { code: 'check_error', label: '检查出错' }, { code: 'timeout', label: '超时' }, { code: 'missing_input', label: '缺输入', ui: '缺少输入' }, { code: 'declared_skip', label: '模型声明跳过' }, { code: 'not_covered', label: '提交未覆盖' }, { code: 'awaiting_step', label: '在等某一步', ui: '等待前序步骤中' }, { code: 'output_failed', label: '出件失败', ui: '输出失败' }, { code: 'repair_exhausted', label: '修复轮数用完', ui: '修复次数已用完' }, { code: 'budget_exhausted', label: '预算用完', ui: '预算已用完' }, { code: 'integrity_unproven', label: '完整性未证明' }] },
   sample_source: { label: '样例来源', owner: 'T02', values: [{ code: 'author', label: '作者' }, { code: 'returned_counterexample', label: '回流反例' }, { code: 'retained_delivery', label: '外部留存交付' }] },
@@ -109,7 +109,8 @@ export const AXES = {
   sync_mode: { label: '同步方式', owner: 'K01', values: [{ code: 'local', label: '仅保存在本机' }, { code: 'hub', label: '同步到 Hub' }] },
   sync_status: { label: '同步状态', owner: 'K01', values: [{ code: 'idle', label: '尚未同步' }, { code: 'syncing', label: '等待同步中' }, { code: 'conflicted', label: '有冲突' }, { code: 'purging', label: '等待清除中' }, { code: 'complete', label: '同步完成' }] },
   sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
-  sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
+  sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }, { code: 'single_item_share', label: '本机条目单条分享' }] },
+  member_handover_status: { label: '成员私人包的移交', owner: 'R01', values: [{ code: 'transfer', label: '转给执行删除的管理员' }, { code: 'present', label: '管理员已有相同版本，不重复转移' }, { code: 'conflict', label: '管理员已有同号不同内容的版本，不转移，随账户清除' }] },
   source_attribution_status: { label: '团队来源署名', owner: 'B02', values: [{ code: 'unsigned', label: '未署名' }, { code: 'attributed', label: '已署名为团队来源' }] },
   source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
@@ -718,10 +719,10 @@ export function isReferenceScheme(value: unknown): value is ReferenceScheme {
 }
 
 /** 有效条件状态 (B01) */
-export const VALIDITY_STATUS = ['valid', 'rule_withdrawn', 'grounds_withdrawn', 'cited_fragment_changed', 'credential_unreadable', 'premise_failed', 'expired', 'contradicted', 'not_evaluated'] as const;
+export const VALIDITY_STATUS = ['valid', 'rule_withdrawn', 'grounds_withdrawn', 'grounds_purged', 'cited_fragment_changed', 'credential_unreadable', 'premise_failed', 'expired', 'contradicted', 'not_evaluated'] as const;
 export type ValidityStatus = (typeof VALIDITY_STATUS)[number];
-export const VALIDITY_STATUS_LABEL = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张', 'not_evaluated': '未评估' } as const satisfies { readonly [K in ValidityStatus]: string };
-export const VALIDITY_STATUS_UI = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张', 'not_evaluated': '未评估' } as const satisfies { readonly [K in ValidityStatus]: string };
+export const VALIDITY_STATUS_LABEL = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'grounds_purged': '根据不可用', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张', 'not_evaluated': '未评估' } as const satisfies { readonly [K in ValidityStatus]: string };
+export const VALIDITY_STATUS_UI = { 'valid': '有效', 'rule_withdrawn': '规则已撤回', 'grounds_withdrawn': '根据已撤回', 'grounds_purged': '根据不可用', 'cited_fragment_changed': '被引片段已变', 'credential_unreadable': '含凭据，原文不可读', 'premise_failed': '依赖的前提失效', 'expired': '已过期', 'contradicted': '出现矛盾主张', 'not_evaluated': '未评估' } as const satisfies { readonly [K in ValidityStatus]: string };
 export const ValidityStatusSchema = z.enum(VALIDITY_STATUS);
 export function isValidityStatus(value: unknown): value is ValidityStatus {
   return (VALIDITY_STATUS as readonly unknown[]).includes(value);
@@ -1178,13 +1179,23 @@ export function isSyncObjectKind(value: unknown): value is SyncObjectKind {
 }
 
 /** 同步信息 (K01) */
-export const SYNC_FIELD = ['last_synced_at', 'cleared_personal_folder'] as const;
+export const SYNC_FIELD = ['last_synced_at', 'cleared_personal_folder', 'single_item_share'] as const;
 export type SyncField = (typeof SYNC_FIELD)[number];
-export const SYNC_FIELD_LABEL = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的个人文件夹' } as const satisfies { readonly [K in SyncField]: string };
-export const SYNC_FIELD_UI = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的私人文件夹' } as const satisfies { readonly [K in SyncField]: string };
+export const SYNC_FIELD_LABEL = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的个人文件夹', 'single_item_share': '本机条目单条分享' } as const satisfies { readonly [K in SyncField]: string };
+export const SYNC_FIELD_UI = { 'last_synced_at': '上次同步', 'cleared_personal_folder': '已清除的私人文件夹', 'single_item_share': '本机条目单条分享' } as const satisfies { readonly [K in SyncField]: string };
 export const SyncFieldSchema = z.enum(SYNC_FIELD);
 export function isSyncField(value: unknown): value is SyncField {
   return (SYNC_FIELD as readonly unknown[]).includes(value);
+}
+
+/** 成员私人包的移交 (R01) */
+export const MEMBER_HANDOVER_STATUS = ['transfer', 'present', 'conflict'] as const;
+export type MemberHandoverStatus = (typeof MEMBER_HANDOVER_STATUS)[number];
+export const MEMBER_HANDOVER_STATUS_LABEL = { 'transfer': '转给执行删除的管理员', 'present': '管理员已有相同版本，不重复转移', 'conflict': '管理员已有同号不同内容的版本，不转移，随账户清除' } as const satisfies { readonly [K in MemberHandoverStatus]: string };
+export const MEMBER_HANDOVER_STATUS_UI = { 'transfer': '转给执行删除的管理员', 'present': '管理员已有相同版本，不重复转移', 'conflict': '管理员已有同号不同内容的版本，不转移，随账户清除' } as const satisfies { readonly [K in MemberHandoverStatus]: string };
+export const MemberHandoverStatusSchema = z.enum(MEMBER_HANDOVER_STATUS);
+export function isMemberHandoverStatus(value: unknown): value is MemberHandoverStatus {
+  return (MEMBER_HANDOVER_STATUS as readonly unknown[]).includes(value);
 }
 
 /** 团队来源署名 (B02) */
@@ -1325,6 +1336,7 @@ export interface AxisValues {
   sync_status: SyncStatus;
   sync_object_kind: SyncObjectKind;
   sync_field: SyncField;
+  member_handover_status: MemberHandoverStatus;
   source_attribution_status: SourceAttributionStatus;
   source_location_status: SourceLocationStatus;
   capacity_unit: CapacityUnit;
@@ -1438,6 +1450,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   sync_status: SYNC_STATUS_LABEL,
   sync_object_kind: SYNC_OBJECT_KIND_LABEL,
   sync_field: SYNC_FIELD_LABEL,
+  member_handover_status: MEMBER_HANDOVER_STATUS_LABEL,
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
   source_location_status: SOURCE_LOCATION_STATUS_LABEL,
   capacity_unit: CAPACITY_UNIT_LABEL,
@@ -1551,6 +1564,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   sync_status: SYNC_STATUS_UI,
   sync_object_kind: SYNC_OBJECT_KIND_UI,
   sync_field: SYNC_FIELD_UI,
+  member_handover_status: MEMBER_HANDOVER_STATUS_UI,
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
   source_location_status: SOURCE_LOCATION_STATUS_UI,
   capacity_unit: CAPACITY_UNIT_UI,

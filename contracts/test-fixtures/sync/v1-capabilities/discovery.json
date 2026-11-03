@@ -8,7 +8,9 @@
         "base_url": "https://192.0.2.10/api/sync/v1",
         "capabilities": [
           "error-detail",
-          "purge-confirmation"
+          "first-sync-notice",
+          "purge-confirmation",
+          "share-single-item"
         ]
       }
     ]

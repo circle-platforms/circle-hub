@@ -71,6 +71,7 @@ const COLUMN: Record<string, string> = {
   knowledge_space_search_documents: 'token_bytes',
   knowledge_space_search_ready: 'row_count',
   knowledge_space_search_totals:'quota_space',
+  run_original_purges:'at',
 };
 
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */
@@ -240,7 +241,8 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     const { dir, manifest } = await createBackup({ layout, postgres: control, libpqBin: libpq!, label: 'records' });
     await verifyBackup(dir);
     const clearing=await openRecords(kitConfig(),{migrate:false,keyProvider});
-    try{const state=await clearing.personalPayloads!.inspect(privateDigest);await clearing.personalPayloads!.purge(privateOwner,state!.epoch);assert.equal(await clearing.store.get(privateDigest),null);assert.ok(await clearing.store.get(heldOriginal));assert.equal(await clearing.store.get(heldPersonalLink),null);assert.deepEqual(Buffer.from((await clearing.objects.get(heldOriginalSha))!),runOriginalBytes);}finally{await clearing.close();}
+    try{const state=await clearing.personalPayloads!.inspect(privateDigest);await clearing.personalPayloads!.purge(privateOwner,state!.epoch);assert.equal(await clearing.store.get(privateDigest),null);// Owner ruling 3 (issue 141): the purge also removes the run-held copy of the personal original.
+    assert.equal(await clearing.store.get(heldOriginal),null);assert.equal(await clearing.store.get(heldPersonalLink),null);assert.equal(await clearing.objects.get(heldOriginalSha),null);}finally{await clearing.close();}
     assert.deepEqual(manifest.database.application_role, { name: role, privileges: before.privileges });
 
     assert.equal(await control.stop(), true);
@@ -269,7 +271,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       assert.equal((await kit.personalSync!.operation(privateOwner,syncEpoch,'synthetic-backup-operation'))?.counts.accepted,1);
       assert.ok(await kit.store.get(heldOriginal));assert.ok(await kit.store.get(heldPersonalLink));assert.deepEqual(Buffer.from((await kit.objects.get(heldOriginalSha))!),runOriginalBytes);
       const restored=await kit.personalPayloads!.inspect(privateDigest);assert.equal(restored?.cleared,false);
-      await kit.personalPayloads!.purge(privateOwner,restored!.epoch);assert.equal(await kit.store.get(privateDigest),null);assert.equal(await kit.store.get(heldPersonalLink),null);assert.ok(await kit.store.get(heldOriginal));assert.deepEqual(Buffer.from((await kit.objects.get(heldOriginalSha))!),runOriginalBytes);
+      await kit.personalPayloads!.purge(privateOwner,restored!.epoch);assert.equal(await kit.store.get(privateDigest),null);assert.equal(await kit.store.get(heldPersonalLink),null);assert.equal(await kit.store.get(heldOriginal),null);assert.equal(await kit.objects.get(heldOriginalSha),null);
       assert.equal((await kit.store.getByKey('claim', 'synthetic.0'))?.digest, appended[0].digest, 'unique business identities survive the restore');
       await kit.store.put({ kind: 'claim', schema: 'synthetic-claim@1', provenance: 'declared', body: { n: 99, text: '恢复之后' } });
     } finally {

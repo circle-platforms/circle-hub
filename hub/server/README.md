@@ -1125,6 +1125,47 @@ recorded (the reported clientInfo, the OAuth client's registered name or the adm
 客户端 when nothing was reported). Where the name came from appears only under the technical details.
 The API remains outside the six model tools; per-route token scopes are deferred, not implemented or implied here.
 
+### Owner rulings on issue 141 (2026-11-03, supplement to decision 137)
+
+Task page: `docs/hub-r4-tasks/rulings-141.md`. Model version 35 (K01, R01 and B02 rules; protocol code `GROUNDS_PURGED`;
+`validity_status.grounds_purged`, `sync_field.single_item_share`, axis `member_handover_status`). All four are additive to sync v1.
+
+1. **Single-item sharing from 仅保存在本机** (capability `share-single-item`, `POST /api/sync/v1/share`,
+   `personal-sync-share@1` → `personal-sync-share-result@1`). `PersonalKnowledgeSync.shareItem` decodes exactly the
+   entry revision, its quotations and its own source revisions and chunks (anything else is `SYNC_OBJECT_INVALID`), and
+   `KnowledgeSpaces.shareSingle` runs the checks of `share()` in the same order on those bytes. Merged: a team entry,
+   team-held source copies (`admins: true`, declared by the uploader through `team_mark`) and team source records; no
+   personal record, payload or sync object is written, so it works in mode `local`. Every outcome appends a
+   `knowledge_share` receipt whose `single_item` names item, revision, `team_mark`, epoch, the hashed operation key,
+   the request hash, the client path and the raw SHA-256 of the sources (indexes `knowledge.share.operation`,
+   `knowledge.share.item`). The receipt is the idempotency record; a later share of the same item replaces only the
+   account's own earlier single-item team entry. The team mark itself is client-local and never on the wire except as
+   `team_mark: true`. The route is listed in `PERSONAL_SYNC_CAPABILITY_ROUTES`; the frozen `http.json` is unchanged.
+2. **First-connection notice** (capability `first-sync-notice`): `personal-sync-state@1` carries `never_synced`, true
+   while the account has no row in `personal_sync_operations` or `personal_sync_mode_operations` in any epoch. The
+   default mode stays `hub`; Circle shows the notice (separate Circle change).
+3. **Purge removes run-held copies.** Migration 24 adds append-only `run_original_purges` and a dedicated guard on
+   `run_originals` that allows a DELETE only by the owner-defined purge after it recorded the removal.
+   `hub_purge_personal` records and removes every independent copy of the epoch's originals whose holder is not a team
+   knowledge source (`hub_run_citations`), then purges as before; `hub_finish_independent_objects` skips purged
+   targets. This also applies to member deletion, whose sync-epoch purge uses the same function; account-epoch run
+   inputs and frozen pack files keep the #139 retention. `/mode/check` adds `run_held_originals` and `affected_runs`
+   (part of the check hash and of the mode audit); the console confirmation names both and the reason. `RunDetail`
+   gains `grounds_purged` (from `PgPersonalPayloads.purgedRunOriginals(run)`), shown on the run page as
+   根据不可用 with the `GROUNDS_PURGED` text. Records keep their digests; nothing is rewritten.
+4. **Member deletion hands private workflows and skills to the deleting administrator.** `PersonalPacks` registers a
+   hand-over with `PgMemberDeletions`. The preview lists each private version (`member_handover_status`) as `transfer`, `present` (the
+   administrator already holds that digest) or `conflict` (same pack and version or another kind in the
+   administrator's space; not moved, purged with the account) and folds the plan into the checked state. `prepare`
+   appends, in the transaction that begins the deletion, exact copies (manifest, files, captures, original check
+   report) as `personal_pack_version` records of the administrator plus a `personal_pack_transfer` with `from` (index
+   `personal.pack.handover.from`). Grants do not move; a dependency that named the deleted member's space explicitly
+   no longer resolves. An administrator deleting their own account hands nothing over. The deletion dialog and the
+   host command list the receiving administrator and every version's outcome.
+
+Tests: `hub/server/sync-rulings.test.ts` (1, 2), `hub/records/personal-run-originals.test.ts` and acceptance 49 (3),
+`hub/runs/packs/member-deletion.test.ts`, `hub/server/console/member-deletion.test.ts` and acceptance 54 (4).
+
 ## Exact capacity controls (decision 91, phase 5 block 4)
 
 `capacity.ts` is the shared one-decimal KB/MB/GB formatter for member metadata, my space, memory limits and quota errors.

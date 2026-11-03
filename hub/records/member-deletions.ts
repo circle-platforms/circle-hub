@@ -3,7 +3,8 @@ import {retirePersonalCaches} from './personal-caches.ts';
 import {isAbsolute} from 'node:path';
 // Administrator coordination shares the native payload purger; progress contains digests and counts only.
 import {MemberDeletionBody,MemberDeletionCounts,type MemberDeletionBody as Receipt} from '../../contracts/src/spaces.ts';
-import {PermissionRoleSchema} from '../../contracts/generated/vocabulary.ts';
+import {PermissionRoleSchema,type MemberHandoverStatus} from '../../contracts/generated/vocabulary.ts';
+import type {PersonalPackVersionBody} from '../../contracts/src/sharing.ts';
 import {canonicalize} from './canonical.ts';
 import {parseStrictJson} from './strict-json.ts';
 import {RecordKindSchema} from '../../contracts/src/records.ts';
@@ -16,11 +17,25 @@ import {lockAdministratorSet} from './principals.ts';
 import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export interface MemberDeletionScopeCounts {knowledge:number;memory:number;originals:number;attributions:number;archived_originals:number;private_versions:number}
-export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts'];scope_counts:MemberDeletionScopeCounts}
+/** One private workflow or skill version of the member and what deletion does with it (owner ruling 4, issue 141). */
+export interface MemberHandoverItem {pack:string;version:string;kind:PersonalPackVersionBody['kind'];title:string;digest:string;status:MemberHandoverStatus}
+/** The packs port registers how private versions are handed to the deleting administrator. */
+export interface MemberHandover {plan(admin:string,member:string,tx?:Transaction):Promise<MemberHandoverItem[]>;transfer(by:Principal,member:string,tx:Transaction):Promise<number>}
+export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts'];scope_counts:MemberDeletionScopeCounts;
+ /** The deleting administrator receives these versions; null when an administrator deletes their own account. */
+ handover?:{to:string|null;items:MemberHandoverItem[]}}
 export class PgMemberDeletions {
  readonly cacheRoots=new Set<string>();
  readonly sharedCacheRoots=new Set<string>();
  registerCacheRoot(root:string,options:{shared?:boolean}={}){if(!isAbsolute(root))throw new TypeError('private cache root');this.cacheRoots.add(root);if(options.shared)this.sharedCacheRoots.add(root);}
+ #handover?:MemberHandover;
+ registerHandover(handover:MemberHandover){this.#handover=handover;}
+ /** The plan is part of the checked state, so a changed plan makes the administrator check again. */
+ async #withHandover(by:Principal,preview:Omit<MemberDeletionPreview,'handover'>,tx?:Transaction):Promise<MemberDeletionPreview>{
+  if(!this.#handover)return preview;
+  const to=by.id===preview.member?null:by.id,items=to?await this.#handover.plan(to,preview.member,tx):[];
+  return {...preview,handover:{to,items},state:sha256Hex(canonicalize({state:preview.state,handover:{to,items}}))};
+ }
  readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly retire:()=>Promise<void>;readonly now:()=>Date;
  constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,retire:()=>Promise<void>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.retire=retire;this.now=now;}
  async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||user.role!==PermissionRoleSchema.enum.admin)throw new AccessError('对象不存在或无权读取');}
@@ -55,13 +70,13 @@ export class PgMemberDeletions {
   const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects,caches})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
   return {member,epoch,purge_manifest,counts,scope_counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
  }
- async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#preview(member,tx);});}
+ async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#withHandover(by,await this.#preview(member,tx),tx);});}
  async status(by:Principal,member:string){return this.store.withTransaction(async tx=>{
   await this.#admin(by,tx);const intent=await this.intent(member,tx);if(!intent)return null;
   const row=await this.store.getByKey<Receipt>('member_deletion',intent.operation_id,tx);
   return {intent,result:row?{record:row.digest,...MemberDeletionBody.parse(row.body)}:null};
  });}
- async prepare(by:Principal,input:Omit<MemberDeletionPreview,'scope_counts'>&{operation_id:string}):Promise<Receipt>{
+ async prepare(by:Principal,input:Omit<MemberDeletionPreview,'scope_counts'|'handover'>&{operation_id:string}):Promise<Receipt>{
   // Parse the operation and immutable manifest before touching an identity.
   MemberDeletionBody.parse({operation_id:input.operation_id,member:input.member,epoch:input.epoch,purge_manifest:input.purge_manifest,counts:input.counts,by:by.id,at:this.now().toISOString()});
   return this.store.withTransaction(async tx=>{
@@ -71,8 +86,11 @@ export class PgMemberDeletions {
    if(intent){await this.#admin(by,tx);if(intent.operation_id!==input.operation_id||intent.epoch!==input.epoch||intent.purge_manifest!==input.purge_manifest||canonicalize(intent.counts)!==canonicalize(input.counts))throw new ConflictError('删除操作与已记录的操作不符');return intent;}
    await this.#admin(by,tx);
    const user=(await this.db.query('SELECT updated_at FROM users WHERE id=$1 FOR UPDATE',[input.member],tx)).rows[0];
-   const current=await this.#preview(input.member,tx);if(current.state!==input.state||current.epoch!==input.epoch||current.purge_manifest!==input.purge_manifest||canonicalize(current.counts)!==canonicalize(input.counts))throw new ConflictError('成员或清除范围已变化，请重新检查');
+   const current=await this.#withHandover(by,await this.#preview(input.member,tx),tx);if(current.state!==input.state||current.epoch!==input.epoch||current.purge_manifest!==input.purge_manifest||canonicalize(current.counts)!==canonicalize(input.counts))throw new ConflictError('成员或清除范围已变化，请重新检查');
    const receipt=MemberDeletionBody.parse({operation_id:input.operation_id,member:input.member,epoch:input.epoch,purge_manifest:input.purge_manifest,counts:input.counts,by:by.id,at:this.now().toISOString()});
+   // Owner ruling 4 (issue 141): hand the private workflows and skills to the deleting administrator in the same
+   // transaction that begins the deletion; the member's own versions are purged afterwards as before.
+   if(this.#handover&&current.handover?.to)await this.#handover.transfer(by,input.member,tx);
    try{await this.db.query('SELECT hub_begin_member_deletion($1,$2,$3,$4,$5,$6,$7,$8)',[by.id,input.member,input.epoch,input.operation_id,input.purge_manifest,JSON.stringify(input.counts),receipt.at,user.updated_at],tx);}catch(cause){throw new ConflictError('删除检查未通过；成员、清除范围或存储准备已变化',{cause});}
    return receipt;
   }).finally(retireReadScope);
