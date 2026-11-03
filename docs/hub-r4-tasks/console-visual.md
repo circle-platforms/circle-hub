@@ -1066,3 +1066,9 @@ Claude 转交独立审查（针对 `54b6649c`）：未发现授权回归。确�
 仍需区分未处理的路径：记忆列表/详情的语料固定为每成员 5 份，`memory.items()` 仍逐 head 读取版本，存在随记忆数量增长的读取模式；本轮没有记忆文档数增长实验，不宣称这一 N+1 已消除。记忆页分别为 100 / 74 SQL，其中同页同步状态/epoch 读取也有重复。后续可评估同页复用一次同步状态结果、批量取记忆头/版本，保留事务、epoch 与清空校验；本次按批准范围保留该行为并明确标记。
 
 集成 profile 的完整规模阶段中位值：listRuns 3 次累计 354.9 ms；summary 120 次累计 9886.5 ms、单次最长 106.1 ms（并行，不相加）；listRequests 1 次 0.4 ms；runCandidates 3 次累计 102.1 ms；findBatch 23 次累计 252.7 ms。CPU profile 与所有样本均保留，未删慢样本或承诺 300 ms。
+
+### 第二次独立审查的补充修正
+
+审查确认前述三个低项已闭合，`02a25641` / `dfb31c8e` / `35f34d74` 未发现授权回归；资源路径的 traversal、query、case、double slash、%00、HEAD/POST/If-None-Match 探针也通过。新增发现分别补回归与提交，不改变前述同步基线或迁移。
+
+参数键与延迟调用现在使用同一份调用时快照：plain JSON 校验/键生成后立即复制参数，再把副本交给微任务和 find/count 批次及其 scalar fallback。无效参数与显式事务仍走原始非缓存路径；不缓存跨请求授权。新增回归先复现 echo 与 find 的 alice → bob 污染，再验证嵌套数组、循环复用查询、count 索引、泛型 findMany、原生批次与 fallback，以及后续同键读取。`memoReadValue` 的 loader 是可信控制流，其捕获输入由调用方冻结；引擎 queryRead 原有完整快照保留。

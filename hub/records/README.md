@@ -918,3 +918,9 @@ fallback precedence: independent run bytes, then an active personal owner/epoch 
 registration handling. Every returned byte stream is hashed; a bad sibling falls back to isolated reads and cannot
 hide healthy bytes. Returned arrays are detached per caller. This trusted byte port grants no access: callers still
 use exact source/capture and read-tier guards. New reads recheck purge; no cross-request authorization cache is added.
+
+Memoized method arguments are copied synchronously at admission, after plain-JSON eligibility/key validation and
+before the deferred method or batch can run. Find/count batches and scalar fallbacks consume that same snapshot;
+mutating or reusing the caller's query cannot change an existing proof under its old key. Unsupported arguments and
+transaction calls still bypass memoization. Trusted memoReadValue loaders remain responsible for their captured inputs;
+queryRead already freezes its complete encoded input before supplying the loader.

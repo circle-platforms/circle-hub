@@ -193,3 +193,21 @@ test('space header filtering does not hide a missing active personal payload as 
  const epoch=(await kit.personalPayloads!.scope(owner.id)).epoch;await kit.personalPayloads!.purge(owner,epoch);
  assert.deepEqual(await kit.store.entryCandidates!(query),{items:[],total:0},'a completed purge, unlike lost active bytes, is ordinary absence');
 });
+
+test('memoized port methods execute the call-time argument snapshot before the caller can mutate it',async()=>{
+ let calls=0;const port={echo:async(o:{v:string;items:string[]})=>{calls++;return o.v+':'+o.items.join(',');}};
+ await withReadScope(async()=>{const scoped=memoReadPort(port,['echo']),arg={v:'alice',items:['first']};const pending=scoped.echo(arg);arg.v='bob';arg.items.push('second');assert.equal(await pending,'alice:first');assert.equal(await scoped.echo({v:'alice',items:['first']}),'alice:first');assert.equal(calls,1);});
+});
+test('queued record reads freeze nested arguments for native batches, scalar fallbacks and generic methods',async()=>{
+ for(const native of [true,false]){
+  const find=async(q:{value:string})=>({items:[{body:{v:q.value}}],next:null});
+  const count=async(q:{index:{value:string}[]})=>({count:q.index[0].value==='alice'?1:2,capped:false});
+  const store={find,countIndexed:count,...(native?{findBatch:async(qs:any[])=>Promise.all(qs.map(find)),countIndexedBatch:async(qs:any[])=>Promise.all(qs.map(count))}:{}),findMany:async(q:{values:string[]})=>[{body:{values:[...q.values]}}]} as unknown as RecordStore;
+  await withReadScope(async()=>{
+   const scoped=scopedRecordStore(store),q={key:'synthetic.snapshot',value:'alice'},pending=scoped.find<any>(q);q.value='bob';assert.equal((await pending).items[0].body.v,'alice');assert.equal((await scoped.find<any>({...q,value:'alice'})).items[0].body.v,'alice');
+   const values=['alice','bob','carol'],shared={key:'synthetic.snapshot',value:''};const reads=values.map(value=>{shared.value=value;return scoped.find<any>(shared);});shared.value='last';assert.deepEqual((await Promise.all(reads)).map(p=>p.items[0].body.v),values);
+   const c={index:[{key:'synthetic.snapshot',value:'alice'}]},counts=scoped.countIndexed!(c);c.index[0].value='bob';assert.equal((await counts).count,1);assert.equal((await scoped.countIndexed!({index:[{key:'synthetic.snapshot',value:'alice'}]})).count,1);
+   const f={key:'synthetic.snapshot',values:['alice']},generic=scoped.findMany<any>(f);f.values[0]='bob';assert.deepEqual((await generic)[0].body.values,['alice']);assert.deepEqual((await scoped.findMany<any>({key:f.key,values:['alice']}))[0].body.values,['alice']);
+  });
+ }
+});
