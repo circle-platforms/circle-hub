@@ -18,16 +18,21 @@ describe('the profile', () => {
   test('lists every read route one by one and no write route; the write path under the read prefix matches none', () => {
     assert.deepEqual(
       profile.routes.map((r) => `${r.method} ${r.path}`),
-      ['GET /plmquery/product/all/', 'GET /plmquery/build/', 'POST /plmquery/bug/detail/', 'POST /plmquery/story/detail/'],
+      ['GET /plmquery/product/all/', 'GET /plmquery/build/', 'GET /plmquery/build/{id}/', 'POST /plmquery/bug/detail/', 'GET /plmquery/bug/', 'POST /plmquery/story/detail/'],
     );
     for (const route of profile.routes) {
       assert.equal(route.read, true);
-      assert.doesNotMatch(route.path, /\{/, 'literal paths: no template can reach another path under the prefix');
+      // A template segment takes digits only, so it cannot name another path under the prefix (decision 111: one build by number).
+      if (/\{/.test(route.path)) assert.deepEqual(Object.values(route.params ?? {}).map((shape) => (shape as { pattern?: string }).pattern), ['^[0-9]{1,15}$'], route.id);
       assert.equal(templateReaches(parsePathTemplate(route.path), parsePathTemplate(WRITE_PATH)), false, route.id);
     }
     const routes = compileRoutes(profile.routes);
     assert.throws(() => matchRoute(routes, { method: 'POST', path: WRITE_PATH, query: {}, body: { id: 1 } }), 'the write route is refused by the route list');
     assert.throws(() => matchRoute(routes, { method: 'POST', path: '/plmquery/bug/detail/', query: {}, body: { bug_ids: [1], status: 'closed' } }), 'a body the read does not allow');
+    // The bug list (decision 111): its whitelisted filters only, by GET only.
+    assert.doesNotThrow(() => matchRoute(routes, { method: 'GET', path: '/plmquery/bug/', query: { assignedTo: 'synthetic.user', status: 'active' }, body: undefined }));
+    assert.throws(() => matchRoute(routes, { method: 'GET', path: '/plmquery/bug/', query: { assignedTo: 'synthetic.user', page: '2' }, body: undefined }), 'a filter outside the whitelist');
+    assert.throws(() => matchRoute(routes, { method: 'POST', path: '/plmquery/bug/', query: {}, body: { assignedTo: 'synthetic.user' } }), 'the list is read by GET only');
   });
 });
 

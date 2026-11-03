@@ -107,6 +107,25 @@
       "description": "一个产品的全部构建（带信封或裸数组，不分页）"
     },
     {
+      "id": "build-detail",
+      "role": "plm-api",
+      "method": "GET",
+      "path": "/plmquery/build/{id}/",
+      "params": {
+        "id": {
+          "type": "string",
+          "maxLength": 15,
+          "pattern": "^[0-9]{1,15}$"
+        }
+      },
+      "response": "json",
+      "envelope": "when_present",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "按编号读一条构建记录（缺陷读法用它带出发现构建的名字）"
+    },
+    {
       "id": "bug-detail",
       "role": "plm-api",
       "method": "POST",
@@ -145,6 +164,63 @@
       "timeout_ms": 60000,
       "read": true,
       "description": "缺陷详情（读接口，用 POST）"
+    },
+    {
+      "id": "bug-list",
+      "role": "plm-api",
+      "method": "GET",
+      "path": "/plmquery/bug/",
+      "query": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "maxLength": 9,
+            "pattern": "^[0-9]{1,9}$"
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 8,
+            "enum": [
+              "active",
+              "resolved",
+              "closed"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "maxLength": 1,
+            "pattern": "^[1-5]{1}$"
+          },
+          "assignedTo": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "openedBy": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "lastEditedDate_start": {
+            "type": "string",
+            "maxLength": 19,
+            "pattern": "^[0-9 :T-]{10,19}$"
+          },
+          "lastEditedDate_end": {
+            "type": "string",
+            "maxLength": 19,
+            "pattern": "^[0-9 :T-]{10,19}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": "when_present",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "按条件列出缺陷：只收产品、状态、严重程度、经办人、创建人和最后修改时间段几个条件（至少一个、各值的精确格式由读法函数核对；列表接口不分页）"
     },
     {
       "id": "story-detail",
@@ -191,7 +267,7 @@
     {
       "name": "bug",
       "external": "plm:bug",
-      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段。settings.bug_fix_actions 为 JSON 字符串数组时，content.fix_notes 只收 action 与数组成员完全相等且 comment 非空的动作，按原顺序，comment 原文不改（HTML 转纯文本）；没配置或不是该数组时 fix_notes 为 null，说明写缺少设置 settings.bug_fix_actions",
+      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段。settings.bug_fix_actions 为 JSON 字符串数组时，content.fix_notes 只收 action 与数组成员完全相等且 comment 非空的动作，按原顺序，comment 原文不改（HTML 转纯文本）；没配置或不是该数组时 fix_notes 为 null，说明写缺少设置 settings.bug_fix_actions；再按 openedBuild 的编号读那一条构建记录，content.opened_build 给出编号和名字，读不到时写明原因",
       "plan": {
         "module": "functions/plm.ts",
         "export": "detailPlan"
@@ -200,7 +276,7 @@
         "module": "functions/plm.ts",
         "export": "detailProject"
       },
-      "max_requests": 1,
+      "max_requests": 2,
       "absent_codes": [
         "plm.absent"
       ]
@@ -216,6 +292,20 @@
       "project": {
         "module": "functions/plm.ts",
         "export": "bugsProject"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "bug-list",
+      "external": "plm:bug-list",
+      "description": "按条件列出的缺陷（plm:bug-list:<条件>，条件写成 名=值、用 & 连接、值做 URI 编码；名取 product、status、severity、assignedTo、openedBy、lastEditedDate_start、lastEditedDate_end，每个最多一次，至少一个）：应答的每一行原样给出（只取标量字段），带过滤条件和行数；列表接口不分页，Hub 没有核对服务端行数上限，空列表不说明没有",
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "bugListPlan"
+      },
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "bugListProject"
       },
       "max_requests": 1
     },

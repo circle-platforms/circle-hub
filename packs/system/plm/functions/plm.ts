@@ -8,9 +8,9 @@
 
 import type { Resolution } from '../../../../contracts/generated/vocabulary.ts';
 
-type Planned = { key: string; route: string; body?: unknown; query?: Record<string, string> };
+type Planned = { key: string; route: string; body?: unknown; query?: Record<string, string>; params?: Record<string, string> };
 type PlanOutput = { requests: Planned[]; done: boolean; original?: string };
-type Response = { ok?: boolean; json?: unknown };
+type Response = { ok?: boolean; json?: unknown; error?: { code?: string; message?: string } };
 
 const ID = /^[1-9][0-9]{0,14}$/;
 export const MAX_BUGS_BATCH = 50;
@@ -48,12 +48,48 @@ function partsOf(input: unknown): { type: string; key: string; responses: Record
 
 const kindOf = (type: string): Kind | null => (type === 'bug' || type === 'story' ? type : null);
 
-/** Plan of plm:bug:<id> and plm:story:<id>: one detail request for the one id. */
+/**
+ * Plan of plm:bug:<id> and plm:story:<id>: one detail request for the one id. A bug then reads the one build record its
+ * openedBuild names (GET build/{id}/), so the content can say which build the bug was found in, not only a build number.
+ */
 export function detailPlan(input: unknown): PlanOutput {
-  const { type, key } = partsOf(input);
+  const { type, key, responses } = partsOf(input);
   const kind = kindOf(type);
   if (kind === null || !ID.test(key)) return { requests: [], done: true };
-  return { requests: [{ key: 'detail', route: KINDS[kind].route, body: { [KINDS[kind].member]: [Number(key)] } }], done: true };
+  const detail: Planned = { key: 'detail', route: KINDS[kind].route, body: { [KINDS[kind].member]: [Number(key)] } };
+  if (kind !== 'bug') return { requests: [detail], done: true };
+  if (!Object.hasOwn(responses, 'detail')) return { requests: [detail], original: 'detail', done: false };
+  const build = openedBuildId(recordOf(responses.detail, key));
+  return { requests: build === null ? [] : [{ key: 'opened', route: 'build-detail', params: { id: build } }], original: 'detail', done: true };
+}
+
+/** The record of one id in a detail answer, or null. */
+function recordOf(response: Response | undefined, key: string): Record<string, unknown> | null {
+  const data = isRecord(response?.json) ? (response.json as Record<string, unknown>).data : undefined;
+  const record = Array.isArray(data) ? data.find((item) => isRecord(item) && idText(item.id) === key) : undefined;
+  return isRecord(record) ? record : null;
+}
+
+/** The build number a bug record names in openedBuild, when it is one (the service also writes trunk or an empty value). */
+function openedBuildId(record: Record<string, unknown> | null): string | null {
+  const raw = record === null ? null : idText(record.openedBuild);
+  return raw !== null && ID.test(raw) ? raw : null;
+}
+
+/**
+ * The build a bug was found in (D05 R[8]): the number its record gives and the name from that one build record, or why
+ * there is no name: the record names no build number, the build read failed (a held answer says so), or the record has none.
+ */
+function openedBuildOf(record: Record<string, unknown>, response: Response | undefined): { id: string | null; name: string | null; note?: string } {
+  const id = openedBuildId(record);
+  if (id === null) return { id: typeof record.openedBuild === 'string' && record.openedBuild !== '' ? record.openedBuild : null, name: null, note: '缺陷记录的 openedBuild 不是构建编号，没有对应的构建记录可读' };
+  if (response === undefined) return { id, name: null, note: `没有读构建 ${id} 的记录` };
+  if (response.ok === false) return { id, name: null, note: `构建 ${id} 的记录没读到：${(response.error?.message ?? '读取失败').slice(0, 300)}` };
+  const json = response.json;
+  const data = isRecord(json) && Object.hasOwn(json, 'data') ? json.data : json;
+  const build = Array.isArray(data) ? data.find((item) => isRecord(item) && idText(item.id) === id) : data;
+  const name = isRecord(build) && typeof build.name === 'string' && build.name.trim() !== '' ? build.name : null;
+  return name === null ? { id, name: null, note: `构建 ${id} 的记录里没有名字` } : { id, name };
 }
 
 /** Plan of plm:bugs:<id>+<id>+...: one detail request for all ids (at most 50, sorted numerically, deduplicated). */
@@ -149,7 +185,7 @@ export function detailProject(input: unknown): unknown {
   return {
     ...(notes?.fix_notes_note ? { note: notes.fix_notes_note } : {}),
     artifacts: [
-      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField, ...notes } : {}) } },
+      { name: 'content', media_type: 'application/json', json: { id: key, kind, title, fields, html_fields: html, ...(kind === 'bug' ? { fix_field: fixField, ...notes, opened_build: openedBuildOf(record, responses.opened) } : {}) } },
       { name: 'meta', media_type: 'application/json', json: { id: key, kind, title: title === null ? `${KINDS[kind].label} ${key}` : `${KINDS[kind].label} ${key} ${title}`, status } },
     ],
   };
@@ -315,4 +351,68 @@ export function buildsProject(input: unknown): unknown {
   });
   const note = 'id' in key ? '产品编号取自读取键，没有对照产品列表核对；构建列表为空不证明产品存在。下一步如需核实产品身份，请对照产品列表或按名字读取' : undefined;
   return { ...(note ? { note } : {}), artifacts: [{ name: 'content', media_type: 'application/json', json: { product: choice.product, product_resolution: choice.resolution, builds, ...(note ? { note } : {}) } }] };
+}
+
+/**
+ * The filters of a bug list (the query service's list route GET /plmquery/bug/; its parameters were observed on 2026-10-12):
+ * each at most once, every value checked against its form. The list route does not page, so a read always filters.
+ */
+export const BUG_LIST_FILTERS: Readonly<Record<string, RegExp>> = {
+  product: /^[1-9][0-9]{0,8}$/,
+  status: /^(?:active|resolved|closed)$/,
+  severity: /^[1-5]$/,
+  assignedTo: /^[A-Za-z0-9._-]{1,64}$/,
+  openedBy: /^[A-Za-z0-9._-]{1,64}$/,
+  lastEditedDate_start: /^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T ][0-9]{2}:[0-9]{2}:[0-9]{2})?$/,
+  lastEditedDate_end: /^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:[T ][0-9]{2}:[0-9]{2}:[0-9]{2})?$/,
+};
+
+const LIST_FORM = `写成 名=值，多个条件用 & 连接，值做 URI 编码；名取 ${Object.keys(BUG_LIST_FILTERS).join('、')}，每个最多一次`;
+
+/** Parses a bug list key `name=value[&name=value…]` into its filters; at least one filter, names and values as BUG_LIST_FILTERS says. */
+export function parseBugListKey(key: string): { filters: Record<string, string> } | { error: string } {
+  if (typeof key !== 'string' || key === '') return { error: `缺少过滤条件：${LIST_FORM}` };
+  const filters: Record<string, string> = {};
+  for (const pair of key.split('&')) {
+    const at = pair.indexOf('=');
+    const name = at < 0 ? pair : pair.slice(0, at);
+    if (!Object.hasOwn(BUG_LIST_FILTERS, name)) return { error: `不认识的过滤条件“${name.slice(0, 40)}”：${LIST_FORM}` };
+    if (Object.hasOwn(filters, name)) return { error: `过滤条件 ${name} 写了不止一次：${LIST_FORM}` };
+    let value: string;
+    try { value = decodeURIComponent(pair.slice(at + 1)); } catch { return { error: `过滤条件 ${name} 的值不是合法的 URI 编码：${LIST_FORM}` }; }
+    if (at < 0 || !BUG_LIST_FILTERS[name]!.test(value)) return { error: `过滤条件 ${name} 的值不合它的格式：${LIST_FORM}` };
+    filters[name] = value;
+  }
+  return { filters };
+}
+
+/** One GET of the list route with the key's filters as its query. */
+export function bugListPlan(input: unknown): PlanOutput {
+  const { type, key } = partsOf(input);
+  const parsed = type === 'bug-list' ? parseBugListKey(key) : { error: '读取类型不是 bug-list' };
+  if ('error' in parsed) return { requests: [], done: true };
+  return { requests: [{ key: 'list', route: 'bug-list', query: parsed.filters }], original: 'list', done: true };
+}
+
+/**
+ * The rows of the list as the service gave them (scalar fields only, nothing renamed or counted for the reader), with the
+ * filters and the row count. Its note says what the list does and does not establish: the route does not page (observed),
+ * the Hub has not checked for a server-side row cap, and an empty list is no match at that moment, not proof of none.
+ */
+export function bugListProject(input: unknown): unknown {
+  const { type, key, responses, original } = partsOf(input);
+  const parsed = type === 'bug-list' ? parseBugListKey(key) : { error: '读取类型不是 bug-list' };
+  if ('error' in parsed) return { error: { code: 'plm.invalid_key', message: parsed.error } };
+  const raw = responses[original]?.json;
+  const data = Array.isArray(raw) ? raw : (isRecord(raw) && Array.isArray(raw.data) ? raw.data : null);
+  if (responses[original]?.ok === false || data === null) return { error: { code: 'plm.no_records', message: '缺陷列表不是数组：应答既不是数组也没有数组形的 data；核对原始应答后重读' } };
+  const bugs = data.filter(isRecord).map((record) => Object.fromEntries(Object.entries(record).filter(([, value]) => value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))));
+  const note = `按这些条件列出的缺陷，这次应答共 ${bugs.length} 行；查询服务的列表接口不分页（2026-10-12 观察），Hub 没有核对服务端是否另有行数上限；行里的字段（含 deleted、status）原样给出，按哪些行计数由读者判断；空列表只说明读取时刻按这些条件没有匹配，不说明没有`;
+  return {
+    note,
+    artifacts: [
+      { name: 'content', media_type: 'application/json', json: { filters: parsed.filters, count: bugs.length, bugs, note } },
+      { name: 'meta', media_type: 'application/json', json: { count: bugs.length, filters: parsed.filters } },
+    ],
+  };
 }
