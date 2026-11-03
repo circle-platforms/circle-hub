@@ -8,18 +8,24 @@ name: Hub checks
 # runner writes (JUNIT_REPORT), to compare with the measured durations that balance the shards, and keep that report for 14
 # days. The macOS paths (sandbox-exec, plutil, launchd) run in macos.yml on every push to main, nightly and on
 # demand, and in the local macOS run of each phase (AGENTS.md).
+# A pull request runs the fast jobs only: Types, Generated contracts match the model, Docs and CI checks, Reference archive.
+# The heavy jobs (the unit, acceptance and Linux isolation shards) run in the merge queue, on the commit that becomes main,
+# and on every push to main. On a pull request their aggregates (Unit tests, Acceptance on a temporary PostgreSQL, Linux
+# isolation) are skipped, which a required check counts as passed; in the merge queue and on main each requires every shard.
 
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
 
-# A newer push to a pull request replaces its running checks; every push to main keeps its own run.
+# A newer push to a pull request replaces its running checks. Every other run (a push to main, a merge group) has a group of
+# its own, so none is cancelled or replaced while it waits.
 concurrency:
-  group: checks-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -52,6 +58,8 @@ jobs:
   # regular runs in three shards balanced by measured durations (tools/run-unit-tests.ts); parser-bounds stays one single-worker process.
   unit_parts:
     name: Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}
+    # The merge queue and main only: a pull request runs the fast jobs.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -111,7 +119,8 @@ jobs:
   unit:
     name: Unit tests
     needs: unit_parts
-    if: ${{ always() }}
+    # Skipped on a pull request, where its parts do not run; elsewhere it reports also when a part failed or was cancelled.
+    if: ${{ always() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -121,6 +130,8 @@ jobs:
   # Four slices balanced by measured file durations (tools/run-acceptance-tests.ts); each file runs in exactly one.
   acceptance_parts:
     name: Acceptance on a temporary PostgreSQL / ${{ matrix.shard }}
+    # The merge queue and main only: a pull request runs the fast jobs.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -161,7 +172,8 @@ jobs:
   acceptance:
     name: Acceptance on a temporary PostgreSQL
     needs: acceptance_parts
-    if: ${{ always() }}
+    # Skipped on a pull request, where its parts do not run; elsewhere it reports also when a part failed or was cancelled.
+    if: ${{ always() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -175,6 +187,8 @@ jobs:
   # balanced by measured durations; the other jobs have no isolation and skip those tests.
   isolation_parts:
     name: Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}
+    # The merge queue and main only: a pull request runs the fast jobs.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -243,7 +257,8 @@ jobs:
   isolation:
     name: Linux isolation
     needs: isolation_parts
-    if: ${{ always() }}
+    # Skipped on a pull request, where its parts do not run; elsewhere it reports also when a part failed or was cancelled.
+    if: ${{ always() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
