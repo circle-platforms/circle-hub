@@ -1,4 +1,4 @@
-// Decision 105 read the way CES reads a running task (compile-excel SKILL.md §9: read the task by its id, never resubmit):
+// Decision 105 read the way the reference compile skill reads a running task (read the task by its id, never resubmit):
 // a run whose release requirement is open does not try to dispatch; while a job of the run has not ended, the same
 // submission reads progress and a different one is kept as received but not validated. Toy pack, scripted dispatch port.
 import { createTestParserRegistry } from '../../testing/parsers.ts';

@@ -17,7 +17,7 @@ function withSteps(steps: ReturnType<typeof goodData>['steps']): ReturnType<type
   return data;
 }
 
-describe('台架事实', () => {
+describe('自动化测试环境事实', () => {
   it('监听候选、盲地址、后端候选照清单算出', () => {
     const facts = bedFacts(bedsOf()[0]);
     assert.deepEqual(
@@ -49,10 +49,10 @@ describe('台架事实', () => {
     assert.ok(facts.listeners.some((f) => f.device === 'dut1' && f.triggers.some((t) => t.device === 'server0')), JSON.stringify(facts.listeners));
   });
 
-  it('部署按台架座位收窄触发类型后，只剩 server 的网段又算盲；没有任何触发座位的网段仍盲', () => {
+  it('部署按自动化测试环境座位收窄触发类型后，只剩 server 的网段又算盲；没有任何触发座位的网段仍盲', () => {
     const doc = bedsOf();
     const bed = { ...doc[0], devices: [...doc[0].devices.filter((d) => d.type !== 'console' && d.name !== 'router0' && d.name !== 'client0'), { ...doc[0].devices.find((d) => d.name === 'server0')!, ipv4: [{ family: 'ipv4' as const, address: '192.0.2.190', subnet: '192.0.2.128/26', prefix: 26, value: 0n }] }] };
-    // 部署声明本台架 server 没有可用的主机 shell 座位：只有 server 的网段回到盲。
+    // 部署声明本自动化测试环境 server 没有可用的主机 shell 座位：只有 server 的网段回到盲。
     const narrowed = bedFacts(bed, new Set(['router', 'client']));
     assert.ok(narrowed.blind.some((f) => f.device === 'dut1'), JSON.stringify(narrowed.blind));
     // dut0 的网段上有 router0 被删掉了：整张床没有任何 router/client/server 以外……
@@ -74,7 +74,7 @@ describe('台架事实', () => {
     assert.deepEqual(readAddress(bed, leases, now, '2001:db8:2::21'), { kind: 'off_bed' });
   });
 
-  it('地址判读：接口地址、分配到的地址（血缘租约）、台架之外', () => {
+  it('地址判读：接口地址、分配到的地址（血缘租约）、自动化测试环境之外', () => {
     const bed = bedsOf()[0];
     const now = '2026-10-23T02:00:00.000Z';
     const leases = [

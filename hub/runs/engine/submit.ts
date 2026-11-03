@@ -285,7 +285,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   }
   // A job of the run that has not ended verifies the run's latest accepted result again before its submit. While it runs,
   // the same submission reads progress from the stored result, and a different one is kept as received but not validated,
-  // so the job goes on (CES reads a running task by its id and never resubmits it).
+  // so the job goes on (the reference compile skill reads a running task by its id and never resubmits it).
   if (!refresh && workflow.effects?.some((row) => row.trigger === 'hub_template') && ctx.deps.dispatch?.inFlight) {
     const flight = await ctx.deps.dispatch.inFlight(run.run);
     if (flight !== null) {

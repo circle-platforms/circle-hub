@@ -787,6 +787,11 @@
       },
       "autoid": "990000000000000031",
       "title": "合成用例",
+      "path": [
+        "合成文档",
+        "合成分组",
+        "合成用例"
+      ],
       "priority": "2",
       "steps": [
         {
@@ -821,7 +826,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.8.6"
+      "generator": "case-compile@3.9.18"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -855,7 +860,7 @@
           },
           {
             "name": "xl/worksheets/sheet1.xml",
-            "size": 3398,
+            "size": 3431,
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
           }
         ],
@@ -920,14 +925,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.8.6",
+                    "text": "case-compile@3.9.18",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "334db964bbae536e9301e2a0015af99ffc2405385ab84ffeeddfeb0ac6a5cb8b",
+                    "text": "b7fe9af2c4e38727db14bf83ddee4d3551368a0d274c093cb85b0f6f79bf6153",
                     "formula": false,
                     "style": null
                   }
@@ -1056,7 +1061,7 @@
                   {
                     "reference": "D4",
                     "type": "inlineStr",
-                    "text": "合成用例",
+                    "text": "合成文档>合成分组>合成用例",
                     "formula": false,
                     "style": null
                   },

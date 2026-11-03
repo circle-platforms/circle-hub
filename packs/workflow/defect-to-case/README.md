@@ -6,18 +6,16 @@
 
 | 文件 | 内容与职责 |
 | --- | --- |
-| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定收窄的 `knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令>&fields=commands,document,node,title,negative,case_structure`）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
-| `requirements.json` | 声明五项要求项：`cases`（用例起草，判定，条目级）、`shape`（用例结构，事实，条目级）、`commands`（命令与参数，事实，条目级）、`grounded`（期望结果依据，事实，条目级）、`not_duplicate`（用例去重，事实，条目级），以及各代码的修复重试规则（最多 2 轮） |
-| `checks.json` | 声明七项检查：`draft_shape`（结构合规）、`commands_catalog`（目录解析与参数校验）、`commands_refutation`（反向用例预期反驳校验）、`grounded_quotes`（逐字引文核对）、`grounded_sources`（来源范围核验）、`grounded_reading`（期望文字逐字核对）、`duplicate_check`（已索引用例去重检查） |
+| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定不带 `only` 的完整命令索引）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；Hub 从解析出的命令身份计算读取键并在同一修订重绑索引；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1` |
+| `requirements.json` | 声明六项条目级要求：`cases`（用例起草）、`shape`（用例结构）、`commands`（命令与参数）、`grounded`（期望结果依据）、`not_duplicate`（用例去重）和 `fixed_status`（原始结构的已修复状态） |
+| `checks.json` | 声明九项检查：结构、命令目录、预期反驳、逐字引文、来源范围、期望文字、结构去重、完整签名成员关系和原始已修复状态 |
 | `slots.schema.json` | 声明条目插槽 `cases`：包含起草用例的结构模式（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与逐字引文、标签） |
 | `SKILL.md` | 中文起草指引（< 8000 字符）：任务目标、证据读取顺序、用例起草结构、边界校验与修复规则、提交格式 |
 | `functions/` | 投影函数 `projection.ts`、不再自动绑定手册的期望来源函数 `expected.ts`、被判对象构建器 `subjects.ts`、纯检查函数 `checks.ts` 及类型定义 `types.ts` |
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
-| `samples/` | 14 个样例（`pack-sample@1`，positive 与 negative 各 7 个），覆盖所有 7 项检查 |
+| `samples/` | 19 个样例（`pack-sample@1`，positive 9 个、negative 10 个），覆盖九项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.6.6`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
-
-| `pack.json` | 任务包清单（`defect-to-case@1.6.7`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.6.24`，由 pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
@@ -102,6 +100,7 @@ npx tsc --noEmit
 - **packs/system/plm**：缺陷 content.fix_field 必须回传资源 settings.bug_fix_field 的字段名或 null；plm-fields 1.2.0 已完成本地合成验证，仍须集成者合入、发布、更新资源并核实真实字段后才生效，本包不把分支代码视为部署可用。
 - **packs/product/famx**：若要增加按期望结果去重，需要 cases 生产器在用例索引提供期望原文及其来源；产品包字段和本包检查一起排期，须提供完整 case_structure，包括期望原文身份。
 - **hub/runs/engine**：显式绑定不可读外部对象时，SOURCE_UNAVAILABLE 回执尚不能指出可补取的槽与对象；客户端当前须先核实可读再绑，可选 manual 不可读时不绑定，避免无说明地终止。
+- **hub/runs/engine（`narrow-reads.ts`）**：检查时收窄读到的视图只因未知条目截断（`unknown_only`）时，引擎仍记“收窄索引存在截断、跳过或缺少条目”（`budget_exhausted`，下一步“调高视图或 max_entries 上限”），并把已列出用例里没有的请求键记成“补建这些键的索引”。这两条进了主张的 `data.unread_sources`，与本包陈述里的出口（按视图说明补齐事实后重开运行）不一致。引擎应读 `unknown_entries`/`unknown_only`，写明条数并沿用视图说明的下一步。另外引擎按 `max_entries` 截掉条目时保留了原视图的 `unknown_only: true`；本包看到列出的条目少于 `total_entries` 时不再把它当作只因未知条目截断，但这个标记本该由引擎去掉。
 - **已做（1.5.0）**：核心视图已提供 `only` 和 `cut_keys`，本包已按字段消费；仅对缺少相应字段的老视图按 URI 和上限推断，并在说明里披露。
 
 ## 终审核对：收窄索引的缺失与空集
@@ -158,6 +157,8 @@ PLM 部署设置有两项。`settings.bug_fix_field` 由系统包在缺陷 `cont
 
 R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/defects[].bug/status/text，status 来自生成词表 release_status；complete 必须为 true，构建与冻结构建精确相等。HTML/Markdown 标题、文件角色及数字外形不再补 fixed/known，缺字段给来源维护人补原始 JSON 后重产。可选 version、released、module、system 只读声明，不从正文猜测。
 
+1.6.20 修正技能和两个提交样例：测试类型写在 `resource`，取包内标签表的精确原文，并声明稳定草稿 `id`。原来的 `tags` 只是保留的旧字段，大小写变体不等同于声明值；检查规则不变。
+
 查重规则 defect-to-case.case-structure@2：原用例作者在 KityMinder case 节点 data.case_structure 声明 {schema:"case-structure@2",commands:CommandIdentity[],expected:[{after,quote:ExpectedQuoteIdentity}]}，FAMX 原样保留并标作者声明。草稿给稳定 id，每步 identity，每个 expected 给 identity/after 和原文 quote。命令与期望的顺序及重复次数均保留，after 为从 1 起的命令位置；参数按显式位置排序及类型化 parsed 值比较，不补默认值，raw/role/标题/标签/正反向/优先级不作键。引用按原始摘要、parser、路径、byte span 完全相等。Hub 核验草稿引文 byte span 与完整原件字节；没有原件、类型来源、结构声明或完整索引范围时保持未知，并请求补声明/原件后以新根或新运行续做。非法负向命令没有合法完整身份时，不伪造身份：交包作者补非法输入身份合约或具名人工复核。
 
 主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本版按所有者要求运行包测试及 acceptance 27。
@@ -179,3 +180,28 @@ R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/d
 命令树里的联合类型参数（例如 IPADDR 是 IPv4 或 IPv6）由产品包生成器发布成同一签名引用下的几个目录签名（编号 k.1、k.2），草稿和索引用例的 CommandIdentity 记的仍是这一个签名引用。结构身份按这个引用下的全部展开核对：各展开除了每个参数的类型备选，其余必须一致（参数个数、名称、原生类型、可省略标记）；一致时，身份只要在其中一个展开下完整就成立，即每个参数都有类型且约束已核、必填参数都给了、每个实参都落在所声明的类型内。不会拿一个展开的地址和另一个展开的端口拼出身份。展开之间不一致时身份不成立，查重记未知，不再默认取第一个展开。
 
 1.6.20 及以前只拿第一个展开核对，排在后面的备选永远对不上（IPv6 地址；IPMASK 先列点分掩码时的前缀长度）：带这种参数的草稿查重停在未知；索引里这样的用例被算作“缺完整作者结构声明”，同一视图下的其他草稿，只要没查出与别的用例重复，也跟着停在未知。`functions/union-identity.test.ts` 用合成的双族地址命令复现并覆盖这几种情况。
+
+## 合线（1.6.25，2026-11-04）
+
+集成线在本包上另发了 1.6.22–1.6.24：1.6.22 是联合类型参数结构身份的同一修正（main 上是 1.6.21），1.6.23、1.6.24 见下面两节。合线后的包取两边都没用过的 1.6.25，带上这两节的改动；联合类型的修正保留 main 的写法。
+
+## 只因未知条目截断的用例索引（1.6.23）
+
+`indexed_cases` 声明 `unknown_entries: "disclose"`。知识视图只因部分用例缺查询所需的事实而截断时（`truncated: true`、`unknown_entries: N`、`unknown_only: true`），Hub 照样绑定；还有别的截断（行留给下一页、上限截断、凭据扫描命中），或截断却没有 `unknown_only`，开始运行时仍被拒绝。本包只读这两个字段，不读 notes 做判断，notes 原样转给人看。
+
+- 读法（`functions/compact-index.ts` 的 `unknownEntriesOf`）：`unknown_entries` 必须是正整数且视图已截断，`unknown_only` 只能是 true 且带计数；形状不对或与 `truncated` 矛盾记 `invalidUnknown`，不证明完整。`unknown_only` 表示别的都没截，所以列出的键和条目必须等于 `total_keys`、`total_entries`，也不能有 `cut_keys`；对不上时按普通截断处理。紧凑索引只在视图带这些字段时多出 `unknownEntries`、`unknownOnly` 和原样的 `sourceNotes`；没有未知条目的视图，投影输出和检查结果与 1.6.22 逐字节相同。
+- 查重：可见的结构重复照样驳回，未知条目只会多出用例，推翻不了已见的重复。没查出重复的草稿记未知（`integrity_unproven`），陈述写明未知用例条数、哪些请求键在已列出的用例里没有条目、原样引用的视图说明，下一步是按视图说明补齐这些用例的事实后以新输入重开运行；同一冻结修订重读补不出这些事实。主张的 data 带 `unknown_entries`。截断而没有 `unknown_only`，或两个字段都没有，照旧写“源索引截断；下一步同根补完整范围”。
+- 开始运行：`functions/expected.ts` 在回执的证据缺口里给出 `defect-to-case.index_unknown_entries`，写明条数、视图说明和下一步，`data.unknown_entries` 是计数。
+- 测试与样例：`functions/unknown-entries.test.ts` 覆盖完整视图、只因未知条目截断、未知条目加别的截断、两个字段都没有四种情况，以及字段读法、开始运行缺口和真实知识视图生产的命令未知用例；`unknown-entries.test.ts` 经真实运行引擎验证：只因未知条目截断的索引被绑定，回执带缺口，查重主张未知并带条数，另两种截断仍被拒绝。样例 `samples/negative/duplicate_unknown_entries.json` 同一视图下一份草稿被驳回、一份记未知。
+
+任务说明假定本包的索引由 Hub 按 `index_default` 从构建缺陷索引补 only 并合并分段。本包没有 `index_default`：开始运行绑定不带 only 的完整命令索引，检查时由 `duplicate_check.reads.narrow` 按草稿命令在同一修订重读一段 only，不经过分段合并。端到端测试覆盖的是这条收窄读取路径。
+
+## 没有修复说明时给出假设（1.6.24）
+
+缺陷没有可引用的修复说明时（missing_fix_field、fix_text_missing），拒绝不再只给一个原因。拒绝引用缺陷原件，写明缺的事实是"可以引用的修复说明"，并列出两个假设，再固定留一个"其他"（决定 111，通用模型 V08）：
+
+- 缺陷还没有修复：已修复状态规则预测，没修复的缺陷不会有原始结构状态 fixed；原件里观察到 fixed 时这个假设记已排除，否则开放，并写出看到的状态；
+- 修复说明写在 Hub 没有配置读取的字段或动作里：没有规则能预测，保持开放，并写出资源的配置情况。
+
+修正写明各步由谁做：缺陷修复后由运行者再开运行；修复说明在别的字段或动作里时由集成者配置 settings.bug_fix_field 或 settings.bug_fix_actions。哪个假设成立由读者判断，Hub 不替读者选。
+

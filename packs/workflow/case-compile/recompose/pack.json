@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -28,13 +28,13 @@
     },
     {
       "path": "functions/compile-structure.ts",
-      "sha256": "f09f66fac05ba85c04be39c6cc1f09885b5f35949fab33ae2b79729addec519f",
-      "size": 12443
+      "sha256": "449511eb624e0bca749f194cef1ebdfcc2b8bf7671e74b6d584486c14705774f",
+      "size": 13117
     },
     {
       "path": "functions/generated/command-grammar.ts",
-      "sha256": "10c20025d5070495320ddf398cfa2dcc5e94d15f5e57a32c4c75b4734bc77b47",
-      "size": 10589
+      "sha256": "46b7682f92a2ad54586840d263e459c8d463f2d833c0556e01290f8018d60237",
+      "size": 11844
     },
     {
       "path": "functions/project.ts",
@@ -43,12 +43,12 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "14d5a8d13f15a7c50fc4794ee4cf3286a293c9e699c6bad3ff44ef18def359f8",
-      "size": 23052
+      "sha256": "c6ccb66bb6d7f99123a37c3a1353750733be63237907cae3a34a3823419b411a",
+      "size": 23067
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "07370dca08b95d55dc92923049d055a98f835f97e265ac9810f33664f6588778",
+      "sha256": "f1c0a6f4ce9834daf7dd664f93525c143d7e399250eddfa3f9ec3b784181472c",
       "size": 4185
     },
     {
@@ -88,7 +88,7 @@
     },
     {
       "path": "samples/negative/record.json",
-      "sha256": "0a910d1e0e833131d98538059cc8e3d0758a3eebeb8974a502963c5b97cb3b86",
+      "sha256": "074aae0cca2aa0fa16beed0a4d64b3ea93f316e9d74b785efa1659d6770d228a",
       "size": 28861
     },
     {
@@ -103,7 +103,7 @@
     },
     {
       "path": "samples/positive/record.json",
-      "sha256": "51f39aec3594404071b4eb3f33d8ea8378c695f24d31cde2b9d5a849e5d03921",
+      "sha256": "36c6429204b7ede48e7b7ccd62aad9d62f61403f080a627cbdfd53d4a7215646",
       "size": 28927
     },
     {
@@ -113,8 +113,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "804bc30da61a0d383df715a5d350c5126290d23466464ff9068856d2890393e6",
-      "size": 1588
+      "sha256": "a89f0017bc5b526e2cfdedbb1250d617624cad022b727bef8730a96fdb8061cd",
+      "size": 1603
     },
     {
       "path": "tables/compile-structure.json",
@@ -128,8 +128,8 @@
     },
     {
       "path": "tables/recompose-codes.json",
-      "sha256": "8b1af856f9e4b377e2b7342d8834daefb1ed408184d1cf7fbf89f5e6dfb13520",
-      "size": 1413
+      "sha256": "f1c3a4d47ce1fde2421c18f2228ac7083fbee33f10cbcd71ddac8c0bc1c0304e",
+      "size": 1428
     },
     {
       "path": "tables/recompose-format.json",

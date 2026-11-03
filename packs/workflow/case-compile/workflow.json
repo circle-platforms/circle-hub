@@ -15,7 +15,7 @@
     {
       "slot": "contract",
       "role": "expected",
-      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值",
+      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值。缺省写 doc:doc:runner-contract",
       "accepts": [
         "doc:doc"
       ],
@@ -25,7 +25,7 @@
     {
       "slot": "inventory",
       "role": "expected",
-      "description": "台架清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "description": "自动化测试环境清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
       "accepts": [
         "doc:doc"
       ],
@@ -35,7 +35,7 @@
     {
       "slot": "profile",
       "role": "expected",
-      "description": "发布的 runtime-profile@1：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明",
+      "description": "发布的 runtime-profile@1 命名文档（doc:doc）：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明。缺省写 doc:doc:runtime-profile",
       "accepts": [
         "doc:doc"
       ],
@@ -45,12 +45,25 @@
     {
       "slot": "workbook",
       "role": "artifact_under_verification",
-      "description": "客户端从已满足计划生成并上传的单用例工作簿，xlsx@1 解析；缺少时只核计划，工作簿要求项保持缺输入并由客户端继续生成上传",
+      "description": "客户端从已满足计划生成并上传的工作簿（本运行全部用例的一份），xlsx@1 解析；缺少时只核计划，工作簿要求项保持缺输入并由客户端继续生成上传",
       "accepts": [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       ],
       "required": false,
       "many": false
+    },
+    {
+      "slot": "plan_result",
+      "role": "expected",
+      "description": "绑定 workbook 时写计划运行号（与 plan_run 相同）；Hub 换成该计划运行最近一次受理的结果，冻结全部用例已受理的计划和命令目录回执，每个用例按它们重算整份工作簿。多于一个用例时必填",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false,
+      "from_runs": {
+        "pack": "case-compile"
+      }
     },
     {
       "slot": "case_index",
@@ -121,8 +134,8 @@
     },
     {
       "name": "autoid",
-      "description": "本轮只编译这个自动化编号，按原始文字匹配；找不到或重复均拒绝开始运行",
-      "required": true,
+      "description": "只编译这个自动化编号（按原始文字匹配；找不到或重复均拒绝开始运行）。不填时编译整份文档：全部带文字 autoid、未声明不自动化的用例，一个运行一份工作簿；有用例的 autoid 不合配置形状，或用例数超过一次派发的上限时拒绝开始运行，没有 autoid 的用例不编译",
+      "required": false,
       "schema": {
         "type": "string",
         "minLength": 1,

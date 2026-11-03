@@ -115,14 +115,14 @@ export function parseManifest(input: unknown): ParsedManifest {
   }
   if (!Array.isArray(input.beds)) {
     if (!('beds' in input)) {
-      problems.push({ pointer: '/beds', message: '清单没有 beds 列表', fix: '写一个 beds 数组，每项一个台架' });
+      problems.push({ pointer: '/beds', message: '清单没有 beds 列表', fix: '写一个 beds 数组，每项一个自动化测试环境' });
     } else {
-      problems.push({ pointer: '/beds', message: 'beds 必须是一个数组', fix: '把 beds 写成数组，每项一个台架' });
+      problems.push({ pointer: '/beds', message: 'beds 必须是一个数组', fix: '把 beds 写成数组，每项一个自动化测试环境' });
     }
     return { ok: false, problems };
   }
   if (input.beds.length > LIMITS.maxBeds) {
-    problems.push({ pointer: '/beds', message: `清单里有 ${input.beds.length} 个台架，超过上限 ${LIMITS.maxBeds}`, fix: '一份清单至多 200 个台架，请拆分' });
+    problems.push({ pointer: '/beds', message: `清单里有 ${input.beds.length} 个自动化测试环境，超过上限 ${LIMITS.maxBeds}`, fix: '一份清单至多 200 个自动化测试环境，请拆分' });
     return { ok: false, problems };
   }
   const beds: ManifestBed[] = [];
@@ -130,23 +130,23 @@ export function parseManifest(input: unknown): ParsedManifest {
   input.beds.forEach((rawBed, bedAt): void => {
     const bedPointer = pointer(['beds', bedAt]);
     if (!isRecord(rawBed)) {
-      problems.push({ pointer: bedPointer, message: '台架必须是一个对象', fix: `第 ${bedAt + 1} 个台架写成 { "name": …, "devices": […] }` });
+      problems.push({ pointer: bedPointer, message: '自动化测试环境必须是一个对象', fix: `第 ${bedAt + 1} 个自动化测试环境写成 { "name": …, "devices": […] }` });
       return;
     }
     const name = typeof rawBed.name === 'string' ? rawBed.name : '';
     if (!BED_NAME.test(name)) {
-      problems.push({ pointer: `${bedPointer}/name`, message: `台架名 ${JSON.stringify(name)} 不合规矩：小写字母、数字和连字符，1 到 64 个字符`, fix: '用 bed-a 这样的名字' });
+      problems.push({ pointer: `${bedPointer}/name`, message: `自动化测试环境名 ${JSON.stringify(name)} 不合规矩：小写字母、数字和连字符，1 到 64 个字符`, fix: '用 bed-a 这样的名字' });
     } else if (bedNames.has(name)) {
-      problems.push({ pointer: `${bedPointer}/name`, message: `台架名 ${name} 在清单里重复出现`, fix: '每个台架一个名字，重复的条目请删除' });
+      problems.push({ pointer: `${bedPointer}/name`, message: `自动化测试环境名 ${name} 在清单里重复出现`, fix: '每个自动化测试环境一个名字，重复的条目请删除' });
     } else {
       bedNames.add(name);
     }
     if (!Array.isArray(rawBed.devices)) {
-      problems.push({ pointer: `${bedPointer}/devices`, message: '台架的 devices 必须是一个数组', fix: '把 devices 写成数组，每项一台设备' });
+      problems.push({ pointer: `${bedPointer}/devices`, message: '自动化测试环境的 devices 必须是一个数组', fix: '把 devices 写成数组，每项一台设备' });
       return;
     }
     if (rawBed.devices.length > LIMITS.maxDevicesPerBed) {
-      problems.push({ pointer: `${bedPointer}/devices`, message: `台架 ${name || bedAt} 有 ${rawBed.devices.length} 台设备，超过上限 ${LIMITS.maxDevicesPerBed}`, fix: '一个台架至多 100 台设备' });
+      problems.push({ pointer: `${bedPointer}/devices`, message: `自动化测试环境 ${name || bedAt} 有 ${rawBed.devices.length} 台设备，超过上限 ${LIMITS.maxDevicesPerBed}`, fix: '一个自动化测试环境至多 100 台设备' });
       return;
     }
     // Devices, addresses; duplicate detection within the bed.
@@ -163,7 +163,7 @@ export function parseManifest(input: unknown): ParsedManifest {
       if (!DEVICE_NAME.test(dName)) {
         problems.push({ pointer: `${devicePointer}/name`, message: `设备名 ${JSON.stringify(dName)} 不合规矩：小写字母开头，小写字母、数字、_ 和 -，最长 64 个字符`, fix: '用 afamx0、router0 这样的名字' });
       } else if (deviceNames.has(dName)) {
-        problems.push({ pointer: `${devicePointer}/name`, message: `设备名 ${dName} 在台架 ${name || bedAt} 里重复出现`, fix: '每台设备一个名字' });
+        problems.push({ pointer: `${devicePointer}/name`, message: `设备名 ${dName} 在自动化测试环境 ${name || bedAt} 里重复出现`, fix: '每台设备一个名字' });
       } else {
         deviceNames.add(dName);
       }
@@ -242,7 +242,7 @@ export function parseManifest(input: unknown): ParsedManifest {
           seenOnDevice.add(key2);
           const owner = addressOwner.get(key2);
           if (owner !== undefined) {
-            problems.push({ pointer: entryAtPointer, message: `地址 ${formatIp(family, value)} 同时属于设备 ${owner} 和设备 ${dName || deviceAt}`, fix: '同一台架里一个地址只能属于一台设备，请改正其中一处' });
+            problems.push({ pointer: entryAtPointer, message: `地址 ${formatIp(family, value)} 同时属于设备 ${owner} 和设备 ${dName || deviceAt}`, fix: '同一自动化测试环境里一个地址只能属于一台设备，请改正其中一处' });
             return;
           }
           addressOwner.set(key2, dName || `#${deviceAt}`);
@@ -261,14 +261,14 @@ export function parseManifest(input: unknown): ParsedManifest {
       // A device no interface address at all cannot be reached on the bed: refuse it at import (task hub-pack-findings 9).
       const pushed = devices[devices.length - 1];
       if (pushed.ipv4.length === 0 && pushed.ipv6.length === 0) {
-        problems.push({ pointer: devicePointer, message: `设备 ${dName || deviceAt} 没有接口地址（ipv4 和 ipv6 都是空的），上台架后无法访问`, fix: '至少写一个接口地址，例如 "ipv4": ["192.0.2.10/26"]；没有地址的占位设备请从清单里删掉' });
+        problems.push({ pointer: devicePointer, message: `设备 ${dName || deviceAt} 没有接口地址（ipv4 和 ipv6 都是空的），上自动化测试环境后无法访问`, fix: '至少写一个接口地址，例如 "ipv4": ["192.0.2.10/26"]；没有地址的占位设备请从清单里删掉' });
       }
     });
     // Services.
     const services: ManifestService[] = [];
     const rawServices = rawBed.services;
     if (rawServices === undefined || rawServices === null) {
-      problems.push({ pointer: `${bedPointer}/services`, message: '台架没有 services 列表', fix: '写 "services": []（没有服务就写空列表）' });
+      problems.push({ pointer: `${bedPointer}/services`, message: '自动化测试环境没有 services 列表', fix: '写 "services": []（没有服务就写空列表）' });
     } else if (!Array.isArray(rawServices)) {
       problems.push({ pointer: `${bedPointer}/services`, message: 'services 必须是一个数组', fix: '把 services 写成数组，每项 { "host": …, "ip": …, "proto": …, "port": … }' });
     } else {
@@ -285,7 +285,7 @@ export function parseManifest(input: unknown): ParsedManifest {
         const port = rawService.port;
         const device = byName.get(host);
         if (device === undefined) {
-          problems.push({ pointer: `${at}/host`, message: `服务的 host ${JSON.stringify(host)} 不是台架 ${name || bedAt} 里的设备`, fix: 'host 写该台架 devices 里的一个设备名' });
+          problems.push({ pointer: `${at}/host`, message: `服务的 host ${JSON.stringify(host)} 不是自动化测试环境 ${name || bedAt} 里的设备`, fix: 'host 写该自动化测试环境 devices 里的一个设备名' });
         }
         const parsedIp = parseIp(ip);
         if (parsedIp === null) {
@@ -308,7 +308,7 @@ export function parseManifest(input: unknown): ParsedManifest {
     const reserved: ReservedRange[] = [];
     const rawReserved = rawBed.reserved;
     if (rawReserved === undefined || rawReserved === null) {
-      problems.push({ pointer: `${bedPointer}/reserved`, message: '台架没有 reserved 列表', fix: '写 "reserved": []（没有保留段就写空列表）' });
+      problems.push({ pointer: `${bedPointer}/reserved`, message: '自动化测试环境没有 reserved 列表', fix: '写 "reserved": []（没有保留段就写空列表）' });
     } else if (!Array.isArray(rawReserved)) {
       problems.push({ pointer: `${bedPointer}/reserved`, message: 'reserved 必须是一个数组', fix: '把 reserved 写成数组，每项 "起始地址-结束地址"' });
     } else {
@@ -351,7 +351,7 @@ export function parseManifest(input: unknown): ParsedManifest {
           }
         }
         if (!inside) {
-          problems.push({ pointer: at, message: `保留段 ${JSON.stringify(entry)} 不落在台架 ${name || bedAt} 的任何网段里`, fix: '保留段要落在某台设备的接口地址所在网段内' });
+          problems.push({ pointer: at, message: `保留段 ${JSON.stringify(entry)} 不落在自动化测试环境 ${name || bedAt} 的任何网段里`, fix: '保留段要落在某台设备的接口地址所在网段内' });
           return;
         }
         const addresses = [...expandRange(startText, endText, 4096)];
@@ -367,7 +367,7 @@ export function parseManifest(input: unknown): ParsedManifest {
       if (!Array.isArray(rawBaseline)) {
         problems.push({ pointer: `${bedPointer}/baseline`, message: 'baseline 必须是一个数组', fix: '把 baseline 写成数组，每项 { "id": …, "values": { … } }；没有基线配置就删掉 baseline' });
       } else if (rawBaseline.length > 64) {
-        problems.push({ pointer: `${bedPointer}/baseline`, message: `基线配置有 ${rawBaseline.length} 项，超过上限 64`, fix: '一份台架的基线配置至多 64 项' });
+        problems.push({ pointer: `${bedPointer}/baseline`, message: `基线配置有 ${rawBaseline.length} 项，超过上限 64`, fix: '一份自动化测试环境的基线配置至多 64 项' });
       } else {
         const ids = new Set<string>();
         rawBaseline.forEach((entry, entryAt): void => {
@@ -380,7 +380,7 @@ export function parseManifest(input: unknown): ParsedManifest {
           if (!DEVICE_NAME.test(id)) {
             problems.push({ pointer: `${at}/id`, message: `基线配置的 id ${JSON.stringify(id)} 不合规矩：小写字母开头，小写字母、数字、_ 和 -，最长 64 个字符`, fix: '用 pool 这样的 id' });
           } else if (ids.has(id)) {
-            problems.push({ pointer: `${at}/id`, message: `基线配置 id ${id} 在台架 ${name || bedAt} 里重复`, fix: '每个 id 只写一项' });
+            problems.push({ pointer: `${at}/id`, message: `基线配置 id ${id} 在自动化测试环境 ${name || bedAt} 里重复`, fix: '每个 id 只写一项' });
           } else {
             ids.add(id);
           }

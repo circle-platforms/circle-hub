@@ -51,7 +51,7 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   if(targets.length!==selected.length || new Set(selected).size!==targets.length || targets.some(device=>!selected.includes(device)))throw new PrecheckFactError(`缺少覆盖全部 ${targets.length} 个派发目标设备的一一对应探测座位`,'管理员核对设备集合指针、派发目标的类型闭集与各座位声明，为每个派发目标补一个座位、去掉非派发目标的座位后再采证');
   // Listed for the precheck answer: manifest devices that are not dispatch targets, by manifest position and declared type.
   const unprobed=devices.map((device,index)=>({device,index})).filter(row=>!targets.includes(row.device)).map(row=>({index:row.index,type:typeOf(row.device)}));
-  // The build the devices run is what they report (decision 120; the gateway's env_prepare and CES do the same): only a run's
+  // The build the devices run is what they report (decision 120; the gateway's env_prepare and the reference compile skill do the same): only a run's
   // locked build is compared against it. Without one the version probe records each seat's own report and judges nothing.
   const locked=typeof context.build==='string'?context.build:null;
   const names=new Set<string>(locked===null?[]:[locked]);

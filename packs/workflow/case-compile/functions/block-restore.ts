@@ -1,7 +1,7 @@
 // Symbolic restore obligations are not CommandIdentity values. Only an executor-declared pre-send guard may resolve them.
 import {blockMeta} from './blocks.ts';
 import {runtimeBlocks} from './block-runtime.ts';
-import {runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
+import {runtimeMethod,scopeAllows,type RuntimeContract} from './runtime-contract.ts';
 import type {RuntimeProfile} from './profile.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
@@ -30,7 +30,8 @@ export function prepareRestores(contract:RuntimeContract,profile:RuntimeProfile,
   const guard=Array.isArray(cap?.restore_methods)?cap.restore_methods.find((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method):null;
   if(!guard||typeof guard.root_parameter!=='string'||typeof guard.target_parameter!=='string'){note(at,'缺守卫方法 root_parameter / target_parameter 声明；下一步：执行器维护者补原合约后发布');continue;}
   const method=runtimeMethod(contract,step.object,step.method),a=method?.authority;
-  if(!a?.effects.some(effect=>effect.command_scope?.some(prefix=>within(path,prefix)))){note(at,'恢复目标不在捕获还原方法的效果范围里',true);continue;}
+  // A declared scope narrows; an effect without scope or list follows the contract's destructive commands (decision 114).
+  if(!a?.effects.some(effect=>(effect.command_scope!==undefined||effect.commands===undefined)&&scopeAllows(contract,effect,path))){note(at,'恢复目标不在捕获还原方法的效果范围里',true);continue;}
   const target={tree_root:catalog.root,path,leading_parameters:[...identity.parameters].sort((a,b)=>a.position-b.position).slice(0,rule.leading_parameters),bed:profile.bed,manifest_sha256:manifestSha};
   for(const [key,value]of [[guard.root_parameter,catalog.root],[guard.target_parameter,canonicalJson(target)]] as Array<[string,string]>){if(Object.hasOwn(step.keywords,key)&&step.keywords[key]!==value)note(at+'/keywords/'+key,'模型填写的守卫绑定不等于冻结输入的机械派生值',true);else step.keywords[key]=value;}
   step.restore_target=target;

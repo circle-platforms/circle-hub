@@ -57,7 +57,7 @@
     },
     {
       "code": "regression-scope.facets_view",
-      "when": "未绑定唯一的完整目标根用例命令分面，或分面截断、内容不合式",
+      "when": "未绑定唯一的目标根用例命令分面，或分面截断（只因部分用例的命令归属未知而截断的除外）、内容不合式",
       "fix": "在 inputs.facets 绑定 knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；缺完整计数时读取 notes 和根引用交当前用户供集成者定位行数、字节预算或来源排除原因；同一根不自动重试，待修复并取得完整输入后再启动"
     }
   ],
@@ -96,6 +96,11 @@
       "code": "regression-scope.truncated",
       "when": "影响视图被截断，列出的变更路径不是全部",
       "fix": "无。完整性记为未知"
+    },
+    {
+      "code": "regression-scope.unknown_entries",
+      "when": "分面视图只因部分后一构建用例的命令归属未知而截断（unknown_only），这些用例记为未知，不是 0 个，也不算未归位",
+      "fix": "照分面视图的说明补齐这些用例的命令归属，再重新开始运行；有纳入范围的变更路径时，回归范围的完整性记为未知"
     }
   ]
 }

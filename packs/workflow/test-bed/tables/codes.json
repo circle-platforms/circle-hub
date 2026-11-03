@@ -4,8 +4,8 @@
   "violations": [
     {
       "code": "test-bed.unknown_bed",
-      "when": "台架不在当前清单",
-      "fix": "从当前清单选择台架"
+      "when": "自动化测试环境不在当前清单",
+      "fix": "从当前清单选择自动化测试环境"
     },
     {
       "code": "test-bed.already_owned",
@@ -14,7 +14,7 @@
     },
     {
       "code": "test-bed.not_owner",
-      "when": "台架不是自己登记的",
+      "when": "自动化测试环境不是自己登记的",
       "fix": "由主人或管理员处置"
     },
     {
@@ -25,7 +25,7 @@
     {
       "code": "test-bed.duration_removed",
       "when": "旧 hours 或 extend 请求",
-      "fix": "台架预订不限时长，用完由运行释放"
+      "fix": "自动化测试环境预订不限时长，用完由运行释放"
     },
     {
       "code": "test-bed.no_ownership",

@@ -57,7 +57,7 @@
     },
     {
       "code": "maintenance-sweep.facets_view",
-      "when": "未绑定唯一的完整起始根用例命令分面，或分面截断、内容不合式",
+      "when": "未绑定唯一的起始根用例命令分面，或分面截断（只因部分用例的命令归属未知而截断的除外）、内容不合式",
       "fix": "在 inputs.facets 绑定 knowledge:facets:<产品>:<起始构建>?kind=case&by=commands；缺完整计数时读取 notes 和根引用交当前用户供集成者定位行数、字节预算或来源排除原因；同一根不自动重试，待修复并取得完整输入后再启动"
     }
   ],
@@ -96,6 +96,11 @@
       "code": "maintenance-sweep.truncated",
       "when": "影响视图被截断，列出的变更路径不是全部",
       "fix": "无。完整性记为未知"
+    },
+    {
+      "code": "maintenance-sweep.unknown_entries",
+      "when": "分面视图只因部分较早构建用例的命令归属未知而截断（unknown_only），这些用例记为未知，不是 0 个，也不算未归位",
+      "fix": "照分面视图的说明补齐这些用例的命令归属，再重新开始运行；有删除或修改的命令时，巡检的完整性记为未知"
     }
   ]
 }

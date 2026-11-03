@@ -14,11 +14,11 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '3.8.6',
+  version: '3.9.18',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'},{pack:'workbook-format'}],
   title: '用例编译',
-  description: '按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通',
+  description: '把一整份测试脑图编译成自动化用例 Excel 工作簿，再交给自动化测试环境执行；需要这份脑图在敏捷平台上的文档号。每个用例的第一行写着它在脑图里的层级（AAA>BBB>CCC），方便人工对照原文。工作簿由客户端生成，Hub 只逐行核对并重算，不生成内容、不调用模型；核对通过不证明在真实设备上跑得通',
 } as const;
 
 /** Top-level declaration files and the folders whose files belong to the pack. */

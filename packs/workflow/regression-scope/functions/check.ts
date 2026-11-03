@@ -6,8 +6,11 @@ import type { ChangeKind, Verdict, Reason as UnknownReason } from '../../../../c
 // each changed path with no later-build case as unknown (missing input), a cross-item claim, never a failure. The only
 // refutations are contradictions a well-formed projection does not produce; the publish check requires a negative sample
 // (C05 R[0]). One ground per outcome (the item's case reference); path strings and definition references are joined from
-// the run-level note.details, so an outcome stays small at any scale.
+// the run-level note.details, so an outcome stays small at any scale. Later-build cases whose command attribution the facet
+// view could not tell (note.unknown_entries) are unknown, never zero, unplaced or a failure: while a considered path exists
+// they could sit on it, so neither check supports a scope that is empty or whole and each says what is unknown instead.
 
+import { unknownSentence } from './facets.ts';
 import { groundsOf } from './scope.ts';
 import { uniqueSorted } from './text.ts';
 import { CHANGE_LABEL, PACK, guarded, isRecord } from './text.ts';
@@ -57,6 +60,21 @@ function itemsOf(subject: unknown): Item[] {
 function noteOf(subject: unknown): { [key: string]: unknown } | null {
   const raw = isRecord(subject) ? subject : {};
   return isRecord(raw.note) ? raw.note : null;
+}
+
+/** The later-build cases the facet view left out because their command attribution is unknown, and the view's notes that
+ * name the next step; null when the note carries no positive count. */
+function unknownOf(note: { [key: string]: unknown } | null): { count: number; notes: string[] } | null {
+  if (note === null) return null;
+  const count = note.unknown_entries;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0) return null;
+  const notes = Array.isArray(note.facet_notes) ? note.facet_notes.filter((row): row is string => typeof row === 'string') : [];
+  return { count, notes };
+}
+
+/** An unknown outcome about the unknown cases: what is missing is their command attribution, said with the next step. */
+function unknownOutcome(statement: string, count: number): Outcome {
+  return { verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + statement, reason: 'missing_input', statement, grounds: [], tier: TIER, data: { unknown_entries: count } };
 }
 
 function reasonsOf(item: Item, details: DetailRow[]): ParsedReason[] | null {
@@ -146,15 +164,19 @@ function inScope(subject: unknown): Outcome[] {
     });
   }
   if (out.length === 0) {
+    const unknown = unknownOf(note);
     if (note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('回归范围的检查里没有用例'), reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
+    // An empty scope is not a fact while cases of unknown command attribution could sit on a considered path.
+    else if (unknown !== null && (pathNotes(note.considered) ?? []).length > 0) out.push(unknownOutcome(`投影给出的回归范围里没有用例，但不能据此说回归范围是空的：后一构建有 ${unknownSentence(unknown.count, unknown.notes, true)}`, unknown.count));
     else out.push({ verdict: 'support', statement: '投影给出的回归范围里没有用例：两个构建之间没有纳入范围的用例，回归范围是空的。', grounds: [], tier: TIER });
   }
   return out;
 }
 
-function uncoveredStatement(path: string, change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'added' | 'modified'>>>, skippedTo: number): string {
+function uncoveredStatement(path: string, change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'added' | 'modified'>>>, skippedTo: number, unknown = 0): string {
   const skip = skippedTo > 0 ? `后一构建的索引缺少 ${skippedTo} 份列出的文档，这条路径上的用例可能没有被读到。` : '';
-  return `变更路径 ${path}（${CHANGE_LABEL[change]}）在后一构建里没有用例。用例索引在这里没有条目，所以这不是失败。${skip}`;
+  const open = unknown > 0 ? `另有 ${unknown} 个用例的命令归属未知，这条路径上可能有其中的用例。` : '';
+  return `变更路径 ${path}（${CHANGE_LABEL[change]}）在后一构建里没有用例。用例索引在这里没有条目，所以这不是失败。${skip}${open}`;
 }
 
 /** Most paths the command-diff summary lists; past it the rest is counted and the run-level details hold the full table. */
@@ -239,10 +261,12 @@ function uncovered(subject: unknown): Outcome[] {
   const skippedTo = typeof note?.skipped_to === 'number' && note.skipped_to > 0 ? note.skipped_to : 0;
   const truncated = note?.truncated === true;
   const changedPaths = typeof note?.changed_paths === 'number' ? note.changed_paths : derived.length;
+  const unknown = unknownOf(note);
+  const empty = (pathNotes(note?.considered)?.length ?? 0) === 0 && (explicit === null || explicit.length === 0);
   const out: Outcome[] = derived.map((row) => ({
-    verdict: 'unknown' as const, missing: '尚未取得本检查所需的事实：' + (uncoveredStatement(row.path, row.change, skippedTo)),
+    verdict: 'unknown' as const, missing: '尚未取得本检查所需的事实：' + (uncoveredStatement(row.path, row.change, skippedTo, unknown?.count)),
     reason: 'missing_input' as const,
-    statement: uncoveredStatement(row.path, row.change, skippedTo),
+    statement: uncoveredStatement(row.path, row.change, skippedTo, unknown?.count),
     grounds: [],
     tier: TIER,
   }));
@@ -264,8 +288,9 @@ function uncovered(subject: unknown): Outcome[] {
       tier: TIER,
     });
   }
+  // With a considered path, cases of unknown command attribution leave the scope's completeness unknown.
+  if (unknown !== null && !empty) out.push(unknownOutcome(`后一构建有 ${unknownSentence(unknown.count, unknown.notes, true)}`, unknown.count));
   if (out.length === 0) {
-    const empty = (pathNotes(note?.considered)?.length ?? 0) === 0 && (explicit === null || explicit.length === 0);
     out.push({
       verdict: 'support',
       statement: empty ? '两个构建之间没有纳入范围的变更路径，回归范围是空的。' : '列出的变更路径在后一构建里都有用例。',

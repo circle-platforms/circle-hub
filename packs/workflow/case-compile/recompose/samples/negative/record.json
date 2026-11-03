@@ -230,7 +230,7 @@
         "kind": "run",
         "body": {
           "run": "run_synthetic_recompose-authority",
-          "pack": "recompose-authority@1.0.1",
+          "pack": "recompose-authority@1.0.3",
           "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
           "product": "orbit",
           "runner": "synthetic-reviewer",
@@ -342,7 +342,7 @@
           "schema": "validation@1",
           "run": "run_synthetic_recompose-authority",
           "locks": {
-            "pack": "recompose-authority@1.0.1",
+            "pack": "recompose-authority@1.0.3",
             "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
           },
           "acceptance": "accepted",
@@ -373,7 +373,7 @@
         "kind": "run",
         "body": {
           "run": "run_synthetic_recompose-adjudication",
-          "pack": "recompose-adjudication@1.0.1",
+          "pack": "recompose-adjudication@1.0.3",
           "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
           "product": "orbit",
           "runner": "synthetic-reviewer",
@@ -574,7 +574,7 @@
           "schema": "validation@1",
           "run": "run_synthetic_recompose-adjudication",
           "locks": {
-            "pack": "recompose-adjudication@1.0.1",
+            "pack": "recompose-adjudication@1.0.3",
             "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
           },
           "acceptance": "accepted",

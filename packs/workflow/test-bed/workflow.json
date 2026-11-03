@@ -4,7 +4,7 @@
     {
       "slot": "inventory",
       "role": "subject",
-      "description": "台架清单：管理员用 circle-hub doc put 发布的命名文档（doc:doc:<名字>，由 Hub 的 json@1 核心解析器解析，形状 test-bed-manifest@1）。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "description": "自动化测试环境清单：管理员用 circle-hub doc put 发布的命名文档（doc:doc:<名字>，由 Hub 的 json@1 核心解析器解析，形状 test-bed-manifest@1）。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
       "accepts": [
         "doc:doc"
       ],
@@ -15,7 +15,7 @@
   "parameters": [
     {
       "name": "action",
-      "description": "search：搜索；facts：环境事实；acquire：不限时预订；release：由预订谱系释放；register：把清单台架登记到自己名下；unregister：带理由注销；force_release：主人带理由强制释放。extend 是已移除的请求，只作明确拒绝",
+      "description": "search：搜索；facts：环境事实；acquire：不限时预订；release：由预订谱系释放；register：把清单自动化测试环境登记到自己名下；unregister：带理由注销；force_release：主人带理由强制释放。extend 是已移除的请求，只作明确拒绝",
       "required": false,
       "schema": {
         "type": "string",
@@ -33,15 +33,30 @@
     },
     {
       "name": "need",
-      "description": "设备数量、类型与构建需求；不再接受 need.hours",
+      "description": "设备类型、数量与构建需求：devices 每项一种设备 {type, count}（type 是 load-balancer、router、client、server、console 之一，count 是 1 到 100 台；预订整个自动化测试环境时按清单的类型和数量写全，不写设备名），build 写要的构建名；不再接受 need.hours",
       "required": false,
       "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "enum": ["load-balancer", "router", "client", "server", "console"] },
+                "count": { "type": "integer", "minimum": 1, "maximum": 100 }
+              },
+              "required": ["type", "count"],
+              "additionalProperties": false
+            }
+          },
+          "build": { "type": "string", "minLength": 1 }
+        }
       }
     },
     {
       "name": "bed",
-      "description": "acquire 时指定台架名；不写时按 need 选最佳匹配（设备够、现在 Hub 记录里空闲、构建不冲突的第一个）",
+      "description": "acquire 时指定自动化测试环境名；不写时按 need 选最佳匹配（设备够、现在 Hub 记录里空闲、构建不冲突的第一个）",
       "required": false,
       "schema": {
         "type": "string",
@@ -51,7 +66,7 @@
     },
     {
       "name": "hours",
-      "description": "已移除：只用于明确拒绝旧请求并提示台架预订不限时长，用完由运行释放",
+      "description": "已移除：只用于明确拒绝旧请求并提示自动化测试环境预订不限时长，用完由运行释放",
       "required": false,
       "schema": {}
     },
@@ -67,7 +82,7 @@
     },
     {
       "name": "addresses",
-      "description": "acquire 时要分配的空闲地址：{ segment: <网段>，count: <个数> }。从该台架这个网段扣掉接口地址、保留段和别人占着的地址后取前 count 个，租约键 bed/<台架>/ip/<地址>，与设备的租约同一批取得、同一批释放",
+      "description": "acquire 时要分配的空闲地址：{ segment: <网段>，count: <个数> }。从该自动化测试环境这个网段扣掉接口地址、保留段和别人占着的地址后取前 count 个，租约键 bed/<自动化测试环境>/ip/<地址>，与设备的租约同一批取得、同一批释放",
       "required": false,
       "schema": {
         "type": "object"
@@ -75,7 +90,7 @@
     },
     {
       "name": "devices",
-      "description": "force_release 可选：只释放清单里的这些设备，不写释放台架下所有当前占用的键",
+      "description": "force_release 可选：只释放清单里的这些设备，不写释放自动化测试环境下所有当前占用的键",
       "required": false,
       "schema": {
         "type": "array",
@@ -98,7 +113,8 @@
     "catalogs": []
   },
   "context": [
-    "leases"
+    "leases",
+    "observations"
   ],
   "leases": {
     "prefix": "bed/"

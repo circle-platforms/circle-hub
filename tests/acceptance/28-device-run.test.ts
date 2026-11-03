@@ -237,13 +237,53 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       const binding = await dispatch().journal.binding(job); assert.equal(binding.initiated_by, bed.reviewer.principal.id); assert.equal(binding.acting_by, bed.hub.admin.principal.id);
       assert.deepEqual(latest.payload, p.payload); hashes.push(latest.digest);
       const report = await resultReport(state); assert.equal(report.rows[0].reported_terminal, 'pass'); assert.equal(report.rows[0].dynamic_terminal, 'no_verdict'); assert.ok(report.rows[0].limits.includes('未排除本地操作'));
-      // Like the task id CES prints: repeating the same submission reads this job and its result, it never dispatches again.
+      // Like the task id the reference compile skill prints: repeating the same submission reads this job and its result, it never dispatches again.
       const count = submissions; const again = (await client.call('submit_result', v.sent!)).out;
       assert.equal(again.dispatch?.length, 1); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
       const read = await client.call('get_nodes', { reference: state.result }); assert.equal(read.isError, false);
       const stored = await bed.hub.hub.runs.getRun(bed.reviewer.principal, p.run); assert.equal(stored!.run.predecessor, booked); await release(booked);
     }
     assert.equal(new Set(hashes).size, 2); assert.equal(new Set(bookings).size, 2);
+  });
+  test('a whole mindmap compiles into one workbook that the Hub dispatches once, with one verdict row per case', async () => {
+    // Decisions 104 and 105 at the user's unit of work, as the reference compile skill runs a mindmap batch: no autoid, one plan submission for every
+    // case, the generation inputs fetched with the runner's own token, one workbook, one verification run, one dispatch.
+    // The real devices echo another family's name of the locked build (dotted, based on it): the Hub's own dispatch accepts the
+    // knowledge base's aliases of that build, as the administrator command always did.
+    aliasEcho = true;
+    const booked = await booking(); const before = submissions;
+    const scope = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED };
+    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: {} });
+    const planRun = whole.run!.run; const items = whole.run!.items.map(item => item.id);
+    assert.equal(items.length, ids.length, 'every textual-autoid case of the document is an item');
+    const planned = (await client.call('submit_result', { run: planRun, model: 'synthetic-scripted-model', items: items.map((item, index) => planItem(index, item)) })).out;
+    assert.equal(planned.acceptance, 'accepted', JSON.stringify(planned.errors));
+    for (const row of planned.result!.partitions.delivered) assert.ok(row.requirements.filter(r => r.requirement !== 'workbook_verified').every(r => r.status === 'satisfied'), JSON.stringify(row.requirements));
+    // The client's own published tools: fetch-run reads the token from standard input only, generate-workbook writes one file.
+    // fetch-run calls this in-process Hub back, so it runs asynchronously: a synchronous child would block the Hub that answers it.
+    const directory = await mkdtemp(join(staged, 'whole-mindmap-'));
+    const fetching = promisify(execFile)(process.execPath, [join(staged, 'case-compile/tools/fetch-run.ts'), '--hub', bed.hub.mcpUrl, '--run', planRun, '--out', directory], { encoding: 'utf8' });
+    fetching.child.stdin!.end(bed.reviewer.token); await fetching;
+    const argv = ['run', 'result', 'submission', 'contract', 'profile', 'inventory'].flatMap(name => [`--${name}`, join(directory, `${name}.json`)]);
+    const output = join(directory, 'case.xlsx');
+    const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
+    const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
+    const ref = await client.upload(payload, 'synthetic-whole.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
+    const sent = { run: verification.run!.run, model: 'synthetic-scripted-model', items: verification.run!.items.map((item, index) => planItem(index, item.id)) };
+    const result = (await client.call('submit_result', sent)).out;
+    assert.equal(result.acceptance, 'accepted', JSON.stringify(result.errors));
+    assert.equal(result.result!.partitions.delivered.length, ids.length);
+    for (const row of result.result!.partitions.delivered) assert.ok(row.requirements.every(r => r.status === 'satisfied'), JSON.stringify(row.requirements));
+    const state = await settled({ run: verification.run!.run, result });
+    assert.equal(state.outcome, 'effective'); assert.equal(submissions, before + 1, 'one dispatch carries the whole mindmap');
+    assert.deepEqual(latest.ids, ids); assert.deepEqual(latest.payload, payload);
+    const report = await resultReport(state);
+    assert.deepEqual(report.rows.map((row: { item: string }) => row.item), ids, 'one verdict row per case of the workbook');
+    for (const row of report.rows) assert.equal(row.reported_terminal, 'pass');
+    const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
+    aliasEcho = false;
+    await release(booked);
   });
   test('a booking of part of the bed dispatches nothing and the runner is told why', async () => {
     // The first real whole-mindmap run booked one load balancer: the executor's target is the whole bed, so the Hub refuses
@@ -254,11 +294,11 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
     const note = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
     assert.match(note.text, /^Hub 没有派发：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
-    // Like CES's failed bed check, the refusal names what is missing: every device key of the bed the run did not book.
+    // Like the reference compile skill's failed bed check, the refusal names what is missing: every device key of the bed the run did not book.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
     assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
-    // Nothing was sent, so repeating the ready submission checks the boundary again (as CES resubmits a refused workbook).
+    // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
     const again = (await client.call('submit_result', v.sent!)).out.dispatch?.[0];
     assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^Hub 没有派发：.*租约/);
     assert.equal(submissions, before);
@@ -301,7 +341,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       // The target lease is released after the job's end record, so its release is awaited rather than raced.
       for (let i = 0; i < 200 && releases === closed; i++) await new Promise(resolve => setTimeout(resolve, 50));
       assert.equal(releases, closed + 1);
-      // CES reports a failed bed check to the user as it is and submits nothing past it: the runner's repeat reads which check
+      // the reference compile skill reports a failed bed check to the user as it is and submits nothing past it: the runner's repeat reads which check
       // failed, and that the job has ended rather than that it still runs.
       assert.deepEqual(state.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
       const text = (await client.call('submit_result', v.sent!)).out.dispatch?.[0]?.text ?? '';

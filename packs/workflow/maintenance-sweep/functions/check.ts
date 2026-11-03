@@ -9,9 +9,12 @@ import type { ChangeKind, Verdict, CheckTier, Reason as UnknownReason } from '..
 // the verdict of the item.
 // A reason on an item is only the index of its path in note.details and the change kind; path strings, field
 // differences and definition references are joined from that run-level table, so an outcome stays small at any
-// scale. One ground per outcome (the item's location).
+// scale. One ground per outcome (the item's location). Earlier-build cases whose command attribution the facet view could
+// not tell (note.unknown_entries) are unknown, never zero, unplaced or a failure: while the diff has a removed or modified
+// path they could sit on it, so command_exists says them as unknown and neither check supports an empty sweep.
 
-import { groundsOf } from './sweep.ts';
+import { unknownSentence } from './facets.ts';
+import { groundsOf, maintainable } from './sweep.ts';
 import { CHANGE_LABEL, FIX, PACK, clip, guarded, isRecord } from './text.ts';
 
 const REMOVED = `${PACK}.case.command_removed`;
@@ -68,6 +71,27 @@ function itemsOf(subject: unknown): Item[] {
 function noteOf(subject: unknown): { [key: string]: unknown } | null {
   const raw = isRecord(subject) ? subject : {};
   return isRecord(raw.note) ? raw.note : null;
+}
+
+/** The earlier-build cases the facet view left out because their command attribution is unknown, and the view's notes that
+ * name the next step; null when the note carries no positive count. */
+function unknownOf(note: { [key: string]: unknown } | null): { count: number; notes: string[] } | null {
+  if (note === null) return null;
+  const count = note.unknown_entries;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count <= 0) return null;
+  const notes = Array.isArray(note.facet_notes) ? note.facet_notes.filter((row): row is string => typeof row === 'string') : [];
+  return { count, notes };
+}
+
+/** The unknown cases when they could change this sweep: the note's diff (or its detail rows) has a removed or modified path. */
+function openUnknownOf(subject: unknown): { count: number; notes: string[] } | null {
+  const unknown = unknownOf(noteOf(subject));
+  return unknown !== null && maintainable([...diffRowsOf(subject), ...detailRowsOf(subject)]) ? unknown : null;
+}
+
+/** An unknown outcome about the unknown cases: what is missing is their command attribution, said with the next step. */
+function unknownOutcome(statement: string, count: number, tier: CheckTier): Outcome {
+  return { verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + statement, reason: 'missing_input', statement, grounds: [], tier, data: { unknown_entries: count } };
 }
 
 function fieldsOf(value: unknown): ParsedField[] | null {
@@ -247,6 +271,9 @@ function commandExists(subject: unknown): Outcome[] {
       const total = typeof note.changed_paths === 'number' ? String(note.changed_paths) : '未知';
       out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`), reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
     }
+    // Like skipped documents: cases of unknown command attribution leave the sweep's completeness unknown.
+    const unknown = openUnknownOf(subject);
+    if (unknown !== null) out.push(unknownOutcome(`较早构建有 ${unknownSentence(unknown.count, unknown.notes, true)}`, unknown.count, 'blocking'));
   }
   if (out.length === 0) {
     if (note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
@@ -406,7 +433,10 @@ function commandUnchanged(subject: unknown): Outcome[] {
     });
   }
   if (out.length === 0) {
+    const unknown = openUnknownOf(subject);
     if (noteOf(subject) === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
+    // An empty sweep is not a fact while cases of unknown command attribution could sit on a removed or modified path.
+    else if (unknown !== null) out.push(unknownOutcome(`已读来源里命令归属已知的用例没有需要维护的，但不能据此说巡检范围是空的：较早构建有 ${unknownSentence(unknown.count, unknown.notes, true)}`, unknown.count, 'advisory'));
     else out.push({ verdict: 'support', statement: '已读来源里没有需要维护的用例，巡检范围是空的。', grounds: [], tier: 'advisory' });
   }
   return out;

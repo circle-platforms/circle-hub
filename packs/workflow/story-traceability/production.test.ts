@@ -13,7 +13,7 @@ describe('synthetic story production run', { skip }, () => {
   test('publishes and verifies story facts with fake PLM and knowledge at start_run', async () => {
     const casesId = `knowledge:index:famx:${BUILD.name}?kind=case&key=stories&fields=document,node,title`;
     hub.views.put('plm:stories:21+22', { stories: [{ id: '21', status: 'synthetic', stage: 'synthetic-stage', title: '合成需求' }], unread: ['22'] });
-    hub.views.put(casesId, indexViewOf('case', 'stories', [caseEntry({ defects: ['22'], stories: ['21'], case: 'c1' })], {}, ['document', 'node', 'title']));
+    hub.views.put(casesId, { ...indexViewOf('case', 'stories', [caseEntry({ defects: ['22'], stories: ['21'], case: 'c1' })], {}, ['document', 'node', 'title']), key_space_complete: true });
     const result = await hub.service.startRunDetailed(hub.alice, { pack: 'story-traceability', inputs: { stories: [{ external: 'plm:stories:21+22' }], cases: { external: casesId } } }, call());
     assert.equal(result.answer.call_result, 'ok', JSON.stringify(result.answer.errors));
     assert.deepEqual(result.answer.run?.items.map(i => i.id), ['21', '22']);

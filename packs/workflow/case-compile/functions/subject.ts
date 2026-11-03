@@ -3,7 +3,7 @@ import {readCommandPolicy,pathSegments} from './command-policy.ts';
 import {authorTexts} from './command-policy.ts';
 import {commandLines} from './generated/command-grammar.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
-import {planCommands,deviceCommandLines} from './plan-commands.ts';
+import {planCommands,deviceCommandLines,confirmationSteps} from './plan-commands.ts';
 // Frozen raw inputs are revalidated on every check. This pack only verifies the authored plan slots.
 import { checkContractShape } from './checks.ts';
 import { isRecord } from './text.ts';
@@ -104,15 +104,17 @@ export function workbookSubject(input: unknown): unknown {
   const groups = Array.isArray(context.groups) ? context.groups : []; const group = groups.find((v) => isRecord(v) && v.kind === 'case-compile');
   const frozen = isRecord(group) ? group : {}; const item = isRecord(raw.item) ? raw.item : {};
   const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;const catalog=contract.ok&&profile?.ok&&slots.ok?planCommands(contract.contract,profile.profile,slots.slots,subject.command_catalog).catalog:null;
-  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,manifest_sha256:frozen.manifest_sha256??null};
+  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,plan_set:frozen.plan_set??null,manifest_sha256:frozen.manifest_sha256??null};
 }
 
 /** Only frozen contract/profile roles choose device CLI slots; no scanning prose or author identities. */
 export function selectCommandCatalog(input:unknown):unknown{
  const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);
  const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;
- let lines=contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots).map(value=>value.line):[];
  const raw=isRecord(input)?input:{},context=isRecord(raw.context)?raw.context:{};
+ // Confirmation answers are dialogue, not commands: they need no catalog entry.
+ const answers=contract.ok&&profile?.ok&&slots.ok?confirmationSteps(contract.contract,profile.profile,slots.slots,readCommandPolicy(context.command_policy)).answers:new Set<number>();
+ let lines=contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots,answers).map(value=>value.line):[];
  if(slots.ok&&slots.slots.steps.some(step=>step.restore_for!==undefined)){
   const policy=readCommandPolicy(context.command_policy);
   const targets=new Set(slots.slots.steps.flatMap(step=>step.restore_for!==undefined?[step.restore_for]:[]));

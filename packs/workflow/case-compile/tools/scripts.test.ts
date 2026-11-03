@@ -26,6 +26,15 @@ test('normalization changes only declared wrappers and never rounds long numeric
   const normal = Buffer.from('{ "root": {"data":{},"children":[]} }\n'); assert.deepEqual(normalizeMindmap(normal).bytes, normal);
   for (const raw of ['[]', '[{},{}]', '\uffff{}', '{"root":null}']) assert.throws(() => normalizeMindmap(Buffer.from(raw)));
 });
+test('normalization removes the KityMinder export head U+FFFF U+FEFF that real local exports carry', () => {
+  // Every real local export seen (2026-10-30) starts EF BF BF EF BB BF; 3.8.7 only knew two U+FFFF and refused them all.
+  const original = Buffer.concat([Buffer.from([0xef, 0xbf, 0xbf, 0xef, 0xbb, 0xbf]), Buffer.from('[{"data":{"id":"fixture","autoid":990000000000000031},"children":[]}]')]);
+  const result = normalizeMindmap(original);
+  assert.deepEqual(result.transformations, ['删除 KityMinder 导出文件头 U+FFFF U+FEFF', '单元素数组改为 root 对象，元素原文不重写']);
+  assert.equal(Buffer.from(result.bytes).toString(), '{"root":{"data":{"id":"fixture","autoid":990000000000000031},"children":[]}}');
+  assert.equal(result.before_sha256, sha256(original));
+  for (const raw of ['\ufeff\uffff[{"data":{},"children":[]}]', '\uffff\ufeff\ufeff{"root":{"data":{},"children":[]}}']) assert.throws(() => normalizeMindmap(Buffer.from(raw)));
+});
 test('local recipe comes from the exact accepted submission and bound bytes', () => {
   const value = fixture(); const recipe = satisfiedRecipe(value); assert.equal(recipe.plan_run, value.run.run); assert.deepEqual(recipe.slots, generationFixture().slots);
   assert.deepEqual(generateWorkbook(recipe), generateWorkbook(generationFixture()));

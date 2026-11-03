@@ -118,7 +118,7 @@ function precheckUnjudged(events:readonly Event[]):NonNullable<JobStatus['unjudg
     return [];
   });
 }
-/** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them (CES reports a
+/** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them (the reference compile skill reports a
  * failed bed check as it is). */
 class LeaseCoverageError extends Error {
   missing: string[];
@@ -970,7 +970,7 @@ export class DispatchService {
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, build_base:binding.input?.build_base ?? binding.context?.build_base, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
   /**
    * Where the evidence of every row that did not pass is: the log and the per-device sessions the target reported for it, at
-   * the result's declared pointers, each saved on its own and readable by the runner (CES hands the model the failed checks
+   * the result's declared pointers, each saved on its own and readable by the runner (the reference compile skill hands the model the failed checks
    * and the session dumps of every non-pass case to attribute the failure). The raw report stays readable by functions only;
    * a session the credential scan holds back leaves the other sessions and the verdicts readable.
    */

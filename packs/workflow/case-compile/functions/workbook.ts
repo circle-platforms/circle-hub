@@ -8,24 +8,28 @@ import FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import { readWorkbookModel, type WorkbookRow } from './xlsx-model.ts';
 import { decodeG } from './g-syntax.ts';
 import { canonicalJson } from './canonical-json.ts';
-import { readSlots } from './slots.ts';
+import { readSlots, type PlanSlots } from './slots.ts';
 import { parseRuntimeContract, runtimeMethod } from './runtime-contract.ts';
 import { parseManifest } from './manifest.ts';
 import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
-import { generateWorkbook, type GenerationInput, type GenerationFields } from './generate.ts';
+import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
 import { isRecord, markers, type Outcome } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }
 export type WorkbookRead = { ok: true; executions: ReadExecution[]; autoids: string[] } | { ok: false; problems: WorkbookProblem[] };
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
-/** Does not call the generator or use generated rows to interpret the uploaded model. */
-export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookRead {
+/** Does not call the generator or use generated rows to interpret the uploaded model. Several recipes are the cases of one
+ * run in workbook order (decision 104); one recipe is the single-case layout. */
+export function readWorkbook(input: unknown, recipes: GenerationInput | GenerationInput[]): WorkbookRead {
   const problems: WorkbookProblem[] = []; const issue = (rule: string, pointer: string, message: string) => problems.push({ rule, pointer, message });
   const model = readWorkbookModel(input); if (!model) return { ok: false, problems: [{ rule: 'model', pointer: '', message: '不是完整的 xlsx@1 模型' }] };
-  const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '当前计划槽位不合式' }] };
-  const plan = slots.slots; const profile = recipe.profile; const book = profile.workbook;
+  const set = Array.isArray(recipes) ? recipes : [recipes]; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可回读的用例计划' }] };
+  const plans: PlanSlots[] = [];
+  for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '当前计划槽位不合式' }] }; plans.push(slots.slots); }
+  if (new Set(plans.map((plan) => !!blockMeta(plan))).size !== 1) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '同一份工作簿里块计划与普通计划不能混用' }] };
+  const recipe = set[0]; const plan = plans[0]; const profile = recipe.profile; const book = profile.workbook;
   if (JSON.stringify(model.members.map((v) => v.name).sort()) !== JSON.stringify([...FORMAT.members].sort()) || new Set(model.members.map((v) => v.name)).size !== FORMAT.members.length) issue('members', '/members', '成员必须恰好是同版生成器的六个部件');
   if(model.nulRemoved>0)issue('subset','/nulRemoved','解析移除了 NUL，不属于生成器原字节子集');
   const relation='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
@@ -59,20 +63,26 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
   const identity = grid(1);
   if (identity[1] !== recipe.contract.runtimeVersion || identity[2] !== recipe.contract.pinned.identity || identity[3] || identity[4]) issue('identity', '/sheets/0/rows/0', '运行时/合约身份不符，或认证请求 D/E 格不为空');
   if (identity[FORMAT.identity_generator_column - 1] !== FORMAT.generator) issue('generator', '/sheets/0/rows/0', '工作簿生成器版本与本运行锁定包的生成器版本不符');
-  const recipeDigest = hash(canonicalJson({ slots:sourcePlan(plan), fields: { ...(recipe.fields.source_atoms!==undefined?{source_atoms:recipe.fields.source_atoms}:{}),expected_nodes:selectedExpectedNodes(recipe.fields.expected_nodes,plan)??null,command_catalog:recipe.fields.command_catalog??null,command_identities:recipe.fields.command_identities??null,autoid: recipe.fields.autoid, title: recipe.fields.title, priority: recipe.fields.priority ?? null,...(blockMeta(plan)?{bed_services:recipe.fields.bed_services??null,manifest_sha256:recipe.fields.manifest_sha256??null,criteria_review:blockReviewIdentity(recipe.fields.criteria_review)}:{}), steps: recipe.fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: recipe.contract.runtimeVersion, digest: recipe.contract.pinned.identity }, profile, plan_run: recipe.plan_run, build: recipe.build, generator: FORMAT.generator }));
-  if (identity[FORMAT.identity_recipe_column - 1] !== recipeDigest) issue('recipe', '/sheets/0/rows/0', '工作簿没有绑定当前完整槽位、来源字段及配置');
+  if (identity[FORMAT.identity_recipe_column - 1] !== recipeDigest(set.map((value, k) => caseRecipe({ ...value, generator: FORMAT.generator }, plans[k])))) issue('recipe', '/sheets/0/rows/0', '工作簿没有绑定当前完整槽位、来源字段及配置');
   const reference = `'${book.sheet.replaceAll("'", "''")}'!$A$2:$I$2`;
   if (model.definedNames.length !== 1 || model.definedNames[0].name !== book.range_name || model.definedNames[0].scope !== null || model.definedNames[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
-  const expectedLast = 5 + plan.steps.length + plan.expects.length;
+  const expectedLast = 4 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + 1, 0);
   if (sheet.lastRow !== expectedLast || rows.size !== expectedLast || [...rows.keys()].some((number, i) => number !== i + 1)) issue('closing', '/sheets/0', '收尾行必须是最后一个有单元格的行，不能夹行、漏行或追加样式行');
   if (JSON.stringify(grid(expectedLast)) !== JSON.stringify(book.closing_row)) issue('closing', '/sheets/0', '收尾行与配置不符');
   if (grid(expectedLast - 1).some(Boolean) || grid(3)[2] !== '0' || grid(3)[3] !== `计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(3).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '说明或空行不符合冻结的 plan_run/构建，说明行 E–I 必须为空');
   const defaultAssertion=assertionTarget(recipe.contract,profile);
   if (!defaultAssertion) issue('assertion', '/profile/allowed', '缺少唯一的允许字面断言组合');
-  // Scan every post-header E–I row, including description, blank and closing rows.
-  const registers=new Set<string>(),caps=runtimeBlocks(recipe.contract);
+  // Scan every post-header E–I row, including description, blank and closing rows. Registers live within one case, as in
+  // the reference runner: it resets them at every row that starts a case (an autoid in A on a row whose C is not the init
+  // type 1) to the registers its init rows captured, and clears them before each case's init. This generator writes no init rows, so every case
+  // starts without registers; inside a case a name is still captured once.
+  const initRegisters=new Set<string>(),caps=runtimeBlocks(recipe.contract); let registers=new Set<string>();
   const executions: ReadExecution[] = []; const executionByRow = new Map<number, ReadExecution>();
-  for (const [number, cells] of values) if (number > 2 && cells.slice(4).some(Boolean)) {
+  for (const [number, cells] of values) {
+    if (number <= 2) continue;
+    const init = cells[2] === '1';
+    if (cells[0] !== '' && !init) registers = new Set(initRegisters);
+    if (!cells.slice(4).some(Boolean)) continue;
     const at = `/sheets/0/rows/${number - 1}`; const [object, method, g, h, variable] = cells.slice(4);
     const entry = runtimeMethod(recipe.contract, object, method); const allowed = allowedCall(profile, object, method);
     if (!object || !method || !entry || !allowed || !blockMeta(plan)&&(!g||h||variable)) { issue('execution', at, 'E/F/G 必须是启用且角色配置完整的调用，H/I 必须为空'); continue; }
@@ -93,18 +103,20 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
         }else{
           if(!g)issue('execution',at,'普通调用 G 不能为空');
           if(variable&&(!registers.has(variable)||!Array.isArray(caps?.restore_methods)||!caps.restore_methods.some((row:any)=>row.object===object&&row.method===method)||decoded.args.length!==1||decoded.args[0]!=='{}'))issue('register',at,'普通 I 仅用于已捕获原文的声明还原守卫');
-          if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output==='raw_text'))issue('register',at,'H 捕获必须命名唯一并由声明的原文观察产生');else registers.add(h);}
+          if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output==='raw_text'))issue('register',at,'H 捕获必须在本用例内命名唯一并由声明的原文观察产生');else{registers.add(h);if(init)initRegisters.add(h);}}
         }
       }
       const execution = { row: number, object, method, ...decoded, assertion,...(blockMeta(plan)?{h,i:variable}:{}) }; executions.push(execution); executionByRow.set(number, execution);
     } catch (error) { issue('G', at, error instanceof Error ? error.message : 'G 无法按运行器规则读取'); }
   }
   const cases = [...values].filter(([number, cells]) => number > 2 && number < expectedLast && cells[0] !== '');
-  if (cases.length !== 1 || cases[0][0] !== 4 || cases[0][1][0] !== recipe.fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cases[0]?.[1][0] ?? '') || !cases[0]?.[1][4]) issue('autoid', '/sheets/0', '必须只有一个文本 autoid，等于条目且符合形状，首行 E 不能为空');
+  const starts: number[] = []; { let at = 4; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
+  if (cases.length !== set.length || cases.some(([number, cells], k) => number !== starts[k] || cells[0] !== set[k].fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cells[0]) || !cells[4]) || new Set(set.map((value) => value.fields.autoid)).size !== set.length) issue('autoid', '/sheets/0', set.length === 1 ? '必须只有一个文本 autoid，等于条目且符合形状，首行 E 不能为空' : '每个用例的首行必须依序是它的文本 autoid，符合形状且互不重复，首行 E 不能为空，用例之间不能夹别的 autoid');
   let row = 4;
+  for (const [k, recipe] of set.entries()) { const plan = plans[k];
   for (const [i, step] of plan.steps.entries()) {
     const actual = executionByRow.get(row); const cells = grid(row);
-    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (recipe.fields.title)||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
+    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (i === 0 ? pathCell(recipe.fields.path) : recipe.fields.title)||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
     row++;
     const allowed = allowedCall(profile, step.object, step.method);
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {
@@ -114,12 +126,15 @@ export function readWorkbook(input: unknown, recipe: GenerationInput): WorkbookR
       row++;
     }
   }
-  if (!plan.expects.length || row !== expectedLast - 1 || executions.length !== plan.steps.length + plan.expects.length) issue('execution', '/sheets/0', '执行行或断言数与唯一用例计划不一致，可能漏行或多行');
-  return problems.length ? { ok: false, problems } : { ok: true, executions, autoids: [recipe.fields.autoid] };
+  if (!plan.expects.length || grid(row).some(Boolean)) issue('execution', `/sheets/0/rows/${row - 1}`, '每个用例之后必须恰好是一行空行，执行行或断言数与计划不一致');
+  row++;
+  }
+  if (row !== expectedLast || executions.length !== plans.reduce((sum, value) => sum + value.steps.length + value.expects.length, 0)) issue('execution', '/sheets/0', '执行行或断言数与本运行用例计划不一致，可能漏行或多行');
+  return problems.length ? { ok: false, problems } : { ok: true, executions, autoids: set.map((value) => value.fields.autoid) };
 }
 function generationFields(value: unknown): GenerationFields | null {
   if (!isRecord(value) || typeof value.autoid !== 'string' || typeof value.title !== 'string' || !Array.isArray(value.steps) || value.steps.some((v) => !isRecord(v) || typeof v.text !== 'string') || value.priority !== null && typeof value.priority !== 'string') return null;
-  return { autoid: value.autoid, title: value.title, priority: value.priority, steps: value.steps as Array<{ text: string }> };
+  return { autoid: value.autoid, title: value.title, ...(Array.isArray(value.path) ? { path: value.path as string[] } : {}), priority: value.priority, steps: value.steps as Array<{ text: string }> };
 }
 export default function check(input: unknown): Outcome[] {
   const s = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -142,10 +157,25 @@ export default function check(input: unknown): Outcome[] {
   const unverified = checked.find(v => v.verdict === 'unknown');
   if (unverified) return [{ ...unverified, statement: '工作簿未核对：' + unverified.statement, grounds, ...(item ? { item } : {}) }];
   fields.source_atoms=isRecord(s.fields)?s.fields.source_atoms:undefined;fields.bed_services=s.bed_services;fields.manifest_sha256=s.manifest_sha256 as string;fields.criteria_review=s.criteria_review;fields.expected_nodes=isRecord(s.fields)?s.fields.expected_nodes:undefined;fields.command_identities=isRecord(s.fields)?s.fields.command_identities:undefined;fields.command_catalog=isRecord(s.fields)?s.fields.command_catalog:undefined;
-  const recipe: GenerationInput = { slots: slots.slots, fields, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build };
+  const own: GenerationInput = { slots: slots.slots, fields, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build };
+  // Several cases (decision 104): the run froze, from the plan run's accepted result, every case's accepted plan and catalog
+  // receipt; this item's resubmitted plan must be exactly its frozen one, and the workbook is regenerated from all of them.
+  let recipes: GenerationInput[] = [own];
+  if (s.plan_set !== undefined && s.plan_set !== null) {
+    const frozen = Array.isArray(s.plan_set) ? s.plan_set : null;
+    const mine = frozen?.filter((entry) => isRecord(entry) && entry.item === item) ?? [];
+    if (!frozen || !frozen.length || mine.length !== 1 || !isRecord(mine[0]) || canonicalJson(mine[0].plan ?? null) !== canonicalJson(s.data ?? null)) return fail('本条重交的计划不等于计划运行受理的计划；整份工作簿只能由计划运行受理的全部计划生成，按原样重交或从新的计划运行重新生成', '/data');
+    recipes = [];
+    for (const entry of frozen) {
+      const case_fields = isRecord(entry) ? generationFields(entry.fields) : null; const plan = isRecord(entry) ? readSlots(entry.plan) : null;
+      if (!case_fields || !plan?.ok || !isRecord(entry)) return unknown('check_error', '冻结的用例计划集合不完整，无法重算整份工作簿；以计划运行号绑定 plan_result 重开核验运行。不证明在真实设备上跑得通。');
+      const extra = isRecord(entry.fields) ? entry.fields : {};
+      recipes.push({ slots: plan.slots, fields: { ...case_fields, source_atoms: extra.source_atoms, bed_services: s.bed_services, manifest_sha256: s.manifest_sha256 as string, criteria_review: s.criteria_review, expected_nodes: extra.expected_nodes, command_identities: entry.command_identities, command_catalog: entry.command_catalog }, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build });
+    }
+  }
   try {
-    const read = readWorkbook(raw.model, recipe); if (!read.ok) return read.problems.map((v) => fail(`${v.rule}：${v.message}；按修复行重生成并开后继运行`, `/workbook/model${v.pointer}`)[0]);
-    const regenerated = generateWorkbook(recipe);
+    const read = readWorkbook(raw.model, recipes); if (!read.ok) return read.problems.map((v) => fail(`${v.rule}：${v.message}；按修复行重生成并开后继运行`, `/workbook/model${v.pointer}`)[0]);
+    const regenerated = generateWorkbookSet(recipes);
     if (typeof raw.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(raw.sha256) || hash(regenerated) !== raw.sha256) return fail('bytes：绑定的工作簿原字节摘要与本运行同版生成器重算不同；不能仅凭单元格相同受理');
     return [{ verdict: 'support', statement: '工作簿经独立逐行回读并由本运行生成器重算，绑定原字节完全一致；plan_run 与 predecessor 的一致性由派发核验' + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), data: { sha256: raw.sha256, autoids: read.autoids, bed: { id: profile.profile.bed, manifest_sha256: s.manifest_sha256 }, build: generation.build, generator: FORMAT.generator, plan_run: generation.plan_run } }];
   } catch (error) { return fail('当前槽位无法按本运行生成器写成工作簿：' + (error instanceof Error ? error.message : '无法重算')); }

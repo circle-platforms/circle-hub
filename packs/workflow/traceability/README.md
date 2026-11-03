@@ -66,6 +66,12 @@ by construction (absence is not proof).
   itself never fails on absence. `join_mismatch` cannot occur from the pack's own projection; it guards the frozen subject.
 - The checks never receive the views again: everything they need is frozen in the item fields and the run's `groups` (the
   view facts). The grounds of the counts claim are the `src:` references of the two stored views.
+- **The defect numbers are fed on use** (1.0.12, decision 94): a line's seedling holds only the manual and the command tree,
+  so the build's `kind=defect` index lists the fed records of its fixed-bug page. The SKILL.md's step 0 names the one read
+  that feeds them (`source-read` with `product` and `build` written together, the page as `buildsite:file:<link>`); the Hub's
+  refusal for an empty defect index names the same step. Those records declare no release status, so every defect of such a
+  build is unknown for `traced` with the cases still listed in its data (the hits), and `counts` says how many statuses are
+  undeclared. The pack's functions are unchanged; only SKILL.md and the `defects` slot description changed.
 - **No `api.ts`**: a pack is loaded by the engine from the registry and offers nothing to other packages (same as
   case-location; architecture section 10's file rule is met by this README and the declarations).
 
@@ -121,3 +127,7 @@ node --test --test-concurrency=2 "packs/workflow/traceability/**/*.test.ts"
 缺 release-notes@2 原始 status 不再作为整个构建的 producer incomplete。结构身份可核对的缺陷保留原文引用，status:null、declaration_status:undeclared，并带 missing/next_action；缺身份另记 identity_declaration_status:undeclared，不能从正文数字、标题、标记或文件名猜编号和 fixed/known。HTML 仅从解析后的明确 tracker URL 结构取身份，不从锚文本猜状态。
 
 命令树、手册等独立来源仍照常成根；未声明条目不被追溯状态过滤静默删掉，依赖“已修复”的判断保持未知并请求来源维护者补结构状态后重产。缺陷转用例单列 fixed_status 要求项，其他检查继续独立核对。历史根不改写，本版验证只使用合成 JSON/HTML、临时 PostgreSQL 和脚本化模型，不重跑真实同步。
+
+## 合线（1.0.13，2026-11-04）
+
+私有集成线在本包上另发了 1.0.12，main 当时是 1.0.11，同号的版本字节不同。本版把集成线的改动带进 main，main 已有的修正保留，版本号高于两边已发布的版本。带进来的改动：读不到时分清没有和没有权限；构建的已修复缺陷页按用时喂入它的缺陷索引，SKILL 第 0 步点名做这件事的读取。

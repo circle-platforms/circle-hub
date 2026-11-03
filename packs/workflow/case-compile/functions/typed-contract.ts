@@ -9,7 +9,7 @@ import type {CommandIdentity,DeclaredParameterType} from '../../../../contracts/
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
 const Type=schema(TYPE),Role=schema(ROLE),Address=schema(ADDRESS),Identity=schema(IDENTITY);
-export interface ValueType {declaration:DeclaredParameterType;address_kind?:string;values?:string[];literal?:string;minimum?:number;maximum?:number;minLength?:number;maxLength?:number}
+export interface ValueType {declaration:DeclaredParameterType;address_kind?:string;values?:string[];literal?:string;minimum?:number;maximum?:number;minLength?:number;maxLength?:number;pattern?:string}
 export interface RoleDeclaration {source:string;bed_member?:boolean}
 export interface Effect {id:string;source:string;roles:string[];budget:number;commands?:CommandIdentity[];command_scope?:string[];allowed_literals:string[];command_roles:Array<{signature:string;position:number;role:string}>}
 export interface Authority {source:string;parameters:Record<string,{type:ValueType;role:string}>;roles:Record<string,RoleDeclaration>;effects:Effect[]}
@@ -47,6 +47,8 @@ export function readAuthority(contract:Record<string,unknown>,entry:Record<strin
   if(d.catalog_type==='keyword'&&typeof row.literal!=='string')return null;
   if(typeof row.minimum==='number'&&typeof row.maximum==='number'&&row.minimum>row.maximum||typeof row.minLength==='number'&&typeof row.maxLength==='number'&&row.minLength>row.maxLength)return null;
   if(row.literal!==undefined&&typeof row.literal!=='string')return null;
+  // A declared text shape: one anchored expression over the whole value, for names the runner splices into device lines.
+  if(row.pattern!==undefined){if(typeof row.pattern!=='string'||!row.pattern.startsWith('^')||!row.pattern.endsWith('$')||row.pattern.length>200||d.catalog_type!=='string')return null;try{new RegExp(row.pattern,'u');}catch{return null;}}
   types[id]={...row,declaration:d} as unknown as ValueType;
  }
  const effects:Record<string,Effect>={};for(const [id,row]of Object.entries(contract.effects)){if(!isRecord(row)||!ground(id,row.source)||!Array.isArray(row.roles)||row.roles.some(r=>typeof r!=='string'||!roles[r])||!Number.isSafeInteger(row.budget)||Number(row.budget)<0)return null;
@@ -75,6 +77,7 @@ export function valueProblem(type:ValueType,value:unknown):string|null {
  if(t==='enum')return type.values?.includes(value)?null:'不在已声明枚举中';
  if(t==='keyword')return type.literal===value?null:'不等于声明字面量';
  if(type.minLength!==undefined&&[...value].length<type.minLength||type.maxLength!==undefined&&[...value].length>type.maxLength)return '文字长度超出声明范围';
+ if(type.pattern!==undefined&&!new RegExp(type.pattern,'u').test(value))return '不符合声明的文字形状';
  if(t==='hostname'||t==='ip_or_hostname'){const host=value.endsWith('.')?value.slice(0,-1):value;const valid=host.length>0&&host.length<=253&&host.split('.').every(part=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(part));if(addressKey(value)!==null)return t==='ip_or_hostname'?null:'hostname 不能代替已声明 IP 类型';return valid?null:'不符合声明的 DNS 标签语法';}
  return t==='string'?null:'未实现该声明类型的完整核验';
 }

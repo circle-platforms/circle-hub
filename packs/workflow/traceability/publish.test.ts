@@ -58,7 +58,7 @@ describe('publishing the traceability pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['traceability', '1.0.11', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['traceability', '1.0.13', 'workflow']);
     // The same content again is the same publication.
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
@@ -70,7 +70,7 @@ describe('publishing the traceability pack', { skip }, () => {
     const sample = JSON.parse(await readFile(path, 'utf8')) as { expect: Array<{ code?: string }> };
     sample.expect[0].code = 'traceability.no_such_code';
     await writeFile(path, `${JSON.stringify(sample, null, 2)}\n`);
-    // 1.0.11 已按原内容发布。改样例后再签必须换版本，否则先被 version_reused 拦住，到不了样例检查。
+    // 1.0.13 已按原内容发布。改样例后再签必须换版本，否则先被 version_reused 拦住，到不了样例检查。
     await signPack(dir, { version: '99.0.0' });
     const outcome = await registry.publish(owner, dir);
     assert.ok(!outcome.ok);

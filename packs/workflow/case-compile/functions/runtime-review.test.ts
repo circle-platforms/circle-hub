@@ -56,7 +56,7 @@ test('review 10 unsafe numeric autoids diagnose missing original precision rathe
   const result = projectItems(projectionInput(model)) as { error: { code: string; message: string; fix: string } };
   assert.equal(result.error.code, 'case-compile.autoid_imprecise'); assert.match(result.error.message, /安全|精度/); assert.match(result.error.fix, /文本.*重新|文本.*重.*导出/);
 });
-test('review 11 replacement chains are invalid and undeclared source addresses stay unknown',()=>{const chain=addressInput('192.0.2.90',{source:'192.0.2.200',replacements:[{case:'192.0.2.200',bed:'192.0.2.200'}]});const data=chain.subject.data as ReturnType<typeof goodData>;data.replacements.push({case:'192.0.2.200',bed:'192.0.2.90'});assert.ok(codes(checkAddresses(chain)).includes('case-compile.replacement_invalid'));const phantom=goodData();phantom.replacements=[{case:'192.0.2.251',bed:'192.0.2.90'}];assert.ok(checkAddresses(subjectOf(phantom)).some(v=>v.verdict==='unknown'&&v.missing?.includes('冻结类型化参数身份')));});
+test('review 11 replacement chains are invalid and a source that is no address of the author\'s commands is refused (decision 115)',()=>{const chain=addressInput('192.0.2.90',{source:'192.0.2.200',replacements:[{case:'192.0.2.200',bed:'192.0.2.200'}]});const data=chain.subject.data as ReturnType<typeof goodData>;data.replacements.push({case:'192.0.2.200',bed:'192.0.2.90'});assert.ok(codes(checkAddresses(chain)).includes('case-compile.replacement_invalid'));const phantom=goodData();phantom.replacements=[{case:'192.0.2.251',bed:'192.0.2.90'}];assert.ok(checkAddresses(subjectOf(phantom)).some(v=>v.verdict==='refute'&&v.code==='case-compile.replacement_invalid'&&/替换的来源 192\.0\.2\.251 不是作者命令里的地址/.test(v.statement)));});
 import { readFileSync } from 'node:fs';
 import { runCheck } from '../../../../hub/rules/api.ts';
 test('review 12 unreadable inputs retain document pointers and cannot become vacuous interpreter support', async () => {
@@ -89,7 +89,7 @@ test('review 18 every imprecise case id has its source pointer and a lossless-in
 });
 test('review 19 decision 35 opens covered combinations and all bed interfaces without dropping lineage allocations', () => {
   const description = JSON.parse(readFileSync(new URL('../requirements.json', import.meta.url), 'utf8')).requirements.find((v: { key: string }) => v.key === 'bed_addresses').description;
-  assert.match(description, /本血缘分配/); assert.match(description, /本台架/);
+  assert.match(description, /本血缘分配/); assert.match(description, /本自动化测试环境/);
   assert.equal(checkAddresses(addressInput('192.0.2.1'))[0].verdict,'support');
   const doc = structuredClone(CONTRACT_DOC); doc.entries.push({ ...entry('widget-host', 'fixture_action', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }]), dispatch: 'execute_registry' }); const signed = signRuntime(doc); const rawProfile = profileDocument(signed);
   rawProfile.allowed.push({ object: 'widget-host', method: 'fixture_action', parameters: { command: 'host_shell' } } as any); rawProfile.hosts.push({ object: 'widget-host', method: 'fixture_action', device: 'client0' });

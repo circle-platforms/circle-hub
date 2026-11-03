@@ -136,6 +136,8 @@ export class FakeExternal implements ExternalReaderPort {
         if (only) { view.only = [...new Set(only)].sort(); view.keys = Object.fromEntries(Object.entries(view.keys).filter(([key]) => only.includes(key))); }
         const hashes = new Set(Object.values(view.keys).flat());
         view.entries = Object.fromEntries(Object.entries(view.entries).filter(([key]) => hashes.has(key)));
+        // The counts of an only= slice are its own, as the knowledge views write them.
+        if (only) { view.total_keys = Object.keys(view.keys).length; view.total_entries = hashes.size; }
         const fields = query.get('fields')?.split(',').map(decodeURIComponent);
         if (fields) {
           view.fields = fields;

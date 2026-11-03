@@ -17,7 +17,7 @@ import subjectDefault from './functions/subject.ts';
 import tagDeclarations from './functions/tag-declarations.ts';
 import { isFailure } from './functions/common.ts';
 import { commandSampleSubjects, commandTransitionalExamples } from './testing/command-samples.ts';
-import { bindIndex, indexView, LOCK } from './testing/index.ts';
+import { bindIndex, indexView, LOCK, unknownOnly } from './testing/index.ts';
 import type { PackWarning } from './functions/types.ts';
 import { EXAMPLE_INPUT, EXAMPLE_RESULT, exampleBytes, exampleResult } from './testing/examples.ts';
 import { baseDocument, outlineDocument, renamed } from './testing/mindmap.ts';
@@ -38,7 +38,7 @@ describe('the pack directory', () => {
   it('pack.json lists every pack file with its SHA-256 and size, and nothing else', async () => {
     assert.deepEqual(await manifestProblems(), []);
     const manifest = await readManifest();
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.14', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.22', 'workflow']);
     assert.deepEqual(manifest.files, await packFiles());
     for (const own of ['README.md', 'api.ts', 'pack.test.ts', 'engine.test.ts', 'testing/bed.ts', 'functions/project.test.ts']) assert.equal(isPackFile(own), false, own);
     const paths = manifest.files.map((f) => f.path);
@@ -227,6 +227,7 @@ describe('codes.json', () => {
     }
     collect(tagDeclarations({ subject: { item: '1', location: 'src:x', fields: { case_resources: [{ case: 'c', present: true, resource: ['NotAType'] }] } } }));
     collect(projectDefault(projectionInput([bind(base, { external: 'agile:mindmap:900001' }), bindIndex(indexView([], ['900001']))])));
+    collect(projectDefault({ ...projectionInput([bind(base, { external: 'agile:mindmap:900001' }), bindIndex(unknownOnly(indexView([], ['900001'])))]), context: LOCK }));
     for (const code of emitted) assert.ok(declared.has(code), `${code} is not declared in tables/codes.json`);
     for (const code of declared) assert.ok(emitted.has(code), `${code} is declared but no scenario emits it`);
   });

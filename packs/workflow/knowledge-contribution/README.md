@@ -1,6 +1,18 @@
-# knowledge-contribution 1.3.15
+# knowledge-contribution 1.3.20
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
+
+## 1.3.20（合入集成线 1.3.7–1.3.14，2026-11-04）
+
+集成线在同一包上另发了 1.3.7–1.3.15，编号与 main 的 1.3.7–1.3.19 重叠、字节不同；合线后的包取两边都没用过的 1.3.20。带进来的改动：
+
+- operation-capture 的启动幂等身份在会话、原件和运行上下文之外，加入技能版本、模型身份和已核验提案结构的摘要（`proposalDigest`，不含原始文字）。同一提案在 Hub 记录的幂等有效期内（默认 24 小时）原样重试仍复用运行；同一原件上的不同提案分别开运行。超过有效期后相同提案也可能开出新运行；结果未知时先查原回执并对账。main 的令牌核对（提案含当前令牌即拒、`artifact` 绑定的原件输入）不变。
+- 生成的回注结构接受用例索引使用的可选源节点上下文和锁定命令树身份；没有这些字段的旧记录照常可读。
+- 技能提示开运行时给出确认过的产品和目标版本或构建，并核对返回的产品、构建和根；缺目标或根时保持未知、交来源维护者，模型不自造。
+- bed 的中文名改为“自动化测试环境”（决定 110）：说明和采集技能的提示文字跟着改，行为不变。
+- 回注的版本绑定里，自动化测试环境的在装构建取自预订时在设备上看到的构建（决定 112）；清单里写的在装构建不再使用。
+
+没有带进来：集成线 1.3.12 的 `--allow-plaintext-host`（对用户指定的一个非回环主机放行明文 HTTP）。main 用 Hub 内置的 HTTPS（决定 121，原决定 74）连内网 Hub，采集技能仍只用 HTTPS，明文 HTTP 只许本机回环；放宽它要所有者决定。
 
 ## 1.3.15（控制台安全复核的共用扫描同步，2026-11-02）
 
@@ -115,7 +127,7 @@
 
 Circle 做过的事走同一回注槽，不另开通道。产出种类用 `assertion`（声明）。结构化内容放在 `feeding`：`fed-observation@1`（做了什么、结果引文）、`fed-procedure@1`（目标、每步带引文）、`fed-pitfall@1`（现象、建议、引文）。根据必须是本次上传、出处为 `client_captured` 的原件；观察到的、投影的、声明的和候选的原件仍拒收。
 
-不要在提交里写 `object`、`binding`、`by`、`run`、`at`、`version`、`build` 或 `line`。Hub 用规范化后的陈述和引文计算身份，并从本次运行锁定的构建或台架结构里的在装构建填写版本；两边不一致就两边都留，不选边。结构里没有时记未声明，并写明缺什么、下一步是什么。模型自己写的版本一律拒收。
+不要在提交里写 `object`、`binding`、`by`、`run`、`at`、`version`、`build` 或 `line`。Hub 用规范化后的陈述和引文计算身份，并从本次运行锁定的构建，或预订自动化测试环境时在设备上看到的在装构建（本次运行或它的前序预订）填写版本；两边不一致就两边都留，不选边。清单里写的在装构建不再使用。两边都没有时记未声明，并写明缺什么、下一步是什么。模型自己写的版本一律拒收。
 
 引文必须逐字出自该上传原件，比对规则与边界相同。产品读者可以读这三类；读不到原件的人整条都看不到。和手册或来源结构矛盾时只打 `contradicts`，两边都返回，Hub 不裁决。管理员追加撤回后条目失效但不删除，默认不再当作有效条目。依据等级轴目前没有「声明」这个码，存储的 `basis_rank` 仍是既有的 `judgment`；这三类的喂入主张性质是未知，不进入核验、评分或放行当证据。
 
@@ -147,7 +159,7 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
 
-先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.19；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.20；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
 
 默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。请求记录与未提交的判断记录留在 Circle 的工作目录内，不在仓库；submit 才上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
 
@@ -180,7 +192,7 @@ read_tier 的全部取值和标签同样由 pack-files.ts 写进 generated.json�
 
 1.0.1 删除包内重复码表；回注准入码由 contracts/codes.json 的核心登记和生成物唯一提供，发出方是核心准入核对，不是包解释器。凭据拒绝使用 CREDENTIAL_IN_UPLOAD。每个异常在抛出时绑定生成码与登记修正动作，不依赖包名或错误文案分类。
 
-普通产品读者按 get_nodes 返回的 tree:<root><path>[@entry] 回注，默认示例不绑定 originals。根原件是管理员可读输入；非管理员请求它仍收到中性 SOURCE_UNAVAILABLE，操作指引由 SKILL 第 1、3 步给出，不通过错误细节泄露权限事实。
+普通产品读者按 get_nodes 返回的 tree:<root><path>[@entry] 回注，默认示例不绑定 originals。根原件是管理员可读输入；非管理员请求它收到 SOURCE_NOT_PERMITTED（原件存在，你没有读取权限），操作指引由 SKILL 第 1、3 步给出。
 
 ## 结构声明与适用条件主张
 

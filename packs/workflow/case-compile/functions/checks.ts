@@ -4,6 +4,7 @@ import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
 import {labelOf} from './generated/vocabulary.ts';
 import {planCommands} from './plan-commands.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
+import { authoredAddresses, type RunnerCovered } from './command-obligations.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
 import { encodeG, GSyntaxError } from './g-syntax.ts';
@@ -40,23 +41,39 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   const read = readSlots(s.data);
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；按 slots.schema.json 的形状修正`, `/data${v.pointer}`)) };
 }
-function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null {
+function typedPrerequisites(s: CheckSubject, slots: PlanSlots, covered?: RunnerCovered[]): Outcome[] | null {
   const gaps0=[...(s.projection_unknowns??[]),...(s.recomposition_requested&&!s.recomposition?['缺可受理的独立重组记录；等待重组模型与核对方在编写之前完成重组并绑定真实 Hub 运行及结果']:[]),...recompositionGaps(slots,s.recomposition,s.manifest_sha256).filter(i=>i.verdict==='unknown').map(i=>i.message)];
   const invalidRecomposition=recompositionGaps(slots,s.recomposition,s.manifest_sha256).filter(i=>i.verdict==='refute');
   if(invalidRecomposition.length)return [refute(s,'slots_invalid',invalidRecomposition.map(i=>i.message).join('；'),'/data/recomposition')];
   if(gaps0.length)return [{verdict:'unknown',reason:'missing_input',missing:gaps0.join('；'),statement:gaps0.join('；'),grounds:[],tier:'blocking',item:s.item}];
   // Model identity proposals belong to commands_known, not shared contract prerequisites.
   const plan=withoutModelIdentities(slots);
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services);
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services,covered);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
   if(gaps.some(g=>g.verdict==='refute')){const first=gaps.find(gap=>gap.verdict==='refute')!;const pointer=blockMeta(slots)&&first.pointer.startsWith('/blocks/')?'/data'+first.pointer:'/data';return [refute(s,'method_forbidden',missing,pointer,{problems:gaps,obligations:gaps.flatMap(gap=>gap.obligation?[gap.obligation]:[])})];}
   return [{ verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, data: { problems: gaps } }];
 }
+/** What the runner's own cleanup discharges (decision 112), with its source, rule and how far its digest is pinned. */
+function runnerCleanupText(contract: RuntimeContract, covered: readonly RunnerCovered[]): string {
+  const c = contract.cleanup;
+  if (!c || covered.length === 0) return '';
+  const listed = covered.slice(0, 5).map((row) => `${row.object} 的“${row.line}”（规则 ${row.rule + 1}${row.source_line !== null ? `，${c.source} 第 ${row.source_line} 行` : ''}，前缀“${row.prefix}”）`).join('、');
+  const pinned = c.pinned ? '原合约的源文件摘要表记了同一摘要' : '原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对';
+  return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：每个用例开始前和整本结束时按发过的命令行逐条比前缀、第一条命中即用；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
+}
+/** How device commands are authorised (decision 114): by the locked command tree except the declared destructive commands. */
+function destructiveText(contract: RuntimeContract): string {
+  const d = contract.destructive;
+  if (!d) return '';
+  const parts = [d.exact.length ? `命令 ${d.exact.join('、')}` : '', d.prefixes.length ? `${d.prefixes.join('、')} 及其下的命令` : '', d.segments.length ? `路径里带 ${d.segments.join('、')} 的命令` : ''].filter(Boolean).join('；');
+  return `；设备命令按锁定命令树放行，只拒运行器合约声明的破坏性命令（${d.source}@${d.sha256.slice(0, 12)}，同参考实现的禁令：${parts}）`;
+}
 export function checkContractShape(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;
-  const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
+  const covered: RunnerCovered[] = [];
+  const unverified = typedPrerequisites(s, read.slots, covered); if (unverified) return unverified;
   const out: Outcome[] = [];
   for (const [i, step] of read.slots.steps.entries()) {
     const at = `/data/steps/${i}`; const beforeStep=out.length;
@@ -77,7 +94,8 @@ export function checkContractShape(input: unknown): Outcome[] {
     }
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity })];
+  const cleanup = s.contract!.cleanup;
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对${runnerCleanupText(s.contract!, covered)}${destructiveText(s.contract!)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
@@ -85,16 +103,19 @@ export function checkAddresses(input: unknown): Outcome[] {
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const bed = s.beds.find((v) => v.name === slots.bucket);
   const triggerTypes = triggerTypesOf(s.profile!.trigger_types);
-  if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单台架', '/data/bucket')];
+  if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单自动化测试环境', '/data/bucket')];
   const out:Outcome[]=[];
   const uses=typedAddressUses(s.contract!,s.profile!,slots,s.command_catalog);
   const sourceIdentities=Array.isArray(s.command_identities)?s.command_identities:[];
-  const sourceValues=new Set(sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}));
+  // The author's own addresses (decision 115, as SyntheticReference): parsed from the case's command lines by the locked tree.
+  const authored=authoredAddresses(s.command_catalog,Array.isArray(s.case_texts)?s.case_texts as string[]:[]);
+  const sourceValues=new Set([...sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}),...authored]);
+  const kept:string[]=[];
   const from=new Set<string>(),to=new Set<string>();
   for(const [i,replacement]of slots.replacements.entries()){
     const source=addressKey(replacement.case),target=addressKey(replacement.bed),at='/data/replacements/'+i;
     if(!source||!target||from.has(source)||to.has(target)||source.split(':')[0]!==target.split(':')[0])out.push(refute(s,'replacement_invalid','替换必须是同一声明地址族的一一对应数值映射',at));
-    if(source&&!sourceValues.has(source))return [{verdict:'unknown',reason:'missing_input',missing:'替换来源的冻结类型化参数身份；下一步由用例生产器补 data.command_identities 并重开运行',statement:'不能把原文中外形像地址的文字作为替换依据；缺冻结类型化参数身份，下一步补源声明后重跑',grounds:[],tier:TIER,item:s.item}];
+    if(source&&!sourceValues.has(source))out.push(refute(s,'replacement_invalid',`替换的来源 ${replacement.case} 不是作者命令里的地址：只能替换锁定命令树从作者原文命令里解析出的地址参数（这里解析出 ${authored.size} 个${authored.size?`：${[...authored].slice(0,10).join('、')}`:''}），不按外形从散文里找地址`,at));
     if(source&&target&&source!==target&&slots.replacements.some((other,j)=>j!==i&&addressKey(other.case)===target))out.push(refute(s,'replacement_invalid','替换映射不能形成链或环',at));
     if(source)from.add(source);if(target)to.add(target);
     if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',at));
@@ -102,13 +123,18 @@ export function checkAddresses(input: unknown): Outcome[] {
   }
   for(const use of uses){
     if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
-    if(typeof use.bed_member!=='boolean')return [{verdict:'unknown',reason:'missing_input',missing:'地址参数的合约闭集角色及 bed_member 用途；下一步合约发布管理员补字段并重新绑定',statement:'地址用途未声明，当前阻止派发；下一步由合约发布管理员补角色用途后重开运行',grounds:[],tier:TIER,item:s.item}];
-    if(!use.bed_member)continue;
+    // A role that says the address is not on the environment is not checked; a missing use is checked like a member (decision 115).
+    if(use.bed_member===false)continue;
     const value=String(use.value);if(slots.replacements.some(r=>addressKey(r.case)===addressKey(value)&&addressKey(r.case)!==addressKey(r.bed)))out.push(refute(s,'replacement_missing','声明地址位置仍保留替换前的值',use.pointer));
-    if(readAddress(bed,s.leases,s.now,value).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',use.pointer));
-    else if(inBlindSegment(bed,value,triggerTypes))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
+    const off=readAddress(bed,s.leases,s.now,value).kind==='off_bed',blind=!off&&inBlindSegment(bed,value,triggerTypes);
+    if(!off&&!blind)continue;
+    // As the reference implementation does: an address the author wrote is kept and disclosed; only one the plan made up is refused.
+    const key=addressKey(value);if(key&&authored.has(key)){if(!kept.includes(value))kept.push(value);continue;}
+    if(off)out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址，也不是作者原文命令里的地址（作者写的地址照原值保留并披露，只拒计划自己改出来的）。下一步：换用有触发设备的网段里的接口地址，或用作者原文里的地址，或先取得本血缘租约后再编译',use.pointer));
+    else out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段，也不是作者原文命令里的地址。下一步：把计划地址改到有触发设备的网段，或用作者原文里的地址，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
   }
-  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描',{typed_positions:uses,replacements:slots.replacements})];
+  const disclosed=kept.length?`；作者原文命令里的 ${kept.length} 个地址不在本环境可达范围里，照原值保留（同 SyntheticReference：只拒计划自己编的地址，作者写的写进披露），上机时可能连不通：${kept.join('、')}`:'';
+  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描'+disclosed,{typed_positions:uses,replacements:slots.replacements,author_kept:kept})];
 }
 export function checkExpectedSources(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;

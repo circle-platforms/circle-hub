@@ -30,7 +30,7 @@ test('five synthetic block plans compile, round-trip a workbook, and the VIP cas
     assert.deepEqual(typedAuthorityGaps(bed.contract, bed.profile, parsed.slots, undefined, bed.catalog, [], bed.manifest_sha256), [], item.id);
     const shape = checkContractShape(bed.subject(data, { item: item.id }));
     assert.ok(shape.every((outcome) => outcome.verdict === 'support'), `${item.id} ${JSON.stringify(shape)}`);
-    const fields = { ...bed.fields, autoid: `SYN-BLOCK-${index + 1}`, title: `合成 ${item.id} ${item.address}` };
+    const title = `合成 ${item.id} ${item.address}`, fields = { ...bed.fields, autoid: `SYN-BLOCK-${index + 1}`, title, path: ['合成文档', '合成分组', title] };
     const recipe = { slots: parsed.slots, contract: bed.contract, profile: bed.profile, fields, plan_run: 'run_' + '0'.repeat(26), build: 'SYN_ORBIT_10_8_1' };
     const bytes = generateWorkbook(recipe);
     const read = readWorkbook(coreModel(bytes), recipe);

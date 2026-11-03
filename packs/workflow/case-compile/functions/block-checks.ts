@@ -43,7 +43,7 @@ export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,s
   else if(row.kind==='undetermined')note(at,(row.missing??'应答者未定')+'；下一步：'+(row.next_action??'模型核对来源和请求链后补明确应答者'));
   else if(row.kind==='device'&&!profile.seats.some(seat=>seat.device===row.ref))note(at,'设备应答者不在冻结设备座位中',true);
   else if(row.kind==='fixture'){const source=meta.steps.get(row.ref),target=meta.steps.get(step.id!);if(!source||!target||source>=target)note(at,'案内 fixture 必须指向本次观察之前已安排的步骤',true);}
-  else if(row.kind==='bed_service'){if(!Array.isArray(services))note(at,'缺冻结台架服务清单；下一步：补绑定 inventory 后重新核验');else if(!services.some(service=>isRecord(service)&&service.host===row.ref))note(at,'床服务应答者没有冻结服务声明',true);}
+  else if(row.kind==='bed_service'){if(!Array.isArray(services))note(at,'缺冻结自动化测试环境服务清单；下一步：补绑定 inventory 后重新核验');else if(!services.some(service=>isRecord(service)&&service.host===row.ref))note(at,'床服务应答者没有冻结服务声明',true);}
  }
  for(const [index,expect]of slots.expects.entries())if(!observations.some(row=>row.step.id===expect.output))note(expect.origin??'/expects/'+index,'断言必须明确指向产生原文的观察，等待和配置不是输出',true);
  for(const [index,row]of context.responders.entries())if(!observations.some(value=>value.step.id===row.output))note('/block_context/responders/'+index,'应答者必须对应实际观察输出',true);

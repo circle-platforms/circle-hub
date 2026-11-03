@@ -1,16 +1,16 @@
-# case-compile 3.8.6
+# case-compile 3.9.18
 
-The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
+The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
 ## Frozen inputs and plan
 
-subject is a KityMinder document; contract, inventory and profile are required published expected sources. Textual autoid selects exactly one case; absent/duplicate selections refuse startup. Items retain autoid, auto, priority, title and authored steps. Both child-step and case-body/one-leaf layouts preserve source text. Unsafe numeric identifiers cannot be reconstructed.
+subject is a KityMinder document; contract, inventory and profile are required published expected sources. Without `parameters.autoid` the run takes every case of the document that the rule takes, the author did not exclude and that carries an autoid of the profile's shape, one item each in document order (3.9.0); an autoid of another shape, a duplicate autoid or more cases than one dispatch takes refuse startup, and a case without an autoid is counted in the selection summary (3.9.6). With `autoid`, exactly that case; an absent or duplicate selection refuses startup. Items retain autoid, auto, priority, title and authored steps, each from its own node (a repeated node id takes the node's selector in the item id). Both child-step and case-body/one-leaf layouts preserve source text. Unsafe numeric identifiers cannot be reconstructed.
 
 The original runner contract is not converted. Every original member except contract_sha256 participates in sorted compact UTF-8 identity; unknown status/dispatch/kind/authority values, unsafe/non-integer numbers and non-BMP keys refuse the whole contract. Object names are read from the key `e` (`name` stays accepted; both present and different refuses). Enabled non-internal, non-candidate entries alone are callable. Default text is not copied or evaluated; redacted parameters cannot be submitted. Identity must equal the declaration. A runtime-contract@2 document must declare `original` (the original contract's canonical identity and byte digest): the additions are a Hub-side deployment declaration, removing them recovers the original identity, and the pinned original identity — not the recomputed @2 digest — is what the profile expects, the workbook identity row carries and check-runtime-contract --expect checks. The parameter role `executor_return` marks a required parameter the executor fills with the previous step's return (the two-argument checkpoints' `result`); the profile check exempts it and the generator refuses to let the model write it.
 
 runtime-profile@1 defines expected identity; workbook sheet/nine headers/identity marker/range/closing row/autoid shape; seat and host-method mappings; allowed combinations with parameter roles; device/host rejection lists; synthetic; required device_count from read-only precheck; optional fold_newlines pairs, default empty. Decision 35 considers every enabled pair; allowed contains only opened combinations with role coverage and any required explicit reviewed decision. External-format closed sets live in the pack's format tables. Dispatch must check the real current device count again.
 
-Plan data is bucket, empty blocks, steps [{object,method,args,keywords}], expects [{text,quote,after}] and replacements [{case,bed}]. Args remain text; keywords may also be safe nonnegative integers because the runner converts digit keywords. Signatures enforce order, required/positional-only arguments, declared keywords and credential exclusion without defaults. Literal assertions are forbidden in steps: only expects supplies assertion text, with an original quotation and a one-based command after. Replacements are numeric one-to-one mappings, and slots contain final text. Device/host rejection lists, catalog@1, quote@1, address ownership and grounded expectations remain required checks. The bed/ prefix exposes test-bed predecessor allocations; unrelated runs cannot use them.
+For a flat plan, data is bucket, empty blocks, steps [{object,method,args,keywords}], expects [{text,quote,after}] and replacements [{case,bed}]. Args remain text; keywords may also be safe nonnegative integers because the runner converts digit keywords. Signatures enforce order, required/positional-only arguments, declared keywords and credential exclusion without defaults. Literal assertions are forbidden in steps: only expects supplies assertion text, with an original quotation and a one-based command after. Replacements are numeric one-to-one mappings, and slots contain final text. Device/host rejection lists, catalog@1, quote@1, address ownership and grounded expectations remain required checks. The bed/ prefix exposes test-bed predecessor allocations; unrelated runs cannot use them.
 
 ## G behavior and supported encoding
 
@@ -22,27 +22,27 @@ encodeG always decodes its result and compares types and values. It names the vi
 
 ## Deterministic file and independent reading
 
-The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, each step with its after expectations immediately following, blank row, configured closing row. The description contains plan_run and build, never a person. Exactly one textual autoid starts the case with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
+The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, then for each case in item order its steps, each with its after expectations immediately following, and a blank row, then the configured closing row. The description contains plan_run and build, never a person. Each case starts at the row of its textual autoid, with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
 
 Identity F records the generator id; G records a canonical recipe digest so a changed quote/replacement also changes bytes without copying source content. The workbook-level range points exactly to the header. Invalid XML values are refused rather than dropped; CR text is preserved. SpreadsheetML-looking _xHHHH_ sequences are refused with xstring_escape because literal inline and ST_Xstring readers disagree. The reference circle-packs 10-13 xlsx.mjs was read only for OOXML behavior: differences are STORE versus Deflate, strict fixed layout and subset, no hidden-row facility, exact identity/range, rejection of invalid characters and _xHHHH_ text, and accounted recipe metadata. No reference code or template bytes are imported.
 
-The only ZIP/XML reader is the existing core xlsx@1 parser, unchanged here. readWorkbook consumes its structural model and independently scans all post-header E–I rows, including description/closing rows. It checks members, one visible sheet, inline strings/numeric C, no formulas or equals-prefixed cells, hidden rows, unique identity/header/range, exact original fields, signatures, one autoid, immediate assertions, empty registers, seat bounds and final closing row. It never calls the generator to parse input. Existing catalog@1 and quote@1 checks also serve workbook_verified. Only after semantic reading does the verifier regenerate and compare SHA-256 against the integrity-checked bound original bytes. A single changed ZIP timestamp byte fails even if the parsed model is identical.
+The only ZIP/XML reader is the existing core xlsx@1 parser, unchanged here. readWorkbook consumes its structural model and independently scans all post-header E–I rows, including description/closing rows. It checks members, one visible sheet, inline strings/numeric C, no formulas or equals-prefixed cells, hidden rows, unique identity/header/range, exact original fields, signatures, one autoid per case in item order, immediate assertions, empty legacy registers and block registers scoped to their case, seat bounds and final closing row. It never calls the generator to parse input. Existing catalog@1 and quote@1 checks also serve workbook_verified. Only after semantic reading does the verifier regenerate and compare SHA-256 against the integrity-checked bound original bytes. A single changed ZIP timestamp byte fails even if the parsed model is identical.
 
 The support data is exactly {sha256,autoids,bed:{id,manifest_sha256},build,generator,plan_run}. manifest_sha256 is the raw bound inventory digest, not a re-encoded model hash. No workbook text/bytes are returned. The package checks description D against frozen plan_run; dispatch must compare data.plan_run with the verification run's own predecessor. The bundle's generator id is tied to the pack version by tests; uploaded stale generator identities are refused.
 
-Limits are declared in tables/workbook-format.json: 2,048 rows, 32,767 characters per cell, 2 MiB frozen model, 8 MiB output. Exceeding them refuses rather than truncates. SHA integrity and synthetic checks do not certify actual runner behavior.
+Limits are declared in tables/workbook-format.json: 2,048 rows, 32,767 characters per cell, 2 MiB frozen model, 8 MiB output; policies/dispatch.json caps one run at `max_items` (64) cases, checked when the run starts. Exceeding them refuses rather than truncates, and the refusal names the split the workflow offers: several uploaded documents, or one autoid per run. SHA integrity and synthetic checks do not certify actual runner behavior.
 
 ## Two runs and offline scripts
 
 First reserve the bed, then start a plan run with that reservation predecessor and all original sources. Submit/repair until every plan requirement is satisfied. workbook_verified alone is missing_input; accepted is not shorthand for satisfied. Preserve the exact original submission, start_run summary, complete result and bound source bytes. If the client exposes only formatted summaries, request a raw structured export from the integrator instead of manufacturing proof. Source pagination must be complete; local source-byte SHA checks catch reformatting or incomplete copies.
 
-Run normalize-mindmap.ts only for local exports needing the two declared transformations: remove two leading U+FFFF and convert a single array wrapper into root. It preserves element spelling, including long numeric literals, and prints before/after SHA plus client-normalization disclosure. Ordinary root documents retain their original bytes.
+Run normalize-mindmap.ts only for local exports needing the declared transformations: remove the KityMinder export head (U+FFFF then U+FEFF, bytes EF BF BF EF BB BF, which every real local export carries; since 3.8.8) or two leading U+FFFF, and convert a single array wrapper into root. It preserves element spelling, including long numeric literals, and prints before/after SHA plus client-normalization disclosure. Ordinary root documents retain their original bytes.
 
-The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full single-item coverage, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size. No environment or network is read and existing files are not overwritten.
+The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full coverage of every item of the run, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size. No environment or network is read and existing files are not overwritten.
 
 Source and published scripts both live under tools/, exactly as pack.json declares; staging copies those paths without namespace mapping. Installation must preserve tools/, functions/, tables/ and requirements.json together. The script and checker import the same functions/generate.ts. Node 24 is required; no production dependencies beyond built-ins are added.
 
-Upload the exact generated file. The second start_run binds workbook by its uploaded src: reference, uses the same sources/build, and sets both predecessor and plan_run to the satisfied plan run. Resubmit the unchanged slots. Fixing slots requires regeneration and a new successor because inputs are frozen. Every required check must then be satisfied before handoff. SKILL.md drives missing-input continuation through generation/upload, never reports missing input as success, and retains the qualifications 按合成合约核对 / 按发布的运行器合约核对 and 不证明在真实设备上跑得通. Real dispatch remains the integrator's operation after the owner's design-section-6 answers.
+Upload the exact generated file. The second start_run binds workbook by its uploaded src: reference, uses the same sources/build, and sets predecessor, plan_run and (for several cases) plan_result to the satisfied plan run. Resubmit the unchanged slots of every case. Fixing slots requires regeneration and a new successor because inputs are frozen. Every required check must then be satisfied before handoff. SKILL.md drives missing-input continuation through generation/upload, never reports missing input as success, and retains the qualifications 按合成合约核对 / 按发布的运行器合约核对 and 不证明在真实设备上跑得通. Since 3.9.1 the Hub dispatches the verified run itself while the runner holds the whole bed (decision 105).
 
 ## Verification
 
@@ -116,7 +116,7 @@ allowed 是合约启用集合中、经角色和检查覆盖的已开放子集；
 独立 compile-check 核对要求每项 Hub 状态存在且确定：未知不算一致，缺状态或缺结论都是差异；报告 position_comparisons 保留逐检查的已比位置、未定标记和差异，不因旁边有未知而跳过已知反驳的位置。未知的缺失事实和下一步随核对结果返回。
 
 2.3.5 兼容不限时预订：冻结租约的 until 为 null 时，本血缘分配的地址仍可用；其他用户的地址仍拒绝。
-只改变租约期限的解释和相应合成输入，不改变命令、规格或真实台架判断。独立合成测试装配显式提供空作业端口，
+只改变租约期限的解释和相应合成输入，不改变命令、规格或真实自动化测试环境判断。独立合成测试装配显式提供空作业端口，
 其私有数据库没有派发服务；真实服务仍由 Hub 装配接上实际只读作业记录。生成器版本标记随包升版，
 工作簿正反样例由合成原件重新生成、解析和计算摘要；没有手改字节摘要。
 
@@ -154,7 +154,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
 
-设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 FAMX 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在台架/本血缘租约中。
+设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 FAMX 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在自动化测试环境/本血缘租约中。
 
 派发允许集合来自方法、角色闭集、完整命令/字面效果允许集合及预算。denied 字段和拒绝词表已经退役；host_shell 另保留已声明的静态 POSIX 子集语法限制（无扩展、管道或重定向）。同一检查用于计划、客户端生成、独立工作簿回读和派发前重核；工作簿生成器升至 @3，旧记录不改写，新合约须重绑后生成新运行及新制品。缺事实时由当前运行者请求合约发布管理员补声明或绑定命令索引，按 Hub 具名补证请求继续。本次续接未运行验证。
 
@@ -173,7 +173,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 测试：`functions/criterion-grounding.test.ts` 七条，用包已发布的 runtime-contract@2 样例（合约、配置、命令身份）作类型化夹具，改前（主线 `d5aa4a68`）整个文件因缺 `criteriaOf` 加载失败，改后七条全过；覆盖冻结声明逐字接地并写出声明/复核/复核人、未冻结或属于别条目的引用不接地、客户端副本与冻结字节不符按 `expect_not_in_criterion` 退回、同一条目里引文接地与判据接地并存、grounds 交 quote@1 在本次边界重核、以及缺 grounds/新判据/复核身份的声明不可用。
 
-未做（下一步）：整链合成验收“用例的期望和手册对不上 → 作者提交声明 → 作者以外的账号开复核运行接受 → 新修订通过；未接受时照旧不通过”还没有写；它要 case-compile 与 criterion-review 两个包在同一张合成台架上跑通，而 R5 的类型化夹具迁移尚未完成（本包 303 条里 128 条在主线就失败，原因是旧夹具的 profile/contract 不合 runtime-contract@2）。缺的事实：可跑通整链的类型化夹具与验收台架；下一步：R5 负责人完成夹具迁移后补这条验收。本次未运行该场景，不宣称已证明。
+未做（下一步）：整链合成验收“用例的期望和手册对不上 → 作者提交声明 → 作者以外的账号开复核运行接受 → 新修订通过；未接受时照旧不通过”还没有写；它要 case-compile 与 criterion-review 两个包在同一张合成自动化测试环境上跑通，而 R5 的类型化夹具迁移尚未完成（本包 303 条里 128 条在主线就失败，原因是旧夹具的 profile/contract 不合 runtime-contract@2）。缺的事实：可跑通整链的类型化夹具与验收自动化测试环境；下一步：R5 负责人完成夹具迁移后补这条验收。本次未运行该场景，不宣称已证明。
 
 ## runtime-contract@2 夹具迁移（3.1.3）
 
@@ -197,7 +197,11 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
-容量来自冻结 profile 的显式 ordinal 与台架同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+容量来自冻结 profile 的显式 ordinal 与自动化测试环境同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+
+### 公开线的互逆与触发核对（3.8.7）
+
+3.8.7 采用公开仓库 case-compile 已有的三处修正（公开提交 ac95f6f6、ebfec96f、2dc82f3c；公开 main 上是 3.8.6，与本线改动合并后的公开快照是 3.8.7），上面两段已按它改写。命令树里的联合类型参数（例如 IPADDR 是 IPv4 或 IPv6）由产品包生成器发布成同一签名引用下的几个目录签名（编号 k.1、k.2），CommandIdentity 的签名引用仍是这一个。互逆对按参数位置跨这些展开逐一核对：没有哪个展开在该位置声明含这对值的枚举，该位置就不是互逆备选，命令照常走声明的前缀逆规则；每个展开都在该位置声明同一个枚举，才换成配对值；展开在这样的位置不一致，仍记未知（公开 issue #56，验收场景 28）。3.8.5 及以前，本线在条目的任意签名、任意位置找含该取值的枚举，可能把文本参数当成可互逆；一条命令有两处可互逆时退回前缀规则；`trigger_types` 的空数组等于全闭集，闭集外的类型被静默滤掉。
 
 ### Sibling switches and declared trigger narrowing
 
@@ -272,7 +276,7 @@ W06：本用例全部期望节点有稳定引用身份；每条都映射到断�
 
 覆盖分母是结构投影的作者原子全集，不采信模型 author_atoms 自报；mapped/unmapped 由代码与全集双向比。原文账只存逐字原子，释义另留说明。适配 action 为声明操作，commands 为完整命令行，按锁定树比较定义身份及次数；等价理由附声明引用。实际参数变化按产品声明的语义角色核 load_bearing，未能机械判定的语义由独立裁定提出且带逐字引文。具体化只接作者/规范来源/目录声明的值，缺来源或权限一律未知，点名产品包作者或重组者及提交前时点。
 
-床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含台架，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements/重绑定账执行。
+床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含自动化测试环境，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements/重绑定账执行。
 
 孪生文件入库迁移：原示意中的占位引用、释义原文账、本机路径和自述裁定改成可核引用与合成凭证；四种预期状态不变。原 README 中的真实名扫描模式不作为数据复制。检查脚本改写为 TypeScript，使用已安装技能的解析接口，不恢复核心默认 KityMinder。
 
@@ -291,3 +295,207 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.9.18: the integration line's 3.8.9–3.9.17 on main
+
+The private integration line published case-compile 3.8.7–3.9.17 while main stood at 3.8.6. This release brings those
+changes to main on top of main's own 3.8.6 fixes (union-typed inverse alternatives, declared trigger narrowing), which the
+integration line had already taken in 3.8.7. 3.9.18 is above every version either line published. The sections below
+describe what came in; the references to the read-only reference implementation (SyntheticReference) and its compile skill
+name behaviour, not code: nothing of theirs is copied, imported or run.
+
+### 3.8.9: union-typed optional arguments bind positionally
+
+The shared command grammar (`functions/generated/command-grammar.ts`, regenerated from `contracts/src/command-grammar.ts`) gave a
+line no identity when an optional argument of a union type (IPADDR published as IPv4 and IPv6 alternatives) was omitted: in the
+alternative whose type at that position rejected the given address, the address skipped the position and bound one later, so
+a removal command with a name and an address had two identities and its cleanup could not be checked. The expansions of one
+declared signature now bind as the declared signature does, the given arguments at the earliest positions; identities of
+different declared signatures still make a line ambiguous (`contracts/src/command-grammar-union.test.ts`).
+
+### 3.8.10: an unlabeled expectation under several actions binds to the step (decision 103)
+
+An expectation with no `step_ref`, no bracket label and no number, under a step whose several actions precede it, binds to
+those actions as one step instead of staying unbound, as the reference implementation handles it. The authoring model splits
+it into verbatim clauses of the expectation node and asserts each after the plan operation it observes; that placement is a
+model judgment, and the Hub still checks every quote against the expectation's original bytes. An explicit `step_ref`, label
+or number that matches no action, or several, still leaves the expectation unbound.
+
+### 3.8.11: declared confirmations, net-effect cleanup and declared text shapes (decision 104)
+
+Three generic rules a case that loads a certificate on a device needs.
+
+- **Declared confirmations.** A product's command-policy@1 may declare `confirmations` (`command_prefix`, `prompt`, `answer`).
+  A device command under a declared prefix must pass the declared prompt as its runner prompt (the parameter whose declared
+  type is `runner_prompt`, role `runner_option`), and the very next step, on the same object and method and in the same
+  section, must carry exactly the declared answer as its only value. That step is dialogue: it is not parsed against the
+  catalog, needs no catalog entry and has no cleanup obligation (`confirmationSteps` in `functions/plan-commands.ts`). A
+  declared command without its prompt or answer, a runner prompt on any other device command, and an answer that follows
+  nothing are refused, since a missing answer leaves the device waiting inside the dialogue.
+- **Net-effect cleanup.** Only what is alive at the end is torn down. An execution step that is exactly the declared inverse
+  of a still-live earlier one on the same device (delete, then re-create) undoes it, and neither needs cleanup; every other
+  configuration stays live and needs its own cleanup in reverse order (`functions/command-obligations.ts`). The bed's
+  pre/post check still decides whether the bed was restored.
+- **Declared text shapes.** A runtime-contract@2 type of catalog type `string` may declare `pattern`, one anchored expression
+  the whole value must match (`functions/typed-contract.ts`), for names the runner splices into device lines.
+
+Test: `functions/confirmations.test.ts` with the synthetic fixture `testing/confirmations.ts`.
+
+### 3.9.0–3.9.1: one run and one workbook for the whole document (decisions 104, 105)
+
+A user converts a whole mind map for a version, not one case at a time. Without `parameters.autoid` the run takes every case
+of the document that has a textual autoid of the configured shape and is not excluded by the author, in document order, one
+item each; duplicate autoids refuse startup, and a recomposed pipeline stays one case per run. With `autoid`, exactly that
+case, as before.
+
+- **One workbook.** `generateWorkbookSet` writes one identity row, header and description, then each case's rows in item
+  order, each followed by a blank row, then the closing row; the runner begins a case at every A-column autoid row. The
+  identity recipe digest covers the ordered list of the cases' recipes; one case keeps exactly the single-case bytes. The
+  independent reader (`readWorkbook`) walks the case blocks in the same order, and a block plan and a flat plan cannot share
+  a workbook.
+- **Verification against every accepted plan.** The verification run binds `plan_result` (a `from_runs` input: the plan run
+  id, which the Hub replaces with that run's latest accepted result). The projection freezes, in item order, every case's
+  accepted plan (the model's judgment claim on the plan slot) and commands_known catalog receipt (`plan_set` in the run
+  group). Each item's `workbook_verified` check requires its resubmitted plan to equal its frozen plan and regenerates the
+  whole workbook from the frozen set; all items return the same support data, whose `autoids` lists every case.
+- **Dispatch.** `policies/dispatch.json` binds 1 to `max_items` (64) distinct autoids; the Hub's dispatch proof accepts a
+  verification run of several items when it names one dispatched id per item.
+- **Client.** `tools/fetch-run.ts --hub <address> --run <run> --out <directory>` reads the user's token from standard input
+  only and fetches from the Hub's `/run-export/<run>` the run, its latest accepted result and that result's submission, and
+  from `/run-export/<run>/sources/<sha256>` the bound contract, profile and inventory, checking each against the digest the
+  run bound. Every original is fetched and checked before anything is written, a failed write removes what the call wrote,
+  and nothing is overwritten. A Hub that cannot be reached is reported as unreachable with its cause, one that does not
+  answer within 120 s as such, and only an answer that does not parse as UTF-8 JSON as malformed. A secret placeholder the
+  client did not fill is answered with `/secrets HUB_TOKEN` and never sent. `tools/generate-workbook.ts` generates the whole
+  workbook when every case's plan requirements are satisfied (only the workbook may still be missing) and produces nothing
+  otherwise. Once the verification run is accepted with every requirement satisfied while the runner holds the executor's
+  bed keys, the Hub dispatches the workbook itself (decision 105) and the answer's `派发` line names the job; repeating the
+  same submission byte for byte reads its progress and the result reference.
+
+Tests: `functions/whole-mindmap.test.ts`, `tools/fetch-run.test.ts`, the whole-mind-map case of acceptance scenario 28.
+
+### 3.9.2: promoted certification candidates (decision 104)
+
+A runner contract may mark device methods as certification candidates (device certified through a device receipt set, with a
+final-contract release replay still required). case-compile never enables a candidate by itself. A runtime-contract@2
+document may now declare `promotions` (`object`, `method`, `status_authority`, `reason`), an addition removed with the
+others when the original identity is recovered: a candidate is enabled only when a promotion names it with exactly the
+device receipt set the original entry records and the entry carries typed authority. A promotion of anything else refuses
+the whole contract. The release replay is the dispatch of a workbook that uses the method; its result is judged as any
+other. Test: `functions/promotions.test.ts`.
+
+### 3.9.3–3.9.7: verdicts from the vocabulary, the whole bed, rework, each case's own identity
+
+- The verdict of a cleanup problem narrows the generated `Verdict` with `Extract` instead of a handwritten union.
+- The contract and profile inputs name their default documents (`doc:doc:runner-contract`, `doc:doc:runtime-profile`) as
+  the inventory input already did (`doc:doc:bed-topology`).
+- Step 1 of `SKILL.md` books the whole bed (`need.devices` with every device of the inventory), because the executor's
+  target is the whole bed and a partial booking would be refused only at dispatch.
+- The Hub's dispatch result names, for every row that did not pass, its log and its device sessions as sources the runner
+  reads (`evidence`). Step 9 says what follows a run with failures: read that evidence, attribute each failure (plan,
+  expectation, product or environment), never copy device output into an expectation, change only the failed cases and
+  keep every passed plan as it ran, then run the whole mind map again until every case passes or the remaining failures go
+  to the user with their evidence. Step 3 says that `after` points at the step whose output the expectation reads.
+- Local commands name the skill directory and write every command with the installed script's full path, so a client guard
+  that runs only `node` with a full path admits them (`scripts/real/circle-home.test.ts`).
+- A pasted case keeps the node id of the case it was copied from. The earlier extraction is now found by selector alone, and
+  an item id uses the node's selector where the node id repeats in the document; a unique node id keeps
+  `<document>:<node id>`.
+- A whole-document run refuses with `autoid_invalid` when a case's autoid does not match the profile's shape, naming up to
+  ten cases by selector and quoted autoid with the fix; a case without an autoid is still not compiled and is counted.
+- The independent reader keeps registers per case, reset at every row that starts a case, as the runner does; within a case
+  a name is still captured once.
+- More than `max_items` (64) selectable cases refuse the start with `too_many_cases` and the split the workflow offers
+  (several uploaded documents, or one autoid per run) instead of failing at `dispatch_policy` after the work.
+- In Chinese text the bed is 自动化测试环境 (decision 110); identifiers and behaviour are unchanged. The recompose stage
+  packs carry two of the renamed messages, so they moved together.
+
+### 3.9.8: the runner's own cleanup (decision 112)
+
+Before every case after the first and at the end of a workbook the runner clears each of its device objects by prefix rules
+applied to every command line the object sent, first hit in source order. A runtime-contract@2 document may declare that
+cleanup as the closed addition `cleanup`: `source` (the runner path), `sha256` (the file bytes), `objects` (1–16 contract
+objects the runner clears) and `rules` (1–512, each 1–16 single-line `prefixes` and an optional source `line`). The clear
+commands themselves are never declared: many are module-wide and are not a teardown a case may copy. Like the other
+additions it is removed when the original identity is recovered; a `sha256` that differs from the original contract's
+`source_hashes` entry for the same path refuses the contract.
+
+A live configuration command on a listed object whose line starts with a declared prefix needs no inverse in the case; every
+other one still needs its declared inverse in the cleanup segment, in reverse order, and an explicit inverse of a covered
+command is still accepted. The contract check's support statement says how many commands the runner's cleanup discharges,
+which rule and prefix covers each, and whether the original contract records the same digest for the source (otherwise the
+digest is the Hub-side declaration only and the bytes on the jumphost are unchecked).
+
+### 3.9.9: device commands by the locked command tree, except the destructive ones (decision 114)
+
+A runner contract that lists command subtrees in `command_scope` stopped a defect reproduction whose commands were outside
+them, and the only way on was a maintainer revising the contract. The reference implementation allows every device command
+the command grammar knows and bans only the commands that take a shared environment's device down or wipe it with its
+management access.
+
+- runtime-contract@2 gets the closed addition `destructive`: `source`, `sha256`, and at least one of `exact`, `prefixes`
+  (paths under `/commands` of the locked command tree) and `segments` (path segments, anywhere in the path). It is matched
+  on the resolved command identity's path, never on wording.
+- A device CLI effect that declares no `command_scope` and no `commands` now authorises every command the locked tree
+  resolves, except the destructive ones, when the contract declares `destructive`; without it, device commands stay
+  refused and the refusal says so. A declared scope still narrows, and a destructive command is refused inside it too.
+- A command address whose position has no declared role must be an address of the environment, a lineage lease or a
+  replacement (bed member); a declared role without `bed_member` is still a gap.
+- The contract-shape support says how commands were authorised (the declaration's source and digest and what it bans).
+- SKILL step 2: the same rule; a fact only a maintainer can supply goes to that maintainer as an evidence request, and the
+  user is told which request the run waits on, never asked to choose for the maintainer.
+
+### 3.9.10: the author's own addresses stay (decision 115)
+
+The reference implementation refuses an unreachable address only when the compiling model made it up; one the author wrote
+is kept and disclosed.
+
+- `bed_addresses`: the author's addresses are the address parameters of the case's own command lines, parsed by the locked
+  command tree (no text scan). A plan address off the environment or in a blind segment is kept and disclosed when it is one
+  of them, refused otherwise; the support says which addresses were kept. A declared role with `bed_member: false` is still
+  not checked; a position without a declared use is checked like a member.
+- A replacement may replace any address of the author's commands, not only one from the case index; any other source is a
+  plan error (`replacement_invalid`, naming the source and the author's addresses), no longer a missing fact for a maintainer.
+- An inverse that parses with several leading-parameter counts accepts the plan's own cleanup when it is one of them, and
+  otherwise lists every valid form; it no longer waits for a product declaration.
+
+### 3.9.11–3.9.13: cleanup per device, attribution from the echo, one booking (decisions 118, 119)
+
+- Reverse order binds within one device only: each device's live configurations, latest first, take that device's cleanup
+  steps; the order between devices is free. An explicit inverse of a configuration the runner's own cleanup covers is
+  accepted wherever it stands on its device. A left-over cleanup step that is the declared inverse of a live configuration
+  of the same device is named as out of reverse order, with the configuration it undoes.
+- SKILL step 9: a command or configuration the device echo names is read in the locked command tree and the manual before
+  the plan changes; an inference the echo does not explain is a judgment with a written prediction (V08), a read-only
+  observation before the command under test tells it apart next time, and a miss changes the hypothesis instead of
+  repeating the change.
+- SKILL steps 1 and 9: step 1 keeps a whole-bed booking already held (for instance from installing a build), step 9 reruns
+  under it, and once every job has an end the booking is released with test-bed release. The confirmation rule no longer
+  quotes one product's command, prompt and answer as examples.
+
+### 3.9.16: the case's mind-map path on its first row, consistent examples, an everyday description (issues #144, #130, #143)
+
+- Column D of each case's first row (the autoid row) is the case's place in the mind map: the texts of the nodes from the
+  root to the case, verbatim, joined by `>` (`AAA>BBB>CCC`); the case's other execution rows keep the case title. The path is
+  projected at start (`fields.path`), carried into the frozen plan set and the recipe digest, and read back by the
+  independent reader. Column D is free text for the runner (it logs it and shows the first row's as the case description;
+  whether a row executes is decided by other columns). A path text that the generator subset refuses (a leading `=`, a
+  control character, `_xHHHH_`) refuses generation as any cell does.
+- The examples are derived from `examples/case-mindmap.json` by `node testing/examples.ts --write`; `examples.test.ts`
+  fails when they drift. `start-run.json` names placeholders for product and build.
+- The skill and pack descriptions say in everyday words what the pack does: compile a whole test mind map into an
+  automation-case Excel workbook and run it on the automation test environment.
+
+### 3.9.17: an uploaded mind map is named by its root node (owner's decision)
+
+- Without an agile document id (an uploaded file) and without a parser meta id, the document id, the first part of every
+  item id `<document>:<node>`, is now the root node's id; until 3.9.16 it was the first case's node id. A tree whose root
+  carries no id is named `tree-<sha256>`: the SHA-256 of the canonical JSON of the whole tree reduced to each node's text
+  and its children in order (`rootDocumentId` in `functions/cases.ts`). The same texts and shape give the same id on every
+  run, and any change of a text or of the shape gives another.
+- Runs started before keep the item ids recorded with them; records are append-only and nothing is rewritten. The example
+  item is now `fixture-document:fixture-case`.
+
+The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.3 with this release (the integration
+line's 1.0.2 and main's 1.0.1 hold different bytes): `functions/recompose-evidence.ts` accepts stage evidence of exactly that
+version, so the pin moves with them (in the parent, the three copies, `testing/recompose.ts` and the recompose samples).

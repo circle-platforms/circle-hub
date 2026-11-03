@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.21",
+  "version": "1.6.25",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "d74feebf243159e3238f493d4d10d258de6c012258f5123bf4b0d38bc426ef21",
-      "size": 10789
+      "sha256": "1c540faf534534a28657a4601427492053fe41abdb84a691c2e809e5f58b1243",
+      "size": 11588
     },
     {
       "path": "checks.json",
@@ -23,13 +23,13 @@
     },
     {
       "path": "examples/submission.json",
-      "sha256": "a5f325b7a4d83dd8c94a2fac00331c6578d36e52fb65fb0e91f9268798b54cb7",
-      "size": 1916
+      "sha256": "730c327fd8bff528ad1a969488aeb97e4c32af0801094f099197767869da94a0",
+      "size": 1953
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "7bb0820012a8835d94d9909ec080bb75f4ffc6ba0f71c6afb773520a2803e358",
-      "size": 1473
+      "sha256": "71e7e17301ed9f703c8bb861b0f94c05d7849cb71e679b65ca4d9f0a5f7cb393",
+      "size": 1508
     },
     {
       "path": "functions/case-identity.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "99a437a5c2ef13c8aa2c1a56dcc0f5839473a5320596e06349d27c1121fc9627",
-      "size": 23277
+      "sha256": "8d5d91bfa8a256b06b5fb75bf3c2337be62c190275223e46471be82d5f5d1a3c",
+      "size": 24539
     },
     {
       "path": "functions/command-head.ts",
@@ -48,13 +48,13 @@
     },
     {
       "path": "functions/compact-index.ts",
-      "sha256": "d8244c19d58352ff59a3fde5402546f4ebfea382d86ccc37030603070ef69da3",
-      "size": 11828
+      "sha256": "177d2de23f3da2b38e3b045787c44cd1fedafaa8eecf1ff693afebfb9ef2e51d",
+      "size": 15384
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "2636dd6fb2bdc791f9eafbb5f296a8c3aae00e48c11a9c275d9fd014c06fc57b",
-      "size": 1936
+      "sha256": "855001310ad6d7c8b9b78d112587897b61b138d017252f99a0f211ffa407ceed",
+      "size": 3504
     },
     {
       "path": "functions/fixed-status.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "78c62f2b1f4de38e93557ecff99ee54baaea8b013c3fa1cbe56a6d202d2cf8e6",
-      "size": 8453
+      "sha256": "8ad55ea9229c7c1f3c0e62e184d685654d9743881897460f77f88ed5e048a038",
+      "size": 11051
     },
     {
       "path": "functions/quote-identity.ts",
@@ -100,6 +100,11 @@
       "path": "samples/negative/duplicate_found.json",
       "sha256": "36f1ba6e41df8ca5a12036605d04290ebbc3a1d1ff44d0394af9f60bf1f03e3c",
       "size": 6963
+    },
+    {
+      "path": "samples/negative/duplicate_unknown_entries.json",
+      "sha256": "5924cc30f9e8c07fc6916f16f5b34a178d2d4e2f5cdfd52613ee14fcb1f802c7",
+      "size": 8956
     },
     {
       "path": "samples/negative/fixed_status_known.json",
@@ -223,8 +228,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "1eb0ff71c27ebf9332723884d2e1b0d5325718e385c83ba355b8721bf70b368d",
-      "size": 1911
+      "sha256": "e6045705d13ba4389002b2257eee059abe065d0bcda552730e30f02115c871d9",
+      "size": 2092
     }
   ]
 }

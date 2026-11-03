@@ -2,8 +2,9 @@
 // wording, facts items, the acquire plan and its lease_requests, the invalid-manifest whole-call refusal, and the
 // frozen groups the check reads. Addresses only 192.0.2.0/24 and 2001:db8::/32.
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, test } from 'node:test';
 import project from './project.ts';
+import { readParameters } from './conclude.ts';
 
 const NOW = '2026-10-22T02:00:00.000Z';
 const LATER = '2026-10-22T05:00:00.000Z';
@@ -33,11 +34,11 @@ const MANIFEST = {
   ],
 };
 
-function input(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }> } = {}): unknown {
+function input(parameters: Record<string, unknown>, options: { manifest?: unknown; leases?: Array<{ key: string; until: string; mine?: boolean }>; observations?: unknown[] } = {}): unknown {
   return {
     inputs: [{ slot: 'inventory', external: 'doc:doc:bed-topology', sha256: 'a'.repeat(64), media_type: 'application/json', parser: 'json@1', model: options.manifest ?? MANIFEST, meta: null }],
     parameters,
-    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [], registrations: [] } },
+    context: { product: null, names: [], line: null, build: null, root: null, parameters, groups: [], leases: { now: NOW, entries: options.leases ?? [], registrations: [] }, ...(options.observations ? { observations: options.observations } : {}) },
   };
 }
 
@@ -62,7 +63,7 @@ describe('project action search', () => {
     const out2 = project(input({ need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] } }));
     const b2 = fieldsOf(out2, 'bed-b');
     assert.equal(b2.devices_ok, false);
-    assert.deepEqual(b2.missing, ['需要 1 台负载均衡，台架里有 0 台']);
+    assert.deepEqual(b2.missing, ['需要 1 台负载均衡，自动化测试环境里有 0 台']);
     const leased = project(input({ need: { devices: [{ type: 'client', count: 1 }] } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }] }));
     const a3 = fieldsOf(leased, 'bed-a');
     assert.equal(a3.earliest_free, LATER);
@@ -78,7 +79,7 @@ describe('project action search', () => {
     const out = project(input({ need: { devices: [{ type: 'client', count: 1 }], build: 'Rel_FAMX_10_6_1_57' } }));
     const a = fieldsOf(out, 'bed-a');
     assert.equal(a.build_ok, 'unknown');
-    assert.match(String(a.conclusion), /设备上装的构建没有记录（未知）/);
+    assert.match(String(a.conclusion), /设备上装的构建没有观察记录（未知；预订时 Hub 会在设备上看一次）/);
   });
 });
 
@@ -155,9 +156,9 @@ describe('project action extend and release', () => {
     { key: 'bed/bed-b/client1', until: LATER, mine: false },
   ];
 
-  it("reject retired extend: the lineage-held keys with the extension TTL, devices and addresses named",()=>{const out=project(input({action:'extend',booking:'run_book1',hours:3})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/台架预订不限时长/);});
+  it("reject retired extend: the lineage-held keys with the extension TTL, devices and addresses named",()=>{const out=project(input({action:'extend',booking:'run_book1',hours:3})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/自动化测试环境预订不限时长/);});
 
-  it("reject retired extend: hours falls back to need.hours",()=>{const out=project(input({action:'acquire',need:{hours:5}})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/台架预订不限时长/);});
+  it("reject retired extend: hours falls back to need.hours",()=>{const out=project(input({action:'acquire',need:{hours:5}})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/自动化测试环境预订不限时长/);});
 
   it('release: the lineage-held keys without a TTL', () => {
     const out = project(input({ action: 'release', booking: 'run_book1' }, { leases: HELD })) as { lease_requests?: unknown[]; items?: Array<{ fields: Record<string, unknown> }> };
@@ -181,7 +182,7 @@ describe('project action extend and release', () => {
   });
 });
 
-describe('project with declared installs in the manifest', () => {
+describe('project with observed installs (decision 112)', () => {
   const DECLARED = {
     schema: 'test-bed-manifest@1',
     beds: [
@@ -209,50 +210,80 @@ describe('project with declared installs in the manifest', () => {
     ],
   };
   const needBuild = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_8' };
+  const inventory = 'a'.repeat(64);
+  const seen = (device: string, label: string, build: string, base: string | null, at = '2026-10-21T12:00:00.000Z') => ({ inventory, device, label, build, base, values: [build], observed_at: at, run: 'run_synthetic', job: null, reference: `src:${'b'.repeat(64)}` });
+  const OBSERVED = [seen('/beds/0/devices/0', 'bed-a/afamx0', 'Rel_FAMX_10_6_1_8', 'Rel_FAMX_10_6_1_8'), seen('/beds/1/devices/0', 'bed-b/afamx1', 'Rel_FAMY_10_6_1_8', 'Rel_FAMX_10_6_1_8')];
 
-  it('search: the declared install answers 声明，未核对; an FAMY name based on the FAMX build is the same build; no record stays unknown', () => {
-    const out = project(input({ need: needBuild }, { manifest: DECLARED }));
+  it('search: an observed install answers with its moment; an FAMY name on the same base build is the same build; never observed stays unknown', () => {
+    const out = project(input({ need: needBuild }, { manifest: DECLARED, observations: OBSERVED }));
     assert.ok(!('error' in Object(out)), JSON.stringify(out).slice(0, 300));
     const a = fieldsOf(out, 'bed-a');
     assert.equal(a.build_ok, 'match');
-    assert.equal(a.build_source, 'declared');
-    assert.match(String(a.conclusion), /构建一致（Rel_FAMX_10_6_1_8，声明，未核对）/);
+    assert.equal(a.build_source, 'observed');
+    assert.match(String(a.conclusion), /构建一致（Rel_FAMX_10_6_1_8，观察于 2026-10-21T12:00:00.000Z）/);
     const b = fieldsOf(out, 'bed-b');
-    assert.equal(b.build_ok, 'match', 'the FAMY name maps to its base build before comparing');
-    assert.match(String(b.conclusion), /构建一致（Rel_FAMX_10_6_1_8，声明，未核对）/);
+    assert.equal(b.build_ok, 'match', 'the FAMY name resolves to the same base build');
     const c = fieldsOf(out, 'bed-c');
-    assert.equal(c.build_ok, 'unknown', 'no installed: no record, never a mismatch');
-    assert.match(String(c.conclusion), /没有记录（未知）/);
+    assert.equal(c.build_ok, 'unknown', 'never observed: no record, never a mismatch');
+    assert.match(String(c.conclusion), /没有观察记录（未知；预订时 Hub 会在设备上看一次）/);
   });
 
-  it('search: a declared mismatch says 需要升级, still 声明，未核对', () => {
-    const out = project(input({ need: { ...needBuild, build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED }));
-    const a = fieldsOf(out, 'bed-a');
+  it('a manifest declaration is not used: without an observation the device is unknown, and the answer says the declaration is ignored', () => {
+    const out = project(input({ need: needBuild }, { manifest: DECLARED })) as { warnings?: Array<{ code: string; message: string }> };
+    assert.equal(fieldsOf(out, 'bed-a').build_ok, 'unknown');
+    assert.ok(out.warnings?.some((w) => w.code === 'test-bed.declared_install_ignored' && /不再使用：以设备上实际看到的为准/.test(w.message)));
+  });
+
+  it('only an observation of this inventory counts: the same pointer under another inventory digest is not this device', () => {
+    const other = OBSERVED.map((o) => ({ ...o, inventory: 'c'.repeat(64) }));
+    assert.equal(fieldsOf(project(input({ need: needBuild }, { manifest: DECLARED, observations: other })), 'bed-a').build_ok, 'unknown');
+  });
+
+  it('the newest observation of a device decides', () => {
+    const later = [...OBSERVED, seen('/beds/0/devices/0', 'bed-a/afamx0', 'Rel_FAMX_10_6_1_9', 'Rel_FAMX_10_6_1_9', '2026-10-22T08:00:00.000Z')];
+    const a = fieldsOf(project(input({ need: needBuild }, { manifest: DECLARED, observations: later })), 'bed-a');
     assert.equal(a.build_ok, 'mismatch');
-    assert.match(String(a.conclusion), /构建不一致（装的是 Rel_FAMX_10_6_1_8，需要升级到 Rel_FAMX_10_6_1_9，声明，未核对）/);
+    assert.match(String(a.conclusion), /构建不一致（装的是 Rel_FAMX_10_6_1_9，要的是 Rel_FAMX_10_6_1_8，观察于 2026-10-22T08:00:00.000Z）/);
+  });
+
+  it('acquire on an observed mismatch: the refusal cites the bed of the inventory, says observed, and its fix names no upgrade', () => {
+    const out = project(input({ action: 'acquire', bed: 'bed-a', need: { ...needBuild, build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED, observations: OBSERVED })) as { error?: { code: string; message: string; fix: string; provenance?: string; grounds?: string[] } };
+    assert.equal(out.error?.code, 'test-bed.build_mismatch');
+    assert.equal(out.error?.provenance, 'observed');
+    assert.deepEqual(out.error?.grounds, [`src:${inventory}/json@1/p/beds/0`]);
+    assert.match(out.error?.message ?? '', /要的是 Rel_FAMX_10_6_1_9，观察于 2026-10-21T12:00:00.000Z/);
+    assert.doesNotMatch(`${out.error?.message}${out.error?.fix}`, /需要升级|先升级/);
+    assert.match(out.error?.fix ?? '', /再用 bed-install 装上/);
+  });
+
+  it('acquire asks the Hub to observe every booked device, by the inventory digest and pointer, with a label', () => {
+    const out = project(input({ action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'router', count: 1 }] } }, { manifest: DECLARED })) as { observe?: unknown[] };
+    assert.deepEqual(out.observe, [
+      { inventory, device: '/beds/0/devices/0', label: 'bed-a/afamx0' },
+      { inventory, device: '/beds/0/devices/1', label: 'bed-a/router0' },
+    ]);
   });
 
   it('search: no matching build adds one unknown exit and does not rewrite the per-bed fields', () => {
-    const out = project(input({ need: { ...needBuild, build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED })) as { warnings?: Array<{ code: string; message: string }> };
+    const out = project(input({ need: { ...needBuild, build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED, observations: OBSERVED })) as { warnings?: Array<{ code: string; message: string }> };
     const warning = out.warnings?.find((row) => row.code === 'test-bed.no_matching_build');
     assert.ok(warning);
-    assert.match(warning.message, /没有任何台架的在装构建匹配版本线 Rel_FAMX_10_6_1_9/);
-    assert.match(warning.message, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
+    assert.match(warning.message, /没有任何自动化测试环境最近一次观察到装的是 Rel_FAMX_10_6_1_9/);
+    assert.match(warning.message, /最近一次观察到的是别的构建：bed-a\/afamx0 装的是 Rel_FAMX_10_6_1_8（观察于 2026-10-21T12:00:00.000Z）/);
+    assert.match(warning.message, /没有观察记录：bed-c\/afamx2/);
+    assert.match(warning.message, /。下一步：要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次$/);
     assert.equal(fieldsOf(out, 'bed-a').build_ok, 'mismatch');
-    assert.match(String(fieldsOf(out, 'bed-a').conclusion), /需要升级到 Rel_FAMX_10_6_1_9/);
-    const matched = project(input({ need: needBuild }, { manifest: DECLARED })) as { warnings?: Array<{ code: string }> };
+    const matched = project(input({ need: needBuild }, { manifest: DECLARED, observations: OBSERVED })) as { warnings?: Array<{ code: string }> };
     assert.equal(matched.warnings?.some((row) => row.code === 'test-bed.no_matching_build'), false);
   });
 
-  it('facts: the declared installs ride the item with 声明，未核对 in the summary', () => {
-    const out = project(input({ action: 'facts' }, { manifest: DECLARED }));
+  it('facts: the observed installs ride the item with their moment, and the summary says observed', () => {
+    const out = project(input({ action: 'facts' }, { manifest: DECLARED, observations: OBSERVED }));
     const a = fieldsOf(out, 'bed-a');
-    assert.deepEqual(a.installed, [{ device: 'afamx0', build: 'Rel_FAMX_10_6_1_8', base: null }]);
+    assert.deepEqual(a.installed, [{ device: 'afamx0', build: 'Rel_FAMX_10_6_1_8', base: 'Rel_FAMX_10_6_1_8', observed_at: '2026-10-21T12:00:00.000Z' }]);
     const items = (out as { items?: Array<{ fields: Record<string, unknown>; summary?: string }> }).items ?? [];
-    const itemA = items.find((item) => item.fields.bed === 'bed-a');
-    assert.match(String(itemA?.summary), /声明，未核对/);
-    const c = fieldsOf(out, 'bed-c');
-    assert.deepEqual(c.installed, [], 'no installs: an empty list, not unknown');
+    assert.match(String(items.find((item) => item.fields.bed === 'bed-a')?.summary), /最近观察到的构建 1 项（观察，各带时间）/);
+    assert.deepEqual(fieldsOf(out, 'bed-c').installed, [], 'never observed: an empty list, not unknown');
   });
 });
 
@@ -281,8 +312,23 @@ describe('project on a bad inventory', () => {
 it('rejects removed duration inputs and projects owner registration without a TTL', () => {
   for(const parameters of [{action:'extend'}, {action:'acquire',hours:1}, {need:{hours:1}}]){
     const out=project(input(parameters)) as {error?:{fix:string}};
-    assert.match(out.error?.fix??'',/台架预订不限时长，用完由运行释放/);
+    assert.match(out.error?.fix??'',/自动化测试环境预订不限时长，用完由运行释放/);
   }
   const registered=project(input({action:'register',bed:'bed-a'})) as {lease_requests?:unknown[]};
   assert.deepEqual(registered.lease_requests,[{op:'register',prefix:'bed/bed-a/'}]);
+});
+
+test('a need.devices entry that is not {type, count} is refused for what it is, at its position (decision 114)', () => {
+  const name = readParameters({ action: 'acquire', need: { devices: [{ type: 'router', count: 1 }, 'afamx0'] } });
+  assert.ok('code' in name);
+  assert.deepEqual([name.code, name.pointer], ['test-bed.bad_need', '/parameters/need/devices/1']);
+  assert.equal(name.message, 'need.devices 第 2 项是 "afamx0"，不是 {type, count} 对象');
+  assert.match(name.fix, /不写设备名/);
+  const untyped = readParameters({ action: 'acquire', need: { devices: [{ count: 2 }] } });
+  assert.ok('code' in untyped);
+  assert.deepEqual([untyped.message, untyped.pointer], ['need.devices 第 1 项没有 type', '/parameters/need/devices/0/type']);
+  assert.doesNotMatch(untyped.message, /""/, 'never a value the caller did not write');
+  const counted = readParameters({ action: 'acquire', need: { devices: [{ type: 'client' }] } });
+  assert.ok('code' in counted);
+  assert.deepEqual([counted.message, counted.pointer], ['need.devices 第 1 项 client 的数量没有写，要 1 到 100 的整数', '/parameters/need/devices/0/count']);
 });

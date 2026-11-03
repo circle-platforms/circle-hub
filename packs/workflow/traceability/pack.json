@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "traceability",
-  "version": "1.0.11",
+  "version": "1.0.13",
   "kind": "workflow",
   "title": "追溯矩阵",
   "description": "构建的缺陷到用例的追溯矩阵：release notes 列出的缺陷条目和瘦身（fields=document,node,title）的用例索引，每个缺陷有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "58eed100aef09778f00d39ce5471c4b7dfcc3b7be8f3be7dacb27d3bd0207a13",
-      "size": 4997
+      "sha256": "648be83aee5b28db33c158fdab476080d2f0797ff0fbef418b2a9baf1beba5ea",
+      "size": 5553
     },
     {
       "path": "checks.json",
@@ -133,8 +133,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "47f096a7830f01058e89a4f583cff16ee15251b9356f7a4f6de7f1cc26c00ead",
-      "size": 2014
+      "sha256": "f20e2122fde7b9f481a1af0fc61d0ee449d205be918aadf68f651b2eee877112",
+      "size": 2127
     }
   ]
 }
