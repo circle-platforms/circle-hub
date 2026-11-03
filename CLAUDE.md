@@ -57,7 +57,7 @@ Packages under `hub/` with a strict dependency direction (cross-package calls go
 - ESM, erasable TS syntax only (no `enum`, parameter properties, namespaces); imports end in `.ts`; dependencies are exactly those in `package.json`.
 - User-facing text is Chinese; tool/schema descriptions and code comments are English.
 - Errors throw typed errors carrying a registered code (`PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `<pack>.<code>`); new codes are requested from the contracts owner, not invented.
-- Absent and forbidden look identical to callers (`SOURCE_UNAVAILABLE`).
+- A failed read follows D05 R[3] (model 37): for team, product and business-system content, absent is `SOURCE_ABSENT` and present but unreadable is `SOURCE_NOT_PERMITTED`; another member's personal-space content and credential or login failures stay neutral (`SOURCE_UNAVAILABLE`), with the real cause only in the admin call log. Code still answers the model-36 neutral form until consolidation step 4 ports it.
 - Pack functions are pure modules (`export default function (input: unknown): unknown`).
 - Tests and CI use only scripted models and synthetic fixtures (addresses in 192.0.2.0/24); never open the owner's environment file or credential stores.
 - Commits: one capitalized imperative English sentence, no prefix, no final period, `git commit -s`, explicit paths only (no `git add -A/.`/`commit -a`). Work happens on task branches opened from `hub-redesign`; no push or PR without the owner's decision.

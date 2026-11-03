@@ -174,7 +174,7 @@ Scenarios 1–16 below were the initial set written with this brief; later scena
 3. A statement that a command does not exist while the catalog has it: that finding is a violation routed through the error table into repair, not a whole-submission rejection.
 4. A negative case with an out-of-range parameter: the catalog check refutes as expected, shown at advisory tier.
 5. A cross-item fact plus a judgment that rests on it: listed separately, not counted in partitions.
-6. A user without the pack gets "对你不可用" and the same empty shape; the real reason is only in the admin log.
+6. A user to whom a team pack is not assigned gets "X 存在，你没有读取权限" with who can assign it and no pack content; another member's personal pack, like a credential or login failure, gets "对你不可用" and the same empty shape; the real reason is only in the admin log (D05 R[3], model 37; the code follows in consolidation step 4).
 7. Call log: one line per call with trace id and session id; argument digest and size only.
 8. A second, non-FAMX synthetic product pack reviews with the same workflow pack and the core code does not change.
 9. Connectors: a route outside the allow-list is refused; an expired token logs in once and a second failure stops; originals are stored by SHA-256.

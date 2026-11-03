@@ -23,7 +23,7 @@ export const AXES = {
   attribution: { label: '归责', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口' }, { code: 'author_input', label: '作者输入' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因' }] },
   partition: { label: '分区', ui: '结果分类', owner: 'V05', values: [{ code: 'delivered', label: '已交付' }, { code: 'rejected', label: '已拒收' }, { code: 'quarantined', label: '已隔离', ui: '派发结果未确认' }, { code: 'incomplete', label: '未完成' }] },
   task_result: { label: '任务结果', owner: 'V05', values: [{ code: 'passed', label: '已通过' }, { code: 'delivered_pending', label: '已交付（含未决项）' }, { code: 'delivered_unsatisfied', label: '已交付（含未满足项）' }, { code: 'rejected', label: '已拒收' }, { code: 'incomplete', label: '未完成' }, { code: 'held', label: '派发结果未确认' }, { code: 'awaiting', label: '等待提交中' }, { code: 'abandoned', label: '已放弃' }] },
-  environment_state: { label: '运行环境状态', owner: 'D07', values: [{ code: 'available', label: '可用' }, { code: 'in_use', label: '使用中' }, { code: 'frozen', label: '已冻结' }, { code: 'deactivated', label: '已停用' }, { code: 'unknown', label: '未知' }] },
+  environment_state: { label: '自动化测试环境状态', owner: 'D07', values: [{ code: 'available', label: '可用' }, { code: 'in_use', label: '使用中' }, { code: 'frozen', label: '已冻结' }, { code: 'deactivated', label: '已停用' }, { code: 'unknown', label: '未知' }] },
   done_rule: { label: '交付规则', owner: 'V06', values: [{ code: 'bookkeeping', label: '记账型' }, { code: 'gating', label: '门禁型' }] },
   aggregation: { label: '聚合方式', owner: 'V07', values: [{ code: 'first_pass', label: '首次通过' }, { code: 'k_of_n', label: 'k-of-n' }, { code: 'all', label: '全部' }] },
   hypothesis_status: { label: '假设状态', owner: 'V08', values: [{ code: 'open', label: '开放' }, { code: 'excluded', label: '已排除' }] },
@@ -318,7 +318,7 @@ export function isTaskResult(value: unknown): value is TaskResult {
   return (TASK_RESULT as readonly unknown[]).includes(value);
 }
 
-/** 运行环境状态 (D07) */
+/** 自动化测试环境状态 (D07) */
 export const ENVIRONMENT_STATE = ['available', 'in_use', 'frozen', 'deactivated', 'unknown'] as const;
 export type EnvironmentState = (typeof ENVIRONMENT_STATE)[number];
 export const ENVIRONMENT_STATE_LABEL = { 'available': '可用', 'in_use': '使用中', 'frozen': '已冻结', 'deactivated': '已停用', 'unknown': '未知' } as const satisfies { readonly [K in EnvironmentState]: string };

@@ -549,3 +549,28 @@ changed element (B02, B03, B05, P02, C01, T01, T02, K01, K02, D06, R01, R02) rec
 35's `changes35` notes keep their wording with the new numbers. No rule, shape, code or vocabulary changes; only
 `MODEL_VERSION` is regenerated, and the skill protocol mirrors are unchanged. The renumbering table is at the top of
 `docs/hub-r4-progress.md`.
+
+Consolidation step 3 (decision 136 ②, owner 2026-11-02) sets model 37: it carries the integration line's model changes
+made on its model 13 after the R7 snapshot, each recorded in one `changes37` note per element in decision-date order
+(B03, B04, W07, D06, D01, D07, K03, T01, V07, R01, D05, A05, R02, K05). Decision 82: a request is checked against the
+permissions and assignments at its start (B03 R[0], B04 R[3]), and a submission observed in the run's starting session
+may reuse the run's declared model identity (W07 F[0]). Decision 81's slimming plan: `get_nodes` reads a caller's own
+in-flight `start_run`/`get_nodes` records (D06 F[3]). Decision 110: 台架 and the console's 运行环境 become 自动化测试环境
+in Chinese text, including the `environment_state` axis label; identifiers do not change. Decisions 111 and 114: errors
+and fixes are claims (D05 R[8]). Decision 113: a list to choose from lists every option first (A05 R[1]). Decision 112,
+settled by decision 136 ③ and the owner's 2026-11-03 rulings, rewrites D05 R[3]: for team, product and business-system
+content, absent is `SOURCE_ABSENT` and present but unreadable is the new `SOURCE_NOT_PERMITTED`; another member's
+personal-space content and the credential and login failures stay neutral (`SOURCE_UNAVAILABLE`), with the real cause
+in the administrator-visible call log; `GROUNDS_PURGED` (“根据不可用 · 已清除”) is the allowed exception for a run's
+purged personal grounds and reveals neither content nor owner. B03 R[0], R[9], R02 R[0], R[1], R[9], R[11], T01 R[1]
+and display rule 9 follow. `fed-case@1` gains ten optional source-node and author-declaration fields (outside identity,
+so earlier records stay valid) and K05 R[5] describes re-projection on a new seedling root (decision 137, first phase).
+The integration line's own `changes14`–`changes17` keys are not kept: they collided with this line's (T01 `changes16`),
+and the decision numbers in each note trace them. The generated protocol mirrors advance html-format and mindmap-format
+to 1.0.18 and workbook-format and xml-format to 1.0.19, and the regenerated contribution shapes advance
+knowledge-contribution to 1.3.19; no pack function changes.
+
+Model 37 is ahead of the code until consolidation step 4: the read engine, console originals, submission grounds and the
+local-tool download outlet still give the model-36 neutral answer; `contracts/src/submission.ts` still requires `model`
+on every submission, which W07 F[0] makes optional within the starting session; and feeding does not yet write the new
+`fed-case@1` fields or re-project. Where they disagree, the model wins and step 4 ports the code.
