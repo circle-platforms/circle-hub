@@ -864,7 +864,7 @@ server's token/OAuth-client IDs for auditing, without exposing token values. Exi
 is unchanged. Member sync metadata rechecks the current actor's enabled/admin role and exposes mode/time only.
 
 Console performance reads use an asynchronous, read-only scope. Verified digest reads and indexed pages coalesce into
-native batches; callers receive independent copies. Explicit transaction reads bypass the scope. Scope closure, writes
+native batches; cached results are deeply immutable and shared in one scope. Callers editing a record must first make a local copy. Explicit transaction reads bypass the scope. Scope closure, writes
 through the adapter and failed reads invalidate or evict their entries. A failed batch retries its members individually,
 so one corrupt sibling cannot hide healthy records. No authorization value survives a request or an escaped adapter.
 `runCandidates` orders contract ASCII headers by `(started_at, run)` before engine checks; the original text is still
@@ -887,8 +887,7 @@ boundaries. Regression coverage includes 5/20 members, revocation, expiry, conso
 
 Source reads now reuse the same readonly record scope for distinct digest lookups. A separate explicit readonly port
 memoizes source/readability decisions and the current viewer only during that scope; exact capture, producer and reader
-remain in the key. Every new proof retains scan/tier/provenance checks and object-byte integrity. Returned byte arrays
-are copied. Administrative and ingestion identity checks remain fresh, and later requests observe revocation/disable.
+remain in the key. Every new proof retains scan/tier/provenance checks and object-byte integrity. The memo stores only the source choice and its verified metadata; byte arrays stay outside it and are read into caller-owned buffers. Administrative and ingestion identity checks remain fresh, and later requests observe revocation/disable.
 
 Independent review hardening: memo arguments accept finite primitive/undefined values and plain JSON trees only. Keys
 explicitly distinguish null, undefined, omitted fields and -0. Sets, Maps, functions, symbols, bigint, nonfinite numbers,
@@ -928,7 +927,7 @@ Memoized method arguments are copied synchronously at admission, after plain-JSO
 before the deferred method or batch can run. Find/count batches and scalar fallbacks consume that same snapshot;
 mutating or reusing the caller's query cannot change an existing proof under its old key. Unsupported arguments and
 transaction calls still bypass memoization. Trusted memoReadValue loaders remain responsible for their captured inputs;
-queryRead already freezes its complete encoded input before supplying the loader.
+queryRead uses the same validated argument snapshot for its complete key and loader input.
 
 Find keys cover the entire validated query, including future JSON fields. Known default aliases remain normalized;
 top-level field order is canonical for this field-based API. The batch and fallback receive exactly that normalized
@@ -1068,3 +1067,38 @@ Team knowledge and memory use the same verified historical capacity ledger as pe
 longer omitted: added entry registrations and exact capture sizes are charged along with version metadata and memory
 history, using bounded batches rather than trusting cumulative counters. Quota records accept the existing team space
 identifier as well as account ids. This change adds no tables, migration, runtime grants or mutable ledger authority.
+
+
+### Frozen request results (console performance follow-up A)
+
+A read scope freezes each cached JSON result deeply in place before it resolves the first caller. Every subsequent
+caller receives that same immutable value. Arrays and nested records reject writes under ESM strict mode. Native Map/Set
+slots cannot be protected by Object.freeze alone: the scope freezes their shell/children once and exposes one frozen
+readonly view backed by one private collection snapshot. Borrowed native mutators and forEach callbacks cannot expose
+or change that backing. It is not copied per caller. Mutable binary buffers stay outside the memo; artifact reads cache
+the exact permission/source choice, then obtain caller-owned bytes through the unchanged integrity-checked object port.
+
+Argument validation, snapshot and key encoding share one descriptor walk. Primitive arguments are reused; supported
+plain JSON objects are snapshotted once at admission and that snapshot supplies both the identity and the deferred
+method input. Known deeply frozen JSON argument roots can reuse their encoding within the request; shared/cyclic graphs,
+proxies, accessors and the other unsupported argument types still bypass memoization. Find normalizes known defaults
+before the single encoding and still includes every executed future field. Engine derivations use the same snapshot
+path instead of a second stringify/parse cycle. Failed entries are evicted and writes/transactions retain their guards.
+
+Record verification reuses only an exact normalized raw envelope (claimed digest, id, kind, schema, provenance,
+created_at and body text) inside the active read scope. A changed raw body or metadata must be verified again rather
+than borrowing the claimed digest's proof; failures are not cached. Explicit transaction readers bypass this cache,
+intercepted writes clear it, and every new request hashes again. Noncanonical fallback and personal-payload loss/purge
+checks remain in force. No digest-only, principal or authorization cache survives the request.
+
+### Frozen results and destructive generation retirement
+
+The frozen-result memo and the deletion generation share the same read scope. Each memo/port/batch delivery checks
+whether its captured scope was retired after its await; a retired hit reloads through the raw port using the original
+call-time argument snapshot. Frozen values and getMany priming cannot revive an old generation. Record-verification
+memoization also bypasses retired scopes, including children invalidated through their parent's shared generation.
+A later withReadScope creates a fresh generation with its own immutable-result and exact-envelope caches. Values
+already delivered before retirement stay immutable; retirement prevents their reuse by subsequent reads rather than
+rewriting references a prior caller already holds. Parameter restrictions, ordinary write invalidation and transaction
+bypasses retain their existing behavior. Member-deletion, deactivation, purge and pending-result regressions cover this
+boundary alongside the frozen-cache-hit and engine-proof regressions.

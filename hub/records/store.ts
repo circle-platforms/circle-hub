@@ -1,3 +1,4 @@
+import {verifiedReadValue} from './read-scope.ts';
 import {PgPersonalPayloads,personalRecordOwner,isPersonalPackRecord,captureRecordOwner} from './personal-payloads.ts';
 import { RecordsError } from './errors.ts';
 // Append-only logical records over PostgreSQL. Canonical text preserves every accepted JSON value, including U+0000.
@@ -115,7 +116,7 @@ export class PgRecordStore implements RecordStore {
     if (!isSha256(digest)) return null;
     const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE digest = $1`, [digest], tx);
     if(result.rows[0]===undefined){await this.personalPayloads.inspect(digest,tx);return null;}
-    return verifiedRecord<B>(result.rows[0]);
+    return verifiedRecord<B>(result.rows[0],tx);
   }
 
   async getText(digest: string, tx?: Transaction): Promise<(Omit<StoredRecord, 'body'> & { bodyText: string ;}) | null> {
@@ -125,14 +126,14 @@ export class PgRecordStore implements RecordStore {
   async getTexts(digests: readonly string[], tx?: Transaction): Promise<Map<string, Omit<StoredRecord, 'body'> & { bodyText: string ;}>> {
     const wanted = [...new Set(digests.filter(isSha256))]; if (!wanted.length) return new Map();
     const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE digest=ANY($1::text[])`, [wanted], tx);
-    return new Map(result.rows.map(row => { const record = verifiedRecordText(row); return [record.digest, record]; }));
+    return new Map(result.rows.map(row => { const record = verifiedRecordText(row,tx); return [record.digest, record]; }));
   }
 
   async getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
     const wanted = [...new Set(digests.filter(isSha256))];
     if (!wanted.length) return new Map();
     const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE digest = ANY($1::text[])`,[wanted],tx);
-    return new Map(result.rows.map(row => { const record = verifiedRecord<B>(row); return [record.digest,record]; }));
+    return new Map(result.rows.map(row => { const record = verifiedRecord<B>(row,tx); return [record.digest,record]; }));
   }
 
   async findMany<B = unknown>(query: {key:string;values:readonly string[];kind?: import('./api.ts').RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]> {
@@ -145,7 +146,7 @@ export class PgRecordStore implements RecordStore {
        FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
        WHERE i.key=$1 AND i.value=ANY($2::text[]) ${query.kind === undefined ? '' : 'AND r.kind=$3'} ORDER BY r.seq`,
       query.kind === undefined ? [query.key,values] : [query.key,values,query.kind],tx);
-    return result.rows.map(row => verifiedRecord<B>(row));
+    return result.rows.map(row => verifiedRecord<B>(row,tx));
   }
 
   async addIndex(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number> {
@@ -278,13 +279,13 @@ export class PgRecordStore implements RecordStore {
          WHERE i.key=$1 AND i.value=wanted.value ${query.kind === undefined ? '' : 'AND r.kind=$3'}
          ORDER BY i.record_seq LIMIT 1
        ) AS matched`, query.kind === undefined ? [query.key, values] : [query.key, values, query.kind], tx);
-    return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row)]));
+    return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row,tx)]));
   }
 
   async getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
     if (typeof id !== 'string' || !RECORD_ID.test(id)) return null;
     const result = await this.#db.query(`SELECT ${COLUMNS} FROM hub_read_records() WHERE id = $1`, [id], tx);
-    return result.rows[0] === undefined ? null : verifiedRecord<B>(result.rows[0]);
+    return result.rows[0] === undefined ? null : verifiedRecord<B>(result.rows[0],tx);
   }
 
   async find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>> {
@@ -312,7 +313,7 @@ export class PgRecordStore implements RecordStore {
       values,
       tx,
     );
-    return page<B>(result.rows, limit);
+    return page<B>(result.rows, limit,tx);
   }
 
   async findBatch<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>{
@@ -336,7 +337,7 @@ export class PgRecordStore implements RecordStore {
       for(const row of result.rows){const n=Number(row.n);const rows=groups.get(n)??[];rows.push(row);groups.set(n,rows);}
     }
     // Lateral rows retain the requested order; the outer group ordering alone is not an SQL order guarantee.
-    return queries.map((q,n)=>{if(!isIndexValue(q.value))return {items:[],next:null};const rows=groups.get(n)??[];rows.sort((a,b)=>{const order=BigInt(String(a.seq))-BigInt(String(b.seq));return order===0n?0:(order>0n?1:-1)*(q.newestFirst===true?-1:1);});return page<B>(rows,pageLimit(q.limit));});
+    return queries.map((q,n)=>{if(!isIndexValue(q.value))return {items:[],next:null};const rows=groups.get(n)??[];rows.sort((a,b)=>{const order=BigInt(String(a.seq))-BigInt(String(b.seq));return order===0n?0:(order>0n?1:-1)*(q.newestFirst===true?-1:1);});return page<B>(rows,pageLimit(q.limit),tx);});
   }
 
   async runCandidates<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>{
@@ -353,7 +354,7 @@ export class PgRecordStore implements RecordStore {
     const result=await this.#db.query(`SELECT ${COLUMNS.split(', ').map(c=>'r.'+c).join(', ')} FROM hub_read_records() r WHERE ${where}
       ORDER BY ${at} COLLATE "C" DESC NULLS FIRST,${id} COLLATE "C" DESC NULLS FIRST LIMIT $4`,values,tx);
     // Preserve verified malformed records for the engine's diagnostic/fallback path; a business header is not envelope integrity.
-    return result.rows.map(row=>verifiedRecord<B>(row));
+    return result.rows.map(row=>verifiedRecord<B>(row,tx));
   }
 
   async list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>> {
@@ -372,7 +373,7 @@ export class PgRecordStore implements RecordStore {
       values,
       tx,
     );
-    return page<B>(result.rows, limit);
+    return page<B>(result.rows, limit,tx);
   }
 
   async position(digest:string,tx?:Transaction):Promise<number|null>{const rows=await this.#db.query<{seq:string}>('SELECT seq FROM records WHERE digest=$1',[digest],tx);if(!rows.rows.length)return null;const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
@@ -407,8 +408,8 @@ export class PgRecordStore implements RecordStore {
   }
 }
 
-function page<B>(rows: Row[], limit: number): Page<StoredRecord<B>> {
-  const items = rows.slice(0, limit).map((row) => verifiedRecord<B>(row));
+function page<B>(rows: Row[], limit: number,tx?:Transaction): Page<StoredRecord<B>> {
+  const items = rows.slice(0, limit).map((row) => verifiedRecord<B>(row,tx));
   const last = rows.length > limit ? rows[limit - 1] : undefined;
   return { items, next: last === undefined ? null : encodeCursor(String(last.seq)) };
 }
@@ -433,19 +434,17 @@ export function validateIndex(entries: readonly IndexEntry[]): IndexEntry[] {
 }
 
 /** Rebuilds a record from its row and refuses it when the stored text no longer hashes to the stored digest. */
-function verifiedRecordText(row: Row): Omit<StoredRecord, 'body'> & { bodyText: string ;} {
-  const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: iso(row.created_at) };
-  const bodyText = String(row.body);
-  if (envelopeDigest(meta, bodyText) !== row.digest) {
-    const { body, ...record } = verifiedRecord(row);
-    return { ...record, bodyText: canonicalize(body) };
-  }
-  const kind = RecordKindSchema.safeParse(meta.kind);
-  if (!kind.success || !isProvenanceType(meta.provenance) || !SchemaId.safeParse(meta.schema).success) throw new IntegrityError('记录的种类、来源类型或模式不在合约里');
-  return { id: String(row.id), digest: String(row.digest), ...meta, kind: kind.data, provenance: meta.provenance, bodyText };
+function verifiedRecordText(row: Row,tx?:Transaction): Omit<StoredRecord, 'body'> & { bodyText: string ;} {
+  const record=verifiedRecord(row,tx),{body,...metadata}=record;
+  return {...metadata,bodyText:record.integrity_note?canonicalize(body):String(row.body)};
 }
 
-export function verifiedRecord<B>(row: Row): StoredRecord<B> {
+export function verifiedRecord<B>(row: Row,tx?:Transaction): StoredRecord<B> {
+  if(typeof row.digest!=='string')return verifyRecord<B>(row);
+  const normalized={id:String(row.id),digest:row.digest,kind:String(row.kind),schema:String(row.schema),provenance:String(row.provenance),created_at:iso(row.created_at),body:String(row.body)};
+  return verifiedReadValue([normalized.digest,normalized.id,normalized.kind,normalized.schema,normalized.provenance,normalized.created_at,normalized.body],()=>verifyRecord<B>(normalized),tx);
+}
+function verifyRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
   const body = String(row.body);

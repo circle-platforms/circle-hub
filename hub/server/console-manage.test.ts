@@ -85,7 +85,7 @@ const principals = {
     const user = users.find((u) => u.id === id && !u.disabled);
     return user ? { id: user.id, name: user.name, role: user.role } : null;
   },
-  async list() { return users; },
+  async list() { return structuredClone(users); },
   async get(id: string) { return users.find((u) => u.id === id) ?? null; },
   async tokens() { return []; },
   async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }) {

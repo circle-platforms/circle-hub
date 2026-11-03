@@ -27,7 +27,7 @@ test('scoped reads coalesce verified gets, isolate caller mutation and bypass tr
  const kit=await openTestRecords({postgres});t.after(()=>kit.close());const store=kit.store;
  const row=await store.put({kind:'action',schema:'synthetic-scope@1',provenance:'declared',body:{n:1}}),many=store.getMany.bind(store);let batches=0;
  store.getMany=async(...args)=>{batches++;return many(...args);};let escaped:RecordStore;
- await withReadScope(async()=>{const scoped=scopedRecordStore(store);escaped=scoped;const [a,b]=await Promise.all([scoped.get<{n:number}>(row.digest),scoped.get<{n:number}>(row.digest)]);assert.equal(batches,1);a!.body.n=99;assert.equal(b!.body.n,1);assert.equal((await scoped.get<{n:number}>(row.digest))!.body.n,1);assert.equal(batches,1);
+ await withReadScope(async()=>{const scoped=scopedRecordStore(store);escaped=scoped;const [a,b]=await Promise.all([scoped.get<{n:number}>(row.digest),scoped.get<{n:number}>(row.digest)]);assert.equal(batches,1);assert.equal(a,b);assert.throws(()=>{a!.body.n=99;},TypeError);assert.equal(b!.body.n,1);assert.equal((await scoped.get<{n:number}>(row.digest))!.body.n,1);assert.equal(batches,1);
   await store.withTransaction(async tx=>{assert.equal((await scoped.get<{n:number}>(row.digest,tx))!.body.n,1);});
  });
  await escaped!.get(row.digest);assert.equal(batches,1,'escaped adapters read directly rather than reuse their expired cache');
@@ -149,7 +149,7 @@ test('value memo uses explicit JSON keys, isolates owners and clears with interc
  const owner={},other={};let calls=0;const load=async()=>({value:++calls});
  const store={put:async()=>({})} as unknown as RecordStore;
  await withReadScope(async()=>{
-  const first=await memoReadValue(owner,['key',undefined],load);first.value=99;
+  const first=await memoReadValue(owner,['key',undefined],load);assert.throws(()=>{first.value=99;},TypeError);
   assert.deepEqual(await memoReadValue(owner,['key',undefined],load),{value:1});
   assert.deepEqual(await memoReadValue(owner,['key',null],load),{value:2});
   assert.deepEqual(await memoReadValue(other,['key',undefined],load),{value:3});
@@ -221,5 +221,58 @@ test('find memo keys include future JSON fields and keep normalized known-field 
    const pages=await Promise.all([scoped.find<any>(alice),scoped.find<any>(bob)]);assert.deepEqual(pages.map(p=>p.items[0].body.subject),['alice','bob']);assert.equal(calls,2);
    assert.equal((await scoped.find<any>({future:{subject:'alice'},newestFirst:false,cursor:null,limit:50,value:'same',key:base.key,kind:undefined} as any)).items[0].body.subject,'alice');assert.equal(calls,2,'known defaults and object member order do not create extra queries');
   });
+ }
+});
+
+
+test('cached values freeze deeply in place before the first caller and keep one identity for all callers',async()=>{
+ const raw={body:{rows:[{n:1}]}},owner={};let calls=0;
+ await withReadScope(async()=>{
+  const a=await memoReadValue(owner,['frozen'],async()=>{calls++;return raw;}),b=await memoReadValue<typeof raw>(owner,['frozen'],async()=>{throw Error('unexpected load');});
+  assert.equal(a,raw);assert.equal(a,b);assert.ok(Object.isFrozen(raw.body.rows[0]));
+  assert.throws(()=>{a.body.rows[0].n=2;},TypeError);assert.throws(()=>a.body.rows.push({n:2}),TypeError);
+  const local=structuredClone(a);local.body.rows[0].n=3;assert.equal(b.body.rows[0].n,1);assert.equal(calls,1);
+ });
+});
+test('readonly cached collections cannot expose mutable slots through methods, prototypes, callbacks or raw producer aliases',async()=>{
+ const rawMap=new Map([['one',{n:1}]]),rawSet=new Set([{n:2}]),owner={};
+ await withReadScope(async()=>{
+  const a=await memoReadValue(owner,['collections'],async()=>({map:rawMap,set:rawSet}));
+  const b=await memoReadValue<{map:typeof rawMap;set:typeof rawSet}>(owner,['collections'],async()=>{throw Error('unexpected load');});assert.equal(a,b);
+  assert.ok(Object.isFrozen(a.map));assert.ok(Object.isFrozen(a.set));assert.ok(Object.isFrozen(rawMap));
+  assert.throws(()=>a.map.set('two',{n:2}),TypeError);assert.throws(()=>Map.prototype.set.call(a.map,'two',{n:2}),TypeError);
+  assert.throws(()=>a.map.forEach((_v,_k,map)=>map.clear()),TypeError);assert.throws(()=>a.set.add({n:3}),TypeError);assert.throws(()=>Set.prototype.clear.call(a.set),TypeError);
+  assert.throws(()=>a.set.forEach((_v,_k,set)=>set.clear()),TypeError);assert.equal(a.map.valueOf(),a.map);assert.equal(a.set.valueOf(),a.set);
+  Map.prototype.set.call(rawMap,'borrowed',{n:99});Set.prototype.add.call(rawSet,{n:99});
+  assert.equal(b.map.has('borrowed'),false);assert.equal(b.set.size,1);assert.throws(()=>{b.map.get('one')!.n=4;},TypeError);
+ });
+});
+test('frozen argument encoding still rejects cycles and sharing and keeps the same snapshot for key and execution',async()=>{
+ const owner={},shared={n:1};let calls=0;
+ await withReadScope(async()=>{
+  const result=await memoReadValue(owner,['graph'],async()=>({left:shared,right:shared}));
+  const port=memoReadPort({read:async(..._args:unknown[])=>++calls},['read']);
+  assert.notEqual(await port.read(result),await port.read(result),'shared graphs remain unsupported even when frozen');
+  const json=await memoReadValue(owner,['json'],async()=>({a:[1,undefined,-0]}));
+  assert.equal(await port.read(json),await port.read({a:[1,undefined,-0]}));
+  assert.notEqual(await port.read(json,json),await port.read(json,json),'repeated roots remain unsupported after encoding is warm');
+ });
+});
+
+
+test('an in-flight generic batch cannot seed stale single reads after an intercepted write',async()=>{
+ let n=0,release!:()=>void,started!:()=>void;const ready=new Promise<void>(resolve=>{started=resolve;}),gate=new Promise<void>(resolve=>{release=resolve;});let calls=0;
+ const id='a'.repeat(64),store={getMany:async()=>{const row={digest:id,body:{n}};if(++calls===1){started();await gate;}return new Map([[id,row]]);},put:async()=>{n=1;return {};}} as unknown as RecordStore;
+ await withReadScope(async()=>{const scoped=scopedRecordStore(store),old=scoped.getMany<{n:number}>([id]);await ready;await scoped.put({kind:'action',schema:'synthetic-clear@1',provenance:'declared',body:{}});release();assert.equal((await old).get(id)!.body.n,0);assert.equal((await scoped.get<{n:number}>(id))!.body.n,1);});
+});
+
+test('a producer can return its native collection in a new request without sharing the previous cached view',async()=>{
+ for(const kind of ['map','set'] as const){
+  const raw=kind==='map'?new Map([['one',{n:1}]]):new Set([{n:1}]);let calls=0;
+  const port={read:async()=>{calls++;return raw;}};let first:typeof raw;
+  await withReadScope(async()=>{first=await memoReadPort(port,['read']).read();assert.equal(first.size,1);});
+  if(raw instanceof Map)Map.prototype.set.call(raw,'two',{n:2});else Set.prototype.add.call(raw,{n:2});
+  await withReadScope(async()=>{const next=await memoReadPort(port,['read']).read();assert.equal(next.size,2);assert.equal(first.size,1);assert.notEqual(next,first);assert.throws(()=>next.clear(),TypeError);});
+  assert.equal(calls,2,'new requests always call the producer again');
  }
 });

@@ -55,7 +55,7 @@ export const CHECK_PARALLELISM = 8;
 
 export interface EngineContext {
   /** Installed only by read-only entry points; never used by admission or commit paths. */
-  queryRead?: <T>(key: readonly unknown[], read: () => Promise<T>) => Promise<T>;
+  queryRead?: <K extends readonly unknown[],T>(key: K, read: (snapshot:K) => Promise<T>) => Promise<T>;
   deps: RunsEngineDeps;
   parsers: ParserRegistry;
   documents: DocumentCache;

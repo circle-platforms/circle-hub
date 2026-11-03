@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {withReadScope} from '../../records/api.ts';
+import {withReadScope,retireReadScope} from '../../records/api.ts';
 import type {EngineContext} from './deps.ts';
 import {withQueryReads,queryRead} from './query-scope.ts';
 const context=()=>({deps:{records:{store:{},artifacts:{}}}} as EngineContext);
@@ -8,7 +8,7 @@ test('query derivation shares complete input identities only within one read req
  const ctx=context(),other=context();let calls=0;const load=async()=>({value:++calls});
  await withReadScope(async()=>{
   await withQueryReads(ctx,async current=>{
-   const first=await queryRead(current,['proof',{reader:'a',body:{capture:1}}],load);first.value=999;
+   const first=await queryRead(current,['proof',{reader:'a',body:{capture:1}}],load);assert.throws(()=>{first.value=999;},TypeError);
    assert.deepEqual(await queryRead(current,['proof',{reader:'a',body:{capture:1}}],load),{value:1});
    assert.deepEqual(await queryRead(current,['proof',{reader:'b',body:{capture:1}}],load),{value:2});
    assert.deepEqual(await queryRead(current,['proof',{reader:'a',body:{capture:2}}],load),{value:3});
@@ -39,5 +39,16 @@ test('proof input and cache identity are one snapshot even when caller input cha
   input.reader='administrator';input.capture='public';
   assert.equal(await proof,false,'mutation never lends administrator authority to a member/private cache key');
   assert.equal(await queryRead(current,['proof',{reader:'member',capture:'private'}] as const,async()=>true),false);
+ });
+});
+
+test('a frozen engine proof cache hit reloads its call-time input after generation retirement',async()=>{
+ let deleted=false,calls=0;const seen:string[]=[];
+ await withQueryReads(context(),async current=>{
+  const load=async([,input]:readonly [string,{reader:string}])=>{calls++;seen.push(input.reader);return deleted?null:{body:{private:'synthetic proof'}};};
+  const first=await queryRead(current,['proof',{reader:'owner'}] as const,load);assert.ok(Object.isFrozen(first!.body));
+  assert.equal(await queryRead(current,['proof',{reader:'owner'}] as const,load),first);
+  const input={reader:'owner'},pending=queryRead(current,['proof',input] as const,load);input.reader='other';deleted=true;retireReadScope();
+  assert.equal(await pending,null);assert.deepEqual(seen,['owner','owner']);assert.equal(calls,2);
  });
 });

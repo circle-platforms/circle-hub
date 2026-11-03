@@ -96,7 +96,7 @@ test('a meeting intermittent carries no attribution and a missing one is unattri
   assert.equal(submitted.acceptance, 'accepted');
   const result = submitted.result!;
   const item = started.items[0].id;
-  const record = (await h.service.getRun(h.alice, started.run))!.run;
+  const record = structuredClone((await h.service.getRun(h.alice, started.run))!.run);
   const frozen = record.requirements.find(row => row.key === 'catalog')!;
   frozen.repetition = { count: 3, aggregation: 'first_pass', basis: 'explicit', declared: { count: true, aggregation: true, k: false } };
   const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });

@@ -221,7 +221,7 @@ export class RecordArtifacts implements Artifacts {
   get #store():RecordStore{return scopedRecordStore(this.#rawStore);}
   readonly #readView={
     viewer:(id:string):Promise<Viewer|null>=>this.#viewer({id,name:id,role:'user'}),
-    source:(by:Principal,sha:string,options:{consumer?:ProducerKind;record?:string}):Promise<ArtifactSource|null>=>this.#source(by,sha,options),
+    source:(by:Principal,sha:string,options:{consumer?:ProducerKind;record?:string}):Promise<Choice|null>=>this.#source(by,sha,options),
     readable:(by:Principal,sha:string):Promise<SourceArtifact|null>=>this.#readable(by,sha),
   };
   get #reads(){return memoReadPort(this.#readView,['viewer','source','readable']);}
@@ -412,16 +412,17 @@ export class RecordArtifacts implements Artifacts {
     const consumer=options.consumer??MODEL;
     if(!isProducerKind(consumer))throw new TypeError('consumer must be a producer kind');
     const record=pinned(options.record);
-    return this.#reads.source({...principal},sha256,{consumer,...(record===null?{}:{record})});
+    const choice=await this.#reads.source({...principal},sha256,{consumer,...(record===null?{}:{record})});
+    return choice===null?null:this.#sourceChoice(choice,consumer);
   }
-  async #source(principal: Principal, sha256: string, options: { consumer?: ProducerKind; record?: string }): Promise<ArtifactSource | null> {
+  async #source(principal: Principal, sha256: string, options: { consumer?: ProducerKind; record?: string }): Promise<Choice | null> {
     const consumer = options.consumer ?? MODEL;
     if (!isProducerKind(consumer)) throw new TypeError('consumer must be a producer kind');
     const record = pinned(options.record);
     const viewer = await this.#readViewer(principal);
     const choice = viewer === null ? null : await this.#choose(viewer, sha256, record);
     if (choice === null) return null;
-    return this.#sourceChoice(choice, consumer);
+    return choice;
   }
 
   async mayDeclareUpload(principal:Principal,artifact:string):Promise<boolean>{
