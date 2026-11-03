@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Mask deleted member names in administrator CLI listings while retaining stable member identifiers.
+
 - Narrow frozen upload declarations by the source hash index before decoding registrations during run admission and upgrade.
 
 - Bound private pack staging per member and keep sandbox publication checks outside pooled database transactions.

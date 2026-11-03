@@ -1147,3 +1147,10 @@ placeholder (“已删除的成员”). A tombstone Inspector places the content
 The preview shows six content categories, including prior versions and exact original captures; technical storage counts
 and the manifest remain inside the closed “查看清除清单摘要” disclosure in preview, pending and completed states. The
 console instructs execution in Circle on the Hub host and has no deletion confirmation button or write route.
+
+
+Administrator CLI listings use the generated deleted-member display term too: `user list` masks names in text and JSON
+without changing ids or stored tombstones. Pack owners/assignees, lease owners/holders and share subjects render the
+placeholder with the stable member id, so two deleted identities remain distinguishable without printing stored names.
+Token listings (all accounts or one id) also mask tombstone names, retain member and token ids, and never print token
+secrets. Historical publish-right revocation and assignment removal use the placeholder in their confirmations too.

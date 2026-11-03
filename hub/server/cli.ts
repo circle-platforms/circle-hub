@@ -12,7 +12,7 @@ import {deletionCheck,deleteMember,DELETION_EFFECT} from './member-deletion.ts';
 import { writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, type HubConfig } from '../config/index.ts';
 import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, liveKeyPipe, runPlatformCommand } from '../platform/api.ts';
 import { RecordsError, openRecords, type CallLogLine, type Principal, type RecordsKit, type User } from '../records/index.ts';
@@ -243,7 +243,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
   if (sub === 'list') {
     const { values } = parse(rest, { json: { type: 'boolean' } }, 0);
     const kit = await ctx.records();
-    const users = await kit.principals.list();
+    const users = (await kit.principals.list()).map(user=>user.deleted_at?{...user,name:uiLabelOf('account_display_name','deleted_member')}:user);
     if (values.json) { io.stdout(jsonSafe(JSON.stringify(users))); return 0; }
     if (users.length === 0) io.stdout('还没有用户');
     for (const user of users) out(io, [user.id, user.name, roleText(user.role), labelOf('account_status', user.deleted_at?'deleted':user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
@@ -340,7 +340,7 @@ async function tokenCommand(args: readonly string[], ctx: CliContext, options: C
     for (const user of users) {
       for (const token of await kit.principals.tokens(user.id)) {
         count += 1;
-        out(io, [token.id, user.name, token.label || '—', token.created_at, token.last_used_at ?? '未用过', token.revoked_at === null ? '有效' : `已撤销 ${token.revoked_at}`].join('\t'));
+        out(io, [token.id, user.deleted_at?`${uiLabelOf('account_display_name','deleted_member')}（${user.id}）`:user.name, token.label || '—', token.created_at, token.last_used_at ?? '未用过', token.revoked_at === null ? '有效' : `已撤销 ${token.revoked_at}`].join('\t'));
       }
     }
     if (count === 0) io.stdout('没有令牌');
