@@ -711,6 +711,12 @@ view-byte review). Source acceptance is still bound to scanner version and findi
 scanner from the current version rather than pinning it. Existing encodings, placeholders, negatives and large-input
 time/memory bounds remain covered.
 
+Base64 runs are cut by `base64Spans`, one forward pass that yields exactly the spans of the former pattern
+`[A-Za-z0-9+/_-]{24,}(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9+/_-]{2,})*={0,2}` (#153). V8 kept a backtracking entry per
+repeated character of that pattern and overflowed its stack on one run of about 6 MB, so a large upload got an exception
+instead of a scan. The pass reads each character at most three times; the tests compare its spans with the pattern on
+generated texts, count its reads and scan 8 MiB and 32 MiB runs. Findings and the scanner version do not change.
+
 HTML character-reference data is generated through the already declared parse5 dependency, with its decoder data license
 retained. A small portable decoder is checked against that parser for every named reference and numeric boundaries. Run
 `node tools/gen-credential-scanner.ts --check` to check the generated data; the knowledge-contribution pack generator also

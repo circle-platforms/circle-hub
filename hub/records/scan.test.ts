@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
+import { base64Spans, CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
 
 const BS = String.fromCharCode(0x5c);
 const dashes = '-'.repeat(5);
@@ -382,6 +382,74 @@ test('base64 image data containing a synthetic credential shape is still a cloud
   assert.equal(encoded.slice(1_000_000, 1_000_044), collision);
   const scan = scanForCredentials(Buffer.from(`![diagram](data:image/png;base64,${encoded})`));
   assert.equal(scan.inspected, true);
+  assert.equal(scan.clean, false);
+  assert.ok(scan.findings.some((finding) => finding.detector === 'cloud_key'));
+});
+
+// The pattern the base64 views used before #153; base64Spans must find exactly its matches, without its stack.
+const BASE64_PATTERN = /[A-Za-z0-9+/_-]{24,}(?:[ \t]*\r?\n[ \t]*[A-Za-z0-9+/_-]{2,})*={0,2}/g;
+const spansOf = (text: string, work?: { reads: number }) => {
+  const spans: Array<[number, number]> = [];
+  base64Spans(text, (start, end) => { spans.push([start, end]); return true; }, work);
+  return spans;
+};
+
+test('base64 runs are found in one forward pass with exactly the spans of the former pattern', () => {
+  // A fixed linear congruential sequence keeps the generated texts the same on every run.
+  let seed = 153;
+  const next = () => (seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648) / 2_147_483_648;
+  const alphabet = ['A', 'b', '0', '+', '/', '_', '-'];
+  const others = ['=', '==', ' ', '\t', '\r', '\n', '\r\n', ' \n', '.', 'x', 'é'];
+  for (let round = 0; round < 20_000; round++) {
+    const share = next() * 0.3;
+    let text = '';
+    for (let length = Math.floor(next() * 120); length > 0; length--) {
+      text += next() < share ? others[Math.floor(next() * others.length)] : alphabet[Math.floor(next() * alphabet.length)];
+    }
+    const expected = [...text.matchAll(BASE64_PATTERN)].map((match): [number, number] => [match.index, match.index + match[0].length]);
+    assert.deepEqual(spansOf(text), expected, JSON.stringify(text));
+  }
+  // Work is counted in characters read: at most three per character, also where continuation lines fail late.
+  const adversarial = [
+    `${'A'.repeat(24)}${' '.repeat(100_000)}\n${' '.repeat(100_000)}x`,
+    `${'A'.repeat(23)}.`.repeat(10_000),
+    `${'A'.repeat(24)}\r${'A'.repeat(24)}\r\nx`.repeat(10_000),
+    `${'A'.repeat(24)}==`.repeat(10_000),
+    `${'A'.repeat(24)}\n \nA`.repeat(10_000),
+  ];
+  for (const text of adversarial) {
+    const work = { reads: 0 };
+    assert.deepEqual(spansOf(text, work), [...text.matchAll(BASE64_PATTERN)].map((match) => [match.index, match.index + match[0].length]));
+    assert.ok(work.reads <= 3 * text.length, `${JSON.stringify(text.slice(0, 30))}: ${work.reads} reads for ${text.length} characters`);
+  }
+});
+
+test('8 MiB and 32 MiB base64 runs scan without an exception and keep the verdict of smaller runs (#153)', () => {
+  const MiB = 1024 * 1024;
+  // The same public seed as largeSyntheticBytes: the shorter fixtures are prefixes of these bytes, so the verdict is
+  // the one the 1.5 MB image gets above. One unbroken run of about 6 MB overflowed the former pattern's stack.
+  const seeded = (length: number) => createHash('shake256', { outputLength: length }).update('circle-hub scan large clean fixture v1').digest();
+  for (const size of [8 * MiB, 32 * MiB]) {
+    const encoded = seeded((size / 4) * 3).toString('base64');
+    assert.equal(encoded.length, size);
+    for (const [form, body] of [['one line', encoded], ['76-character lines', (encoded.match(/.{1,76}/g) ?? []).join('\r\n')]]) {
+      const text = `![diagram](data:image/png;base64,${body})`;
+      const work = { reads: 0 };
+      const spans = spansOf(text, work);
+      assert.deepEqual(spans, [[text.indexOf('base64,') + 7, text.length - 1]], `${size} ${form}`);
+      // Linear, not timed: one read per character, plus one per line break and per short word of the prefix.
+      assert.ok(work.reads <= text.length * 1.05, `${size} ${form}: ${work.reads} reads for ${text.length} characters`);
+      const scan = scanForCredentials(Buffer.from(text));
+      assert.deepEqual({ inspected: scan.inspected, clean: scan.clean, findings: scan.findings.length }, { inspected: true, clean: true, findings: 0 }, `${size} ${form}`);
+    }
+  }
+  // A synthetic credential shape deep inside a 32 MiB run is still found, as in the 1.5 MB image.
+  const bytes = seeded(24 * MiB);
+  const collision = `/${'AI' + 'za'}${'Ab3'.repeat(11)}Z9/AAA`;
+  bytes.set(Buffer.from(collision, 'base64'), 15 * MiB);
+  const encoded = bytes.toString('base64');
+  assert.equal(encoded.slice(20 * MiB, 20 * MiB + 44), collision);
+  const scan = scanForCredentials(Buffer.from(`![diagram](data:image/png;base64,${encoded})`));
   assert.equal(scan.clean, false);
   assert.ok(scan.findings.some((finding) => finding.detector === 'cloud_key'));
 });
