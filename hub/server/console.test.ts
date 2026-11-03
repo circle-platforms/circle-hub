@@ -439,7 +439,7 @@ describe('pages', () => {
     // The settings page of a member shows only their own Circles.
     const mine = await get('/console/settings', userSession);
     assert.equal(mine.status, 200);
-    assert.ok(mine.body.includes('我的 Circle'));
+    assert.ok(mine.body.includes('我的客户端'));
     for (const token of await server.records.principals.tokens(server.admin.user.id)) assert.ok(!mine.body.includes(token.id), 'no other account\'s token');
     for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(!mine.body.includes(token.id), 'device rows do not expose token identifiers');
 

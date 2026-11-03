@@ -69,8 +69,20 @@ export function link(path: string, text: unknown, params: Record<string, string 
   return html`<a href="${href(path, params)}">${text}</a>`;
 }
 
-export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty = '没有记录', cls?: string, selection?: {selected?:number;hrefs?:readonly string[]}): Html {
-  if (rows.length === 0) return html`<div class="ch-empty"><p class="ch-empty-title">${empty}</p></div>`;
+/** An empty list: what it is (one fact), one line on what appears here, and at most one primary action. */
+export interface EmptyState { title: string; text?: string; action?: Html }
+export function emptyBlock(empty: string | EmptyState): Html {
+  const state = typeof empty === 'string' ? { title: empty } : empty;
+  return html`<div class="ch-empty"><p class="ch-empty-title">${state.title}</p>${state.text ? html`<p class="ch-empty-text">${state.text}</p>` : ''}${state.action ? html`<div class="ch-actions">${state.action}</div>` : ''}</div>`;
+}
+
+/** The one primary action of an empty state. */
+export function emptyAction(path: string, text: unknown, params: Record<string, string | number | null | undefined> = {}): Html {
+  return html`<a class="ch-btn ch-btn--primary" href="${href(path, params)}">${text}</a>`;
+}
+
+export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty: string | EmptyState = '没有记录', cls?: string, selection?: {selected?:number;hrefs?:readonly string[]}): Html {
+  if (rows.length === 0) return emptyBlock(empty);
   return html`<div class="ch-table-wrap" tabindex="0" role="region" aria-label="表格"><table class="ch-table"${cls === undefined ? '' : html` data-view="${cls}"`}><thead><tr>${headers.map((h,i) => html`<th scope="col"${rows.some(row=>typeof row[i]==='number')?html` class="num"`:''}>${h}</th>`)}</tr></thead><tbody>${rows.map(
     (row,i) => html`<tr${selection?.selected===i?html` class="is-selected" aria-selected="true"`:''}${selection?.hrefs?.[i]?html` data-row-href="${selection.hrefs[i]}"`:''}>${row.map((cell) => html`<td${typeof cell==='number'?html` class="num"`:''}>${typeof cell==='number'?cell.toLocaleString('en-US'):cell}</td>`)}</tr>`,
   )}</tbody></table></div>`;
@@ -134,6 +146,8 @@ export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections
 
 export interface PageChrome {
   title: string;
+  /** The heading when it holds recorded names (marked as evidence); the document title stays `title`. */
+  heading?: Html;
   notice?: string;
   /** Signed-in user: name and role label; null on the login page. */
   user: { name: string; role: string; admin: boolean } | null;
@@ -223,7 +237,8 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
   const current = NAV.find(([key]) => key === chrome.active);
   const crumbs = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? link(current[2], current[1]) : undefined);
-  const title = chrome.hint === undefined ? chrome.title : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${chrome.title}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
+  const heading = chrome.heading ?? chrome.title;
+  const title = chrome.hint === undefined ? heading : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${heading}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
   const actions=layout.actions??chrome.actions;
   const notice=chrome.notice?html`<div class="ch-toast" role="status" data-toast-success tabindex="0">${chrome.notice}</div>`:'';
   const top = html`${layout.detail?'':notice}${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;

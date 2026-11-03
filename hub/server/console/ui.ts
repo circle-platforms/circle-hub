@@ -52,7 +52,7 @@ export function plannedCard(title:unknown,text:unknown,_iconName:keyof typeof IC
 }
 export const kv=facts;
 export function emptyState(title:unknown,text:unknown,action?:Html):Html{
- return html`<div class="ch-empty"><h2 class="ch-empty-title">${title}</h2><p class="ch-empty-note">${text}</p>${action??''}</div>`;
+ return html`<div class="ch-empty"><h2 class="ch-empty-title">${title}</h2><p class="ch-empty-text">${text}</p>${action??''}</div>`;
 }
 
 export interface Pill {

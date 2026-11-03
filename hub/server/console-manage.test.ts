@@ -165,7 +165,7 @@ const actsAs = (input: CommandInput, userId: string): boolean => consoleTokens.h
 let session = '';
 let csrf = '';
 
-test('the first administrator is created with the setup code; the token shown once only connects Circle and the administrator signs in with the password', async () => {
+test('the first administrator is created with the setup code; the token shown once only connects a client and the administrator signs in with the password', async () => {
   const login = await send('GET', '/console/login');
   assert.match(login.body, /还没有管理员/);
   const page = await send('GET', '/console/setup');
@@ -192,7 +192,7 @@ test('the first administrator is created with the setup code; the token shown on
   const done = await send('POST', '/console/setup', { cookie: `circle_hub_setup=${nonce4}`, body: form({ csrf: nonce4, code: code.toLowerCase(), name: 'root' }) });
   assert.equal(done.status, 200, done.body);
   assert.equal(done.body.split('A'.repeat(43)).length - 1, 1, 'the token is on the page once');
-  assert.match(done.body, /访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次/);
+  assert.match(done.body, /访问令牌，只用于连接客户端，不能登录控制台；只显示这一次/);
   assert.match(done.body, /mcp_servers/);
   assert.ok(!done.cookies.some((c) => c.startsWith('circle_hub_session=')), 'creating the administrator opens no session');
   assert.match(done.body, /<a [^>]*href="\/console\/login"[^>]*>前往登录<\/a>/);

@@ -13,7 +13,7 @@ export async function memberDeletionDialog(ctx:PageContext,member:string):Promis
  try{
   const check=await deletionCheck(ctx.deps.records,ctx.principal,member),c=check.preview.scope_counts;
   const categories=[['知识',c.knowledge],['记忆',c.memory],['原文',c.originals],['来源署名',c.attributions],['归档的原文',c.archived_originals],['私人工作流与技能',c.private_versions]];
-  return dialog(deletionDialogId,'确认永久删除成员',html`<p>${DELETION_EFFECT}</p><p>${tooltip('清除范围','数量包括此前保存的版本；原文按采集次数计数，私人工作流与技能按版本计数。团队和已有任务独立持有的副本保留。')}</p><dl class="ch-section ch-list" data-deletion-scope>${categories.map(([label,count])=>html`<div class="ch-source-head"><dt>${label}</dt><dd>${count}</dd></div>`)}</dl><p>在 Hub 所在主机上的 Circle 中执行下列命令完成删除；内容变化后须重新检查。</p>${manifestSummary(check.preview.purge_manifest,check.preview.counts)}<pre class="ch-quote">${check.command}</pre>`);
+  return dialog(deletionDialogId,'确认永久删除成员',html`<p>${DELETION_EFFECT}</p><p>${tooltip('清除范围','数量包括此前保存的版本；原文按采集次数计数，私人工作流与技能按版本计数。团队和已有任务独立持有的副本保留。')}</p><dl class="ch-section ch-list" data-deletion-scope>${categories.map(([label,count])=>html`<div class="ch-source-head"><dt>${label}</dt><dd>${count}</dd></div>`)}</dl><p>在 Hub 所在主机上执行下列命令完成删除；内容变化后须重新检查。</p>${manifestSummary(check.preview.purge_manifest,check.preview.counts)}<pre class="ch-quote">${check.command}</pre>`);
  }catch(error){if(!(error instanceof RecordsError))throw error;return dialog(deletionDialogId,'删除检查未通过',html`<p role="alert">${error.message}</p><p>尚未删除成员；修正后重新检查。</p>`,actionLink('/console/team/'+member+'?deletion=preview#'+deletionDialogId,'重新检查'));}
 }
 export async function memberDeletionProgress(ctx:PageContext,member:string):Promise<Html>{

@@ -31,6 +31,7 @@ import { operationsPage, systemForgetPage, systemTrialPage } from './operations.
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
+import { actionNotice } from './feedback.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
 import {withReadScope,memoReadPort} from '../../records/api.ts';
 import {sourceArchivePage} from './source-archive.ts';
@@ -122,7 +123,7 @@ async function loginPage(options: ConsoleOptions, response: ServerResponse, stat
     html`${message === null ? '' : html`<p class="error">${message}</p>`}${ended ? html`<p class="notice">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
 <form method="post" action="/console/login">
 <div class="ch-field"><label class="ch-field-label" for="hub-username">用户名</label><div class="ch-input"><input id="hub-username" name="username" autocomplete="username" maxlength="200" required></div></div>
-<div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接 Circle。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接客户端。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
 <input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
 <button type="submit" class="ch-btn ch-btn--primary">登录</button></form>`,
   );
@@ -251,7 +252,7 @@ async function passwordPage(request: IncomingMessage, response: ServerResponse, 
 
 // ---------------------------------------------------------------- one-time login links
 
-const LINK_INVALID = '登录链接已失效：该链接已使用或已过期。请在 Circle 中重新获取。';
+const LINK_INVALID = '登录链接已失效：该链接已使用或已过期。请在客户端中重新获取。';
 
 /**
  * A link from Circle leads to the password sign-in at its page (owner, 2026-11-02: every account signs in with username and
@@ -309,7 +310,7 @@ async function loginLinks(request: IncomingMessage, response: ServerResponse, op
   const match = typeof authorization === 'string' ? /^Bearer[ \t]+([A-Za-z0-9_-]{43})[ \t]*$/i.exec(authorization) : null;
   if (principal === null || match === null) {
     request.resume();
-    return sendJson(response, 401, { code: null, message: '需要有效的 Bearer 令牌', fix: '以已连接的 Circle 的令牌请求登录链接' }, { ...headers, 'www-authenticate': 'Bearer realm="circle-hub"' });
+    return sendJson(response, 401, { code: null, message: '需要有效的 Bearer 令牌', fix: '以已连接客户端的令牌请求登录链接' }, { ...headers, 'www-authenticate': 'Bearer realm="circle-hub"' });
   }
   let next: string | null = null;
   if (mediaTypeOf(request) === 'application/json') {
@@ -376,7 +377,7 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   }
   const form = await formOf(request);
   if (form === 'aborted') return void response.destroy();
-  if (typeof form === 'string' || form.get('csrf') !== open.csrf) return forbidden(response, '表单已过期或不是本控制台发出的，请在 Circle 中重新连接 Hub');
+  if (typeof form === 'string' || form.get('csrf') !== open.csrf) return forbidden(response, '表单已过期或不是本控制台发出的，请在客户端中重新连接');
   const step = form.get('step');
   // A request is decided once: a second submit (a double click) waits for the first and gets the same answer.
   if (step === 'decide' && open.decision !== null) {
@@ -449,7 +450,7 @@ async function logout(request: IncomingMessage, response: ServerResponse, option
 
 // ---------------------------------------------------------------- first administrator
 
-const SETUP_STEPS = ['初始化码', '创建管理员', '连接 Circle', '完成'] as const;
+const SETUP_STEPS = ['初始化码', '创建管理员', '连接客户端', '完成'] as const;
 
 async function setupPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, prefill = ''): Promise<void> {
   if (await hasAdmin(options.deps)) {
@@ -513,12 +514,12 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
       { ...anonymous('管理员已创建'), wide: true },
       html`${stepper(SETUP_STEPS, 2)}
 <p>已创建管理员 ${outcome.name}。</p>${outcome.password === null ? '' : html`<p class="notice">初始密码仅显示一次；首次登录必须修改。</p>${pre(outcome.password)}`}
-<p class="notice">下面是这位管理员的访问令牌，只用于连接 Circle，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
+<p class="notice">下面是这位管理员的访问令牌，只用于连接客户端，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
-<h2>在 Circle 中连接这个 Hub</h2>
-<h2 class="ch-section-label">${tooltip('连接 Circle','把配置写入 Circle 的 settings.json，首次连接时登录控制台并确认身份。')}</h2>
+<h2>在客户端中连接这个 Hub</h2>
+<h2 class="ch-section-label">${tooltip('MCP 标准连接确认','下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。首次连接时登录控制台并确认身份。')}</h2>
 <pre class="ch-quote">${circleEntry(mcpOrigin(request, secure), false)}</pre>
-<h2 class="ch-section-label">${tooltip('兼容连接方式','客户端不支持 MCP 标准连接确认时，在 Circle 中用 /secrets CIRCLE_HUB_TOKEN 保存令牌后采用下方配置。')}</h2>
+<h2 class="ch-section-label">${tooltip('兼容连接方式','客户端不支持 MCP 标准连接确认时，把令牌保存为客户端的密钥 CIRCLE_HUB_TOKEN，再采用下方配置。')}</h2>
 <pre class="ch-quote">${circleEntry(mcpOrigin(request, secure))}</pre>
 ${secure ? html`${trustSteps()}` : ''}
 <h2>接下来</h2>
@@ -670,7 +671,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   if (request.method === 'POST' && writePath(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     request.resume();
-    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Circle 中执行' }, { ...headers, allow: 'GET, HEAD' });
+    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Hub 所在主机上执行' }, { ...headers, allow: 'GET, HEAD' });
   }
   const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
   if (principal === null) {
@@ -868,10 +869,12 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
       if(values.get('csrf')!==session!.csrf)return forbidden(response,'表单已过期或不是本控制台发出的');
       try{
         const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);
-        if(values.get('preview_grant')!=='1'&&segments[2]!=='share-batch'&&segments[2]!=='memory-share'){
+        if(ctx.feedback)session!.notice=ctx.feedback;
+        else if(values.get('preview_grant')!=='1'&&segments[2]!=='share-batch'&&segments[2]!=='memory-share'){
           // A replay may return an earlier mode receipt; feedback reports the current state, never a new purge.
           const state=segments[2]==='sync-mode'||segments[2]==='sync-resume'||segments[2]==='sync-confirm-purge'?await ctx.deps.records.personalSync?.state(ctx.principal):undefined;
-          session!.notice=state?axisUiLabel('sync_mode')+'：'+uiLabelOf('sync_mode',state.mode):'操作已完成';
+          const done=segments[0]==='packs'?actionNotice('packs',segments[2],values):segments[2].startsWith('memory-')?actionNotice('memory',segments[2].slice(7),values):actionNotice('knowledge',segments[2],values,upload);
+          session!.notice=state?(segments[2]==='sync-confirm-purge'?'已确认清除 · ':'')+axisUiLabel('sync_mode')+'：'+uiLabelOf('sync_mode',state.mode):done??'已保存';
         }
         return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);
       }catch(error){result=spaceActionFailure(ctx,error);}

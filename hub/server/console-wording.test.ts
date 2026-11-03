@@ -17,8 +17,13 @@ import {writePack} from '../runs/packs/testing/builder.ts';
 test('the rendered wording guard rejects old UI copy and missing spaces while retaining original evidence verbatim',()=>{
  assert.ok(wordingProblems('<p>未核验 · 近30天 · Circle正在执行</p>').length>=2);
  assert.ok(wordingProblems('<button title="等待你处理">分享</button>').length);
- assert.deepEqual(wordingProblems('<p>待验证 · 近 30 天 · Circle 正在执行</p>'),[]);
+ assert.deepEqual(wordingProblems('<p>待验证 · 近 30 天 · Cursor 正在执行</p>'),[]);
  const original='原文未核验Circle42目录历史依据';const rendered=html`<p>原文：${evidence(original)}</p>`;assert.ok(rendered.text.includes(original));assert.deepEqual(wordingProblems(rendered.text),[]);
+});
+
+test('the wording guard rejects Circle as the generic client name but keeps names a client reported',()=>{
+ for(const markup of ['<p>已连接的 Circle</p>','<h1>允许 Circle 连接 Hub</h1>','<button>签发 Circle 访问令牌…</button>','<a title="在管理员的 Circle 中执行">查看命令…</a>','<td>Circle</td>'])assert.ok(wordingProblems(markup).some(problem=>problem.includes('Circle as the client name')),markup);
+ for(const markup of ['<p>已连接的客户端</p>','<p>circle-hub 控制台</p>','<td><span data-evidence>Circle 3.9</span></td>','<pre>Circle</pre>','<code>Circle</code>'])assert.deepEqual(wordingProblems(markup),[],markup);
 });
 
 test('connection confirmation keeps original client and account names separate from static UI wording',()=>{

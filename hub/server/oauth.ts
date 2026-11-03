@@ -41,7 +41,8 @@ const VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
 const REFUSED_SCHEMES = new Set(['javascript:', 'data:', 'file:', 'blob:', 'about:', 'vbscript:', 'filesystem:', 'ftp:', 'ws:', 'wss:']);
-const UNNAMED_CLIENT = '未命名的客户端';
+/** The name the Hub records for a client that registered without a client_name; the console shows it as 客户端. */
+export const UNNAMED_CLIENT = '未命名的客户端';
 
 const PATHS = new Set([
   '/.well-known/oauth-protected-resource',
@@ -434,23 +435,23 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
 
 async function authorize(request: IncomingMessage, response: ServerResponse, url: URL, options: OAuthOptions, issuer: string, secure: boolean, refuse: AuthorizeRefusal): Promise<void> {
   const query = url.searchParams;
-  for (const name of new Set(query.keys())) if (query.getAll(name).length > 1) return refuse(response, 400, '授权请求无效：参数重复。请在 Circle 中重新连接 Hub。');
+  for (const name of new Set(query.keys())) if (query.getAll(name).length > 1) return refuse(response, 400, '授权请求无效：参数重复。请在客户端中重新连接。');
   const client = await options.principals.client(query.get('client_id') ?? '');
-  if (client === null) return refuse(response, 400, '授权请求无效：客户端未在本 Hub 登记。请在 Circle 中重新连接 Hub。');
+  if (client === null) return refuse(response, 400, '授权请求无效：客户端未在本 Hub 登记。请在客户端中重新连接。');
   const sent = query.get('redirect_uri');
   const redirectUri = sent ?? (client.redirect_uris.length === 1 ? client.redirect_uris[0] : null);
-  if (redirectUri === null || !redirectMatches(client.redirect_uris, redirectUri)) return refuse(response, 400, '授权请求无效：回调地址与客户端登记的地址不一致。请在 Circle 中重新连接 Hub。');
+  if (redirectUri === null || !redirectMatches(client.redirect_uris, redirectUri)) return refuse(response, 400, '授权请求无效：回调地址与客户端登记的地址不一致。请在客户端中重新连接。');
   const state = query.get('state');
   // Refused before anybody looked at the request: a page, not a redirect to a URI the client chose for itself.
-  if (query.get('response_type') !== 'code') return refuse(response, 400, '授权请求无效：只支持授权码（response_type=code）。请在 Circle 中重新连接 Hub。');
+  if (query.get('response_type') !== 'code') return refuse(response, 400, '授权请求无效：只支持授权码（response_type=code）。请在客户端中重新连接。');
   const challenge = query.get('code_challenge');
-  if (challenge === null || !CHALLENGE.test(challenge) || query.get('code_challenge_method') !== 'S256') return refuse(response, 400, '授权请求无效：需要 PKCE（code_challenge_method=S256）。请在 Circle 中重新连接 Hub。');
+  if (challenge === null || !CHALLENGE.test(challenge) || query.get('code_challenge_method') !== 'S256') return refuse(response, 400, '授权请求无效：需要 PKCE（code_challenge_method=S256）。请在客户端中重新连接。');
   if (state !== null && state.length > 2000) return refuse(response, 400, '授权请求无效：state 超过 2000 个字符。');
   const resource = `${issuer}/mcp`;
   const asked = query.get('resource');
-  if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在 Circle 中重新连接 Hub。');
+  if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在客户端中重新连接。');
   const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, redirectSent: sent !== null, state, challenge, peer: peerOf(request), resource, issuer, secure });
-  if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在 Circle 中重新连接 Hub。');
+  if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在客户端中重新连接。');
   const page = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);
   response.writeHead(303, {

@@ -863,6 +863,8 @@ export interface CallLog {
   query(principal: Principal, query?: CallLogQuery): Promise<Page<CallLogLine>>;
   /** The initialize declaration of this account, token and Hub-issued Mcp-Session-Id; null when the session declared none. */
   declaredClient?(userId:string,mcpSession:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;
+  /** The newest initialize declaration made with this account and token, for showing a connection; it binds no write. */
+  latestDeclaredClient?(userId:string,tokenId:string):Promise<{name:string;version:string|null;at:string}|null>;
   /** Appends to the JSONL files every call logged in [from, to) that its file is missing (after a crash). Returns the lines written. */
   repairFiles(range: { from: string; to: string }): Promise<number>;
 }

@@ -31,23 +31,23 @@ export const commands = {
   }),
   userDisable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-disable', user.id), title: `停用成员 ${user.name}`,
-    text: '停用后，该成员无法访问 Hub，私人空间冻结，已分享的私人内容暂停访问。团队已取得的内容保留。重新启用后恢复仍有效的分享；不会清除内容或停止远程 Circle。', command: command('user', 'disable', user.id),
+    text: '停用后，该成员无法访问 Hub，私人空间冻结，已分享的私人内容暂停访问。团队已取得的内容保留。重新启用后恢复仍有效的分享；不会清除内容或停止远程客户端。', command: command('user', 'disable', user.id),
   }),
   userEnable: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-enable', user.id), title: `启用成员 ${user.name}`,
-    text: '启用后，私人空间和仍有效的分享恢复可用，已收回的分享不会恢复。未吊销且未过期的 Circle 令牌恢复可用；已关闭的控制台会话需要重新登录。', command: command('user', 'enable', user.id),
+    text: '启用后，私人空间和仍有效的分享恢复可用，已收回的分享不会恢复。未吊销且未过期的客户端访问令牌恢复可用；已关闭的控制台会话需要重新登录。', command: command('user', 'enable', user.id),
   }),
   tokenRevoke: (token: { id: string; label: string }, owner: string): CommandDialog => ({
-    id: dialogId('token-revoke', token.id), title: `断开 ${owner} 的 Circle`,
-    text: `吊销令牌 ${token.id}${token.label ? `（${token.label}）` : ''}：使用该令牌的 Circle 与控制台会话立即断开，其他令牌不受影响。`, command: command('token', 'revoke', token.id),
+    id: dialogId('token-revoke', token.id), title: `断开 ${owner} 的客户端`,
+    text: `吊销令牌 ${token.id}${token.label ? `（${token.label}）` : ''}：使用该令牌的客户端与控制台会话立即断开，其他令牌不受影响。`, command: command('token', 'revoke', token.id),
   }),
   userInvite: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('user-invite', user.id), title: `签发邀请码：${user.name}`,
-    text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的 Circle 打开连接确认页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
+    text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的客户端打开连接确认页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
   }),
   tokenIssue: (user: { id: string; name: string }): CommandDialog => ({
-    id: dialogId('token-issue', user.id), title: `签发 Circle 访问令牌：${user.name}`,
-    text: '新令牌仅在签发时显示一次，只用于连接 Circle，不能登录控制台；所有账户都用用户名和密码登录控制台。', command: command('token', 'issue', user.id, '--label=Circle'),
+    id: dialogId('token-issue', user.id), title: `签发客户端访问令牌：${user.name}`,
+    text: '新令牌仅在签发时显示一次，只用于连接客户端，不能登录控制台；所有账户都用用户名和密码登录控制台。', command: command('token', 'issue', user.id, '--label=客户端'),
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
@@ -95,7 +95,7 @@ export const commands = {
   }),
   tlsIssue: (): CommandDialog => ({
     id: 'cmd-tls-issue', title: '重新签发服务器证书',
-    text: '由本 Hub 的证书颁发机构重新签发服务器证书；重启 Hub 后生效。颁发机构不变，已信任的浏览器与 Circle 无需重新配置。', command: command('tls', 'issue'),
+    text: '由本 Hub 的证书颁发机构重新签发服务器证书；重启 Hub 后生效。颁发机构不变，已信任的浏览器与客户端无需重新配置。', command: command('tls', 'issue'),
   }),
   backup: (): CommandDialog => ({
     id: 'cmd-backup', title: '备份',

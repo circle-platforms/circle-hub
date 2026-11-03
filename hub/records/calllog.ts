@@ -67,6 +67,8 @@ function sessionOf(value: string | null | undefined): string | null {
 export const CLIENT_DECLARATION_SCHEMA = 'mcp-client-declaration@1';
 /** Index of a declaration: account, server token and the Mcp-Session-Id the Hub issued at initialize. */
 const CLIENT_SESSION_KEY = 'mcp.client.session';
+/** Index of a declaration by account and server token alone: what a connection last reported, for display only. */
+const CLIENT_TOKEN_KEY = 'mcp.client.token';
 const MCP_SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sessionKey = (user: string, token: string | null | undefined, session: string | null | undefined): string | null =>
   typeof token === 'string' && token.length > 0 && token.length <= 200 && typeof session === 'string' && MCP_SESSION.test(session) ? `${user}/${token}/${session}` : null;
@@ -185,7 +187,7 @@ export class PgCallLog implements CallLog {
     const client = input.client ? clientOf(input.client) : null;
     // Bound only to the MCP session the Hub issued at this initialize; without one the declaration names no later write.
     const bound = client === null || entry.user === null ? null : sessionKey(entry.user, input.tokenId, input.mcpSessionId);
-    const declared = bound === null ? [] : [{ key: CLIENT_SESSION_KEY, value: bound }];
+    const declared = bound === null ? [] : [{ key: CLIENT_SESSION_KEY, value: bound }, { key: CLIENT_TOKEN_KEY, value: `${entry.user}/${input.tokenId}` }];
     const { record, note } = await this.#store.withTransaction(async (tx) => {
       const stored = await this.#store.put<CallLogEntry>(
         { kind: 'call_log', schema: RECORD_SCHEMAS.call_log, provenance: 'observed', body: entry, created_at: at },
@@ -228,6 +230,12 @@ export class PgCallLog implements CallLog {
     if (value === null) return null;
     const row = (await this.#store.find<{ user: string; client: { name: string; version: string | null } }>({ kind: 'action', key: CLIENT_SESSION_KEY, value, newestFirst: true, limit: 1 })).items[0];
     return row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId ? row.body.client : null;
+  }
+
+  async latestDeclaredClient(userId: string, tokenId: string): Promise<{ name: string; version: string | null; at: string } | null> {
+    if (typeof tokenId !== 'string' || tokenId.length === 0 || tokenId.length > 200) return null;
+    const row = (await this.#store.find<{ user: string; at: string; client: { name: string; version: string | null } }>({ kind: 'action', key: CLIENT_TOKEN_KEY, value: `${userId}/${tokenId}`, newestFirst: true, limit: 1 })).items[0];
+    return row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId ? { ...row.body.client, at: row.body.at } : null;
   }
 
   async query(principal: Principal, query: CallLogQuery = {}): Promise<Page<CallLogLine>> {
