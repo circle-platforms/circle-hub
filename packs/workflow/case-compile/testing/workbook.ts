@@ -7,5 +7,5 @@ import IDENTITIES from '../examples/command-identities-v2.json' with {type:'json
 import type { GenerationInput } from '../functions/generate.ts';
 export function generationFixture(): GenerationInput {
   const contract = contractOf(); const profile = parseProfile(PROFILE_DOC, contract, bedsOf()); if (!profile.ok) throw new Error('invalid synthetic profile');
-  return { slots: goodData(), fields: { command_catalog:planCommands(contract,profile.profile,goodData(),COMMAND_CATALOG).catalog,command_identities:structuredClone(COMMAND_IDENTITIES),autoid: AUTOID, title: '合成用例', priority: '2', steps: [{ text: '原始配置步骤' }] }, contract, profile: profile.profile, plan_run: 'run_00000000000000000000000000', build: 'Fixture_Build_A' };
+  return { slots: goodData(), fields: { command_catalog:planCommands(contract,profile.profile,goodData(),COMMAND_CATALOG).catalog,command_identities:structuredClone(COMMAND_IDENTITIES),autoid: AUTOID, title: '合成用例', path: ['合成文档', '合成分组', '合成用例'], priority: '2', steps: [{ text: '原始配置步骤' }] }, contract, profile: profile.profile, plan_run: 'run_00000000000000000000000000', build: 'Fixture_Build_A' };
 }

@@ -10,7 +10,7 @@ import { parseManifest } from './manifest.ts';
 import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
 import { readWorkbookModel } from './xlsx-model.ts';
-import { documentIdOf, extractCases, type CaseRule } from './cases.ts';
+import { documentIdOf, extractCases, rootDocumentId, type CaseRule } from './cases.ts';
 
 interface Slot {
   slot: string;
@@ -105,13 +105,17 @@ export function projectItems(input: unknown): unknown {
     const shown=(c:StructureCase)=>{const value=authoredAutoid(c.node);const text=JSON.stringify(typeof value==='string'&&value.length>64?value.slice(0,64)+'…':value)??String(value);return `${c.selector||'（无选择器）'} ${text.slice(0,80)}`;};
     if (malformed.length) return refusal('autoid_invalid', `整份文档有 ${malformed.length} 个用例的 autoid 不符合配置形状 ${profileRead.profile.workbook.autoid_pattern}：${malformed.slice(0,10).map(shown).join('、')}${malformed.length>10?` 等 ${malformed.length} 个`:''}`, '作者改正或删去这些 autoid 后重新上传文档，再开始新运行（没有 autoid 的用例不编译）；或填 parameters.autoid 只编一条');
   }
+  const parents=new Map<number,number>();for(const [index,node] of ((subject.model as any)?.nodes??[]).entries())for(const child of Array.isArray(node?.children)?node.children:[])if(typeof child==='number'&&!parents.has(child))parents.set(child,index);
   const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid):c.autoid===parameters.autoid).map(c=>{
     // The earlier extraction of the same node, by selector: a pasted case keeps the node id of the case it was copied from,
     // the parser then addresses both by position, so only the selector names one node. A model without selectors falls
     // back to a node id that names exactly one case.
     const raw=(subject.model as any).nodes[c.node],data=raw.data??{},old=c.selector?extraction.cases.find(v=>v.selector===c.selector):extraction.cases.filter(v=>v.id===c.id).length===1?extraction.cases.find(v=>v.id===c.id):undefined;
     const expectedNodes=[...new Set(c.atoms.filter(a=>a.kind==='expectation').map(a=>a.selector))].map(selector=>{const n=(subject.model as any).nodes.find((n:any)=>n.selector===selector);return {text:n?.text??c.atoms.find(a=>a.selector===selector)?.text??'',selector:n?selector:null,...(n?.data?.assertion!==undefined?{declaration:n.data.assertion}:{})};});
-    return {...(old??{id:c.id,title:raw.text,tags:Array.isArray(data.resource)?data.resource:[],priority:data.priority===undefined?null:String(data.priority),autoid:c.autoid,auto:data.auto===undefined?null:String(data.auto),negative:data.negative===true,selector:c.selector}),steps:c.atoms.filter(a=>a.kind==='action').map(a=>({text:a.text,expected:c.atoms.filter(e=>e.kind==='expectation'&&e.after.includes(a.id)).map(e=>e.text)})),expected:c.atoms.filter(a=>a.kind==='expectation'&&!a.after.length).map(a=>a.text),expected_nodes:expectedNodes,projection_unknowns:c.missing,source_atoms:c.atoms};
+    // The case's place in the mind map (issue #144): the texts of the nodes from the root to the case, verbatim, along the
+    // same children links the extraction walks. The workbook shows them joined on the case's first row for reviewers.
+    const path:string[]=[];for(let at:number|undefined=c.node,guard=0;at!==undefined&&guard<=parents.size;guard++){const n=nodeAt(at);path.unshift(isRecord(n)&&typeof n.text==='string'?n.text:'');at=parents.get(at);}
+    return {path,...(old??{id:c.id,title:raw.text,tags:Array.isArray(data.resource)?data.resource:[],priority:data.priority===undefined?null:String(data.priority),autoid:c.autoid,auto:data.auto===undefined?null:String(data.auto),negative:data.negative===true,selector:c.selector}),steps:c.atoms.filter(a=>a.kind==='action').map(a=>({text:a.text,expected:c.atoms.filter(e=>e.kind==='expectation'&&e.after.includes(a.id)).map(e=>e.text)})),expected:c.atoms.filter(a=>a.kind==='expectation'&&!a.after.length).map(a=>a.text),expected_nodes:expectedNodes,projection_unknowns:c.missing,source_atoms:c.atoms};
   });
   if (selected.length === 0) return whole ? refusal('autoid_not_found', `整份文档里按规则取不到带文字 autoid 的自动化用例（${unnumbered.size} 个用例没有 autoid）`, '核对用例文档和 case_rule：自动化用例要有文字 autoid 且没有声明不自动化') : refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
   if (new Set(selected.map((value) => value.autoid)).size !== selected.length) return refusal('autoid_ambiguous', whole ? '整份文档里有重复的 autoid，工作簿和派发结果无法一一对应用例' : '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
@@ -123,7 +127,9 @@ export function projectItems(input: unknown): unknown {
   // selector instead, which names one node.
   const nodeIdCount = new Map<string, number>();
   for (const node of Array.isArray(model.nodes) ? model.nodes : []) if (isRecord(node) && isRecord(node.data) && typeof node.data.id === 'string' && node.data.id !== '') nodeIdCount.set(node.data.id, (nodeIdCount.get(node.data.id) ?? 0) + 1);
-  const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, extraction.cases[0]?.id ?? null);
+  // Since 3.9.17 a mind map without an agile document id is named by its root node (rootDocumentId), no longer by its first
+  // case's node id. Runs started earlier keep the item ids recorded with them; only new runs use this rule.
+  const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, rootDocumentId(subject.model));
   const warnings: PackWarning[] = [];
   if (extraction.cases.length === 0) warnings.push({ code: 'case-compile.no_cases', message: `文档 ${documentId} 里按规则取不到用例（${extraction.ruleSummary}）` });
   if (extraction.candidates > 0) warnings.push({ code: 'case-compile.candidate_only', message: `${extraction.candidates} 个节点只靠标记识别，case_rule 为 tagged 时不是用例（要取用请加标签，或改用默认规则）` });
@@ -151,6 +157,7 @@ export function projectItems(input: unknown): unknown {
       projection_unknowns:found.projection_unknowns,
       source_atoms:found.source_atoms,
       title: found.title,
+      path: found.path,
       tags: found.tags,
       priority: found.priority,
       autoid: found.autoid,
@@ -179,7 +186,7 @@ export function projectItems(input: unknown): unknown {
       const catalogs = requirement('commands_known').filter((claim: any) => claim.statement.verdict === 'support' && isRecord(claim.statement.data) && Object.hasOwn(claim.statement.data, 'command_catalog'));
       if (plans.length !== 1 || catalogs.length !== 1) return refusal('workbook_context', `计划运行没有受理用例 ${item.fields.autoid} 的唯一计划和命令目录回执`, '先在计划运行里让每个用例的计划要求项都满足并被受理，再按其运行号绑定 plan_result');
       const data = (catalogs[0] as any).statement.data;
-      planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
+      planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, path: item.fields.path, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
     }
   }
   const skipped = whole && unnumbered.size > 0 ? `；另有 ${unnumbered.size} 个用例没有 autoid，不编译（要编译请作者补 autoid 后重新上传）` : '';

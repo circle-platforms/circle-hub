@@ -11,7 +11,7 @@
             "text": "合成计划，尚未上机",
             "quotes": [
               {
-                "reference": "src:ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85/kityminder@1/n/fixture-expected",
+                "reference": "src:f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942/kityminder@1/n/fixture-expected",
                 "text": "健康检查间隔设置成功"
               }
             ],
@@ -67,7 +67,7 @@
                 {
                   "text": "健康检查间隔设置成功",
                   "quote": {
-                    "reference": "src:ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85/kityminder@1/n/fixture-expected",
+                    "reference": "src:f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942/kityminder@1/n/fixture-expected",
                     "text": "健康检查间隔设置成功"
                   },
                   "after": 2
@@ -75,7 +75,7 @@
                 {
                   "text": "Total entries: 1",
                   "quote": {
-                    "reference": "src:ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85/kityminder@1/n/fixture-expected-count",
+                    "reference": "src:f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942/kityminder@1/n/fixture-expected-count",
                     "text": "查询到 1 条间隔记录"
                   },
                   "after": 3,

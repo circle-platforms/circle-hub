@@ -15,7 +15,7 @@ import { bindArguments, hasSingleLineValue } from './binding.ts';
 import { encodeG, type GOptions } from './g-syntax.ts';
 import { zipStore } from './zip-store.ts';
 export const GENERATOR = FORMAT.generator;
-export interface GenerationFields {source_atoms?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; priority?: string | null; steps: Array<{ text: string }> }
+export interface GenerationFields {source_atoms?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; path?: string[]; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }
 export class GenerationError extends Error { readonly rule: string; readonly pointer: string; constructor(pointer: string, message: string, rule = 'generation') { super(`${pointer}：${message}`); this.name = 'GenerationError'; this.pointer = pointer; this.rule = rule; } }
 const reject = (at: string, message: string): never => { throw new GenerationError(at, message); };
@@ -30,10 +30,16 @@ function escape(text: string, at: string, xstring = true): string {
   if (/_x[0-9a-fA-F]{4}_/.test(text)) throw new GenerationError(at, 'xstring_escape：内联文字的转义读法不一致；改用没有该序列的原文', 'xstring_escape');
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;').replaceAll('\r', '&#13;');
 }
+/** Column D of a case's first row (issue #144): the case's place in the mind map, the node texts from the root to the case
+ * joined by ">". The runner only logs D (InfoTest lib/test_xlsx.py log_and_check_line), so it is free text for people. */
+export const PATH_SEPARATOR = '>';
+export function pathCell(path: unknown): string | null {
+  return Array.isArray(path) && path.length > 0 && path.every((v) => typeof v === 'string') ? path.join(PATH_SEPARATOR) : null;
+}
 /** The canonical recipe of one case: everything its rows are generated from. */
 export function caseRecipe(input: GenerationInput, slots: PlanSlots): unknown {
   const { fields, contract, profile } = input;
-  return { slots:sourcePlan(slots), fields: { ...(fields.source_atoms!==undefined?{source_atoms:fields.source_atoms}:{}),expected_nodes:selectedExpectedNodes(fields.expected_nodes,slots)??null,command_catalog:fields.command_catalog??null,command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null,...(blockMeta(slots)?{bed_services:fields.bed_services??null,manifest_sha256:fields.manifest_sha256??null,criteria_review:blockReviewIdentity(fields.criteria_review)}:{}), steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR };
+  return { slots:sourcePlan(slots), fields: { ...(fields.source_atoms!==undefined?{source_atoms:fields.source_atoms}:{}),expected_nodes:selectedExpectedNodes(fields.expected_nodes,slots)??null,command_catalog:fields.command_catalog??null,command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, path: fields.path ?? null, priority: fields.priority ?? null,...(blockMeta(slots)?{bed_services:fields.bed_services??null,manifest_sha256:fields.manifest_sha256??null,criteria_review:blockReviewIdentity(fields.criteria_review)}:{}), steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR };
 }
 /** The identity row's recipe digest: one case keeps its own recipe, several cases the ordered list of their recipes. */
 export function recipeDigest(recipes: unknown[]): string {
@@ -79,6 +85,7 @@ function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string
   if (gaps.length) reject(at('/contract'), authorityRecovery(gaps));
   if (slots.bucket !== profile.bed || typeof fields.autoid !== 'string' || !new RegExp(profile.workbook.autoid_pattern, 'u').test(fields.autoid)) reject(at('/fields/autoid'), '自动化测试环境或 autoid 与已核验输入不符');
   if (typeof fields.title !== 'string' || !fields.title || !Array.isArray(fields.steps) || fields.steps.some((v) => typeof v.text !== 'string')) reject(at('/fields'), '缺少条目标题或步骤原文');
+  const path = pathCell(fields.path); if (path === null || fields.path!.at(-1) !== fields.title) reject(at('/fields/path'), '缺少用例在脑图里的层级路径（从根到本用例的节点原文），或路径末尾不是本用例标题；重新开始运行以取得当前投影');
   if (!slots.expects.length) reject(at('/expects'), '至少一条溯源期望才可生成');
   const rows: Array<Array<string | number>> = [];
   for (const [i, step] of slots.steps.entries()) {
@@ -96,7 +103,7 @@ function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string
     const seat = profile.seats.find((v) => v.object === step.object);
     if (seat && seat.ordinal >= profile.device_count) reject(at(`/steps/${i}`), '座位序号超出预检设备数；派发前还须重核实际设备数');
     let g: string; try { g = encodeG(step, gOptions(step.object, step.method, contract, profile)); } catch (e) { return reject(at(`/steps/${i}/G`), e instanceof Error ? e.message : 'G 无法往返'); }
-    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.title, step.object, step.method, g,...(blockMeta(slots)?[step.save_as??'',step.input_register??'']:[])]);
+    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, i === 0 ? path! : fields.title, step.object, step.method, g,...(blockMeta(slots)?[step.save_as??'',step.input_register??'']:[])]);
     for (const [k, expect] of slots.expects.entries()) if (expect.after === i + 1) {
       if (!blockMeta(slots)&&!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(at(`/expects/${k}/after`), '期望不能跟在等待或断言之后');
       if (!expect.register&&!hasSingleLineValue(expect.text)) reject(at(`/expects/${k}/text`), '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');

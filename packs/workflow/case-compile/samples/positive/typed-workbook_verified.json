@@ -787,6 +787,11 @@
       },
       "autoid": "990000000000000031",
       "title": "合成用例",
+      "path": [
+        "合成文档",
+        "合成分组",
+        "合成用例"
+      ],
       "priority": "2",
       "steps": [
         {
@@ -821,7 +826,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.9.15"
+      "generator": "case-compile@3.9.17"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -855,7 +860,7 @@
           },
           {
             "name": "xl/worksheets/sheet1.xml",
-            "size": 3399,
+            "size": 3431,
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
           }
         ],
@@ -920,14 +925,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.9.15",
+                    "text": "case-compile@3.9.17",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "796acc93589d8ad028885024233deb09c2ceb12249c426f2ead2ab7bf7d0ebd9",
+                    "text": "b5dd36c01fd1d6b5586e4add67b05fa9e8dae6a001f00114a45f4fcf8ecfd6e7",
                     "formula": false,
                     "style": null
                   }
@@ -1056,7 +1061,7 @@
                   {
                     "reference": "D4",
                     "type": "inlineStr",
-                    "text": "合成用例",
+                    "text": "合成文档>合成分组>合成用例",
                     "formula": false,
                     "style": null
                   },
@@ -1261,7 +1266,7 @@
           }
         ]
       },
-      "sha256": "a032df5b9e9c5138313b192db0c5e6e1b7eeb7f8c05858b381d759529e786c6c"
+      "sha256": "f98c5fdc6f9221da5b9b46c93c8b43275f8917a03409fe44c970b78295f191aa"
     }
   },
   "expect": [

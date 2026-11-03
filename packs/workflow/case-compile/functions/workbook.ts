@@ -14,7 +14,7 @@ import { parseManifest } from './manifest.ts';
 import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
-import { generateWorkbookSet, caseRecipe, recipeDigest, type GenerationInput, type GenerationFields } from './generate.ts';
+import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
 import { isRecord, markers, type Outcome } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }
@@ -117,7 +117,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   for (const [k, recipe] of set.entries()) { const plan = plans[k];
   for (const [i, step] of plan.steps.entries()) {
     const actual = executionByRow.get(row); const cells = grid(row);
-    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (recipe.fields.title)||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
+    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (i === 0 ? pathCell(recipe.fields.path) : recipe.fields.title)||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
     row++;
     const allowed = allowedCall(profile, step.object, step.method);
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {
@@ -135,7 +135,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
 }
 function generationFields(value: unknown): GenerationFields | null {
   if (!isRecord(value) || typeof value.autoid !== 'string' || typeof value.title !== 'string' || !Array.isArray(value.steps) || value.steps.some((v) => !isRecord(v) || typeof v.text !== 'string') || value.priority !== null && typeof value.priority !== 'string') return null;
-  return { autoid: value.autoid, title: value.title, priority: value.priority, steps: value.steps as Array<{ text: string }> };
+  return { autoid: value.autoid, title: value.title, ...(Array.isArray(value.path) ? { path: value.path as string[] } : {}), priority: value.priority, steps: value.steps as Array<{ text: string }> };
 }
 export default function check(input: unknown): Outcome[] {
   const s = isRecord(input) && isRecord(input.subject) ? input.subject : {};

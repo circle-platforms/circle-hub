@@ -11,9 +11,9 @@ import { AUTOID } from './test-support.ts';
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
 
 const SECOND = '990000000000000032';
-function twoCases(): GenerationInput[] { const first = generationFixture(), second = generationFixture(); second.fields = { ...second.fields, autoid: SECOND, title: '合成用例二' }; return [first, second]; }
+function twoCases(): GenerationInput[] { const first = generationFixture(), second = generationFixture(); second.fields = { ...second.fields, autoid: SECOND, title: '合成用例二', path: ['合成文档', '合成用例二'] }; return [first, second]; }
 const itemOf = (k: number) => 'doc-1:c-' + (k + 1);
-function planSet(inputs: GenerationInput[]) { return inputs.map((input, k) => ({ item: itemOf(k), fields: { autoid: input.fields.autoid, title: input.fields.title, priority: input.fields.priority, steps: input.fields.steps }, plan: input.slots, command_catalog: input.fields.command_catalog, command_identities: input.fields.command_identities })); }
+function planSet(inputs: GenerationInput[]) { return inputs.map((input, k) => ({ item: itemOf(k), fields: { autoid: input.fields.autoid, title: input.fields.title, path: input.fields.path, priority: input.fields.priority, steps: input.fields.steps }, plan: input.slots, command_catalog: input.fields.command_catalog, command_identities: input.fields.command_identities })); }
 function itemInput(inputs: GenerationInput[], bytes: Uint8Array, k: number, data: unknown = inputs[k].slots) {
   const base = workbookCheckInput(bytes);
   return { subject: { ...base.subject, item: itemOf(k), data, fields: inputs[k].fields, plan_set: planSet(inputs) } };
@@ -90,11 +90,28 @@ const errorCode = (input: unknown) => { const out = projectItems(input) as { err
 test('without autoid the run takes every textual-autoid case of the document in order; duplicates refuse', () => {
   const out = projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string; fields: Record<string, unknown> }> };
   assert.deepEqual(out.items.map((item) => item.fields.autoid), [AUTOID, SECOND]);
-  assert.deepEqual(out.items.map((item) => item.id), ['case-1:case-1', 'case-1:case-2'], 'a node id that names one node keeps <document>:<node id>');
+  assert.deepEqual(out.items.map((item) => item.id), ['doc:case-1', 'doc:case-2'], 'a node id that names one node keeps <document>:<node id>; the document is the root node (3.9.17)');
   assert.equal(errorCode(startInput(twoCaseModel(AUTOID))), 'case-compile.autoid_ambiguous');
   const one = projectItems(startInput(twoCaseModel(), { autoid: SECOND })) as { items: Array<{ fields: Record<string, unknown> }> };
   assert.deepEqual(one.items.map((item) => item.fields.autoid), [SECOND]);
   assert.equal(errorCode(startInput(twoCaseModel(), { pipeline: 'recomposed' })), 'case-compile.invalid_parameter');
+});
+
+test('each case carries its mind-map path from the root, and the workbook shows it as AAA>BBB>CCC on the autoid row only', () => {
+  // Issue #144: one group level between the root and the second case.
+  const model = twoCaseModel(); model.nodes[0].children = [1, 7]; model.nodes.push({ text: '合成分组', data: { id: 'group' }, children: [4] });
+  const out = projectItems(startInput(model)) as { items: Array<{ fields: Record<string, unknown> }> };
+  assert.deepEqual(out.items.map((item) => item.fields.path), [['合成文档', '合成标题一'], ['合成文档', '合成分组', '合成标题二']]);
+  const inputs = twoCases(); inputs[1].fields = { ...inputs[1].fields, path: ['合成文档', '合成分组', '合成用例二'] };
+  const bytes = generateWorkbookSet(inputs); const sheet = coreModel(bytes).sheets[0];
+  const d = (row: number) => sheet.rows.find((r) => r.number === row)?.cells.find((c) => c.reference === `D${row}`)?.text;
+  assert.equal(d(4), '合成文档>合成分组>合成用例'); assert.equal(d(9), '合成文档>合成分组>合成用例二');
+  assert.equal(d(6), '合成用例'); assert.equal(d(11), '合成用例二');
+  assert.ok(readWorkbook(coreModel(bytes), inputs).ok);
+  // The reader and the recipe both bind the path: another path reads back as a step mismatch and a recipe mismatch.
+  const other = structuredClone(inputs); other[1].fields.path = ['合成文档', '合成用例二'];
+  const read = readWorkbook(coreModel(bytes), other); assert.ok(!read.ok);
+  if (!read.ok) assert.deepEqual([...new Set(read.problems.map((v) => v.rule))].sort(), ['recipe', 'step']);
 });
 
 test('a workbook of several cases needs the plan run accepted result, and its plans are frozen in item order', () => {
@@ -145,7 +162,7 @@ test('a pasted case that kept the node id of its source is its own item with its
   // The first copy declared not automatable: the only item is the second case, under its own autoid, title and node.
   assert.deepEqual(project(startInput(pasted('NO'))).items.map((item) => [item.fields.autoid, item.fields.title, item.location.selector]), [[SECOND, '合成用例二', 'i/1']]);
   // A node id that names one node keeps the item id <document>:<node id>.
-  assert.deepEqual(project(startInput(parsed([caseOne]))).items.map((item) => item.id), ['case-a:case-a']);
+  assert.deepEqual(project(startInput(parsed([caseOne]))).items.map((item) => item.id), ['synthetic-map:case-a']);
 });
 
 test('a whole run refuses autoids of another shape, naming the cases and their autoids, and counts the cases without one', () => {
@@ -198,4 +215,26 @@ test('more cases than one dispatch takes are refused at the start with the cap a
   assert.match(over!.fix, /拆成几份/); assert.match(over!.fix, /parameters\.autoid/);
   const full = project(startInput(cases(DISPATCH.max_items)));
   assert.equal(full.error, undefined, JSON.stringify(full.error)); assert.equal(full.items.length, DISPATCH.max_items);
+});
+
+// 3.9.17: a mind map without an agile document id is named by its root node; a tree without node ids by the digest of its
+// texts and shape. Runs started before keep their recorded item ids.
+import { rootDocumentId } from './cases.ts';
+const outline = (leaf = '期望成功') => { const bytes = new TextEncoder().encode(JSON.stringify({ root: { data: { text: '合成文档' }, children: [{ data: { text: '合成分组' }, children: [{ data: { text: '合成标题一', resource: ['功能'], autoid: AUTOID }, children: [{ data: { text: '执行 widget health interval 60' }, children: [{ data: { text: leaf } }] }] }] }] } }));
+  const read = recognize(createTestParserRegistry(), bytes, 'application/json'); assert.ok(read); return read.document.model; };
+test('an uploaded mind map is named by its root node id, not by its first case', () => {
+  assert.equal(rootDocumentId(twoCaseModel()), 'doc');
+  const out = projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string }> };
+  assert.ok(out.items.every((item) => item.id.startsWith('doc:')), JSON.stringify(out.items.map((item) => item.id)));
+  const agile = startInput(twoCaseModel()); (agile.inputs[0] as { external?: string }).external = 'agile:mindmap:90001@2026-11-01';
+  const external = projectItems(agile) as { items: Array<{ id: string }> };
+  assert.deepEqual(external.items.map((item) => item.id), ['90001:case-1', '90001:case-2'], 'an agile document id still wins');
+});
+test('a tree without node ids is named by a digest of its whole tree: the same on every run, another when the content changes', () => {
+  const first = rootDocumentId(outline()), again = rootDocumentId(outline()), changed = rootDocumentId(outline('期望失败'));
+  assert.match(first, /^tree-[a-f0-9]{64}$/); assert.equal(first, again); assert.notEqual(first, changed);
+  const moved = outline(); (moved as any).nodes[1].text = '另一分组'; assert.notEqual(rootDocumentId(moved), first, 'a group text is part of the tree');
+  const out = projectItems(startInput(outline())) as { items: Array<{ id: string }> };
+  assert.equal(out.items.length, 1); assert.ok(out.items[0].id.startsWith(first + ':'), out.items[0].id);
+  assert.equal((projectItems(startInput(outline())) as { items: Array<{ id: string }> }).items[0].id, out.items[0].id, 'two starts give the same item id');
 });
