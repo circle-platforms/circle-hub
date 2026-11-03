@@ -100,7 +100,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     // The administrator publishes the inventory as a named document.
     await bed.hub.hub.docs.put(bed.hub.admin.principal, 'bed-topology', new TextEncoder().encode(JSON.stringify(INVENTORY)), { fileName: 'bed-topology.json' });
     await bed.hub.hub.docs.put(bed.hub.admin.principal, 'bed-topology-dup', new TextEncoder().encode(JSON.stringify(DUPLICATE)), { fileName: 'bed-topology-dup.json' });
-    const user = await bed.user('台架用户', ['test-bed']);
+    const user = await bed.user('自动化测试环境用户', ['test-bed']);
     client = await bed.connect(user, 'sess-s25');
   });
 
@@ -140,7 +140,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const shortRun = (short.out as { run?: { run?: string } }).run?.run;
     assert.ok(shortRun);
     const shortClaims = await claimsOf(bed, shortRun);
-    assert.ok(shortClaims.some((c) => c.statement.text.includes('bed-b') && c.statement.text.includes('需要 2 台负载均衡，台架里有 1 台')), 'bed-b says what it lacks');
+    assert.ok(shortClaims.some((c) => c.statement.text.includes('bed-b') && c.statement.text.includes('需要 2 台负载均衡，自动化测试环境里有 1 台')), 'bed-b says what it lacks');
   });
 
   test('acquire: the lease is granted and frozen; the second user on the same device is refused with the earliest free moment', async () => {
@@ -160,7 +160,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const view = await bed.hub.leases.view('bed/');
     assert.ok(view.entries.some((e) => e.key === 'bed/bed-a/afamx0' && e.until === until), 'the lease table holds the rows');
 
-    const other = await bed.user('台架用户乙', ['test-bed']);
+    const other = await bed.user('自动化测试环境用户乙', ['test-bed']);
     const otherClient = await bed.connect(other, 'sess-s25-b');
     const refused = await otherClient.call('start_run', {
       pack: 'test-bed',
@@ -185,7 +185,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.equal(row.leases![0]!.until,null);
     for(const parameters of [{action:'extend',booking},{action:'acquire',hours:2}]){
       const legacy=await client.call('start_run',{pack:'test-bed',inputs,predecessor:booking,parameters});
-      assert.equal(legacy.isError,true);assert.match(JSON.stringify(legacy.out),/台架预订不限时长，用完由运行释放/);
+      assert.equal(legacy.isError,true);assert.match(JSON.stringify(legacy.out),/自动化测试环境预订不限时长，用完由运行释放/);
     }
     const unlinked=await client.call('start_run',{pack:'test-bed',inputs,parameters:{action:'release',booking}});
     assert.equal(unlinked.isError,true);assert.match(JSON.stringify(unlinked.out),/你没有持有这个预订/);
@@ -197,7 +197,24 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.equal(rebooked.isError,false,rebooked.text);
   });
 
-  test('search with a build requirement: the declared installs answer 声明，未核对, an alias is the same build, no record stays unknown', async () => {
+  test('search with a build requirement: the newest device observations answer with their moment, never observed stays unknown', async () => {
+    // What the devices showed (decision 112): an executor bound to this inventory has version seats at bed-a/afamx0 and
+    // bed-b/afamx1, and the dispatch service holds one observation of each; the manifest's own install entries are ignored.
+    const { ExecutorDefinition } = await import('../../hub/dispatch/api.ts');
+    const { definition } = await import('../../hub/dispatch/testing/definition.ts');
+    const { probes } = await import('../../hub/dispatch/testing/probes.ts');
+    const dispatch = bed.hub.hub.dispatch!;
+    const sha = (await bed.hub.hub.docs.show('bed-topology'))!.sha256;
+    const seats = [
+      { ...probes.seats[0]!, seat: 'afamx0', manifest: { ...probes.seats[0]!.manifest, device: '/beds/0/devices/0' } },
+      { ...probes.seats[1]!, seat: 'afamx1', manifest: { ...probes.seats[1]!.manifest, device: '/beds/1/devices/0' } },
+    ];
+    const raw = definition('http://127.0.0.1:1/mcp');
+    const d = ExecutorDefinition.parse({ ...raw, probes: { ...probes, seats }, allowed_tools: [...raw.allowed_tools, 'inspect_seat'], manifest_sha256: sha });
+    const executor = await addSyntheticExecutor(bed.hub.records, dispatch.registry, bed.hub.admin.principal, d, 'synthetic-observe-key');
+    for (const [device, label] of [['/beds/0/devices/0', 'bed-a/afamx0'], ['/beds/1/devices/0', 'bed-b/afamx1']] as const) {
+      await dispatch.recordObservation({ inventory: sha, device, label, values: ['Rel_FAMX_10_6_1_8'], reference: `src:${'b'.repeat(64)}`, run: 'run_00000000000000000000000000', job: null, executor: executor.id, product: null });
+    }
     const started = await client.call('start_run', {
       pack: 'test-bed',
       inputs: { inventory: { external: 'doc:doc:bed-topology' } },
@@ -208,10 +225,10 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.ok(run);
     const claims = await claimsOf(bed, run);
     const statements = claims.map((c) => c.statement.text);
-    assert.ok(statements.some((text) => text.includes('bed-a') && text.includes('构建一致（Rel_FAMX_10_6_1_8，声明，未核对）')), JSON.stringify(statements).slice(0, 500));
-    assert.ok(statements.some((text) => text.includes('bed-b') && text.includes('构建一致（Rel_FAMX_10_6_1_8，声明，未核对）')), 'bed-b’s FAMY name maps to its base FAMX build');
+    assert.ok(statements.some((text) => text.includes('bed-a') && /构建一致（Rel_FAMX_10_6_1_8，观察于 \d{4}-\d\d-\d\dT/.test(text)), JSON.stringify(statements).slice(0, 500));
+    assert.ok(statements.some((text) => text.includes('bed-b') && /构建一致（Rel_FAMX_10_6_1_8，观察于 /.test(text)));
 
-    // A need the deciding device has no record for: unknown, never a mismatch.
+    // A need the deciding device was never observed for: unknown, never a mismatch.
     const noRecord = await client.call('start_run', {
       pack: 'test-bed',
       inputs: { inventory: { external: 'doc:doc:bed-topology' } },
@@ -221,10 +238,10 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const noRecordRun = (noRecord.out as { run?: { run?: string } }).run?.run;
     assert.ok(noRecordRun);
     const noRecordClaims = await claimsOf(bed, noRecordRun);
-    assert.ok(noRecordClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('没有记录（未知）')), 'client0 has no declared install: unknown');
-    assert.ok(!noRecordClaims.some((c) => c.statement.text.includes('构建不一致')), 'no record is never a mismatch');
+    assert.ok(noRecordClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('没有观察记录（未知')), 'client0 was never observed: unknown');
+    assert.ok(!noRecordClaims.some((c) => c.statement.text.includes('构建不一致')), 'no observation is never a mismatch');
 
-    // A mismatch names the upgrade, still declared and unchecked.
+    // A mismatch says what the device showed and when, and what was wanted; never an upgrade.
     const mismatch = await client.call('start_run', {
       pack: 'test-bed',
       inputs: { inventory: { external: 'doc:doc:bed-topology' } },
@@ -234,7 +251,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const mismatchRun = (mismatch.out as { run?: { run?: string } }).run?.run;
     assert.ok(mismatchRun);
     const mismatchClaims = await claimsOf(bed, mismatchRun);
-    assert.ok(mismatchClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('需要升级到 Rel_FAMX_10_6_1_9，声明，未核对')), JSON.stringify(mismatchClaims.map((c) => c.statement.text)).slice(0, 500));
+    assert.ok(mismatchClaims.some((c) => c.statement.text.includes('bed-a') && /构建不一致（装的是 Rel_FAMX_10_6_1_8，要的是 Rel_FAMX_10_6_1_9，观察于 /.test(c.statement.text) && !c.statement.text.includes('升级到')), JSON.stringify(mismatchClaims.map((c) => c.statement.text)).slice(0, 500));
   });
 
   test('facts: the listener of bed-a and the blind address of bed-b, computed from the frozen manifest', async () => {
@@ -265,7 +282,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     });
     assert.equal(dup.isError, true, 'the invalid inventory refuses the call');
     const text = JSON.stringify(dup.out);
-    assert.match(text, /test-bed.manifest_invalid|台架清单/);
+    assert.match(text, /test-bed.manifest_invalid|自动化测试环境清单/);
     assert.match(text, /\/beds\/0\/devices\/1\/ipv4\/0/, 'the pointer of the duplicate address is named');
     const outsider = await bed.user('没分配的人', []);
     const outsideClient = await bed.connect(outsider, 'sess-s25-c');
