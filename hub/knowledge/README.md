@@ -1268,6 +1268,17 @@ Knowledge sharing previews likewise return a target directory only after its cre
 refusals. Memory credential refusals identify generated field labels and line numbers, never matched text; grant and share
 previews preserve that safe location information. Neither preview creates a document, team root or refusal audit.
 
+Memory metadata lists and directory share preflight own a read scope, or join the enclosing console scope. Heads and
+usage are reused per space only within that scope; version and original-content reads coalesce through the verified
+record store, after each path's existing permission test. Principals and grant pages are request-scoped too. Transaction
+arguments bypass memoization and writes through the scoped store clear it, as for knowledge entries; raw writers must
+finish their outer read scope first (records README). No authorization result is cached across requests.
+Preflight collects per-head read results before scanning in original head order, preserving its first failure. A missing
+batch result falls back to the scalar record reader so an active missing payload still raises an integrity incident;
+a completed purge remains unavailable, and team copies are unaffected. Versions retain document/space and body-pointer
+checks, disabled recipient visibility and session limits. SQL regressions cover 25 to 100 documents per owner, ordinary
+grantees and administrator recipients, including revisions that refer to original text.
+
 Memory revocation accepts an existing disabled recipient, so re-enabling the account cannot revive a revoked grant.
 Disabled personal documents remain visible to their owner, but not to recipients, including all-administrator grantees;
 team administrators retain management access to disabled team documents.
