@@ -6,7 +6,7 @@ import {MemoryShareBody} from '../../../contracts/src/memory.ts';
 import {Sha256} from '../../../contracts/src/common.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {newId,AccessError} from '../../records/api.ts';
-import {html,link,page,pageLayout,pre,table,type Html} from './html.ts';
+import {html,link,page,pageLayout,pre,table,emptyAction,type Html} from './html.ts';
 import {button} from './ui.ts';
 import {evidence,panel as card,field as inputField,actionLink,dialog} from './presentation.ts';
 import {memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
@@ -69,7 +69,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
    grant=await grantDialog(ctx,{id:'memory-grants',trigger:false,current:audience.text,content:directoryName(path)+' · 只读，含全部子文件夹',checks:await memory.precheckGrant(ctx.principal,path),grants:(await memory.grants(ctx.principal)).filter(g=>containsDirectory(g.path,path)),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,disabled)});
   }
   const selectedSync=syncSelected(ctx)&&(scope==='personal'||scope==='all'),syncPanel=scope==='personal'||scope==='all'?await personalSyncNotice(ctx):html``;
-  content=pageLayout(html`${tabs}${result}${selectedSync?'':syncPanel}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${capacitySize(usage.active)} / ${capacitySize(usage.limits.spaceBytes)} · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${capacitySize(usage.limits.documentBytes)}</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,'没有可读的记忆'))}`,{...(selectedSync?{inspector:syncPanel,detail:true,back:link(location({scope}),'返回记忆')}:{}),actions:html`${scope==='personal'&&!local?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
+  content=pageLayout(html`${tabs}${result}${selectedSync?'':syncPanel}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${capacitySize(usage.active)} / ${capacitySize(usage.limits.spaceBytes)} · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${capacitySize(usage.limits.documentBytes)}</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,{title:'还没有记忆',text:'客户端会话写入的记忆和在这里新建的记忆列在这里；启用的记忆可用于新会话。',...(canWrite?{action:emptyAction(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'))}:{})}))}`,{...(selectedSync?{inspector:syncPanel,detail:true,back:link(location({scope}),'返回记忆')}:{}),actions:html`${scope==='personal'&&!local?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
  }
  return {status:200,body:page(ctx.chrome(memoryLabel(),{active:'knowledge',hint:'记忆只用于客户端会话；知识与记忆的分享设置分别管理'}),await spaceLayout(ctx,content))};
 }

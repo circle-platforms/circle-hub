@@ -1,8 +1,11 @@
 // Rendered-interface checks only: original evidence, protocol bytes and user-authored content are deliberately immutable.
 import {parse,type DefaultTreeAdapterTypes as Tree} from 'parse5';
+// The console is the Hub's own interface: a connected program is named by what it reported, or 客户端, never Circle by
+// default (docs/design/circle-design-system/README.md, 知识与同步的说法). Recorded names stay in data-evidence.
+const CLIENT_AS_CIRCLE=/\bCircle(?!-hub|\s+CJK)/g;
 export function wordingProblems(markup:string):string[]{
  const errors=new Set<string>(),old=/共享给我的|个人|出处|依据|可见范围|授权|提交共享|添加条目|已核验|未核验|历史|修订引文|目录|种类|继承自上级/g;
- const check=(text:string,where:string)=>{text=text.replace(/\s+/g,' ').trim();if(!text)return;for(const found of text.matchAll(old))errors.add(where+': old wording '+found[0]);if(/(?:^|[，。；：\s])(?:你|他)(?:们)?(?:的|已|可|需|要|正在|把|将|来|正|会|能|应|处理)|等待你|交给你|请你/.test(text))errors.add(where+': personal subject');if(/[\p{Script=Han}][A-Za-z0-9]|[A-Za-z0-9][\p{Script=Han}]/u.test(text))errors.add(where+': missing Chinese/Latin spacing: '+text);};
+ const check=(text:string,where:string)=>{text=text.replace(/\s+/g,' ').trim();if(!text)return;for(const found of text.matchAll(old))errors.add(where+': old wording '+found[0]);if(/(?:^|[，。；：\s])(?:你|他)(?:们)?(?:的|已|可|需|要|正在|把|将|来|正|会|能|应|处理)|等待你|交给你|请你/.test(text))errors.add(where+': personal subject');for(const found of text.matchAll(CLIENT_AS_CIRCLE))errors.add(where+': Circle as the client name: '+found[0]);if(/[\p{Script=Han}][A-Za-z0-9]|[A-Za-z0-9][\p{Script=Han}]/u.test(text))errors.add(where+': missing Chinese/Latin spacing: '+text);};
  const attrs=(node:Tree.Node)=>'attrs'in node?Object.fromEntries(node.attrs.map(attr=>[attr.name,attr.value])):{};
  const raw=(node:Tree.Node)=>'value'in node?node.value:'';
  const flow=(node:Tree.Node):string=>{const a=attrs(node);if(a['data-evidence']!==undefined||a['role']==='tooltip'||['pre','code','textarea','select','input','script','style'].includes(node.nodeName))return '';return node.nodeName==='#text'?raw(node):'childNodes'in node?node.childNodes.map(flow).join(''):'';};

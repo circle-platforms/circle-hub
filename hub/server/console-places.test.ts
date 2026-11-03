@@ -138,7 +138,7 @@ describe('the eight places', () => {
     assert.ok(!records.body.includes(otherRun), 'another member\'s calls are not listed');
     assert.ok(!records.body.includes('管理员备注'));
     const settings = await get('/console/settings', session);
-    assert.ok(settings.body.includes('我的 Circle'));
+    assert.ok(settings.body.includes('我的客户端'));
     assert.ok(!settings.body.includes('circle-hub user disable'), 'no command for an administrator\'s operation');
     const overview = await get('/console/overview', session);
     assert.ok(!overview.body.includes('添加成员'), 'no management entry for a member');
@@ -254,7 +254,7 @@ describe('operations and commands', () => {
     const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
     assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
     assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
-    assert.match(workflow,/title="规定做法与验收要求；由 Circle 执行，Hub 按验收要求判定结果"/);
+    assert.match(workflow,/title="规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果"/);
     assert.match(skills,/title="只规定做法，没有验收要求"/);
     assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
     const detail=await get('/console/packs/review',admin);
@@ -264,7 +264,7 @@ describe('operations and commands', () => {
     assert.ok(!mine.body.includes(skill.title));
   });
 
-  test('Circle tables show registered device names or direct-token labels without token identifiers', async () => {
+  test('client tables show registered client names or direct-token labels without token identifiers', async () => {
     const user=await member();
     const client=await server.records.principals.registerClient('合成 MacBook Circle',['http://127.0.0.1/callback']);
     const oauth=await server.records.principals.issueToken(server.admin.principal,user.user.id,'不应替代客户端名称',client.id);
@@ -273,7 +273,7 @@ describe('operations and commands', () => {
     for(const path of ['/console/team',`/console/team/${user.user.id}`,'/console/connections']) {
       const reply=await get(path,admin);
       const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
-      assert.match(tables,/设备名/);
+      assert.match(tables,/<th scope="col">客户端<\/th>[\s\S]*<th scope="col">连接方式<\/th>/);
       assert.match(tables,/合成 MacBook Circle/);
       assert.match(tables,/合成 Linux Circle/);
       const visible=tables.replace(/<[^>]*>/g,'');
@@ -297,7 +297,7 @@ describe('operations and commands', () => {
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
     const detail=await get(`/console/team/${user.user.id}?workflow=review`,admin);
-    assert.match(detail.body,/成员详情|权限|工作流分配|已连接的 Circle/);
+    assert.match(detail.body,/成员详情|权限|工作流分配|已连接的客户端/);
     assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
     assert.equal((await get(`/console/team/${other.user.id}`,session)).status,404);
     assert.equal((await get('/console/team/absent',admin)).status,404);
@@ -317,7 +317,7 @@ describe('operations and commands', () => {
     const admin = await signIn(server.admin.token);
     const settings = await get('/console/team/'+user.user.id, admin);
     const [token] = await server.records.principals.tokens(user.user.id);
-    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token issue ${user.user.id} --label=Circle`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
+    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token issue ${user.user.id} '--label=客户端'`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
     assert.match(settings.body, /<div class="ch-dialog" id="cmd-user-disable-[^"]+" role="dialog"/);
     assert.match(settings.body, /href="#cmd-user-disable-[^"]+"/, 'the button opens its dialog by fragment');
     assert.doesNotMatch(settings.body, /action="\/console\/admin\/do\/(?:user-disable|token-revoke|token-issue)/, 'these management actions remain command dialogs');

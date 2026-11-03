@@ -41,6 +41,8 @@ export interface PageContext {
   csrf?: string;
   /** The personal epoch read when rendering a write form. */
   personalEpoch?: string;
+  /** What a knowledge action did, set by the action itself when only it knows (for example how many shares were merged). */
+  feedback?: string;
   /** The request came over HTTPS (the built-in listener or the configured proxy). */
   secure?: boolean;
   /** The origin the browser reached (scheme and the Host the app accepted), for the Circle entry of this Hub. */
@@ -138,11 +140,11 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
   const empty = tasks.length === 0 && !filtering;
   const list = empty
-    ? card({ title: '尚无任务' }, html`<p class="ch-meta">Circle 启动任务后在此列出。</p>`)
+    ? card({ title: '尚无任务' }, html`<p class="ch-meta">客户端启动任务后在此列出。</p>`)
     : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '工作流版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务',undefined,{hrefs:shown.map(task=>'/console/runs/'+task.run.run)})}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: '客户端提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
 ${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, listing.overdue_requests, true))}`,{inspector:html`<h2 class="ch-panel-title">任务</h2>${stat('本页任务',tasks.length)}${stat('筛选后',shown.length)}${card({title:'任务结果'},html`<ul class="ch-feed">${[...counts].map(([result,count])=>html`<li>${uiLabelOf('task_result',result)}<span class="num">${count}</span></li>`)}</ul>`)}`})),
   };
 }

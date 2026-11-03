@@ -165,7 +165,7 @@ test('entry inspectors keep counts with labels and one ordered action row; openi
  assert.equal(reply.status,200,reply.body);
  assert.match(reply.body,/<h2 class="ch-section-label"[^>]*>来源 · 1<\/h2>/);
  const foot=/<footer class="ch-inspector-actions">([\s\S]*?)<\/footer>/.exec(reply.body)?.[1]??'';
- assert.match(foot,/ch-btn--ghost[^>]*>版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到团队…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
+ assert.match(foot,/ch-btn--ghost[^>]*>知识版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到团队…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
  assert.doesNotMatch(foot,/<details|<summary|<form/);
  assert.match(reply.body,/<div class="ch-dialog" id="withdraw-entry"[\s\S]*action="\/console\/knowledge\/do\/withdraw"/);
  const confirmation=await browser.get(path+'#withdraw-entry');assert.equal(confirmation.status,200);

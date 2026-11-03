@@ -1,3 +1,4 @@
+import {UNREPORTED_CLIENT} from './client-provenance.ts';
 import {technicalCode} from './presentation.ts';
 // The console's management (owner decision 75): administrators manage users and tokens, task packs, resources, secrets and
 // knowledge sync from the browser. Every action is a form POST (this server's own origin, the session's CSRF token, an
@@ -191,7 +192,7 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
       if (connect !== 'invitation' && connect !== 'token') throw new FormError('连接方式不对');
       return [
         { argv: ['user', 'create', name, flag('role', role)] },
-        connect === 'token' ? { argv: ['token', 'issue', name, flag('label', form.get('label') || 'Circle')] } : { argv: ['user', 'invite', name] },
+        connect === 'token' ? { argv: ['token', 'issue', name, flag('label', form.get('label') || UNREPORTED_CLIENT)] } : { argv: ['user', 'invite', name] },
       ];
     },
   },
@@ -325,11 +326,11 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
   const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
-      ? card({ title: '写入成员的 Circle',hint:'在成员的 Circle 中用 /secrets CIRCLE_HUB_TOKEN 保存令牌，再把配置写入 settings.json。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx))}</pre>${connected}`)
-      : card({ title: '成员的 Circle 如何连接',hint:'把配置写入成员 Circle 的 settings.json。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
+      ? card({ title: '写入成员的客户端',hint:'把令牌保存为成员客户端的密钥 CIRCLE_HUB_TOKEN，再按下面 mcp_servers 格式的条目填写 MCP 地址。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx))}</pre>${connected}`)
+      : card({ title: '成员的客户端如何连接',hint:'按下面 mcp_servers 格式的条目在成员的客户端中填写 MCP 地址。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
-    body: page({...actionChrome(ctx, action),...(last.code===0?{notice:'操作已完成'}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
+    body: page({...actionChrome(ctx, action),...(last.code===0?{notice:doneNotice(action.title)}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
   };
 }
 
@@ -370,7 +371,12 @@ export interface ManageDeps {
   log: (line: string) => void;
 }
 
-const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在 Hub 所在主机的 Circle 中执行对应的命令';
+/** The success line of a management action that exited 0: its title, which always starts with the verb, as done. */
+function doneNotice(title: string): string {
+  return title === '知识同步' ? '已完成知识同步' : '已' + title;
+}
+
+const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在 Hub 所在主机上执行对应的命令';
 
 /** A run's output with the private directories written as <文件夹>: no page shows where the server keeps an upload. */
 function withoutPaths(run: CommandRun, ...paths: string[]): CommandRun {

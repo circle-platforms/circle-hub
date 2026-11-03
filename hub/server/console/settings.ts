@@ -13,7 +13,8 @@ import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
 import type { TokenInfo, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { commands } from './commands.ts';
-import { circleName } from './circles.ts';
+import { connectedClients, clientLabel } from './circles.ts';
+import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { button, card, chip, commandLink, commandModal, duration, kv, sectionHead, seg, when, type CommandDialog } from './ui.ts';
@@ -70,7 +71,7 @@ const shortPrint = (fingerprint: string): string => {
 /** Steps to trust this Hub's certificate authority in a browser, per operating system of the reader's computer. */
 export function trustSteps(): Html {
   return html`<details><summary>浏览器信任步骤（macOS / Linux / Windows）</summary>
-<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到本机，按系统导入，并在 Circle 的 trust_cert_files 中填写路径。')}</p>
+<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到本机，按系统导入，并在客户端的信任证书设置中填写路径。')}</p>
 <ol class="ch-meta">
 <li><b>macOS</b>：双击证书加入“钥匙串访问”的“系统”钥匙串，打开证书，在“信任”中将“使用此证书时”设为“始终信任”。</li>
 <li><b>Linux</b>：复制到 ${code('/usr/local/share/ca-certificates/circle-hub.crt')}，执行 ${code('sudo update-ca-certificates')}；Firefox 在“设置 → 隐私与安全 → 证书”中导入。</li>
@@ -216,18 +217,18 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   const origin = originOf(ctx);
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
   dialogs.push(...stopping);
-  const body = html`${sectionHead('凭据', undefined, undefined, 'secrets', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 Circle 中执行')}
+  const body = html`${sectionHead('凭据', undefined, undefined, 'secrets', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 Hub 所在主机上执行')}
 ${card(null, secretBody)}
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
 ${await hubState(ctx)}
-${sectionHead('需停机或在主机上执行的操作', undefined, undefined, undefined, '控制台不执行这些操作；在 Hub 所在主机上的管理员 Circle 中执行')}
+${sectionHead('需停机或在主机上执行的操作', undefined, undefined, undefined, '控制台不执行这些操作；在 Hub 所在主机上执行')}
 ${card({title:'主机操作',hint:'部署与回滚在 Hub 主机上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}`;
   return {
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
-      hint: '凭据与 Hub 状态；需人工处理的事项在对应的 Circle 中完成',
+      hint: '凭据与 Hub 状态；需人工处理的事项在 Hub 所在主机上完成',
 
     }),pageLayout(html`${seg([['secrets','凭据'],['hub','Hub 状态']],'设置分区')}${body}`,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.consumers.join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:html`<h2 class="ch-panel-title">设置</h2>${stat('凭据项',secrets.rows?.length??'—')}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用'],['已运行',ctx.hub?duration(Date.now()-ctx.hub.startedAt.getTime()):'—']])}`})),
   };
@@ -235,14 +236,15 @@ ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSe
 
 async function memberSettings(ctx: PageContext): Promise<PageResult> {
   const tokens = await ctx.deps.records.principals.tokens(ctx.principal.id);
-  const rows = await Promise.all(tokens.filter(token => token.revoked_at === null).map(async token => [await circleName(ctx.deps.records.principals, token),ctx.principal.name,when(token.last_used_at),'由管理员断开']));
+  const clients = await connectedClients(ctx.deps.records, tokens.filter(token => token.revoked_at === null).map(token => ({ token, owner: ctx.principal.name })));
+  const rows = clients.map(client => [...clientRow(client, clientLabel(client)), '由管理员断开']);
   const body = html`<section class="ch-section" data-columns="2" id="mine">
-${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的 Circle', undefined, undefined, undefined, '每台设备上的 Circle 独立连接；断开由管理员在 Circle 中执行')}${table(['设备名','成员','最近使用时间','操作'], rows, '尚无已连接的 Circle')}`))}
-${card({ title: '连接新的 Circle', meta: 'MCP 标准连接确认',hint:'把配置写入新设备的 Circle，浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>`)}
+${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的客户端', undefined, undefined, undefined, '每台设备上的客户端独立连接；名称和版本照客户端报的写；断开由管理员执行')}${table([...CLIENT_COLUMNS,'操作'], rows, { title: '尚无已连接的客户端', text: '按“连接新的客户端”的配置连接后，客户端列在这里。' })}`))}
+${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>`)}
 </section>
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
 ${await hubState(ctx)}`;
-  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的 Circle 与 Hub 状态',  }),pageLayout(html`${seg([['mine','我的 Circle'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:html`<h2 class="ch-panel-title">我的 Circle</h2>${stat('已连接',rows.length)}${card({title:'最近使用'},html`<p>${when(lastUse(active(tokens)))}</p>`)}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用']])}`})) };
+  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(html`${seg([['mine','我的客户端'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:html`<h2 class="ch-panel-title">我的客户端</h2>${stat('已连接',rows.length)}${card({title:'最近使用'},html`<p>${when(lastUse(active(tokens)))}</p>`)}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用']])}`})) };
 }
 
 /** The old management pages of decision 75 land here; a member gets the neutral page as before. */

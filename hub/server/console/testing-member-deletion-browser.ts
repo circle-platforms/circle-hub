@@ -93,7 +93,7 @@ try {
           assert.match(await evaluate("document.querySelector('#delete-member-confirm pre').textContent"),/--expected-state=/);
           assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源署名','归档的原文','私人工作流与技能']);
           assert.equal(await evaluate("[...document.querySelectorAll('[data-deletion-scope] dt')].every(node=>node.getBoundingClientRect().height<28)"),true,'category names must remain readable on one line');
-          assert.ok(await evaluate("document.querySelector('#delete-member-confirm').innerText.includes('在 Hub 所在主机上的 Circle 中执行下列命令完成删除；内容变化后须重新检查。')"));
+          assert.ok(await evaluate("document.querySelector('#delete-member-confirm').innerText.includes('在 Hub 所在主机上执行下列命令完成删除；内容变化后须重新检查。')"));
         }
         if(name==='deletion-pending'||name==='deletion-complete'){
           const head=await evaluate("(()=>{const root=document.querySelector('[data-inspector-content]'),tag=root.querySelector('.ch-tag'),badge=tag.parentElement.querySelector('.ch-badge');return {tagWidth:tag.getBoundingClientRect().width,rowWidth:tag.parentElement.getBoundingClientRect().width,sameRow:badge?.parentElement===tag.parentElement,status:badge?.textContent,name:root.querySelector('h2')?.textContent,neutral:badge?.classList.contains('ch-badge--pending')};})()");

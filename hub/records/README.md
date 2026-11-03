@@ -752,7 +752,9 @@ requests of the current epoch and `confirmPurge` performs one as recorded, addin
 migration is added. The call log keeps an MCP client's `initialize` declaration as a separate
 `mcp-client-declaration@1` record linked to the line, so the `call_log@1` body and its digest check are unchanged. It
 is indexed (`mcp.client.session`) by account, server token and the `Mcp-Session-Id` the server issued in that answer;
-`declaredClient` finds it only by all three.
+`declaredClient` finds it only by all three, which is what binds a declaration to writes. A second index
+(`mcp.client.token`, account and token alone) serves `latestDeclaredClient`, which the console uses only to show what a
+connection last reported; it binds nothing. Declarations recorded before this index existed are not found by it.
 
 `personalSync` is an account-scoped internal port, not an MCP tool or an HTTP handler. It rechecks the account and epoch
 inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings

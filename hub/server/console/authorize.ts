@@ -4,19 +4,31 @@
 // a signed-in browser may still switch to an invitation. Approving sends the browser to the client's redirect URI with a
 // one-time code, refusing with access_denied; both end the request. No password is asked (owner-confirmed item 1), and
 // the page carries only the fixed theme script. The confirm page allows its form to lead to the redirect URI's origin (CSP form-action).
-import {evidence} from './presentation.ts';
+import {evidence,technical} from './presentation.ts';
+import {UNREPORTED_CLIENT} from './client-provenance.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
-import { AUTHORIZATION_REQUEST_TTL_MS, redirectIsLocal } from '../oauth.ts';
-import { CONTENT_SECURITY_POLICY, code, html, page, type Html } from './html.ts';
+import { AUTHORIZATION_REQUEST_TTL_MS, UNNAMED_CLIENT, redirectIsLocal } from '../oauth.ts';
+import { CONTENT_SECURITY_POLICY, code, definitions, html, page, type Html } from './html.ts';
 import { stepper } from './ui.ts';
 
 const STEPS = ['身份', '确认连接', '完成'] as const;
 /** Wrong invitation codes one authorization request accepts before it ends. */
 export const MAX_INVITATION_FAILURES = 5;
 
-const chrome = (title: string, hint?: string) => ({ title, hint, user: null, csrf: null, wide: true });
+const chrome = (title: string, hint?: string, heading?: Html) => ({ title, hint, heading, user: null, csrf: null, wide: true });
+
+/**
+ * The page title names the client by the name it registered (client_name), shown exactly as recorded; a client that
+ * registered none is 客户端. The document title stays generic, so a recorded name never reaches the browser tab unmarked.
+ */
+const named = (request: AuthorizationRequest): boolean => request.client.name !== UNNAMED_CLIENT && request.client.name !== '';
+function allowChrome(request: AuthorizationRequest, hint: string) {
+  return chrome('允许客户端连接', hint, named(request) ? html`允许 ${evidence(request.client.name)} 连接` : undefined);
+}
+/** The client's name as it registered it, or 客户端. */
+const clientName = (request: AuthorizationRequest): Html => named(request) ? html`<b data-evidence>${request.client.name}</b>` : html`<b>${UNREPORTED_CLIENT}</b>`;
 
 /** Where the redirect URI is, for the page: the origin of an http(s) URI, the scheme of a private-use one. */
 export function redirectTarget(uri: string): string {
@@ -43,12 +55,12 @@ export function authorizeSecurityPolicy(uri: string): string {
 
 function facts(request: AuthorizationRequest): Html {
   const values = [
-    ['客户端', html`<b data-evidence>${request.client.name}</b> <span class="ch-meta">${request.client.id}</span>`],
+    ['客户端', clientName(request)],
     ['回调地址', code(request.redirectUri)],
     ['访问范围', '本 Hub 的 MCP 服务（' + request.resource + '）'],
     ['有效期', `连接请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效`],
   ];
-  return html`<dl class="ch-kv">${values.map(([label,value])=>html`<dt>${label}</dt><dd>${value}</dd>`)}</dl>`;
+  return html`<dl class="ch-kv">${values.map(([label,value])=>html`<dt>${label}</dt><dd>${value}</dd>`)}</dl>${technical(definitions([['名称来源', named(request) ? 'OAuth client_name' : '未报告'], ['已登记的客户端', code(request.client.id)]]))}`;
 }
 
 function callout(tone: 'info' | 'warn', body: Html): Html {
@@ -66,8 +78,8 @@ ${error === null ? '' : html`<p class="error">${error}</p>`}
 
 /** The identity step: the invitation code, or signing in to the console first. */
 export function identityPage(request: AuthorizationRequest, error: string | null): Html {
-  return page(chrome('允许 Circle 连接 Hub', '输入管理员签发的邀请码确认账号；也可用密码登录控制台后确认连接。'), html`${stepper(STEPS, 0)}
-<p><b data-evidence>${request.client.name}</b> 请求连接本 Hub。</p>
+  return page(allowChrome(request, '输入管理员签发的邀请码确认账号；也可用密码登录控制台后确认连接。'), html`${stepper(STEPS, 0)}
+<p>${clientName(request)} 请求连接本 Hub。</p>
 <section class="ch-section">${facts(request)}</section>
 <div>${invitationForm(request, error, true)}</div>
 <p class="ch-meta">邀请码 24 小时内有效，仅可使用一次。${html`<a href="/console/login?next=${encodeURIComponent(`/console/authorize/${request.id}`)}">登录控制台</a>`}</p>`);
@@ -86,9 +98,9 @@ export function confirmPage(request: AuthorizationRequest, account: { id: string
   const other = via === 'session'
     ? html`<details><summary>以其他账号连接</summary><div>${invitationForm(request, null, false)}</div></details>`
     : '';
-  return page(chrome('允许 Circle 连接 Hub', '管理员在团队页管理连接；成员在设置页查看本人的 Circle。断开由管理员生成命令执行。'), html`${stepper(STEPS, 1)}
+  return page(allowChrome(request, '管理员在团队页管理连接；成员在设置页查看本人的客户端。断开由管理员生成命令执行。'), html`${stepper(STEPS, 1)}
 ${error === null ? '' : html`<p class="error">${error}</p>`}
-<p>以 <b data-evidence>${account.name}</b>（${account.role}）的身份允许 <b data-evidence>${request.client.name}</b> 连接本 Hub。</p>
+<p>以 <b data-evidence>${account.name}</b>（${account.role}）的身份允许 ${clientName(request)} 连接本 Hub。</p>
 <section class="ch-section">${facts(request)}</section>
 ${redirectNotice(request.redirectUri, account.name)}
 ${callout('info', html`<span>确认后，该客户端可以 ${evidence(account.name)} 的身份调用 Hub 的工具，权限与该账号相同。</span>`)}
@@ -99,12 +111,12 @@ ${decide}${other}`);
 export function endedPage(request: AuthorizationRequest): Html {
   const approved = request.ended === 'approved';
   return page(chrome(approved ? '已允许连接' : '已拒绝'), html`${stepper(STEPS, 2)}
-<p>${approved ? html`已允许 <b data-evidence>${request.client.name}</b> 连接本 Hub，可关闭本页。` : html`已拒绝 <b data-evidence>${request.client.name}</b> 的连接请求，该客户端未获连接。`}</p>`);
+<p>${approved ? html`已允许 ${clientName(request)} 连接本 Hub，可关闭本页。` : html`已拒绝 ${clientName(request)} 的连接请求，该客户端未获连接。`}</p>`);
 }
 
 /** A request that does not exist for this browser (expired, ended by too many wrong codes, a restart, another browser's). */
 export function expiredPage(message = `连接请求已过期、不存在，或不是由本浏览器发起的。连接请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效，Hub 重启后失效。`): Html {
-  return page(chrome('连接请求已失效'), html`<p>${message}</p><p class="ch-meta">请在 Circle 中重新连接 Hub，浏览器将打开新的连接确认页。</p>`);
+  return page(chrome('连接请求已失效'), html`<p>${message}</p><p class="ch-meta">请在客户端中重新连接，浏览器将打开新的连接确认页。</p>`);
 }
 
 /** An authorization request the endpoint cannot answer at a redirect URI (unknown client, mismatched redirect URI). */

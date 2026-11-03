@@ -72,7 +72,7 @@ export async function taskHead(ctx: PageContext, detail: RunDetail, titles: Read
   const who = run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner);
   const line = [run.product, run.version, run.build].filter(Boolean).join(' / ');
   return card(null, html`<div class="dhead"><div class="grow">
-<div class="ch-actions"><h2 class="ch-panel-title" title="需人工处理的事项在对应的 Circle 中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
+<div class="ch-actions"><h2 class="ch-panel-title" title="需人工处理的事项在对应的客户端中完成">${taskTitle(run, titles)}</h2>${resultCell({ result, pending })}</div>
 <p class="ch-meta">工作流 ${taskTitle(run,titles)}${line ? ` · ${line}` : ''} · 执行人 ${who} · 开始于 ${when(run.started_at)}</p>
 </div></div>`);
 }
@@ -151,7 +151,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const end = Date.parse(line.at);
     const start = end - line.duration_ms;
     if (line.tool === 'submit_result' && previousEnd !== null && start - previousEnd > 1000) {
-      steps.push({ name: 'Circle 本机处理', sub: '两次调用之间的时间，Hub 未观测', fill: 'fill-circle', dot: 'idle', start: previousEnd, end: start, depth: 0, dur: duration(start - previousEnd) });
+      steps.push({ name: '客户端本机处理', sub: '两次调用之间的时间，Hub 未观测', fill: 'fill-circle', dot: 'idle', start: previousEnd, end: start, depth: 0, dur: duration(start - previousEnd) });
     }
     steps.push({ name: toolName(line.tool), sub: callSub(line, run), fill: line.call_result === 'ok' ? 'fill-circle' : 'fill-fail', dot: callDot(line), start, end, depth: 0, dur: duration(line.duration_ms) });
     previousEnd = end;
@@ -259,7 +259,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const waiting = steps.filter((s) => s.open === true).length;
   const total = calls.length === 0 ? null : Date.parse([...calls].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0].at) - Math.min(...calls.map((c) => Date.parse(c.at) - c.duration_ms));
   const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'—':duration(total))}</div>`;
-  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；提交前的空档是 Circle 本机时间，Hub 不观测这段时间。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
+  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；提交前的空档是客户端本机时间，Hub 不观测这段时间。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow=[...calls].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,3);
   const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),'毫秒'):'';
   return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;

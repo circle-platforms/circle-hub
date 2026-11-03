@@ -8,7 +8,8 @@ import type {SpaceVersion} from '../../knowledge/api.ts';
 import type {NodesPage} from '../../ports.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {parseReference} from '../../refs/api.ts';
-import {html,href,link,page,table,type Html} from './html.ts';
+import {html,href,link,page,table,emptyAction,type Html} from './html.ts';
+import {shareFeedback} from './feedback.ts';
 import {sectionHead} from './ui.ts';
 import {evidence,panel as card} from './presentation.ts';
 import {knowledgeState,number,timestamp} from './knowledge-display.ts';
@@ -37,7 +38,7 @@ export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version
    rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择条目">`:html`<input type="checkbox" disabled aria-label="无法选择条目" title="只有本人的已验证条目可以分享到团队">`]:[]),link('/console/knowledge/space',evidence(entry.statement),location),uiLabelOf('entry_kind',entry.kind),(await currentAudience(ctx,space,node.path,product)).text,entry.status?knowledgeState(entry.status):'—',...(showCitations?[entry.cited_count==null?'—':number(entry.cited_count)]:[]),...(space==='team'?[view?await ctx.userName(view.body.by):'—',source,view?timestamp(view.body.at):'—']:[])]);
   }
   const selectedIndex=node.entries.findIndex(entry=>entry.entry===ctx.url.searchParams.get('entry'));
-  const listing=table(headers,rows,'这个文件夹还没有知识',undefined,{selected:selectedIndex,hrefs:rowLinks});
+  const listing=table(headers,rows,{title:'这个文件夹还没有知识',text:'新建一条知识，或导入文件后从中摘录；每条知识都附带来源。',...(own?{action:emptyAction('/console/knowledge/space','新建',{space,path:node.path,edit:'1',scope:ctx.url.searchParams.get('scope')})}:{})},undefined,{selected:selectedIndex,hrefs:rowLinks});
   const selected=own?html`<form data-knowledge-selection method="get" action="/console/knowledge/share-batch"><input type="hidden" name="root" value="${version.root}"><input type="hidden" name="path" value="${node.path}"><div class="ch-bulkbar"><span data-bulk-count>已选条目</span><button class="ch-btn ch-btn--primary" type="submit">分享到团队…</button></div>${listing}</form>`:listing;
   blocks.push(html`${node.path===(ctx.url.searchParams.get('path')??'/')?'':sectionHead(directoryName(node.path))}${node.children.length?table(['子文件夹'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})])):''}${selected}`);
  }
@@ -66,6 +67,7 @@ export async function batchSharePage(ctx:PageContext):Promise<PageResult>{
 export async function shareBatch(ctx:PageContext,values:URLSearchParams|Map<string,string>):Promise<string>{
  const spaces=ctx.deps.knowledge.spaces;if(!spaces)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
  const input=batchInput(values);
- for(const entry of input.entries)await spaces.share(ctx.principal,{root:input.root,path:input.path,entry,team_path:input.team_path});
+ const receipts=[];for(const entry of input.entries)receipts.push(await spaces.share(ctx.principal,{root:input.root,path:input.path,entry,team_path:input.team_path}));
+ ctx.feedback=shareFeedback(receipts);
  return '/console/knowledge/submissions';
 }

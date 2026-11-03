@@ -245,9 +245,9 @@ test('a task pack is checked from its zip into a stage, then published by the ad
   assert.equal((await post(`packs/stage/${again.stage.id}/publish`, {})).status, 404);
 });
 
-test('without a command bridge the operations answer 503 and point to the administrator\'s Circle', async () => {
+test('without a command bridge the operations answer 503 and point to the Hub\'s host', async () => {
   const bare = await signIn('root', barePort);
   const reply = await send('POST', '/console/api/members', { port: barePort, cookie: bare.cookie, csrf: bare.csrf, body: JSON.stringify({ name: 'carol' }) });
   assert.equal(reply.status, 503);
-  assert.match(JSON.parse(reply.body).fix, /管理员的 Circle/);
+  assert.match(JSON.parse(reply.body).fix, /Hub 所在的主机上执行同一命令/);
 });
