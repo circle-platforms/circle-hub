@@ -23,6 +23,7 @@ import {
   type Pending,
   type Site,
 } from './docs-rules.ts';
+import { SYNC_SPEC_PAGE, TABLE_BEGIN, TABLE_END, syncErrorTableProblems, withSyncErrorTable } from '../../tools/gen-sync-error-table.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
@@ -164,6 +165,19 @@ describe('decided and deferred pending items match the model', () => {
       assert.deepEqual(pendingSummaryProblems(read(page), lang, pending), []);
     });
   }
+});
+
+describe('the sync protocol error table equals the registered codes', () => {
+  it('reports a stale or missing table', () => {
+    const current = withSyncErrorTable(`x\n${TABLE_BEGIN}\n${TABLE_END}\ny`);
+    assert.deepEqual(syncErrorTableProblems(current), []);
+    assert.equal(syncErrorTableProblems(current.replace('| 409 |', '| 400 |')).length, 1);
+    assert.match(syncErrorTableProblems('no table')[0], /needs exactly one/);
+  });
+
+  it(SYNC_SPEC_PAGE, () => {
+    assert.deepEqual(syncErrorTableProblems(read(SYNC_SPEC_PAGE)), []);
+  });
 });
 
 describe('recorded decisions name their source', () => {

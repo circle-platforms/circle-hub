@@ -2,7 +2,7 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncError} from '../../contracts/src/sync.ts';
+import {PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncError,personalSyncErrorStatus} from '../../contracts/src/sync.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {ActionKindSchema,SyncModeSchema} from '../../contracts/generated/vocabulary.ts';
 import {RecordsError,parseStrictJson,sha256Hex,type Principal} from '../records/api.ts';
@@ -102,7 +102,7 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
   await send(200,result,{},null);
  }catch(cause){
   const code=cause instanceof z.ZodError?'SYNC_OBJECT_INVALID':(cause instanceof RecordsError||cause instanceof KnowledgeError)&&cause.code?cause.code:'SOURCE_RETRYABLE';
-  const status=code==='SOURCE_UNAVAILABLE'?404:code==='SYNC_BATCH_LIMIT'?413:code==='SYNC_VERSION_CONFLICT'||code==='SYNC_EPOCH_CHANGED'||code==='SYNC_MODE_LOCAL'?409:code==='SOURCE_RETRYABLE'?503:422;
+  const status=personalSyncErrorStatus(code);
   try{await error(status,code,code==='SOURCE_RETRYABLE'?{'retry-after':'1'}:{},cause instanceof RecordsError?cause.detail.state:undefined);}catch{options.log('同步请求审计未完成');if(!response.headersSent)await send(503,{code:'SOURCE_RETRYABLE'},{'retry-after':'1'});else response.destroy();}
  }finally{hold.release();release?.();}
 }

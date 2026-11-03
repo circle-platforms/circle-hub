@@ -457,6 +457,10 @@ No vocabulary or protocol mirror changed in this step; model 26 and the six MCP 
 
 ### Frozen personal sync compatibility vectors (decision 89, step 6)
 
+The normative protocol is [docs/protocols/knowledge-sync-v1.md](../docs/protocols/knowledge-sync-v1.md) (decision 137); it
+references these schemas, vectors and the reference encoder/merge, and its error-code table is generated from
+`PROTOCOL_CODES` and `PERSONAL_SYNC_ERROR_STATUS` by `tools/gen-sync-error-table.ts` (checked by `npm run test:docs`).
+
 The portable v1 suite is in `test-fixtures/sync/v1/`; its README defines the frozen compatibility boundary. Encoding,
 raw/quote bytes, read-only grounds, ancestry merges and HTTP route vectors remain unchanged. `exchange.json` adds full
 inventory/snapshot ancestry around the existing memory revisions and fixed source/quote examples. The golden bytes

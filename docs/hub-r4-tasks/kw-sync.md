@@ -9,6 +9,8 @@
 - 第二、三阶段已合并（PR #128、#129）：空间、授权、统一条目、提交共享和个人工作流都在 Hub 上。
 - 页面重做与记忆（PR #132，`kw-console.md`）提供了记忆的存储与读写协议：`get_nodes.memory`、`upload_file.memory`。
 
+协议现以中立规范 [`docs/protocols/knowledge-sync-v1.md`](../protocols/knowledge-sync-v1.md) 为准（决定 137，2026-11-03）；本页是实施记录，下文的提案、审查与验证保留供追溯，与规范不一致之处以规范为准。
+
 本任务做 Hub 端的同步接口。Circle 端在 Circle 仓库另立任务，按本任务写进合约的接口实现；两边共用同一组测试样例。
 
 ## 做法
