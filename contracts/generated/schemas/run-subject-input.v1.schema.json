@@ -166,6 +166,42 @@
                 "minItems": 2,
                 "maxItems": 2
               }
+            },
+            "confirmations": {
+              "description": "Commands under these prefixes ask the device user to confirm: the command waits for the declared prompt and the very next line on the same device is the declared answer, which is dialogue, not a command",
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "command_prefix": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                    "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^\\S(?:.*\\S)?$",
+                    "description": "The text the device shows when it asks for the confirmation; the runner waits for it instead of the command prompt"
+                  },
+                  "answer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16,
+                    "pattern": "^\\S+$",
+                    "description": "The single word that confirms; sent as the next device line"
+                  }
+                },
+                "required": [
+                  "command_prefix",
+                  "prompt",
+                  "answer"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -596,6 +632,111 @@
             "entries"
           ],
           "additionalProperties": false
+        },
+        "observations": {
+          "description": "present only when the workflow asked for the observations context: the latest observation of each device an executor covers under the workflow's lease prefix; a device never observed is absent, never declared",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "inventory": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "device": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "build": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "base": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "the knowledge-base build the echoed name resolves to, aliases followed; null when it resolves to none"
+              },
+              "values": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "observed_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "run": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "the booking run whose granted lease caused the observation, or null"
+              },
+              "job": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "the dispatch job whose version probe made the observation, or null"
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1,
+                "description": "src: of the stored probe output; readable by the one who caused the observation and admins"
+              },
+              "note": {
+                "description": "why build is null",
+                "type": "string"
+              }
+            },
+            "required": [
+              "inventory",
+              "device",
+              "label",
+              "build",
+              "base",
+              "values",
+              "observed_at",
+              "run",
+              "job",
+              "reference"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

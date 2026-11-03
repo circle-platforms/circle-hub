@@ -17,6 +17,11 @@ export const CommandPolicy=z.strictObject({
  read_only:z.array(CommandPrefix).max(64),
  inverse_rules:z.array(z.strictObject({source_prefix:CommandPrefix,inverse_prefix:CommandPrefix,leading_parameters:z.number().int().min(0).max(128).optional().describe('When absent, require a unique inverse formed by a leading parameter count accepted by the locked inverse signature')})).max(64),
  inverse_alternatives:z.array(z.tuple([z.string().regex(/\S/),z.string().regex(/\S/)])).max(64).optional().describe('Pairs of enum alternative values of one signature that are each other\'s inverse (on/off, enable/disable); decided on the locked tree\'s declared enum structure, never on free text'),
+ confirmations:z.array(z.strictObject({
+  command_prefix:CommandPrefix,
+  prompt:z.string().min(1).max(64).regex(/^\S(?:.*\S)?$/).describe('The text the device shows when it asks for the confirmation; the runner waits for it instead of the command prompt'),
+  answer:z.string().min(1).max(16).regex(/^\S+$/).describe('The single word that confirms; sent as the next device line'),
+ })).max(16).optional().describe('Commands under these prefixes ask the device user to confirm: the command waits for the declared prompt and the very next line on the same device is the declared answer, which is dialogue, not a command'),
 });
 export type CommandPolicy=z.infer<typeof CommandPolicy>;
 

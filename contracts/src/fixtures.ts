@@ -196,6 +196,7 @@ export const packSummary = {
   kind: 'workflow',
   title: '用例评审',
   description: '合成的评审包',
+  digest: H,
   products: ['line-a', 'line-a-alias'],
   inputs: [{ slot: 'mindmap', role: 'subject', description: '被评审的脑图', accepts: ['application/json', 'mind-map:document'], required: true, many: false }],
   parameters: [{ name: 'strict', description: '严格模式', required: false }],

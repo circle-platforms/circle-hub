@@ -1,5 +1,5 @@
 import {MemoryWriteInput,MemoryShareInput,MemoryWriteReceipt,MemoryShareBody,MemoryPage,MemoryDocumentView,MemoryCheckResult,MemoryQuery} from './memory.ts';
-import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
+import {FeedingOffsetSchema,ModelIdentitySchema} from '../generated/shared-interfaces.ts';
 // The six MCP tools of the Hub (D06). Schemas here are the single source for the server, the tests and contracts/generated/tools.json.
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
@@ -8,11 +8,11 @@ import { KnowledgeShareInput, KnowledgeShareReceipt } from './sharing.ts';
 import { SpaceEntryInput, SpaceEntryReceipt, SpaceId, SpaceSearchHit } from './spaces.ts';
 import { KnowledgeSpaceKindSchema, KnowledgeSearchScopeSchema, KnowledgeEntryStatusSchema } from '../generated/vocabulary.ts';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
-import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256,ProtocolError } from './common.ts';
+import { AcceptanceSchema, CallResultSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
+import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256, TraceId, ProtocolError } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
-import { InputBinding, PackSummary, RunSummary } from './run.ts';
+import { InputBinding, LocalToolsSummary, PackSummary, RunSummary } from './run.ts';
 import { Submission } from './submission.ts';
 import { PartitionCounts, ValidationResult, partitionCountsOf } from './validation.ts';
 import type { EffectClass } from '../generated/vocabulary.ts';
@@ -45,6 +45,7 @@ Personal packs: list_task_packs includes space for personal workflows and generi
 Memory: get_nodes with memory lists or reads preferences, and upload_file with memory writes them optimistically using expected_version and client_key. memory_share previews with check_only=true and confirms on a second call. Memory has separate grants and is never an input or ground. Session mode reads only team and caller-owned enabled current documents.
 Sharing: upload_file with share_entry submits a verified personal entry; team_path optionally selects the team directory (default: the personal path); a receipt records that target with a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
 Personal knowledge: upload_file with personal_entry writes only to the caller's space; space=personal imports an original without drafting entries. get_nodes with search and scope searches current readable knowledge only without run. During a run, copy exact tree addresses from the frozen team/personal roots and the initiator's currently authorized content.
+If start_run or get_nodes times out, get_nodes call_query checks the exact original arguments without rerunning them. Use the original trace when known; without it matching calls are candidates, not proven to be the timed-out call.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
 
 const Fields = {
@@ -67,8 +68,37 @@ const issue = <T>(ctx: z.core.$RefinementCtx<T>, path: Path, message: string): v
 
 export const ListTaskPacksInput = z.strictObject({
   kind: PackKindSchema.optional().describe('Only packs of this kind'),
+  pack_id: PackId.optional().describe('Only the pack with this exact ID'),
+  offset: z.number().int().nonnegative().optional().describe('Continue at this zero-based position in the same filtered list'),
 });
-export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary) }).superRefine((o, ctx) => {
+/** One line of the whole filtered list (A05 R[1]): every choice is in the answer even when the details are paged. */
+export const PackIndexRow = z.strictObject({ pack: z.string().describe('id@version'), title: z.string(), kind: PackKindSchema });
+/**
+ * What the run context of the listed packs would hold right now (decision 113), from the Hub's own records: the lease view of
+ * every declared lease prefix (R02 R[3]: who holds a key is not said) and the newest observation of every observed device
+ * (A05 R[3]: it holds for its moment only). Present only when a listed pack declares the leases or observations context.
+ */
+export const PackContextView = z.strictObject({
+  leases: z.array(z.strictObject({
+    prefix: z.string().min(1),
+    packs: z.array(z.string()).describe('the listed packs (id@version) that declare this lease prefix'),
+    registrations: z.array(z.strictObject({ prefix: z.string().min(1), mine: z.boolean() })),
+    held: z.array(z.strictObject({ key: z.string().min(1), since: IsoTime, until: IsoTime.nullable(), run: z.string().min(1), jobs: z.array(z.string()), mine: z.boolean() })),
+  })),
+  observations: z.array(z.strictObject({
+    label: z.string().min(1),
+    build: z.string().nullable(),
+    base: z.string().nullable(),
+    observed_at: IsoTime,
+    packs: z.array(z.string()).describe('the listed packs (id@version) that declare the observations context'),
+  })),
+});
+export type PackContextView = z.infer<typeof PackContextView>;
+export const ListTaskPacksOutput = Envelope.extend({
+  packs: z.array(PackSummary),
+  index: z.array(PackIndexRow).optional().describe('Every pack of the same filter, one row each, whatever the offset'),
+  context: PackContextView.optional(),
+}).superRefine((o, ctx) => {
   if (o.call_result === 'error' && o.packs.length > 0) issue(ctx, ['packs'], 'an error answer lists no packs');
 });
 
@@ -131,6 +161,7 @@ export const StartRunInput = z.strictObject({
   product: z.string().optional().describe('Product name; every name of a product line is accepted'),
   version: z.string().optional().describe('Version line of the product'),
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
+  model_identity: ModelIdentitySchema.optional().describe('Explicit model and family declaration; submissions from this same observed session can reuse it'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
   parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs lists every pack parameter with its name, description and schema'),
   submission_due:IsoTime.optional().describe('Requested absolute submission deadline; the service binds its actual finite policy before writing the run'),
@@ -148,10 +179,22 @@ export const ProductionResult = z.strictObject({
   reference: referenceUriOf('rec').describe('the validation_result record of the run; read it with get_nodes and this reference'),
   counts: PartitionCounts,
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional() }).superRefine((o, ctx) => {
+/** The inputs of the reader's packs that accept the type (`system:kind`, exact) of a source the run read (decision 113). */
+export const AcceptedBy = z.strictObject({
+  type: z.string().min(1),
+  inputs: z.array(z.strictObject({ pack: z.string().describe('id@version'), slot: z.string().min(1), role: SourceRoleSchema })),
+});
+export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
   if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
+  if (o.local_tools !== undefined && o.run === undefined) issue(ctx, ['local_tools'], 'local tools belong to a run');
 });
+
+const CallQuery=z.strictObject({
+  start_run:z.record(z.string(),z.unknown()).optional().describe('Exact arguments of your earlier start_run call'),
+  get_nodes:z.record(z.string(),z.unknown()).optional().describe('Exact arguments of your earlier get_nodes call'),
+  trace:TraceId.optional().describe('The original trace when known; omit it to list matching candidates'),
+}).superRefine((value,ctx)=>{if((value.start_run===undefined)===(value.get_nodes===undefined))issue(ctx,[],'provide exactly one original call argument object');});
 
 export const GetNodesInput = z.strictObject({
   memory:MemoryQuery.optional().describe('List or read versioned client preferences without a run. Session lists select team or personal; session document reads pin a listed version. A grant permits browsing only. Continue with memory.cursor; these documents cannot be grounds.'),
@@ -171,7 +214,8 @@ export const GetNodesInput = z.strictObject({
   depth: z.number().int().min(0).max(6).optional().describe('Levels below each path; default 1'),
   reference: ReferenceUri.optional().describe('Read the content a reference points at instead of a subtree'),
   cursor: z.string().optional(),
-}).refine(input=>input.memory===undefined||[input.pack,input.pack_space,input.file,input.space,input.search,input.scope,input.run,input.root,input.paths,input.depth,input.reference,input.cursor].every(v=>v===undefined),'memory is an independent non-evidence mode');
+  call_query:CallQuery.optional().describe('Check your own in-flight call and recent completion logs without rerunning it; provide the exact original arguments'),
+}).refine(input=>input.memory===undefined||[input.pack,input.pack_space,input.file,input.space,input.search,input.scope,input.run,input.root,input.paths,input.depth,input.reference,input.cursor,input.call_query].every(v=>v===undefined),'memory is an independent non-evidence mode');
 
 const NodeEntry = z.strictObject({
   status: KnowledgeEntryStatusSchema.optional(),
@@ -209,6 +253,14 @@ export const GetNodesOutput = Envelope.extend({
   memory_document:MemoryDocumentView.optional(),
   warnings:z.array(ProtocolError).max(100).optional().describe('Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present'),
   matches: z.array(SpaceSearchHit).optional(),
+  call_status:z.strictObject({
+    tool:z.string(),
+    active_total:z.number().int().nonnegative(),
+    active:z.array(z.strictObject({trace:TraceId,started_at:IsoTime})),
+    completed:z.array(z.strictObject({trace:TraceId,at:IsoTime,call_result:CallResultSchema,error_code:z.string().nullable(),duration_ms:z.number().int().nonnegative(),run:RunId.nullable(),run_record:referenceUriOf('rec').optional(),result_record:referenceUriOf('rec').optional()})),
+    truncated:z.boolean(),
+    missing:z.string().optional(),next_action:z.string(),
+  }).optional(),
   root: Sha256.optional().describe('Knowledge root the nodes belong to'),
   nodes: z.array(KnowledgeNode).optional(),
   content: z
@@ -225,9 +277,10 @@ export const GetNodesOutput = Envelope.extend({
     .optional(),
 }).superRefine((o, ctx) => {
   if (o.call_result === 'error') {
-    if (o.memory_page!==undefined||o.memory_document!==undefined||(o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
+    if (o.memory_page!==undefined||o.memory_document!==undefined||(o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0 || o.call_status !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes, content or call status');
     return;
   }
+  if(o.call_status!==undefined && (o.root!==undefined || o.nodes!==undefined || o.content!==undefined))issue(ctx,['call_status'],'a call status is separate from a knowledge or reference read');
   const nodes = o.nodes ?? [];
   if (nodes.length > 0 && o.root === undefined) issue(ctx, ['root'], 'nodes come with the root they belong to');
   if (o.root === undefined) return;
@@ -277,6 +330,12 @@ export const SubmitResultOutput = Envelope.safeExtend({
     'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',
   ),
   counts: PartitionCounts.optional().describe('Counts derived from result.partitions, only when the submission was accepted'),
+  dispatch: z.array(z.strictObject({
+    job: Sha256.optional().describe('The job the Hub dispatched for this run'),
+    executor: z.string().min(1).max(200).optional().describe('The executor the job runs on'),
+    result: ReferenceUri.optional().describe('The job result once it is complete (src:), readable by the runner: one row per dispatched item'),
+    text: z.string().min(1).max(800).describe('What happened or what is missing, in the user language'),
+  })).max(16).optional().describe('Jobs of this run that the Hub dispatches by a hub_template effect row once a submission is accepted and the release conditions hold (W03, decision 105). Repeating the same submission reads their progress'),
 }).superRefine((o, ctx) => {
   if (o.result !== undefined && o.result.acceptance !== o.acceptance) issue(ctx, ['result', 'acceptance'], 'the receipt and the validation result agree');
   if (o.acceptance !== 'accepted') {
@@ -296,7 +355,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_task_packs',
     label: '查询工作流',
     title: 'List task packs',
-    description: 'List the task packs you may use, with the inputs, parameters and requirements of each.',
+    description: 'List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.',
     input: ListTaskPacksInput,
     output: ListTaskPacksOutput,
     effect: 'none',
@@ -327,7 +386,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'get_nodes',
     label: '读取知识',
     title: 'Read knowledge nodes',
-    description: 'Read a permitted pack file with pack, pack_space and file, or personal/team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry.',
+    description: 'Read a permitted pack file with pack, pack_space and file, or personal/team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry. Use call_query with exact original arguments to check your own long start_run or get_nodes call without rerunning it.',
     input: GetNodesInput,
     output: GetNodesOutput,
     effect: 'none',

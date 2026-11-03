@@ -7,12 +7,12 @@
       "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
     },
     "model": {
+      "description": "Legacy model name and exact configuration; may be omitted when an explicit model_identity is supplied or the same observed session reuses the run declaration",
       "type": "string",
-      "minLength": 1,
-      "description": "model name and exact configuration as the client declares it"
+      "minLength": 1
     },
     "model_identity": {
-      "description": "Explicit exact model and family identity; absent on legacy submissions, whose family independence stays unknown",
+      "description": "Explicit model and family identity; if omitted, the current run declaration is reused only for the same observed session; legacy submissions without either stay unknown",
       "type": "object",
       "properties": {
         "model_id": {
@@ -530,7 +530,6 @@
   },
   "required": [
     "run",
-    "model",
     "items"
   ],
   "additionalProperties": false,
