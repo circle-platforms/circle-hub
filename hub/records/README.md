@@ -744,6 +744,9 @@ operation until the checked, authenticated mode-switch routes are wired in subse
 
 ### Personal sync transport (decision 89, step 3)
 
+The wire protocol is specified in [docs/protocols/knowledge-sync-v1.md](../../docs/protocols/knowledge-sync-v1.md)
+(decision 137); the sections below record how records stores and scopes it.
+
 `personalSync` is an account-scoped internal port, not an MCP tool or an HTTP handler. It rechecks the account and epoch
 inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings
 store a digest of the native identity, never its path. The state token includes the native knowledge root and memory

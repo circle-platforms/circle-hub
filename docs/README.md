@@ -9,6 +9,7 @@
 - [Hub r4 进度](hub-r4-progress.md)：阶段清单、记录和已定的决定。
 - [设计](design/README.md)：[通用模型](design/generic-model.md)摘要、[对象标准：五要素检查单](design/object-standard.md)、研究提案和已被取代的旧设计篇；英文在 [design/en](design/en/README.md)。设计的权威是 [contracts/model.json](../contracts/model.json)。
 - [兼容矩阵](compatibility.md)：circle、circle-hub、circle-packs 三个仓库彼此的要求。
+- [同步协议 v1](protocols/knowledge-sync-v1.md)：个人知识与记忆同步的中立规范（英文，规范性），任何客户端和服务器可照此实现；[中文概述](protocols/knowledge-sync-v1.zh-CN.md)。
 
 ## 历史记录
 

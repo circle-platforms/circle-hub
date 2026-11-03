@@ -1052,6 +1052,10 @@ The dedicated HTTP route and own-account mode controls are described below.
 
 ### Personal sync HTTP and mode controls (decision 89, step 5)
 
+The protocol itself is specified for any client or server in [docs/protocols/knowledge-sync-v1.md](../../docs/protocols/knowledge-sync-v1.md)
+(decision 137); this section records the Hub implementation. HTTP statuses come from `PERSONAL_SYNC_ERROR_STATUS` in
+contracts/src/sync.ts, which also generates the specification's error-code table.
+
 The dedicated `/api/sync/v1` routes implement the versioned contracts in contracts/src/sync.ts: state, clients,
 sessions, frozen inventory, missing objects, batch upload/download, CAS commit, operation receipts, abort, mode check
 and mode change. They accept live access Bearers only, including registered OAuth clients; cookies, console-session

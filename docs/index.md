@@ -20,6 +20,7 @@ circle-hub 正在重建为一个标准 MCP 服务器。模型在客户端（例�
 | 看进度和已定的决定 | [Hub r4 进度](hub-r4-progress.md) |
 | 研究背景 | [置真对接架构](design/truth-docked-architecture.md)（研究提案，不是实现说明） |
 | 三个仓库彼此的要求 | [兼容矩阵](compatibility.md) |
+| 实现知识与记忆同步的客户端或服务器 | [同步协议 v1](protocols/knowledge-sync-v1.md)（英文规范；[中文概述](protocols/knowledge-sync-v1.zh-CN.md)） |
 | 设计索引，以及已被取代的旧设计篇 | [设计](design/README.md)（[English](design/en/README.md)） |
 
 ## 历史记录
