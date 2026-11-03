@@ -29,7 +29,7 @@ import type { SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { PARTITION, type Acceptance } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, disclosedExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, LimitError, recordExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -179,7 +179,7 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
     ctx.log({ traceId: call.traceId, run: named, what: 'submit_result', detail: named === null ? 'no run id in the arguments' : `run ${named} is unknown or not visible to ${user.id}` });
     if (named === null) return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('SUBMISSION_SCHEMA_VIOLATION', '提交里没有运行号 run', { path: '/run', fix: '写上 start_run 返回的运行号后重交' })] };
     // A run of another account's personal workflow stays neutral (D05 R[3]).
-    if (stored !== null && disclosedExistence(user.id, [stored]) === 'neutral') return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+    if (stored !== null && await recordExistence(store, user.id, stored) === 'neutral') return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
     return { call_result: 'error', acceptance: 'not_accepted', errors: [missingError(stored !== null, '/run', `运行 ${named}`, stored !== null ? '只能向你自己的运行提交；要接着做，用 start_run 开你自己的运行' : '核对运行号；运行号来自 start_run 的回答')] };
   }
   return ctx.lock(`submit:${stored.body.run}`, async () => {

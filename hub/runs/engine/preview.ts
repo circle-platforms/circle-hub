@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import type { Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
 import { ResolveReferenceInput, type ResolveReferenceOutput } from '../../../contracts/src/tools.ts';
-import { disclosedExistence, type Principal } from '../../records/api.ts';
+import { recordExistence, type Principal } from '../../records/api.ts';
 import type { CallContext, Untraced } from '../../ports.ts';
 import { findQuote, normalizeReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -45,7 +45,7 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     const stored = await runById(ctx.deps.records.store, input.run);
     if (stored === null || !await runReadableBy(ctx,user,stored.body)) {
       ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `run ${input.run} is unknown or not visible to ${user.id}` });
-      if (stored !== null && disclosedExistence(user.id, [stored]) === 'neutral') return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+      if (stored !== null && await recordExistence(ctx.deps.records.store, user.id, stored) === 'neutral') return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
       return { call_result: 'error', errors: [missingError(stored !== null, '/run', `运行 ${input.run}`, stored !== null ? '用你自己的运行，或请这个运行的运行者分享给你' : '核对运行号；运行号来自 start_run 的回答')], references: [], diagnostics: [] };
     }
     const workflow = await ctx.deps.workflows.byDigest(stored.body.pack_digest,stored.body.pack_space);

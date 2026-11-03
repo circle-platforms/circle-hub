@@ -344,7 +344,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   // Reading is an authorization decision, not immutable document content: recheck it on every use.
   const legacySources = sourceReader(artifacts, consumer);
   const spaces=ctx.deps.knowledge.spaces;
-  const sources:typeof legacySources={read:async(hash,reader)=>{const by={id:reader.user!,role:reader.role,name:''};const source=spaces?await spaces.source(by,hash,reader.run,consumer):await legacySources.read(hash,reader);if(source)return consumer==='model'&&source.bytes===null&&source.readTier!=='retain_only'?null:source;return await ctx.deps.personalPacks?.source(by,hash,reader.run)??null;}};
+  const sources:typeof legacySources={exists:legacySources.exists,read:async(hash,reader)=>{const by={id:reader.user!,role:reader.role,name:''};const source=spaces?await spaces.source(by,hash,reader.run,consumer):await legacySources.read(hash,reader);if(source)return consumer==='model'&&source.bytes===null&&source.readTier!=='retain_only'?null:source;return await ctx.deps.personalPacks?.source(by,hash,reader.run)??null;}};
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,

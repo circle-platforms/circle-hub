@@ -1,5 +1,5 @@
 export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
-export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf} from './personal-payloads.ts';
+export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';

@@ -8,7 +8,7 @@ import type { ContributionLayer } from '../knowledge/api.ts';
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
 import { canSeeRun } from '../runs/engine/api.ts';
 import type { RunsService } from '../ports.ts';
-import { IntegrityError, disclosedExistence } from '../records/api.ts';
+import { IntegrityError, disclosedExistence, recordExistence } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
 import type { RecordRead, RecordReader, SourceRead, SourceReader } from '../refs/api.ts';
 
@@ -103,7 +103,7 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
     },
     async exists(digest): Promise<boolean | null> {
       const stored = await records.store.get(digest);
-      const existence = disclosedExistence(principal.id, stored === null ? [] : [stored]);
+      const existence = await recordExistence(records.store, principal.id, stored);
       return existence === 'neutral' ? null : existence === 'exists';
     },
   };

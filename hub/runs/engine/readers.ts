@@ -8,7 +8,7 @@ import type { ProducerKind } from '../../../contracts/generated/vocabulary.ts';
 import {parseReference} from '../../refs/api.ts';
 import type {SourceBinding} from '../../../contracts/src/run.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
-import { requestRead, runIsSharedWith } from '../../records/api.ts';
+import { disclosedExistence, recordExistence, requestRead, runIsSharedWith } from '../../records/api.ts';
 import type { Artifacts, Principal, RecordStore } from '../../records/api.ts';
 import type { ReaderIdentity, RecordReader, SourceReader } from '../../refs/api.ts';
 import { SCHEMAS, runById, actionOfSubmission } from './store.ts';
@@ -49,8 +49,10 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
       },source=>source?.cacheable ? source.bytes?.byteLength??0 : -1);
     },
     // Whether the Hub holds the source at all, so refs tells absent from forbidden (D05 R[3], decision 112).
+    // Another account's personal copies stay neutral (null), D05 R[3].
     async exists(sha256) {
-      return (await artifacts.records(sha256)).length > 0;
+      const existence = disclosedExistence('', await artifacts.records(sha256));
+      return existence === 'neutral' ? null : existence === 'exists';
     },
   };
 }
@@ -94,7 +96,8 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
     },
     async exists(digest) {
-      return (await store.get(digest)) !== null;
+      const existence = await recordExistence(store, '', await store.get(digest));
+      return existence === 'neutral' ? null : existence === 'exists';
     },
   };
 }

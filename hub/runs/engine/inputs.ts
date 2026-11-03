@@ -11,7 +11,7 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
-import { disclosedExistence, type Principal, type VariableSnapshot } from '../../records/api.ts';
+import { disclosedExistence, recordExistence, type Principal, type VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -178,7 +178,7 @@ export async function bindInputs(
       const record = await guardedRecords(ctx).read(ref.record, identityOf(user));
       if (record === null) {
         const stored = await store.get(ref.record);
-        const existence = disclosedExistence(user.id, stored === null ? [] : [stored]);
+        const existence = await recordExistence(store, user.id, stored);
         if (existence === 'neutral') { gone(path, 'record not visible to the caller'); return null; }
         const exists = existence === 'exists';
         missingAt(exists, path, `记录 rec:${ref.record}`, exists ? 'record not visible to the caller' : 'no such record', exists ? '请记录所在运行的运行者分享给你，或换一条你能读的记录' : '核对记录摘要');

@@ -32,7 +32,7 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
-import { IntegrityError, RecordsError, disclosedExistence, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
+import { IntegrityError, RecordsError, recordExistence, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
@@ -606,7 +606,7 @@ const getNodes: Handler = async (deps, call, args) => {
     const found = deps.records?.store ? await deps.records.store.find({ key: 'runs.id', value: run, kind: 'run', limit: 1 }).catch(() => null) : null;
     if (found === null) return unavailable();
     // A run of another account's personal workflow stays neutral (D05 R[3]).
-    const existence = disclosedExistence(call.principal.id, found.items);
+    const existence = await recordExistence(deps.records.store, call.principal.id, found.items[0] ?? null);
     if (existence === 'neutral') return unavailable();
     const exists = existence === 'exists';
     return missingObject(exists, `运行 ${run}`, exists ? '读你自己的运行，或请这个运行的运行者分享给你' : '核对运行号；运行号来自 start_run 的回答');
