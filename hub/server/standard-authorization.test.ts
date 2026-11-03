@@ -1,4 +1,4 @@
-// The MCP standard authorization end to end (decision 78): the official SDK client discovers the Hub's metadata from the
+// The MCP standard authorization end to end (decision 125): the official SDK client discovers the Hub's metadata from the
 // 401, registers, is sent to the authorization page, and after the invitation step and the approval exchanges the code
 // for a token it then calls tools with. Also: a signed-in browser approves without an invitation; every refusal of the
 // authorization and token endpoints; the request and code lifetimes; revocation; and the one-time login links, which lead

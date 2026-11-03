@@ -1,6 +1,6 @@
 # runs-packs: the pack registry
 
-## Personal publication (decision 87)
+## Personal publication (decision 134)
 
 `registry.personal` publishes workflows and generic skills in an account namespace. `check` and `publish` reuse the
 team publisher's directory, structural, import, reference, credential and sandbox/sample checks, without requiring a
@@ -304,7 +304,7 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
 集成者于 2026-10-24 授权一项仅限静态审读的例外：包内相对路径 `functions/adoc/vendor/core.mjs`，完整 SHA-256 为 `5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d` 的上游浏览器文件，可含未执行的字面动态导入 `node:fs`、`node:fs/promises`、`node:async_hooks`。只放过这三个指定导入；路径或任一字节改变即失效，静态导入、getBuiltinModule 和其他模块不在例外内。全局内置模块表、运行时导入守卫与 OS 权限均不改变；同路径实际执行这些导入仍被拒绝，回归测试逐项核对。
 
 
-Decision 88 audit summaries add `personal.pack.grant_owner` alongside the existing grantee index when appending a personal
+Decision 135 audit summaries add `personal.pack.grant_owner` alongside the existing grantee index when appending a personal
 use grant/revocation. The console queries only the participant's indexes, or the all-administrators index for administrators,
 and verifies the body audience before rendering. This first phase-3 index adds no migration or permission and never exposes
 another member's named grant through administrative audit views.
@@ -317,7 +317,7 @@ loaded once per catalog call. Publication, owner, withdrawal, expiry and account
 no new cross-request authorization cache is introduced. Real-registry regressions grow from 3 to 8 workflows for admin
 and member readers and recheck grants, withdrawals and disabled accounts on subsequent calls. Missing optional native
 batch ports retain the existing single-operation fallback.
-## Decision 91 personal publication freeze
+## Decision 140 personal publication freeze
 
 Personal workflow and skill publication takes the personal-pack business lock, then locks the current actor and resolved
 personal dependency owners through `principals.lockActive` in its committing transaction. Captures, file indexes, manifest

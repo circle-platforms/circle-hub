@@ -1,6 +1,6 @@
 # hub/server
 
-## Sharing and personal publication (decision 87)
+## Sharing and personal publication (decision 134)
 
 The console has a share action on the owner's verified entry and `/console/knowledge/submissions` for the owner's merged
 or rejected receipts, with generated status text, registered codes and safe reasons. Team entries disclose submitter,
@@ -28,9 +28,9 @@ Personal workflow runs cannot unlock named documents, including retained runs wi
 publication/start gates exclude business-system inputs, leases and external effects; administrators use the same
 personal capability boundary. Team workflows retain assignment-based access.
 
-## Console spaces (decision 86)
+## Console spaces (decision 133)
 
-Decision 88 replaces the former columns with one space panel, shared with workflows: all, personal, shared with me,
+Decision 135 replaces the former columns with one space panel, shared with workflows: all, personal, shared with me,
 then team. Empty received groups disappear. Directory trees use current read permissions, product titles and hierarchy
 names; narrow screens use a row of scope tabs. Knowledge and memory retain their selected view and scope in links.
 `/console/knowledge/space` browses a selected immutable root,
@@ -47,7 +47,7 @@ reveals the quota without opening the member's content. Forms and imports have b
 no drafted entries. Hover text states visibility, non-recoverable prior reads after revocation and inclusion in server
 backups. Synchronization and signing remain later phases, without a seventh MCP tool.
 
-## Space tools (decision 86)
+## Space tools (decision 133)
 
 The server still publishes six MCP tools. `upload_file` takes exactly one of `file_path` (base64 bytes), `personal_entry`, `share_entry` or `withdraw_entry`.
 The latter carries caller-authored kind, statement, data, optional applicability/path, and reference/quotation grounds;
@@ -63,32 +63,32 @@ reads space tree addresses and admitted constituent sources as well as legacy pr
 again when an old address is used, and a raw `rec:` space record cannot disclose an ungranted directory.
 
 
-Decision 85, item 2: the 工作流 navigation entry retains `/console/packs` so existing links stay valid. The page separates
+Decision 132, item 2: the 工作流 navigation entry retains `/console/packs` so existing links stay valid. The page separates
 工作流 from 通用技能 using generated kind labels and title hover explanations. Workflow details show acceptance requirements
 in a full-width section above checks and version controls; the old stage graph is removed. Publication states derive from
 the existing catalog fields through the generated `pack_status` display axis.
 
-Decision 85, item 3: knowledge lists 产品知识来源 and connections lists 业务系统接入, with details returning to the matching
+Decision 132, item 3: knowledge lists 产品知识来源 and connections lists 业务系统接入, with details returning to the matching
 place. These lists use the existing permission-filtered pack catalog. Product lines come only from the active declaration
 for the displayed version; absent metadata stays unknown. System mappings show existing resource bindings and their actual
 versions without calling business systems. Members retain their existing knowledge access; the move grants no catalog rights.
 
-Decision 85, item 4: server-owned console, CLI and answer text use the new display terms. Publication still uses the same
+Decision 132, item 4: server-owned console, CLI and answer text use the new display terms. Publication still uses the same
 upload/check/publish commands and authorization; `?kind=product` and `?kind=system` select the title and return location.
 Staged results retain the uploaded manifest's actual kind for display, without rewriting it or changing API payloads.
 Stored records, author-provided content and diagnostics supplied by other packages are shown without rewriting their text.
 
-Decision 85, item 5: after a successful console-bridged `user password-reset`, the console clears only that account's
+Decision 132, item 5: after a successful console-bridged `user password-reset`, the console clears only that account's
 `account:<username>` login-attempt counter. A refused form or failed command clears nothing; other accounts and peer-based
 backup-login limits retain their counters. The existing administrator checks, command bridge and first-change requirement apply.
 
-Decision 83, second round item 5: `user list --json` emits public account fields only (no password material or tokens). The installer uses it after deployment migrations to distinguish existing administrators from incomplete initialization.
+Decision 130, second round item 5: `user list --json` emits public account fields only (no password material or tokens). The installer uses it after deployment migrations to distinguish existing administrators from incomplete initialization.
 
-Decision 83, second round item 4: `circle-hub user password-reset <user>` uses the host operator’s administrator identity, generates a one-time initial password and requires its first-use change. It appends the existing password-change history and revokes console credentials; account-bound MCP tokens remain valid. This command also recovers the sole administrator before the initial password was changed. Team resets run that command through the management bridge at `POST /console/admin/do/password-reset`; the old direct page reset route is absent. Administrator backup failures have separate counters for each socket peer; username failures still share the account counter across sources.
+Decision 130, second round item 4: `circle-hub user password-reset <user>` uses the host operator’s administrator identity, generates a one-time initial password and requires its first-use change. It appends the existing password-change history and revokes console credentials; account-bound MCP tokens remain valid. This command also recovers the sole administrator before the initial password was changed. Team resets run that command through the management bridge at `POST /console/admin/do/password-reset`; the old direct page reset route is absent. Administrator backup failures have separate counters for each socket peer; username failures still share the account counter across sources.
 
-Decision 83, second round item 3: Chinese account, login and credential instructions consistently use “密码”, including console forms, CLI output and errors. Legacy source words remain recognized by the credential scanner.
+Decision 130, second round item 3: Chinese account, login and credential instructions consistently use “密码”, including console forms, CLI output and errors. Legacy source words remain recognized by the credential scanner.
 
-The MCP server, the console (read-only pages, and management for administrators: decision 75), the HTTP surface and the server CLI of the Hub. Model elements: D05 (uniform
+The MCP server, the console (read-only pages, and management for administrators: decision 122), the HTTP surface and the server CLI of the Hub. Model elements: D05 (uniform
 response), D06 (the six tools), B08 (call log), R01 and R02 (roles, visibility); brief sections 3, 6 and 9. The server is
 built against the ports of `hub/ports.ts` (RunsService, KnowledgePort, WorkflowStore, PackCatalogPort,
 ResourceCatalogPort), the run engine's extras (`ServerDeps.runsDetail`) and the real phase 1 packages (records, refs,
@@ -131,7 +131,7 @@ target server. In particular, the VM check injects fake principals and call logg
 does not validate a real identity store, colleague's Circle, actual credentials or the target network.
 
 The default is loopback `127.0.0.1`; a specific internal IP requires an explicit allowed-host list. Wildcard and public
-listeners are refused. The port comes from `CIRCLE_HUB_PORT`. With `CIRCLE_HUB_HTTPS_PORT` (owner decision 74) the app
+listeners are refused. The port comes from `CIRCLE_HUB_PORT`. With `CIRCLE_HUB_HTTPS_PORT` (owner decision 121) the app
 opens a second listener with the certificate of `<data dir>/tls` (`AppOptions.tls`, read by `serve` before anything
 starts) and serves the same routes there. Each listener answers only to its own authorities: an HTTPS name sent over
 plain HTTP, or the reverse, is a 403. A request that arrived over that listener is secure for the console (the
@@ -180,9 +180,9 @@ closes every connection, then waits again (`closeGraceMs`, 15 s by default; both
 the handlers it cut off, so their call-log lines are written before `serve` stops the sandbox and closes the records; what
 still runs after that is named in the operator's log. It never stops the database.
 
-## MCP standard authorization (decision 78)
+## MCP standard authorization (decision 125)
 
-Owner decision 78 (2026-11-01, the seven open items of the interface doc confirmed as assumed): the Hub is both the
+Owner decision 125 (2026-11-01, the seven open items of the interface doc confirmed as assumed): the Hub is both the
 protected resource `/mcp` and its authorization server, by the MCP authorization specification (OAuth 2.1 with PKCE;
 RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
 
@@ -375,15 +375,15 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
-Decision 83, second round item 1: member status uses R01's generated `account_status` (enabled/disabled), including the Team
+Decision 130, second round item 1: member status uses R01's generated `account_status` (enabled/disabled), including the Team
 page and CLI account listings. In-use only describes an occupied runtime environment. Model 15 stays the revision.
 
-Decision 83's remaining-page pass moves reading guidance on task details, neutral pages, operation results, forms,
+Decision 130's remaining-page pass moves reading guidance on task details, neutral pages, operation results, forms,
 background jobs and authorization to heading/label hover hints. Breadcrumbs, measured times, counts, commands, one-time
 values, permission consequences and missing-evidence facts remain visible. Background jobs display the generated action
 result: an outstanding result is unknown, rather than success or failure.
 
-Decision 83 makes username/password the ordinary sign-in for administrators and members. Only administrators create
+Decision 130 makes username/password the ordinary sign-in for administrators and members. Only administrators create
 accounts; `user create` generates an initial password shown once and requires a first-login change. Team manages
 resets; members change their own password there. Passwords travel through forms or stdin, never command arguments or logs.
 Five failed attempts per account and 50 per peer in 15 minutes are bounded in process memory, including unknown accounts;
@@ -394,41 +394,41 @@ Circle tokens stay bound to their member account. Existing members without a pas
 before console login. First-use restrictions also guard API reads/writes, live streams and authorization confirmations.
 
 
-Decision 84 supersedes decision 83's personal/team knowledge draft (`docs/design/personal-team-knowledge.md`, retained
+Decision 131 supersedes decision 130's personal/team knowledge draft (`docs/design/personal-team-knowledge.md`, retained
 as a research record). Personal knowledge will live in both Circle and Hub with two-way sync and multiple clients; the
 individual chooses the mode, sets personal-space permissions and may share with administrators or others. Shared
 submissions require no review. The owner accepted all fourteen design recommendations; the implementation basis is
-`docs/design/knowledge-workflows.md`. Decision 85 implements its first stage: 工作流 contains workflows with acceptance
+`docs/design/knowledge-workflows.md`. Decision 132 implements its first stage: 工作流 contains workflows with acceptance
 and 通用技能 without acceptance; 产品知识来源 is under Knowledge and 业务系统接入 under Connections. The other stages
 (personal/team spaces, authorization, sharing, search and two-way synchronization) remain future work; this rename changes
 neither their models nor business code. Existing format skills remain globally installed parser providers, rather than
 the future per-account synchronized skill storage. `docs/design/console-navigation.md` records the current navigation.
 
-Decision 83 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
+Decision 130 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
 last use and disconnect action. Team, Connections and member Settings omit token identifiers from their tables; exact
 identifiers remain inside disconnect command dialogs only.
 
-Decision 83 adds Team before Settings. Administrators manage member details, publish rights, workflow assignments and
+Decision 130 adds Team before Settings. Administrators manage member details, publish rights, workflow assignments and
 Circle connections there using the existing commands. Members see only their own account. Settings retains system
 secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.
 
-Decision 83 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
+Decision 130 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
 their future management belongs on separate pages with separate navigation entries.
 
-Decision 83 groups knowledge intake by personal and team visibility, with the share/verification boundary between two
+Decision 130 groups knowledge intake by personal and team visibility, with the share/verification boundary between two
 columns. Runtime explanations are hover hints. This diagram grants no new read rights; source archiving stays planned.
 
-Decision 83 hides product browsing and version comparison until a readable product line exists. Comparison selects
+Decision 130 hides product browsing and version comparison until a readable product line exists. Comparison selects
 produced versions of that product instead of asking for digests; import keeps its name and explains its scope on hover.
 
-Decision 83 places knowledge intake pending items on the knowledge page. Empty queues are hidden and the same
+Decision 130 places knowledge intake pending items on the knowledge page. Empty queues are hidden and the same
 principal-scoped feeding query remains the source; the tasks page no longer reads it.
 
-Decision 83 combines pending and overdue requests in one shared list on the task and task-detail pages. It deduplicates
+Decision 130 combines pending and overdue requests in one shared list on the task and task-detail pages. It deduplicates
 record identities, resolves member names, puts overdue requests first and hides an empty list. Labels use B07's generated
 display axis; requests and their answer rules are unchanged.
 
-Owner decision 83 (2026-11-02), walkthrough item 4: an empty, unfiltered task page hides the pack/result filters and
+Owner decision 130 (2026-11-02), walkthrough item 4: an empty, unfiltered task page hides the pack/result filters and
 zero-page counts. An active filter remains visible even when empty. Nonempty lists keep factual page/filter counts;
 the ordering explanation is a title hint. The walkthrough task page records each scoped check.
 
@@ -446,7 +446,7 @@ Every dynamic value goes through an escaping template (element text or double-qu
 paths with encoded query parameters).
 
 The pages follow the design canvas (version 25) and the owner's choices in the simplification proposal of 2026-10-31
-(decision 77 in `docs/hub-r4-progress.md`):
+(decision 124 in `docs/hub-r4-progress.md`):
 
 - **Eight places** in a side navigation: 总览 `/console/overview` (the home `/console` and a sign-in lead to), 任务
   `/console/runs`, 知识库 `/console/knowledge`, 任务包 `/console/packs`, 连接 `/console/connections`, 记录
@@ -475,7 +475,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   otherwise); 401 in JSON without a session (no redirect); absent and forbidden alike 404 `SOURCE_UNAVAILABLE`; an error is
   `{code, message, fix}` with `code` null where no code is registered (not signed in, a bad parameter); codes come with their
   interface terms (`*_label`); token values and credential contents never appear.
-- **The write interfaces** (`console/api-write.ts`, decision 78): `POST /console/api/members`, `/systems`,
+- **The write interfaces** (`console/api-write.ts`, decision 125): `POST /console/api/members`, `/systems`,
   `/knowledge/imports` (202, a background job read at `knowledge/imports/<job>`), `/packs/stage` (multipart, the zip in
   field `archive`) and `/packs/stage/<id>/publish|discard` run the very commands of the forms, built by the same builders
   of `manage.ts`, through the command bridge as the signed-in administrator; `/commands` (`{operation, object}`) answers
@@ -484,7 +484,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   and a JSON object of strings and booleans; a member gets the neutral 404 before any body is read, an upload included; 400 for a refused parameter or exit code 2, 409 for exit code 1 (with what the
   command said), 503 without a command bridge, the neutral 404 for members and unknown objects. Adding a member answers the
   invitation code (or the token) once, with the Circle entry.
-- **Search** (`console/search.ts`, decision 79): `GET /console/api/search?q=` and the page `/console/search?q=`, reached
+- **Search** (`console/search.ts`, decision 126): `GET /console/api/search?q=` and the page `/console/search?q=`, reached
   from the sidebar's 搜索 box on every signed-in page. Each kind is searched only within what the reader may see:
   - tasks: run id, pack, title, product, version, build and runner, among the reader's latest 300 runs;
   - packs: id or title in the reader's catalog;
@@ -501,27 +501,27 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   entries; the source text behind them is not resolved) and `citations`. Those are the accepted submissions of the last 30
   days citing the node in this root, or any of its entries from any root (hub/runs indexes them, see its README), with a
   count per entry, capped at 10,000. They are exact (`complete`) once the runs engine's backfill has indexed the older
-  submissions (decision 80), or when the window starts after `indexed_since`, the oldest submission indexed as it was
+  submissions (decision 127), or when the window starts after `indexed_since`, the oldest submission indexed as it was
   stored; otherwise they are a lower bound, and the page says from when it counts. The knowledge tree page shows
   被引用 for the node and 出处 and 近 30 天被引用 for its entries.
-- **The connection attempt** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
+- **The connection attempt** (decision 126): `POST /console/api/systems/test`, a write interface for administrators, and the
   尝试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
   says what the trial does and never does) with the typed system pack, origins, environment and credential contents. The
   answer is `{report: {system_pack, environment, auth: {kind, sent, ok, reason, code, message, ms}, routes: [{route, role,
   method, path, tried, reason, ok, status, code, message, ms, bytes}], started_at, ended_at, saved: false}}`; 400 for a
   form error, RESOURCE_INVALID, PACK_UNAVAILABLE or PROFILE_INVALID; 503 without the port (`ServerDeps.systems`, wired by
   the assembly); the neutral 404 for members. The form comes back with the secret names, never their contents.
-  Decision 81 records each completed trial as a `trial-report@1` action (`trial`, B05): actor, times, pack/version,
+  Decision 128 records each completed trial as a `trial-report@1` action (`trial`, B05): actor, times, pack/version,
   environment, login and route outcomes only, without addresses, credential contents or source text. `saved: false`
   means no resource configuration or credential content was saved. A failed audit write is logged by connectors and
   does not change the report or repeat a request. The records page lists trial actions for administrators only, with the
   generated action label, member/time filters and its own pagination; tool/run filters select the MCP call log alone.
-  Decision 81 adds `POST /console/api/systems/test/forget`, with the same form fields, administrator session, Origin and
+  Decision 128 adds `POST /console/api/systems/test/forget`, with the same form fields, administrator session, Origin and
   CSRF checks as the trial, returning only `{found, cleared}`. The blocked-login result offers 清除这组凭据的失败记录
   (`system-test-forget`); credential contents must be re-entered, and are never returned. Clearing uses the running
   connectors instance so its memory and vault agree, preserves other stops, sends no login and never retries. A failed
   clear returns 503 without private storage details; a newer concurrent failure stays stopped. There is no CLI command.
-- **Runtime environments' state** (decision 79; vocabulary axis `environment_state` of D07): `GET
+- **Runtime environments' state** (decision 126; vocabulary axis `environment_state` of D07): `GET
   /console/api/environments` gives each executor its derived `status` (`available`, `in_use`, `frozen`, `deactivated`,
   `unknown`) with `status_label` and `status_detail` (why, line by line), beside the facts it comes from (`state`, from
   hub/dispatch's `environment`, null when not read): `deactivated` when the registration is disabled; `unknown` when the
@@ -533,12 +533,12 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   with its outcome; two dialogs give `circle-hub bed hold clear <executor> --reason=…` (确认已恢复) and `circle-hub job
   status <job>` (处置派发结果). The task page's dispatch step names the environment and its current status; a job waiting
   for its result with no disposition request open reads 等待派发结果中，不可重发.
-  Decision 81 adds `calls_24h: {executor, since, until, calls, results, results_label, median_ms, slowest_ms, last_at,
+  Decision 128 adds `calls_24h: {executor, since, until, calls, results, results_label, median_ms, slowest_ms, last_at,
   partial} | null` to each environment. The assembly reads hub/dispatch's existing timed exchange records; null is
   unreadable, not zero. The connections page adds 响应时间 (median and slowest), or 近 24 小时无调用 when complete and
   empty. A capped scan says 至少 for the count and the durations cover the scanned calls only. No new measurement request
   or record is made, and duplicate read/transport records of one exchange count once.
-- **Backups and the database** (decision 79): `GET /console/api/hub` adds `backups: {count, latest_at} | null` (the
+- **Backups and the database** (decision 126): `GET /console/api/hub` adds `backups: {count, latest_at} | null` (the
   complete backups under the data root that `circle-hub backup` wrote, through hub/platform's `listBackups`, the newest by
   its manifest's `created_at`; a partial one does not count) and `database_bytes: number | null` (the records store's
   `databaseSize`, PostgreSQL's `pg_database_size`); null is unreadable, never none. The settings page's Hub state and the
@@ -547,7 +547,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   results, results_label, median_ms, slowest_ms, last_at, partial} | null`, from hub/connectors' read manifests. The
   connections page (column 近 24 小时读取) and the overview's systems card show it, naming the window; `partial` reads
   “至少 N 次”, and null 暂不可用.
-- **Live updates** (`console/live.ts`, decision 78; owner-confirmed item 7: no build step, so the script is an inline
+- **Live updates** (`console/live.ts`, decision 125; owner-confirmed item 7: no build step, so the script is an inline
   JavaScript module allowed by its response nonce and pinned by SRI): `GET /console/api/stream[?events=a,b]` is a server-sent event stream on the
   pages' session (401 in JSON without one, 400 for an unknown event name; `retry: 5000`; a heartbeat every 25 s that
   re-authenticates the session's token, so a revoked token, a disabled account or a closed session ends the stream; at
@@ -560,13 +560,13 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   so commands of other processes are seen too. The state the records hold of a business system or a runtime environment
   is its configuration: a later `resource_config` decision on a system (enabled, disabled, changed) is `system.status
   {system}`, held 6 s like `system.added`, and any decision on an executor (`executor.<id>`) is `environment.status
-  {environment}`, both for administrators. A read of a business system that ended (its read manifest, decision 80) is
+  {environment}`, both for administrators. A read of a business system that ended (its read manifest, decision 127) is
   `system.status {system}` too, since its reads and times of the last day changed; the held events of one system are
   sent once. Occupancy and freezing come from the dispatch journal: a record that can change
   them (a reservation, an intent, an end, a request left uncertain or answered, a disposition, a bed hold opened or
   cleared, an unknown outcome) is `environment.status` for the executor its job reserved (the last 2,000 jobs are kept in
   mind). An explicitly timed executor response changes its call statistics and sends `environment.status` too (decision
-  81), resolved through the job's reservation. Events of one environment are held for 6 s and sent once during that period.
+  128), resolved through the job's reservation. Events of one environment are held for 6 s and sent once during that period.
   A live module carries `data-live="<events>"` and a stable id; on an
   event the script fetches its own page (`circle-hub-refresh: live`, which does not count as session activity, so an
   unattended page still reaches the idle limit) and swaps those modules, keeping the scroll position and leaving a module
@@ -576,7 +576,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
 
-- **The authorization page** (`/console/authorize/<request>`, `console/authorize.ts`, decision 78): the request the
+- **The authorization page** (`/console/authorize/<request>`, `console/authorize.ts`, decision 125): the request the
   authorization endpoint accepted, for its 10 minutes, on the channel it was opened on, only for the browser holding the
   request's cookie (any other gets the 410 page that says the request does not exist). Without a console session the page
   asks for an invitation code (no password, owner-confirmed item 1); a signed-in browser confirms for its own account and
@@ -590,7 +590,7 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser
   sees that the request ended.
-- **One-time login links** (decisions 78 and 83): the existing Bearer endpoint and five-minute lifetime remain.
+- **One-time login links** (decisions 125 and 130): the existing Bearer endpoint and five-minute lifetime remain.
   An administrator can confirm a link as a backup sign-in, still subject to a forced password change. A member's link
   leads to username/password sign-in at the requested console path and never opens a token-authenticated browser session.
   Spent and expired links disclose no account. Return paths remain local to this console.
@@ -661,9 +661,9 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
 
 The refresh target reader follows the [HTML shared declarative refresh steps](https://html.spec.whatwg.org/multipage/semantics.html#shared-declarative-refresh-steps); image-set string handling follows [CSS Images Level 4](https://drafts.csswg.org/css-images-4/#image-set-notation). These are syntax scans only: the probe does not follow any discovered resource URL.
 
-## Management in the console (decision 75)
+## Management in the console (decision 122)
 
-Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. Decision 77 keeps four of the operations
+Owner decision 122 (2026-10-31): administrators manage the Hub from the browser. Decision 124 keeps four of the operations
 as console pages under `/console/operations/`: adding a member (`member-add`: `user create`, then `user invite`, the
 initial password and invitation code shown once with this Hub's Circle entry for the standard authorization; or `token issue` for a client
 without it), connecting a business system (`system-add`: `resource add`, then `secret set` for the credentials typed with
@@ -672,7 +672,7 @@ it), publishing a task pack (`pack-stage`, then `pack-publish` or `pack-discard`
 other operation (disabling a member, disconnecting a Circle, a spare login token, changing or withdrawing a credential,
 switching a system or a product pack, use and maintenance of a pack, retiring a version, an environment, the stopping
 platform commands) is a button that opens a dialog with its `circle-hub` command and the real ids, for the administrator's
-Circle on the Hub's host (`console/commands.ts`). The actions of decision 75 stay as they were; `/console/admin` shows the
+Circle on the Hub's host (`console/commands.ts`). The actions of decision 122 stay as they were; `/console/admin` shows the
 settings page, `/console/admin/calls` the records, and `/packs`, `/resources`, `/secrets` and `/knowledge` the task packs,
 connections, settings and the import page. Every action is a POST form
 to `/console/admin/do/<action>` (`console/manage.ts` `ACTIONS`): this server's own origin, the session's CSRF token and
@@ -990,12 +990,12 @@ establish target-server, real-user or production-network behavior.
 
 第三阶段以全部实际读者检查替代第二阶段的临时个人依据拒收：个人条目和原文可按当前授权读取，结果的每个依据及底层来源须对全部结果读者可读，否则返回 `RESULT_GROUNDS_UNREADABLE`。仅事实工作流与缓存回执同样检查；撤回使用读取包装中的 `grounds_withdrawn`，旧结果保持原字节。共享目录仍拒收无法完整检查的原文，使用 `SPACE_CONTENT_UNINSPECTABLE`，不误报为命中凭据。团队产品目录由 Hub 登记，版本记录不署为随机读取成员。
 
-决定 88 的页面重做已取代第三阶段临时界面，移除“知识入库流程”卡片。空间栏与知识／记忆切换沿用当前权限，目录以名称层级显示；个人原文与条目分开列出。来源：所有者确认的决定 88 及任务页 `kw-console.md`。
+决定 135 的页面重做已取代第三阶段临时界面，移除“知识入库流程”卡片。空间栏与知识／记忆切换沿用当前权限，目录以名称层级显示；个人原文与条目分开列出。来源：所有者确认的决定 135 及任务页 `kw-console.md`。
 
 第二阶段第二轮索引修正：`get_nodes` 搜索可返回 `warnings`（注册错误码、未检索范围、说明与处理办法），正文和控制台同时显示；可用匹配继续返回，不宣称全部范围已检索。单条索引及当前版本限额由 Hub 配置，产品与团队条目分别计量。超限或索引未完成不会让 `/console/search` 整页返回 500。团队页容量提示区分个人原文／历史容量、当前版本索引额度与仍保留的历史磁盘占用。
 
 
-决定 88 第三阶段：“记录”页增加按授权人／接收人索引读取的个人知识与个人包授权历史。普通成员只看本人参与的授权；管理员仅看全体管理员授权，看不到成员间的授权。每次还核对记录正文的受众，错误索引不构成披露依据。提交共享只呈现安全元数据，管理员可见全部，成员只见本人；成员／时间过滤和各来源分页沿用当前页面，工具／运行过滤时不混入无关事件。团队目录显示为层级名称，拒收回执也显示目标；不展示提交原文、个人文件字节或未经处理的参数。
+决定 135 第三阶段：“记录”页增加按授权人／接收人索引读取的个人知识与个人包授权历史。普通成员只看本人参与的授权；管理员仅看全体管理员授权，看不到成员间的授权。每次还核对记录正文的受众，错误索引不构成披露依据。提交共享只呈现安全元数据，管理员可见全部，成员只见本人；成员／时间过滤和各来源分页沿用当前页面，工具／运行过滤时不混入无关事件。团队目录显示为层级名称，拒收回执也显示目标；不展示提交原文、个人文件字节或未经处理的参数。
 Run source information identifies uploader declarations: binding an own ordinary upload makes it readable to the run's
 current actual readers in that run only. The console and MCP text show this scope; a bare source read gains no permission.
 References the submitter could not read remain absent diagnostics. Reader checks do not rerun fragment parsers, and an
@@ -1024,7 +1024,7 @@ show assigned enabled member names to administrators, or the generated unassigne
 the team scope. Personal grant templates apply only to personal packs; administrator authority is unchanged.
 Credential refusals disclose field names and line numbers without matched values.
 
-Layout review of decision 88: received workflow/skill cards have their own group, and share history resolves readable
+Layout review of decision 135: received workflow/skill cards have their own group, and share history resolves readable
 statements with team links or refusal reasons. Personal and team trees omit repeated namespace roots; counts derive
 only from visible space rows or memory documents. Knowledge and memory use generated state chips, readable capacities,
 grouped byte counts and minute-level local times. Version history is collapsed by default and uses descriptive names;
@@ -1034,15 +1034,15 @@ selected audience and exact username through a same-origin/CSRF-protected redire
 Revocation uses a secondary or danger control. Narrow tables scroll within their own boxes, while state/time/count and
 scope labels stay on one line. Synthetic layout captures are evidence for presentation only, not permission checks.
 
-Decision 89 review item 5 masks cleared personal source directories in sharing receipts, team-entry provenance and
+Decision 138 review item 5 masks cleared personal source directories in sharing receipts, team-entry provenance and
 source links. Public team destinations, statements and safe receipt facts remain visible; immutable receipt bytes are
 not rewritten. The marker comes from model 26 display metadata. Console contexts cache only the metadata flag for one
 request, and both members and administrators retain the normal raw-record refusals. The real-Hub regression uses
 synthetic console passwords through testConsoleCredentials and verifies team content remains available after purge.
 
-Decision 89 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms never restore purged personal content. Originals independently held by runs retain their existing reader restrictions and read-tier checks; personal knowledge links and grants are removed. The HTTP transport is described below; MCP still exposes only six tools.
+Decision 138 step-2 review item 9 displays the generated local synchronization status in personal/all knowledge and memory views, with a CSRF-protected own-account return-to-Hub form. Local personal node/search/memory reads are empty, including a run started without a personal root. Team content and workflow execution remain available. The password-session form checks epoch and current state and starts a new empty epoch; it cannot target another member. Old forms never restore purged personal content. Originals independently held by runs retain their existing reader restrictions and read-tier checks; personal knowledge links and grants are removed. The HTTP transport is described below; MCP still exposes only six tools.
 
-### Personal sync commit integration (decision 89, step 4)
+### Personal sync commit integration (decision 138, step 4)
 
 Console and MCP personal knowledge/memory writes participate in the same state and capacity boundary as internal sync
 commits. A rendered personal write form carries its epoch and refuses stale content after purge and resume; the service
@@ -1050,7 +1050,7 @@ also rechecks the epoch after asynchronous admission. Existing MCP inputs remain
 exposed. Memory answers report the generated conflict status and count instead of silently selecting a candidate.
 The dedicated HTTP route and own-account mode controls are described below.
 
-### Personal sync HTTP and mode controls (decision 89, step 5)
+### Personal sync HTTP and mode controls (decision 138, step 5)
 
 The protocol itself is specified for any client or server in [docs/protocols/knowledge-sync-v1.md](../../docs/protocols/knowledge-sync-v1.md)
 (decision 137); this section records the Hub implementation. HTTP statuses come from `PERSONAL_SYNC_ERROR_STATUS` in
@@ -1083,7 +1083,7 @@ device IDs or personal titles. The pre-check cannot count unpersisted read-only 
 unknown and explains their re-verification instead. Team copies and local copies remain; an older backup can restore
 older personal content.
 
-### Personal sync acceptance boundary (decision 89, step 6)
+### Personal sync acceptance boundary (decision 138, step 6)
 
 Acceptance 49 uses the frozen v1 exchange vectors directly as HTTP bytes, rather than re-encoding test expectations
 with server code. Two devices create sibling memory revisions, observe a stale CAS refusal, retain both conflicting
@@ -1166,7 +1166,7 @@ Task page: `docs/hub-r4-tasks/rulings-141.md`. Model version 35 (K01, R01 and B0
 Tests: `hub/server/sync-rulings.test.ts` (1, 2), `hub/records/personal-run-originals.test.ts` and acceptance 49 (3),
 `hub/runs/packs/member-deletion.test.ts`, `hub/server/console/member-deletion.test.ts` and acceptance 54 (4).
 
-## Exact capacity controls (decision 91, phase 5 block 4)
+## Exact capacity controls (decision 140, phase 5 block 4)
 
 `capacity.ts` is the shared one-decimal KB/MB/GB formatter for member metadata, my space, memory limits and quota errors.
 Exact byte evidence remains in focusable design-system Tooltips, or alongside formatted values in MCP/CLI plain text.

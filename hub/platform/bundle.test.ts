@@ -1,4 +1,4 @@
-// Release bundles (decision 76): an unpacked bundle deploys its app/ as the release without npm ci, keeping the symlinks
+// Release bundles (decision 123): an unpacked bundle deploys its app/ as the release without npm ci, keeping the symlinks
 // npm made, once its tree digest and platform check out; a tampered tree, another platform, a link out of the release or
 // an absolute link is refused and leaves no release behind.
 import assert from 'node:assert/strict';

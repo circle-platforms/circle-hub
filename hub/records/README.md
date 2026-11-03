@@ -1,6 +1,6 @@
 # records
 
-## Personal-pack records and result audiences (decision 87)
+## Personal-pack records and result audiences (decision 134)
 
 Personal publications, grants/revocations, retirements and team transfers are append-only registered records, indexed
 by owner/id rather than global pack id. `personalPackGrants` reduces the newest decision per audience, and
@@ -16,7 +16,7 @@ complete result-ground rule at admission and read time.
 No migration or change to existing record/object bytes is required for these new registered kinds.
 
 
-## Space search projection (decision 86)
+## Space search projection (decision 133)
 
 Migration 9 adds the projection; migration 10 consolidates its token copies into `knowledge_space_search_documents`,
 keyed by the immutable entry record. `knowledge_space_search` retains only version/path/entry references. Unchanged versions
@@ -49,9 +49,9 @@ artifact and version through the same connection after a complete snapshot capac
 Objects remain immutable; no existing source bytes are deleted or rewritten.
 
 
-Decision 83, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.
+Decision 130, second round item 4 reuses `principals.resetPassword` from both the host CLI and the console command bridge. No migration or new record shape: the existing password revision, forced change, console-session revocation and append-only history apply equally.
 
-Decision 83, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.
+Decision 130, second round item 3: password validation and database errors use “密码” in Chinese. Historical source text and the scanner’s recognition of synonyms are unchanged.
 
 Persistence layer and identity primitives of the Hub: model elements B01 B02 B04 B05 B08, R01 and R02 (visibility).
 The package owns `hub/records/**`, `hub/config/**` and `hub/testing/**`. Other packages code against
@@ -85,7 +85,7 @@ const kit = await openRecords(loadConfig(process.env), { keyProvider, migrate: f
 
 ## Storage
 
-Decision 83 adds migration 8 for console passwords. User rows hold a random-salt scrypt digest and a mandatory-first-change
+Decision 130 adds migration 8 for console passwords. User rows hold a random-salt scrypt digest and a mandatory-first-change
 flag, never plaintext. Password revisions prevent a verification from creating a session after a concurrent reset.
 Password changes and administrator resets append a `user_history` snapshot marked `password_changed`, revoke all console
 credentials and preserve the account's Circle tokens. Console credentials expire after 12 hours and are excluded from
@@ -663,7 +663,7 @@ error. A source reference without the authorized run continues to use the reader
 
 来源及允许修改范围见任务页 `docs/hub-r4-tasks/stable-scan-fixture.md`。按集成者指令，本轮没有运行测试或类型检查；固定输入的 clean 结论和新增断言均待集成者验证，不计通过。
 
-## MCP 标准授权的存储（决定 78，2026-11-01）
+## MCP 标准授权的存储（决定 125，2026-11-01）
 
 迁移 7 `standard_authorization` 追加三处可变存储，已应用迁移 1–6 的 SQL 不变（`migrations.snapshot.test.ts` 把 6、7 也固定下来，并更新文件摘要）：
 
@@ -673,9 +673,9 @@ error. A source reference without the authorized run continues to use the reader
 
 运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销记在这些可变存储里，与此前的令牌一样不写记录；合约里没有对应的记录类型。测试：`standard-authorization.test.ts`。
 
-`RecordStore.countIndexed`（决定 79）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
+`RecordStore.countIndexed`（决定 126）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
 
-`RecordStore.addIndex`（决定 80）：给一条已存的记录追加索引项。索引是派生的、只追加的（`record_index` 的触发器不许修改和删除），记录本身和摘要不变；已有的项保留、不重复，一条记录合计至多 200 项，不存在的记录不加，返回加了几项。运行引擎用它给索引之前受理的提交补上所引知识的索引。测试：`add-index.test.ts`。
+`RecordStore.addIndex`（决定 127）：给一条已存的记录追加索引项。索引是派生的、只追加的（`record_index` 的触发器不许修改和删除），记录本身和摘要不变；已有的项保留、不重复，一条记录合计至多 200 项，不存在的记录不加，返回加了几项。运行引擎用它给索引之前受理的提交补上所引知识的索引。测试：`add-index.test.ts`。
 
 The second knowledge-space review adds `Artifacts.recordUploadRefusal` for a trusted caller after its enclosing transaction
 has rolled back. It appends safe scan/digest/uploader metadata only and never stores original bytes. Ordinary upload
@@ -723,7 +723,7 @@ retained. A small portable decoder is checked against that parser for every name
 mirrors the scanner, decoder and data into its standalone skill, without a runtime package dependency. This avoids two
 credential policies drifting apart; it adds no per-source hashing or data-verification pass.
 
-### Personal payload storage (decision 89, step 2)
+### Personal payload storage (decision 138, step 2)
 
 Migration 14 adds account/epoch-scoped PostgreSQL byte payloads, immutable digest capsules and purge journals. These
 payloads use no per-epoch encryption. Equal bytes are held independently across accounts; only an account/epoch deduplicates.
@@ -751,7 +751,7 @@ restoring a backup taken before a purge restores that old content. The restore c
 No sync HTTP handler or client is provided by this step. Current mode defaults to Hub. Clearing is an internal service
 operation until the checked, authenticated mode-switch routes are wired in subsequent steps.
 
-### Personal sync transport (decision 89, step 3)
+### Personal sync transport (decision 138, step 3)
 
 The wire protocol is specified in [docs/protocols/knowledge-sync-v1.md](../../docs/protocols/knowledge-sync-v1.md)
 (decision 137); the sections below record how records stores and scopes it. `changeMode(by, input, via)` with an HTTP
@@ -796,11 +796,11 @@ metadata. PG 18 ownership now backs up, purges and restores a real staged batch,
 as private record bodies. Returning from local to Hub uses the owner-defined hub_resume_personal function, not an
 UPDATE grant on personal_spaces (Claude 2026-11-03); the HTTP mode adapter is described in step 5 below.
 
-Decision 89 review item 1: startup retirement treats each team version's products[].root as a knowledge-record mount,
+Decision 138 review item 1: startup retirement treats each team version's products[].root as a knowledge-record mount,
 not a directory object file. It skips those mount boundaries while preserving ordinary team directory objects. The
 upgrade regression covers first and repeated startup; a real synthetic produced product also stays readable after recovery.
 
-Decision 89 review item 2: object_holds indexes exact storage fields, with SELECT-only runtime access and owner trigger
+Decision 138 review item 2: object_holds indexes exact storage fields, with SELECT-only runtime access and owner trigger
 maintenance. Authorization bound objects cover resource, variable and executor definitions; pack manifests/files,
 verbatim submissions, frozen executor maps, producer outputs/lists and registered feeding objects have explicit paths.
 Generator inputs, arbitrary strings and ordinary grounds are not storage ownership. A non-space artifact holder keeps
@@ -828,7 +828,7 @@ Legacy file retirement fsyncs the containing directory before recording completi
 
 Review item 9 exposes a metadata-only personal mode read and a console-only resume operation. The runtime still cannot UPDATE personal_spaces. The owner-defined resume function requires a completed local purge and a fresh UUID; the authenticated application checks the account, epoch and expected state while holding its existing space lock. New head, mode and a content-free action audit commit together. Direct runtime regression covers privileges, invalid reuse, rollback, disabled accounts and concurrent resume. General bidirectional HTTP mode switching is implemented in step 5 below.
 
-### Atomic personal sync commits (decision 89, step 4)
+### Atomic personal sync commits (decision 138, step 4)
 
 Migration 16 adds scoped bindings, private notes, native-byte credits, export accounting and memory reservations. The
 account lock serializes native writes, sync CAS and epoch changes. An owner-defined scope lock avoids granting UPDATE
@@ -851,7 +851,7 @@ or inherited roles. Runtime migration verification repeats that check at startup
 available; granting the table owner as a runtime role is still refused. External database owners must revoke unsafe
 privileges themselves; the grant helper does not silently change database policy.
 
-### Run-held personal uploads (decision 89 review)
+### Run-held personal uploads (decision 138 review)
 
 Migration 17 retains the exact capture body and raw bytes of a personal upload when a run binds its artifact. An
 owner-only trigger performs the copy inside the run append transaction, with a shared epoch lock; failed appends retain
@@ -882,7 +882,7 @@ EXECUTE on `hub_run_citations`; mode pre-checks count copies and affected runs. 
 pack files keep their independent holders. Member deletion (ruling 4) appends a hand-over of private pack versions
 to the deleting administrator through a hook registered by the packs package, inside the `prepare` transaction.
 
-### Sync mode receipts and access-token authentication (decision 89, step 5)
+### Sync mode receipts and access-token authentication (decision 138, step 5)
 
 Migration 18 adds append-only, content-free personal_sync_mode_operations, keyed by account/epoch/operation. The
 full request identity binds replay to the same intent; a cached old purge result cannot purge a later epoch. Mode

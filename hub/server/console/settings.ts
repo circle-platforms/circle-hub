@@ -247,7 +247,7 @@ ${await hubState(ctx)}`;
   return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(html`${seg([['mine','我的客户端'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:html`<h2 class="ch-panel-title">我的客户端</h2>${stat('已连接',rows.length)}${card({title:'最近使用'},html`<p>${when(lastUse(active(tokens)))}</p>`)}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用']])}`})) };
 }
 
-/** The old management pages of decision 75 land here; a member gets the neutral page as before. */
+/** The old management pages of decision 122 land here; a member gets the neutral page as before. */
 export function adminOnly(ctx: PageContext, render: () => Promise<PageResult>): Promise<PageResult> {
   return ctx.admin ? render() : Promise.resolve(neutralPage(ctx));
 }

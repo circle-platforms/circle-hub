@@ -194,7 +194,7 @@ export const ICONS = {
 } as const;
 
 /**
- * The mark of circle-hub (owner decision 82): the Hub at the centre, the Circles it serves on an orbit around it, in
+ * The mark of circle-hub (owner decision 129): the Hub at the centre, the Circles it serves on an orbit around it, in
  * Circle's four colours. The centre and the orbit take the text colour; satellites use the shared brand tokens.
  */
 export function logo(): Html {

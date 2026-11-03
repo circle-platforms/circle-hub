@@ -1,6 +1,6 @@
 import {evidence,technicalCode,stat,facts} from './presentation.ts';
 import {personalOriginCleared,clearedPersonalFolder,singleItemOrigin} from './personal-origin.ts';
-// Decision 88 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
+// Decision 135 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
 import { SpaceGrantBody } from '../../../contracts/src/spaces.ts';
 import { KnowledgeShareBody, PersonalPackGrantBody } from '../../../contracts/src/sharing.ts';
 import {MemoryGrantBody,MemoryShareBody} from '../../../contracts/src/memory.ts';

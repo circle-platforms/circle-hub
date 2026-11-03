@@ -1,13 +1,13 @@
-# 任务：Hub 上的个人与团队空间（决定 84 第二阶段）
+# 任务：Hub 上的个人与团队空间（决定 131 第二阶段）
 
-依据：决定 84（所有者 2026-11-02，14 个待定问题全部按建议定下），设计页 [`knowledge-workflows.md`](../design/knowledge-workflows.md)“分阶段”第 2 项，以及“两个空间”“授权”“条目”“来源与组织”“索引”“版本与引用”“权限与安全”各节。本任务只做 Hub：个人空间先只在 Hub 上，经控制台和 Circle 读写，暂不同步；提交共享、同步、上传署名等在后续任务。
+依据：决定 131（所有者 2026-11-02，14 个待定问题全部按建议定下），设计页 [`knowledge-workflows.md`](../design/knowledge-workflows.md)“分阶段”第 2 项，以及“两个空间”“授权”“条目”“来源与组织”“索引”“版本与引用”“权限与安全”各节。本任务只做 Hub：个人空间先只在 Hub 上，经控制台和 Circle 读写，暂不同步；提交共享、同步、上传署名等在后续任务。
 
 ## 做法
 
 - 工作树 `circle-hub-spaces`，分支 `kw-spaces-local`，从“工作流改名”分支（PR #125）的头部开出；`node_modules` 已链接，不要运行 `npm install`；只在本机提交，Claude 审查并跑过相关检查后推送、开 PR，合并由所有者决定。
 - 先在本页“实施方案”一节写出数据结构、合约改动、接口与页面的具体做法，然后直接动手，不必等确认；做的过程中改了方案就同步改本节。
 - 规则同 [`console-walkthrough.md`](console-walkthrough.md) 与 `AGENTS.md`：
-  - 枚举、记录类型、拒收码和界面用语只取自 `contracts/generated`；需要的新词表、记录类型和拒收码按决定 84 写进 `contracts/model.json` 与 `contracts/codes.json` 并生成，在 `changes` 里写明来源。
+  - 枚举、记录类型、拒收码和界面用语只取自 `contracts/generated`；需要的新词表、记录类型和拒收码按决定 131 写进 `contracts/model.json` 与 `contracts/codes.json` 并生成，在 `changes` 里写明来源。
   - 跨包只经各包 `api.ts` 调用；已应用的迁移不改，只追加。
   - 核心代码不写产品名；测试只用合成数据（地址在 192.0.2.0/24）。
   - 界面文字用规范术语，说明性文字放悬停提示。
@@ -15,7 +15,7 @@
   - 改动波及读取权限、登录、迁移、记录回放或 MCP 工具答复时，再跑受影响的验收场景（`tests/acceptance/` 中相关文件）。
   - 这是 PR #124 的教训：定向测试漏掉了跨包的验收场景、冻结版本的升级回放和并发建用户，CI 才发现。
   - 测试中的成员用 `testConsoleCredentials` 以合成密码登录控制台。
-- 可以分多次提交，每次提交是一个能独立说明的步骤。完成后在本页“做了的”“验证”写明，并在 `docs/hub-r4-progress.md` 记为决定 86（Hub 个人与团队空间的实施，依据决定 84）。
+- 可以分多次提交，每次提交是一个能独立说明的步骤。完成后在本页“做了的”“验证”写明，并在 `docs/hub-r4-progress.md` 记为决定 133（Hub 个人与团队空间的实施，依据决定 131）。
 
 ## 要做到的（验收标准）
 
@@ -64,7 +64,7 @@
 
 ## 实施方案
 
-1. **合约与版本**：模型升为 17，按决定 84 改 K01 的必选产品线约束，增加空间、条目核验状态、搜索范围与授权对象词表，以及空间版本、条目、授权、原文归属、容量设置的追加记录和拒收码。旧产品条目与树的版本 1 格式保留，新空间采用一套共用条目格式；生成器及必要的技能镜像清单同步生成和升补丁版。
+1. **合约与版本**：模型升为 17，按决定 131 改 K01 的必选产品线约束，增加空间、条目核验状态、搜索范围与授权对象词表，以及空间版本、条目、授权、原文归属、容量设置的追加记录和拒收码。旧产品条目与树的版本 1 格式保留，新空间采用一套共用条目格式；生成器及必要的技能镜像清单同步生成和升补丁版。
 2. **存储与回放**：追加迁移 9，建立可从追加记录重建的空间搜索投影，中文按两字切分并建立 PostgreSQL GIN 数组索引。空间 ID 为 team 或成员 ID，个人空间按需建立，团队空间唯一。版本记录固定空间、目录内容、前版、操作者、时间与原因；版本记录摘要作为新空间根，树和条目仍按内容寻址，因此相同内容在不同空间不会混淆授权。旧产品根和旧引用不变，团队的产品目录按现有指针动态挂载。
 3. **知识服务与权限**：通过 records 的公共 API 提供搜索投影；knowledge 的公共 API 提供空间目录、写入、替代／撤回、历史、差异、授权／收回和容量设置。个人写入在数据库事务与空间业务锁内完成，核对来源、引文、路径和凭据；无依据为未核验，有依据逐条通过后为已核验。历史与索引中的读取同样检查当前授权，目录按完整路径分段判定，管理员没有个人空间的默认读权。个人凭据来源不可授权，授权前扫描凭据。默认个人容量 1 GiB，管理员只调整限额。
 4. **MCP 与运行**：仍为六个工具；upload_file 增加可选个人条目载荷（可只提交条目），普通文件上传行为保留；个人导入文件显式归入个人空间。get_nodes 增加空间选择、目录及无运行搜索参数；带 run 的搜索明确拒绝。空间树通过现有 tree: 读取与 resolve_reference 路径解析。start_run 的新记录可选保存团队与本人个人空间的版本锁，旧运行无此字段仍可回放；任务读取个人内容按发起人及当前授权限制，不借管理员身份扩大范围。
@@ -149,7 +149,7 @@
 - 既有验收：`node --test --test-concurrency=1 tests/acceptance/06-user-without-pack.test.ts tests/acceptance/12-console-security.test.ts tests/acceptance/13-idempotence.test.ts tests/acceptance/14-knowledge-sync.test.ts tests/acceptance/15-aliasing-end-to-end.test.ts tests/acceptance/17-hub-restart.test.ts tests/acceptance/19-concurrency.test.ts tests/acceptance/30-shared-results.test.ts tests/acceptance/33-r5-t1t3-knowledge-qa.test.ts tests/acceptance/35-r5-t1t3-build-diff.test.ts tests/acceptance/39-r5-t9-2-skill-packs.test.ts`（29 通过）。加新增场景 46 的 5 项，定向验收共 34 项通过，0 跳过。
 - 收尾：`npm run typecheck`、`npm run verify:contracts`、`npm run test:docs`；检查 Git 差异与签署提交。所有已执行分组均 0 跳过；没有把未选入的套件计入通过。
 
-本机实现分步提交：`cab0033`（合约、存储与知识／运行核心）、`3e8ee67`（控制台与模型文本、跨包验收及范围复查）；本页与决定 86 随收尾提交补齐验证。第三阶段 `kw-share.md` 和 Circle 仓库均未改；没有推送或创建 PR。
+本机实现分步提交：`cab0033`（合约、存储与知识／运行核心）、`3e8ee67`（控制台与模型文本、跨包验收及范围复查）；本页与决定 133 随收尾提交补齐验证。第三阶段 `kw-share.md` 和 Circle 仓库均未改；没有推送或创建 PR。
 
 ## 审查意见（Claude 2026-11-02，独立安全审查）
 
@@ -209,4 +209,4 @@
 - 场景 14 单独执行：4 项通过，0 失败、0 跳过。按协调者要求执行 `node --test --test-concurrency=2 tests/acceptance/14-knowledge-sync.test.ts tests/acceptance/42-r5-t4-2-operations.test.ts` 三轮（每轮独立临时 PostgreSQL／合成服务）：每轮 7 项通过（14 的 4 项、42 的 3 项），均 0 失败、0 跳过，约 102、84、81 秒。三轮同时有并行测试负载，仍未复现；这不证明间歇问题已消失。后续若再次失败，附带的构建原因可用来继续定位。
 
 - 第二轮受影响验收收尾：`node --test --test-concurrency=1 tests/acceptance/06-user-without-pack.test.ts tests/acceptance/12-console-security.test.ts tests/acceptance/13-idempotence.test.ts tests/acceptance/15-aliasing-end-to-end.test.ts tests/acceptance/17-hub-restart.test.ts tests/acceptance/19-concurrency.test.ts tests/acceptance/30-shared-results.test.ts tests/acceptance/33-r5-t1t3-knowledge-qa.test.ts tests/acceptance/39-r5-t9-2-skill-packs.test.ts tests/acceptance/46-knowledge-spaces.test.ts`：29 项通过，0 失败、0 跳过，约 257 秒。包含十路并发与重启回放、知识问答、升级后的四个技能引用及新空间边界。没有跑全量回归。
-- 未运行／跳过：`hub/platform/ownership.test.ts` 的真实平台集成整组因缺 PG 18 客户端跳过（不是通过）；其备份／恢复路径、Linux 隔离作业、来源归档检查、真实业务系统与部署均未执行。本轮没有改来源相关工具，无需追加来源检查；没有推送或创建 PR。类型检查、生成合约核对和文档检查均通过。第三阶段须保留决定 88 的补充提交，并用全部实际读者规则取代第二阶段临时防护。
+- 未运行／跳过：`hub/platform/ownership.test.ts` 的真实平台集成整组因缺 PG 18 客户端跳过（不是通过）；其备份／恢复路径、Linux 隔离作业、来源归档检查、真实业务系统与部署均未执行。本轮没有改来源相关工具，无需追加来源检查；没有推送或创建 PR。类型检查、生成合约核对和文档检查均通过。第三阶段须保留决定 135 的补充提交，并用全部实际读者规则取代第二阶段临时防护。

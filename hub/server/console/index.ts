@@ -5,7 +5,7 @@ import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts
 import { LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
 // 设置) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
-// decision 75; the older paths (/console/results, /console/admin/...) stay. The
+// decision 122; the older paths (/console/results, /console/admin/...) stay. The
 // session cookie is HttpOnly, SameSite=Strict and scoped to /console. Every POST form (sign-in, sign-out, first-admin
 // setup and the management actions under /console/admin/do/) carries a CSRF token the server issued and must come from
 // this server's own origin; a management action also needs an administrator's session. Every request re-authenticates the
@@ -536,7 +536,7 @@ type Route = (ctx: PageContext, rest: string[], options: ConsoleOptions, session
 
 const bridgeRun = (options: ConsoleOptions, session: ConsoleSession) => (options.bridge === undefined ? null : (argv: string[]) => options.bridge!.run(argv, { token: session.token }));
 
-/** The management pages of decision 75, each now part of one of the seven places; administrators only, as before. */
+/** The management pages of decision 122, each now part of one of the seven places; administrators only, as before. */
 const ADMIN_PAGES: Record<string, Route> = {
   calls: (ctx) => recordsPage(ctx, '/console/admin/calls'),
   packs: (ctx) => packsPage(ctx),

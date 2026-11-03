@@ -1,8 +1,8 @@
 # hub/platform
 
-Decision 83, second round item 3: the installer’s Chinese prompts and help use “密码”, consistent with console login.
+Decision 130, second round item 3: the installer’s Chinese prompts and help use “密码”, consistent with console login.
 
-Decision 83's second-round release-workflow approval aligns the fresh-runner install check with `install.sh`:
+Decision 130's second-round release-workflow approval aligns the fresh-runner install check with `install.sh`:
 `--admin-user` supplies a synthetic account, `--password-stdin` reads its password, and the HTTPS check requires the
 username/password login form. Local static and dry-run checks do not establish a successful deployed install or CI run.
 
@@ -40,7 +40,7 @@ Configure the target and firewall before exposing the service; this setting does
 
 ## Built-in HTTPS
 
-Owner decision 74 (2026-10-31): the Hub can serve HTTPS itself, so the web console and Circle reach it on an internal
+Owner decision 121 (2026-10-31): the Hub can serve HTTPS itself, so the web console and Circle reach it on an internal
 address without a separate TLS proxy. `init --https-port <p> [--https-host <ip>]` (or `CIRCLE_HUB_HTTPS_PORT` and
 `CIRCLE_HUB_HTTPS_HOST` at init) pins `https_port` and `https_host` in the deployment settings; a non-loopback HTTPS
 address needs the allowed-host list, the port may not be the HTTP port, and a TLS proxy and the built-in HTTPS are
@@ -64,7 +64,7 @@ names it in `trust_cert_files`. Check the fingerprint before trusting it.
 
 ## Release bundles and the installer
 
-Owner decision 76 (2026-10-31): the Hub installs with one command on macOS and Linux (arm64 and x64). A release bundle
+Owner decision 123 (2026-10-31): the Hub installs with one command on macOS and Linux (arm64 and x64). A release bundle
 (`tools/build-bundle.ts`) is one directory `circle-hub-<version>-<platform>/` holding `app/` (git archive of the commit
 without foundation/ and references/, with `npm ci --include=dev --os --cpu` for that platform, the PostgreSQL binaries
 included), `node/` (bin/node and LICENSE of the official Node.js build, checked against its SHASUMS256.txt) and
@@ -653,13 +653,13 @@ Static wiring is aligned (since decision 137 on every platform, `keyStoreFor`): 
 resolved deployment root and vault key names. Actual service-user production execution remains unverified. The owner canceled
 backup/rehearsal work; the integrator performs the final authorized real pipe. No agent accessed real keys or target systems.
 
-Decision 89 step 2: personal payloads are in PostgreSQL and are included in the existing consistent dump/restore, with
+Decision 138 step 2: personal payloads are in PostgreSQL and are included in the existing consistent dump/restore, with
 no extra key or unlisted filesystem area. Restoring a backup from before personal content was cleared brings that
 content back; the restore command prints this fact. Old backups and independently held team copies are not erased.
 The ownership regression backs up private payloads, purges them, restores the older snapshot and verifies both restored
 content and a subsequent purge under the application role. It also checks the unchanged table ownership and grants.
 
-Decision 89 step 3 registers CIRCLE_HUB_SYNC_MAX_BATCH_BYTES in the platform service environment allow-list. Migration 15
+Decision 138 step 3 registers CIRCLE_HUB_SYNC_MAX_BATCH_BYTES in the platform service environment allow-list. Migration 15
 adds ten scoped transport tables; ownership covers every table and preserves the restricted personal_spaces grants.
 The backup regression also restores a staged sync object with its session and idempotent receipt. Runtime collection
 uses an owner-defined function with a pinned search path, without direct DELETE grants on payloads or the object catalog.

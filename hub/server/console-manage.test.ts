@@ -1,4 +1,4 @@
-// The console's management (decision 75) end to end over HTTP with synthetic records and a recording command bridge:
+// The console's management (decision 122) end to end over HTTP with synthetic records and a recording command bridge:
 // first-admin setup with the one-time code (it opens no session: the administrator signs in with the password and first
 // changes an initial one), the management pages, actions as POST forms (own origin, the session's CSRF
 // token, administrators only) turned into exact `circle-hub` argv, the secret value kept out of argv, a background job,

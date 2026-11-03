@@ -1,6 +1,6 @@
 import {UNREPORTED_CLIENT} from './client-provenance.ts';
 import {technicalCode} from './presentation.ts';
-// The console's management (owner decision 75): administrators manage users and tokens, task packs, resources, secrets and
+// The console's management (owner decision 122): administrators manage users and tokens, task packs, resources, secrets and
 // knowledge sync from the browser. Every action is a form POST (this server's own origin, the session's CSRF token, an
 // administrator's session) that runs the matching `circle-hub` commands through the command bridge, as the signed-in
 // administrator: the same checks, records and messages as the command line, shown on the result page. The console's pages
