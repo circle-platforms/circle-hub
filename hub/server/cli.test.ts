@@ -3,7 +3,7 @@
 // user and token management as the operator token's admin (a token is printed once; --raw prints the token alone), the
 // call-log export without argument content, run show through the command-time assembly, the extension point for the
 // assembly's commands, and delegation to the platform commands without the operator token. A temporary socket-only
-// PostgreSQL; operator tokens in memory (never the owner's keychain), no launchd.
+// PostgreSQL; operator tokens in memory (never the owner's token file), no launchd.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
@@ -75,12 +75,12 @@ const keyProvider = () => new FileKeyProvider(join(scratch, 'vault.key'));
 /** A placeholder assembly module (no packages wired): what the CLI must refuse clearly. */
 const missingAssembly = async (): Promise<AssemblyModule> => ({ assemble: () => { throw new AssemblyMissingError(); } });
 const owner = () => postgres.config.user;
-/** Where the built-in commands look for the operator token: in memory, never the owner's keychain. */
+/** Where the built-in commands look for the operator token: in memory, never the owner's token file. */
 const tokensIn = (store: OperatorTokenStore) => ({ operatorTokens: () => store });
 
 async function run(argv: string[], env: NodeJS.ProcessEnv, extra: Record<string, unknown> = {}) {
   const c = capture(env);
-  const code = await main(argv, { io: c.io, keyProvider, ownerRole: owner(), ...tokensIn(memoryOperatorTokens(null, '测试的空钥匙串')), ...extra });
+  const code = await main(argv, { io: c.io, keyProvider, ownerRole: owner(), ...tokensIn(memoryOperatorTokens(null, '测试的空令牌存储')), ...extra });
   return { code, out: c.out, err: c.err, text: [...c.out, ...c.err].join('\n') };
 }
 
@@ -261,7 +261,7 @@ describe('users, tokens and logs', () => {
     const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line));
     assert.ok(rootToken, 'the bootstrap token is printed once');
     // The deployment's operator token item holds the admin's token (init-admin or operator-token set write it).
-    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试钥匙串'));
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
     assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
     assert.equal((await run(['user', 'create', '乙', '--role', 'superuser'], env, operator)).code, 2);
     const issued = await run(['token', 'issue', '甲', '--label', '笔记本'], env, operator);
@@ -314,7 +314,7 @@ describe('users, tokens and logs', () => {
     const env = await migrated();
     const root = await run(['user', 'create', '根管理员', '--role', 'admin'], env);
     const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
-    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试钥匙串'));
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
     assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
     const userToken = (await run(['token', 'issue', '甲', '--raw'], env, operator)).out[0];
     const changing = [['user', 'create', '乙'], ['user', 'disable', '甲'], ['user', 'enable', '甲'], ['token', 'issue', '甲'], ['token', 'revoke', 'tok_00000000000000000000000001']];
@@ -351,7 +351,7 @@ describe('users, tokens and logs', () => {
     const env = await migrated();
     const root = await run(['user', 'create', '根管理员', '--role', 'admin'], env);
     const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
-    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试钥匙串'));
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
     assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
     const raw = await run(['token', 'issue', '甲', '--raw', '--label', '脚本'], env, operator);
     assert.equal(raw.code, 0, raw.text);
@@ -368,7 +368,7 @@ describe('users, tokens and logs', () => {
     }
     // Through a real process: stdout is exactly the token and one newline (what TOKEN=$(...) captures). The admin token
     // goes the way an operator gives it, CIRCLE_HUB_TOKEN for this one command: never on a command line (ps shows those to
-    // every local user, and node would read one that starts with '-' as its own option). The keychain is never asked: the
+    // every local user, and node would read one that starts with '-' as its own option). No token file is read: the
     // store is an empty one in memory.
     const script = `const { main } = await import(${JSON.stringify(new URL('./cli.ts', import.meta.url).href)});
 const { memoryOperatorTokens } = await import(${JSON.stringify(new URL('./assemble/operator-token.ts', import.meta.url).href)});
@@ -390,7 +390,7 @@ process.exitCode = await main(['token', 'issue', '甲', '--raw'], { keyProvider:
     const env = await migrated();
     const root = await run(['user', 'create', '根管理员', '--role', 'admin'], env);
     const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
-    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试钥匙串'));
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
     assert.equal((await run(['user', 'create', '第二管理员', '--role', 'admin'], env, operator)).code, 0);
     assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
     const userToken = (await run(['token', 'issue', '甲', '--raw'], env, operator)).out[0];
@@ -415,7 +415,7 @@ process.exitCode = await main(['token', 'issue', '甲', '--raw'], { keyProvider:
     assert.equal(asRoot.code, 0, asRoot.text);
     assert.equal(Object.hasOwn(once, 'CIRCLE_HUB_TOKEN'), false, 'taken out of the environment');
     assert.equal(lines(asRoot).filter((line) => line.admin_note !== undefined).length, 2);
-    assert.equal(lines(await run(['logs', 'export'], env, operator)).length, 2, 'the keychain item reads the same');
+    assert.equal(lines(await run(['logs', 'export'], env, operator)).length, 2, 'the stored operator token reads the same');
     // A user's token: their own calls only, never an admin note.
     const mine = await run(['logs', 'export'], { ...env, CIRCLE_HUB_TOKEN: userToken });
     assert.equal(mine.code, 0, mine.text);
@@ -448,7 +448,7 @@ process.exitCode = await main(['token', 'issue', '甲', '--raw'], { keyProvider:
     const env = await migrated();
     const root = await run(['user', 'create', '根管理员', '--role', 'admin'], env);
     const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
-    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试钥匙串'));
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
     const ESC = String.fromCodePoint(0x1b);
     const BEL = String.fromCodePoint(0x07);
     const CSI = String.fromCodePoint(0x9b);

@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 // Test-only read of hub/config's public entry: the platform keeps a copy of its list and must not drift from it.
 import { HUB_ENVIRONMENT } from '../config/index.ts';
-import { assertHubEnvironment, assertKnownHubVariables, HUB_CONFIG_VARIABLES, PLATFORM_VARIABLES, retiredEnvironmentKeys, unknownHubVariables, variable } from './environment.ts';
+import { assertHubEnvironment, assertKnownHubVariables, HUB_CONFIG_VARIABLES, PLATFORM_VARIABLES, RETIRED_VARIABLES, retiredEnvironmentKeys, unknownHubVariables, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
-import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM } from './keychain.ts';
-import { DEFAULT_KEYCHAIN_ACCOUNT, DEFAULT_KEYCHAIN_SERVICE, OPERATOR_TOKEN_ACCOUNT } from './settings.ts';
 
 test('retired CIRCLE_SERVER_* names refuse to start, even empty or beside the new name, naming keys only', () => {
   assert.deepEqual(retiredEnvironmentKeys({ CIRCLE_SERVER_PORT: '1', CIRCLE_HUB_PORT: '2', CIRCLE_SERVER_DATA_DIR: '' }), [
@@ -36,11 +34,29 @@ test('the platform knows exactly the names hub/config reads, plus its own', () =
   for (const name of Object.values(PLATFORM_VARIABLES)) assert.ok(HUB_CONFIG_VARIABLES.includes(name) || name === PLATFORM_VARIABLES.libpqBin, name);
 });
 
-test('hub/config describes the keychain names as the platform uses them: one service for both items, an account the vault master key may not use', () => {
-  const service = HUB_ENVIRONMENT[PLATFORM_VARIABLES.keychainService];
-  const account = HUB_ENVIRONMENT[PLATFORM_VARIABLES.keychainAccount];
-  for (const text of [VAULT_KEY_ITEM.label, OPERATOR_TOKEN_ITEM.label, `账户 ${OPERATOR_TOKEN_ACCOUNT}`, `默认 ${DEFAULT_KEYCHAIN_SERVICE}`]) assert.ok(service.includes(text), `${text} in ${service}`);
-  for (const text of [VAULT_KEY_ITEM.label, `默认 ${DEFAULT_KEYCHAIN_ACCOUNT}`, `${OPERATOR_TOKEN_ACCOUNT} 留给${OPERATOR_TOKEN_ITEM.label}`]) assert.ok(account.includes(text), `${text} in ${account}`);
+test('the retired keychain names refuse to start, even empty, saying the keys are files under the data root', () => {
+  for (const name of Object.keys(RETIRED_VARIABLES)) {
+    assert.equal(Object.hasOwn(HUB_ENVIRONMENT, name), false, `${name} is no longer a configuration name`);
+    assert.equal(Object.values(PLATFORM_VARIABLES).includes(name as never), false, name);
+    for (const value of ['synthetic-value', '']) {
+      assert.deepEqual(retiredEnvironmentKeys({ [name]: value, CIRCLE_HUB_PORT: '7420' }), [name]);
+      assert.throws(
+        () => assertHubEnvironment({ [name]: value, CIRCLE_HUB_PORT: '7420' }),
+        (error: unknown) => {
+          assert.ok(error instanceof PlatformError);
+          assert.match(error.message, new RegExp(`不再读取 ${name}`));
+          assert.match(error.hint ?? '', /不再使用 macOS 钥匙串.*\$CIRCLE_HUB_DATA_DIR\/keys（0700，文件 0600）/);
+          assert.doesNotMatch(`${error.message}${error.hint}`, /synthetic-value/);
+          return true;
+        },
+      );
+    }
+  }
+  // Beside a retired prefix name, both are named.
+  assert.throws(
+    () => assertHubEnvironment({ CIRCLE_SERVER_PORT: '1', CIRCLE_HUB_KEYCHAIN_SERVICE: 'x' }),
+    (error: unknown) => error instanceof PlatformError && /CIRCLE_SERVER_PORT -> CIRCLE_HUB_PORT/.test(error.hint ?? '') && /CIRCLE_HUB_KEYCHAIN_SERVICE 也已停用/.test(error.hint ?? ''),
+  );
 });
 
 test('a misspelled or unknown CIRCLE_HUB_* name is refused by name, with the list of real ones', () => {

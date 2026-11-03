@@ -4,7 +4,7 @@ import {deletionCheck,deleteMember,DELETION_EFFECT} from './member-deletion.ts';
 // records (run show the assembly module's command-time assembly; run list the same records, administrator only); pack,
 // resource, secret, knowledge, init-admin, operator-token and anything else the assembly module registers through
 // registerCommand. The built-in commands that change state (user create once an admin exists, user disable|enable, token
-// issue|revoke) act as the admin of the operator token (CIRCLE_HUB_TOKEN, else the deployment's keychain item), like the
+// issue|revoke) act as the admin of the operator token (CIRCLE_HUB_TOKEN, else the deployment's operator token file), like the
 // assembly's; the read-only ones that read as an account (logs export, run show) read as the token's account, like the
 // assembly's listings. run list is read-only and refuses every account that is not an administrator. Output is Chinese, made safe for a
 // terminal (stored text may come from users' documents), and never shows a secret: a token is printed once, when it is
@@ -32,7 +32,7 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
   io: CliIo;
   /**
    * Where the built-in state-changing commands find the operator token when CIRCLE_HUB_TOKEN is not set; default the
-   * deployment's keychain item (as the assembly's commands). Tests pass a store of their own: never the owner's keychain.
+   * deployment's operator token file (as the assembly's commands). Tests pass a store of their own: never the owner's data root.
    */
   operatorTokens?: (config: HubConfig, service: string) => OperatorTokenStore;
 }
@@ -98,7 +98,7 @@ function usage(extra: readonly CliCommand[]): string {
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
     '',
     `平台命令 ${PLATFORM_COMMANDS.join('、')} 由 hub/platform 执行（例如 circle-hub status），用法见 hub/platform/README.md。`,
-    `改变状态的命令（建用户、停用、恢复、签发和撤销令牌，以及装配模块的这类命令）以操作令牌的管理员身份执行：${OPERATOR_TOKEN_VARIABLE}（只给一条命令：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>），没有时用钥匙串里的操作令牌（init-admin、operator-token set 或 operator-token reissue 存进去）。`,
+    `改变状态的命令（建用户、停用、恢复、签发和撤销令牌，以及装配模块的这类命令）以操作令牌的管理员身份执行：${OPERATOR_TOKEN_VARIABLE}（只给一条命令：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>），没有时用数据根私有密钥文件里的操作令牌（init-admin、operator-token set 或 operator-token reissue 存进去）。`,
     '只读命令（logs export、run show 和装配模块的列表）有操作令牌时以令牌的账号读，--as 只能写这个账号；没有令牌时 --as 指明以哪位管理员的身份读，只有一位启用中的管理员时可以省略。',
     'run list 也是只读，但只允许管理员；普通用户的令牌会被拒绝。它按已有的运行和验证结果列出，不新写存储，不输出提交正文、引文或凭据。--limit 默认 50，最大 500，按开始时间新到旧；还有更多时给出下一页游标，不悄悄截断。未知和各要求项终态取最新一条已受理结果，没有已受理结果时未知为 0、终态为无。验证状态取最新一条验证结果：没有结果是进行中。',
   ];
@@ -108,7 +108,7 @@ function usage(extra: readonly CliCommand[]): string {
 /** A state-changing command takes no --as: who it acts as is the operator token's account. */
 function noAs(as: string | undefined): void {
   if (as !== undefined) {
-    throw new UsageError(`改变状态的命令不用 --as：它以操作令牌的管理员身份执行（${OPERATOR_TOKEN_VARIABLE}，没有时用钥匙串里的操作令牌）`);
+    throw new UsageError(`改变状态的命令不用 --as：它以操作令牌的管理员身份执行（${OPERATOR_TOKEN_VARIABLE}，没有时用私有密钥文件里的操作令牌）`);
   }
 }
 
@@ -222,7 +222,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const kit = await ctx.records();
     const admins = (await kit.principals.list()).filter((user) => user.role === 'admin');
     if (admins.length === 0) {
-      if (role !== 'admin') throw new CliError('还没有管理员', '先建第一位管理员：circle-hub init-admin <名字>（令牌存进钥匙串），或 circle-hub user create <名字> --role admin（令牌显示一次）');
+      if (role !== 'admin') throw new CliError('还没有管理员', '先建第一位管理员：circle-hub init-admin <名字>（令牌存进私有密钥文件），或 circle-hub user create <名字> --role admin（令牌显示一次）');
       const password = initialPassword();
       const { user, token } = await kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:true});
       io.stdout('初始密码（仅显示一次，首次登录必须修改）：');

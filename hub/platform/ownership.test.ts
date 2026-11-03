@@ -165,7 +165,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     parent = await tempDir();
     layout = layoutAt(join(parent, 'root'));
     await ensureLayout(layout);
-    // The vault key lives outside the data root, as the keychain item does.
+    // The vault key lives outside this data root: the test checks database ownership, not the key file.
     keyProvider = new FileKeyProvider(join(parent, 'vault.key'));
     control = createPostgres({ layout, port });
     await control.initialise();

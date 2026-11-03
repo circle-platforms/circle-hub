@@ -58,7 +58,7 @@ FAMX 与 FAMY 是同一产品的两个名字，按一条产品线处理。核心
 - 对任何业务系统写。
 - 推送、建 PR、改 GitHub 设置或发布工作流、把 Hub 开放到本机以外、使用真实设备，除非所有者另行决定。
 - 让凭据、内部地址、真实业务数据或本机绝对路径进入 Git、日志或文档。
-- 打开所有者的环境配置文件或所有者自己的凭据库。测试用临时的钥匙串文件；Hub 的钥匙串条目只经它的平台命令处理，密钥只经 Hub 的 vault 命令进入。
+- 打开所有者的环境配置文件或所有者自己的凭据库。测试用临时数据根里的密钥文件和临时的密钥库；Hub 的密钥文件（数据根 `keys` 目录下的密钥库主密钥和操作令牌，Hub 不再用 macOS 钥匙串，决定 137）只经它的平台命令处理，密钥只经 Hub 的 vault 命令进入。
 - 在 Circle 里加 Hub 专用的界面或标签。
 
 ## 里程碑 1 之后的七项能力
@@ -68,9 +68,9 @@ FAMX 与 FAMY 是同一产品的两个名字，按一条产品线处理。核心
 ## 怎么验证
 
 - 每个包：`npx tsc --noEmit` 不报本包的错；本包的测试用 `node --test` 跑通，并写明命令；每条实现的规则都有正例和反例，解析器和沙箱有对抗输入；README 写明决定、限制、怎么跑测试和对其他包的需求。
-- 全仓：`npm run typecheck`、`npm run verify:contracts`、`npm run test:unit`、`npm run test:acceptance`（临时 PostgreSQL）、`npm run verify:references`、`npm run test:references`，以及文档检查 `node --test ".github/checks/*.test.ts"`。CI 在 Ubuntu 上跑同一组命令，在任务摘要里列出计数和跳过的用例；一个测试都没跑的任务判失败。需要 macOS 或 libpq 的用例（包函数沙箱的断网、钥匙串、launchd、备份恢复与部署）在 CI 上跳过，跳过不算通过：这些路径的证据是每个阶段在本机 macOS 上的完整运行，记在进度里。
+- 全仓：`npm run typecheck`、`npm run verify:contracts`、`npm run test:unit`、`npm run test:acceptance`（临时 PostgreSQL）、`npm run verify:references`、`npm run test:references`，以及文档检查 `node --test ".github/checks/*.test.ts"`。CI 在 Ubuntu 上跑同一组命令，在任务摘要里列出计数和跳过的用例；一个测试都没跑的任务判失败。需要 macOS 或 libpq 的用例（包函数沙箱的断网、launchd、备份恢复与部署）在 CI 上跳过，跳过不算通过：这些路径的证据是每个阶段在本机 macOS 上的完整运行，记在进度里。
 - 合成验收：架构文档第 9 节的场景，加上 `tests/acceptance/` 里后来补充的场景。
-- 部署（第 5 阶段）：在另一个数据目录里演练备份与恢复，包括钥匙串里的钥匙丢失后重新导入密钥；切换失败能回到上一个部署；重启后自动恢复；只监听本机。
+- 部署（第 5 阶段）：在另一个数据目录里演练备份与恢复，包括密钥文件丢失后重新导入密钥；切换失败能回到上一个部署；重启后自动恢复；只监听本机。
 - 真实系统（第 5 阶段）：每个连接器做一次只读冒烟，日志里只有条数和摘要；知识同步跑完一遍，按构建报告产出、跳过和失败，各个根的组成记录可查，没有路径的条目留在根下标为未归位；一份真实脑图在 Circle 里完成初评和独立复核，分区清单和层终态在控制台可查。
 
 ## 最终报告必须写明证明不了的事

@@ -2,8 +2,9 @@
 // the tests need. Each host has its own selection, computed from the sources and never kept by hand: a test file is selected
 // when it names one of the host's skip guards, or when it imports a local helper that itself skips on one of them
 // (tests/acceptance/support/operation-acceptance.ts, for example).
-// - macos (the `macOS-only paths` workflow, macos.yml): sandbox-exec isolation of pack functions, the keychain
-//   (/usr/bin/security), plutil and launchd, and pg_dump/pg_restore of the embedded PostgreSQL's major version (MACOS_GUARD).
+// - macos (the `macOS-only paths` workflow, macos.yml): sandbox-exec isolation of pack functions, plutil and launchd, and
+//   pg_dump/pg_restore of the embedded PostgreSQL's major version (MACOS_GUARD). The keychain is not among them: the Hub keeps
+//   its keys in files on every platform (decision 137), so those tests run on Ubuntu like any other.
 // - linux (the `Linux isolation` jobs of checks.yml): bubblewrap and AppArmor isolation of pack functions, which those jobs
 //   install and load before they run this (ISOLATION_GUARD). The other Ubuntu jobs have no isolation and keep skipping them.
 // A run refuses to start where the host's isolation is unavailable, since every guarded test would only skip. With
@@ -31,7 +32,7 @@ export const ISOLATION_GUARD = /\b(?:sandboxSkip|osIsolationAvailable)\b/;
 
 /** The isolation guards plus the macOS host tools and libpq guards a test checks for before it runs. */
 export const MACOS_GUARD =
-  /\b(?:sandboxSkip|osIsolationAvailable|securityAvailable|temporaryKeychainAvailable|libpqAvailable|LIBPQ_MISSING)\b|\/usr\/bin\/(?:sandbox-exec|security)\b|\bplutil\b|\blaunchctl\b|platform\s*[!=]==?\s*'darwin'/;
+  /\b(?:sandboxSkip|osIsolationAvailable|libpqAvailable|LIBPQ_MISSING)\b|\/usr\/bin\/sandbox-exec\b|\bplutil\b|\blaunchctl\b|platform\s*[!=]==?\s*'darwin'/;
 
 const GUARDS: Readonly<Record<Host, RegExp>> = { macos: MACOS_GUARD, linux: ISOLATION_GUARD };
 const PLATFORMS: Readonly<Record<Host, NodeJS.Platform>> = { macos: 'darwin', linux: 'linux' };

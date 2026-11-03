@@ -62,7 +62,6 @@ test('a legacy key in the vault buys no client and no outbound call; declared pa
       host: '127.0.0.1',
       port: 0,
       database: kit.database,
-      keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...kit.config.limits },
     };
     const hub = await assembleHub(config, { ...kit, vault }, { requireOsIsolation: await osIsolationAvailable(), fetch: recordingFetch, log: () => {}, resourceCacheMs: 0, extractDir: join(scratch, 'extracted') });

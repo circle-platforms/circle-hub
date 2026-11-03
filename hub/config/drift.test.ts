@@ -3,12 +3,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as platform from '../platform/environment.ts';
-import { DEFAULT_KEYCHAIN_ACCOUNT as PLATFORM_KEYCHAIN_ACCOUNT, DEFAULT_KEYCHAIN_SERVICE as PLATFORM_KEYCHAIN_SERVICE } from '../platform/settings.ts';
+import { DEFAULT_KEY_ACCOUNT as PLATFORM_KEY_ACCOUNT, DEFAULT_KEY_SERVICE as PLATFORM_KEY_SERVICE } from '../platform/settings.ts';
 import {
+  DEFAULT_KEY_ACCOUNT,
+  DEFAULT_KEY_SERVICE,
   HUB_ENVIRONMENT,
   HubConfigError,
   HubEnvironmentError,
   PLATFORM_ONLY_ENVIRONMENT,
+  RETIRED_NAMES,
   assertNoRetiredEnvironment,
   isHubEnvironmentName,
   loadConfig,
@@ -30,6 +33,9 @@ test('hub/config refuses exactly the retired names hub/platform refuses', () => 
   const names = [
     ...Object.keys(HUB_ENVIRONMENT).map((name) => name.replace(/^CIRCLE_HUB_/, 'CIRCLE_SERVER_')),
     'CIRCLE_SERVER_DATABASE_CONFIG',
+    ...Object.keys(RETIRED_NAMES),
+    'CIRCLE_HUB_KEYCHAIN',
+    'CIRCLE_HUB_KEYCHAIN_SERVICE_X',
     'CIRCLE_SERVER_',
     'CIRCLE_SERVER',
     'CIRCLE_SERVERLESS',
@@ -70,6 +76,10 @@ test('hub/config tolerates exactly the platform-only names of PLATFORM_VARIABLES
   assert.throws(() => loadConfig({ ...BASE, CIRCLE_HUB_NOT_A_PLATFORM_NAME: 'x' }), HubConfigError);
 });
 
-test('the keychain defaults are the platform defaults', () => {
-  assert.deepEqual(loadConfig(BASE).keychain, { service: PLATFORM_KEYCHAIN_SERVICE, account: PLATFORM_KEYCHAIN_ACCOUNT });
+test('the key name defaults are the platform defaults', () => {
+  assert.deepEqual({ service: DEFAULT_KEY_SERVICE, account: DEFAULT_KEY_ACCOUNT }, { service: PLATFORM_KEY_SERVICE, account: PLATFORM_KEY_ACCOUNT });
+});
+
+test('hub/config retires the same single names as hub/platform, with the same text', () => {
+  assert.deepEqual({ ...RETIRED_NAMES }, { ...platform.RETIRED_VARIABLES });
 });

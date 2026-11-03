@@ -69,7 +69,6 @@ describe('scenario 17: hub process restart preserves runs and results', () => {
       host: '127.0.0.1',
       port: 0,
       database: bed.hub.records.database,
-      keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...bed.hub.records.config.limits },
     };
 

@@ -22,7 +22,7 @@ export interface ServeOptions {
   io: CliIo;
   /** Starts the platform's cluster when the database is the data root's socket; default hub/platform ensureHubDatabase. */
   ensureDatabase?: (env: NodeJS.ProcessEnv) => Promise<unknown>;
-  /** Vault key provider; default hub/platform hubKeyProvider (the keychain item of the deployment settings). */
+  /** Vault key provider; default hub/platform hubKeyProvider (the key file the deployment settings name). */
   keyProvider?: (env: NodeJS.ProcessEnv) => KeyProvider;
   /** Role that owns the tables for --migrate-only; default the operating-system account, the cluster's own role under hub/platform. */
   ownerRole?: string;

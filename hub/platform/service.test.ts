@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { ensureLayout, layoutAt } from './layout.ts';
 import { createPostgres } from './postgres.ts';
-import { ensureHubDatabase, hubKeyProvider } from './service.ts';
+import { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, fileKeyStore, VAULT_KEY_ITEM } from './file-key.ts';
+import { deploymentKeyNames, ensureHubDatabase, hubKeyProvider } from './service.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
 import { withSession } from './sql.ts';
-import { ok, recordingRunner, removeDir, socketPort, tempDir } from './test-support.ts';
+import { removeDir, socketPort, tempDir } from './test-support.ts';
 
 const roots: string[] = [];
 after(async () => {
@@ -71,34 +72,28 @@ test('ensureHubDatabase starts the cluster named by the service environment, nev
   await assert.rejects(ensureHubDatabase({ CIRCLE_HUB_DATABASE_PORT: port }), /没有设置 CIRCLE_HUB_DATA_DIR/, 'never the default data root');
 });
 
-test('hubKeyProvider reads the keychain item of the deployment settings; a data root without settings, the one the environment names; no data root, none', async () => {
-  const key = randomBytes(32).toString('hex');
-  // A development data root without settings (as hub/testing makes them).
+test('hubKeyProvider reads the key file the deployment settings name; a data root without settings, the default names; no data root, none', async () => {
+  const key = randomBytes(32);
+  // A development data root without settings (as hub/testing makes them): the default names, on every platform.
   const plain = await tempDir();
   roots.push(plain);
-  const { runner, calls } = recordingRunner(() => ok(`${key}\n`), { real: false });
-  const provider = hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain, CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }, { runner, platform: 'darwin' });
-  assert.equal(Buffer.from(await provider.getKey()).toString('hex'), key);
-  assert.deepEqual(calls[0]?.args, ['find-generic-password', '-s', 'hub-x', '-a', 'key-x', '-w']);
-  const defaults = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain }, { runner: defaults.runner, platform: 'darwin' }).getKey();
-  assert.deepEqual(defaults.calls[0]?.args, ['find-generic-password', '-s', 'circle-hub', '-a', 'vault-master-key', '-w']);
-  // Without a data root nothing is guessed, as ensureHubDatabase refuses: the default root's settings may name other items.
-  const unset = recordingRunner(() => ok(`${key}\n`), { real: false });
-  for (const env of [{}, { CIRCLE_HUB_DATA_DIR: '' }, { CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }]) {
-    await assert.rejects(hubKeyProvider(env, { runner: unset.runner, platform: 'darwin' }).getKey(), /^PlatformError: 没有设置 CIRCLE_HUB_DATA_DIR：钥匙串项由部署的数据根里的部署设置决定，不猜默认数据根$/, JSON.stringify(env));
+  await fileKeyStore({ root: plain, service: DEFAULT_KEY_SERVICE, account: DEFAULT_KEY_ACCOUNT, item: VAULT_KEY_ITEM }).write(key);
+  const provider = hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain });
+  assert.deepEqual(Buffer.from(await provider.getKey()), key);
+  // Without a data root nothing is guessed, as ensureHubDatabase refuses: the default root's settings may name other keys.
+  for (const env of [{}, { CIRCLE_HUB_DATA_DIR: '' }]) {
+    await assert.rejects(hubKeyProvider(env).getKey(), /^PlatformError: 没有设置 CIRCLE_HUB_DATA_DIR：密钥文件由部署的数据根里的部署设置决定，不猜默认数据根$/, JSON.stringify(env));
   }
-  assert.deepEqual(unset.calls, [], 'the keychain was not asked');
 
   const root = await tempDir();
   roots.push(root);
   const layout = layoutAt(root);
   await ensureLayout(layout);
-  await writeSettingsFile(layout, newSettingsFile({ environment: 'test', keychainService: 'hub-pinned', keychainAccount: 'key-pinned' }));
-  const pinned = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner: pinned.runner, platform: 'darwin' }).getKey();
-  assert.deepEqual(pinned.calls[0]?.args, ['find-generic-password', '-s', 'hub-pinned', '-a', 'key-pinned', '-w']);
-  const stray = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await assert.rejects(hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root, CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'dev-key' }, { runner: stray.runner, platform: 'darwin' }).getKey(), /CIRCLE_HUB_KEYCHAIN_ACCOUNT 是 dev-key/);
-  assert.deepEqual(stray.calls, [], 'the keychain was not asked for another item');
+  await writeSettingsFile(layout, newSettingsFile({ environment: 'test', keyService: 'hub-pinned', keyAccount: 'key-pinned' }));
+  // The default names' file is not the deployment's key: the settings' names are.
+  await fileKeyStore({ root, service: DEFAULT_KEY_SERVICE, account: DEFAULT_KEY_ACCOUNT, item: VAULT_KEY_ITEM }).write(randomBytes(32));
+  await assert.rejects(hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }).getKey(), /没有密钥库主密钥/);
+  await fileKeyStore({ root, service: 'hub-pinned', account: 'key-pinned', item: VAULT_KEY_ITEM }).write(key);
+  assert.deepEqual(Buffer.from(await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }).getKey()), key);
+  assert.deepEqual(await deploymentKeyNames({ CIRCLE_HUB_DATA_DIR: root }).then(({ vaultKey, operatorToken }) => [vaultKey.service, vaultKey.account, operatorToken.service, operatorToken.account]), ['hub-pinned', 'key-pinned', 'hub-pinned', 'operator-token']);
 });

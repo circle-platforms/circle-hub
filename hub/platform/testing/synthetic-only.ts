@@ -13,6 +13,11 @@ class SyntheticOnlyRefusal extends Error {
   constructor(reason: string) { super('合成验证禁止访问真实平台资源'); this.name = 'SyntheticOnlyRefusal'; this.reason = reason; }
 }
 
+/**
+ * Refuses the host tools that reach the account's services: launchctl, systemctl and security. The Hub no longer uses the
+ * macOS keychain (decision 137), so any security call is unexpected; the tripwire and the protected keychain directory
+ * stay so that no verification can reach the owner's credential stores.
+ */
 export function assertSyntheticCommand(command: unknown, shell = false): void {
   if (typeof command !== 'string') return;
   if (['security', 'launchctl', 'systemctl'].includes(basename(command)) || (shell && /(?:^|[\s;|&])(?:\/usr\/bin\/|\/bin\/)?(?:security|launchctl|systemctl)(?:\s|$)/.test(command))) throw new SyntheticOnlyRefusal('host_tool');

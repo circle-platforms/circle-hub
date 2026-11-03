@@ -19,10 +19,8 @@ test('the macOS run selects the guarded unit and acceptance files from the sourc
   for (const file of unit) assert.ok(all.has(file), `${file} is a unit file`);
   assert.deepEqual(acceptance.filter((file) => !acceptanceFiles().includes(file)), []);
   for (const file of [
-    'hub/platform/keychain.test.ts',
     'hub/platform/launchd.test.ts',
     'hub/platform/backup-live.test.ts',
-    'hub/server/assemble/operator-token.test.ts',
     'hub/rules/sandbox/sandbox.test.ts',
     'packs/product/famx/functions/sandbox.test.ts',
   ]) {
@@ -33,6 +31,10 @@ test('the macOS run selects the guarded unit and acceptance files from the sourc
     assert.ok(acceptance.includes(file), file);
   }
   assert.ok(!unit.includes('tools/run-unit-tests.test.ts'), 'a file without a guard stays on Ubuntu only');
+  // Decision 137: the key files are the same on every platform, so their tests run on Ubuntu with the others.
+  for (const file of ['hub/platform/file-key.test.ts', 'hub/platform/key-transfer.test.ts', 'hub/server/assemble/operator-token.test.ts']) {
+    assert.ok(!unit.includes(file), `${file} needs no macOS host tool`);
+  }
 });
 
 test('the Linux run selects the files that guard on the pack sandbox, and none that need macOS or libpq only', () => {
@@ -53,7 +55,7 @@ test('the Linux run selects the files that guard on the pack sandbox, and none t
   for (const file of ['tests/acceptance/28-device-run.test.ts', 'tests/acceptance/43-r5-t4-3-change.test.ts', 'tests/acceptance/oracle/differential.test.ts']) {
     assert.ok(linux.acceptance.includes(file), file);
   }
-  for (const file of ['hub/platform/keychain.test.ts', 'hub/platform/launchd.test.ts', 'hub/platform/backup-live.test.ts', 'hub/server/assemble/operator-token.test.ts']) {
+  for (const file of ['hub/platform/launchd.test.ts', 'hub/platform/backup-live.test.ts', 'hub/server/assemble/operator-token.test.ts']) {
     assert.ok(!linux.unit.includes(file), `${file} needs macOS or libpq, not the pack sandbox`);
   }
 });
@@ -61,7 +63,7 @@ test('the Linux run selects the files that guard on the pack sandbox, and none t
 test('a helper counts only when it skips by itself, and each host reads only its own guards', () => {
   const sources: Record<string, string> = {
     'tests/acceptance/support/skips.ts': "export async function run(t) { if (!await osIsolationAvailable()) { t.skip('x'); return; } }",
-    'tests/acceptance/support/keychain.ts': "export async function run(t) { if (!await securityAvailable()) { t.skip('x'); return; } }",
+    'tests/acceptance/support/plist.ts': "export async function run(t) { if (!existsSync('/usr/bin/plutil')) { t.skip('x'); return; } }",
     'hub/runs/engine/testing/harness.ts': "export async function sandboxSkip() { return (await osIsolationAvailable()) ? false : 'x'; }",
   };
   const read = (file: string): string | undefined => sources[file];
@@ -70,13 +72,17 @@ test('a helper counts only when it skips by itself, and each host reads only its
     assert.equal(needsHost(host, 'hub/runs/x.test.ts', "import { openHarness } from './engine/testing/harness.ts';", read), false);
     assert.equal(needsHost(host, 'hub/runs/x.test.ts', "import { openHarness, sandboxSkip } from './engine/testing/harness.ts';", read), true);
   }
-  assert.equal(needsHost('macos', 'tests/acceptance/51-x.test.ts', "import { run } from './support/keychain.ts';", read), true);
-  assert.equal(needsHost('linux', 'tests/acceptance/51-x.test.ts', "import { run } from './support/keychain.ts';", read), false);
+  assert.equal(needsHost('macos', 'tests/acceptance/51-x.test.ts', "import { run } from './support/plist.ts';", read), true);
+  assert.equal(needsHost('linux', 'tests/acceptance/51-x.test.ts', "import { run } from './support/plist.ts';", read), false);
+  // The keychain is no longer a macOS guard (decision 137): naming security selects nothing.
+  for (const retired of ["await access('/usr/bin/security')", 'const s = await securityAvailable();', 'if (!temporaryKeychainAvailable) return;']) {
+    assert.equal(needsHost('macos', 'hub/platform/x.test.ts', retired, read), false, retired);
+  }
   const darwin = "test('p', { skip: process.platform === 'darwin' ? false : 'macOS' }, () => {});";
   assert.equal(needsHost('macos', 'hub/platform/x.test.ts', darwin, read), true);
   assert.equal(needsHost('linux', 'hub/platform/x.test.ts', darwin, read), false);
   const files = ['a.test.ts', 'b.test.ts', 'c.test.ts'];
-  const source = (file: string): string => (file === 'a.test.ts' ? 'const s = await securityAvailable();' : file === 'b.test.ts' ? 'if (await sandboxSkip()) return;' : 'plain');
+  const source = (file: string): string => (file === 'a.test.ts' ? 'const s = await libpqAvailable();' : file === 'b.test.ts' ? 'if (await sandboxSkip()) return;' : 'plain');
   assert.deepEqual(guardedFiles('macos', files, source), ['a.test.ts', 'b.test.ts']);
   assert.deepEqual(guardedFiles('linux', files, source), ['b.test.ts']);
 });

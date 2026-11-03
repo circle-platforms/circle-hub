@@ -4,13 +4,12 @@ import {mkdtemp, chmod, lstat, readdir, rename, rm, symlink, writeFile} from 'no
 import {tmpdir,userInfo} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
-import {fileKeyProvider, fileKeyStore, removeKeyFile} from './file-key.ts';
-import {VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM} from './keychain-items.ts';
-import {agentFor, createContext, keychainFor} from './context.ts';
+import {fileKeyProvider, fileKeyStore, keyFilePath, removeKeyFile, VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM} from './file-key.ts';
+import {agentFor, createContext, keyStoreFor} from './context.ts';
 import {layoutAt} from './layout.ts';
 import {newSettingsFile, resolveSettings} from './settings.ts';
 
-test('Linux file keys remain private and separate, read exact bytes, and never replace existing items', async t=>{
+test('file keys remain private and separate, read exact bytes, and never replace existing keys', async t=>{
  const root=await mkdtemp(join(tmpdir(),'hub-file-key-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const master=fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});
  const operator=fileKeyStore({root,service:'synthetic',account:'operator-token',item:OPERATOR_TOKEN_ITEM});
@@ -26,7 +25,7 @@ test('Linux file keys remain private and separate, read exact bytes, and never r
  assert.equal(await operator.delete(),true);assert.equal(await operator.delete(),false);assert.deepEqual(await master.read(),value);
 });
 
-test('Linux file keys refuse insecure permissions and symlinks rather than reading them', async t=>{
+test('file keys refuse insecure permissions and symlinks rather than reading them', async t=>{
  const root=await mkdtemp(join(tmpdir(),'hub-file-key-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const store=fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});await store.init();
  const keys=join(root,'keys');const [name]=await readdir(keys);const path=join(keys,name!);
@@ -53,8 +52,25 @@ test('Linux platform dispatch uses systemd and private files even with an inject
  const layout=layoutAt(root);const calls:string[]=[];
  const context=createContext({}, {layout,platform:'linux',home:root,launchAgentsDir:join(root,'systemd'),runner:async(command)=>{calls.push(command);return {code:0,stdout:'LoadState=not-found\n',stderr:''};}});
  const settings=resolveSettings(newSettingsFile({environment:'test'}),{},layout);
- const store=keychainFor(context,settings);await store.init();assert.equal((await store.status()).present,true);
+ const store=keyStoreFor(context,settings);await store.init();assert.equal((await store.status()).present,true);
  assert.equal((await agentFor(context,settings).status()).loaded,false);assert.deepEqual(calls,['/usr/bin/systemctl']);
+});
+
+test('macOS uses the same private key files as Linux: the platform never runs security (decision 137)', async t=>{
+ const roots:string[]=[];t.after(()=>Promise.all(roots.map(root=>rm(root,{recursive:true,force:true}))));
+ for(const platform of ['darwin','linux'] as const){
+  const root=await mkdtemp(join(tmpdir(),`hub-${platform}-key-`));roots.push(root);
+  const layout=layoutAt(root);const calls:string[]=[];
+  const context=createContext({}, {layout,platform,home:root,launchAgentsDir:join(root,'agents'),runner:async(command,args)=>{calls.push([command,...args].join(' '));return {code:1,stdout:'',stderr:'no host tool in this test'};}});
+  const settings=resolveSettings(newSettingsFile({environment:'test'}),{},layout);
+  const store=keyStoreFor(context,settings);
+  assert.deepEqual(await store.status(),{present:false},platform);
+  await store.init();
+  const path=keyFilePath(root,settings.keyService,settings.keyAccount);
+  assert.equal((await lstat(path)).mode&0o777,0o600,platform);assert.equal((await lstat(join(root,'keys'))).mode&0o777,0o700,platform);
+  assert.equal((await store.read()).length,32,platform);
+  assert.deepEqual(calls,[],`${platform}: no command ran`);
+ }
 });
 
 test('Linux service defaults to the effective account home even when HOME is inherited from another account', async t=>{

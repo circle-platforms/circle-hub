@@ -576,7 +576,7 @@ export interface Artifacts {
 
 // ---------------------------------------------------------------- vault
 
-/** Supplies the 32-byte vault key. The platform provides a macOS Keychain implementation; tests use FileKeyProvider. */
+/** Supplies the 32-byte vault key. The platform provides the deployment's key file (hubKeyProvider); tests use FileKeyProvider. */
 export interface KeyProvider {
   /** Throws VaultError when no key exists. Never creates one. */
   getKey(): Promise<Uint8Array>;

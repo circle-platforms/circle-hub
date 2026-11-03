@@ -17,7 +17,7 @@ nav_order: 4
 | jev | 对外调用（HTTP 客户端、密钥、配置、命令）已拆除；脚本化判断器与核验形状保留，供以后核验 bot 的归位提议 |
 | 装配、管理员命令（含命名文档 `doc put/list/show`）、答案文本预算、真实测试 Hub | 完成 |
 | 任务包：用例评审初评与复核、模板缺口、用例定位、回归范围、维护巡检、追溯矩阵、质量看板、缺陷转用例、FAMX/FAMY 产品包、5 个系统包 | 完成，各包当前版本见使用指南 |
-| 持久部署（这台 Mac，只监听本机，LaunchAgent，钥匙串里的钥匙和操作令牌） | 在运行（2026-10-22 的记录） |
+| 持久部署（这台 Mac，只监听本机，LaunchAgent，钥匙串里的钥匙和操作令牌） | 在运行（2026-10-22 的记录）；决定 137 起 Hub 不再读钥匙串，升级到含这项改动的发布之前，先用 `key export --confirm` 把主密钥经管道交给新发布的 `key import`，再 `operator-token reissue` |
 | 知识库 | 6 条版本线、84 个构建已产出根（2026-10-22 的记录）；CLI 手册已入树 |
 | Circle 一侧（本地分支 `hub-mcp-client`，不推送） | 完成，`npm run check` 通过（2026-10-22 的记录） |
 | 用例索引与用例节点规则 | 完成：默认值统一为“带标签或带标记”（`marked`），`case_rule: tagged` 限制为只认标签；评审摘要带规则说明行与 `marked_only` 计数；验收场景已按新规则更新 |
@@ -40,7 +40,7 @@ node --test --test-concurrency=3 "hub/**/*.test.ts" "packs/**/*.test.ts" "contra
 node bin/circle-hub status          # 持久部署的状态；其他命令见 node bin/circle-hub help
 ```
 
-跳过的用例和 `todo` 用例要如实报，不算通过。包内函数的沙箱和断网在 Linux CI 的 `Linux isolation` 任务里以 bubblewrap 与 AppArmor 运行；需要 macOS 的路径（`sandbox-exec`、钥匙串、launchd）在 Linux CI 上跳过。
+跳过的用例和 `todo` 用例要如实报，不算通过。包内函数的沙箱和断网在 Linux CI 的 `Linux isolation` 任务里以 bubblewrap 与 AppArmor 运行；需要 macOS 的路径（`sandbox-exec`、plutil、launchd）在 Linux CI 上跳过。
 
 ## 规则（摘要，全文在 AGENTS.md）
 

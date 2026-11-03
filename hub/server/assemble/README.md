@@ -16,7 +16,7 @@ model elements D01 R[6] (resources), B04 (decisions), R01 (roles), T01/T02 (publ
 | `hub.ts` | `assembleHub(config, records, options)` → `AssembledHub` (ServerDeps plus every service, `runsExternal` the engine's reader); `createAssembly(options)` → the `AssembleFunction` of `serve`; `createCommandAssembly(options)` → the `CommandAssembleFunction` (api.ts): no vault key, no sandbox probe, no notices, log lines to the CLI's stderr |
 | `vault.ts` | `requireVaultKey` (reads the master key through records' `checkVaultKey`, never creates it; the advice depends on whether the vault holds entries), `vaultKeyProblem` |
 | `notes.ts` | `CallNotes`: the connectors' and the registry's messages to the current call's admin note (AsyncLocalStorage around every engine call) and the operator's log; the engine's to the operator's log only (it notes the call itself); `withCallNotes`, `MAX_CONNECTOR_NOTES` |
-| `operator-token.ts` | the operator token: `CIRCLE_HUB_TOKEN` (`takeEnvironmentToken`), the keychain item (`keychainOperatorTokens`, `OperatorTokenError`; named by the platform's `OPERATOR_TOKEN_ITEM`), its keychain service (`deploymentKeychainService`), `memoryOperatorTokens` |
+| `operator-token.ts` | the operator token: `CIRCLE_HUB_TOKEN` (`takeEnvironmentToken`), the private key file (`fileOperatorTokens`, `OperatorTokenError`; named by the platform's `OPERATOR_TOKEN_ITEM`), its key service (`deploymentKeyService`), `memoryOperatorTokens` |
 | `secret-input.ts` | `readSecret`: a value from stdin only (a terminal reads without echo, special keys dropped; one trailing line break removed from a pipe) |
 | `terminal.ts` | `terminalSafe`: every C0 and C1 control character but tab, the line separators and the bidirectional controls as visible escapes; `jsonSafe`: the same characters that JSON.stringify leaves raw as `\u` escapes inside JSON text |
 | `errors.ts`, `files.ts` | `AssemblyError` (message plus the operator's next step); `removeTree` for directories holding read-only extracted packs |
@@ -32,10 +32,10 @@ runtime role without migrating (an unmigrated database refuses here, before the 
 orphan sweep, then `assemble(config, records)`, then `listen()`. `assemble` = `createAssembly()`:
 
 1. **Vault master key**: `requireVaultKey` reads it through the key provider the records were opened with
-   (`hubKeyProvider` of hub/platform in a deployment) and checks it against the vault. A missing key, a locked keychain or a
+   (`hubKeyProvider` of hub/platform in a deployment) and checks it against the vault. A missing key, an unreadable key file or a
    key that does not open the vault stops the process with `AssemblyError` and the next step. When the vault already holds
-   entries (listing names needs no key), prefer restoring the original keychain item: a new key cannot open old entries.
-   If that item cannot be recovered, follow the **Irrecoverable key loss** procedure in Secrets below using
+   entries (listing names needs no key), prefer restoring the original key file: a new key cannot open old entries.
+   If that key cannot be recovered, follow the **Irrecoverable key loss** procedure in Secrets below using
    `circle-hub key init --set-aside-vault`; plain `key init` is only for an empty vault. Startup never creates a key.
 2. sandbox-exec is probed; where it is missing a notice says pack functions cannot run (pack functions always run with
    `requireOsIsolation: true` in the deployed Hub).
@@ -59,7 +59,7 @@ the vault), without the probe and without start-up notices, its log lines on the
 ## Administrator commands
 
 ```
-circle-hub init-admin <name>                         # first admin; its token goes into the keychain item, never printed
+circle-hub init-admin <name>                         # first admin; its token goes into the token file, never printed
 circle-hub operator-token set                        # a lost item: an enabled admin's token from stdin into the item
 circle-hub operator-token reissue [--as <admin>]     # a lost or dead item and no admin token in hand: a new one, never printed
 circle-hub pack publish <dir> [--stage] | grant-publish <user> | revoke-publish <user> | assign <user> <pack> | unassign <user> <pack>
@@ -80,48 +80,52 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 
 - **Operator token.** Every command that changes state (all of the above except the listings, `roots` and `diff`; a
   `knowledge sync` or `knowledge seed`, dry runs included, because their reads store source artifacts) acts as the account of the operator
-  token. The normal path is the keychain item `init-admin` writes: account `operator-token` under the deployment's keychain
-  service, which is resolved as hub/platform resolves the vault master key's (`deploymentKeychainService`: the deployment
-  settings of `CIRCLE_HUB_DATA_DIR` when that data root has them, a disagreeing `CIRCLE_HUB_KEYCHAIN_SERVICE` refused as the
-  platform refuses it; otherwise the variable, else `circle-hub`), so the item always sits beside the vault key of the same
-  deployment. `CIRCLE_HUB_TOKEN` gives a token for one invocation only: `read -rs T` then `CIRCLE_HUB_TOKEN="$T" circle-hub
+  token. The normal path is the private key file `init-admin` writes (decision 137: on every platform, no macOS
+  keychain): account `operator-token` under the deployment's key service in `<data root>/keys` (hub/platform
+  `fileKeyStore`, directory 0700, file 0600), the service resolved as hub/platform resolves the vault master key's
+  (`deploymentKeyService`: the deployment settings of `CIRCLE_HUB_DATA_DIR` when that data root has them, else
+  `circle-hub`), so the file always sits beside the vault key of the same deployment. `CIRCLE_HUB_TOKEN` gives a token for one invocation only: `read -rs T` then `CIRCLE_HUB_TOKEN="$T" circle-hub
   pack …` (the token stays out of the shell history). It must not be exported: `serve` refuses to start while it is set,
   and a token left in a shell reaches everything that shell starts. The server core's built-in state-changing commands
   (`user create|disable|enable`, `token issue|revoke`) follow the same rule through `operatorAdmin` and `operatorAct`;
   platform commands accept the name and get an environment without it. The commands remove it from the environment object
   when they read it, so it never reaches a child process. No token, an unknown or revoked one, or one of a non-admin is
   refused (exit 1) before anything is read or written, and the fix named works without that token (`operator-token
-  reissue` for a lost or dead item, never `token issue`, which needs it); `secret set` never asks for a value then.
+  reissue` for a lost or dead token file, never `token issue`, which needs it); `secret set` never asks for a value then.
 - **Read-only commands** (`pack list`, `resource list`, `knowledge roots|diff`, and the server core's
   `logs export` and `run show` through `operatorViewer`) act as the account of the operator token when there is one (a
   user's `pack list` shows the user's packs); `--as` is then allowed only when it names that same account. Without a token
   they act as `--as` or the only enabled admin.
-  A keychain item that cannot be read (a locked keychain: over SSH `security` fails at once, in a GUI session it waits for
-  the unlock dialog up to the platform's 60 s) costs a notice on stderr, and the command reads as if there were no token. These
+  A token file that cannot be read (the platform refuses a wrong owner or wrong permissions) costs a notice on stderr, and
+  the command reads as if there were no token. These
   rules choose a view, they are not an access boundary: anyone who can run the CLI against the database can act as the only
   admin.
-- **init-admin** refuses once any admin exists (naming `operator-token reissue` for a lost token) and when the keychain
-  item exists already; it creates the admin with `Principals.bootstrapAdmin` and writes its token into the item. When the
+- **init-admin** refuses once any admin exists (naming `operator-token reissue` for a lost token) and when the token
+  file exists already; it creates the admin with `Principals.bootstrapAdmin` and writes its token into the file. When the
   write fails the admin exists and the never-shown token is revoked, and the fix is `operator-token reissue --as <admin>`
-  once the keychain works (after deleting an item a failed read-back may have left); when the revocation fails or is not
+  once the key directory is usable (after `operator-token remove --confirm-only-operator-token` of a file a failed
+  read-back may have left); when the revocation fails or is not
   confirmed the message says so and the fix adds `circle-hub token revoke <tok_…>` after the reissue (the revocation
   needs the operator token the reissue gives).
-- **operator-token set** replaces a lost item (another Mac, a reset keychain) with an admin token in hand: it refuses
-  while the item exists (an item that no longer works is deleted in Keychain Access first), reads a token from stdin only
-  (never argv or the environment; a terminal reads without echo), checks that it is a well-formed Hub token of an enabled
-  admin (`Principals.authenticate`) and only then writes it into the item (stdin of `security -i`, read back); the output
-  names the admin and never the token. Without a token in hand its refusal names the reissue.
-- **operator-token reissue [--as <admin>]** is the break-glass path: the item is lost (init-admin never showed its token),
-  or its token was revoked or its account disabled, and no admin token is at hand. It refuses while the item exists (an
-  item that no longer works is deleted in Keychain Access first), issues a new token for `--as` or the only enabled admin
-  (records keep at least one; label `操作令牌（重新签发）`, issued by that admin) and writes it straight into the item,
+- **operator-token set** replaces a lost token file (another machine, a reset data root) with an admin token in hand: it
+  refuses while the file exists (one that no longer works is removed first with `operator-token remove
+  --confirm-only-operator-token`), reads a token from stdin only (never argv or the environment; a terminal reads without
+  echo), checks that it is a well-formed Hub token of an enabled admin (`Principals.authenticate`) and only then writes it
+  into the file (`O_EXCL`, read back); the output names the admin and never the token. Without a token in hand its refusal names the reissue.
+- **operator-token reissue [--as <admin>]** is the break-glass path: the token file is lost (init-admin never showed its
+  token), or its token was revoked or its account disabled, and no admin token is at hand. It refuses while the file
+  exists (one that no longer works is removed first with `operator-token remove --confirm-only-operator-token`), issues a
+  new token for `--as` or the only enabled admin (records keep at least one; label `操作令牌（重新签发）`, issued by that
+  admin) and writes it straight into the file,
   never printing it; a token it cannot store is revoked, as for init-admin. The output names the admin and the token id and
   says how to revoke the old token should it still be valid somewhere. It needs no token: the CLI is no access boundary
   against whoever can run it against the database (that account can change the database directly), and what it gives
-  exists only in the deployment's keychain item, which takes the owner's unlocked login keychain to write and to read.
+  exists only in the deployment's token file, which only the service account can write and read.
+- **operator-token remove --confirm-only-operator-token** removes only the local token file (never the vault master key,
+  never a token in the records: revoke the old token with `token revoke` afterwards).
 - **Cutting off one's own token.** `token revoke` of the operator token's own token and `user disable` of its own account
   are carried out (revocation must stay possible for a leak); afterwards the command says on stderr that the operator token
-  no longer works and how to get a new one (`operator-token reissue`, after deleting the dead item).
+  no longer works and how to get a new one (`operator-token reissue`, after `operator-token remove` of the dead file).
 - **Named deployment values**: only the current operator administrator may use `var` or `secret`, including read-only listings. `var set <NAME> [--file <file>] [--text] [--not-secret] --reason <note>` reads bounded UTF-8 JSON, or an explicit text value; it never guesses the type. Lists hide values; `var show <NAME> --value` first warns that the value remains in terminal history. A credential-like name belongs to `secret`; a credential-like ordinary value needs explicit `--not-secret`, recorded in its reason. Immutable history cannot be erased: rotate at the issuer if a secret was mistakenly persisted as ordinary data.
 
 - **Secrets**: `secret set --name <NAME>… --reason <note>` first lists the registered consumers, then reads each value without echo. A pipe supplies exactly one line per name. A name has one kind permanently; each secret setting creates a new vault entry and an atomic configuration decision. Short values require `--short <NAME>` and an explicit warning. Digest storage is explicit with `--digest <NAME>=sha512_base64`; a consumer that needs the raw value prevents digest-only storage. Never pass a value in argv or in the reason. `secret list` and `secret show --name <NAME> [--history]` show only names, versions, lengths, digest rules and consumers, never values or their hashes.
@@ -130,11 +134,11 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 - **Irrecoverable key loss**: stop the service, then run `circle-hub key init --set-aside-vault`.
   It takes the platform lock, refuses a loaded service, a busy configured port or a present key, moves only `vault/`
   to a unique `set-aside/<timestamp>-key-loss/vault`, recreates the empty vault with mode 0700 and initializes the key.
-  The database and objects stay in place. Run `circle-hub operator-token reissue` only if that item was lost too,
+  The database and objects stay in place. Run `circle-hub operator-token reissue` only if the token file was lost too,
   then inspect `secret list` (registered versions whose entries were lost), use the named `secret import` form to reimport, then start the service. Before starting after a backup restore, inspect each current secret setting time; values rotated or revoked at the issuer since the restore point must be set or withdrawn again. A new key cannot open old entries.
-  Plain `key init` refuses a nonempty vault before touching the keychain. `resource list` remains available without
+  Plain `key init` refuses a nonempty vault before writing a key file. `resource list` remains available without
   the master key; commands needing secrets refuse before opening the environment file. Synthetic tests use temporary
-  file keys and explicitly targeted temporary keychain files; they verify logins before loss and after reimport.
+  data roots with their own key files; they verify logins before loss and after reimport.
 - **Login state.** Named secret decisions participate in the session binding. `secret set --name <NAME>` changes the binding, so the next read logs in with the new version without a restart. `resource reset-login <res>` changes the shared credential-version stop epoch and removes that resource's session; all consumers of those versions can make another attempt. In-flight operations finish using the versions they captured.
 - **Changing a resource:** `--credential <item>=<NAME>` sets an explicit reference, migrating a legacy entry atomically with the new definition. A destination change requires a new enrollment through `secret set`. Settings update by key: `--setting k=text` always stores text, `--setting-json k=JSON` parses JSON, `--setting-var k=NAME` creates a whole-value reference, and `--unset-setting k` removes a key. `resource show <res>` is metadata only; `--values` explicitly prints literal settings. Origins and plaintext declarations still replace their complete maps/lists. Pack versions take effect only through an update.
 - **Read-only connector smoke**: `resource read <resource> <read-name> <key>` needs the operator's admin token and
@@ -206,8 +210,8 @@ service, `hub.logs` the operator's log lines.
    The assembly's own commands require the key only where they read or write a secret value (`secret set`,
    `knowledge sync`), refused then with `这个命令要用密钥库，没有执行` rather than serve's `Hub 不启动`; `resource
    reset-login` only removes a vault entry and needs no key; `resource list` reads the key once for its login column. So
-   `pack list`, `secret list`, `knowledge roots|diff` and `resource list` work without the key; with a keychain item that
-   cannot be read they cost one `security` call and a notice (decision 6).
+   `pack list`, `secret list`, `knowledge roots|diff` and `resource list` work without the key; with a token file that
+   cannot be read they cost one read and a notice (decision 6).
 2. **Admin notes by call, not by trace.** The engine writes its reasons to the admin note of the call it serves itself
    (`CallContext.adminNote`) and to the process-wide `adminLog`, which goes to the operator's log only (with the trace and
    run). The connectors and the pack registry report through process-wide callbacks without a call context, so every
@@ -232,16 +236,16 @@ service, `hub.logs` the operator's log lines.
    of a pack declaring `accepts: ["doc:doc"]` on an input slot freezes the current digest into its sources at start
    (withRevision). The pointer is the records package's compare-and-set one (`doc:<name>`), `Pointers.list` was added
    for `doc list`; a non-admin, on the CLI and through a run, gets the same answer as for a doc that does not exist.
-5. **Operator token item.** The keychain item holds the token's 32 random bytes as 64 hexadecimal characters, the one form
-   hub/platform `keychainStore().read()` reads; the token is base64url of those bytes (records' token form, checked before
-   storing). It is read through `keychainStore` made with the platform's `OPERATOR_TOKEN_ITEM`, so the platform's own
-   messages name the operator token on every account and carry no vault key advice (nothing is reworded here; the tests
-   follow the platform's exported labels, not a spelling of them). It is written by this package through stdin of
-   `security -i` and read back to confirm (see Needs: the platform's `keychainStore.write` can replace it). Its service is
-   the deployment's, resolved as the vault key's (Administrator commands).
+5. **Operator token file.** Since decision 137 (2026-11-03) the token is a private key file on every platform: its 32
+   random bytes in hub/platform's `fileKeyStore` (the token is base64url of those bytes, records' token form, checked
+   before storing). The store is made with the platform's `OPERATOR_TOKEN_ITEM`, so the platform's own messages name the
+   operator token and carry no vault key advice (nothing is reworded here; the tests follow the platform's exported
+   labels, not a spelling of them; `OperatorTokenError` keeps the platform's hint). The platform writes it with
+   `O_EXCL`, never over an existing file, and reads it back to confirm. Its service is the deployment's, resolved as the
+   vault key's (Administrator commands). The keychain store, its `security -i` write and `runTool` are gone.
 6. **Read-only commands follow the token.** With a token they act as its account and `--as` must name that account; without
-   one they act as `--as` or the only enabled admin; a keychain item that cannot be read falls back to that rule with a
-   notice. An invalid token (the variable's or the item's) is refused, with how to remove a stale item.
+   one they act as `--as` or the only enabled admin; a token file that cannot be read falls back to that rule with a
+   notice. An invalid token (the variable's or the file's) is refused, with how to remove a stale file.
 7. **createTestHub stages packs** before publishing and extracts them outside the records' data directory (extracted trees
    are read-only and `hub/testing` removes the data directory without unlocking them).
 8. **Terminal-safe output.** Session `out`/`err`, the errors of the commands and the log lines of their assemblies pass
@@ -260,10 +264,9 @@ service, `hub.logs` the operator's log lines.
   usable token it holds stays in use until its next login. The server's connector profile cache keeps a withdrawn system
   pack for up to 5 s, and a knowledge sync from the CLI is not serialised with one from another process (knowledge
   README).
-- A read-only command reads the keychain item when `CIRCLE_HUB_TOKEN` is not set; in a GUI session with a locked keychain
-  that read waits for the unlock dialog (at most 60 s, hub/platform) before the command falls back.
-- The keychain write is tested with a fake `security` tool everywhere and with the real one only against a throwaway
-  keychain file on macOS (every call is refused unless it names that file); the owner's keychain is never touched.
+- A read-only command reads the token file when `CIRCLE_HUB_TOKEN` is not set; the file store never waits (no unlock
+  dialog), it refuses at once on a wrong owner or wrong permissions.
+- The token file is tested on every platform in temporary data roots; the owner's data root and keys are never touched.
 - Each CLI invocation assembles the whole Hub (no network, no sandbox call until a command needs one).
 
 ## Tests
@@ -278,8 +281,8 @@ them: put/replace/idempotent, name and size rules, concurrent puts on the compar
 held-back credentials, a run freezing the digest with only the declaring pack's user reading). `assemble.test.ts` (15): start-up order (a retired variable
 refuses serve and the admin commands before the assembly loads or the key provider is asked; an unmigrated database
 refuses serve and the commands before the assembly runs); no key file stops serve before listening and creates none; the
-platform's keychain provider with a fake `security` tool and no item stops serve and only reads, advising `key init` for
-an empty vault and the original item, never `key init`, for a vault that holds an entry (the item matched by the
+platform's key file provider with no key file stops serve and creates none, advising `key init` for
+an empty vault and the original key file, never `key init`, for a vault that holds an entry (the key matched by the
 platform's exported `VAULT_KEY_ITEM.label`, not a spelling of it); a key that does not open the
 vault stops the assembly; a real start serves the six tools to a token, `list_task_packs` over the real registry, a
 neutral `start_run` whose engine reason is the call's admin note, and no judgment-service notice at start-up (the Hub
@@ -297,20 +300,20 @@ answer's reason on the call once. `no-judgment.test.ts` (1): the assembly insura
 a product whose producer declared its path-less entries placeable makes no outbound call to the judgment service (every
 recorded call goes to a loopback stub), the entries stay at the root marked 未归位 and the production records
 `placement.spans` 0. `cli-admin.test.ts` (30): every command through the server CLI's `main` on a
-socket-only PostgreSQL (the built-in commands with the same in-memory token store): init-admin, its output (the keychain
-item as the normal path) and refusals (naming the reissue), a token it could not store revoked with the reissue as the
+socket-only PostgreSQL (the built-in commands with the same in-memory token store): init-admin, its output (the token file
+as the normal path) and refusals (naming the reissue), a token it could not store revoked with the reissue as the
 fix, or said to be possibly live when the revocation was not confirmed or failed (a fake context), the fix never a
-command that needs the lost token; `operator-token set` refusing an existing item (nothing read), a user's, an invalid
+command that needs the lost token; `operator-token set` refusing an existing token (nothing read), a user's, an invalid
 and a malformed token (naming the reissue), then storing the admin's from stdin, after which changing commands work
-again; the lockout of a lost item recovered by `operator-token reissue` (every refusal on the way names it, a new token
-in the item and never printed, labelled and issued by its admin, changing commands working again, a second reissue
-refused), revoking the operator token's own token (done and said, the dead item refused with the reissue as the fix, a
-reissue after deleting it; revoking another token silent; a one-command token's own revocation said for it), disabling
+again; the lockout of a lost token file recovered by `operator-token reissue` (every refusal on the way names it, a new
+token in the file and never printed, labelled and issued by its admin, changing commands working again, a second reissue
+refused), revoking the operator token's own token (done and said, the dead token refused with `operator-token remove` and the reissue as the fix, a
+reissue after removing it; the reissue into the private key file beside a vault key that `operator-token remove` leaves; revoking another token silent; a one-command token's own revocation said for it), disabling
 the operator token's own account (said, a reissue for the other admin), the reissue's `--as` among several admins (a
 user refused, a usage error) and a token it cannot store revoked; every state-changing command refused without a token,
 with a non-admin token and with an invalid one, nothing written then and no secret read; `CIRCLE_HUB_TOKEN` taken out of
-the environment; read-only commands as the token's account with `--as` checked against it; a locked keychain item (a
-fake `security` tool, the deployment's keychain service) costing listings a notice and refusing a changing command with
+the environment; read-only commands as the token's account with `--as` checked against it; a token file with wrong
+permissions (the deployment's key service) costing listings a notice and refusing a changing command with
 messages that name the operator token by the platform's `OPERATOR_TOKEN_ITEM.label` and never its `VAULT_KEY_ITEM.label`;
 the pack lifecycle with the publish right, a refused publication, assignments, activation, withdrawal and
 the user's view; control sequences in a pack title, a resource name and an argument shown as escapes; resources with
@@ -325,12 +328,11 @@ failed builds and exit codes, a second sync that skips the produced build and wr
 named documents put, listed, shown, replaced, idempotent, oversize and bad names refused, non-admins answered as for a
 missing doc, nothing stored then; and
 a scan of every printed line, the assemblies' log lines included, for every secret.
-`operator-token.test.ts` (9): the keychain item written only through stdin of `security -i` and read back through
-keychainStore, never overwritten, scrubbed errors, a locked keychain, errors naming the operator token on any account
-(the platform's `OPERATOR_TOKEN_ITEM`), the
-deployment's keychain service from the settings (a disagreeing variable refused) or the configuration, the token form, the
-environment variable, with a fake tool; the same with the real `security` tool against a throwaway keychain file on macOS,
-skipped elsewhere, which is not a pass; secrets from a pipe and from a terminal without echo: arrows, function keys and
+`operator-token.test.ts`: the token file private (0700 directory, 0600 file, a name that says nothing), beside but
+distinct from the vault master key, never overwritten and removed alone; errors of a file with wrong permissions or a
+directory that is not 0700 naming the operator token (the platform's `OPERATOR_TOKEN_ITEM`), never the vault master key
+or `key init`; the memory store's removal; the deployment's key service from the settings or the default, the token
+form, the environment variable, on every platform; secrets from a pipe and from a terminal without echo: arrows, function keys and
 bracketed paste dropped, a character split across reads, invalid UTF-8, Ctrl-U, cancellation, a terminal that closes.
 `testing-real.test.ts` (5): the smoke test (list packs, start a run on the agile stub's synthetic mind map through a real
 resource, the text naming the run record and its slot schema read by that reference, submit, accepted, the receipt
@@ -349,11 +351,11 @@ discovery and staging. Pack functions run in the real sandbox (sandbox-exec wher
   --include-unreleased` (the knowledge package's parser), `knowledge roots --as` and `diff --as`, `operator-token set`
   (the owner's open question of the last round, asked for by the integrator), `operator-token reissue` (the break-glass
   path two reviewers asked for: without it a lost item or a revoked operator token left only SQL).
-- **The keychain item is written by this package** with `security -i` over stdin, not yet by hub/platform's
-  `keychainStore.write`, which the platform offers now (Needs); it is read through `keychainStore`.
-- **The keychain service** of the operator token is the deployment's, resolved like the vault master key's (the data
-  root's settings, else `CIRCLE_HUB_KEYCHAIN_SERVICE`, else `circle-hub` as the brief says), so a second deployment on the
-  same Mac keeps its own operator token whether or not the shell sets the variable.
+- **The token file is written by hub/platform's `fileKeyStore`** on every platform (decision 137, 2026-11-03: no macOS
+  keychain); this package only converts the token to and from its 32 bytes.
+- **The key service** of the operator token is the deployment's, resolved like the vault master key's (the data root's
+  settings, else `circle-hub` as the brief says); the retired `CIRCLE_HUB_KEYCHAIN_SERVICE` refuses to start, and a
+  second deployment keeps its own operator token in its own data root.
 - **hub/knowledge's `knowledgeCliCommand` is not registered**: it acts as `--as` without the operator token. The `knowledge`
   command here uses the knowledge package's `parseKnowledgeSyncArgs`, `knowledgeSync` and `formatSyncReport` and adds the
   token rule, `roots` and `diff`.
@@ -369,12 +371,9 @@ are done. Open:
 
 - **platform (`hub/platform`)**, still uncommitted in the shared worktree: the item labels are adopted (the store is made
   with `OPERATOR_TOKEN_ITEM`, `aboutToken` no longer rewords anything, the tests follow `VAULT_KEY_ITEM.label` and
-  `OPERATOR_TOKEN_ITEM.label`), so hub/server is to be committed with or after hub/platform. Offered by the platform's
-  README and not adopted in this review round (not review findings; to switch once hub/platform is committed): (1)
-  `deploymentKeychainNames(env).operatorToken` in place of `deploymentKeychainService` (it refuses an unset
-  `CIRCLE_HUB_DATA_DIR`, which the configuration requires anyway); (2) `keychainStore(...).write(tokenBytes(token))` in
-  place of the `security -i` write of `keychainOperatorTokens`, with the platform's `runCommand` for the throwaway keychain
-  test; (3) its `OPERATOR_TOKEN_ACCOUNT` in place of this package's copy. Still open: `<data dir>/packs` (extracted packs,
+  `OPERATOR_TOKEN_ITEM.label`), so hub/server is to be committed with or after hub/platform. The keychain items the
+  platform's README offered are superseded by decision 137: the token is the platform's file store, and
+  `OPERATOR_TOKEN_ACCOUNT` is the platform's (re-exported here). Still open: `<data dir>/packs` (extracted packs,
   read-only trees) is derived data: leave it out of backups and restores and do not treat it as unknown.
 - **knowledge**: `knowledgeCliCommand` should take the acting admin from the caller (the operator token) rather than
   `actingAdmin(--as)`, or be left to the assembly as now.

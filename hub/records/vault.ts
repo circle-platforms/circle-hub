@@ -29,7 +29,7 @@ export function maskedForDisplay(value: string | Uint8Array | null | undefined):
   return length === 0 ? '已设置（空值）' : `已设置（长度 ${length}）`;
 }
 
-/** Key in a 0600 file. For tests and development; the deployed Hub uses the platform's Keychain provider. */
+/** Key in a 0600 file. For tests and development; the deployed Hub uses the platform's key file provider (hubKeyProvider). */
 export class FileKeyProvider implements KeyProvider {
   readonly path: string;
 

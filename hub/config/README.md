@@ -5,7 +5,8 @@ Decision 83, second round item 3: user-facing configuration descriptions and err
 Part of the records package; decisions and tests are in [../records/README.md](../records/README.md) (decision 12).
 
 - `guard.ts`: side-effect module. Import it first in every Hub entry point: a process that sees any `CIRCLE_SERVER_*`
-  variable refuses to start (`HubEnvironmentError`, names only, never values).
+  variable, or one of the retired single names of `RETIRED_NAMES`, refuses to start (`HubEnvironmentError`, names only,
+  never values).
 - `index.ts`: `loadConfig(env, { allowUnknown })` returns a validated `HubConfig` or throws `HubConfigError` listing every
   problem in Chinese. It reads only the object it is given, never a file.
 - `names.ts`: `HUB_ENVIRONMENT`, the only list of `CIRCLE_HUB_*` names the Hub reads, each with its Chinese description,
@@ -36,10 +37,12 @@ The built-in HTTPS is on when `CIRCLE_HUB_HTTPS_PORT` is set (`HubConfig.https`)
 HTTPS port may not equal the HTTP port; a TLS proxy (`CIRCLE_HUB_PROXY_ORIGIN`) and the built-in HTTPS are exclusive.
 `CIRCLE_HUB_HTTPS_HOST` without the port is refused.
 
-| Variable | Default | `HubConfig` |
-| --- | --- | --- |
-| `CIRCLE_HUB_KEYCHAIN_SERVICE` | `circle-hub` | `keychain.service` |
-| `CIRCLE_HUB_KEYCHAIN_ACCOUNT` | `vault-master-key` (the platform's and the brief's name) | `keychain.account` |
+Retired single names (`RETIRED_NAMES` in `names.ts`): `CIRCLE_HUB_KEYCHAIN_SERVICE` and `CIRCLE_HUB_KEYCHAIN_ACCOUNT`,
+since 2026-11-03 (decision 137, the macOS keychain is no longer used). The vault master key and the operator token are
+private files under `$CIRCLE_HUB_DATA_DIR/keys` on every platform (hub/platform `file-key.ts`); their file names come from
+the deployment settings, or from `DEFAULT_KEY_SERVICE` and `DEFAULT_KEY_ACCOUNT` on a data root without settings. A
+process that carries either name, even empty, refuses to start, and the refusal says where the keys are now.
+`HubConfig` has no key names any more.
 
 Platform-only names: `CIRCLE_HUB_LIBPQ_BIN` (directory of `pg_dump` and `pg_restore`, read by the platform's backup,
 restore and deploy commands). The source of this list is hub/platform `PLATFORM_VARIABLES`: its values that hub/config does
@@ -47,7 +50,7 @@ not read. `CIRCLE_HUB_HOME` is not among them (the platform reads the data root 
 `CIRCLE_HUB_HOME`), so it still refuses to start.
 
 `drift.test.ts` reads exports of hub/platform (tests only; the production code imports it not) and fails when
-the retired-name guard, the platform-only names or the keychain defaults stop agreeing.
+the retired-name guard, the platform-only names or the key name defaults stop agreeing.
 
 Memory limits use decimal UTF-8 bytes: CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES defaults to 24,000 body bytes (1–16 MiB), CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES to 48,000 title/path/body bytes (1–64 MiB), and CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS to 20 active documents (1–10,000). Space limits apply separately to team and each personal space and count only enabled current versions. Session lists and body reads check the same limits. Historical personal memory also counts toward personal capacity; every appended version checks that capacity. An unchanged write returns its current version without consuming history.
 

@@ -1,5 +1,6 @@
 // Helpers for the platform tests. Nothing here may reach the login keychain, ~/Library, the user's launchd domain or the
-// network: launchctl is always faked, security only runs against a temporary keychain file, data roots are temporary.
+// network: launchctl and systemctl are always faked, security is never run (the Hub no longer uses the keychain, decision
+// 137), data roots and their key files are temporary.
 import { access, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -30,15 +31,9 @@ export async function removeDir(path: string): Promise<void> {
 }
 
 /** Refuses commands that could reach the user's real environment. */
-export function guard(call: Call, keychain?: string): void {
+export function guard(call: Call): void {
   const name = basename(call.command);
-  if (name === 'launchctl' || name === 'systemctl') throw new Error(`test tried to run ${name} ${call.args.join(' ')}`);
-  if (name === 'security') {
-    // Every security call must name the temporary keychain file: as its last argument, or inside the -i input line.
-    const input = call.options.input ?? '';
-    const targeted = keychain !== undefined && (call.args.at(-1) === keychain || (call.args[0] === '-i' && input.trimEnd().endsWith(`"${keychain}"`)));
-    if (!targeted) throw new Error('test tried to use the default keychain');
-  }
+  if (name === 'launchctl' || name === 'systemctl' || name === 'security') throw new Error(`test tried to run ${name} ${call.args.join(' ')}`);
 }
 
 /**
@@ -47,7 +42,7 @@ export function guard(call: Call, keychain?: string): void {
  */
 export function recordingRunner(
   handler: (call: Call) => CommandResult | undefined | Promise<CommandResult | undefined> = () => undefined,
-  options: { keychain?: string; real?: boolean } = {},
+  options: { real?: boolean } = {},
 ): { runner: CommandRunner; calls: Call[] } {
   const calls: Call[] = [];
   const runner: CommandRunner = async (command, args, opts = {}) => {
@@ -56,7 +51,7 @@ export function recordingRunner(
     const answer = await handler(call);
     if (answer) return answer;
     if (options.real === false) throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
-    guard(call, options.keychain);
+    guard(call);
     return runCommand(command, args, opts);
   };
   return { runner, calls };
@@ -138,33 +133,4 @@ export async function sqlState(session: SqlSession, statement: string): Promise<
   } finally {
     await session.query('ROLLBACK');
   }
-}
-
-/** In-memory security protocol; no command can fall through to the host keychain. */
-export function syntheticKeychain(file: string, security = '/usr/bin/security') {
-  const items = new Map<string, string>();
-  const keyOf = (args: readonly string[]) => `${args[args.indexOf('-s') + 1]}/${args[args.indexOf('-a') + 1]}`;
-  const recorder = recordingRunner((call) => {
-    if (call.command !== security) throw new Error('synthetic keychain received another executable');
-    const input = call.options.input ?? '';
-    if (!(call.args.at(-1) === file || (call.args[0] === '-i' && input.endsWith(`"${file}"\n`)))) throw new Error('synthetic keychain requires its isolated target');
-    const action = call.args[0];
-    if (action === '-i') {
-      const match = /^add-generic-password -s (\S+) -a (\S+) -w ([0-9a-f]{64}) /.exec(input);
-      if (!match) throw new Error('unsupported synthetic keychain input');
-      const name = `${match[1]}/${match[2]}`;
-      if (items.has(name)) return exit(45, 'item already exists');
-      items.set(name, match[3]);
-      return ok();
-    }
-    if (action === 'find-generic-password') {
-      const value = items.get(keyOf(call.args));
-      return value === undefined ? exit(44, 'item not found') : ok(call.args.includes('-w') ? value + '\n' : 'synthetic keychain item\n');
-    }
-    if (action === 'delete-generic-password') return items.delete(keyOf(call.args)) ? ok() : exit(44, 'item not found');
-    if (action === 'delete-keychain') { items.clear(); return ok(); }
-    if (['create-keychain', 'unlock-keychain', 'set-keychain-settings'].includes(action)) return ok();
-    throw new Error('unsupported synthetic keychain action');
-  }, { real: false });
-  return { items, ...recorder };
 }

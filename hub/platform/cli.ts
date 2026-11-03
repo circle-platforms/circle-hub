@@ -6,13 +6,13 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { backupPath, createBackup, listBackups, pruneBackups } from './backup.ts';
-import { agentFor, createContext, identityOf, keychainFor, keychainNamesFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
+import { agentFor, createContext, identityOf, keyNamesFor, keyStoreFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
 import { deploy, deployLogPath, progressPath, progressText, protectedBackups, readDeployments, readProgress, rollback } from './deploy.ts';
 import { assertHubEnvironment, assertKnownHubVariables, PLATFORM_VARIABLES, variable } from './environment.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { isMissingOrEmpty, withLock } from './files.ts';
 import { checkHealth, HEALTH_PATH, portOccupied } from './health.ts';
-import { VAULT_KEY_ITEM } from './keychain-items.ts';
+import { keyDirectory, VAULT_KEY_ITEM } from './file-key.ts';
 import { exportVaultKey, importVaultKey, liveKeyPipe, type KeyPipe } from './key-transfer.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './layout.ts';
@@ -79,7 +79,7 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
     '  tls init [--renew-authority]|issue|status      内置 HTTPS 的本地证书颁发机构和服务器证书（数据根的 tls 目录）',
     '  status                                         汇总状态',
     '',
-    `数据根默认是 ~/Library/Application Support/circle-hub，可用 ${DATA_ROOT_VARIABLE} 改。端口、数据库名与钥匙串项只来自部署设置。`,
+    `数据根默认是 ~/Library/Application Support/circle-hub，可用 ${DATA_ROOT_VARIABLE} 改。端口、数据库名与密钥文件名只来自部署设置；密钥库主密钥和操作令牌在数据根的 keys 目录里（0700，文件 0600），不进备份。`,
   ].join('\n');
 }
 
@@ -103,7 +103,7 @@ function parseCount(text: string, name: string): number {
 /** `owner` is the database's owner as the running cluster reports it (pg_database.datdba); left out when not known. */
 function databaseText(layout: Layout, settings: PlatformSettings, owner?: string): string {
   const { name, role, port } = settings.database;
-  return `数据库 ${name}（${owner === undefined ? '' : `属于角色 ${owner}，`}应用角色 ${role}，套接字 ${socketFile(layout, port)}）；钥匙串项：服务 ${settings.keychainService}，账户 ${settings.keychainAccount}`;
+  return `数据库 ${name}（${owner === undefined ? '' : `属于角色 ${owner}，`}应用角色 ${role}，套接字 ${socketFile(layout, port)}）；密钥文件：服务 ${settings.keyService}，账户 ${settings.keyAccount}`;
 }
 
 /** Refuses while a deploy or rollback is unfinished: its state must be finished first, and its backups kept. */
@@ -146,8 +146,6 @@ const init: Handler = async (args, context, io) => {
       proxyPeer: variable(context.env, PLATFORM_VARIABLES.proxyPeer),
       httpsHost,
       httpsPort,
-      keychainService: variable(context.env, PLATFORM_VARIABLES.keychainService),
-      keychainAccount: variable(context.env, PLATFORM_VARIABLES.keychainAccount),
       database: context.database,
     });
     // Refuses before anything is written when --port and CIRCLE_HUB_PORT disagree.
@@ -282,7 +280,7 @@ const key: Handler = async (args, context, io) => {
     onlyConfirm(rest);
     const pipe = io.keyPipe ?? { stdoutIsPipe: false, stdinIsPipe: false };
     const settings = await settingsOf(context);
-    await exportVaultKey(keychainFor(context, settings), pipe, true);
+    await exportVaultKey(keyStoreFor(context, settings), pipe, true);
     io.stderr(`已通过标准输出送出${VAULT_KEY_ITEM.label}（32 字节）；密钥不会显示`);
     return 0;
   }
@@ -290,15 +288,15 @@ const key: Handler = async (args, context, io) => {
     if (rest.length !== 0) throw new UsageError('用法：circle-hub key import');
     const pipe = io.keyPipe ?? { stdoutIsPipe: false, stdinIsPipe: false };
     const settings = await settingsOf(context);
-    await importVaultKey(keychainFor(context, settings), pipe);
+    await importVaultKey(keyStoreFor(context, settings), pipe);
     io.stderr(`已从标准输入写入${VAULT_KEY_ITEM.label}；已存在的不会覆盖，密钥不会显示`);
     return 0;
   }
   const setAsideVault = action === 'init' && rest.length === 1 && rest[0] === '--set-aside-vault';
   if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError(KEY_USAGE);
   const settings=await settingsOf(context);
-  const store = keychainFor(context, settings);
-  const item = `服务 ${store.service}，账户 ${store.account}`;
+  const store = keyStoreFor(context, settings);
+  const item = `${keyDirectory(context.layout.root)}，服务 ${store.service}，账户 ${store.account}`;
   if (action === 'init') {
     if (!setAsideVault && !(await isMissingOrEmpty(context.layout.vault))) throw new KeyInitRefusal('vault_not_empty');
     const initialize = async (): Promise<number> => {
@@ -310,13 +308,13 @@ const key: Handler = async (args, context, io) => {
         if(moved.path) io.stdout(`密钥库已移到 ${moved.path}，原文件保留`);
       }
       await store.init();
-      io.stdout(`已在${context.platform === 'linux' ? '私有密钥文件' : '钥匙串'}建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
+      io.stdout(`已在私有密钥文件建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
       return 0;
     };
     return setAsideVault ? withLock(platformLockPath(context),initialize) : initialize();
   }
   const { present } = await store.status();
-  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在${context.platform === 'linux' ? '私有密钥文件' : '钥匙串'}（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
+  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在私有密钥文件（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
   return present ? 0 : NOT_RUNNING;
 };
 
@@ -341,7 +339,7 @@ const service: Handler = async (args, context, io) => {
   const settings = await settingsOf(context);
   // serve would refuse a vault master key on the operator token's account, and launchd would restart it every 10 s;
   // stop, uninstall and status stay available to clean up.
-  if (action === 'install' || action === 'start') keychainNamesFor(context, settings);
+  if (action === 'install' || action === 'start') keyNamesFor(context, settings);
   const agent = agentFor(context, settings);
   switch (action) {
     case 'install': {
@@ -480,7 +478,7 @@ const rehearseCommand: Handler = async (args, context, io) => {
   const report = await rehearse({ runner: context.runner, libpqBin: context.libpqBin, binariesRoot: context.codeRoot, keep: values.keep === true, now: context.now });
   io.stdout(`演练数据根：${report.root}${report.kept ? '（保留；解包目录是只读的，删除前先 chmod -R u+w）' : '（已删除）'}`);
   io.stdout(`写入：${report.tables} 张表 ${report.rows} 行，${report.objects} 个对象，${report.vaultFiles} 个密钥库文件，${report.packFiles} 个解包文件（派生数据，不进备份）`);
-  io.stdout(report.keyLoss.skipped ? `钥匙丢失：${report.keyLoss.reason}` : `钥匙丢失：${report.keyLoss.items} 项；备份命中 ${report.keyLoss.backupHits}；丢失后找到 ${report.keyLoss.remaining} 项；移开密钥库 ${report.keyLoss.setAsideFiles} 个文件`);
+  io.stdout(`密钥丢失：${report.keyLoss.items} 个密钥文件；备份命中 ${report.keyLoss.backupHits}；丢失后找到 ${report.keyLoss.remaining} 个；移开密钥库 ${report.keyLoss.setAsideFiles} 个文件`);
   io.stdout(`应用角色 ${report.role}：恢复后 ${report.privileges} 项权限，删改历史或表结构的 ${report.refused} 条语句被拒绝`);
   if (report.ok) io.stdout('恢复后核对：行数、表摘要、文件摘要与应用角色的权限全部一致，应用角色不拥有任何对象；解包目录不在备份里，恢复后原样保留');
   else for (const line of report.differences) io.stderr(`不一致：${line}`);
@@ -549,7 +547,7 @@ const status: Handler = async (args, context, io) => {
     unsure('数据库', error);
   }
   try {
-    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keychainFor(context, settings).status()).present ? (context.platform === 'linux' ? '已在私有密钥文件' : '已在钥匙串') : '没有'}`);
+    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keyStoreFor(context, settings).status()).present ? '已在私有密钥文件' : '没有'}`);
   } catch (error) {
     unsure(VAULT_KEY_ITEM.label, error);
   }

@@ -58,7 +58,6 @@ test('restarting the hub process continues a pending device report and keeps the
     host: '127.0.0.1',
     port: 0,
     database: c.kit.database,
-    keychain: { service: 'circle-hub-test', account: 'vault' },
     limits: { ...c.kit.config.limits },
   };
   const restarted = await assembleHub(config, c.kit, {

@@ -10,6 +10,7 @@ import { createContext, postgresFor, type PlatformContext } from './context.ts';
 import { isMissingOrEmpty } from './files.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
 import { RELEASE_SCHEMA } from './release.ts';
+import { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, fileKeyStore, VAULT_KEY_ITEM } from './file-key.ts';
 import { newSettingsFile, OPERATOR_TOKEN_ACCOUNT, settingsPath } from './settings.ts';
 import { withSession } from './sql.ts';
 import { captureIo, exit, freePort, libpqAvailable, LIBPQ_MISSING, ok, ownerTables, recordingRunner, removeDir, socketPort, tempDir, type Call } from './test-support.ts';
@@ -20,21 +21,13 @@ const libpq = await libpqAvailable();
 /** The operating-system account, whose role owns the Hub database. */
 const OWNER = userInfo().username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Fake security (an in-memory item) and fake launchctl; every other command runs for real behind the guard. */
+/**
+ * Fake launchctl; every other command runs for real behind the guard, which refuses security: the vault master key is a
+ * private file under the data root on macOS as on Linux (decision 137).
+ */
 function fakeSystem() {
-  const state: { key?: string; loaded: boolean } = { loaded: false };
+  const state: { loaded: boolean } = { loaded: false };
   const recorder = recordingRunner((call: Call) => {
-    if (call.command === '/usr/bin/security') {
-      if (call.args[0] === '-i') {
-        state.key = /-w ([0-9a-f]{64})/.exec(call.options.input ?? '')?.[1];
-        return ok();
-      }
-      if (call.args[0] === 'find-generic-password') {
-        if (!state.key) return exit(44, 'The specified item could not be found in the keychain.');
-        return ok(call.args.includes('-w') ? `${state.key}\n` : 'keychain: "synthetic"\nattributes: ...\n');
-      }
-      return exit(1, 'unexpected security call');
-    }
     if (call.command === '/bin/launchctl') {
       if (call.args[0] === 'print') return state.loaded ? ok('\tstate = running\n\tpid = 777\n') : exit(113, 'Could not find service');
       if (call.args[0] === 'bootstrap') state.loaded = true;
@@ -44,6 +37,14 @@ function fakeSystem() {
     return undefined;
   });
   return { state, ...recorder };
+}
+
+/** The vault master key's file of `root` as hexadecimal, or undefined when there is none. */
+async function keyHex(root: string, service = DEFAULT_KEY_SERVICE): Promise<string | undefined> {
+  const store = fileKeyStore({ root, service, account: DEFAULT_KEY_ACCOUNT, item: VAULT_KEY_ITEM });
+  if (!(await store.status()).present) return undefined;
+  const bytes = await store.read();
+  try { return Buffer.from(bytes).toString('hex'); } finally { bytes.fill(0); }
 }
 
 describe('platform CLI', () => {
@@ -154,7 +155,7 @@ describe('platform CLI', () => {
     assert.match(first.out, /已写入部署设置/);
     assert.match(first.out, /已初始化数据库目录/);
     assert.match(first.out, new RegExp(`环境类别：测试（test）；端口：127\\.0\\.0\\.1:${port}`));
-    assert.match(first.out, new RegExp(`数据库 circle_hub（属于角色 ${OWNER}，应用角色 circle_hub，套接字 .*\\.s\\.PGSQL\\.${databasePort}）；钥匙串项：服务 circle-hub，账户 vault-master-key`));
+    assert.match(first.out, new RegExp(`数据库 circle_hub（属于角色 ${OWNER}，应用角色 circle_hub，套接字 .*\\.s\\.PGSQL\\.${databasePort}）；密钥文件：服务 circle-hub，账户 vault-master-key`));
     const settings = JSON.parse(await readFile(join(root, 'config', 'platform.json'), 'utf8'));
     assert.equal(settings.environment, 'test');
     assert.equal(settings.port, Number(port));
@@ -180,41 +181,51 @@ describe('platform CLI', () => {
     assert.equal(wrongPort.code, 1);
     assert.match(wrongPort.err, /CIRCLE_HUB_PORT 是 \d+，部署设置里是 \d+/);
     for (const argv of [['backup'], ['service', 'install'], ['key', 'status'], ['db', 'start']]) {
-      const stray = await runWith({ CIRCLE_HUB_DATABASE_NAME: 'circle_hub_dev', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'dev-key' }, ...argv);
+      const stray = await runWith({ CIRCLE_HUB_DATABASE_NAME: 'circle_hub_dev', CIRCLE_HUB_DATABASE_USER: 'dev_role' }, ...argv);
       assert.equal(stray.code, 1, argv.join(' '));
-      assert.match(stray.err, /CIRCLE_HUB_KEYCHAIN_ACCOUNT 是 dev-key，部署设置里是 vault-master-key；CIRCLE_HUB_DATABASE_NAME 是 circle_hub_dev，部署设置里是 circle_hub/);
+      assert.match(stray.err, /CIRCLE_HUB_DATABASE_NAME 是 circle_hub_dev，部署设置里是 circle_hub；CIRCLE_HUB_DATABASE_USER 是 dev_role，部署设置里是 circle_hub/);
+      // The retired keychain names refuse every command before anything is read, saying where the key is now.
+      const retired = await runWith({ CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'dev-key' }, ...argv);
+      assert.equal(retired.code, 1, argv.join(' '));
+      assert.match(retired.err, /不再读取 CIRCLE_HUB_KEYCHAIN_ACCOUNT/);
+      assert.match(retired.err, /\$CIRCLE_HUB_DATA_DIR\/keys/);
+      assert.doesNotMatch(retired.err, /dev-key/);
     }
     const control = postgresFor(createContext({ CIRCLE_HUB_DATA_DIR: root }, { runner: system.runner }));
     const databases = await withSession(control.connector, 'postgres', (s) => s.query('SELECT datname FROM pg_database ORDER BY 1'));
     assert.ok(!databases.some((row) => row.datname === 'circle_hub_dev'), 'no stray database was created');
   });
 
-  test('key init refuses a nonempty vault before touching the keychain', async () => {
+  test('key init refuses a nonempty vault before writing a key file', async () => {
     const vault = join(root, 'vault'); await mkdir(vault, { recursive: true });
     const entry = join(vault, 'synthetic-sealed-entry'); await writeFile(entry, 'synthetic sealed content');
     const before = system.calls.length;
     try {
       const result = await run('key', 'init');
       assert.equal(result.code, 1); assert.match(result.err, /set-aside/); assert.equal(system.calls.length, before);
+      assert.equal(await keyHex(root), undefined);
     } finally { await rm(entry); }
   });
 
   test('key init and status never print the key and refuse to replace it', async () => {
     const absent = await run('key', 'status');
     assert.equal(absent.code, 3);
-    assert.match(absent.out, /密钥库主密钥：没有（服务 circle-hub，账户 vault-master-key）/);
+    assert.match(absent.out, /密钥库主密钥：没有（.*\/root\/keys，服务 circle-hub，账户 vault-master-key）/);
     const created = await run('key', 'init');
     assert.equal(created.code, 0);
     assert.match(created.out, /密钥不会显示/);
-    assert.ok(system.state.key && KEY.test(system.state.key));
-    assert.equal((await run('key', 'status')).code, 0);
+    const stored = await keyHex(root);
+    assert.ok(stored && KEY.test(stored));
+    assert.equal((await stat(join(root, 'keys'))).mode & 0o777, 0o700);
+    assert.match((await run('key', 'status')).out, /密钥库主密钥：已在私有密钥文件/);
     const again = await run('key', 'init');
     assert.equal(again.code, 1);
     assert.match(again.err, /不覆盖/);
-    for (const call of system.calls) assert.ok(!call.args.some((arg) => arg.includes(system.state.key!)));
+    assert.equal(await keyHex(root), stored, 'the key was not replaced');
+    for (const call of system.calls) assert.ok(!call.args.some((arg) => arg.includes(stored!)));
   });
 
-  test('review 7: a healthy nonempty vault receives conditional recovery guidance without keychain access', async () => {
+  test('review 7: a healthy nonempty vault receives conditional recovery guidance without touching the key file', async () => {
     const entry = join(root, 'vault', 'synthetic-healthy-entry');
     await writeFile(entry, 'synthetic sealed content');
     const before = system.calls.length;
@@ -262,7 +273,7 @@ describe('platform CLI', () => {
       /数据库：运行中/,
       new RegExp(`^数据库 circle_hub 属于角色 ${OWNER}$`, 'm'),
       /应用角色 circle_hub：只连接并按授权读写，不拥有任何对象/,
-      /密钥库主密钥：已在钥匙串/,
+      /密钥库主密钥：已在私有密钥文件/,
       /服务：未加载/,
       /备份：0 份/,
       new RegExp(`健康检查（http://127\\.0\\.0\\.1:${port}/healthz）：不正常`),
@@ -388,7 +399,7 @@ describe('service commands on settings that give the vault master key the operat
       const root = join(parent, 'root');
       const layout = layoutAt(root);
       await ensureLayout(layout);
-      // Edited by hand, or written by an earlier platform version's init with CIRCLE_HUB_KEYCHAIN_ACCOUNT=operator-token.
+      // Edited by hand, or written by an earlier platform version's init with the retired CIRCLE_HUB_KEYCHAIN_ACCOUNT.
       await writeFile(settingsPath(layout), JSON.stringify({ ...newSettingsFile({ environment: 'test' }), keychain_account: OPERATOR_TOKEN_ACCOUNT }));
       // A deployed release, so that nothing else stops the install.
       const id = 'abcdefabcdef';
@@ -407,8 +418,8 @@ describe('service commands on settings that give the vault master key the operat
         assert.equal(refused.code, 1, action);
         assert.equal(
           refused.err,
-          `错误：部署设置（${settingsPath(layout)}）里密钥库主密钥的钥匙串账户是 operator-token：这个账户留给操作令牌，两者会成为同一个钥匙串项，不执行\n` +
-            '处理：把部署设置里的 keychain_account 改成另一个名字（例如 vault-master-key）；钥匙串里已有这个账户的密钥库主密钥时，先在“钥匙串访问”里把那一项的账户改成同一个名字',
+          `错误：部署设置（${settingsPath(layout)}）里密钥库主密钥的密钥账户是 operator-token：这个账户留给操作令牌，两者会成为同一个密钥文件，不执行\n` +
+            '处理：把部署设置里的 keychain_account 改回 circle-hub init 写下的名字（默认 vault-master-key）',
           action,
         );
       }
@@ -427,33 +438,35 @@ describe('service commands on settings that give the vault master key the operat
 
 async function keyAsideWorld(t: {after(fn:()=>Promise<void>):void},port?:number) {
  const parent=await tempDir();t.after(()=>removeDir(parent));const layout=layoutAt(join(parent,'root'));await ensureLayout(layout);
- const keychain=join(parent,'synthetic.keychain-db');await writeFile(keychain,'synthetic fake-keychain target');
- const dbPort=socketPort();await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:ENVIRONMENT[0],port:port ?? await freePort(),keychainService:'synthetic-key-recovery',database:{port:dbPort}})));
- const system=fakeSystem();const runner:PlatformContext['runner']=async(command,args,options)=>{if(command==='/usr/bin/security'){await access(join(layout.run,'platform.lock'));assert.ok([...args,options?.input ?? ''].join(' ').includes(keychain));}return system.runner(command,args,options);};
- const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner,platform:'darwin',home:parent,keychain,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
+ const service='synthetic-key-recovery';
+ const dbPort=socketPort();await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:ENVIRONMENT[0],port:port ?? await freePort(),keyService:service,database:{port:dbPort}})));
+ const system=fakeSystem();
+ const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner:system.runner,platform:'darwin',home:parent,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
+ const key=()=>keyHex(layout.root,service);
+ const plantKey=(bytes:Uint8Array)=>fileKeyStore({root:layout.root,service,account:DEFAULT_KEY_ACCOUNT,item:VAULT_KEY_ITEM}).write(bytes);
  await writeFile(join(layout.vault,'sealed'),'synthetic sealed bytes');await writeFile(join(layout.db,'sentinel'),'synthetic database');await writeFile(join(layout.objects,'sentinel'),'synthetic object');
- return{parent,layout,system,run};
+ return{parent,layout,system,run,key,plantKey};
 }
 test('closure key init flag archives only the vault under the platform lock and initializes a missing key',async t=>{
  const w=await keyAsideWorld(t);const before=await w.run('key','init');assert.equal(before.code,1);assert.match(before.err,/--set-aside-vault/);assert.equal(w.system.calls.length,0);
  await mkdir(join(w.layout.setAside,'20261023T000000Z-key-loss'),{recursive:true});await writeFile(join(w.layout.setAside,'20261023T000000Z-key-loss','sentinel'),'keep prior archive');
- const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,0,result.err);assert.ok(w.system.state.key);
+ const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,0,result.err);assert.ok(await w.key());
  assert.equal(await readFile(join(w.layout.setAside,'20261023T000000Z-key-loss-2','vault','sealed'),'utf8'),'synthetic sealed bytes');assert.deepEqual(await readdir(w.layout.vault),[]);assert.equal((await stat(w.layout.vault)).mode & 0o777,0o700);
  for(const area of [w.layout.db,w.layout.objects])assert.match(await readFile(join(area,'sentinel'),'utf8'),/synthetic/);assert.doesNotMatch(result.out+result.err,KEY);
 });
-test('closure key init flag refuses a loaded service before any keychain call or move',async t=>{
- const w=await keyAsideWorld(t);w.system.state.loaded=true;const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/service stop/);assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+test('closure key init flag refuses a loaded service before any key file is written or the vault moved',async t=>{
+ const w=await keyAsideWorld(t);w.system.state.loaded=true;const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/service stop/);assert.equal(await w.key(),undefined);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
 });
 test('closure key init flag preserves a healthy existing key and its current vault',async t=>{
- const w=await keyAsideWorld(t);w.system.state.key='a'.repeat(64);const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');assert.ok(!w.system.calls.some(c=>c.command==='/usr/bin/security' && c.args[0]==='-i'));
+ const w=await keyAsideWorld(t);await w.plantKey(Buffer.alloc(32,0xaa));const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');assert.equal(await w.key(),'aa'.repeat(32));
 });
 
-test('closure key init flag refuses a manually occupied configured port before touching the vault or keychain',async t=>{
+test('closure key init flag refuses a manually occupied configured port before touching the vault or the key file',async t=>{
  const {createServer}=await import('node:net');const server=createServer(socket=>socket.end());
  await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));
  const address=server.address();assert.ok(address && typeof address!=='string');const w=await keyAsideWorld(t,address.port);
  const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/配置端口.*进程应答/);
- assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+ assert.equal(await w.key(),undefined);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
 });
 
 test('a listener at an earlier address still blocks restore and vault recovery without changing bytes',async t=>{
@@ -466,7 +479,7 @@ test('a listener at an earlier address still blocks restore and vault recovery w
  assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
  assert.equal(await readFile(join(w.layout.db,'sentinel'),'utf8'),'synthetic database');
  assert.equal(await readFile(join(w.layout.objects,'sentinel'),'utf8'),'synthetic object');
- assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);
+ assert.equal(await w.key(),undefined);
 });
 
 test('closure key init recovery order reissues a missing operator token before importing secrets',async t=>{

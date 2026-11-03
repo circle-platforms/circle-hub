@@ -1,4 +1,4 @@
-// R5 synthetic dispatch rules. Addresses stay in 192.0.2.0/24. No live device, keychain, or environment file.
+// R5 synthetic dispatch rules. Addresses stay in 192.0.2.0/24. No live device, key file, or environment file.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DispatchService } from '../../hub/dispatch/service.ts';

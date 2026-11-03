@@ -3,11 +3,11 @@
 import { createContext, postgresFor } from './context.ts';
 import { PLATFORM_VARIABLES, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
-import { deploymentKeychainNames, keychainKeyProvider, type KeychainOptions, type KeyProvider } from './keychain.ts';
+import { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, fileKeyProvider, keyNamesOf, settingsKeyNames, type DeploymentKeyNames, type KeyProvider } from './file-key.ts';
 import { ensureDatabaseRunning } from './postgres.ts';
 import { assertApplicationRole, roleFixHint } from './roles.ts';
-import { fileKeyProvider } from './file-key.ts';
 import { resolveLayout } from './layout.ts';
+import { readSettingsFile, resolveSettings, settingsPath } from './settings.ts';
 
 /**
  * Starts the cluster of the data root CIRCLE_HUB_DATA_DIR names, on the binaries of the running release, when it is
@@ -34,18 +34,36 @@ export async function ensureHubDatabase(
 }
 
 /**
- * The vault master key from its keychain item as deploymentKeychainNames resolves it: the deployment settings of
- * CIRCLE_HUB_DATA_DIR (CIRCLE_HUB_KEYCHAIN_SERVICE and _ACCOUNT may only repeat them); a data root without settings (a
- * development root) takes the variables, else the defaults; without CIRCLE_HUB_DATA_DIR the first use is refused, as
- * ensureHubDatabase refuses. The item is looked up at the first use.
+ * The keys of the deployment CIRCLE_HUB_DATA_DIR names, as hubKeyProvider resolves the vault master key's: the deployment
+ * settings of that data root when it has them, with the same rule as the platform's own commands (settingsKeyNames); a
+ * data root without settings (a development root) takes the defaults. Without CIRCLE_HUB_DATA_DIR it refuses: platform
+ * commands would act on the default data root, whose settings may name other keys, so nothing is guessed
+ * (ensureHubDatabase refuses the same). The operator token sits beside the vault master key (the same service, account
+ * OPERATOR_TOKEN_ACCOUNT, which the vault master key may not use). Only the settings file is read here.
  */
-export function hubKeyProvider(env: NodeJS.ProcessEnv = process.env, options: Pick<KeychainOptions, 'runner' | 'keychain'> & {platform?: NodeJS.Platform} = {}): Required<KeyProvider> {
+export async function deploymentKeyNames(env: NodeJS.ProcessEnv = process.env): Promise<DeploymentKeyNames> {
+  if (variable(env, PLATFORM_VARIABLES.dataDir) === undefined) {
+    throw new PlatformError(
+      `没有设置 ${PLATFORM_VARIABLES.dataDir}：密钥文件由部署的数据根里的部署设置决定，不猜默认数据根`,
+      `服务的环境由 circle-hub service install 写好；在 shell 里运行时把 ${PLATFORM_VARIABLES.dataDir} 设成部署的数据根`,
+    );
+  }
+  const layout = resolveLayout(env);
+  const file = await readSettingsFile(layout);
+  if (file) return settingsKeyNames(resolveSettings(file, env, layout), settingsPath(layout));
+  return keyNamesOf(DEFAULT_KEY_SERVICE, DEFAULT_KEY_ACCOUNT);
+}
+
+/**
+ * The vault master key from its file under <data root>/keys, on every platform (decision 137), named as
+ * deploymentKeyNames resolves it; without CIRCLE_HUB_DATA_DIR the first use is refused, as ensureHubDatabase refuses.
+ * The file is looked up at the first use.
+ */
+export function hubKeyProvider(env: NodeJS.ProcessEnv = process.env): Required<KeyProvider> {
   let resolved: Promise<Required<KeyProvider>> | undefined;
   const provider = () =>
-    (resolved ??= deploymentKeychainNames(env)
-      .then(({ vaultKey }) => (options.platform ?? process.platform) === 'linux'
-        ? fileKeyProvider({ root: resolveLayout(env).root, ...vaultKey })
-        : keychainKeyProvider({ ...options, ...vaultKey }))
+    (resolved ??= deploymentKeyNames(env)
+      .then(({ vaultKey }) => fileKeyProvider({ root: resolveLayout(env).root, ...vaultKey }))
       .catch((error: unknown) => {
         resolved = undefined;
         throw error;

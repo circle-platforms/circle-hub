@@ -3,10 +3,9 @@ import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platformLibpqDirectory } from './backup.ts';
-import { fileKeyStore } from './file-key.ts';
+import { fileKeyStore, settingsKeyNames, type DeploymentKeyNames, type KeyStore } from './file-key.ts';
 import { defaultSystemdDirectory, systemdAgent } from './systemd.ts';
 import { PlatformError } from './errors.ts';
-import { keychainStore, settingsKeychainNames, type DeploymentKeychainNames, type KeychainStore } from './keychain.ts';
 import { defaultLaunchAgentsDirectory, launchAgent, type LaunchAgent, type ServiceIdentity } from './launchd.ts';
 import { resolveLayout, type Layout } from './layout.ts';
 import { createPostgres, type PostgresControl } from './postgres.ts';
@@ -26,8 +25,6 @@ export interface PlatformContext {
   home: string;
   runner: CommandRunner;
   launchAgentsDir: string;
-  /** A keychain file instead of the user's default keychain. */
-  keychain?: string;
   /** Node binary for the service and for migrations; default: the settings, then a stable path to this Node. */
   nodePath?: string;
   libpqBin?: string;
@@ -60,7 +57,6 @@ export function createContext(env: NodeJS.ProcessEnv = process.env, overrides: P
     home,
     runner: overrides.runner ?? runCommand,
     launchAgentsDir: overrides.launchAgentsDir ?? (platform === 'linux' ? defaultSystemdDirectory(home) : defaultLaunchAgentsDirectory(home)),
-    ...(overrides.keychain ? { keychain: overrides.keychain } : {}),
     ...(overrides.nodePath ? { nodePath: overrides.nodePath } : {}),
     libpqBin: platformLibpqDirectory(overrides.libpqBin, env),
     codeRoot: overrides.codeRoot ?? CODE_ROOT,
@@ -112,19 +108,17 @@ export function agentFor(context: PlatformContext, settings: Pick<PlatformSettin
 }
 
 /**
- * The deployment's keychain items, from its settings. A vault master key account that is the operator token's is refused:
+ * The deployment's key names, from its settings. A vault master key account that is the operator token's is refused:
  * `serve` would refuse it too, so deploy, rollback and service install|start check it before anything changes.
  */
-export function keychainNamesFor(context: PlatformContext, settings: PlatformSettings): DeploymentKeychainNames {
-  return settingsKeychainNames(settings, settingsPath(context.layout));
+export function keyNamesFor(context: PlatformContext, settings: PlatformSettings): DeploymentKeyNames {
+  return settingsKeyNames(settings, settingsPath(context.layout));
 }
 
-/** The vault master key's item of the deployment; a reserved account (the operator token's) is refused. */
-export function keychainFor(context: PlatformContext, settings: PlatformSettings): KeychainStore {
-  if (context.platform === 'linux') return fileKeyStore({root: context.layout.root, ...keychainNamesFor(context, settings).vaultKey});
-  return keychainStore({
-    ...keychainNamesFor(context, settings).vaultKey,
-    runner: context.runner,
-    ...(context.keychain ? { keychain: context.keychain } : {}),
-  });
+/**
+ * The vault master key's file of the deployment, on every platform (decision 137); a reserved account (the operator
+ * token's) is refused.
+ */
+export function keyStoreFor(context: PlatformContext, settings: PlatformSettings): KeyStore {
+  return fileKeyStore({ root: context.layout.root, ...keyNamesFor(context, settings).vaultKey });
 }

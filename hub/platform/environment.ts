@@ -1,5 +1,6 @@
-// Hub configuration comes only from CIRCLE_HUB_* variables. The retired CIRCLE_SERVER_* names are never read or
-// aliased: a process that still carries one, even empty, refuses to start. Errors name keys only, never values.
+// Hub configuration comes only from CIRCLE_HUB_* variables. The retired CIRCLE_SERVER_* names and the retired keychain
+// names (RETIRED_VARIABLES) are never read or aliased: a process that still carries one, even empty, refuses to start.
+// Errors name keys only, never values.
 import { PlatformError } from './errors.ts';
 
 /**
@@ -21,8 +22,6 @@ export const PLATFORM_VARIABLES = {
   databasePort: 'CIRCLE_HUB_DATABASE_PORT',
   databaseName: 'CIRCLE_HUB_DATABASE_NAME',
   databaseUser: 'CIRCLE_HUB_DATABASE_USER',
-  keychainService: 'CIRCLE_HUB_KEYCHAIN_SERVICE',
-  keychainAccount: 'CIRCLE_HUB_KEYCHAIN_ACCOUNT',
   /** Directory of pg_dump and pg_restore; platform commands only. */
   libpqBin: 'CIRCLE_HUB_LIBPQ_BIN',
 } as const;
@@ -46,8 +45,6 @@ export const HUB_CONFIG_VARIABLES: readonly string[] = [
   'CIRCLE_HUB_DATABASE_PORT',
   'CIRCLE_HUB_DATABASE_NAME',
   'CIRCLE_HUB_DATABASE_USER',
-  'CIRCLE_HUB_KEYCHAIN_SERVICE',
-  'CIRCLE_HUB_KEYCHAIN_ACCOUNT',
   'CIRCLE_HUB_SYNC_MAX_BATCH_BYTES', 'CIRCLE_HUB_SYNC_REQUESTS_PER_MINUTE',
   'CIRCLE_HUB_MAX_UPLOAD_BYTES',
   'CIRCLE_HUB_MAX_RECORD_BYTES',
@@ -65,17 +62,31 @@ export const PLATFORM_ONLY_VARIABLES: readonly string[] = [PLATFORM_VARIABLES.li
 const RETIRED_PREFIX = 'CIRCLE_SERVER_';
 const HUB_PREFIX = 'CIRCLE_HUB_';
 
+/** Why the keychain names were retired and where the keys are now (decision 137). Names the variable, never its value. */
+const KEY_FILES_MOVED =
+  'Hub 不再使用 macOS 钥匙串：密钥库主密钥和操作令牌在每个平台上都存在数据根下的私有密钥文件里，目录 $CIRCLE_HUB_DATA_DIR/keys（0700，文件 0600），文件名由部署设置决定；删掉这个变量';
+
+/** Copy of hub/config/names.ts RETIRED_NAMES, which the platform may not import; a test keeps the two equal. */
+export const RETIRED_VARIABLES: Readonly<Record<string, string>> = {
+  CIRCLE_HUB_KEYCHAIN_SERVICE: KEY_FILES_MOVED,
+  CIRCLE_HUB_KEYCHAIN_ACCOUNT: KEY_FILES_MOVED,
+};
+
 export function retiredEnvironmentKeys(env: NodeJS.ProcessEnv = process.env): string[] {
   return Object.keys(env)
-    .filter((key) => key.startsWith(RETIRED_PREFIX) && env[key] !== undefined)
+    .filter((key) => (key.startsWith(RETIRED_PREFIX) || Object.hasOwn(RETIRED_VARIABLES, key)) && env[key] !== undefined)
     .sort();
 }
 
 export function assertHubEnvironment(env: NodeJS.ProcessEnv = process.env): void {
   const keys = retiredEnvironmentKeys(env);
   if (keys.length === 0) return;
-  const renames = keys.map((key) => `${key} -> ${HUB_PREFIX}${key.slice(RETIRED_PREFIX.length)}`).join('，');
-  throw new PlatformError(`circle-hub 不再读取 ${RETIRED_PREFIX}* 配置，设置了这些变量就不启动`, `删掉它们，改用 ${HUB_PREFIX}* 名字：${renames}`);
+  const prefixed = keys.filter((key) => key.startsWith(RETIRED_PREFIX));
+  const single = keys.filter((key) => !key.startsWith(RETIRED_PREFIX));
+  if (prefixed.length === 0) throw new PlatformError(`circle-hub 不再读取 ${single.join('、')}，设置了就不启动`, RETIRED_VARIABLES[single[0]!]);
+  const renames = prefixed.map((key) => `${key} -> ${HUB_PREFIX}${key.slice(RETIRED_PREFIX.length)}`).join('，');
+  const also = single.length === 0 ? '' : `；${single.join('、')} 也已停用：${RETIRED_VARIABLES[single[0]!]}`;
+  throw new PlatformError(`circle-hub 不再读取 ${RETIRED_PREFIX}* 配置，设置了这些变量就不启动`, `删掉它们，改用 ${HUB_PREFIX}* 名字：${renames}${also}`);
 }
 
 /** CIRCLE_HUB_* names that neither hub/config nor the platform knows, sorted. */

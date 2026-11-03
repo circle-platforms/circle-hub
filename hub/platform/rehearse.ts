@@ -6,12 +6,11 @@
 // The root also holds read-only extracted pack trees, as the server's registry leaves them: they must stay out of the
 // backup and come through the destroy and the restore untouched. It never touches the real data root.
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { access, chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
-import { keychainStore, VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM } from './keychain.ts';
-import { fileKeyStore } from './file-key.ts';
+import { fileKeyStore, OPERATOR_TOKEN_ACCOUNT, VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM } from './file-key.ts';
 import { createBackup } from './backup.ts';
 import { PlatformError } from './errors.ts';
 import { exists, listFiles, removeTree, removeWithin, sha256File, sha256Text } from './files.ts';
@@ -27,8 +26,6 @@ export interface RehearsalOptions {
   /** Directory that receives the throwaway data root; default the system temporary directory. */
   parent?: string;
   libpqBin?: string;
-  /** Override only to exercise an unavailable security tool. */
-  security?: string;
   runner?: CommandRunner;
   binariesRoot?: string;
   records?: number;
@@ -56,7 +53,12 @@ export interface RehearsalReport {
   ok: boolean;
   differences: string[];
   seconds: number;
-  keyLoss: { skipped: boolean; reason?: string; items: number; backupHits: number; remaining: number; setAsideFiles: number };
+  /**
+   * The loss of both key files of the throwaway root (decision 137: the vault master key and the operator token are files
+   * on every platform): how many were made, how often a backup file held one of their values in any encoding (must be
+   * 0), how many were still found after the loss (must be 0), and how many vault files a reset set aside.
+   */
+  keyLoss: { items: number; backupHits: number; remaining: number; setAsideFiles: number };
 
 }
 
@@ -247,23 +249,12 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
   const layout = layoutAt(root);
   const control = (): PostgresControl => createPostgres({ layout, runner, ...(options.binariesRoot ? { binariesRoot: options.binariesRoot } : {}) });
   let running: PostgresControl | undefined;
-  const security = options.security ?? '/usr/bin/security';
-  const keychain = join(root, 'synthetic.keychain-db');
-  const fileKeys = process.platform === 'linux' && options.security === undefined;
-  const available = fileKeys || await access(security).then(() => true, () => false);
-  const keyLoss: RehearsalReport['keyLoss'] = { skipped: !available, ...(!available ? { reason: '跳过，不算通过：security 不可用' } : {}), items: 0, backupHits: 0, remaining: 0, setAsideFiles: 0 };
-  // No security invocation can reach a default keychain, even on failure or cleanup.
-  const guarded: CommandRunner = async (command, args, options = {}) => {
-    if (command !== security || !(args.at(-1) === keychain || (args[0] === '-i' && (options.input ?? '').trimEnd().endsWith(`"${keychain}"`)))) throw new PlatformError('演练拒绝未指定临时钥匙串文件的调用');
-    const result = await runner(command, args, options);
-    if (result.code !== 0 && result.code !== 44) throw new PlatformError('临时钥匙串调用失败');
-    return result;
-  };
+  const keyLoss: RehearsalReport['keyLoss'] = { items: 0, backupHits: 0, remaining: 0, setAsideFiles: 0 };
+  // The key files live under this throwaway root only, under a service name of their own.
   const service = `circle-hub-rehearsal-${randomBytes(12).toString('hex')}`;
-  const stores = [VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM].map((item, i) => {
-    const account = i === 0 ? 'vault-master-key' : 'operator-token';
-    return fileKeys ? fileKeyStore({root, service, account, item}) : keychainStore({ runner: guarded, security, keychain, service, account, item });
-  });
+  const stores = [VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM].map((item, i) =>
+    fileKeyStore({ root, service, account: i === 0 ? 'vault-master-key' : OPERATOR_TOKEN_ACCOUNT, item }),
+  );
   const secretBytes: Uint8Array[] = [];
 
   try {
@@ -278,28 +269,20 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     await withSession(running.applicationConnector, database, (session) => writeSyntheticRecords(session, options.records ?? 200));
     const written = await writeSyntheticFiles(layout, options.objects ?? 20);
     const packFiles = await writeSyntheticPacks(layout);
-    if (available) {
-      if (!fileKeys) {
-        const password = randomBytes(24).toString('hex');
-        for (const args of [['create-keychain', '-p', password, keychain], ['unlock-keychain', '-p', password, keychain], ['set-keychain-settings', keychain]]) await guarded(security, args);
-      }
-      for (const store of stores) { await store.init(); secretBytes.push(await store.read()); }
-      keyLoss.items = stores.length;
-    }
+    for (const store of stores) { await store.init(); secretBytes.push(await store.read()); }
+    keyLoss.items = stores.length;
     const before = await withSession(running.connector, database, async (session) => ({ tables: await summarizeTables(session), privileges: await rolePrivileges(session, role) }));
     const filesBefore = await fileDigests(layout);
     const packsBefore = await treeEntries(layout.packs);
     const { dir: backup, manifest } = await createBackup({ layout, postgres: running, runner, now, label: 'rehearsal', ...(options.libpqBin ? { libpqBin: options.libpqBin } : {}) });
     const keyDifferences: string[] = [];
-    if (available) {
-      for (const path of await listFiles(backup)) {
-        const bytes = await readFile(join(backup, path));
-        for (const value of secretBytes) {
-          const hex = Buffer.from(value).toString('hex');
-          for (const encoding of [Buffer.from(value), Buffer.from(hex), Buffer.from(hex.toUpperCase())]) {
-            let from = 0;
-            while ((from = bytes.indexOf(encoding, from)) >= 0) { keyLoss.backupHits++; keyDifferences.push('备份文件含钥匙串项的值，不能采用'); from += encoding.length; }
-          }
+    for (const path of await listFiles(backup)) {
+      const bytes = await readFile(join(backup, path));
+      for (const value of secretBytes) {
+        const hex = Buffer.from(value).toString('hex');
+        for (const encoding of [Buffer.from(value), Buffer.from(hex), Buffer.from(hex.toUpperCase())]) {
+          let from = 0;
+          while ((from = bytes.indexOf(encoding, from)) >= 0) { keyLoss.backupHits++; keyDifferences.push('备份文件含密钥的值，不能采用'); from += encoding.length; }
         }
       }
     }
@@ -307,7 +290,7 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
 
     await running.stop();
     running = undefined;
-    if (available) for (const store of stores) await store.delete();
+    for (const store of stores) await store.delete();
     // packs/ stays, as after a failed deploy sets the data aside: derived data that a restore leaves as it is.
     for (const area of ['db', 'objects', 'vault'] as const) await removeWithin(root, layout[area]);
 
@@ -322,12 +305,10 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     const packsAfter = await treeEntries(layout.packs);
     const statements = [...new Set(TABLES.flatMap((table) => tamperingStatements(table)))];
     const unrefused = await withSession(running.applicationConnector, database, (session) => unrefusedStatements(session, statements));
-    if (available) {
-      for (const store of stores) if ((await store.status()).present) keyLoss.remaining++;
-      if (keyLoss.remaining > 0) keyDifferences.push('丢失后仍找到钥匙串项');
-      keyLoss.setAsideFiles = (await setAsideVault(layout,now())).files;
-      await stores[0].init();
-    }
+    for (const store of stores) if ((await store.status()).present) keyLoss.remaining++;
+    if (keyLoss.remaining > 0) keyDifferences.push('丢失后仍找到密钥文件');
+    keyLoss.setAsideFiles = (await setAsideVault(layout,now())).files;
+    await stores[0].init();
     const differences = [
       ...keyDifferences,
       ...compareSummaries(before.tables, after.tables),
@@ -358,19 +339,13 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
   } finally {
     for (const bytes of secretBytes) bytes.fill(0);
     let cleanupFailed = false;
-    if (available && fileKeys) {
-      try { for (const store of stores) await store.delete(); } catch { cleanupFailed = true; }
-    } else if (available) {
-      try { await guarded(security, ['delete-keychain', keychain]); }
-      catch { cleanupFailed = true; }
-      finally { await rm(keychain, { force: true }); }
-    }
+    try { for (const store of stores) await store.delete(); } catch { cleanupFailed = true; }
     if (running) await running.stop().catch(() => {});
     if (!options.keep) {
       if (!(await exists(join(root, MARKER)))) throw new PlatformError(`演练数据根缺少标记文件，不删除：${root}`);
       // The extracted pack trees are read-only: their directories are made writable first.
       await removeTree(root);
     }
-    if (cleanupFailed) throw new PlatformError('临时钥匙串清理失败，文件已删除');
+    if (cleanupFailed) throw new PlatformError(`演练的密钥文件没能删除${options.keep ? `：${root}/keys` : '，数据根已删除'}`);
   }
 }

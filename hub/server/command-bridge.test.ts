@@ -1,7 +1,7 @@
 // The command bridge of the console's management (decision 75): the real CLI main() in this process against a temporary
 // socket-only PostgreSQL, acting as the administrator whose token it is given; refusals for another account's token and
 // for commands that are not bridged; the caller's environment left as it was; a secret value delivered to the command's
-// readSecret only. Operator tokens in memory and a file key, never the owner's keychain.
+// readSecret only. Operator tokens in memory and a file key, never the owner's key files.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,7 +24,7 @@ let adminToken: string;
 const overrides = () => ({
   keyProvider: () => new FileKeyProvider(join(scratch, 'vault.key')),
   ownerRole: postgres.config.user,
-  operatorTokens: () => memoryOperatorTokens(null, '测试的空钥匙串'),
+  operatorTokens: () => memoryOperatorTokens(null, '测试的空令牌存储'),
 });
 
 async function cli(argv: string[]): Promise<{ code: number; out: string[]; err: string[] }> {

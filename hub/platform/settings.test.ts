@@ -8,7 +8,7 @@ import {
   assertApplicationRoleName,
   DATABASE_NAME,
   DATABASE_PORT,
-  DEFAULT_KEYCHAIN_ACCOUNT,
+  DEFAULT_KEY_ACCOUNT,
   DEFAULT_PORT,
   deploymentDatabase,
   environmentText,
@@ -48,7 +48,9 @@ test('settings are written once, read back and never replaced', async () => {
   assert.match(text, /"environment": "shared"/);
   const settings = await readSettings(layout, {});
   assert.equal(settings.port, DEFAULT_PORT);
-  assert.equal(settings.keychainAccount, DEFAULT_KEYCHAIN_ACCOUNT);
+  assert.equal(settings.keyAccount, DEFAULT_KEY_ACCOUNT);
+  // The persisted field names predate decision 137 and stay: a release rolled back to reads the same file.
+  assert.match(text, /"keychain_account": "vault-master-key"/);
 });
 
 test('a settings file with unknown fields or a hand-written environment class is refused', async () => {
@@ -61,16 +63,16 @@ test('a settings file with unknown fields or a hand-written environment class is
   await assert.rejects(readSettingsFile(layout), /不是合法的 JSON/);
 });
 
-test('the deployment settings pin the database names, the port and the keychain item', async () => {
-  const file = newSettingsFile({ environment: 'production', port: 7500, keychainAccount: 'key-a', database: { name: 'hub_a', role: 'hub_app', port: 6543 } });
+test('the deployment settings pin the database names, the port and the key file names', async () => {
+  const file = newSettingsFile({ environment: 'production', port: 7500, keyAccount: 'key-a', database: { name: 'hub_a', role: 'hub_app', port: 6543 } });
   assert.equal(file.schema, SETTINGS_SCHEMA);
   assert.deepEqual(file.database, { name: 'hub_a', role: 'hub_app', socket_port: 6543 });
   const settings = resolveSettings(file, {});
   assert.deepEqual(settings.database, { name: 'hub_a', role: 'hub_app', port: 6543 });
   assert.equal(settings.port, 7500);
-  assert.equal(settings.keychainAccount, 'key-a');
+  assert.equal(settings.keyAccount, 'key-a');
   assert.deepEqual(newSettingsFile({ environment: 'test' }).database, { name: DATABASE_NAME, role: APPLICATION_ROLE, socket_port: DATABASE_PORT });
-  assert.throws(() => newSettingsFile({ environment: 'test', keychainService: 'has space' }), /取值不对.*keychain_service/);
+  assert.throws(() => newSettingsFile({ environment: 'test', keyService: 'has space' }), /取值不对.*keychain_service/);
   assert.throws(() => newSettingsFile({ environment: 'test', database: { name: 'bad name;' } }), /database\.name/);
 });
 
@@ -79,8 +81,6 @@ test('a CIRCLE_HUB_* variable may repeat a setting but never change it: a disagr
   const file = newSettingsFile({ environment: 'production', port: 7500 });
   const same = {
     CIRCLE_HUB_PORT: '7500',
-    CIRCLE_HUB_KEYCHAIN_SERVICE: 'circle-hub',
-    CIRCLE_HUB_KEYCHAIN_ACCOUNT: DEFAULT_KEYCHAIN_ACCOUNT,
     CIRCLE_HUB_DATABASE_NAME: DATABASE_NAME,
     CIRCLE_HUB_DATABASE_USER: APPLICATION_ROLE,
     CIRCLE_HUB_DATABASE_PORT: String(DATABASE_PORT),
@@ -90,8 +90,6 @@ test('a CIRCLE_HUB_* variable may repeat a setting but never change it: a disagr
   assert.equal(resolveSettings(file, { CIRCLE_HUB_PORT: '' }, layout).port, 7500, 'an empty variable is unset');
   for (const [name, value] of [
     ['CIRCLE_HUB_PORT', '7999'],
-    ['CIRCLE_HUB_KEYCHAIN_SERVICE', 'hub-b'],
-    ['CIRCLE_HUB_KEYCHAIN_ACCOUNT', 'dev-key'],
     ['CIRCLE_HUB_DATABASE_NAME', 'circle_hub_dev'],
     ['CIRCLE_HUB_DATABASE_USER', 'someone_else'],
     ['CIRCLE_HUB_DATABASE_PORT', '6543'],

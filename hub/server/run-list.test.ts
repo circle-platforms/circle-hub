@@ -135,7 +135,7 @@ function capture(current: NodeJS.ProcessEnv): { io: CliIo; out: string[]; err: s
 
 async function run(argv: string[], current: NodeJS.ProcessEnv = env) {
   const c = capture(current);
-  const code = await main(argv, { io: c.io, keyProvider: () => new FileKeyProvider(join(scratch, 'vault.key')), ownerRole: postgres.config.user, operatorTokens: () => memoryOperatorTokens(null, '测试的空钥匙串') });
+  const code = await main(argv, { io: c.io, keyProvider: () => new FileKeyProvider(join(scratch, 'vault.key')), ownerRole: postgres.config.user, operatorTokens: () => memoryOperatorTokens(null, '测试的空令牌存储') });
   return { code, out: c.out, err: c.err, text: [...c.out, ...c.err].join('\n') };
 }
 

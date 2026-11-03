@@ -107,7 +107,7 @@ brief says.
 
 Data directory (all directories 0700): `objects/ab/<sha256>` (files 0400), `vault/<name>.sealed` and `vault/key-check`
 (0600), `logs/calls-YYYY-MM-DD.jsonl` (0600; `CIRCLE_HUB_LOG_DIR` can move it). A backup needs the database, `objects/`,
-`vault/` and the vault key (which lives in the Keychain, not in the data directory).
+`vault/` and the vault key (a private file under `<data root>/keys` on every platform, decision 137, which backups leave out: it is moved only with `circle-hub key export --confirm | circle-hub key import`).
 
 Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (validate refusals, `move_root`),
 `authorization@1`, `call_log@1`. Their body shapes are the TypeScript types in `api.ts` (`SourceArtifactBody`,
@@ -237,8 +237,10 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     pointed at the vault. `allowUnknown` lets a client program (an admin shell with a client token) declare names it reads
     itself. Uploads are capped at 256 MiB (the scanner decodes an upload into strings; V8 strings end near 512 Mi
     characters) and requests at 512 MiB. The full list with Chinese descriptions is `HUB_ENVIRONMENT` in
-    `hub/config/names.ts`. The keychain item of the vault master key defaults to service `circle-hub`, account
-    `vault-master-key` (the platform's and the brief's name; it was `vault` before 2026-10-22). The Hub calls no model
+    `hub/config/names.ts`. The key file of the vault master key defaults to service `circle-hub`, account
+    `vault-master-key` (the platform's and the brief's name; it was `vault` before 2026-10-22; `DEFAULT_KEY_SERVICE`,
+    `DEFAULT_KEY_ACCOUNT`). `CIRCLE_HUB_KEYCHAIN_SERVICE` and `_ACCOUNT` are retired since 2026-11-03 (decision 137, no macOS
+    keychain): a process that has either set refuses to start (`RETIRED_NAMES`), and `HubConfig` has no key names. The Hub calls no model
     (decision 15 of `docs/hub-r4-progress.md`): `CIRCLE_HUB_JEV_MODEL`, which named the typed-judgment model, was removed
     on 2026-10-22 and is refused as unknown, like every other name the Hub does not read. **Names only platform commands read** (`PLATFORM_ONLY_ENVIRONMENT`,
     today `CIRCLE_HUB_LIBPQ_BIN`) are tolerated and never read, so an operator shell that sets them can run
@@ -246,7 +248,7 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     test keeps the two equal. `CIRCLE_HUB_HOME` is not one of them: the platform reads the data root from
     `CIRCLE_HUB_DATA_DIR` and refuses `CIRCLE_HUB_HOME` as unknown, so tolerating it here would let `serve` ignore a
     directory the operator meant (see Deviations). Tests also keep the retired-name guard of hub/config and the copy in
-    hub/platform equal, and the keychain defaults.
+    hub/platform equal, and the key name defaults.
 13. **The pool never reads secrets from the environment or files**: every connection parameter is explicit and the password
     is a function, so pg never falls back to `PG*` variables or `~/.pgpass`. A password, when TCP needs one, comes from the
     caller (the platform reads it from the vault).
@@ -429,9 +431,9 @@ npx tsc --noEmit
 ```
 
 Covered: RFC 8785 vectors (sections 3.2.2-3.2.4, appendix B numbers) and independently computed digest vectors; ids;
-configuration and the retired-name guard (also as a child process), the upload cap, the keychain defaults,
+configuration and the retired-name guard (also as a child process), the upload cap, the retired keychain names,
 tolerated platform-only names, the removed `CIRCLE_HUB_JEV_MODEL` refused as unknown; drift against hub/platform (retired
-names, platform-only names, keychain defaults) in
+names, platform-only names, key name defaults) in
 `hub/config/drift.test.ts`; append-only enforcement on every history
 table; idempotent put; exact round trip of NUL and other characters; every contracts schema id accepted and leading-zero,
 upper-case and empty ones refused, on put and on read; `Versioned` component and generator ids; index values by bytes;
@@ -479,11 +481,12 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   use of the same kind; the model owner should record it in B02 R[4] and B04 F[0]. Uploads keep B02 R[4] unchanged.
 - **API additions of 2026-10-22** (nothing renamed or removed): `Artifacts.acceptFindings`, `revokeFindings`,
   `FindingsAcceptance`, `ScanAcceptance`, optional `CredentialScan.accepted`, `scanDigest`, `scanAcceptanceKey`;
-  `PLATFORM_ONLY_ENVIRONMENT`, `isPlatformOnlyName`, `DEFAULT_KEYCHAIN_SERVICE`, `DEFAULT_KEYCHAIN_ACCOUNT`.
+  `PLATFORM_ONLY_ENVIRONMENT`, `isPlatformOnlyName`, `DEFAULT_KEYCHAIN_SERVICE`, `DEFAULT_KEYCHAIN_ACCOUNT` (renamed
+  `DEFAULT_KEY_SERVICE` and `DEFAULT_KEY_ACCOUNT` on 2026-11-03, decision 137).
   (`HubConfig.jev` and `DEFAULT_JEV_MODEL`, added that day, were removed the same day when the Hub stopped calling any
   model, decision 15; `CIRCLE_HUB_JEV_MODEL` is refused as unknown now.) Changed behaviour: the newest readable record
   decides `readable()`, `text()` and `source()`
-  (decision 6); the default keychain account is `vault-master-key`; schema ids are checked on read too; **generator ids**
+  (decision 6); the default key account is `vault-master-key`; schema ids are checked on read too; **generator ids**
   (`origin.generated.generator`) and **pointer components** (`MoveInput.component`) are checked as contracts `Versioned`
   instead of `^[a-z][a-z0-9_.-]*@[0-9]+$`, so a leading-zero major (`name@01`, `name@00`) that was accepted before is now
   a `TypeError` (contracts refuses it so that `x@01` and `x@1` cannot both exist; see Needs, connectors).
@@ -521,10 +524,10 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
   an owner role (for example `circle_hub_owner`, owning the database) for `serve --migrate-only`, and run the Hub as the
   runtime role with `openRecords(..., { migrate: false })`; restore as the owner (`--role=<owner>`) and run `migrateRecords`
   with the runtime role again afterwards (it applies nothing and grants again).
-  (2) A Keychain `KeyProvider` (`getKey`, `initKey`; service and account from `config.keychain`); the database password
+  (2) A `KeyProvider` (`getKey`, `initKey`; since decision 137 the platform's key file, named by the deployment settings); the database password
   from the vault when the database is reached over TCP; `import 'hub/config/guard.ts'` first in every bin entry point;
   backups of the database, `objects/` and `vault/`. (3) `HUB_CONFIG_VARIABLES` in `hub/platform/environment.ts` mirrors
-  `HUB_ENVIRONMENT`; a test keeps the two equal. (The keychain default is now
+  `HUB_ENVIRONMENT`; a test keeps the two equal. (The key account default is now
   `vault-master-key` on both sides, and hub/config tolerates `CIRCLE_HUB_LIBPQ_BIN`.)
 - **server**: map `RecordsError.code` into `errors` (null means an internal failure); call `callLog.append` once per MCP call
   with the raw arguments (only digest and size are kept), the `Circle-Session-Id` header and the Hub's span id for the call

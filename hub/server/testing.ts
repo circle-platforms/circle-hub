@@ -144,7 +144,6 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       host: '127.0.0.1',
       port: 0,
       database: records.database,
-      keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);

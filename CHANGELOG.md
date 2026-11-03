@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Keep the vault master key and the operator token in private files under the data root on macOS as on Linux, retire `CIRCLE_HUB_KEYCHAIN_SERVICE` and `CIRCLE_HUB_KEYCHAIN_ACCOUNT` (a process that sets either refuses to start and says where the keys are), and run the key tests on Ubuntu (decision 137). A macOS deployment whose key is still in the keychain moves it with the earlier release's `key export --confirm` piped into the new release's `key import`, then `operator-token reissue`.
+
 - Publish the neutral knowledge sync v1 specification with a discovery document at `/.well-known/knowledge-sync`, `detail` on sync errors, console confirmation for purges asked over the sync API, and recorded client provenance on knowledge entries.
 
 - Keep team and member management available when the knowledge service or personal spaces feature is absent.

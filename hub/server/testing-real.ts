@@ -6,7 +6,7 @@ import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials }
 // pack.json are published through the real registry (product packs activated). Helpers create users and tokens, assign
 // packs, publish more packs, add resources, set credentials and run a knowledge sync; client() wraps the official SDK
 // client over streamable HTTP. This is what the acceptance tests use. Nothing here reaches a real system, the owner's
-// keychain or any file outside temporary directories.
+// data root, its key files or any file outside temporary directories.
 import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -238,7 +238,6 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       host: '127.0.0.1',
       port: 0,
       database: records.database,
-      keychain: { service: 'circle-hub-test', account: 'vault' },
       limits: { ...records.config.limits },
     };
     if (options.stubs !== false) stubs = await startStubs(options);

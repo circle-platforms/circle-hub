@@ -4,13 +4,12 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_KEYCHAIN_ACCOUNT,
-  DEFAULT_KEYCHAIN_SERVICE,
   DEFAULT_LIMITS,
   HUB_ENVIRONMENT,
   HubConfigError,
   HubEnvironmentError,
   PLATFORM_ONLY_ENVIRONMENT,
+  RETIRED_NAMES,
   assertNoRetiredEnvironment,
   isLoopbackAddress,
   loadConfig,
@@ -37,11 +36,9 @@ test('defaults with the required variables only', () => {
     host: '127.0.0.1',
     port: 7999,
     database: { host: '/srv/hub-data/pg', port: 5432, database: 'circle_hub', user: 'circle_hub' },
-    keychain: { service: 'circle-hub', account: 'vault-master-key' },
     limits: { ...DEFAULT_LIMITS },
   });
   assert.equal('password' in config.database, false);
-  assert.deepEqual(config.keychain, { service: DEFAULT_KEYCHAIN_SERVICE, account: DEFAULT_KEYCHAIN_ACCOUNT });
 });
 
 test('every variable is read and validated', () => {
@@ -54,8 +51,6 @@ test('every variable is read and validated', () => {
     CIRCLE_HUB_DATABASE_PORT: '6543',
     CIRCLE_HUB_DATABASE_NAME: 'hub_main',
     CIRCLE_HUB_DATABASE_USER: 'hub_owner',
-    CIRCLE_HUB_KEYCHAIN_SERVICE: 'org.example.hub',
-    CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'vault-key',
     CIRCLE_HUB_SYNC_MAX_BATCH_BYTES:'2097152',
     CIRCLE_HUB_MAX_UPLOAD_BYTES: '1048576',
     CIRCLE_HUB_MAX_RECORD_BYTES: '65536',
@@ -69,7 +64,6 @@ test('every variable is read and validated', () => {
   assert.equal(config.host, '::1');
   assert.equal(config.port, 0);
   assert.deepEqual(config.database, { host: '127.0.0.2', port: 6543, database: 'hub_main', user: 'hub_owner' });
-  assert.deepEqual(config.keychain, { service: 'org.example.hub', account: 'vault-key' });
   assert.deepEqual(config.limits, { syncRequestsPerMinute:120,maxSyncBatchBytes:2097152,maxUploadBytes: 1048576, maxRecordBytes: 65536, maxRequestBytes: 2000000, maxEntryIndexBytes:2097152,maxSpaceIndexBytes:134217728,maxMemoryDocumentBytes:24000,maxMemorySpaceBytes:48000,maxMemorySpaceDocuments:20 });
   // The request limit follows a raised upload limit unless set explicitly.
   const raised = loadConfig({ ...BASE, CIRCLE_HUB_MAX_UPLOAD_BYTES: String(96 * 1024 * 1024) });
@@ -97,7 +91,6 @@ test('missing and invalid values are all reported, in Chinese, before refusing t
     CIRCLE_HUB_DATABASE_HOST: '192.0.2.10',
     CIRCLE_HUB_DATABASE_PORT: '05432',
     CIRCLE_HUB_DATABASE_NAME: 'bad name',
-    CIRCLE_HUB_KEYCHAIN_SERVICE: 'has space',
     CIRCLE_HUB_MAX_UPLOAD_BYTES: '12abc',
   });
   for (const pattern of [
@@ -107,7 +100,6 @@ test('missing and invalid values are all reported, in Chinese, before refusing t
     /CIRCLE_HUB_DATABASE_HOST 只允许回环地址/,
     /CIRCLE_HUB_DATABASE_PORT 必须是/,
     /CIRCLE_HUB_DATABASE_NAME 的写法不对/,
-    /CIRCLE_HUB_KEYCHAIN_SERVICE 的写法不对/,
     /CIRCLE_HUB_MAX_UPLOAD_BYTES 必须是/,
   ]) {
     assert.ok(found.some((problem) => pattern.test(problem)), `${pattern} in ${found.join(' | ')}`);
@@ -191,6 +183,32 @@ test('retired CIRCLE_SERVER_* names refuse to start, even empty or beside the ne
   );
 });
 
+test('the retired keychain names refuse to start, even empty or beside the required variables, saying where the keys are now', () => {
+  assert.deepEqual(Object.keys(RETIRED_NAMES).sort(), ['CIRCLE_HUB_KEYCHAIN_ACCOUNT', 'CIRCLE_HUB_KEYCHAIN_SERVICE']);
+  assert.deepEqual(retiredEnvironmentKeys({ CIRCLE_HUB_KEYCHAIN_SERVICE: '', CIRCLE_HUB_PORT: '1' }), ['CIRCLE_HUB_KEYCHAIN_SERVICE']);
+  for (const env of [
+    { CIRCLE_HUB_KEYCHAIN_SERVICE: 'synthetic-service' },
+    { ...BASE, CIRCLE_HUB_KEYCHAIN_ACCOUNT: '' },
+    { ...BASE, CIRCLE_HUB_KEYCHAIN_SERVICE: 'synthetic-service', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'synthetic-account' },
+  ]) {
+    assert.throws(
+      () => loadConfig(env),
+      (error: unknown) =>
+        error instanceof HubEnvironmentError &&
+        error.keys.every((key) => key in RETIRED_NAMES) &&
+        error.message.includes('不再使用 macOS 钥匙串') &&
+        error.message.includes('$CIRCLE_HUB_DATA_DIR/keys') &&
+        !error.message.includes('synthetic-'),
+      JSON.stringify(env),
+    );
+  }
+  // Both kinds of retired name in one environment are both named.
+  assert.throws(
+    () => assertNoRetiredEnvironment({ CIRCLE_SERVER_PORT: '1', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'x' }),
+    (error: unknown) => error instanceof HubEnvironmentError && error.keys.length === 2 && error.message.includes('CIRCLE_SERVER_PORT -> CIRCLE_HUB_PORT') && error.message.includes('CIRCLE_HUB_KEYCHAIN_ACCOUNT'),
+  );
+});
+
 test('the guard module stops a process that carries a retired name', () => {
   const guard = join(fileURLToPath(new URL('.', import.meta.url)), 'guard.ts');
   const environment = { PATH: process.env.PATH ?? '' };
@@ -207,6 +225,13 @@ test('the guard module stops a process that carries a retired name', () => {
   assert.notEqual(retired.status, 0);
   assert.doesNotMatch(retired.stdout, /started/);
   assert.match(retired.stderr, /HubEnvironmentError/);
+  const keychain = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(guard)}); console.log('started')`], {
+    env: { ...environment, CIRCLE_HUB_KEYCHAIN_SERVICE: 'circle-hub' },
+    encoding: 'utf8',
+  });
+  assert.notEqual(keychain.status, 0);
+  assert.doesNotMatch(keychain.stdout, /started/);
+  assert.match(keychain.stderr, /HubEnvironmentError/);
 });
 
 

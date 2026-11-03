@@ -2,7 +2,22 @@
 // except the names only platform commands read (PLATFORM_ONLY_ENVIRONMENT), which are tolerated and never read here.
 
 export const HUB_PREFIX = 'CIRCLE_HUB_';
+
+/** Why the keychain names were retired and where the keys are now. Names the data root's variable, never its value. */
+const KEY_FILES_MOVED =
+  'Hub 不再使用 macOS 钥匙串：密钥库主密钥和操作令牌在每个平台上都存在数据根下的私有密钥文件里，目录 $CIRCLE_HUB_DATA_DIR/keys（0700，文件 0600），文件名由部署设置决定；删掉这个变量';
 export const RETIRED_PREFIX = 'CIRCLE_SERVER_';
+
+/**
+ * Single CIRCLE_HUB_* names that were retired, with the text a refusal gives for them. Like the retired prefix they are
+ * never read: a process that carries one, even empty, refuses to start. hub/platform/environment.ts keeps a copy (a test
+ * keeps the two equal).
+ */
+export const RETIRED_NAMES = {
+  // Decision 137 (2026-11-03): the macOS keychain is no longer used; both keys are files under the data root.
+  CIRCLE_HUB_KEYCHAIN_SERVICE: KEY_FILES_MOVED,
+  CIRCLE_HUB_KEYCHAIN_ACCOUNT: KEY_FILES_MOVED,
+} as const;
 
 /** Variable name -> Chinese description shown in configuration errors and generated documentation. */
 export const HUB_ENVIRONMENT = {
@@ -22,8 +37,6 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_DATABASE_PORT: 'PostgreSQL 端口，默认 5432（用套接字时决定套接字文件名）',
   CIRCLE_HUB_DATABASE_NAME: '数据库名，默认 circle_hub',
   CIRCLE_HUB_DATABASE_USER: '数据库用户，默认 circle_hub；密码不从环境变量读取',
-  CIRCLE_HUB_KEYCHAIN_SERVICE: '钥匙串服务名，部署的两个钥匙串项都在它下面：密钥库主密钥（账户见 CIRCLE_HUB_KEYCHAIN_ACCOUNT）和操作令牌（账户 operator-token）；默认 circle-hub',
-  CIRCLE_HUB_KEYCHAIN_ACCOUNT: '钥匙串里密钥库主密钥的账户名，默认 vault-master-key；operator-token 留给操作令牌，不能用',
   CIRCLE_HUB_MAX_UPLOAD_BYTES: '单个上传或对象的字节上限，默认 33554432（32 MiB），最大 268435456（256 MiB）',
   CIRCLE_HUB_MAX_RECORD_BYTES: '单条记录正文（规范化 JSON）的字节上限，默认 16777216（16 MiB）',
   CIRCLE_HUB_MAX_REQUEST_BYTES: '单个 HTTP 请求体的字节上限，默认按上传上限的 base64 长度再加 1 MiB，至少 48 MiB，最大 512 MiB',
@@ -35,6 +48,12 @@ export const HUB_ENVIRONMENT = {
 } as const;
 
 export type HubEnvironmentName = keyof typeof HUB_ENVIRONMENT;
+
+export type RetiredName = keyof typeof RETIRED_NAMES;
+
+export function isRetiredName(name: string): name is RetiredName {
+  return Object.hasOwn(RETIRED_NAMES, name);
+}
 
 export function isHubEnvironmentName(name: string): name is HubEnvironmentName {
   return Object.hasOwn(HUB_ENVIRONMENT, name);

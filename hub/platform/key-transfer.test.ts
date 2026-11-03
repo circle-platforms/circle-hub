@@ -10,25 +10,21 @@ import { test } from 'node:test';
 import { FileVault } from '../records/vault.ts';
 import { runPlatformCommand } from './cli.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
+import { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, fileKeyStore, keyDirectory, VAULT_KEY_ITEM } from './file-key.ts';
 import { fdIsKeyPipe, readKeyStdin, writeKeyStdout, importVaultKey, exportVaultKey } from './key-transfer.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
-import { captureIo, exit, ok, recordingRunner, removeDir, tempDir, type Call } from './test-support.ts';
+import { captureIo, recordingRunner, removeDir, tempDir } from './test-support.ts';
 
-function fakeKeychain() {
-  const state: { key?: string } = {};
-  const recorder = recordingRunner((call: Call) => {
-    if (call.command !== '/usr/bin/security') return undefined;
-    if (call.args[0] === '-i') {
-      state.key = /-w ([0-9a-f]{64})/.exec(call.options.input ?? '')?.[1];
-      return ok();
-    }
-    if (call.args[0] === 'find-generic-password') {
-      if (!state.key) return exit(44, 'The specified item could not be found in the keychain.');
-      return ok(call.args.includes('-w') ? `${state.key}\n` : 'attributes only\n');
-    }
-    return exit(1, 'unexpected security call');
-  }, { real: false });
-  return { state, ...recorder };
+/** The deployment's vault master key as the platform stores it on every platform: its key file under <root>/keys. */
+function keyFile(root: string) {
+  const store = fileKeyStore({ root, service: DEFAULT_KEY_SERVICE, account: DEFAULT_KEY_ACCOUNT, item: VAULT_KEY_ITEM });
+  return {
+    async hex(): Promise<string | undefined> {
+      if (!(await store.status()).present) return undefined;
+      const bytes = await store.read();
+      try { return Buffer.from(bytes).toString('hex'); } finally { bytes.fill(0); }
+    },
+  };
 }
 
 async function deployment(parent: string, name: string) {
@@ -36,7 +32,8 @@ async function deployment(parent: string, name: string) {
   const layout = layoutAt(root);
   await ensureLayout(layout);
   await writeSettingsFile(layout, newSettingsFile({ environment: 'test' }));
-  const system = fakeKeychain();
+  // No host tool may run: the key moves between two key files, never through security or the keychain.
+  const system = { ...recordingRunner(() => undefined, { real: false }), key: keyFile(root) };
   const env = { CIRCLE_HUB_DATA_DIR: root };
   const run = async (argv: string[], pipe?: { stdoutIsPipe?: boolean; stdinIsPipe?: boolean; writeKeyBytes?: (bytes: Uint8Array) => void; readKeyBytes?: () => Uint8Array }) => {
     const captured = captureIo(env, parent);
@@ -47,7 +44,8 @@ async function deployment(parent: string, name: string) {
   return { root, env, system, run };
 }
 
-async function contains(root: string, needle: Buffer): Promise<boolean> {
+/** Whether any file under `root` holds `needle`, outside the key directories in `keys` (where a key belongs). */
+async function contains(root: string, needle: Buffer, keys: readonly string[] = []): Promise<boolean> {
   const pending = [root];
   while (pending.length > 0) {
     const dir = pending.pop()!;
@@ -57,7 +55,7 @@ async function contains(root: string, needle: Buffer): Promise<boolean> {
       const path = join(dir, name);
       const info = await lstat(path);
       if (info.isSymbolicLink()) continue;
-      if (info.isDirectory()) pending.push(path);
+      if (info.isDirectory()) { if (!keys.includes(path)) pending.push(path); }
       else if ((await readFile(path)).includes(needle)) return true;
     }
   }
@@ -109,7 +107,7 @@ test('export and import move a raw key only through the pipe and the imported ke
     assert.equal(source.system.calls.length, before, 'a refused export does not read the key');
 
     assert.equal((await source.run(['key', 'init'])).code, 0);
-    const absent = source.system.state.key;
+    const absent = await source.system.key.hex();
     assert.equal(absent?.length, 64);
     const piped: Buffer[] = [];
     const exported = await source.run(['key', 'export', '--confirm'], { stdoutIsPipe: true, writeKeyBytes: (bytes) => { piped.push(Buffer.from(bytes)); } });
@@ -124,7 +122,7 @@ test('export and import move a raw key only through the pipe and the imported ke
 
     const short = await destination.run(['key', 'import'], { stdinIsPipe: true, readKeyBytes: () => Buffer.alloc(31) });
     assert.equal(short.code, 1);
-    assert.equal(destination.system.state.key, undefined);
+    assert.equal(await destination.system.key.hex(), undefined);
     const callsBeforeRefusedTransport = destination.system.calls.length;
     const typed = await destination.run(['key', 'import']);
     assert.equal(typed.code, 1);
@@ -133,15 +131,15 @@ test('export and import move a raw key only through the pipe and the imported ke
     const imported = await destination.run(['key', 'import'], { stdinIsPipe: true, readKeyBytes: () => piped[0]! });
     assert.equal(imported.code, 0, imported.text);
     assert.equal(imported.text.includes(absent!), false);
-    assert.equal(destination.system.state.key, absent);
+    assert.equal(await destination.system.key.hex(), absent);
     for (const call of destination.system.calls) assert.equal(call.args.some((arg) => arg.includes(absent!)), false);
     const again = await destination.run(['key', 'import'], { stdinIsPipe: true, readKeyBytes: () => randomBytes(32) });
     assert.equal(again.code, 1);
     assert.match(again.text, /不覆盖/);
-    assert.equal(destination.system.state.key, absent);
+    assert.equal(await destination.system.key.hex(), absent);
 
     assert.ok(piped[0]!.every(byte => byte === 0), 'consumed transport bytes are wiped');
-    const provider = { getKey: async () => Buffer.from(destination.system.state.key!, 'hex') };
+    const provider = { getKey: async () => Buffer.from((await destination.system.key.hex())!, 'hex') };
     const vault = new FileVault(join(parent, 'vault'), provider);
     await vault.put('agile.token', secret);
     assert.equal(await vault.getText('agile.token'), secret);
@@ -150,7 +148,14 @@ test('export and import move a raw key only through the pipe and the imported ke
     const wrong = { getKey: async () => randomBytes(32) };
     const wrongResult = await new FileVault(join(parent, 'vault'), wrong).verify();
     assert.ok(wrongResult.failed > 0);
-    assert.equal(await contains(parent, Buffer.from(absent!, 'hex')), false);
+    // The key is in the two key files only (0600 under a 0700 directory), never anywhere else under either root.
+    assert.equal(await contains(parent, Buffer.from(absent!, 'hex'), [keyDirectory(source.root), keyDirectory(destination.root)]), false);
+    for (const root of [source.root, destination.root]) {
+      const [file] = await readdir(keyDirectory(root));
+      assert.equal((await lstat(keyDirectory(root))).mode & 0o777, 0o700);
+      assert.equal((await lstat(join(keyDirectory(root), file!))).mode & 0o777, 0o600);
+    }
+    assert.deepEqual([...source.system.calls, ...destination.system.calls], [], 'no host tool ran');
     assert.equal(await contains(parent, Buffer.from(secret)), false);
     piped[0]!.fill(0);
   } finally {

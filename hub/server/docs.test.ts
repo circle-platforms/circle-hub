@@ -228,7 +228,6 @@ describe('runs over named documents', () => {
           host: '127.0.0.1',
           port: 0,
           database: kit.database,
-          keychain: { service: 'circle-hub-test', account: 'vault' },
           limits: { ...kit.config.limits },
         },
         kit,
