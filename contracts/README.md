@@ -457,6 +457,13 @@ No vocabulary or protocol mirror changed in this step; model 26 and the six MCP 
 
 ### Frozen personal sync compatibility vectors (decision 89, step 6)
 
+Decision 137 sets model 34: K01 records the neutral-protocol and client-declaration rules, R02 the console purge
+confirmation, and the new protocol code `SYNC_PURGE_CONFIRMATION_REQUIRED` (403). `sync.ts` adds the optional
+`detail` and `confirmation` members of `personal-sync-error@1`, `knowledge-sync-discovery@1` and the capability names;
+`spaces.ts` adds the optional `client` declaration of `knowledge-space-entry@1`. The four generic skills' protocol
+mirrors are regenerated and their versions advanced. The additive vectors are in `test-fixtures/sync/v1-capabilities/`;
+`test-fixtures/sync/v1/` is unchanged.
+
 The normative protocol is [docs/protocols/knowledge-sync-v1.md](../docs/protocols/knowledge-sync-v1.md) (decision 137); it
 references these schemas, vectors and the reference encoder/merge, and its error-code table is generated from
 `PROTOCOL_CODES` and `PERSONAL_SYNC_ERROR_STATUS` by `tools/gen-sync-error-table.ts` (checked by `npm run test:docs`).

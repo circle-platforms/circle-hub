@@ -35,8 +35,9 @@ exported through it.
 
 ## 2. Transport and endpoints
 
-All routes are relative to the **sync base URL**. On circle-hub the base is `<issuer>/api/sync/v1`, where `<issuer>`
-is the origin the client reached the server on (scheme, host and port, no path). Route templates are fixed relative to
+All routes are relative to the **sync base URL**. A client finds it in the discovery document (section 15); on
+circle-hub the base is `<issuer>/api/sync/v1`, where `<issuer>` is the origin the client reached the server on
+(scheme, host and port, no path). Route templates are fixed relative to
 the base: a client MUST NOT rewrite them, and a server MUST serve exactly these paths. `{id}` is a session UUID for the
 `/sessions/{id}/…` routes and an operation key for `/operations/{id}`.
 
@@ -222,6 +223,10 @@ content on the client only). The wire value `hub` names the mode, not a product;
   their projections are removed and the account's folder grants end. It requires `confirm_purge: true` and the `check`
   of a fresh `/mode/check`; a stale `expected_state` or `check` is `SYNC_VERSION_CONFLICT`. Team copies made by
   sharing stay, local copies are untouched, and a server backup taken before the purge still holds the old content.
+- A server that advertises `purge-confirmation` (section 15) does not purge on a Bearer token alone: it records the
+  request and answers 403 `SYNC_PURGE_CONFIRMATION_REQUIRED` with `confirmation`; the purge runs only after the
+  account holder confirms that exact request outside the sync API, and the client's identical retry then returns the
+  receipt.
 - Switching from `local` to `hub` creates the new epoch; `check` is null and `confirm_purge` false.
 - Requesting the current mode is a no-op with a receipt.
 
@@ -251,7 +256,9 @@ the epoch they ended.
   `<issuer>/.well-known/oauth-authorization-server` (RFC 8414). The same token authenticates the sync API. Access
   tokens an administrator issues for an account are accepted too. Console sign-in sessions, cookies and setup or
   invitation codes are not.
-- Version 1 tokens carry no per-route scopes: whoever holds an account's access token may sync that account.
+- Version 1 tokens carry no per-route scopes: whoever holds an account's access token may sync that account. Purging
+  the server's copy additionally needs the account holder's confirmation where the server advertises
+  `purge-confirmation` (section 15), so a token held by a model-facing MCP client cannot purge alone.
 - The scope is always the authenticated account. There is no owner or space parameter; administrators have no right
   to sync another account. Another account's sessions, operations and objects answer exactly like absent ones.
 - The server rechecks the token and the epoch before it sends a private answer; a token revoked or an epoch purged
@@ -281,7 +288,8 @@ Memory documents keep their own limits (`MEMORY_DOCUMENT_LIMIT`). A request over
 ## 12. Errors
 
 An error answer is `personal-sync-error@1`: `{"code": "<registered code>"}`, plus the current `state` when a CAS or
-epoch refusal can tell it and `retry_after_seconds` on 429. Codes are the protocol codes registered in the generic
+epoch refusal can tell it and `retry_after_seconds` on 429. With the capability `error-detail` it also carries
+`detail`, and the purge refusal carries `confirmation` (section 15). Codes are the protocol codes registered in the generic
 model (`contracts/model.json`, generated into `contracts/generated/protocol.ts`); the registered texts are the server's
 Chinese user-facing texts.
 
@@ -303,6 +311,7 @@ return and their status:
 | `SYNC_VERSION_CONFLICT` | 409 | 同步期间内容已变化 | 取得最新内容并合并后重试 |
 | `SYNC_EPOCH_CHANGED` | 409 | 同步方式已变化 | 重新读取同步设置，不自动上传旧内容 |
 | `SYNC_MODE_LOCAL` | 409 | 当前仅保存在本机 | 在客户端设置同步方式后重试 |
+| `SYNC_PURGE_CONFIRMATION_REQUIRED` | 403 | 清除 Hub 上的私人空间需要本人在控制台确认 | 10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试 |
 | `SYNC_OBJECT_INVALID` | 422 | 同步对象不符合结构 | 核对对象格式后重试 |
 | `SYNC_OBJECT_HASH_MISMATCH` | 422 | 同步对象摘要不符 | 按规范形式重新计算并上传 |
 | `SYNC_OBJECT_MISSING` | 422 | 同步对象尚未齐全 | 补齐本人缺少的对象后重试 |
@@ -328,9 +337,9 @@ return and their status:
   their own generic message.
 - Servers keep refusing request members and query parameters they do not know (`SYNC_OBJECT_INVALID`), so a client
   learns early when it sends something a server does not support.
-- New behaviour is offered only behind a named **capability** that a server advertises; a client uses a capability
-  only when the server advertises it and keeps working without it. Version 1 as specified here defines no
-  capabilities.
+- New behaviour is offered only behind a named **capability** that a server advertises in its discovery document
+  (section 15); a client uses a capability only when the server advertises it and keeps working without it. A server
+  without a discovery document offers plain version 1 with no capabilities.
 
 ## 14. Security considerations
 
@@ -339,4 +348,56 @@ physically; equal bytes are never deduplicated across accounts. Uploaded text an
 before they are stored (`SPACE_CREDENTIALS_DETECTED`, `MEMORY_CREDENTIALS_DETECTED`; content that cannot be inspected
 is `SPACE_CONTENT_UNINSPECTABLE`). Audit metadata records actor, token, the verified OAuth client, the declared
 client ID, route template, times, counts, state hashes and the status, never titles, paths, device names or content.
+On circle-hub an entry version committed through sync names its audited request as its `session`, so the console can
+show which token and OAuth client wrote it. An entry written through MCP keeps the `clientInfo` the client reported in
+`initialize` as a declaration only when the write carries the `Mcp-Session-Id` the server issued in that `initialize`
+answer (MCP Streamable HTTP) with the same token; a write without such a session, or with a session that declared
+nothing, names no client and is shown as 客户端. One token used by two clients therefore never mislabels either.
+`Circle-Session-Id`, when sent, is kept alongside. Names are shown as recorded and are never treated as verified
+identities.
 Bytes already sent to a client cannot be recalled by a purge, and a purge does not erase offline backups.
+
+## 15. Discovery and capabilities
+
+A server MAY publish a discovery document at `/.well-known/knowledge-sync` on its origin (RFC 8615). It is answered to
+`GET` and `HEAD` without authentication, as `application/json`, and names only addresses and capabilities of the server,
+nothing of an account. Its shape is `knowledge-sync-discovery@1` (`knowledge-sync-discovery.v1.schema.json`); the
+vector `contracts/test-fixtures/sync/v1-capabilities/discovery.json` is circle-hub's document for the origin
+`https://192.0.2.10`.
+
+| Member | Meaning |
+|---|---|
+| `issuer` | The origin the document was requested on. |
+| `sync.versions[]` | Per supported version: `version` (`v1`), `base_url` (the sync base URL) and the sorted `capabilities` it offers. Route templates stay fixed relative to `base_url`. |
+| `authorization.resource` | The OAuth protected resource to request tokens for (RFC 8707); on circle-hub `<issuer>/mcp`. |
+| `authorization.resource_metadata` | Its RFC 9728 metadata URL, which names the authorization server. |
+| `local_tools.base_url` | Base of the read-only local-tools distribution (circle-hub: `<issuer>/local-tools`, the MCP endpoint with `/mcp` replaced). |
+| `mcp.endpoint`, `mcp.capabilities` | Optional. The MCP endpoint and, per named operation, which `tool` and input `argument` serve it, with `fixed` argument members, so clients need not hard-code them. |
+
+MCP capabilities defined for version 1:
+
+| Name | Use |
+|---|---|
+| `team-memory-read` | List or read team memory: the named tool with the named argument and the `fixed` members (circle-hub: `get_nodes` with `memory`, `scope: "team"`). |
+| `entry-share` | Share one verified own entry to team knowledge (circle-hub: `upload_file` with `share_entry`). |
+| `memory-share` | Share own memory to the team, first with `check_only: true` (circle-hub: `upload_file` with `memory_share`). |
+
+Sync capabilities defined for version 1:
+
+- **`error-detail`.** Error answers carry `detail`: a non-empty text (at most 2,000 characters) for people, made of
+  the code's registered explanation and next step. It adds no fact beyond the code, so a foreign and an absent
+  object still answer identically. The 401 Bearer challenge is unchanged and carries no `detail`. Clients show
+  `detail` for codes they do not know.
+- **`purge-confirmation`.** `POST /mode` to `local` with a valid `expected_state`, `check` and `confirm_purge` is not
+  performed. The server records the exact request, bound to the account, epoch and request hash, for
+  10 minutes, and answers 403 with `{"code": "SYNC_PURGE_CONFIRMATION_REQUIRED", "detail": …, "confirmation":
+  {"url": …, "expires_at": …}}`. `url` is where the account holder confirms (circle-hub: the console's sync settings,
+  behind a password session and CSRF check, which a sync or MCP token cannot open). Repeating the request before
+  confirmation answers the same refusal and does not record a second request. After confirmation the server performs
+  the recorded request as is: the client's identical retry, or `GET /operations/{operation_id}`, returns the mode
+  result. If the content changed before confirmation, the confirmation fails with `SYNC_VERSION_CONFLICT` and the
+  client starts again with `/mode/check`. An expired request is never performed. Purging from the server's own
+  console is unaffected, and so is switching back to `hub`.
+
+The request shapes of existing operations are unchanged by these capabilities, and so are the frozen vectors in
+`contracts/test-fixtures/sync/v1/`. The additive vectors are in `contracts/test-fixtures/sync/v1-capabilities/`.

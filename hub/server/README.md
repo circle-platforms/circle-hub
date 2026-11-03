@@ -1102,6 +1102,27 @@ cannot grow the append-only record store without bound by changing paths, method
 Token-scope decision (Claude, fourth review of 5509e847): v1 access tokens have no per-route scopes. A client holding a
 member's MCP access Bearer can also call that member's sync API and, after a fresh pre-check and explicit confirmation,
 purge their Hub copy through `/mode`. This is accepted for v1: local copies are unaffected and can be synchronized again.
+
+Decision 137 (owner, 2026-11-03) supersedes that last point additively, as the v1 capability `purge-confirmation` of
+docs/protocols/knowledge-sync-v1.md section 15: `/mode` to local with a token alone records a pending request
+(`personal-sync-purge-request@1`, bound to account, epoch and request hash, ten minutes) and answers 403
+`SYNC_PURGE_CONFIRMATION_REQUIRED` with `detail` and `confirmation`. The owner confirms it on the console's sync
+settings (password session, CSRF, explicit checkbox), which performs the recorded request; the client's identical retry
+replays the receipt. Errors carry `detail` (capability `error-detail`), the registered when/fix text of the code; the
+401 stays a plain `Bearer` challenge. `GET /.well-known/knowledge-sync` (`sync-discovery.ts`) is unauthenticated and
+names the sync base, capabilities, the `<issuer>/mcp` resource, the local-tools base and the MCP tool and argument for
+team memory reads and sharing, checked against the generated tool contract at startup.
+
+Provenance (decision 137, owner additions of 2026-11-03): an MCP `initialize` with `clientInfo` appends an
+`mcp-client-declaration@1` record linked to its call-log line. The Hub stays stateless but issues an `Mcp-Session-Id`
+(a UUID) in every successful initialize answer, and the declaration is indexed by account, token and that id only;
+`Circle-Session-Id` is kept in the declaration when sent. Personal and team entries written through `upload_file`
+store it as `client` (a declaration) only when the request carries that issued id with the same token; otherwise they
+name no client and the console shows 客户端. There is no fallback to another session or to the token alone. Entries projected by
+a sync commit name the audited sync request as their `session`, and the sync audit is indexed by request. The
+console's entry detail shows 写入来源 to the author and administrators: writer, time, session and the client name as
+recorded (the reported clientInfo, the OAuth client's registered name or the administrator's token label, as written;
+客户端 when nothing was reported). Where the name came from appears only under the technical details.
 The API remains outside the six model tools; per-route token scopes are deferred, not implemented or implied here.
 
 ## Exact capacity controls (decision 91, phase 5 block 4)

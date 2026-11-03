@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {encodePersonalSyncObject,decodePersonalSyncObject,personalSyncObjectId} from './sync-canonical.ts';
-import {PersonalSyncObject,PersonalSyncCommit,PersonalSyncUpload,PersonalSyncModeChange,PERSONAL_SYNC_HTTP_ROUTES} from './sync.ts';
+import {PersonalSyncObject,PersonalSyncCommit,PersonalSyncUpload,PersonalSyncModeChange,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncError,KnowledgeSyncDiscovery,PERSONAL_SYNC_CAPABILITIES,KNOWLEDGE_MCP_CAPABILITIES,personalSyncErrorDetail,personalSyncErrorStatus} from './sync.ts';
 import {TOOLS,UploadFileInput,GetNodesInput} from './tools.ts';
 const fixtures=JSON.parse(readFileSync(new URL('../test-fixtures/sync/v1/encoding.json',import.meta.url),'utf8'));
 test('the shared client encoding vectors fix canonical bytes and identities independently of storage',()=>{
@@ -72,4 +72,19 @@ test('frozen HTTP exchanges use closed typed object graphs and the existing port
  assert.deepEqual(exchange.memory.expected_heads,[exchange.memory.left,exchange.memory.right].sort());
  const resolved=rows.find(row=>row.id===exchange.memory.resolved);assert.ok(resolved);const revision=decodePersonalSyncObject(Buffer.from(resolved.canonical),resolved.id);assert.equal(revision.kind,'memory_revision');if(revision.kind==='memory_revision'){assert.deepEqual(revision.body.parents,exchange.memory.expected_heads);assert.equal(revision.body.markdown,exchange.memory.expected_markdown);}
  const raw=decodePersonalSyncObject(Buffer.from(exchange.objects['source-bytes'].canonical),exchange.objects['source-bytes'].id);assert.equal(raw.kind,'bytes');if(raw.kind==='bytes'){assert.equal(raw.body.bytes_base64,exchange.knowledge.raw_base64);assert.match(Buffer.from(raw.body.bytes_base64,'base64').toString(),/^\uFEFF.*\r\n/);}
+});
+
+test('additive v1 capability vectors: discovery and error detail parse, the frozen v1 error shape stays valid',()=>{
+ const vectors=(name:string)=>JSON.parse(readFileSync(new URL('../test-fixtures/sync/v1-capabilities/'+name,import.meta.url),'utf8'));
+ const discovery=KnowledgeSyncDiscovery.parse(vectors('discovery.json'));
+ assert.deepEqual(discovery.sync.versions[0].capabilities,Object.values(PERSONAL_SYNC_CAPABILITIES).sort());
+ assert.equal(new URL(discovery.sync.versions[0].base_url).pathname+'/state',PERSONAL_SYNC_HTTP_ROUTES.state.path,'route templates stay fixed relative to the base');
+ assert.deepEqual(Object.keys(discovery.mcp!.capabilities).sort(),Object.values(KNOWLEDGE_MCP_CAPABILITIES).sort());
+ for(const row of vectors('errors.json').errors as Array<{body:{code:string;detail?:string};status:number;server_output:boolean}>){
+  if(!row.server_output){assert.equal(PersonalSyncError.safeParse(row.body).success,false,'a newer code is not a v1 server output');assert.ok(row.body.detail);continue;}
+  const body=PersonalSyncError.parse(row.body);
+  assert.equal(personalSyncErrorStatus(body.code),row.status);
+  if(body.detail!==undefined)assert.equal(body.detail,personalSyncErrorDetail(body.code as Parameters<typeof personalSyncErrorDetail>[0]));
+ }
+ assert.equal(PersonalSyncError.safeParse({code:'SYNC_OBJECT_INVALID',detail:''}).success,false,'detail is never empty');
 });

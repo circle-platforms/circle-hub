@@ -5,7 +5,7 @@ import {lockActive} from './active-account.ts';
 import {historyUsage,capacityUsage,requireCapacity,chargedBytes,safeBytes,type CapacityUsage} from './capacity.ts';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
-import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, } from '../../contracts/src/spaces.ts';
+import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
@@ -350,7 +350,8 @@ export class KnowledgeSpaces {
     else
       fail('SPACE_ENTRY_INVALID', '授权的依据须为来源或知识树引用');
   }
-  async write(by: Principal, raw: unknown, session: string | null = null, space = by.id): Promise<{
+  /** `client` is the MCP client's own initialize declaration for this session, stored as declared. */
+  async write(by: Principal, raw: unknown, session: string | null = null, space = by.id, client: ClientDeclaration | null = null): Promise<{
     space: string;
     root: string;
     entry: string;
@@ -415,7 +416,7 @@ export class KnowledgeSpaces {
       const entry = sha256Hex(canonicalize(content));
       if (rows.some(r => r.entry === entry))
         fail('SPACE_ENTRY_INVALID', '该空间已包含相同条目');
-      const body = SpaceEntryBody.parse({ ...(epoch?{personal_epoch:epoch}:{}),space, entry, content, grounds: input.grounds, status: input.grounds.length ? 'verified' : 'unverified', by: by.id, at: this.#ctx.now().toISOString(), session, replaces: input.replaces ?? null,...(teamSources.some(source=>source.attribution)?{source_attributions:[...new Set(teamSources.flatMap(source=>source.attribution?[source.attribution]:[]))]}:{}) });
+      const body = SpaceEntryBody.parse({ ...(epoch?{personal_epoch:epoch}:{}),space, entry, content, grounds: input.grounds, status: input.grounds.length ? 'verified' : 'unverified', by: by.id, at: this.#ctx.now().toISOString(), session, replaces: input.replaces ?? null,...(client?{client}:{}),...(teamSources.some(source=>source.attribution)?{source_attributions:[...new Set(teamSources.flatMap(source=>source.attribution?[source.attribution]:[]))]}:{}) });
       const record = await this.#ctx.records.store.put({ kind: 'knowledge_space_entry', schema: 'knowledge-space-entry@1', provenance: 'declared', body, index: [{ key: 'knowledge.space.entry', value: entry }, { key: 'knowledge.space.entry_owner', value: space }] }, tx);
       rows.push({ path: input.path, entry, record: record.digest, status: body.status });
       const sources = [...previous?.body.sources ?? []];
@@ -429,7 +430,8 @@ export class KnowledgeSpaces {
     }));
   }
   /** Internal aggregate projection: the caller owns the account/epoch transaction and performs evidence checks. */
-  async syncProjection(by:Principal,input:{epoch:string;directories:string[];entries:Array<{record?:string;object:string;item_id:string;path:string;content:SpaceEntryBody['content'];grounds:SpaceEntryBody['grounds'];status:SpaceEntryBody['status'];privateOnly:boolean}>;sources:Array<{record?:string;object:string;item_id:string;path:string;name:string|null;mediaType:string;size:number;sha256:string;readBytes:()=>Promise<Uint8Array>;privateOnly:boolean;original?:import('../records/api.ts').SourceArtifact}>},tx:Transaction){
+  /** `session` is the sync HTTP request that commits these entries; its audit names the token and verified OAuth client. */
+  async syncProjection(by:Principal,input:{epoch:string;session?:string|null;directories:string[];entries:Array<{record?:string;object:string;item_id:string;path:string;content:SpaceEntryBody['content'];grounds:SpaceEntryBody['grounds'];status:SpaceEntryBody['status'];privateOnly:boolean}>;sources:Array<{record?:string;object:string;item_id:string;path:string;name:string|null;mediaType:string;size:number;sha256:string;readBytes:()=>Promise<Uint8Array>;privateOnly:boolean;original?:import('../records/api.ts').SourceArtifact}>},tx:Transaction){
     await guardPersonalEpoch(this.#ctx,by.id,input.epoch,tx);by=await this.#user(by);
     const previous=await this.current(by.id,tx),rows:SpaceRow[]=[],sources:string[]=[],bindings:Array<{kind:import('../../contracts/generated/vocabulary.ts').SyncObjectKind;item_id:string;object_id:string;native:string;locator:string}>=[];
     for(const source of input.sources){
@@ -444,7 +446,7 @@ export class KnowledgeSpaces {
       this.#scan(entry.content);this.#scan(entry.path);
       const content=entry.content;if(!content.statement||Buffer.byteLength(canonicalize(content))>this.#ctx.limits.maxDataBytes)fail('SPACE_ENTRY_INVALID');
       if(entry.record){const old=await this.#ctx.records.store.get(entry.record,tx);if(old?.kind==='knowledge_space_entry'){const body=SpaceEntryBody.parse(old.body);if(body.space===by.id&&body.status===entry.status&&!!body.sync_private===entry.privateOnly&&canonicalize(body.content)===canonicalize(content)&&canonicalize(body.grounds)===canonicalize(entry.grounds)){rows.push({private_only:entry.privateOnly,path:entry.path,entry:body.entry,record:old.digest,status:body.status});bindings.push({kind:'entry_revision',item_id:entry.item_id,object_id:entry.object,native:old.digest,locator:sha256Hex(entry.path)});continue;}}}
-      const id=sha256Hex(canonicalize(content)),body=SpaceEntryBody.parse({personal_epoch:input.epoch,sync_private:entry.privateOnly,space:by.id,entry:id,content,grounds:entry.grounds,status:entry.status,by:by.id,at:this.#ctx.now().toISOString(),session:null,replaces:null});
+      const id=sha256Hex(canonicalize(content)),body=SpaceEntryBody.parse({personal_epoch:input.epoch,sync_private:entry.privateOnly,space:by.id,entry:id,content,grounds:entry.grounds,status:entry.status,by:by.id,at:this.#ctx.now().toISOString(),session:input.session??null,replaces:null});
       const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:id},{key:'knowledge.space.entry_owner',value:by.id}]},tx);rows.push({private_only:entry.privateOnly,path:entry.path,entry:id,record:record.digest,status:body.status});
       bindings.push({kind:'entry_revision',item_id:entry.item_id,object_id:entry.object,native:record.digest,locator:sha256Hex(entry.path)});
     }
@@ -810,7 +812,7 @@ export class KnowledgeSpaces {
     try{this.#scan(teamPath);}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')safeTargetPath=false;else throw error;}
     return {ok:prepared.error===null,checks:prepared.checks,duplicate:duplicate&&previous?refOf(previous.root,duplicate.path,duplicate.entry):null,...(safeTargetPath?{target_path:teamPath}:{})};
   }
-  async share(by:Principal,raw:unknown,session:string|null=null):Promise<KnowledgeShareReceipt>{
+  async share(by:Principal,raw:unknown,session:string|null=null,client:ClientDeclaration|null=null):Promise<KnowledgeShareReceipt>{
     by=await this.#user(by);const input=KnowledgeShareInput.parse(raw),teamPath=pathCheck(input.team_path??input.path);
     let safeTargetPath=true;
     try{this.#scan(teamPath);}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')safeTargetPath=false;else throw error;}
@@ -835,7 +837,7 @@ export class KnowledgeSpaces {
       const {sources,grounds,replacement,error}=await this.#inspectSharing(by,input,view,personal,previous,teamPath,tx);
       if(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
       if(withinSpacePath(teamPath,PRODUCTS_PATH))return receipt('rejected','SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录',null);
-      const body=SpaceEntryBody.parse({...view.body,space:'team',grounds,by:by.id,at,session,replaces:replacement?.entry??null,shared_from:source,...([...sources.values()].some(source=>source.attribution)?{source_attributions:[...new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[]))]}:{})});
+      const {client:_personalClient,...shared}=view.body;const body=SpaceEntryBody.parse({...shared,space:'team',grounds,by:by.id,at,session,replaces:replacement?.entry??null,shared_from:source,...(client?{client}:{}),...([...sources.values()].some(source=>source.attribution)?{source_attributions:[...new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[]))]}:{})});
       const plannedRows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row),facts=await this.capacityFacts('team',tx);
       const planned=this.#draft('team',previous,[...plannedRows,{path:teamPath,entry:input.entry,record:'0'.repeat(64),status:'verified'}],previous.body.directories,by,'提交共享',safeBytes(BigInt(chargedBytes(body))+[...sources.values()].reduce((sum,source)=>sum+BigInt(source.size),0n)),[...previous.body.sources,...[...sources.values()].map(()=>'0'.repeat(64))],undefined,facts.knowledge);
       requireCapacity(facts,planned.used_bytes-facts.knowledge,{admin:by.role==='admin'});

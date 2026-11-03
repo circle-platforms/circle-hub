@@ -5,8 +5,9 @@ import {RecordsError} from '../../records/api.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import type {PageContext} from './pages.ts';
 import {html,href,type Html} from './html.ts';
-import {panel,facts,badge,dialog,actionLink,tooltip,stat} from './presentation.ts';
+import {panel,facts,badge,dialog,actionLink,tooltip,stat,technical} from './presentation.ts';
 import {timestamp,size,number} from './knowledge-display.ts';
+import {tokenClient,UNREPORTED_CLIENT} from './client-provenance.ts';
 export async function personalLocal(ctx:PageContext):Promise<boolean>{return await ctx.deps.records.personalPayloads?.mode(ctx.principal.id)===SyncModeSchema.enum.local;}
 export const syncSelected=(ctx:PageContext)=>ctx.url.searchParams.has('sync');
 const location=(ctx:PageContext,sync?:string)=>href('/console/knowledge',{scope:'personal',...(ctx.url.searchParams.get('view')==='memory'?{view:'memory'}:{}),sync});
@@ -29,8 +30,22 @@ export async function personalSyncNotice(ctx:PageContext):Promise<Html>{
  const conflicts=state.status===SyncStatusSchema.enum.conflicted?await api.transact(ctx.principal,state.epoch,async(scope,tx)=>Number((await api.head(ctx.principal,scope.epoch,tx)).conflicts)):0;
  const details=html`${facts([[uiLabelOf('sync_field','last_synced_at'),state.last_synced_at?timestamp(state.last_synced_at):'—']])}${conflicts?html`${stat(uiLabelOf('sync_status','conflicted'),conflicts)}<p class="ch-meta">冲突版本保留，等待客户端选择后同步；未解决的记忆不用于新会话。</p>`:''}${local?html`<p>Hub 上的当前私人空间为空；本机副本、团队副本与运行中独立持有的原文保留。</p>`:html`<p class="ch-meta">${tooltip('知识与记忆共用同步方式','同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读。')}</p>`}`;
  const actions=html`<footer class="ch-inspector-actions">${control}</footer>`;
- if(selected)return html`<div data-sync-settings data-inspector-content><div class="ch-actions"><span class="ch-tag">${axisUiLabel('sync_mode')}</span>${status}</div><h2 class="ch-panel-title">${uiLabelOf('sync_mode',state.mode)}</h2>${details}${actions}${confirmation}</div>`;
- return html`<div data-sync-settings>${panel({title:axisUiLabel('sync_mode'),tail:actionLink(location(ctx,'settings'),'更改…','ghost')},html`<p>${uiLabelOf('sync_mode',state.mode)} ${status}</p>${details}${actions}${confirmation}`)}</div>`;
+ const pending=local?html``:await purgeRequestPanel(ctx,state.epoch);
+ if(selected)return html`<div data-sync-settings data-inspector-content><div class="ch-actions"><span class="ch-tag">${axisUiLabel('sync_mode')}</span>${status}</div><h2 class="ch-panel-title">${uiLabelOf('sync_mode',state.mode)}</h2>${pending}${details}${actions}${confirmation}</div>`;
+ return html`<div data-sync-settings>${panel({title:axisUiLabel('sync_mode'),tail:actionLink(location(ctx,'settings'),'更改…','ghost')},html`<p>${uiLabelOf('sync_mode',state.mode)} ${status}</p>${pending}${details}${actions}${confirmation}`)}</div>`;
+}
+/** Purges a client asked for over the sync API: they run only after the owner confirms here (capability purge-confirmation). */
+async function purgeRequestPanel(ctx:PageContext,epoch:string):Promise<Html>{
+ const api=ctx.deps.records.personalSync,sync=ctx.deps.knowledge.personalSync;if(!api||!sync)return html``;
+ const requests=await api.purgeRequests(ctx.principal);if(!requests.length)return html``;
+ const impact=await sync.modeCheck(ctx.principal,{mode:SyncModeSchema.enum.local});
+ const rows=await Promise.all(requests.map(async ({digest,body})=>{
+  const client=await tokenClient(ctx,ctx.principal.id,body.token);
+  const id='sync-purge-'+digest.slice(0,12);
+  const confirm=html`<form id="${id}-form" method="post" action="/console/knowledge/do/sync-confirm-purge"><input type="hidden" name="csrf" value="${ctx.csrf??''}"><input type="hidden" name="epoch" value="${epoch}"><input type="hidden" name="record" value="${digest}"><button class="ch-btn ch-btn--danger" type="submit">确认清除</button></form>`;
+  return html`<li><p>${client?.name??UNREPORTED_CLIENT} 请求清除 Hub 副本 · ${timestamp(body.at)}，${timestamp(body.expires_at)} 前有效</p>${technical(html`${facts([['名称出处',client?.origin??'未记录'],['同步请求',body.http_request]])}`)}${actionLink('#'+id,'确认清除…','danger')}${dialog(id,'确认清除 Hub 副本',html`<p>清除 Hub 上的私人知识、原文、记忆和版本记录，文件夹分享随之失效。团队副本与本机副本保留；恢复清除前的备份会带回旧内容。确认后，该客户端重试同一请求即可得到结果。</p>${facts([['清除内容',size(impact.personal_bytes)],['文件夹分享',number(impact.directory_grants)],['保留的团队副本',number(impact.team_copies_preserved)]])}<label class="ch-field"><span><input type="checkbox" name="confirm_purge" value="true" required form="${id}-form">确认清除 Hub 上的私人空间内容</span></label>`,confirm)}</li>`;
+ }));
+ return html`<section class="ch-section" data-sync-purge-requests><h3>待确认的清除请求</h3><p class="ch-meta">客户端经同步接口请求清除时，只有在这里确认后才会执行。</p><ul class="ch-feed">${rows}</ul></section>`;
 }
 /** A rendered form cannot restore content from an epoch that has since been purged. */
 export async function checkPersonalFormEpoch(ctx:PageContext,expected:string|undefined|null):Promise<void>{

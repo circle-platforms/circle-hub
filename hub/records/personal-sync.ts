@@ -34,6 +34,13 @@ const objectKinds=SyncObjectKindSchema.enum;
 const emptySnapshot=encodePersonalSyncObject({schema:'personal-sync-object@1',kind:objectKinds.snapshot,body:{parents:[],pages:[]}});
 const emptySnapshotId=sha256Hex(emptySnapshot);
 
+/** Who asked for a purge over HTTP: the audited request, the server token and its verified OAuth client. */
+export interface PurgeRequester {request:string;token:string;client:string|null}
+/** A purge asked for with a Bearer token alone waits for the owner's confirmation in the console. */
+export interface PurgePending {confirmation:{record:string;expires_at:string}}
+export interface PurgeRequestBody {kind:string;by:string;at:string;expires_at:string;epoch:string;identity:string;request:z.infer<typeof PersonalSyncModeChange>;token:string;authenticated_client:string|null;http_request:string}
+const PURGE_REQUEST_SCHEMA='personal-sync-purge-request@1',PURGE_REQUEST_KEY='personal.sync.purge.request.by';
+
 /** No model-facing routes: each method receives an already authenticated account and rechecks its current status. */
 export class PgPersonalSync {
  readonly #db:Database;readonly #store:RecordStore;readonly #payloads:PgPersonalPayloads;
@@ -134,24 +141,56 @@ export class PgPersonalSync {
  }
  modeCheck(by:Principal,input:unknown){const parsed=PersonalSyncModeCheck.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');return this.#scope(by,undefined,(scope,tx)=>this.#impact(scope,parsed.data.mode,tx),undefined,true);}
  modeOperation(by:Principal,epoch:string,id:string){if(!uuid.safeParse(epoch).success||!operationId.safeParse(id).success)return fail('SOURCE_UNAVAILABLE');return this.#scope(by,undefined,async(_scope,tx)=>{const row=(await this.#db.query('SELECT result FROM personal_sync_mode_operations WHERE owner=$1 AND epoch=$2 AND operation_id=$3',[by.id,epoch,id],tx)).rows[0];return row?PersonalSyncModeResult.parse(JSON.parse(String(row.result))):null;},undefined,true);}
- changeMode(by:Principal,input:unknown){
+ /**
+  * `via` names an HTTP caller: a purge it asks for is recorded as pending and returned unchanged, so a Bearer token
+  * alone never purges. `confirmation` is the pending request the owner confirmed in the console.
+  */
+ changeMode(by:Principal,input:unknown,via?:undefined,confirmation?:string):Promise<z.infer<typeof PersonalSyncModeResult>>;
+ changeMode(by:Principal,input:unknown,via:PurgeRequester|undefined,confirmation?:string):Promise<z.infer<typeof PersonalSyncModeResult>|PurgePending>;
+ changeMode(by:Principal,input:unknown,via?:PurgeRequester,confirmation?:string):Promise<z.infer<typeof PersonalSyncModeResult>|PurgePending>{
   const parsed=PersonalSyncModeChange.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');const request=parsed.data;
-  return this.#scope(by,undefined,async(scope,tx)=>{
+  return this.#scope(by,undefined,async(scope,tx):Promise<z.infer<typeof PersonalSyncModeResult>|PurgePending>=>{
    const identity=hash({path:PERSONAL_SYNC_HTTP_ROUTES.mode.path,request}),cached=(await this.#db.query('SELECT request,result FROM personal_sync_mode_operations WHERE owner=$1 AND epoch=$2 AND operation_id=$3',[by.id,request.epoch,request.operation_id],tx)).rows[0];
    if(cached){if(cached.request!==identity)return fail('IDEMPOTENCY_MISMATCH');return PersonalSyncModeResult.parse(JSON.parse(String(cached.result)));}
    if(request.epoch!==scope.epoch)return fail('SYNC_EPOCH_CHANGED');const before=await this.#state(scope,tx);
    if(before.state_version!==request.expected_state)throw new RecordsError(PROTOCOL_CODES.SYNC_VERSION_CONFLICT.when,{code:'SYNC_VERSION_CONFLICT',detail:{state:before}});
    const impact=await this.#impact(scope,request.mode,tx);
    if(request.mode===SyncModeSchema.enum.local&&request.check!==impact.check)throw new RecordsError(PROTOCOL_CODES.SYNC_VERSION_CONFLICT.when,{code:'SYNC_VERSION_CONFLICT',detail:{state:before}});
+   if(via&&request.mode===SyncModeSchema.enum.local&&scope.mode!==SyncModeSchema.enum.local)return this.#pendingPurge(scope,request,identity,via,tx);
    let after:State;
    if(request.mode===scope.mode)after=before;
    else if(request.mode===SyncModeSchema.enum.local){await this.#payloads.purge(by,scope.epoch,tx);after=await this.#state({...scope,mode:request.mode},tx);}
    else {const next={...scope,epoch:randomUUID(),mode:SyncModeSchema.enum.hub};await this.#db.query('SELECT hub_resume_personal($1,$2,$3)',[by.id,scope.epoch,next.epoch],tx);await this.#db.query('INSERT INTO personal_sync_heads(owner,epoch) VALUES($1,$2)',[by.id,next.epoch],tx);after=await this.#state(next,tx);}
    const result=PersonalSyncModeResult.parse({state:after,receipt:{operation_id:request.operation_id,epoch:request.epoch,request:identity,previous_state:before.state_version,state_version:after.state_version,counts:{accepted:0,existing:0,downloaded:0,bytes:0},at:this.#now().toISOString()}});
    await this.#db.query('INSERT INTO personal_sync_mode_operations VALUES($1,$2,$3,$4,$5)',[by.id,request.epoch,request.operation_id,identity,canonicalize(result)],tx);
-   await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:result.receipt.at,previous_mode:scope.mode,mode:request.mode,previous_epoch:scope.epoch,epoch:after.epoch,operation:hash(request.operation_id),previous_state:before.state_version,state:after.state_version,personal_bytes:impact.personal_bytes,directory_grants:impact.directory_grants,team_copies_preserved:impact.team_copies_preserved},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
+   await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:result.receipt.at,previous_mode:scope.mode,mode:request.mode,previous_epoch:scope.epoch,epoch:after.epoch,operation:hash(request.operation_id),previous_state:before.state_version,state:after.state_version,personal_bytes:impact.personal_bytes,directory_grants:impact.directory_grants,team_copies_preserved:impact.team_copies_preserved,...(confirmation?{confirmation}:{})},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
    return result;
   },undefined,true).finally(retireReadScope);
+ }
+ async #pendingPurge(scope:Scope,request:z.infer<typeof PersonalSyncModeChange>,identity:string,via:PurgeRequester,tx:Transaction):Promise<PurgePending>{
+  const now=this.#now();
+  for(const row of await this.#purgeRequests(scope,tx))if(row.body.identity===identity)return {confirmation:{record:row.digest,expires_at:row.body.expires_at}};
+  const body:PurgeRequestBody={kind:ActionKindSchema.enum.validate,by:scope.owner,at:now.toISOString(),expires_at:new Date(now.getTime()+PERSONAL_SYNC_LIMITS.purgeConfirmationSeconds*1000).toISOString(),epoch:scope.epoch,identity,request,token:via.token,authenticated_client:via.client,http_request:via.request};
+  const stored=await this.#store.put({kind:'action',schema:PURGE_REQUEST_SCHEMA,provenance:'observed',body,index:[{key:PURGE_REQUEST_KEY,value:scope.owner}]},tx);
+  return {confirmation:{record:stored.digest,expires_at:body.expires_at}};
+ }
+ /** Unexpired, unexecuted purge requests of the current epoch, newest first. */
+ async #purgeRequests(scope:Scope,tx:Transaction):Promise<Array<{digest:string;body:PurgeRequestBody}>>{
+  const now=this.#now().getTime(),out:Array<{digest:string;body:PurgeRequestBody}>=[];
+  for(const record of (await this.#store.find<PurgeRequestBody>({kind:'action',key:PURGE_REQUEST_KEY,value:scope.owner,newestFirst:true,limit:20},tx)).items){
+   const body=record.body;if(record.schema!==PURGE_REQUEST_SCHEMA||body.by!==scope.owner||body.epoch!==scope.epoch||Date.parse(body.expires_at)<=now)continue;
+   const done=await this.#db.query('SELECT 1 FROM personal_sync_mode_operations WHERE owner=$1 AND epoch=$2 AND operation_id=$3',[scope.owner,scope.epoch,body.request.operation_id],tx);
+   if(!done.rowCount)out.push({digest:record.digest,body});
+  }
+  return out;
+ }
+ /** Console-only listing for the owner's own confirmation; never another account's requests. */
+ purgeRequests(by:Principal):Promise<Array<{digest:string;body:PurgeRequestBody}>>{return this.#scope(by,undefined,(scope,tx)=>scope.mode===SyncModeSchema.enum.local?Promise.resolve([]):this.#purgeRequests(scope,tx),undefined,true);}
+ /** Console-only: performs the exact pending request, so the client's retry of it replays this receipt. */
+ async confirmPurge(by:Principal,record:string):Promise<z.infer<typeof PersonalSyncModeResult>>{
+  const pending=await this.#scope(by,undefined,async(scope,tx)=>(await this.#purgeRequests(scope,tx)).find(row=>row.digest===record),undefined,true);
+  if(!pending)return fail('SOURCE_UNAVAILABLE');
+  return this.changeMode(by,pending.body.request,undefined,record);
  }
  async stableItem(by:Principal,kind:z.infer<typeof PersonalSyncItem>['kind'],identity:string,outer?:Transaction):Promise<string>{
   PersonalSyncItem.shape.kind.parse(kind);if(!identity||Buffer.byteLength(identity)>4000)return fail('SYNC_OBJECT_INVALID');

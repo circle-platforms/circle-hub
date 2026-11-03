@@ -93,7 +93,7 @@ test('disconnects during the pre-body state read release both write slots', {tim
  const admission=new SyncAdmission(),budget=new BodyBudget(1024*1024);
  const server=createServer((req,res)=>{
   req.once('aborted',()=>{if(++disconnected===2)aborted.resolve();});
-  void handlePersonalSync(req,res,new URL(req.url!,'http://127.0.0.1'),{deps:hub.deps,admission,budget,origins:new Set(),log:()=>{}}).then(()=>{if(++completed===3)finished.resolve();},finished.reject);
+  void handlePersonalSync(req,res,new URL(req.url!,'http://127.0.0.1'),{deps:hub.deps,admission,budget,origins:new Set(),log:()=>{},issuer:()=>'http://127.0.0.1'}).then(()=>{if(++completed===3)finished.resolve();},finished.reject);
  });
  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const port=(server.address() as import('node:net').AddressInfo).port;
  const pending:import('node:http').ClientRequest[]=[];
