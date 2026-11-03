@@ -135,6 +135,16 @@ export function commandIdentity(grammar:CommandGrammar,text:string):import('../g
    identities.push({tree_root,path:definition.path,signature:signature.reference,parameters});
   }
  }
- const unique=[...new Map(identities.map(identity=>[JSON.stringify(identity),identity])).values()];
+ // The expansions of one union-typed signature (catalog signatures under the same reference) bind positionally, as the declared
+ // signature does: an optional parameter is skipped only when no expansion takes the argument there. Otherwise the expansion
+ // whose type at an omitted optional union position rejects the argument binds it one position later, and the line has two
+ // identities. Identities of different references are never merged.
+ const group=(identity:import('../generated/shared-interfaces.ts').CommandIdentity)=>identity.path+'\u0000'+identity.signature;
+ const positionsOf=(identity:import('../generated/shared-interfaces.ts').CommandIdentity)=>identity.parameters.map(value=>value.position);
+ const earlier=(a:number[],b:number[])=>{for(let i=0;i<a.length&&i<b.length;i++)if(a[i]!==b[i])return a[i]<b[i];return a.length<b.length;};
+ const first=new Map<string,number[]>();
+ for(const identity of identities){const positions=positionsOf(identity),best=first.get(group(identity));if(!best||earlier(positions,best))first.set(group(identity),positions);}
+ const positional=identities.filter(identity=>JSON.stringify(positionsOf(identity))===JSON.stringify(first.get(group(identity))));
+ const unique=[...new Map(positional.map(identity=>[JSON.stringify(identity),identity])).values()];
  return unique.length===1?unique[0]:null;
 }
