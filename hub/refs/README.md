@@ -1,6 +1,6 @@
 # hub/refs: references and parsers
 
-## Personal skill namespaces (decision 87)
+## Personal skill namespaces (decision 134)
 
 `freeze(dependencies, {principal, space})` resolves declared personal dependencies and their closure with current grants.
 An implicit dependency first uses that personal namespace, then an installed team skill; an explicit owner never falls
@@ -556,7 +556,7 @@ KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 
 
 Team verification uses `ResolveContext.teamParsersOnly`: the current team parser set is used without personal run locks or personal-namespace fallback. Missing team capability returns `TEAM_PARSER_REQUIRED`. Personal reference reads keep their current grant and frozen-skill checks.
 
-Decision 91 block two adds `quoteLocations` through `api.ts` for the source archive. It uses the existing exact KMP matcher
+Decision 140 block two adds `quoteLocations` through `api.ts` for the source archive. It uses the existing exact KMP matcher
 to count every occurrence, including overlaps, while retaining only a bounded page (at most 100 locations; the console
 uses 32). UTF-8 offsets and line numbers refer to the supplied decoded fragment, not implicitly to raw file bytes. No
 whitespace folding, normalization, parser syntax or `verifyQuote` behavior changes. Knowledge owns source authorization,

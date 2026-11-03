@@ -1,6 +1,6 @@
 # config
 
-Decision 83, second round item 3: user-facing configuration descriptions and errors use “密码” consistently. No configuration name or secret-loading rule changes.
+Decision 130, second round item 3: user-facing configuration descriptions and errors use “密码” consistently. No configuration name or secret-loading rule changes.
 
 Part of the records package; decisions and tests are in [../records/README.md](../records/README.md) (decision 12).
 

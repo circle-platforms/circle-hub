@@ -1,4 +1,4 @@
-// Decision 84, phase 2: shared immutable shapes for personal and team knowledge. Legacy product trees keep their schemas.
+// Decision 131, phase 2: shared immutable shapes for personal and team knowledge. Legacy product trees keep their schemas.
 import { z } from 'zod';
 import { EntryKindSchema, KnowledgeEntryStatusSchema, KnowledgeGranteeSchema, KnowledgeGrantActionSchema } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, UserId } from './common.ts';

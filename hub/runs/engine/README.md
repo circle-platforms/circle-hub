@@ -1,6 +1,6 @@
 # hub/runs/engine
 
-## Space locks and citations (decision 86)
+## Space locks and citations (decision 133)
 
 New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy
 run records and summaries remain valid without the field. Exact tree reads and private source aliases recheck both
@@ -977,11 +977,11 @@ The complete predecessor-result scan, including submission-existence reads, hold
 
 getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已下架”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.
 
-### Citations of knowledge (decision 79, 2026-11-01)
+### Citations of knowledge (decision 126, 2026-11-01)
 
-`putSubmission` indexes the knowledge an accepted (parsed) submission cites, in the existing `record_index`, with no migration: each `tree:` reference among the body's strings as `runs.submission.cites.node` (SHA-256 of the root and the canonical path) and, when pinned to an entry, `runs.submission.cites.entry` (the entry digest), at most 100 nodes and 95 entries so a record stays within its 200 index entries, plus the marker `runs.submission.cites.indexed=1` on every accepted submission. Submissions accepted before this are indexed by `backfillCitations` (decision 80), which the engine's maintenance runs in the background: a pass at `startMaintenance` and at every tick until one reaches its end, aborted by `stopMaintenance` and resumed by the next. A pass walks the submissions oldest first up to the oldest one marked `indexed=1` (every later one was indexed as it was stored) and adds to each accepted one, through `RecordStore.addIndex`, the entries `putSubmission` gives it now, marked `runs.submission.cites.indexed=backfilled`; records and digests do not change and entries already held are kept. At its end it marks `runs.submission.cites.complete=1` on that boundary (before any, on the newest submission): `citationsComplete` is then true, later passes do nothing and the console's counts are exact for any window. Until then the console counts from the oldest submission indexed as it was stored on and says so. Tests: `citations.test.ts`, `maintenance-citations.test.ts`.
+`putSubmission` indexes the knowledge an accepted (parsed) submission cites, in the existing `record_index`, with no migration: each `tree:` reference among the body's strings as `runs.submission.cites.node` (SHA-256 of the root and the canonical path) and, when pinned to an entry, `runs.submission.cites.entry` (the entry digest), at most 100 nodes and 95 entries so a record stays within its 200 index entries, plus the marker `runs.submission.cites.indexed=1` on every accepted submission. Submissions accepted before this are indexed by `backfillCitations` (decision 127), which the engine's maintenance runs in the background: a pass at `startMaintenance` and at every tick until one reaches its end, aborted by `stopMaintenance` and resumed by the next. A pass walks the submissions oldest first up to the oldest one marked `indexed=1` (every later one was indexed as it was stored) and adds to each accepted one, through `RecordStore.addIndex`, the entries `putSubmission` gives it now, marked `runs.submission.cites.indexed=backfilled`; records and digests do not change and entries already held are kept. At its end it marks `runs.submission.cites.complete=1` on that boundary (before any, on the newest submission): `citationsComplete` is then true, later passes do nothing and the console's counts are exact for any window. Until then the console counts from the oldest submission indexed as it was stored on and says so. Tests: `citations.test.ts`, `maintenance-citations.test.ts`.
 
-## Result readers and private runs (decision 87)
+## Result readers and private runs (decision 134)
 
 The temporary phase-2 `SPACE_RESULT_GROUNDS_PRIVATE` guard is replaced by `groundsAudience`. Before accepting a result,
 including a fact-only result computed at start, every ground must resolve for every enabled account in that run's actual
@@ -1061,7 +1061,7 @@ business candidate, not a reason to fail every reader's listing. If the ordered 
 the append fallback, skips/logs malformed headers and then applies the same visibility/order/cursor rules to valid runs.
 The fallback also skips them now (it previously displayed them). Diagnostics contain the record digest, never its body.
 NULL headers cannot bypass continuation predicates or become a cursor; envelope integrity failures still fail closed.
-## Decision 91 new personal-run commit boundary
+## Decision 140 new personal-run commit boundary
 
 A new run's stored snapshot is committed in a transaction that rechecks and locks the current actor and personal workflow/
 skill owners through records' `lockActive`. A personal workflow is resolved again for current use permission there; a

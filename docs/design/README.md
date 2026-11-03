@@ -11,9 +11,9 @@ nav_order: 4
 
 | 篇 | 回答什么 |
 |---|---|
-| [Circle 设计规范](circle-design-system/README.md) | 决定 92、93：Circle 工作台与控制台共用的视觉规范——石墨主题的深浅两套设定、三栏结构、组件与交互、图表与界面用语（[效果图](https://github.com/circle-platforms/circle/blob/main/docs/design/circle-design-system-screens.md)，在 Circle 仓库） |
-| [控制台导航](console-navigation.md) | 决定 83 的八项导航、团队与设置的职责 |
-| [知识库与工作流：个人与团队](knowledge-workflows.md) | 决定 84 的完整方案：个人与团队空间、同步、授权、提交共享、索引与版本，工作流（原任务包）与通用技能，以及分阶段实施 |
+| [Circle 设计规范](circle-design-system/README.md) | 决定 141、142：Circle 工作台与控制台共用的视觉规范——石墨主题的深浅两套设定、三栏结构、组件与交互、图表与界面用语（[效果图](https://github.com/circle-platforms/circle/blob/main/docs/design/circle-design-system-screens.md)，在 Circle 仓库） |
+| [控制台导航](console-navigation.md) | 决定 130 的八项导航、团队与设置的职责 |
+| [知识库与工作流：个人与团队](knowledge-workflows.md) | 决定 131 的完整方案：个人与团队空间、同步、授权、提交共享、索引与版本，工作流（原任务包）与通用技能，以及分阶段实施 |
 | **[通用模型](generic-model.md)** | **11 组 73 个元素、三条不变量、词表、七个内核名字，以及第一个里程碑用到哪些** |
 | [对象标准：五要素检查单](object-standard.md) | 四个对象就是四个家；五要素作设计检查单和记录页布局，不作存储分区 |
 | [置真对接架构：理论基础、条件命题与产品研究框架](truth-docked-architecture.md) | 研究提案与数学审计：理论基础、条件命题与反例、未证义务；不是实现说明 |
@@ -22,11 +22,11 @@ nav_order: 4
 
 | 篇 | 原来回答什么 | 现在看哪里 |
 |---|---|---|
-| [个人与团队知识库整合调研](personal-team-knowledge.md) | 第一轮的需求与同类项目调研；个人只放 Circle 本地的旧建议已失效 | [知识库与工作流：个人与团队](knowledge-workflows.md)（决定 84） |
+| [个人与团队知识库整合调研](personal-team-knowledge.md) | 第一轮的需求与同类项目调研；个人只放 Circle 本地的旧建议已失效 | [知识库与工作流：个人与团队](knowledge-workflows.md)（决定 131） |
 | [审批与执行链](approvals-and-enforcement.md) | 变更集审批、执行链、错误码目录 | 许可 B04、发布校验 T02、边界校验 T03、两道强制边界 P11 |
 | [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予、两人规则 | 权限角色 R01（用户、管理员）、可见性 R02 |
 | [术语与状态](vocabulary.md) | 旧术语表、状态枚举与颜色 | 模型的词表（生成在 `contracts/generated/vocabulary.ts`） |
-| [层级与元素](levels-and-elements.md) | Circle 里的五层界面 | Circle 里不出现 Hub 专用界面；网页控制台（运行记录、知识库、任务包、系统管理；管理员在系统管理页管理 Hub，决定 75） |
+| [层级与元素](levels-and-elements.md) | Circle 里的五层界面 | Circle 里不出现 Hub 专用界面；网页控制台（运行记录、知识库、任务包、系统管理；管理员在系统管理页管理 Hub，决定 122） |
 | [与 Circle 的集成](circle-integration.md) | hub 扩展 Circle 的菜单 | Circle 作为普通 MCP 客户端连接（D06） |
 | [产品线包典范](product-line-pack.md) | `product-line/1` 产品线包 | 任务包 T01、发布记录与发布校验 T02 |
 | [执行流迁入产品线包](execution-flow-packs.md) | 执行流与 `module-execute` | 效果写入、租约与执行器（B06、D04，D03 的写声明，D07 的执行器部分）由 `hub/dispatch` 实现；D03 的读部分与 D07 的资源部分由 connectors 包实现，MCP 注解按 D03 推出 |

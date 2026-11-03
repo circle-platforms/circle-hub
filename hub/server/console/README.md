@@ -1,6 +1,6 @@
 # 控制台视觉统一
 
-依据决定 92 与任务页 `docs/hub-r4-tasks/console-visual.md` 的 Claude 审查结论。这里记录控制台自身的实现边界；阶段进度由集成者记录。
+依据决定 141 与任务页 `docs/hub-r4-tasks/console-visual.md` 的 Claude 审查结论。这里记录控制台自身的实现边界；阶段进度由集成者记录。
 
 ## 设定、字体与标志（第一块）
 
@@ -59,7 +59,7 @@
 - `contrast.ts` 只供测试/工具，从共享设定解引用并合成透明叠层，检查两主题五类底色、按钮、提示/标签、悬停/选中行、四系列及组成/加载状态；正文门槛 4.5:1，必要边界/图形 3:1。装饰分隔线、网格、标志与禁用态单列，不冒充通过样本。对比度测试不能代替视觉审查。
 - 增强 POST 遵守 submitter 的原 `formaction`，包括原生 `formnovalidate`；系统试读不再误投接入路由。仍保留原 Origin、CSRF、预检、写入边界及关闭脚本路径，没有新增管理动作或放宽 CSP。
 
-## 私人同步的视觉集成（决定 89）
+## 私人同步的视觉集成（决定 138）
 
 同步方式、上次同步与当前冲突数使用同一套 Section、Badge、事实行和 Stat；知识和记忆共用设置，选择后交给 AppShell 的 Inspector，窄屏有独立详情和返回入口。方式及状态从合约读取，时间与容量沿用控制台统一格式；没有同步时间仍显示未知占位，不制造成功状态。管理员成员详情仅加入现有端口允许的方式和时间，不展示私人正文、标题或冲突数量。
 
@@ -80,7 +80,7 @@ fixed hash. No script-src self/unsafe-inline/eval is added. Styles, login/error 
 intact. Template comparisons omit only nonce entropy, while policy regressions verify exact header/tag matching,
 rotation, SRI, and rejection of absent/stale nonces. The page probe accepts only fixed asset paths with matching SRI
 and an allowed hash or response nonce, retaining unknown script/nonce bytes in evidence.
-## 上传来源署名（决定 91，第一块）
+## 上传来源署名（决定 140，第一块）
 
 原文详情使用选中 ListRow 与响应式 Inspector，精确采集随“打开原文”链接保留。词表状态从模型 25 生成；
 “署名为团队来源…”动作与后果说明为静态文案。只有上传人可以确认；查看详情或打开 Dialog 均只读。
@@ -91,7 +91,7 @@ Dialog 明示署名不创建团队知识、不表示内容已验证，以及团�
 采集。无权的私人原件与不存在的原件显示相同页面；管理员不能代签，也不能从通用记录入口读取私人署名正文。
 原始用户名、原文与引用保持 evidence 标记及转义；不改共享组件、颜色设定或 CSP。原文归档浏览及引文定位在第二块实现如下。
 
-## 原文归档与定位（决定 91，第二块）
+## 原文归档与定位（决定 140，第二块）
 
 模型 26 在既有分段选择中增加“原文”，继续使用全部、我的、与我共享、团队及授权文件夹；侧栏数量来自实际原文登记。
 Table 行只选择对象，Inspector 展示当前精确采集、元数据、只读预览及底部动作。导入/显式保存使用既有 Origin、CSRF、

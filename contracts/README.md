@@ -43,22 +43,22 @@ Only on the model author's decision. The generator refuses (exit 2, every proble
 
 Bump `version` when the meaning of anything changes; it is generated as `MODEL_VERSION`.
 
-Owner decision 81 (2026-11-01) adds B05's `trial` action kind (尝试读取) in model 14. Connection trials remain `action`
+Owner decision 128 (2026-11-01) adds B05's `trial` action kind (尝试读取) in model 14. Connection trials remain `action`
 records; connectors owns and validates their local `trial-report@1` body schema. No new record kind is introduced.
 
-Owner decision 83 (2026-11-02) adds B07's derived `request_status` display axis in model 15. Waiting, overdue and answered
+Owner decision 130 (2026-11-02) adds B07's derived `request_status` display axis in model 15. Waiting, overdue and answered
 labels are generated; the axis changes neither the stored request schema nor its answer rules.
 The owner's second-round approval adds R01's derived `account_status` in the same unmerged model 15: enabled and disabled
 describe accounts; in-use remains a runtime-environment state. No permission or stored-account schema changes.
 
-Owner decision 84 and workflow-rename item 1 set model 16’s `pack_kind` UI names to 工作流, 通用技能, 产品知识来源 and 业务系统接入. Codes and technical kind labels stay unchanged. Other user-facing text updated in this change: `list_task_packs` label 查询工作流, permission label 工作流分配, `SOURCE_UNAVAILABLE.fix`, `PACK_POLICY_DENIED.when`, and the closed-set core violation’s message. Protocol and record names are unchanged. The generator also refreshes four skill-function protocol mirrors; those contain the same model revision and messages, without handwritten pack-code changes.
+Owner decision 131 and workflow-rename item 1 set model 16’s `pack_kind` UI names to 工作流, 通用技能, 产品知识来源 and 业务系统接入. Codes and technical kind labels stay unchanged. Other user-facing text updated in this change: `list_task_packs` label 查询工作流, permission label 工作流分配, `SOURCE_UNAVAILABLE.fix`, `PACK_POLICY_DENIED.when`, and the closed-set core violation’s message. Protocol and record names are unchanged. The generator also refreshes four skill-function protocol mirrors; those contain the same model revision and messages, without handwritten pack-code changes.
 
-Claude, coordinating under the owner's standing authorization for decision 84 (2026-11-02), approved the display-only
+Claude, coordinating under the owner's standing authorization for decision 131 (2026-11-02), approved the display-only
 `pack_status` axis in model 16: published, retired, enabled and inactive reuse the catalog's existing state labels.
 It changes neither records nor permissions. The same authorization covers updating the four generated skill protocol
 mirrors and their release manifests: html-format/mindmap-format 1.0.3, xml-format/workbook-format 1.0.4.
 
-Decision 84 phase 2 (task `kw-spaces.md`, 2026-11-02) sets model 17: product applicability is optional in K01;
+Decision 131 phase 2 (task `kw-spaces.md`, 2026-11-02) sets model 17: product applicability is optional in K01;
 shared personal/team space shapes add immutable entry, tree, version, source, grant and quota records. Five generated axes
 cover space kind, verification state, search scope, grant audience and grant/revoke actions. The five `SPACE_*` refusal
 codes describe capacity, invalid entries, credentials, in-run search and version conflicts. Legacy product records and
@@ -74,7 +74,7 @@ projections. A team space version may have `by: null` for Hub directory registra
 its owner. The four generated skill protocol mirrors advance with their manifests to html-format/mindmap-format 1.0.5
 and xml-format/workbook-format 1.0.6; business code is unchanged.
 
-Decision 84 phase 3 (decision 87, task `kw-share.md`, 2026-11-02) sets model 20. It registers merged/rejected sharing
+Decision 131 phase 3 (decision 134, task `kw-share.md`, 2026-11-02) sets model 20. It registers merged/rejected sharing
 status, the sharing receipt and four personal-pack record kinds, ordered sharing refusal codes and result-ground access
 and withdrawal codes. Entry provenance, personal pack/skill namespaces and promoted team-run sharing fields are additive;
 old records remain valid without them. Sharing receipts enforce owner and success/refusal cross-field consistency at
@@ -383,13 +383,13 @@ knowledge-structure@1（方向 2）：模型定义 fed-case/fed-defect/fed-spec/
 验收恢复接线：submission@1 增加可选 model_identity，直接使用已审定 model-identity@1。model 仍是显示文字；没有新字段的旧提交保持可读，族独立性保持未知。生成器重生 submission schema 与工具输入形状，不手改生成物。
 
 
-Model 19 (decision 86, second review): `get_nodes` knowledge-search answers optionally include bounded `warnings` using the
+Model 19 (decision 133, second review): `get_nodes` knowledge-search answers optionally include bounded `warnings` using the
 existing `ProtocolError` shape. Matches from available scopes remain usable, and omitted incomplete/over-limit scopes are
 explicit. `SPACE_INDEX_LIMIT` distinguishes entry versus current-version limits in its actual message/fix. This does not
 change immutable knowledge records, six-tool routing, permissions or stored references.
 
 
-Decision 88 extends the same unmerged model 20 sharing contract: optional `share_entry.team_path` chooses the team
+Decision 135 extends the same unmerged model 20 sharing contract: optional `share_entry.team_path` chooses the team
 destination; new receipts include optional `target_path` (omitted in older receipts). Personal `source` remains separate
 from the team reference. Team revision lineage reuses `knowledge-space-entry@1.replaces` and the generated superseded
 state; no record mutation, migration, seventh tool or new vocabulary axis is needed.
@@ -408,7 +408,7 @@ The same unmerged security model 22 also registers `TEAM_PARSER_REQUIRED`: team 
 
 Security model 22 adds optional live withdrawal counts (`grounds_withdrawn_hidden_count` in node views and `withdrawn_grounds_hidden_count` beside result receipts). They disclose no paths or digests and do not change stored records. The existing status label remains generated.
 
-Decision 88 and the approved memory protocol (Claude, 2026-11-02) add generated audience, pre-check, knowledge/memory view and memory-state labels in model 23. Memory is a client-context preference declaration, never run evidence. Its separate grants do not inherit knowledge grants. The default active-text cap is 48,000 bytes per space; re-sharing supersedes the earlier team revision unless an administrator edited it.
+Decision 135 and the approved memory protocol (Claude, 2026-11-02) add generated audience, pre-check, knowledge/memory view and memory-state labels in model 23. Memory is a client-context preference declaration, never run evidence. Its separate grants do not inherit knowledge grants. The default active-text cap is 48,000 bytes per space; re-sharing supersedes the earlier team revision unless an administrator edited it.
 
 Model 23 follows the phase-three security model 22 and retains its upload declarations, absent diagnostics and capability
 refusals. Generic protocol mirrors advance HTML/mindmap to 1.0.10 and XML/workbook to 1.0.11. Memory extends only
@@ -428,25 +428,25 @@ labels. Protocol-only mirrors/manifests advance html-format/mindmap-format to 1.
 Memory record classification also covers private refusal and unchanged-write actions. This changes generic reader
 eligibility without changing their stored shapes or granting any evidence rights.
 
-Decision 92 (Claude, 2026-11-03) updates only vocabulary `ui` annotations in the existing model 24 for the shared console
+Decision 141 (Claude, 2026-11-03) updates only vocabulary `ui` annotations in the existing model 24 for the shared console
 wording: scope, verification, sources, sharing, versions, folders and types. Model labels, codes, rules, payloads and
 protocol mirrors are unchanged. `gen:contracts` changes only `generated/vocabulary.ts`; removing `ui` fields makes the
 model identical to the approved chunk-five model. Static buttons/headings/tips remain console code, with a rendered-page
 regression rather than a new model registry. Claude orders the merge with `kw-sync-local`; the later branch rebases and
 regenerates instead of merging generated bytes by hand.
 
-Decision 89 step 1 (Claude approval, kw-sync section 13, 2026-11-02) sets model 25. Independent personal HTTP sync
+Decision 138 step 1 (Claude approval, kw-sync section 13, 2026-11-02) sets model 25. Independent personal HTTP sync
 contracts and shared encoding/scenario vectors do not enter MCP tools. Editable text uses LF, leading-BOM removal
 and NFC; original/quotation bytes stay verbatim. Default mode is Hub; purge preserves team copies, and private payloads
 will use physical account/epoch isolation without epoch encryption. No storage or route is implemented by this step.
 
-Decision 89 step-2 review item 5 (Claude 2026-11-03) sets model 26. The explicitly requested display text
+Decision 138 step-2 review item 5 (Claude 2026-11-03) sets model 26. The explicitly requested display text
 已清除的个人文件夹 is added to the existing sync_field display metadata. It changes no record, sync mode or permission
 rule. Only vocabulary.ts and protocol.ts change on generation; the four skill protocol mirrors and manifests remain current.
 
-Decision 89 step-2 review item 9 permits SpaceLocks.personal to be null when a run starts while personal content is stored only locally. The team root stays required, existing digests are unchanged, and explicit old personal references remain unreadable. Generation updates only the run, run-summary and tool schemas; no vocabulary/model or skill mirror changes are needed for this shape extension.
+Decision 138 step-2 review item 9 permits SpaceLocks.personal to be null when a run starts while personal content is stored only locally. The team root stays required, existing digests are unchanged, and explicit old personal references remain unreadable. Generation updates only the run, run-summary and tool schemas; no vocabulary/model or skill mirror changes are needed for this shape extension.
 
-### Personal sync commit objects (decision 89, step 4)
+### Personal sync commit objects (decision 138, step 4)
 
 The portable ancestry merge in `src/sync-merge.ts` consumes the shared vectors without a Hub dependency. Own predecessor
 entries use revision links; external grounds remain read-only addresses. Sources retain nullable original names; quotes
@@ -455,7 +455,7 @@ separately from immutable revisions. Structural directory conflicts may have one
 objects to native addresses or memory versions; a pack manifest only reports existing installation, never installs it.
 No vocabulary or protocol mirror changed in this step; model 26 and the six MCP tools remain unchanged.
 
-### Frozen personal sync compatibility vectors (decision 89, step 6)
+### Frozen personal sync compatibility vectors (decision 138, step 6)
 
 Decision 137 sets model 34: K01 records the neutral-protocol and client-declaration rules, R02 the console purge
 confirmation, and the new protocol code `SYNC_PURGE_CONFIRMATION_REQUIRED` (403). `sync.ts` adds the optional
@@ -479,7 +479,7 @@ Bearer HTTP transport, checks CAS/conflict resolution and MCP session loading, a
 and verified/unverified knowledge. A source cannot become verified merely because a client supplies a canonical object.
 The model remains 26, generated schemas 176 and MCP tools six. Circle client implementation is a separate task.
 
-Decision 89 visual integration regenerates the model-26 contracts over decision 92's UI labels. Only the existing
+Decision 138 visual integration regenerates the model-26 contracts over decision 141's UI labels. Only the existing
 cleared-personal-folder value gains a UI label for the current console wording; its code, protocol label, HTTP shapes,
 shared v1 fixtures and pack protocol mirrors stay unchanged. No model version or migration is renumbered.
 
@@ -507,7 +507,7 @@ paused private grants, reversible restoration, independent team copies and an or
 B03's frozen-run evaluation authority stays unchanged. Existing account statuses and all shapes/codes/vocabulary remain
 unchanged. Generation changes only the root protocol's model version; protocol mirrors and manifests do not advance.
 
-### Phase 5 capacity (decision 91)
+### Phase 5 capacity (decision 140)
 
 Claude approved contract list `591c4f47`. Model 28 adds R01's record-derived logical history accounting, exact capacity
 adjustment and owner/admin rejection facts, plus the UI-only `capacity_unit` axis (KB/MB/GB). Only the when/fix text of
@@ -515,13 +515,13 @@ adjustment and owner/admin rejection facts, plus the UI-only `capacity_unit` axi
 in the console. Regeneration also updates the four skill protocol mirrors, with manifest-only patch bumps to html/mindmap
 1.0.13 and xml/workbook 1.0.14. No skill behavior or source provenance changes.
 
-### Decision 91 integration with decision 89
+### Decision 140 integration with decision 138
 
 Replaying the four approved finishing blocks onto sync model 26 yields models 27–30. Model 30 contains all sync and
 finishing rules; it introduces no additional decision. The generated protocol mirrors and manifest-only skill patches
 are html/mindmap 1.0.14 and xml/workbook 1.0.15. Earlier phase paragraphs retain their original model/version history.
 
-### Permanent member deletion (decision 91)
+### Permanent member deletion (decision 140)
 
 Claude approved proposal d437875f on 2026-11-03. Model 31 adds the account display value `deleted`, deletion-time metadata
 on the user port, and closed `member-deletion@1` and `knowledge-team-source-attribution@1` records. The deletion receipt
@@ -530,7 +530,7 @@ The team credential preserves a previously verified declaration for one exact in
 paths or text. Both kinds are excluded from arbitrary record-reference readers. No rejection code or MCP tool changes;
 the four skills' code-only protocol mirrors remain byte-identical in this step.
 
-Decision 91 block-5 display polish (Claude, 2026-11-03) sets model 32. account_status.deleted is the status label
+Decision 140 block-5 display polish (Claude, 2026-11-03) sets model 32. account_status.deleted is the status label
 “已删除”; the separate generated account_display_name.deleted_member supplies the identity placeholder “已删除的成员”.
 The two terms are tested independently. No stored record shape, permission, rejection code or migration changes. Four
 skill protocol mirrors are byte-identical because this revision changes only display vocabulary; no skill version bump.
@@ -542,3 +542,10 @@ to 10 GiB as directed by Claude pending the owner's final default confirmation, 
 The capacity refusal code now names space generically; team refusals use team wording, with optional space=team in the
 existing numeric capacity detail for admins only. Members receive no team totals. Generated protocol mirrors and their
 four patch manifests change together; no skill business code changes.
+
+Decisions 136 and 137 (owner, 2026-11-02 and 2026-11-03) unify the decision registry and set model 36. Rule and change
+texts that cite public main's former decisions 74–88 now cite 121–135, and those citing 89–94 cite 138–143; each
+changed element (B02, B03, B05, P02, C01, T01, T02, K01, K02, D06, R01, R02) records this in `changes36`, and model
+35's `changes35` notes keep their wording with the new numbers. No rule, shape, code or vocabulary changes; only
+`MODEL_VERSION` is regenerated, and the skill protocol mirrors are unchanged. The renumbering table is at the top of
+`docs/hub-r4-progress.md`.

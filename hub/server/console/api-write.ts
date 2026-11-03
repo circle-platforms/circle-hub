@@ -1,4 +1,4 @@
-// The write interfaces of /console/api (decision 78; the "管理操作接口" of the interface doc): the console's management
+// The write interfaces of /console/api (decision 125; the "管理操作接口" of the interface doc): the console's management
 // operations as JSON, for an administrator's session, with the session's CSRF token in X-CSRF-Token and this console's
 // Origin (checked by console/index.ts). Each runs the very `circle-hub` commands of the HTML forms, built by the same
 // builders of manage.ts and run through the command bridge as the signed-in administrator, so the checks, records and

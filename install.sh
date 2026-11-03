@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-click installer of circle-hub (owner decision 76): macOS and Linux only.
+# One-click installer of circle-hub (owner decision 123): macOS and Linux only.
 #
 #   curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash -s -- --https-host 192.0.2.20

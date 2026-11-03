@@ -318,7 +318,7 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       logs,
       leases: hub.leases,
       async createUser(name, role = 'user') {
-        // Members sign in to the console with a password (decision 83); the synthetic one never needs changing.
+        // Members sign in to the console with a password (decision 130); the synthetic one never needs changing.
         const user = await records.principals.createUser(admin.principal, name, role, { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });
         const token = await records.principals.issueToken(admin.principal, user.id, 'test');
         registerTestConsoleAccount(token.token, name);

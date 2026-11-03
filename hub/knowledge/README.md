@@ -1,6 +1,6 @@
 # hub/knowledge: the content-addressed knowledge tree
 
-## Verified sharing (decision 87)
+## Verified sharing (decision 134)
 
 `spaces.share` accepts only the caller's currently verified personal entry. The ordered checks re-resolve all grounds,
 verify each exact quotation, recursively check source eligibility, compare only team content, then scan content and
@@ -15,9 +15,9 @@ code/reason receipt with no original or credential text. `shareHistory` pages on
 withdraw their own team submission; an administrator may withdraw any team entry. A withdrawal changes only the appended
 projection. Entry reads recursively derive withdrawn-ground qualifiers, without rewriting dependent records.
 
-## Personal and team spaces (decision 86)
+## Personal and team spaces (decision 133)
 
-Decision 84 phase 2 adds `knowledge.spaces` (`KnowledgeSpaces` from `api.ts`). Both spaces use the same entry content,
+Decision 131 phase 2 adds `knowledge.spaces` (`KnowledgeSpaces` from `api.ts`). Both spaces use the same entry content,
 CAS directory objects, immutable `knowledge_space_version` snapshots and rebuildable full-text index. A new root is the
 version record digest, so equal content in different namespaces never implies equal permissions. Existing product nodes,
 entries, composition records and references are unchanged; team snapshots mount the current readable product pointers
@@ -48,7 +48,7 @@ the transaction and also take a per-space database lock; optimistic `expected_ve
 Local synchronization and account-deletion lifecycle remain later phases on this branch. Upload signing is implemented
 below; it does not implement purge or change the synchronization branch.
 
-## Uploader attribution (decision 91, block one)
+## Uploader attribution (decision 140, block one)
 
 Claude approved the contract list in `9ba31246` before model 25 was changed. `spaces.attributeSource` requires the enabled
 authenticated uploader, their current personal source registration and exact upload capture. Full readability and credential
@@ -72,7 +72,7 @@ The attribution record is part of its uploader's personal space. Per Claude's 20
 include it in sync's personal purge scope after the coordinator arranges the rebase. No parallel purge implementation,
 new SQL table or migration is introduced here. Source archive browsing/location is implemented below.
 
-## Source archive (decision 91, block two)
+## Source archive (decision 140, block two)
 
 Claude approved the contract list in `9f4eb42b` before model 26 was changed. `spaces.archive` projects only current authorized
 space snapshots and their exact source registrations, with optional folder/history selection. It never initializes a space,
@@ -1290,7 +1290,7 @@ available matches. Console and MCP show the omitted scope; cursors bind the set 
 page when that set changes. `records` documents configurable limits and the additional historical database disk usage.
 
 
-Decision 88 sharing revisions: the personal `replaces` chain identifies only that submitter's prior team entry, checked
+Decision 135 sharing revisions: the personal `replaces` chain identifies only that submitter's prior team entry, checked
 against its immutable `shared_from` provenance and author. A successful resubmission records the team `replaces` link
 and supersedes the active predecessor; other authors' entries remain untouched and count toward team deduplication.
 An already withdrawn predecessor keeps its withdrawal and its dependants' qualifiers, while the new revision still
@@ -1356,12 +1356,12 @@ message, intent or payload digest is disclosed by the audit view.
 
 ### Personal content purge boundary
 
-Decision 89 step 2 stores private bodies and directory objects through the records account/epoch payload port. Purging
+Decision 138 step 2 stores private bodies and directory objects through the records account/epoch payload port. Purging
 an epoch makes its historical roots, originals without independent holders, memory versions and directory grants unavailable, without deleting
 team knowledge or team memory. A legacy team entry whose direct or indirect ground still needs a cleared personal root/capture
 is displayed as unverified; its historical record bytes are unchanged. Missing optional knowledge ports remain valid.
 
-Decision 89 step 3 adds the optional records `personalSync` port to the knowledge context. Uncommitted transport objects remain
+Decision 138 step 3 adds the optional records `personalSync` port to the knowledge context. Uncommitted transport objects remain
 isolated staging: they do not enter knowledge search, memory auto-load or pack publication. The real-Hub acceptance
 scenario checks two clients, privacy and purge through this internal port alongside ordinary MCP reads. Native export,
 revision mapping, verified CAS and conflict projection are implemented in step 4; HTTP authentication stays in step 5.
@@ -1370,7 +1370,7 @@ Cleared team src grounds use the existing source-hash index and metadata-only pu
 
 After a completed personal purge, local-mode personal paths and visible spaces are empty. New runs still freeze the team root but freeze personal as null; source binding explicitly handles that absence. Returning to Hub storage uses a new epoch and never restores old grants or roots. This is the step-2 review empty-view boundary, not the step-4 native sync adapter.
 
-### Atomic personal revisions (decision 89, step 4)
+### Atomic personal revisions (decision 138, step 4)
 
 `personalSync` now exports stable native identities and applies a complete snapshot in one owner/epoch transaction.
 It checks object ancestry, explicit deletion and all competing parents; directory collisions suppress their dependent
@@ -1421,7 +1421,7 @@ The sync rebase retains local-mode paths, epoch admission and cleared-ground dow
 Readonly mode/cleared answers are reused only inside the request; raw sync writes must remain outside that scope.
 The native candidate/count/batch ports use hub_read_records(), never physical capsule bodies. Purged roots and former
 grants stay absent after resume, and private-only sync entries are excluded from grantee counts before pagination.
-## Decision 91 member freeze and restore
+## Decision 140 member freeze and restore
 
 Space initialization, knowledge/directory/withdrawal writes, source imports/explicit saves/attribution, grants and team
 sharing recheck the committing actor using records' transaction-scoped `lockActive` after the space business locks.
@@ -1441,7 +1441,7 @@ orders, observes the database lock wait and checks no admitted records on refusa
 The integration test additionally checks stale sessions/principals, private grants, byte preservation and team copies.
 Sync HTTP and personal purge remain deferred to the coordinator's later rebase and block five.
 
-## Record-derived capacity (decision 91, phase 5 block 4)
+## Record-derived capacity (decision 140, phase 5 block 4)
 
 `capacity.ts` recomputes logical usage from immutable admitted space versions and memory documents/revisions, not the
 stored `used_bytes` or mutable memory history counters. Each personal version contributes its actual canonical body

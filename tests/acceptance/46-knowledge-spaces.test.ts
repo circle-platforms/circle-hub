@@ -1,5 +1,5 @@
 import { RecordsError } from '../../hub/records/api.ts';
-// Decision 84 phase 2 over the real assembly and official MCP client, with no products or business systems.
+// Decision 131 phase 2 over the real assembly and official MCP client, with no products or business systems.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';

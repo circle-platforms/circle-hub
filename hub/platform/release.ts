@@ -234,7 +234,7 @@ export async function prepareRelease(source: ReleaseSource, options: ReleaseOpti
 // ---------------------------------------------------------------- release bundles
 
 /**
- * A release bundle (owner decision 76): what `tools/build-bundle.ts` builds for one platform and the installer unpacks.
+ * A release bundle (owner decision 123): what `tools/build-bundle.ts` builds for one platform and the installer unpacks.
  * `app/` is the source tree with its node_modules already installed for that platform (the PostgreSQL binaries included),
  * `node/` the Node runtime, and bundle.json names them. `deploy --bundle <dir>` copies `app/` as the release without
  * npm ci, after checking the tree digest the bundle declares (symlinks included, as `link` lines) and the platform.
