@@ -1,5 +1,6 @@
 // The Hub checks and macOS workflows must count what each test job ran: an empty or skipped run is not a pass (AGENTS.md,
-// Verification). The pack sandbox's tests run under real Linux isolation on every pull request, never quietly skipped.
+// Verification). A pull request runs the fast jobs; the merge queue and every push to main run the whole suite, the pack
+// sandbox's tests under real Linux isolation, never quietly skipped.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
@@ -114,7 +115,11 @@ describe('sharded test jobs keep one stable status each', () => {
     it(`${aggregate} requires every ${parts} job, with no continue-on-error`, () => {
       const body = job(aggregate);
       assert.ok(body.includes(`needs: ${parts}`));
-      assert.ok(body.includes('if: ${{ always() }}'), 'the status is reported also when a part failed or was skipped');
+      assert.ok(
+        body.includes("if: ${{ always() && github.event_name != 'pull_request' }}"),
+        'skipped on a pull request, where a skipped required check counts as passed; elsewhere reported also when a part failed or was cancelled',
+      );
+      assert.ok(job(parts).includes("    if: ${{ github.event_name != 'pull_request' }}"), `${parts} runs in the merge queue and on main only`);
       assert.ok(body.includes(`run: test '\${{ needs.${parts}.result }}' = 'success'`));
       assert.ok(job(parts).includes(`${variable}: \${{ matrix.shard }}`), `${parts} hands the shard to the runner`);
       assert.ok(steps(parts).some((s) => s.includes('test-summary.ts') && s.includes('${{ matrix.shard }}')), 'each part has its own summary label');
@@ -151,8 +156,8 @@ describe('sharded test jobs keep one stable status each', () => {
     assert.doesNotMatch(MACOS, /continue-on-error/);
   });
 
-  it('a newer push replaces the checks of a pull request but never of main', () => {
-    assert.ok(WORKFLOW.includes('group: checks-${{ github.event.pull_request.number || github.sha }}'));
+  it('a newer push replaces the checks of a pull request but never of main or of a merge group', () => {
+    assert.ok(WORKFLOW.includes('group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}'), 'every other run has a group of its own');
     assert.ok(WORKFLOW.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
   });
 });
@@ -172,7 +177,27 @@ describe('backup, restore and deploy tests find pg_dump and pg_restore 18 on Ubu
   });
 });
 
-describe('the pack sandbox runs under Linux isolation on every pull request and push to main', () => {
+describe('pull requests run the fast jobs, the merge queue and main the whole suite', () => {
+  it('checks.yml runs on pull requests, in the merge queue and on a push to main', () => {
+    const triggers = WORKFLOW.slice(WORKFLOW.indexOf('\non:'), WORKFLOW.indexOf('\npermissions:'));
+    assert.match(triggers, /^  push:\n    branches: \[main\]$/m);
+    assert.match(triggers, /^  pull_request:$/m);
+    assert.match(triggers, /^  merge_group:$/m);
+  });
+
+  for (const name of ['typecheck', 'contracts', 'docs', 'references']) {
+    it(`${name} runs on every event, a pull request included`, () => {
+      assert.doesNotMatch(job(name), /^    if:/m);
+    });
+  }
+
+  it('only the shards and their aggregates depend on the event', () => {
+    const conditioned = [...WORKFLOW.matchAll(/^  (\w+):\n(?:    [^\n]*\n|\n)*?    if: [^\n]*github\.event_name/gm)].map((m) => m[1]);
+    assert.deepEqual(conditioned, ['unit_parts', 'unit', 'acceptance_parts', 'acceptance', 'isolation_parts', 'isolation']);
+  });
+});
+
+describe('the pack sandbox runs under Linux isolation in the merge queue and on every push to main', () => {
   const all = steps('isolation_parts');
   const index = (text: string): number => all.findIndex((s) => s.includes(text));
 
@@ -180,10 +205,7 @@ describe('the pack sandbox runs under Linux isolation on every pull request and 
     assert.ok(job('isolation_parts').includes("HUB_SANDBOX_DIAGNOSTICS: '1'"));
   });
 
-  it('checks.yml runs on pull requests and on a push to main', () => {
-    const triggers = WORKFLOW.slice(WORKFLOW.indexOf('\non:'), WORKFLOW.indexOf('\npermissions:'));
-    assert.match(triggers, /^  push:\n    branches: \[main\]$/m);
-    assert.match(triggers, /^  pull_request:$/m);
+  it('runs on ubuntu-24.04', () => {
     assert.ok(job('isolation_parts').includes('runs-on: ubuntu-24.04'));
   });
 

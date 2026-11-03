@@ -307,7 +307,8 @@ whose name is not ASCII; all are killed at the end); nothing else is reached.
   start; decide where `requireOsIsolation: false` may be configured (test harnesses only); optionally run `runSamples()` at
   start and refuse to serve when a sample fails (C05 R[0]).
 - **CI**: done. The `Linux isolation` jobs run the unit and acceptance files that guard on the sandbox under bubblewrap and
-  AppArmor on every pull request; `sandbox-exec` itself runs only in the `macOS-only paths` workflow.
+  AppArmor in the merge queue and on every push to main (a pull request runs only the fast checks); `sandbox-exec` itself
+  runs only in the `macOS-only paths` workflow.
 
 ## quote@1: which sources the check reads
 
