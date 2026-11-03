@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isAcceptance, isCallResult } from '../../contracts/generated/vocabulary.ts';
+import { ActionKindSchema, isAcceptance, isCallResult } from '../../contracts/generated/vocabulary.ts';
 import type { CallLog, CallLogEntry, CallLogInput, CallLogLine, CallLogQuery, Page, Principal, RecordStore } from './api.ts';
 import { canonicalize } from './canonical.ts';
 import { RECORD_SCHEMAS } from './constants.ts';
@@ -63,6 +63,18 @@ function sessionOf(value: string | null | undefined): string | null {
 }
 
 /** A preview the credential scanner flags is not kept: the call log never stores a secret (B08 R[1]). */
+/** What an MCP client reported in initialize (clientInfo), linked to that call-log line; a declaration, never verified. */
+export const CLIENT_DECLARATION_SCHEMA = 'mcp-client-declaration@1';
+const CLIENT_SESSION_KEY = 'mcp.client.session';
+const CLIENT_TOKEN_KEY = 'mcp.client.token';
+/** A client's own name and version, bounded; control and format characters removed (shown in the console as written). */
+function clientOf(value: { name: string; version: string | null }): { name: string; version: string | null } {
+  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
+  const name = clean(value?.name);
+  if (name === null) throw new TypeError('a client declaration has a name');
+  return { name, version: clean(value.version) };
+}
+
 function previewOf(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string' || !value.isWellFormed() || value.includes('\0') || Buffer.byteLength(value, 'utf8') > MAX_ARGS_PREVIEW_BYTES) {
@@ -166,11 +178,20 @@ export class PgCallLog implements CallLog {
       error_code: errorCode,
       duration_ms: Math.round(input.durationMs),
     };
+    // The client declaration is a separate record linked to this line: the call_log@1 body keeps its exact shape.
+    const client = input.client ? clientOf(input.client) : null;
+    const declared = client === null || entry.user === null ? [] : [
+      ...(entry.session !== null ? [{ key: CLIENT_SESSION_KEY, value: entry.user + '/' + entry.session }] : []),
+      ...(typeof input.tokenId === 'string' && input.tokenId.length > 0 && input.tokenId.length <= 200 ? [{ key: CLIENT_TOKEN_KEY, value: input.tokenId }] : []),
+    ];
     const { record, note } = await this.#store.withTransaction(async (tx) => {
       const stored = await this.#store.put<CallLogEntry>(
         { kind: 'call_log', schema: RECORD_SCHEMAS.call_log, provenance: 'observed', body: entry, created_at: at },
         tx,
       );
+      if (stored.created && client !== null && declared.length) {
+        await this.#store.put({ kind: 'action', schema: CLIENT_DECLARATION_SCHEMA, provenance: 'declared', body: { kind: ActionKindSchema.enum.read, call: stored.digest, user: entry.user, session: entry.session, at, client }, index: declared, created_at: at }, tx);
+      }
       if (stored.created) {
         await this.#db.query(
           `INSERT INTO call_logs (digest, at, trace_id, span_id, user_id, session_id, tool, run_id, args_digest, args_size, args_preview, call_result, acceptance, error_code, duration_ms)
@@ -198,6 +219,15 @@ export class PgCallLog implements CallLog {
       });
     }
     return line;
+  }
+
+  async declaredClient(userId: string, session: string | null, tokenId: string | null): Promise<{ name: string; version: string | null } | null> {
+    for (const [key, value] of [[CLIENT_SESSION_KEY, session === null ? null : userId + '/' + session], [CLIENT_TOKEN_KEY, tokenId]] as const) {
+      if (value === null) continue;
+      const row = (await this.#store.find<{ user: string; client: { name: string; version: string | null } }>({ kind: 'action', key, value, newestFirst: true, limit: 1 })).items[0];
+      if (row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId) return row.body.client;
+    }
+    return null;
   }
 
   async query(principal: Principal, query: CallLogQuery = {}): Promise<Page<CallLogLine>> {

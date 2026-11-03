@@ -398,6 +398,7 @@ export class PgPrincipals implements Principals {
 
   async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}
   authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,true);}
+  identify(authorization:string|null|undefined){return this.#authenticate(authorization,false);}
   async #authenticate(authorization:string|null|undefined,accessOnly:boolean):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);

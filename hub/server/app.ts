@@ -23,7 +23,8 @@ import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJ
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
 import { handleMcp } from './mcp.ts';
-import { AuthorizationStore, RegistrationWindow, handleOAuth, oauthTarget, resourceMetadataUrl } from './oauth.ts';
+import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
+import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
 
@@ -148,7 +149,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       if (request.method !== 'GET' && request.method !== 'HEAD') return sendText(response, 405, '只接受 GET', { allow: 'GET, HEAD' });
       return sendJson(response, 200, { status: 'ok', release });
     }
-    if(personalSyncTarget(url.pathname))return handlePersonalSync(request,response,url,{deps,budget,admission:syncAdmission,origins,log});
+    if(personalSyncTarget(url.pathname))return handlePersonalSync(request,response,url,{deps,budget,admission:syncAdmission,origins,log,issuer:r=>issuerOf(r,secureRequest(r))});
+    if(url.pathname===SYNC_DISCOVERY_PATH)return handleSyncDiscovery(request,response,issuerOf(request,secureRequest(request)));
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
     if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
     if (url.pathname === '/console' || url.pathname.startsWith('/console/')) return handleConsole(request, response, url, consoleOptions);

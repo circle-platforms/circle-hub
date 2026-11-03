@@ -14,12 +14,14 @@ import { SyncModeSchema, ENTRY_KIND, KNOWLEDGE_SEARCH_SCOPE, KNOWLEDGE_GRANTEE, 
 import { Sha256 } from '../../../contracts/src/common.ts';
 import { KnowledgeError, type SpaceEntryView } from '../../knowledge/api.ts';
 import { RecordsError } from '../../records/api.ts';
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { code, html, link, page, pageLayout, pre, table, type Html } from './html.ts';
 import { neutralPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import {button,sectionHead} from './ui.ts';
 import {evidence,panel as card,badge as chip,facts as kv,technical,sourceBlock,stat,field as inputField,dialog,actionLink} from './presentation.ts';
 import {knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
 import {sharingRows} from './sharing-history.ts';
+import {entryProvenance} from './client-provenance.ts';
 const field = inputField;
 function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false): Html {
   return html `<form method="post" action="/console/knowledge/do/${action}"${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}<div data-fields>${fields}</div><button type="submit" class="ch-btn ${action==='revoke'||action==='withdraw'?'ch-btn--danger':'ch-btn--primary'}"${disabled?html` disabled`:html``}>${label}</button></form>`;
@@ -114,10 +116,14 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
     }
     const attributions=await spaces.entryAttributions(ctx.principal,entry.root,path,digest);
     const sources:Html[]=[];for(const [groundIndex,ground] of entry.body.grounds.entries()){const pinned=attributions.find(row=>ground.reference==='src:'+row.sha256);sources.push(await sourceBlock(ctx,ground.reference,ground.quotation,pinned?.artifact,{root:entry.root,path,entry:digest,ground:groundIndex}));}
+    // Provenance the Hub already recorded, for the author and administrators only.
+    const origin=entry.body.by===ctx.principal.id||ctx.admin?await entryProvenance(ctx,entry.body):null;
+    const provenanceCard=origin?card({title:'写入来源'},html`${kv(origin.rows.map(([k,v])=>[k,k==='写入时间'?timestamp(String(v)):v]))}${technical(kv(origin.technical))}`):'';
     const signatures=attributions.length?card({title:'来源署名',meta:attributions.length},html`<ul class="ch-feed">${await Promise.all(attributions.map(async row=>html`<li><span>${uiLabelOf('provenance_type','declared')} · 署名人 ${evidence(await ctx.userName(row.by))}${(await ctx.deps.records.principals.get(row.by))?.disabled&&!(await ctx.deps.records.principals.get(row.by))?.deleted_at?html` · ${chip(uiLabelOf('account_status','disabled'),'plain')}`:''}</span>${timestamp(row.at)}</li>`))}</ul>`):'';
     const details=html`<div class="ch-section" data-area-content data-inspector-content><div class="ch-actions"><span class="ch-tag">${uiLabelOf('entry_kind',entry.body.content.kind)}</span>${knowledgeState(entry.row.status)}</div><h2 class="ch-panel-title">${evidence(entry.body.content.statement)}</h2><p class="ch-meta">${directoryName(path)} · ${timestamp(entry.body.at)}</p>${withdrawNotice}
 ${card({title:'来源',meta:entry.body.grounds.length},sources.length?html`${sources}`:html`<p class="ch-meta">未提供来源</p>`)}
 ${signatures}${card({title:'分享'},html`${audienceLine}${provenance}`)}
+${provenanceCard}
 ${showCitations?stat('被引用次数',entry.cited_count??'—'):''}
 ${technical(html`${kv([['引用',code(entry.reference)],['作者',await ctx.userName(entry.body.by)]])}${pre(JSON.stringify(entry.body.content.data,null,2))}${pre(JSON.stringify(entry.body.content.applicability??null,null,2))}`)}
 ${share}${canEdit&&ctx.url.searchParams.get('edit')==='1'?editor(ctx,space,path,entry):''}
@@ -196,6 +202,14 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
   const spaces = ctx.deps.knowledge.spaces;
   if (!spaces)
     throw new KnowledgeError('对象不存在或无权读取', { code: 'SOURCE_UNAVAILABLE' });
+  if(action==='sync-confirm-purge'){
+    const api=ctx.deps.records.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
+    if(values.get('confirm_purge')!=='true')throw new KnowledgeError(PROTOCOL_CODES.SYNC_PURGE_CONFIRMATION_REQUIRED.when,{code:'SYNC_PURGE_CONFIRMATION_REQUIRED'});
+    await checkPersonalFormEpoch(ctx,values.get('epoch'));
+    try{await api.confirmPurge(ctx.principal,values.get('record')??'');}
+    catch(error){if(error instanceof RecordsError&&error.code)throw new KnowledgeError(error.message,{code:error.code});throw error;}
+    return '/console/knowledge?scope=personal&sync=settings';
+  }
   if(action==='sync-resume'||action==='sync-mode'){
     const api=ctx.deps.knowledge.personalSync;if(!api)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});
     try{await api.changeMode(ctx.principal,{epoch:values.get('epoch')??'',expected_state:values.get('expected_state')??'',mode:action==='sync-resume'?SyncModeSchema.enum.hub:values.get('mode'),operation_id:values.get('operation_id')||randomUUID(),check:values.get('check')||null,confirm_purge:values.get('confirm_purge')==='true'});}

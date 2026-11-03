@@ -68,6 +68,7 @@ export const PROTOCOL_CODES = {
   SYNC_MODE_LOCAL: { when: '当前仅保存在本机', fix: '在客户端设置同步方式后重试' },
   SYNC_EPOCH_CHANGED: { when: '同步方式已变化', fix: '重新读取同步设置，不自动上传旧内容' },
   SYNC_RATE_LIMITED: { when: '同步请求过于频繁', fix: '等待答复中的重试时间后重试' },
+  SYNC_PURGE_CONFIRMATION_REQUIRED: { when: '清除 Hub 上的私人空间需要本人在控制台确认', fix: '10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试' },
 } as const;
 
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;
@@ -115,4 +116,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 33;
+export const MODEL_VERSION = 34;

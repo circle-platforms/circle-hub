@@ -2,7 +2,7 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
-import {PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncError,personalSyncErrorStatus} from '../../contracts/src/sync.ts';
+import {PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncError,personalSyncErrorStatus,personalSyncErrorDetail} from '../../contracts/src/sync.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {ActionKindSchema,SyncModeSchema} from '../../contracts/generated/vocabulary.ts';
 import {RecordsError,parseStrictJson,sha256Hex,type Principal} from '../records/api.ts';
@@ -11,6 +11,8 @@ import type {ServerDeps} from './api.ts';
 import {readBody,mediaTypeOf,setCommonHeaders,originAllowed,type BodyBudget} from './http.ts';
 const routes=PERSONAL_SYNC_HTTP_ROUTES;
 type Route=keyof typeof routes;
+/** Index of the sync audit by request id: entries a commit projects name that request as their session. */
+export const SYNC_AUDIT_REQUEST_KEY='personal.sync.http.request';
 export const personalSyncTarget=(path:string)=>path==='/api/sync'||path.startsWith('/api/sync/');
 function target(path:string):{route:Route;id?:string}|null{
  for(const [key,definition]of Object.entries(routes)){
@@ -28,7 +30,11 @@ export class SyncAdmission{
   let released=false;return ()=>{if(!released){released=true;if(write)row!.writes--;}};
  }
 }
-export interface SyncHttpOptions{deps:ServerDeps;budget:BodyBudget;admission:SyncAdmission;origins:ReadonlySet<string>;log:(line:string)=>void}
+export interface SyncHttpOptions{deps:ServerDeps;budget:BodyBudget;admission:SyncAdmission;origins:ReadonlySet<string>;log:(line:string)=>void;
+ /** The origin this request reached the Hub on (the OAuth issuer); names the console page that confirms a purge. */
+ issuer:(request:IncomingMessage)=>string}
+/** The console page where the owner confirms a purge a client asked for. */
+export const PURGE_CONFIRMATION_PAGE='/console/knowledge?scope=personal&sync=settings';
 export async function handlePersonalSync(request:IncomingMessage,response:ServerResponse,url:URL,options:SyncHttpOptions):Promise<void>{
  const {deps}=options,started=(deps.now?.()??new Date()).toISOString(),requestId=randomUUID(),selected=target(url.pathname),hold=options.budget.hold();
  let principal:Principal|undefined,identity:{principal:Principal;token_id:string;client_id:string|null}|null=null,release:(()=>void)|undefined;
@@ -37,18 +43,18 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
  const now=()=>deps.now?.()??new Date();
  const audit=async(phase:'started'|'finished',status:number|null,code:ProtocolCode|null)=>{
   if(!principal||!identity)return;
-  await deps.records.store.put({kind:'action',schema:'personal-sync-http-audit@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:principal.id,request:requestId,phase,route:selected?routes[selected.route].path:'/api/sync',method:request.method==='GET'?'GET':request.method==='POST'?'POST':'OTHER',token:identity.token_id,authenticated_client:identity.client_id,declared_client:device,epoch,operation:operation?sha256Hex(operation):null,started_at:started,at:now().toISOString(),status,code,wire_bytes:bytes,previous_state:before,state:after,counts},index:[{key:'personal.sync.http.by',value:principal.id}]});
+  await deps.records.store.put({kind:'action',schema:'personal-sync-http-audit@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:principal.id,request:requestId,phase,route:selected?routes[selected.route].path:'/api/sync',method:request.method==='GET'?'GET':request.method==='POST'?'POST':'OTHER',token:identity.token_id,authenticated_client:identity.client_id,declared_client:device,epoch,operation:operation?sha256Hex(operation):null,started_at:started,at:now().toISOString(),status,code,wire_bytes:bytes,previous_state:before,state:after,counts},index:[{key:'personal.sync.http.by',value:principal.id},{key:SYNC_AUDIT_REQUEST_KEY,value:requestId}]});
  };
  const send=async(status:number,value:unknown,headers:Record<string,string>={},auditCode?:ProtocolCode|null)=>{
   let text=JSON.stringify(value),size=Buffer.byteLength(text);
-  if(size>deps.config.limits.maxRequestBytes){status=413;auditCode='SYNC_BATCH_LIMIT';text=JSON.stringify(PersonalSyncError.parse({code:auditCode}));size=Buffer.byteLength(text);}
-  if(status<400&&!hold.take(size)){status=503;auditCode='SOURCE_RETRYABLE';text=JSON.stringify(PersonalSyncError.parse({code:auditCode}));headers['retry-after']='1';}
+  if(size>deps.config.limits.maxRequestBytes){status=413;auditCode='SYNC_BATCH_LIMIT';text=JSON.stringify(PersonalSyncError.parse({code:auditCode,detail:personalSyncErrorDetail(auditCode)}));size=Buffer.byteLength(text);}
+  if(status<400&&!hold.take(size)){status=503;auditCode='SOURCE_RETRYABLE';text=JSON.stringify(PersonalSyncError.parse({code:auditCode,detail:personalSyncErrorDetail(auditCode)}));headers['retry-after']='1';}
   if(begun&&auditCode!==undefined)await audit('finished',status,auditCode);
   if(response.destroyed)return;
   setCommonHeaders(response);response.writeHead(status,{'content-type':'application/json; charset=utf-8','content-length':String(Buffer.byteLength(text)),...headers});
   await new Promise<void>(resolve=>{response.once('close',resolve);response.end(text,()=>{response.off('close',resolve);resolve();});});
  };
- const error=async(status:number,code:ProtocolCode,headers:Record<string,string>={},state?:unknown)=>{await send(status,PersonalSyncError.parse({code,...(state?{state}:{}),...(status===429?{retry_after_seconds:60}:{})}),headers,code);};
+ const error=async(status:number,code:ProtocolCode,headers:Record<string,string>={},state?:unknown,extra:{confirmation?:{url:string;expires_at:string}}={})=>{await send(status,PersonalSyncError.parse({code,...(state?{state}:{}),...(status===429?{retry_after_seconds:60}:{}),detail:personalSyncErrorDetail(code),...extra}),headers,code);};
  try{
   if(!originAllowed(request,options.origins)){request.resume();await send(403,{code:'SOURCE_UNAVAILABLE'});return;}
   const authenticate=deps.records.principals.authenticateAccessToken;
@@ -86,10 +92,15 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
    case 'missing':result=await api.missing(principal,id!,body);break;
    case 'upload':result=await api.upload(principal,id!,body);break;
    case 'download':result=await api.download(principal,id!,body);counts.downloaded=(result as {objects:unknown[]}).objects.length;break;
-   case 'commit':result=await sync.commit(principal,id!,body);break;
+   case 'commit':result=await sync.commit(principal,id!,body,requestId);break;
    case 'abort':result=await api.abort(principal,id!,body);break;
    case 'modeCheck':result=await sync.modeCheck(principal,body);break;
-   case 'mode':result=await sync.changeMode(principal,body);break;
+   case 'mode':{
+    // A Bearer token alone never purges: the owner confirms the recorded request in the console, then the client's
+    // identical retry replays the receipt (capability purge-confirmation).
+    const changed=await sync.changeMode(principal,body,{request:requestId,token:identity.token_id,client:identity.client_id});
+    if('confirmation'in changed){const issuer=options.issuer(request);await error(personalSyncErrorStatus('SYNC_PURGE_CONFIRMATION_REQUIRED'),'SYNC_PURGE_CONFIRMATION_REQUIRED',{},undefined,{confirmation:{url:issuer+PURGE_CONFIRMATION_PAGE,expires_at:changed.confirmation.expires_at}});return;}
+    result=changed;break;}
    case 'operation':{const q=query(['epoch','cursor']);epoch=z.uuid().parse(q.epoch);result=await api.modeOperation(principal,epoch,id!);modeReceipt=!!result;if(!result&&epoch===current.epoch&&current.mode===SyncModeSchema.enum.hub)result=await api.result(principal,epoch,id!,q.cursor)??await api.operation(principal,epoch,id!);if(!result)throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE'});break;}
   }
   const receipt=(result as {receipt?:{counts:typeof counts;state_version:string;previous_state:string|null};counts?:typeof counts}),state=(result as {state?:{state_version:string};state_version?:string});

@@ -164,6 +164,8 @@ export interface Principals {
   authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
+  /** Like authenticate, with the server token that authenticated (console sessions included). */
+  identify?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
 }
 
 // ---------------------------------------------------------------- records
@@ -803,6 +805,10 @@ export interface CallLogInput {
   adminNote?: string | null;
   /** Full private reasons, individually stored outside the public record and JSONL. */
   adminReasons?:readonly string[];
+  /** What the client reported in MCP initialize (clientInfo): kept as an `mcp-client-declaration@1` record linked to the line, never verified. */
+  client?:{name:string;version:string|null}|null;
+  /** The server token of the call; indexes the client declaration, never stored in the body. */
+  tokenId?:string|null;
 }
 
 /** Body of a `call_log@1` record: one MCP call (B08). The admin note is not part of it. */
@@ -853,6 +859,8 @@ export interface CallLog {
    * on every query (a disabled account sees nothing, a demoted admin only their own calls). Newest first by default.
    */
   query(principal: Principal, query?: CallLogQuery): Promise<Page<CallLogLine>>;
+  /** The newest initialize declaration of this session (by Circle-Session-Id), else of this token; null when none was reported. */
+  declaredClient?(userId:string,session:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;
   /** Appends to the JSONL files every call logged in [from, to) that its file is missing (after a crash). Returns the lines written. */
   repairFiles(range: { from: string; to: string }): Promise<number>;
 }
@@ -860,7 +868,8 @@ export interface CallLog {
 // ---------------------------------------------------------------- the kit
 
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
-export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
+export type {PurgeRequester,PurgePending,PurgeRequestBody} from './personal-sync.ts';
+export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'purgeRequests'|'confirmPurge'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
   memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'>;
   personalSync?:PersonalSyncStore;

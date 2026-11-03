@@ -870,7 +870,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
         const target=segments[0]==='packs'?await performPersonalPackAction(ctx,segments[2],values,options.staging,upload):segments[2].startsWith('memory-')?await performMemoryAction(ctx,segments[2].slice(7),values):await performSpaceAction(ctx,segments[2],values,upload);
         if(values.get('preview_grant')!=='1'&&segments[2]!=='share-batch'&&segments[2]!=='memory-share'){
           // A replay may return an earlier mode receipt; feedback reports the current state, never a new purge.
-          const state=segments[2]==='sync-mode'||segments[2]==='sync-resume'?await ctx.deps.records.personalSync?.state(ctx.principal):undefined;
+          const state=segments[2]==='sync-mode'||segments[2]==='sync-resume'||segments[2]==='sync-confirm-purge'?await ctx.deps.records.personalSync?.state(ctx.principal):undefined;
           session!.notice=state?axisUiLabel('sync_mode')+'：'+uiLabelOf('sync_mode',state.mode):'操作已完成';
         }
         return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);

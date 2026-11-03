@@ -745,7 +745,12 @@ operation until the checked, authenticated mode-switch routes are wired in subse
 ### Personal sync transport (decision 89, step 3)
 
 The wire protocol is specified in [docs/protocols/knowledge-sync-v1.md](../../docs/protocols/knowledge-sync-v1.md)
-(decision 137); the sections below record how records stores and scopes it.
+(decision 137); the sections below record how records stores and scopes it. `changeMode(by, input, via)` with an HTTP
+requester records a purge to local as an append-only `personal-sync-purge-request@1` action (indexed
+`personal.sync.purge.request.by`) instead of performing it; `purgeRequests` lists the owner's unexpired, unexecuted
+requests of the current epoch and `confirmPurge` performs one as recorded, adding its digest to the mode audit. No
+migration is added. The call log keeps an MCP client's `initialize` declaration as a separate
+`mcp-client-declaration@1` record linked to the line, so the `call_log@1` body and its digest check are unchanged.
 
 `personalSync` is an account-scoped internal port, not an MCP tool or an HTTP handler. It rechecks the account and epoch
 inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings

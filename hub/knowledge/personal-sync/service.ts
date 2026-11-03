@@ -7,7 +7,7 @@ import {MemoryVersionBody} from '../../../contracts/src/memory.ts';
 import {PersonalPackVersionBody} from '../../../contracts/src/sharing.ts';
 import {SyncObjectKindSchema,SyncModeSchema,KnowledgeEntryStatusSchema,ReadTierSchema,type SyncObjectKind} from '../../../contracts/generated/vocabulary.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../../contracts/generated/protocol.ts';
-import {canonicalize,sha256Hex,scanForCredentials,CREDENTIAL_SCANNER,RecordsError,type Principal,type Transaction,type PersonalSyncStore,type SourceArtifact} from '../../records/api.ts';
+import {canonicalize,sha256Hex,scanForCredentials,CREDENTIAL_SCANNER,RecordsError,type Principal,type Transaction,type PersonalSyncStore,type SourceArtifact,type PurgeRequester,type PurgePending} from '../../records/api.ts';
 import {pathOf,pathSegments,parseReference,ReferenceSyntaxError,resolveReference,verifyQuote,type SourceRead} from '../../refs/api.ts';
 import type {KnowledgeContext} from '../context.ts';
 import type {KnowledgeSpaces,SpaceVersion} from '../spaces.ts';
@@ -26,7 +26,9 @@ export class PersonalKnowledgeSync{
  readonly #ctx:KnowledgeContext;readonly #spaces:KnowledgeSpaces;readonly #memory:MemoryDocuments;readonly transport:PersonalSyncStore;
  constructor(ctx:KnowledgeContext,spaces:KnowledgeSpaces,memory:MemoryDocuments,transport:PersonalSyncStore){this.#ctx=ctx;this.#spaces=spaces;this.#memory=memory;this.transport=transport;}
  modeCheck(by:Principal,input:unknown){return this.transport.modeCheck(by,input);}
- changeMode(by:Principal,input:unknown){return this.transport.changeMode(by,input);}
+ changeMode(by:Principal,input:unknown):Promise<Exclude<Awaited<ReturnType<PersonalSyncStore['changeMode']>>,PurgePending>>;
+ changeMode(by:Principal,input:unknown,via:PurgeRequester|undefined):Promise<Awaited<ReturnType<PersonalSyncStore['changeMode']>>|PurgePending>;
+ changeMode(by:Principal,input:unknown,via?:PurgeRequester){return via?this.transport.changeMode(by,input,via):this.transport.changeMode(by,input);}
  #graph(by:Principal,epoch:string,tx:Transaction){return new SyncGraph(id=>this.transport.object(by,epoch,id,tx));}
  async state(by:Principal){const state=await this.transport.state(by);if(state.mode===SyncModeSchema.enum.local)return state;return this.transport.transact(by,state.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);return this.transport.state(by,tx);});}
  async openSession(by:Principal,input:unknown){const request=z.object({epoch:z.uuid()}).parse(input);return this.transport.transact(by,request.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);return this.transport.openSession(by,input,tx);});}
@@ -90,16 +92,17 @@ export class PersonalKnowledgeSync{
   const conflicts=sorted.filter(r=>r.heads.length>1||conflictedIds.has(r.item_id)).map(r=>({item_id:r.item_id,heads:r.heads,...(r.heads.length===1?{structural:true}:{})}));
   await api.stage(by,epoch,objects,tx,true);await api.note(by,epoch,'conflicts',snapshot,tx,conflicts);await api.checkpoint(by,epoch,snapshot,conflicts.length,tx);
  }
- async commit(by:Principal,session:string,raw:unknown){const parsed=PersonalSyncCommit.safeParse(raw);if(!parsed.success)return fail();const request=parsed.data;
+ /** `request` is the audited sync HTTP request; projected entries name it as their session. */
+ async commit(by:Principal,session:string,raw:unknown,request_id:string|null=null){const parsed=PersonalSyncCommit.safeParse(raw);if(!parsed.success)return fail();const request=parsed.data;
   let mismatch:RecordsError|undefined;
   const result=await this.transport.transact(by,request.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);
-   try{return await this.transport.commit(by,session,request,()=>this.#apply(by,scope.epoch,request.snapshot,request.base_snapshot,request.operation_id,tx),tx);}
+   try{return await this.transport.commit(by,session,request,()=>this.#apply(by,scope.epoch,request.snapshot,request.base_snapshot,request.operation_id,tx,request_id),tx);}
    catch(error){if(error instanceof RecordsError&&error.code==='SYNC_VERSION_CONFLICT'&&error.detail.state){mismatch=error;return null;}throw error;}
   });
   // A CAS mismatch must return a durable native export, never a snapshot rolled back with the rejected proposal.
   if(mismatch)throw mismatch;return result!;
  }
- async #apply(by:Principal,epoch:string,snapshot:string,base:string|null,operation:string,tx:Transaction){
+ async #apply(by:Principal,epoch:string,snapshot:string,base:string|null,operation:string,tx:Transaction,request_id:string|null=null){
   const api=this.transport,head=await api.head(by,epoch,tx),graph=this.#graph(by,epoch,tx);await graph.validate(snapshot);
   const previous=await graph.items(head.snapshot as string|null),items=await graph.items(snapshot);if(head.snapshot&&!graph.ancestor(String(head.snapshot),snapshot))return fail('SYNC_VERSION_CONFLICT');
   if(base&&head.snapshot&&!graph.ancestor(base,String(head.snapshot)))return fail('SYNC_VERSION_CONFLICT');graph.checkAdvance(previous,items);
@@ -174,11 +177,11 @@ export class PersonalKnowledgeSync{
     for(const ground of object.body.grounds)if('entry'in ground){const location=locationsByObject.get(ground.entry)!,quote=await graph.get(ground.quotation);if(quote.kind!==kinds.bytes)return fail();grounds.push({reference:'tree:'+location.root+location.path+'@'+location.entry,quotation:new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(Buffer.from(quote.body.bytes_base64,'base64'))});}
     projected.set(id,{record:entryRecords.get(id),object:id,item_id:object.body.item_id,path:await locate(object.body.directory_id)??'/',content:object.body.content,grounds,status:check.status,privateOnly:conflicted.has(object.body.item_id)||check.status==='unverified'||!check.shareable});pending.delete(id);
    }
-   projection=await this.#spaces.syncProjection(by,{epoch,directories:[...paths].filter(([id])=>!conflicted.has(id)).map(([,path])=>path),entries:[...projected.values()],sources:sourceRows.map(s=>({...s,record:sourceRecords.get(s.object)}))},tx);
+   projection=await this.#spaces.syncProjection(by,{epoch,session:request_id,directories:[...paths].filter(([id])=>!conflicted.has(id)).map(([,path])=>path),entries:[...projected.values()],sources:sourceRows.map(s=>({...s,record:sourceRecords.get(s.object)}))},tx);
    for(const binding of projection.bindings){if(binding.kind===kinds.source_revision)sourceRecords.set(binding.object_id,binding.native);if(binding.kind===kinds.entry_revision){entryRecords.set(binding.object_id,binding.native);const row=projection.version.body.entries.find(r=>r.record===binding.native)!;const location={root:projection.version.root,path:row.path,entry:row.entry};locationsByObject.set(binding.object_id,location);await api.note(by,epoch,'entry-location',binding.object_id,tx,location);}}
   }
   if(pending.size)return fail('SYNC_BATCH_LIMIT');
-  projection=await this.#spaces.syncProjection(by,{epoch,directories:[...paths].filter(([id])=>!conflicted.has(id)).map(([,path])=>path),entries:entries.filter(e=>!conflicted.has(e.item_id)).map(e=>({...projected.get(e.object)!,record:entryRecords.get(e.object)})),sources:sourceRows.map(s=>({...s,record:sourceRecords.get(s.object)}))},tx);
+  projection=await this.#spaces.syncProjection(by,{epoch,session:request_id,directories:[...paths].filter(([id])=>!conflicted.has(id)).map(([,path])=>path),entries:entries.filter(e=>!conflicted.has(e.item_id)).map(e=>({...projected.get(e.object)!,record:entryRecords.get(e.object)})),sources:sourceRows.map(s=>({...s,record:sourceRecords.get(s.object)}))},tx);
   const memoryBindings=await this.#memory.syncProjection(by,epoch,memories,{bytes:reservedBytes,documents:reservedDocuments},tx);await api.reserve(by,epoch,reservedBytes,reservedDocuments,tx);
   for(const binding of [...projection.bindings,...memoryBindings])await api.bindings(by,epoch,tx,binding);
   for(const [id,path]of paths){const row=rows.get(id);if(row&&!conflicted.has(id))await api.bindings(by,epoch,tx,{kind:kinds.directory_revision,item_id:id,object_id:row.heads[0],native:sha256Hex(path),locator:''});}

@@ -21,11 +21,15 @@ export const SpaceEntryInput = SpaceEntryContent.extend({
   reason: z.string().min(1).max(1000).default('条目写入'),
 });
 export type SpaceEntryInput = z.infer<typeof SpaceEntryInput>;
+/** What an MCP client reported about itself in initialize (clientInfo): stored as a declaration, never verified. */
+export const ClientDeclaration = z.strictObject({name: z.string().min(1).max(100), version: z.string().min(1).max(100).nullable()});
+export type ClientDeclaration = z.infer<typeof ClientDeclaration>;
 export const SpaceEntryBody = z.strictObject({
   sync_private:z.boolean().optional(),personal_epoch:z.uuid().optional(), space: SpaceId, entry: Sha256, content: SpaceEntryContent, grounds: z.array(SpaceGround).max(100),
   status: KnowledgeEntryStatusSchema.extract(['verified', 'unverified']),
   by: UserId, at: IsoTime, session: z.string().nullable(), replaces: Sha256.nullable(),
   shared_from: SpaceEntryOrigin.optional(),
+  client: ClientDeclaration.optional(),
   source_attributions: z.array(Sha256).max(100).refine(values=>new Set(values).size===values.length,"attributions must be unique").optional(),
 }).refine(row=>row.source_attributions===undefined||row.space==='team',"only team entries carry attributions");
 export type SpaceEntryBody = z.infer<typeof SpaceEntryBody>;

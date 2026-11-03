@@ -267,6 +267,10 @@ export const PROTOCOL_CODES = {
   "SYNC_RATE_LIMITED": {
     "when": "同步请求过于频繁",
     "fix": "等待答复中的重试时间后重试"
+  },
+  "SYNC_PURGE_CONFIRMATION_REQUIRED": {
+    "when": "清除 Hub 上的私人空间需要本人在控制台确认",
+    "fix": "10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试"
   }
 } as const;
 export type ProtocolCode = keyof typeof PROTOCOL_CODES;

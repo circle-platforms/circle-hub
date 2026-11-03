@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Publish the neutral knowledge sync v1 specification with a discovery document at `/.well-known/knowledge-sync`, `detail` on sync errors, console confirmation for purges asked over the sync API, and recorded client provenance on knowledge entries.
+
 - Keep team and member management available when the knowledge service or personal spaces feature is absent.
 
 - Prefer the sharer's own signed original before team and granted equal-byte copies while keeping exact attribution boundaries.

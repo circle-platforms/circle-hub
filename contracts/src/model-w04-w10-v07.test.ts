@@ -16,7 +16,7 @@ test('the shared qualifier axis retains its existing codes and records each mark
  assert.ok(element('V07').changes10.some((text:string)=>text.includes('intermittent')&&text.includes(source)));
 });
 test('the existing work class, ledger and model revision remain unique and consistent with their generated contracts',()=>{
- assert.equal(model.version,33);assert.equal(MODEL_VERSION,33);
+ assert.equal(model.version,34);assert.equal(MODEL_VERSION,34);
  assert.equal(model.vocabulary.length,Object.keys(AXES).length);
  assert.equal(model.vocabulary.filter((value:any)=>value.axis==='work_class').length,1);
  assert.deepEqual(AXES.work_class,{label:'工作类',owner:'V07',values:[{code:'verification',label:'验证'},{code:'reproduction',label:'复现'},{code:'web',label:'Web'}]});

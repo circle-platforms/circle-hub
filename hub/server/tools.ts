@@ -1,3 +1,4 @@
+import type {ClientDeclaration} from '../../contracts/src/spaces.ts';
 import {knowledgeMessage} from './capacity.ts';
 import {join} from 'node:path';
 import { KnowledgeError } from '../knowledge/api.ts';
@@ -44,6 +45,8 @@ export { describeError, describeInternalError } from './notes.ts';
 export interface ServerCallContext extends CallContext {
   /** The real reason behind a neutral answer (absent, forbidden, failed): admins see it in the call log, the caller never does. */
   adminNote(reason: string): void;
+  /** What this session's client reported in MCP initialize (clientInfo), read only by writers; null when nothing was reported. */
+  client?: () => Promise<ClientDeclaration | null>;
 }
 
 /** What one JSON-RPC request contributes to its call-log line (B08). */
@@ -58,6 +61,8 @@ export interface CallState {
   acceptance: Acceptance | null;
   errorCode: string | null;
   notes: string[];
+  /** initialize only: the clientInfo the client reported (a declaration). */
+  client?: ClientDeclaration;
 }
 
 export interface ToolCall {
@@ -288,7 +293,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   if(parsed.data.share_entry||parsed.data.withdraw_entry){
     const spaces=deps.knowledge.spaces;if(!spaces)return errorAnswer('upload_file',[unavailable()]);
     try{
-      if(parsed.data.share_entry){const share=await spaces.share(call.principal,parsed.data.share_entry,call.context.sessionId);return share.status==='merged'?{call_result:'ok',errors:[],acceptance:'accepted',share}:{...errorAnswer('upload_file',[{code:share.code!,message:share.message,fix:PROTOCOL_CODES[share.code as ProtocolCode]?.fix}]),share};}
+      if(parsed.data.share_entry){const share=await spaces.share(call.principal,parsed.data.share_entry,call.context.sessionId,await call.context.client?.()??null);return share.status==='merged'?{call_result:'ok',errors:[],acceptance:'accepted',share}:{...errorAnswer('upload_file',[{code:share.code!,message:share.message,fix:PROTOCOL_CODES[share.code as ProtocolCode]?.fix}]),share};}
       const input=parsed.data.withdraw_entry!,version=await spaces.version(input.root);if(!version||!(await spaces.mayRead(call.principal,version.body.space,input.path)))return errorAnswer('upload_file',[unavailable()]);
       await spaces.withdraw(call.principal,input.entry,version.body.space);
       return {call_result:'ok',errors:[],acceptance:'accepted',withdrawn_reference:`tree:${input.root}${input.path}@${input.entry}`};
@@ -296,7 +301,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   }
   if(parsed.data.personal_entry){
     if(!deps.knowledge.spaces)return errorAnswer('upload_file',[unavailable()]);
-    try{return {call_result:'ok',errors:[],acceptance:'accepted',personal_entry:await deps.knowledge.spaces.write(call.principal,parsed.data.personal_entry,call.context.sessionId)}}
+    try{return {call_result:'ok',errors:[],acceptance:'accepted',personal_entry:await deps.knowledge.spaces.write(call.principal,parsed.data.personal_entry,call.context.sessionId,undefined,await call.context.client?.()??null)}}
     catch(error){if(error instanceof KnowledgeError&&error.code)return errorAnswer('upload_file',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}]);throw error;}
   }
   const { file_path: text, media_type: given, name } = parsed.data;
