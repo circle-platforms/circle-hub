@@ -951,11 +951,313 @@ BEGIN
 END $fn$;
 REVOKE ALL ON FUNCTION public.hub_finish_member_deletion(pg_catalog.text,pg_catalog.text) FROM PUBLIC;
 `},
+ {version:20,name:'account_payload_holders',sql:`ALTER TABLE public.personal_spaces ADD COLUMN account_epoch pg_catalog.text;
+CREATE TABLE public.run_pack_records(record pg_catalog.text PRIMARY KEY REFERENCES public.records(digest),held_by pg_catalog.text NOT NULL REFERENCES public.records(digest),owner pg_catalog.text NOT NULL REFERENCES public.users(id),digest pg_catalog.text NOT NULL,body pg_catalog.text NOT NULL);
+CREATE TABLE public.held_object_targets(sha256 pg_catalog.text NOT NULL,held_by pg_catalog.text NOT NULL REFERENCES public.records(digest),owner pg_catalog.text NOT NULL,epoch pg_catalog.text NOT NULL,PRIMARY KEY(sha256,held_by));
+CREATE TABLE public.held_objects(sha256 pg_catalog.text PRIMARY KEY REFERENCES public.objects(sha256),held_by pg_catalog.text NOT NULL REFERENCES public.records(digest),data pg_catalog.bytea NOT NULL,CHECK(pg_catalog.encode(pg_catalog.sha256(data),'hex')=sha256));
+CREATE TABLE public.original_targets(artifact pg_catalog.text NOT NULL REFERENCES public.records(digest),held_by pg_catalog.text NOT NULL REFERENCES public.records(digest),owner pg_catalog.text NOT NULL,epoch pg_catalog.text NOT NULL,sha256 pg_catalog.text NOT NULL,body pg_catalog.text NOT NULL,PRIMARY KEY(artifact));
+${APPEND_ONLY('run_pack_records')}
+${APPEND_ONLY('held_object_targets')}
+${APPEND_ONLY('held_objects')}
+${APPEND_ONLY('original_targets')}
+CREATE INDEX held_object_targets_owner ON public.held_object_targets(owner,epoch);
+CREATE INDEX original_targets_owner ON public.original_targets(owner,epoch);
+CREATE INDEX run_pack_records_scope ON public.run_pack_records(owner,digest);
+
+CREATE FUNCTION public.hub_account_layout_conversion() RETURNS pg_catalog.bool LANGUAGE sql STABLE SET search_path=pg_catalog,public,pg_temp AS $fn$
+ SELECT CURRENT_USER=pg_catalog.pg_get_userbyid(c.relowner) AND SESSION_USER=pg_catalog.pg_get_userbyid(c.relowner)
+ AND pg_catalog.current_setting('role') IN ('none',pg_catalog.pg_get_userbyid(c.relowner))
+ AND pg_catalog.current_setting('circle_hub.account_layout_conversion',true)='20'
+ AND NOT EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=20)
+ FROM pg_catalog.pg_class c WHERE c.oid='public.records'::pg_catalog.regclass
+$fn$;
+REVOKE ALL ON FUNCTION public.hub_account_layout_conversion() FROM PUBLIC;
+CREATE FUNCTION public.hub_capture_owner(b pg_catalog.jsonb) RETURNS pg_catalog.text LANGUAGE sql IMMUTABLE SET search_path=pg_catalog,public,pg_temp AS $fn$
+ SELECT CASE WHEN b->'origin'->'upload' IS NOT NULL AND b->'visibility'->>'admins'='false' THEN b->'author'->>'user'
+ WHEN b->'origin'->'read' IS NOT NULL AND b->'visibility'->>'admins'='false' AND pg_catalog.jsonb_array_length(b->'visibility'->'readers')=1 THEN b->'visibility'->'readers'->>0 ELSE NULL END
+$fn$;
+CREATE FUNCTION public.hub_account_scope(o pg_catalog.text,n pg_catalog.text) RETURNS pg_catalog.text LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE e pg_catalog.text;s public.personal_spaces%ROWTYPE;
+BEGIN
+ PERFORM 1 FROM public.users WHERE id=o AND NOT disabled AND deleted_at IS NULL FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='P0002';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,'00000000-0000-4000-8000-000000000001') ON CONFLICT DO NOTHING;
+ SELECT * INTO s FROM public.personal_spaces WHERE owner=o FOR UPDATE;
+ IF s.account_epoch IS NOT NULL THEN RETURN s.account_epoch;END IF;
+ IF n=s.epoch OR n !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' OR EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=o AND epoch=n) THEN RAISE EXCEPTION 'invalid account scope';END IF;
+ UPDATE public.personal_spaces SET account_epoch=n WHERE owner=o;RETURN n;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_account_scope(pg_catalog.text,pg_catalog.text) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_append_only() RETURNS pg_catalog.trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF TG_TABLE_NAME='record_index' AND TG_OP='DELETE' THEN
+ IF OLD.key='artifact.object' AND CURRENT_USER=pg_catalog.pg_get_userbyid((SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.record_index'::pg_catalog.regclass)) AND EXISTS(SELECT 1 FROM public.personal_record_bindings b JOIN public.personal_purges p ON (p.owner,p.epoch)=(b.owner,b.epoch) WHERE b.record=OLD.digest) THEN RETURN OLD;END IF;
+ IF OLD.key IN ('personal.pack.id','personal.pack.grant','personal.pack.retired')
+ AND CURRENT_USER=pg_catalog.pg_get_userbyid((SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.record_index'::pg_catalog.regclass))
+ AND EXISTS(SELECT 1 FROM public.personal_record_bindings b JOIN public.personal_purges p ON (p.owner,p.epoch)=(b.owner,b.epoch)
+ JOIN public.member_deletion_intents d ON d.member=b.owner JOIN public.users u ON u.id=d.member AND u.deleted_at IS NOT NULL WHERE b.record=OLD.digest) THEN RETURN OLD;END IF;
+ END IF;
+ IF TG_TABLE_NAME='records' AND TG_OP='UPDATE' THEN
+ IF public.hub_account_layout_conversion() AND (pg_catalog.to_jsonb(NEW)-'body')=(pg_catalog.to_jsonb(OLD)-'body')
+ AND EXISTS(SELECT 1 FROM public.personal_record_bindings b JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(b.owner,b.epoch,b.sha256)
+ WHERE b.record=OLD.digest AND b.marker=NEW.body AND pg_catalog.convert_from(p.data,'UTF8')=OLD.body
+ AND b.sha256=pg_catalog.encode(pg_catalog.sha256(p.data),'hex') AND b.bytes=pg_catalog.octet_length(p.data)
+ AND ((OLD.kind IN ('personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer') AND (pg_catalog.replace(OLD.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'space'=b.owner)
+ OR (OLD.kind='source_artifact' AND public.hub_capture_owner(pg_catalog.replace(OLD.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)=b.owner))
+ AND b.proof=public.hub_personal_proof(OLD.digest,b.sha256,b.owner,b.epoch,b.bytes,OLD.created_at,OLD.kind,OLD.provenance,OLD.schema)) THEN RETURN NEW;END IF;
+ END IF;
+ RAISE EXCEPTION 'append-only table %: % rejected',TG_TABLE_NAME,TG_OP USING ERRCODE='HU001';
+END $fn$;
+CREATE OR REPLACE FUNCTION hub_active_personal_insert() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF public.hub_account_layout_conversion() THEN RETURN NEW;END IF;
+ PERFORM 1 FROM public.personal_spaces s JOIN public.users u ON u.id=s.owner WHERE s.owner=NEW.owner
+ AND ((s.epoch=NEW.epoch AND s.mode='hub') OR s.account_epoch=NEW.epoch) AND u.deleted_at IS NULL FOR SHARE OF s;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.personal_purges WHERE owner=NEW.owner AND epoch=NEW.epoch) THEN RAISE EXCEPTION 'inactive personal scope';END IF;
+ IF TG_TABLE_NAME='personal_objects' AND NOT EXISTS(SELECT 1 FROM public.personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256) THEN RAISE EXCEPTION 'personal object has no payload';END IF;
+ RETURN NEW;
+END $fn$;
+CREATE OR REPLACE FUNCTION hub_check_personal_binding() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE r public.records%ROWTYPE; p pg_catalog.bytea; b pg_catalog.json; h pg_catalog.text;
+BEGIN
+ SELECT * INTO r FROM records WHERE digest=NEW.record;
+ SELECT data INTO p FROM personal_payloads WHERE owner=NEW.owner AND epoch=NEW.epoch AND sha256=NEW.sha256;
+ IF NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=NEW.owner AND ((epoch=NEW.epoch AND mode='hub') OR account_epoch=NEW.epoch)) THEN RAISE EXCEPTION 'inactive personal scope'; END IF;
+ IF r.digest IS NULL OR p IS NULL OR r.body<>NEW.marker OR NEW.marker::jsonb<>jsonb_build_object('personal_payload',NEW.sha256,'owner',NEW.owner,'epoch',NEW.epoch,'record',NEW.record,'proof',NEW.proof)
+ THEN RAISE EXCEPTION 'invalid personal capsule'; END IF;
+ b:=replace(convert_from(p,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::pg_catalog.json;
+ IF (r.kind IN ('knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','knowledge_source_attribution','personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer') AND b->>'space'=NEW.owner)
+ OR (r.kind='source_artifact' AND public.hub_capture_owner(b::pg_catalog.jsonb)=NEW.owner) THEN NULL;
+ ELSE RAISE EXCEPTION 'not a personal payload';END IF;
+ IF r.kind='knowledge_source_attribution' AND b->>'by' IS DISTINCT FROM NEW.owner THEN RAISE EXCEPTION 'not the attributed uploader';END IF;
+ IF r.kind IN ('personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer') AND NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=NEW.owner AND account_epoch=NEW.epoch) THEN RAISE EXCEPTION 'private install scope mismatch';END IF;
+ IF r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=NEW.owner AND account_epoch=NEW.epoch)
+ AND NOT EXISTS(SELECT 1 FROM public.hub_read_records() s JOIN public.personal_record_bindings q ON q.record=s.digest
+ WHERE s.kind='knowledge_space_source' AND q.owner=NEW.owner AND q.epoch=NEW.epoch AND (pg_catalog.replace(s.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'artifact'=NEW.record) THEN RAISE EXCEPTION 'personal artifact has no owning knowledge source';END IF;
+ IF b->'personal_scope' IS NOT NULL THEN
+ IF (b->'personal_scope')::pg_catalog.jsonb<>jsonb_build_object('owner',NEW.owner,'epoch',NEW.epoch) THEN RAISE EXCEPTION 'personal artifact scope mismatch';END IF;
+ END IF;
+ h:=encode(sha256(convert_to('{"body":'||convert_from(p,'UTF8')||',"created_at":'||to_json(to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::pg_catalog.text||',"kind":'||to_json(r.kind)::pg_catalog.text||',"provenance":'||to_json(r.provenance)::pg_catalog.text||',"schema":'||to_json(r.schema)::pg_catalog.text||'}','UTF8')),'hex');
+ IF h<>r.digest OR NEW.bytes<>octet_length(p) OR NEW.proof<>hub_personal_proof(r.digest,NEW.sha256,NEW.owner,NEW.epoch,NEW.bytes,r.created_at,r.kind,r.provenance,r.schema)
+ THEN RAISE EXCEPTION 'personal capsule digest mismatch'; END IF;
+ PERFORM public.hub_finish_personal_record(NEW.record);
+ RETURN NULL;
+END $fn$;
+CREATE OR REPLACE FUNCTION hub_finish_personal_record(d pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER
+ SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE x pg_catalog.record;b pg_catalog.json;missing pg_catalog.bool;hashes pg_catalog.text[];
+BEGIN
+ SELECT r.kind,r.body AS stored_marker,q.*,p.data INTO x FROM public.records r JOIN public.personal_record_bindings q ON q.record=r.digest
+ JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(q.owner,q.epoch,q.sha256) WHERE r.digest=d;
+ IF NOT FOUND THEN RAISE EXCEPTION 'personal record transfer incomplete';END IF;
+ IF x.stored_marker<>x.marker OR x.marker::jsonb<>jsonb_build_object('personal_payload',x.sha256,'owner',x.owner,'epoch',x.epoch,'record',d,'proof',x.proof)
+ THEN RAISE EXCEPTION 'invalid personal capsule';END IF;
+ b:=replace(convert_from(x.data,'UTF8'),chr(92)||'u0000',chr(92)||'u0001')::pg_catalog.json;
+ PERFORM 1 FROM public.personal_spaces s WHERE s.owner=x.owner AND ((s.epoch=x.epoch AND s.mode='hub') OR s.account_epoch=x.epoch) FOR SHARE;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM public.personal_purges p WHERE p.owner=x.owner AND p.epoch=x.epoch) THEN RAISE EXCEPTION 'inactive personal scope';END IF;
+ IF x.kind='source_artifact' THEN
+ IF NOT EXISTS(SELECT 1 FROM public.personal_objects o JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
+ WHERE o.owner=x.owner AND o.epoch=x.epoch AND o.sha256=b->>'sha256' AND octet_length(p.data)=(b->>'size')::pg_catalog.int8) THEN RAISE EXCEPTION 'personal original transfer incomplete';END IF;
+ hashes:=ARRAY[b->>'sha256'];
+ ELSIF x.kind='personal_pack_version' THEN
+ SELECT pg_catalog.array_agg(DISTINCT h) INTO hashes FROM (SELECT b->>'digest' AS h UNION ALL SELECT f->>'sha256' FROM pg_catalog.json_array_elements(b->'manifest'->'files') f) q;
+ IF EXISTS(SELECT 1 FROM pg_catalog.unnest(hashes) h LEFT JOIN public.personal_objects o ON o.owner=x.owner AND o.epoch=x.epoch AND o.sha256=h LEFT JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE p.data IS NULL) THEN RAISE EXCEPTION 'private pack transfer incomplete';END IF;
+ ELSIF x.kind='knowledge_space_version' AND b->>'tree' IS NOT NULL THEN
+ WITH RECURSIVE wanted(h,n) AS (SELECT b->>'tree',0 UNION
+ SELECT child,w.n+1 FROM wanted w CROSS JOIN LATERAL public.hub_personal_tree_children(x.owner,x.epoch,w.h) child WHERE w.n<65),bounded AS(SELECT * FROM wanted LIMIT 10001)
+ SELECT array_agg(DISTINCT w.h),bool_or(p.sha256 IS NULL OR o.sha256 IS NULL OR w.n>64) OR count(*)>10000 INTO hashes,missing FROM bounded w LEFT JOIN public.personal_payloads p ON p.owner=x.owner AND p.epoch=x.epoch AND p.sha256=w.h
+ LEFT JOIN public.personal_objects o ON o.owner=x.owner AND o.epoch=x.epoch AND o.sha256=w.h;
+ IF missing THEN RAISE EXCEPTION 'personal tree transfer incomplete';END IF;
+ END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_legacy_candidates WHERE record=d) THEN
+ INSERT INTO public.personal_legacy_retire(sha256) SELECT unnest(hashes) ON CONFLICT DO NOTHING;
+ END IF;
+ INSERT INTO public.personal_legacy_ready(record) VALUES(d) ON CONFLICT DO NOTHING;
+END $fn$;
+CREATE FUNCTION public.hub_convert_account_payloads() RETURNS pg_catalog.void LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE r public.records%ROWTYPE;b pg_catalog.jsonb;o pg_catalog.text;e pg_catalog.text;h pg_catalog.text;p pg_catalog.text;m pg_catalog.text;d pg_catalog.text;
+BEGIN
+ IF CURRENT_USER<>pg_catalog.pg_get_userbyid((SELECT relowner FROM pg_catalog.pg_class WHERE oid='public.records'::pg_catalog.regclass)) OR EXISTS(SELECT 1 FROM public.schema_migrations WHERE version=20) THEN RAISE EXCEPTION 'migration owner only, once' USING ERRCODE='42501';END IF;
+ PERFORM pg_catalog.set_config('circle_hub.account_layout_conversion','20',true);
+ FOR r IN SELECT * FROM public.records WHERE kind IN ('source_artifact','personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer') AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings q WHERE q.record=records.digest) ORDER BY seq LOOP
+ b:=pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
+ o:=CASE WHEN r.kind='source_artifact' THEN public.hub_capture_owner(b) ELSE b->>'space' END;
+ IF o IS NULL OR NOT EXISTS(SELECT 1 FROM public.users WHERE id=o) THEN CONTINUE;END IF;
+ IF r.kind='source_artifact' AND b->'personal_scope' IS NOT NULL THEN RAISE EXCEPTION 'scoped original has no binding';END IF;
+ IF EXISTS(SELECT 1 FROM public.users WHERE id=o AND deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'unprepared private data belongs to a deleted member';END IF;
+ d:=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to('{"body":'||r.body||',"created_at":'||pg_catalog.to_json(pg_catalog.to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::pg_catalog.text||',"kind":'||pg_catalog.to_json(r.kind)::pg_catalog.text||',"provenance":'||pg_catalog.to_json(r.provenance)::pg_catalog.text||',"schema":'||pg_catalog.to_json(r.schema)::pg_catalog.text||'}','UTF8')),'hex');
+ IF d<>r.digest THEN RAISE EXCEPTION 'account record digest mismatch before conversion';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,'00000000-0000-4000-8000-000000000001') ON CONFLICT DO NOTHING;
+ UPDATE public.personal_spaces SET account_epoch=pg_catalog.gen_random_uuid()::pg_catalog.text WHERE owner=o AND account_epoch IS NULL;
+ SELECT account_epoch INTO e FROM public.personal_spaces WHERE owner=o;
+ h:=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(r.body,'UTF8')),'hex');
+ INSERT INTO public.personal_payloads VALUES(o,e,h,pg_catalog.convert_to(r.body,'UTF8')) ON CONFLICT DO NOTHING;
+ p:=public.hub_personal_proof(r.digest,h,o,e,pg_catalog.octet_length(r.body),r.created_at,r.kind,r.provenance,r.schema);
+ m:=pg_catalog.json_build_object('personal_payload',h,'owner',o,'epoch',e,'record',r.digest,'proof',p)::pg_catalog.text;
+ INSERT INTO public.personal_record_bindings VALUES(r.digest,o,e,h,pg_catalog.octet_length(r.body),m,p);
+ UPDATE public.records SET body=m WHERE digest=r.digest;
+ INSERT INTO public.personal_legacy_candidates VALUES(r.digest) ON CONFLICT DO NOTHING;
+ END LOOP;
+ PERFORM pg_catalog.set_config('circle_hub.account_layout_conversion','',true);
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_convert_account_payloads() FROM PUBLIC;
+-- The owner conversion performs its own exact proof check. Runtime binding validation stays enabled afterwards.
+ALTER TABLE public.personal_record_bindings DISABLE TRIGGER personal_binding_check;
+SELECT public.hub_convert_account_payloads();
+ALTER TABLE public.personal_record_bindings ENABLE TRIGGER personal_binding_check;
+CREATE FUNCTION public.hub_restore_legacy_object(d pg_catalog.text,h pg_catalog.text,raw pg_catalog.bytea) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE x pg_catalog.record;b pg_catalog.jsonb;
+BEGIN
+ SELECT r.kind,q.owner,q.epoch,pg_catalog.convert_from(p.data,'UTF8') AS body INTO x FROM public.records r JOIN public.personal_legacy_candidates c ON c.record=r.digest
+ JOIN public.personal_record_bindings q ON q.record=r.digest JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(q.owner,q.epoch,q.sha256) WHERE r.digest=d AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready a WHERE a.record=d);
+ IF NOT FOUND THEN RAISE EXCEPTION 'not an unfinished legacy transfer';END IF;
+ b:=pg_catalog.replace(x.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
+ IF NOT ((x.kind='source_artifact' AND b->>'sha256'=h AND (b->>'size')::pg_catalog.int8=pg_catalog.octet_length(raw)) OR (x.kind='personal_pack_version' AND (b->>'digest'=h OR EXISTS(SELECT 1 FROM pg_catalog.jsonb_array_elements(b->'manifest'->'files') f WHERE f->>'sha256'=h AND (f->>'size')::pg_catalog.int8=pg_catalog.octet_length(raw))))) THEN RAISE EXCEPTION 'not a declared legacy object';END IF;
+ IF pg_catalog.encode(pg_catalog.sha256(raw),'hex')<>h OR NOT EXISTS(SELECT 1 FROM public.objects WHERE sha256=h AND size=pg_catalog.octet_length(raw)) THEN RAISE EXCEPTION 'legacy object mismatch';END IF;
+ INSERT INTO public.personal_payloads VALUES(x.owner,x.epoch,h,raw) ON CONFLICT DO NOTHING;
+ INSERT INTO public.personal_objects VALUES(x.owner,x.epoch,h) ON CONFLICT DO NOTHING;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_restore_legacy_object(pg_catalog.text,pg_catalog.text,pg_catalog.bytea) FROM PUBLIC;
+CREATE FUNCTION public.hub_keep_capture(holder pg_catalog.text,a pg_catalog.text,required pg_catalog.bool) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE q pg_catalog.record;b pg_catalog.jsonb;raw pg_catalog.bytea;
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.run_originals WHERE artifact=a) THEN RETURN;END IF;
+ SELECT r.body,p.owner,p.epoch INTO q FROM public.hub_read_records() r JOIN public.personal_record_bindings p ON p.record=r.digest WHERE r.digest=a AND r.kind='source_artifact';
+ IF NOT FOUND THEN RETURN;END IF;
+ b:=pg_catalog.replace(q.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
+ INSERT INTO public.original_targets VALUES(a,holder,q.owner,q.epoch,b->>'sha256',q.body) ON CONFLICT DO NOTHING;
+ SELECT p.data INTO raw FROM public.personal_objects o JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE (o.owner,o.epoch,o.sha256)=(q.owner,q.epoch,b->>'sha256');
+ IF raw IS NULL THEN IF required THEN RAISE EXCEPTION 'independent original bytes unavailable';ELSE RETURN;END IF;END IF;
+ INSERT INTO public.run_originals VALUES(a,holder,b->>'sha256',q.body,raw) ON CONFLICT DO NOTHING;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_keep_capture(pg_catalog.text,pg_catalog.text,pg_catalog.bool) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_keep_run_originals(r pg_catalog.text,must_exist pg_catalog.bool) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE a pg_catalog.text;
+BEGIN
+ FOR a IN SELECT h.sha256 FROM public.object_holds h JOIN public.records v ON v.digest=h.record AND v.kind='run' WHERE h.record=r AND h.artifact LOOP PERFORM public.hub_keep_capture(r,a,must_exist);END LOOP;
+END $fn$;
+CREATE FUNCTION public.hub_keep_team_original() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE b pg_catalog.jsonb;
+BEGIN
+ b:=pg_catalog.replace(NEW.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
+ IF b->>'space'='team' THEN PERFORM public.hub_keep_capture(NEW.digest,b->>'artifact',true);END IF;RETURN NULL;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_keep_team_original() FROM PUBLIC;
+CREATE TRIGGER records_team_original AFTER INSERT ON public.records FOR EACH ROW WHEN(NEW.kind='knowledge_space_source') EXECUTE FUNCTION public.hub_keep_team_original();
+CREATE FUNCTION public.hub_keep_frozen_packs(r pg_catalog.text,required pg_catalog.bool) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE run_body pg_catalog.jsonb;wanted pg_catalog.record;v pg_catalog.record;h pg_catalog.text;file pg_catalog.record;raw pg_catalog.bytea;
+BEGIN
+ SELECT pg_catalog.replace(body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb INTO run_body FROM public.records WHERE digest=r AND kind='run';IF NOT FOUND THEN RETURN;END IF;
+ FOR wanted IN SELECT run_body->>'pack_space' AS owner,run_body->>'pack_digest' AS digest UNION SELECT skill->>'space',skill->>'digest' FROM pg_catalog.jsonb_array_elements(COALESCE(run_body->'skills','[]'::pg_catalog.jsonb)) skill LOOP
+ IF wanted.owner IS NULL OR wanted.owner='team' THEN CONTINUE;END IF;
+ IF required AND NOT EXISTS(SELECT 1 FROM public.users WHERE id=wanted.owner AND NOT disabled AND deleted_at IS NULL) THEN RAISE EXCEPTION 'private package owner unavailable';END IF;
+ SELECT x.digest AS record,x.body,p.epoch INTO v FROM public.hub_read_records() x JOIN public.record_index i ON i.digest=x.digest AND i.key='personal.pack.digest' AND i.value=wanted.owner||'/'||wanted.digest JOIN public.personal_record_bindings p ON p.record=x.digest AND p.owner=wanted.owner WHERE x.kind='personal_pack_version' LIMIT 1;
+ IF NOT FOUND THEN IF required THEN RAISE EXCEPTION 'frozen private package unavailable';ELSE CONTINUE;END IF;END IF;
+ INSERT INTO public.run_pack_records VALUES(v.record,r,wanted.owner,wanted.digest,v.body) ON CONFLICT DO NOTHING;
+ FOR h IN SELECT wanted.digest UNION SELECT f->>'sha256' FROM pg_catalog.jsonb_array_elements(pg_catalog.replace(v.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb->'manifest'->'files') f LOOP
+ INSERT INTO public.held_object_targets VALUES(h,r,wanted.owner,v.epoch) ON CONFLICT DO NOTHING;
+ SELECT p.data INTO raw FROM public.personal_objects o JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE (o.owner,o.epoch,o.sha256)=(wanted.owner,v.epoch,h);
+ IF raw IS NULL THEN IF required THEN RAISE EXCEPTION 'frozen package bytes unavailable';ELSE CONTINUE;END IF;END IF;
+ INSERT INTO public.held_objects VALUES(h,r,raw) ON CONFLICT DO NOTHING;
+ END LOOP;
+ FOR file IN SELECT value AS artifact FROM pg_catalog.jsonb_each_text(COALESCE(pg_catalog.replace(v.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb->'files','{}'::pg_catalog.jsonb)) LOOP PERFORM public.hub_keep_capture(r,file.artifact,required);END LOOP;
+ END LOOP;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_keep_frozen_packs(pg_catalog.text,pg_catalog.bool) FROM PUBLIC;
+CREATE FUNCTION public.hub_freeze_private_run() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN PERFORM public.hub_keep_frozen_packs(NEW.digest,true);RETURN NULL;END $fn$;
+REVOKE ALL ON FUNCTION public.hub_freeze_private_run() FROM PUBLIC;
+CREATE TRIGGER records_private_run AFTER INSERT ON public.records FOR EACH ROW WHEN(NEW.kind='run') EXECUTE FUNCTION public.hub_freeze_private_run();
+DO $backfill$
+DECLARE r pg_catalog.record;b pg_catalog.jsonb;
+BEGIN
+ FOR r IN SELECT digest FROM public.records WHERE kind='run' LOOP PERFORM public.hub_keep_run_originals(r.digest,false);PERFORM public.hub_keep_frozen_packs(r.digest,false);END LOOP;
+ FOR r IN SELECT digest,body FROM public.hub_read_records() WHERE kind='knowledge_space_source' LOOP b:=pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;IF b->>'space'='team' THEN PERFORM public.hub_keep_capture(r.digest,b->>'artifact',false);END IF;END LOOP;
+END $backfill$;
+CREATE FUNCTION public.hub_finish_independent_objects(target_owner pg_catalog.text DEFAULT NULL) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ INSERT INTO public.held_objects SELECT t.sha256,t.held_by,p.data FROM public.held_object_targets t JOIN public.personal_objects o ON (o.owner,o.epoch,o.sha256)=(t.owner,t.epoch,t.sha256) JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.held_objects h WHERE h.sha256=t.sha256) ON CONFLICT DO NOTHING;
+ INSERT INTO public.run_originals SELECT t.artifact,t.held_by,t.sha256,t.body,p.data FROM public.original_targets t JOIN public.personal_objects o ON (o.owner,o.epoch,o.sha256)=(t.owner,t.epoch,t.sha256) JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256) WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.run_originals h WHERE h.artifact=t.artifact) ON CONFLICT DO NOTHING;
+ IF EXISTS(SELECT 1 FROM public.held_object_targets t WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.held_objects h WHERE h.sha256=t.sha256)) OR EXISTS(SELECT 1 FROM public.original_targets t WHERE (target_owner IS NULL OR t.owner=target_owner) AND NOT EXISTS(SELECT 1 FROM public.run_originals h WHERE h.artifact=t.artifact)) THEN RAISE EXCEPTION 'independent original transfer incomplete';END IF;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_finish_independent_objects(pg_catalog.text) FROM PUBLIC;
+-- Keep this invoker SQL function inlineable: digest predicates must reach records indexes.
+CREATE OR REPLACE FUNCTION public.hub_read_records() RETURNS TABLE(seq pg_catalog.int8,id pg_catalog.text,digest pg_catalog.text,kind pg_catalog.text,schema pg_catalog.text,provenance pg_catalog.text,created_at pg_catalog.timestamptz,body pg_catalog.text,size pg_catalog.int4) LANGUAGE sql STABLE AS $fn$
+ SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,COALESCE(h.body,k.body,CASE WHEN b.record IS NULL OR r.body<>b.marker OR p.data IS NULL THEN r.body ELSE pg_catalog.convert_from(p.data,'UTF8') END),r.size
+ FROM public.records r LEFT JOIN public.personal_record_bindings b ON b.record=r.digest LEFT JOIN public.personal_payloads p ON (p.owner,p.epoch,p.sha256)=(b.owner,b.epoch,b.sha256)
+ LEFT JOIN public.run_originals h ON h.artifact=r.digest LEFT JOIN public.run_pack_records k ON k.record=r.digest
+ WHERE h.artifact IS NOT NULL OR k.record IS NOT NULL OR NOT EXISTS(SELECT 1 FROM public.personal_purges x WHERE (x.owner,x.epoch)=(b.owner,b.epoch))
+$fn$;
+CREATE FUNCTION public.hub_clear_personal_payloads(o pg_catalog.text,e pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.owner=o AND b.epoch=e AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready d WHERE d.record=b.record))
+ OR EXISTS(SELECT 1 FROM public.personal_objects x JOIN public.personal_legacy_retire q ON q.sha256=x.sha256 WHERE x.owner=o AND x.epoch=e AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_retired d WHERE d.sha256=q.sha256)) THEN
+ RAISE EXCEPTION 'legacy personal object materialization incomplete'; END IF;
+ INSERT INTO public.personal_purges(owner,epoch) VALUES(o,e) ON CONFLICT DO NOTHING;
+ DELETE FROM public.personal_payloads WHERE owner=o AND epoch=e;
+ DELETE FROM public.record_index i USING public.personal_record_bindings b WHERE i.digest=b.record AND b.owner=o AND b.epoch=e AND i.key='artifact.object';
+ DELETE FROM public.knowledge_space_search WHERE space=o;
+ DELETE FROM public.knowledge_space_search_ready WHERE version IN
+ (SELECT record FROM public.personal_record_bindings WHERE owner=o AND epoch=e);
+ DELETE FROM public.knowledge_space_search_totals WHERE quota_space=o;
+ DELETE FROM public.knowledge_space_search_documents d WHERE record IN
+ (SELECT record FROM public.personal_record_bindings WHERE owner=o AND epoch=e)
+ AND NOT EXISTS(SELECT 1 FROM public.knowledge_space_search s WHERE s.record=d.record);
+ DELETE FROM public.memory_heads WHERE space=o;
+ DELETE FROM public.memory_space_usage WHERE space=o;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_clear_personal_payloads(pg_catalog.text,pg_catalog.text) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION public.hub_purge_personal(o pg_catalog.text,e pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ PERFORM 1 FROM public.personal_spaces WHERE owner=o AND epoch=e FOR UPDATE;IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='P0002';END IF;
+ PERFORM public.hub_finish_independent_objects(o);PERFORM public.hub_clear_personal_payloads(o,e);UPDATE public.personal_spaces SET mode='local' WHERE owner=o AND epoch=e;
+END $fn$;
+CREATE OR REPLACE FUNCTION public.hub_begin_member_deletion(a pg_catalog.text,o pg_catalog.text,e pg_catalog.text,op pg_catalog.text,m pg_catalog.text,c pg_catalog.jsonb,t pg_catalog.timestamptz,revision pg_catalog.timestamptz)
+ RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE u public.users%ROWTYPE;admin_set_lock CONSTANT pg_catalog.int8:=7301562002;k pg_catalog.text;
+BEGIN
+ IF pg_catalog.jsonb_typeof(c)<>'object' OR c - ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[]<>'{}'::pg_catalog.jsonb THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ FOREACH k IN ARRAY ARRAY['records','payloads','objects','attributions','archives','private_versions']::pg_catalog.text[] LOOP
+ IF NOT c ? k OR pg_catalog.jsonb_typeof(c->k)<>'number' OR (c->>k) !~ '^(0|[1-9][0-9]*)$' OR (c->>k)::pg_catalog.int8>9007199254740991 THEN RAISE EXCEPTION 'invalid deletion counts';END IF;
+ END LOOP;
+ -- Same administrator-set lock as role changes and deactivation.
+ PERFORM pg_catalog.pg_advisory_xact_lock(admin_set_lock);
+ PERFORM 1 FROM public.users WHERE id=a AND role='admin' AND NOT disabled FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'unavailable' USING ERRCODE='42501';END IF;
+ SELECT * INTO u FROM public.users WHERE id=o FOR UPDATE;
+ IF NOT FOUND OR u.deleted_at IS NOT NULL OR u.updated_at<>revision THEN RAISE EXCEPTION 'member state changed';END IF;
+ IF u.role='admin' AND NOT u.disabled AND NOT EXISTS(SELECT 1 FROM public.users WHERE role='admin' AND NOT disabled AND id<>o) THEN RAISE EXCEPTION 'last active administrator';END IF;
+ INSERT INTO public.personal_spaces(owner,epoch) VALUES(o,e) ON CONFLICT DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM public.personal_spaces WHERE owner=o AND epoch=e) THEN RAISE EXCEPTION 'epoch changed';END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.owner=o AND NOT EXISTS(SELECT 1 FROM public.personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) AND NOT EXISTS(SELECT 1 FROM public.personal_legacy_ready x WHERE x.record=b.record)) THEN RAISE EXCEPTION 'personal transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key='personal.pack.owner' WHERE r.kind='personal_pack_version' AND i.value=o AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=r.digest)) THEN RAISE EXCEPTION 'personal pack transfer incomplete';END IF;
+ IF EXISTS(SELECT 1 FROM public.records r JOIN public.record_index i ON i.digest=r.digest AND i.key IN ('artifact.author','artifact.reader') AND i.value=o
+ CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS b) x
+ WHERE r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings q WHERE q.record=r.digest)
+ AND public.hub_capture_owner(x.b)=o) THEN RAISE EXCEPTION 'private original transfer incomplete';END IF;
+ INSERT INTO public.member_deletion_intents VALUES(o,op,a,e,t,m,c);
+ UPDATE public.users SET disabled=true,deleted_at=t,password_hash=NULL,password_must_change=false,password_revision=password_revision+1,updated_at=t WHERE id=o;
+ UPDATE public.tokens SET revoked_at=t,revoked_by=a WHERE user_id=o AND revoked_at IS NULL;
+ INSERT INTO public.user_history(user_id,name,role,disabled,changed_by,changed_at,deleted_at) VALUES(o,u.name,u.role,true,a,t,t);
+END $fn$;
+CREATE OR REPLACE FUNCTION public.hub_finish_member_deletion(o pg_catalog.text,op pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE e pg_catalog.text;a pg_catalog.text;
+BEGIN
+ SELECT epoch INTO e FROM public.member_deletion_intents WHERE member=o AND operation_id=op;
+ IF NOT FOUND OR NOT EXISTS(SELECT 1 FROM public.users WHERE id=o AND disabled AND deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'unavailable';END IF;
+ PERFORM public.hub_purge_personal(o,e);SELECT account_epoch INTO a FROM public.personal_spaces WHERE owner=o;
+ IF a IS NOT NULL THEN PERFORM public.hub_clear_personal_payloads(o,a);END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_payloads WHERE owner=o) THEN RAISE EXCEPTION 'personal payloads remain';END IF;
+ DELETE FROM public.record_index i USING public.personal_record_bindings b WHERE i.digest=b.record AND b.owner=o AND i.key IN ('personal.pack.id','personal.pack.grant','personal.pack.retired');
+END $fn$;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   member_deletion_intents:'SELECT',
+  run_pack_records:'SELECT',held_object_targets:'SELECT',held_objects:'SELECT',original_targets:'SELECT',
   personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at,native_state,memory_projection,conflicts)',
   personal_sync_bindings:'SELECT, INSERT',
   personal_sync_notes:'SELECT, INSERT',
@@ -1037,6 +1339,7 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
     await db.query(`GRANT EXECUTE ON FUNCTION hub_collect_personal_sync(text,text,timestamptz),hub_replace_personal_memory(text,text,jsonb),hub_lock_personal_scope(text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_finish_personal_record(text),hub_finish_personal_retirement(text) TO "${role}"`, [], t);
     await db.query(`GRANT EXECUTE ON FUNCTION hub_begin_member_deletion(text,text,text,text,text,jsonb,timestamptz,timestamptz),hub_finish_member_deletion(text,text),hub_member_layout_conversion() TO "${role}"`, [], t);
+    await db.query(`GRANT EXECUTE ON FUNCTION hub_account_scope(text,text),hub_restore_legacy_object(text,text,bytea),hub_finish_independent_objects(text),hub_account_layout_conversion() TO "${role}"`, [], t);
     for (const [table, privileges] of Object.entries(RUNTIME_GRANTS)) {
       await db.query(`REVOKE ALL ON TABLE ${table} FROM "${role}"`, [], t);
       await db.query(`GRANT ${privileges} ON TABLE ${table} TO "${role}"`, [], t);

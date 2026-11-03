@@ -22,7 +22,7 @@ import type {SkillDependency} from '../../../contracts/src/skills.ts';
 
 export class PersonalPacks {
   #options:PackRegistryOptions; #team:PackRegistry; #extractor:Extractor; #writes:Promise<unknown>=Promise.resolve();
-  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
+  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
   #now(){return (this.#options.now?.()??new Date()).toISOString();}
   async #account(by:Principal){const account=await this.#team.account(by);if(!account)throw new AccessError('对象不存在或无权读取');return account;}
   async #own(by:Principal,space=by.id){by=await this.#account(by);if(by.id!==space)throw new AccessError('对象不存在或无权读取');return by;}
@@ -64,10 +64,13 @@ export class PersonalPacks {
   async resolve(by:Principal,space:string,ref:string){const parsed=parsePackRef(ref);if(!parsed||!await this.mayUse(by,space,parsed.id))return null;const info=(await this.versions(space,parsed.id)).find(info=>!info.withdrawn&&(parsed.version===null||info.version===parsed.version))??null;return info&&await this.mayUse(by,space,parsed.id)?info:null;}
   async byDigest(space:string,digest:string){const record=(await this.#options.records.store.find({kind:'personal_pack_version',key:'personal.pack.digest',value:space+'/'+digest,limit:1})).items[0];return record?this.#info(record):null;}
   async open(space:string,digest:string):Promise<OpenedPack|null>{
+    return this.#options.records.store.withTransaction(async tx=>{
+    if(this.#options.records.personalPayloads&&!await this.#options.records.personalPayloads.holdPack(space,digest,tx))return null;
     const info=await this.byDigest(space,digest);if(!info)return null;
     const extraction=await this.#extractor.extract(digest,async()=>({manifest:info.manifest,read:sha=>this.#options.records.objects.get(sha)}));
     const files=new Map<string,Uint8Array>();for(const file of info.manifest.files){if(!['workflow.json','requirements.json','checks.json','slots.schema.json','knowledge.json','ledger.json','skill.json','SKILL.md'].includes(file.path))continue;const bytes=await this.#options.records.objects.get(file.sha256);if(!bytes)throw new IntegrityError('个人包声明文件暂不可读');files.set(file.path,bytes);}
     return {info,handle:{space,id:info.id,version:info.version,digest,kind:info.kind,directory:extraction.directory},declarations:parseDeclarations(info.kind,files),readJson:packJsonReader(extraction.directory,info.manifest,digest)};
+    });
   }
   async list(by:Principal):Promise<PackVersionInfo[]>{
     by=await this.#account(by);const owners=new Set([by.id]);
@@ -117,14 +120,14 @@ export class PersonalPacks {
         by=await this.#options.records.principals.lockActive(by,tx);
         const checked=await checkExisting(tx);if(checked.failure)return checked.failure;if(checked.existing)return {ok:true,created:false,version:checked.existing,report} as PublishOutcome;
         const files:Record<string,string>={};const artifacts=this.#options.records.artifacts;
-        for(const file of read.pack.files){await this.#options.records.objects.put(file.bytes,'application/octet-stream',tx);if(artifacts){const artifact=await artifacts.ingest({bytes:file.bytes,mediaType:extname(file.path)==='.json'?'application/json':'text/plain',name:file.path,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);files[file.path]=artifact.digest;}}
-        await this.#options.records.objects.put(read.pack.manifestBytes,'application/json',tx);
+        for(const file of read.pack.files){await this.#options.records.objects.put(file.bytes,'application/octet-stream',tx,by.id,true);if(artifacts){const artifact=await artifacts.ingest({personalOwner:by.id,accountOwned:true,bytes:file.bytes,mediaType:extname(file.path)==='.json'?'application/json':'text/plain',name:file.path,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);files[file.path]=artifact.digest;}}
+        await this.#options.records.objects.put(read.pack.manifestBytes,'application/json',tx,by.id,true);
         const body=PersonalPackVersionBody.parse({space:by.id,pack:manifest.id,version:manifest.version,kind:manifest.kind,digest,title:manifest.title,description:manifest.description,manifest,publisher:by.id,at:this.#now(),report:JSON.parse(JSON.stringify(report)),files});
         const stored=await this.#options.records.store.put({kind:'personal_pack_version',schema:'personal-pack-version@1',provenance:'declared',body,index:[{key:'personal.pack.owner',value:by.id},{key:'personal.pack.id',value:personalPackKey(by.id,manifest.id)},{key:'personal.pack.digest',value:by.id+'/'+digest}]},tx);
         if(!this.#options.records.store.addIndex)throw new IntegrityError('个人包文件索引端口暂不可用');
         const hashes=[...new Set(manifest.files.map(file=>file.sha256))];for(let at=0;at<hashes.length;at+=100)await this.#options.records.store.addIndex(stored.digest,hashes.slice(at,at+100).map(value=>({key:'personal.pack.file',value})),tx);
         return {ok:true,created:true,version:{space:by.id,id:manifest.id,version:manifest.version,kind:manifest.kind,digest,title:manifest.title,description:manifest.description,owner:by.id,publisher:by.id,published_at:body.at,withdrawn:false,withdrawn_at:null,record:stored.digest,publication:stored.digest,samples:report.samples.sources,report,manifest},report} as PublishOutcome;
-      });});this.#writes=writing.catch(()=>{});const outcome=await writing;if(outcome.ok&&staged){await staged.promote();staged=null;}return outcome;
+      });});this.#writes=writing.then(()=>undefined,()=>undefined);const outcome=await writing;if(outcome.ok&&staged){await this.#options.records.store.withTransaction(async tx=>{await this.#options.records.principals.lockActive(by,tx);await staged!.promote();});staged=null;}return outcome;
     }finally{if(staged)await staged.discard();}
   }
   async precheckPromotion(by:Principal,ref:string){

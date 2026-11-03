@@ -1,3 +1,5 @@
+import {retirePersonalCaches} from './personal-caches.ts';
+import {isAbsolute} from 'node:path';
 // Administrator coordination shares the native payload purger; progress contains digests and counts only.
 import {MemberDeletionBody,MemberDeletionCounts,type MemberDeletionBody as Receipt} from '../../contracts/src/spaces.ts';
 import {PermissionRoleSchema} from '../../contracts/generated/vocabulary.ts';
@@ -12,8 +14,10 @@ import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts']}
 export class PgMemberDeletions {
- readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'>;readonly retire:()=>Promise<void>;readonly now:()=>Date;
- constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'>,retire:()=>Promise<void>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.retire=retire;this.now=now;}
+ readonly cacheRoots=new Set<string>();
+ registerCacheRoot(root:string){if(!isAbsolute(root))throw new TypeError('private cache root');this.cacheRoots.add(root);}
+ readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly retire:()=>Promise<void>;readonly now:()=>Date;
+ constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,retire:()=>Promise<void>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.retire=retire;this.now=now;}
  async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||user.role!==PermissionRoleSchema.enum.admin)throw new AccessError('对象不存在或无权读取');}
  async #preview(member:string,tx?:Transaction):Promise<MemberDeletionPreview>{
   const user=(await this.db.query('SELECT * FROM users WHERE id=$1',[member],tx)).rows[0];if(!user||user.deleted_at)throw new AccessError('对象不存在或无权读取');
@@ -22,8 +26,7 @@ export class PgMemberDeletions {
   const unscoped=await this.db.query(`SELECT 1 FROM records r JOIN record_index i ON i.digest=r.digest AND i.key IN ('artifact.author','artifact.reader') AND i.value=$1
    CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS b) x
    WHERE r.kind='source_artifact' AND NOT EXISTS(SELECT 1 FROM personal_record_bindings q WHERE q.record=r.digest)
-   AND ((x.b->'origin'->'upload' IS NOT NULL AND x.b->'author'->>'user'=$1) OR
-   (x.b->'origin'->'read' IS NOT NULL AND x.b->'visibility'->>'admins'='false' AND x.b->'visibility'->'readers'=pg_catalog.jsonb_build_array($1::pg_catalog.text))) LIMIT 1`,[member],tx);
+   AND public.hub_capture_owner(x.b)=$1 LIMIT 1`,[member],tx);
   if(unscoped.rowCount)throw new ConflictError('私人原文清除准备尚未完成，不能删除成员');
   const scope=(await this.db.query('SELECT epoch FROM personal_spaces WHERE owner=$1',[member],tx)).rows[0];
   const records=(await this.db.query('SELECT b.record,r.kind FROM personal_record_bindings b JOIN records r ON r.digest=b.record WHERE b.owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) ORDER BY b.record',[member],tx)).rows;
@@ -62,11 +65,12 @@ export class PgMemberDeletions {
   const intent=await this.intent(member);if(!intent||intent.operation_id!==operation_id)throw new ConflictError('没有对应的删除操作');
   // Self-deletion may finish only its already authorized operation; no new operation is admitted by a tombstone.
   if(by.id!==member||intent.by!==by.id)await this.#admin(by);
-  try{await this.retire();}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
+  try{await this.retire();await retirePersonalCaches(this.db,member,this.cacheRoots);}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
   return this.store.withTransaction(async tx=>{
    await this.store.lock('knowledge-space:'+member,tx);
    if(by.id!==member||intent.by!==by.id)await this.#admin(by,tx);
    const existing=await this.store.getByKey<Receipt>('member_deletion',operation_id,tx);if(existing)return {record:existing.digest,...MemberDeletionBody.parse(existing.body)};
+   await this.payloads.beforePurge?.(member,by,tx);
    try{await this.db.query('SELECT hub_finish_member_deletion($1,$2)',[member,operation_id],tx);}catch(cause){throw new ConflictError('个人内容尚未完成清除，请修复存储后重试同一删除操作',{cause});}
    const record=await this.store.put({kind:'member_deletion',schema:'member-deletion@1',provenance:'observed',body:{...intent,by:by.id,at:this.now().toISOString()},unique_key:operation_id,index:[{key:'member.deletion.member',value:member}]},tx);
    return {record:record.digest,...MemberDeletionBody.parse(record.body)};

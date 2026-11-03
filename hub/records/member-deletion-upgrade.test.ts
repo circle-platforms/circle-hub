@@ -38,7 +38,7 @@ for(const cleared of [false,true])test(`attribution conversion preserves logical
  }
 
  if(cleared){await store.personalPayloads.purge(user,INITIAL_PERSONAL_EPOCH);await db.query('SELECT hub_resume_personal($1,$2,$3)',[user.id,INITIAL_PERSONAL_EPOCH,randomUUID()]);}
- assert.deepEqual(await migrate(db),[19]);const capsule=(await db.query('SELECT * FROM records WHERE digest=$1',[digest])).rows[0];assert.deepEqual({...capsule,body:row.body},row);assert.notEqual(capsule.body,text);
+ assert.deepEqual(await migrate(db),MIGRATIONS.slice(18).map(m=>m.version));const capsule=(await db.query('SELECT * FROM records WHERE digest=$1',[digest])).rows[0];assert.deepEqual({...capsule,body:row.body},row);assert.notEqual(capsule.body,text);
  const binding=(await db.query('SELECT * FROM personal_record_bindings WHERE record=$1',[digest])).rows[0];assert.equal(binding.epoch,INITIAL_PERSONAL_EPOCH);
  if(cleared){assert.equal(await store.get(digest),null);assert.equal((await db.query('SELECT count(*)::int n FROM personal_payloads WHERE epoch=$1',[INITIAL_PERSONAL_EPOCH])).rows[0].n,0);}
  else {assert.deepEqual((await store.get(digest))?.body,body);await store.personalPayloads.purge(user,INITIAL_PERSONAL_EPOCH);assert.equal(await store.get(digest),null);}

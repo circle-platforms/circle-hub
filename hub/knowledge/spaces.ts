@@ -5,7 +5,7 @@ import {lockActive} from './active-account.ts';
 import {historyUsage,capacityUsage,requireCapacity,chargedBytes,safeBytes,type CapacityUsage} from './capacity.ts';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } from '../../contracts/src/sharing.ts';
-import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, SourceAttributionBody, type SpaceRow, } from '../../contracts/src/spaces.ts';
+import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
@@ -616,6 +616,11 @@ export class KnowledgeSpaces {
       if(row.space!=='team'||row.artifact!==artifact.digest||row.sha256!==artifact.body.sha256||!row.attribution||!await this.mayRead(by,'team',row.path))continue;
       const declaration=await this.#ctx.records.store.get(row.attribution,tx),proof=declaration?await this.#validatedAttribution(declaration,tx):null;
       if(proof&&artifact.provenance==='declared'&&artifact.body.provenance_type==='declared'&&artifact.body.author.user===proof.body.by&&canonicalize(artifact.body.origin)===canonicalize(proof.original.body.origin))return {...proof,team:true};
+      const credentials=await this.#ctx.records.store.findMany({kind:'knowledge_team_source_attribution',key:'knowledge.team.attribution.source',values:[record.digest]},tx);
+      for(const credential of credentials){const receipt=TeamSourceAttributionBody.safeParse(credential.body);if(credential.provenance!=='declared'||credential.schema!=='knowledge-team-source-attribution@1'||!receipt.success)continue;const held=receipt.data;
+        if(held.team_source===record.digest&&held.declaration===row.attribution&&held.artifact===artifact.digest&&held.sha256===artifact.body.sha256&&held.uploader===artifact.body.author.user&&artifact.body.visibility.admins)
+          return {record:held.declaration,body:{by:held.uploader,at:held.declared_at},team:true};
+      }
     }
     return null;
   }
@@ -643,7 +648,7 @@ export class KnowledgeSpaces {
       const original=await this.source(by,row.sha256,undefined,'model',artifact);
       if(!original?.bytes||original.artifact.body.author.user!==by.id||original.artifact.provenance!=='declared'||original.artifact.body.provenance_type!=='declared'||!('upload' in original.artifact.body.origin))fail('SOURCE_UNAVAILABLE');
       this.#inspectSource(original.bytes);
-      const existing=await this.#attributionForCapture(by,original.artifact,tx);if(existing)return {record:existing.record,...existing.body};
+      const existing=await this.#attributionForCapture(by,original.artifact,tx);if(existing&&'audience'in existing.body)return {record:existing.record,...existing.body};
       const body=SourceAttributionBody.parse({space:by.id,source,artifact,sha256:row.sha256,by:by.id,at:this.#ctx.now().toISOString(),audience:'team'});
       const record=await this.#ctx.records.store.put({kind:'knowledge_source_attribution',schema:'knowledge-source-attribution@1',provenance:'declared',body,index:[{key:ATTRIBUTION_KEY,value:artifact},{key:'knowledge.source.attribution.owner',value:by.id}]},tx);
       return {record:record.digest,...body};
@@ -652,10 +657,11 @@ export class KnowledgeSpaces {
   async entryAttributions(by:Principal,root:string,path:string,entry:string){
     const view=await this.entry(by,root,path,entry);if(!view||view.body.space!=='team')return [];
     const version=await this.version(root);if(!version)return [];const registered=new Set(version.body.sources),result:Array<{record:string;by:string;at:string;sha256:string;artifact:string}>=[];
-    for(const digest of view.body.source_attributions??[]){const declaration=await this.#ctx.records.store.get(digest),proof=declaration?await this.#validatedAttribution(declaration):null;if(!proof)continue;
-      const associations=await this.#ctx.records.store.findMany({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[proof.body.sha256]});
-      for(const record of associations){if(!registered.has(record.digest))continue;const row=SpaceSourceBody.parse(record.body);if(row.space!=='team'||row.attribution!==digest||row.sha256!==proof.body.sha256||!await this.mayRead(by,'team',row.path))continue;
-        const readable=await this.source(by,row.sha256,undefined,'model',row.artifact);if(!readable||!await this.#attributionForCapture(by,readable.artifact))continue;
+    const sources=await this.#ctx.records.store.getMany([...registered]);
+    for(const digest of view.body.source_attributions??[]){
+      for(const record of sources.values()){if(record.kind!=='knowledge_space_source')continue;const row=SpaceSourceBody.parse(record.body);
+        if(row.space!=='team'||row.attribution!==digest||!await this.mayRead(by,'team',row.path))continue;
+        const readable=await this.source(by,row.sha256,undefined,'model',row.artifact);if(!readable)continue;const proof=await this.#attributionForCapture(by,readable.artifact);if(!proof||proof.record!==digest)continue;
         result.push({record:digest,by:proof.body.by,at:proof.body.at,sha256:row.sha256,artifact:row.artifact});break;
       }
     }
@@ -1154,6 +1160,8 @@ export class KnowledgeSpaces {
       if(facts)requireCapacity(facts,planned.used_bytes-facts.knowledge);
       let artifact=input.artifact;
       if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({...(space===by.id?{personalOwner:by.id}:{}),bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
+      else if(space===by.id){const metadata=source.artifact.body,copy=await this.#ctx.records.artifacts.ingest({personalOwner:by.id,bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:metadata.origin,author:metadata.author,provenanceType:metadata.provenance_type,visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:metadata.requested_read_tier},tx);artifact=copy.digest;}
+
       const body=SpaceSourceBody.parse({personal_epoch:epoch,space,path,sha256:source.sha256,artifact,size:source.size,by:by.id,at:this.#ctx.now().toISOString()});
       const saved=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body,index:[{key:SOURCE_KEY,value:space},{key:'knowledge.space.source_hash',value:body.sha256}]},tx);
       const version=await this.#save(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',body.size,tx,[...previous?.body.sources??[],saved.digest]);

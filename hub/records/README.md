@@ -971,3 +971,22 @@ completion receipt. Self-deletion can finish its already authorized operation; a
 administrator. Unscoped private packs/originals refuse deletion until their payload preparation is complete. The public
 record-reference reader exposes neither deletion receipts nor team attribution credentials; status is the dedicated
 administrator metadata boundary. Private pack/frozen-holder and console/CLI integration follows in the next task step.
+
+### Account-owned installs and independent frozen holders
+
+Migration 20 adds a non-sync account epoch in the same personal payload store for private pack versions, grants,
+retirements, transfers, file captures and ordinary private uploads/sole-reader observations. It preserves every logical
+record body/digest; ordinary uploads gain no `personal_scope` field and keep their run declaration semantics. Local-only
+mode purges its sync epoch while keeping account-owned installs; permanent deletion uses the same purge core for both.
+The owner-only, once-20 inline transform cannot be enabled by the runtime role and never reopens migrations 14/15.
+
+Actual frozen run namespaces/digests and dependency locks retain exact version bodies and objects before a personal
+link is removed. Team sources and independent equal-byte owners remain separate holders. Custody never creates an ACL:
+current public namespace resolution still rejects the deleted owner. Extraction holds the account row through publication
+and extraction; deletion retires unheld caches and private name/external-object lookup values durably. A cleanup failure
+leaves the tombstone and same-operation recovery intent, without a completion receipt.
+
+Both local-mode purge and member deletion preserve a minimal team attribution credential only after checking the full
+private declaration/registration/capture and exact team copy. Credentials carry no private paths, names or original text;
+invalid joins do not manufacture a declaration. The logical record view stays an inlineable invoker function, with
+indexed digest and frozen-holder lookups. Runtime grants for the additional holder tables are SELECT only.

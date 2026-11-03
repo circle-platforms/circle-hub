@@ -26,6 +26,7 @@ const libpq = await libpqAvailable();
 const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
   member_deletion_intents:'member',
+  run_pack_records:'record',held_objects:'sha256',held_object_targets:'sha256',original_targets:'artifact',
   records: 'body',
   object_holds:'record',
   run_originals:'artifact',

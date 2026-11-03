@@ -1470,3 +1470,12 @@ sync metadata. Sync projections use the same committing account guard as native 
 admission freeze the personal epoch before asynchronous work and recheck it inside the space transaction; an old
 request cannot recreate private state after purge/resume. A saved personal upload copy is scoped storage, preserving
 the original upload's independent run declaration and access.
+
+### Team provenance after permanent deletion
+
+Team attribution display accepts the separately preserved, exact team-source credential after the private declaration,
+registration and original have been purged. It still requires the published team association and current source read
+permission; another equal-byte capture cannot borrow the declaration. Personal saved observations use a scoped copy,
+retaining their observed origin. Permanent deletion clears imports, archives, declarations, knowledge/memory history and
+projections, while independent team and other-member captures retain their original rights. Missing private grounds use
+the existing current unverified projection; immutable historic receipts are not rewritten.

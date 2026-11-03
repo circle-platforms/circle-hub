@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {SyncModeSchema,type SyncMode} from '../../contracts/generated/vocabulary.ts';
 import {RecordKindSchema} from '../../contracts/src/records.ts';
@@ -10,12 +11,19 @@ import {sha256Hex,envelopeDigest} from './digest.ts';
 import {IntegrityError,RecordsError} from './errors.ts';
 export const INITIAL_PERSONAL_EPOCH='00000000-0000-4000-8000-000000000001';
 export interface PersonalScope {owner:string;epoch:string}
+export const isPersonalPackRecord=(kind:RecordKind)=>RecordKindSchema.extract(['personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer']).safeParse(kind).success;
 export function personalRecordOwner(kind:RecordKind,body:unknown):string|null{
- if(!RecordKindSchema.extract(['knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','knowledge_source_attribution']).safeParse(kind).success)return null;
+ if(!RecordKindSchema.extract(['knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','knowledge_source_attribution','personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer']).safeParse(kind).success)return null;
  const space=(body as {space?:unknown})?.space;
  return typeof space==='string'&&/^usr_[0-9a-z]{26}$/.test(space)?space:null;
 }
+export function captureRecordOwner(body:unknown):string|null{
+ const b=body as {origin?:{upload?:unknown;read?:unknown};author?:{user?:unknown};visibility?:{admins?:unknown;readers?:unknown[]}}|null;
+ const owner=b?.origin?.upload!=null&&b.visibility?.admins===false?b.author?.user:b?.origin?.read!=null&&b.visibility?.admins===false&&Array.isArray(b.visibility.readers)&&b.visibility.readers.length===1?b.visibility.readers[0]:null;
+ return typeof owner==='string'&&/^usr_[0-9a-z]{26}$/.test(owner)?owner:null;
+}
 export class PgPersonalPayloads {
+ beforePurge?:(owner:string,by:Principal,tx:Transaction)=>Promise<void>;
  readonly db:Database;
  readonly lock:(key:string,tx:Transaction)=>Promise<void>;
  constructor(db:Database,lock:(key:string,tx:Transaction)=>Promise<void>){this.db=db;this.lock=lock;}
@@ -33,13 +41,26 @@ export class PgPersonalPayloads {
   if(row?.mode!==SyncModeSchema.enum.hub)throw new RecordsError(PROTOCOL_CODES.SYNC_MODE_LOCAL.when,{code:'SYNC_MODE_LOCAL'});
   return {owner,epoch:String(row.epoch)};
  }
+ /** Non-sync private ownership uses the account row boundary, never a reverse space lock. */
+ async account(owner:string,tx?:Transaction):Promise<PersonalScope>{
+  if(!tx)return this.db.transaction(t=>this.account(owner,t));
+  try{const row=(await this.db.query('SELECT hub_account_scope($1,$2) AS epoch',[owner,randomUUID()],tx)).rows[0];return {owner,epoch:String(row.epoch)};}catch(cause){if(['P0001','P0002','42501'].includes(String((cause as {code?:unknown}).code)))throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE',cause});throw cause;}
+ }
+ /** Internal frozen readers hold the account row until extraction finishes; this grants no reader ACL. */
+ async holdPack(owner:string,digest:string,tx:Transaction):Promise<boolean>{
+  const user=(await this.db.query('SELECT deleted_at FROM users WHERE id=$1 FOR SHARE',[owner],tx)).rows[0];
+  return !!user&&(!user.deleted_at||!!(await this.db.query('SELECT 1 FROM run_pack_records WHERE owner=$1 AND digest=$2',[owner,digest],tx)).rowCount);
+ }
  async put(scope:PersonalScope,bytes:Uint8Array,tx?:Transaction):Promise<string>{
   if(!tx)return this.db.transaction(t=>this.put(scope,bytes,t));
-  await this.lock('knowledge-space:'+scope.owner,tx);
+  const state=(await this.db.query("SELECT pg_catalog.to_jsonb(s)->>'account_epoch' AS account_epoch FROM personal_spaces s WHERE owner=$1",[scope.owner],tx)).rows[0];
+  const account=state?.account_epoch===scope.epoch;
+  if(account){const user=(await this.db.query('SELECT disabled,deleted_at FROM users WHERE id=$1 FOR SHARE',[scope.owner],tx)).rows[0];if(!user||user.disabled||user.deleted_at)throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE'});}
+  else await this.lock('knowledge-space:'+scope.owner,tx);
   bytes=Uint8Array.from(bytes);
   const hash=sha256Hex(bytes);
-  const row=await this.db.query('SELECT epoch,mode FROM personal_spaces WHERE owner=$1',[scope.owner],tx);
-  if(row.rows[0]?.epoch!==scope.epoch||row.rows[0]?.mode!==SyncModeSchema.enum.hub)throw new RecordsError(PROTOCOL_CODES.SYNC_EPOCH_CHANGED.when,{code:'SYNC_EPOCH_CHANGED'});
+  const row=await this.db.query("SELECT epoch,mode,pg_catalog.to_jsonb(s)->>'account_epoch' AS account_epoch FROM personal_spaces s WHERE owner=$1",[scope.owner],tx);
+  if(account?row.rows[0]?.account_epoch!==scope.epoch:row.rows[0]?.epoch!==scope.epoch||row.rows[0]?.mode!==SyncModeSchema.enum.hub)throw new RecordsError(PROTOCOL_CODES.SYNC_EPOCH_CHANGED.when,{code:'SYNC_EPOCH_CHANGED'});
   await this.db.query('INSERT INTO personal_payloads(owner,epoch,sha256,data) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[scope.owner,scope.epoch,hash,Buffer.from(bytes)],tx);
   const found=await this.get(scope,hash,tx);if(!found||!Buffer.from(found).equals(Buffer.from(bytes)))throw new IntegrityError('个人载荷不符合摘要');
   return hash;
@@ -58,8 +79,8 @@ export class PgPersonalPayloads {
   if(binding.owner!==scope.owner||binding.epoch!==scope.epoch)throw new RecordsError(PROTOCOL_CODES.SYNC_EPOCH_CHANGED.when,{code:'SYNC_EPOCH_CHANGED'});
   return String(binding.marker);
  }
- async object(owner:string,bytes:Uint8Array,tx:Transaction):Promise<string>{
-  const scope=await this.scope(owner,tx),hash=await this.put(scope,bytes,tx);
+ async object(owner:string,bytes:Uint8Array,tx:Transaction,accountOwned=false):Promise<string>{
+  const scope=await (accountOwned?this.account(owner,tx):this.scope(owner,tx)),hash=await this.put(scope,bytes,tx);
   await this.db.query('INSERT INTO personal_objects(owner,epoch,sha256) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[owner,scope.epoch,hash],tx);return hash;
  }
  async anyObject(hash:string):Promise<Uint8Array|null>{
@@ -85,6 +106,7 @@ export class PgPersonalPayloads {
    if(!user||user.disabled)throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE'});
    // Same namespace and lock order as knowledge and memory writes.
    await this.lock('knowledge-space:'+by.id,tx);
+   await this.beforePurge?.(by.id,by,tx);
    await this.db.query('SELECT hub_purge_personal($1,$2)',[by.id,epoch],tx);
   },outer);
  }

@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Purge private installs and original captures with deleted members while preserving exact existing team and frozen-run holders.
+
 - Add permanent member tombstones and guarded digest-only deletion receipts over the existing personal payload purger.
 
 - Share exact native capacity accounting with personal sync admission and freeze archive and attribution requests to their admitted epoch.

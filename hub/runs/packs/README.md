@@ -330,3 +330,12 @@ Resolution/source reads recheck current owner access after asynchronous loads. D
 without rewriting them; restore honors explicit revocations. Independent team publications remain available. Synthetic
 workflow and skill tests exercise both row-lock orders, no new captures on refusal, restoration and team preservation.
 No personal executable purge, sync integration or new record/schema/code is included.
+
+### Deletion of a private publisher
+
+Private installs and files use the records package's account-owned removable payloads. Local-only knowledge mode keeps
+these installs; permanent deletion removes them without transfer to administrators. Explicit team publications and exact
+existing run dependency locks are independent holders. Their files remain available for the original frozen context,
+while current resolve, grant, publish and new run eligibility still require a live owner. Extraction shares the committing
+account boundary, and only independently held digests keep usable caches. The registry registers its extraction root with
+the records deletion coordinator, including non-default roots in synthetic tests.

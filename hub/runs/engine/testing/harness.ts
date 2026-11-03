@@ -2,10 +2,10 @@ import {createTestParserRegistry} from '../../../testing/parsers.ts';
 import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
 // Test harness of the runs engine: a records kit in a temporary PostgreSQL database, three accounts, the toy packs in a
 // temporary directory, fakes of the ports built beside the engine, a clock the tests can move, and the service.
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm,readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Limits, Principal } from '../../../records/api.ts';
+import {canonicalBytes,type Limits,type Principal } from '../../../records/api.ts';
 import type { CallContext, LoadedWorkflow } from '../../../ports.ts';
 import { osIsolationAvailable, type SandboxLimits, type SandboxOptions } from '../../../rules/api.ts';
 import type { TemporaryPostgres } from '../../../testing/postgres.ts';
@@ -82,7 +82,17 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     const admin = principal(adminUser);
     const alice = principal(await kit.principals.createUser(admin, '甲'));
     const bob = principal(await kit.principals.createUser(admin, '乙'));
-    const workflows = new FakeWorkflowStore(admin.id);
+    // Personal projections need real exact holders now, just as registry publications do in production.
+    const workflows = new FakeWorkflowStore(admin.id,async loaded=>{
+      const owner=loaded.pack.space!;
+      await kit.store.withTransaction(async tx=>{
+        if(await kit.store.getByKey('personal_pack_version',owner+'/'+loaded.pack.digest,tx))return;
+        const files:Record<string,string>={};
+        for(const file of loaded.manifest.files){const bytes=await readFile(join(loaded.pack.directory,file.path));await kit.objects.put(bytes,'application/octet-stream',tx,owner,true);const capture=await kit.artifacts.ingest({personalOwner:owner,accountOwned:true,bytes,mediaType:'text/plain',name:file.path,origin:{upload:{session:null}},author:{user:owner},provenanceType:'declared',visibility:{readers:[owner],admins:false,packs:[],shareable:false}},tx);files[file.path]=capture.digest;}
+        await kit.objects.put(canonicalBytes(loaded.manifest),'application/json',tx,owner,true);
+        await kit.store.put({kind:'personal_pack_version',schema:'personal-pack-version@1',provenance:'declared',unique_key:owner+'/'+loaded.pack.digest,body:{space:owner,pack:loaded.pack.id,version:loaded.pack.version,kind:loaded.pack.kind,digest:loaded.pack.digest,title:loaded.manifest.title,description:loaded.manifest.description,manifest:loaded.manifest,publisher:owner,at:now().toISOString(),files,report:{samples:{sources:[]}}},index:[{key:'personal.pack.owner',value:owner},{key:'personal.pack.id',value:owner+'/'+loaded.pack.id},{key:'personal.pack.digest',value:owner+'/'+loaded.pack.digest}]},tx);
+      });
+    });
     const review = await workflows.add(await writePack(dir, reviewPack({ ...(options.review ?? {}), ...(options.dataQuotes !== undefined ? { dataQuotes: options.dataQuotes } : {}) })));
     const verify = await workflows.add(await writePack(dir, verifyPack({ acceptsDeclared: options.verifyAcceptsDeclared })));
     const locate = await workflows.add(await writePack(dir, locatePack()));

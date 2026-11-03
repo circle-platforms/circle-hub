@@ -59,7 +59,7 @@ import { compareVersions, packVersionKey, parsePackRef } from './versions.ts';
 
 export const PACK_VERSION_SCHEMA = 'pack_version@1';
 
-export type RegistryRecords = Pick<RecordsKit, 'store' | 'objects' | 'authorizations' | 'principals'> & Partial<Pick<RecordsKit,'artifacts'>>;
+export type RegistryRecords = Pick<RecordsKit, 'store' | 'objects' | 'authorizations' | 'principals'> & Partial<Pick<RecordsKit,'artifacts'|'memberDeletions'|'personalPayloads'>>;
 
 export interface PackRegistryOptions {
   records: RegistryRecords;

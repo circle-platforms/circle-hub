@@ -66,7 +66,11 @@ test('a queued low-level personal write cannot append private bytes after the to
 
 test('a legacy private capture outside the purge store blocks deletion instead of leaving its bytes behind',async t=>{
  const w=await world(t),artifact=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic legacy private original'),mediaType:'text/plain',origin:{upload:{session:null}},author:{user:w.admin.id},provenanceType:'declared',visibility:{readers:[w.admin.id],admins:false,packs:[],shareable:false}});
- await w.kit.store.put({kind:'source_artifact',schema:'source_artifact@1',provenance:'declared',body:{...artifact.body,author:{user:w.member.id},visibility:{readers:[w.member.id],admins:false,packs:[],shareable:false}},index:[{key:'artifact.author',value:w.member.id},{key:'artifact.reader',value:w.member.id}]});
+ // Simulate a pre-upgrade inline capture through the owner connection. Current writes require owned bytes.
+ const {canonicalize}=await import('./canonical.ts'),{envelopeDigest}=await import('./digest.ts'),{newId}=await import('./ids.ts');
+ const body=canonicalize({...artifact.body,author:{user:w.member.id},visibility:{readers:[w.member.id],admins:false,packs:[],shareable:false}}),created_at=new Date().toISOString(),digest=envelopeDigest({kind:'source_artifact',schema:'source_artifact@1',provenance:'declared',created_at},body);
+ const row=(await w.db.query("INSERT INTO records(id,digest,kind,schema,provenance,created_at,body,size) VALUES($1,$2,'source_artifact','source_artifact@1','declared',$3,$4,$5) RETURNING seq",[newId('rcd'),digest,created_at,body,Buffer.byteLength(body)])).rows[0];
+ await w.db.query("INSERT INTO record_index(key,value,digest,record_seq) VALUES('artifact.author',$1,$2,$3)",[w.member.id,digest,row.seq]);
  await assert.rejects(w.deletions.preview(w.admin,w.member.id));assert.equal((await w.kit.principals.get(w.member.id))?.disabled,false);assert.equal((await w.kit.store.list({kind:'member_deletion'})).items.length,0);
 });
 

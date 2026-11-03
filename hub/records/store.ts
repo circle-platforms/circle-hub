@@ -1,4 +1,4 @@
-import {PgPersonalPayloads,personalRecordOwner} from './personal-payloads.ts';
+import {PgPersonalPayloads,personalRecordOwner,isPersonalPackRecord,captureRecordOwner} from './personal-payloads.ts';
 import { RecordsError } from './errors.ts';
 // Append-only logical records over PostgreSQL. Canonical text preserves every accepted JSON value, including U+0000.
 // Personal bodies use removable scoped payloads; immutable capsules retain their original logical digests.
@@ -69,8 +69,11 @@ export class PgRecordStore implements RecordStore {
         const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);
         if (existing !== null) return { ...existing, created: false };
       }
-      const personalOwner=input.personalOwner??personalRecordOwner(kind.data,input.body);
-      const storedBody=personalOwner?await this.personalPayloads.bind(await this.personalPayloads.scope(personalOwner,t),digest,meta,body,t):body;
+      const capturedOwner=kind.data==='source_artifact'?captureRecordOwner(input.body):null;
+      const registered=capturedOwner?(await this.#db.query('SELECT id FROM users WHERE id=$1',[capturedOwner],t)).rows[0]:null;
+      const personalOwner=input.personalOwner??personalRecordOwner(kind.data,input.body)??(registered?capturedOwner:null);
+      const accountOwned=input.accountOwned||isPersonalPackRecord(kind.data)||!!(registered&&!(input.body as {personal_scope?:unknown})?.personal_scope&&input.personalOwner===undefined);
+      const storedBody=personalOwner?await this.personalPayloads.bind(await (accountOwned?this.personalPayloads.account(personalOwner,t):this.personalPayloads.scope(personalOwner,t)),digest,meta,body,t):body;
       const inserted = await this.#db.query<{ seq: string; id: string }>(
         `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (digest) DO NOTHING RETURNING seq, id`,
