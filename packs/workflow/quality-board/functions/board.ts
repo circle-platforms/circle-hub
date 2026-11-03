@@ -1,9 +1,9 @@
 import {labelOf} from './generated/vocabulary.ts';
 // The board: one group per (line, module) of the facet view (module null is the group 'unplaced', and so is a null line),
 // rows that split a group by the other fields summed. The metrics are exactly the definitions of the owner's real-sample
-// measurement: a case without an expected result has has_expected false; a case with only vague expected results has
-// has_expected true and vague_expected true; the negative share is negative true over all cases. Ratios are exact fractions
-// {num, den}, rounded only for display. The board check always supports with the metrics as claim data — unless the frozen
+// measurement: has_expected false counts missing expectations; the negative share uses declared test types, and vague
+// judgments come only from accepted, bound review claims. Ratios are exact fractions {num, den}, rounded only for display.
+// The board check always supports with the metrics as claim data — unless the frozen
 // counts contradict the definitions (counts_inconsistent, advisory), which the pack's own projection never produces.
 import { coverageSummary } from './coverage.ts';
 import { clip, compareText, guarded, internalError, isRecord } from './text.ts';

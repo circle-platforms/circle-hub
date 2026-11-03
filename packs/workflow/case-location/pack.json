@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.4.12",
+  "version": "1.4.13",
   "kind": "workflow",
   "dependencies": [
     {
@@ -13,8 +13,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "158d85d06215198cfa57a8b3b5d56bfe761f45dfa878cdf6fe5790cdbe769658",
-      "size": 6183
+      "sha256": "b2cd18224d7cfff8a96b598a45bc45f1f299b4e89b8329e9801f46b573af28c6",
+      "size": 6148
     },
     {
       "path": "checks.json",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "cb5580646ffd2d628fed3e636fd12a95f6507a49a3ba3e3106d3839d94b04232",
-      "size": 5642
+      "sha256": "0b8bf36ab1d02b127705e6a8f60095972095150654c57d6b64f8a38032962ba6",
+      "size": 5047
     },
     {
       "path": "functions/ids.ts",
@@ -138,8 +138,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "ea444ed1f2611141f5ff4ad0159c03adca93a4d22b0ebb87acf915adf03b7449",
-      "size": 3035
+      "sha256": "353034fa40173051882e80cfc24cfcab1f778b3e4bcee3c017b16c0001688676",
+      "size": 3122
     }
   ]
 }

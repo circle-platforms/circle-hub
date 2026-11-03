@@ -22,6 +22,8 @@ export type FacetViewData = {
   truncated: boolean;
   /** Listed sources the producers could not use: the counts do not cover what they would have given. */
   skipped: number;
+  /** When declared, whether the document scope itself is complete. */
+  scopeComplete?: boolean;
   notes: string[];
   /** src:<sha256> of the bound view bytes, citable as a ground. */
   source: string;

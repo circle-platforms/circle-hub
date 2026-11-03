@@ -141,7 +141,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.11', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.13', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(

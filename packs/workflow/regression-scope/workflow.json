@@ -24,12 +24,13 @@
     {
       "slot": "facets",
       "role": "hint",
-      "description": "目标构建用例按命令分面的完整计数，只作未归位披露：knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；截断时先补取完整视图",
+      "description": "目标构建用例按命令分面的计数，只作未归位披露：knowledge:facets:<产品>:<目标构建>?kind=case&by=commands。只因部分用例的命令归属未知而截断的视图照常绑定，这些用例记为未知（不是 0 个，也不算未归位）；其他截断先补取完整视图",
       "accepts": [
         "knowledge:facets"
       ],
       "required": true,
-      "many": false
+      "many": false,
+      "unknown_entries": "disclose"
     }
   ],
   "parameters": [

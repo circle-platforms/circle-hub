@@ -180,9 +180,26 @@ export function reversedView(view: { [key: string]: unknown }): { [key: string]:
   return { ...copy, changes, placements, entries };
 }
 
-// Bind the required synthetic disclosure input for existing projection scenarios.
-export function facetInput(view: { [key: string]: unknown }, unplaced = 0): { [key: string]: unknown } {
-  return { slot: 'facets', sha256: SOURCE, model: { schema: 'facet-view@1', product: view.product, build: structuredClone(view.to), kind: 'case', by: ['commands'], rows: unplaced ? [{ values: { commands: null }, count: unplaced }] : [], total: unplaced, totals:{empty:{commands:unplaced}}, truncated: false, skipped: (view.skipped as {from:number;to:number})?.to ?? 0, notes: [] } };
+/** How the synthetic facet view is truncated (contracts/src/views.ts): `unknown` cases left out because their command
+ * attribution is unknown (unknown_entries); `undelivered` when something else is not in the lists as well (rows left for a
+ * later page, a cut, a credential hit), so the view does not say unknown_only. */
+export interface FacetOptions {
+  unknown?: number;
+  undelivered?: boolean;
+  notes?: string[];
+}
+
+/** The note the knowledge views write for cases with steps that are not complete commands (synthetic count). */
+export const unknownNote = (count: number): string => `${count} 个用例缺完整命令身份，未计入命令分面；下一步核对锁定命令树或补完整命令后重读，不把未知当作没有命令`;
+
+// Bind the required synthetic disclosure input for existing projection scenarios. Without options the view is complete
+// and exactly what the earlier versions of this helper built.
+export function facetInput(view: { [key: string]: unknown }, unplaced = 0, options: FacetOptions = {}): { [key: string]: unknown } {
+  const unknown = options.unknown ?? 0;
+  const truncated = unknown > 0 || options.undelivered === true;
+  const reasons = { ...(unknown > 0 ? { unknown_entries: unknown } : {}), ...(unknown > 0 && options.undelivered !== true ? { unknown_only: true } : {}) };
+  const notes = options.notes ?? (unknown > 0 ? [unknownNote(unknown)] : []);
+  return { slot: 'facets', sha256: SOURCE, model: { schema: 'facet-view@1', product: view.product, build: structuredClone(view.to), kind: 'case', by: ['commands'], rows: unplaced ? [{ values: { commands: null }, count: unplaced }] : [], total: unplaced, totals:{empty:{commands:unplaced}}, truncated, ...reasons, skipped: (view.skipped as {from:number;to:number})?.to ?? 0, notes } };
 }
 import { projectItems as rawProject, LIMITS } from './project.ts';
 export { LIMITS };
