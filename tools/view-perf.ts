@@ -15,17 +15,48 @@ import type { Principal } from '../hub/records/api.ts';
 import type { ProductHandle } from '../hub/ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../hub/testing/parsers.ts';
 import { createKnowledge } from '../hub/knowledge/service.ts';
-import { createKnowledgeReader } from '../hub/knowledge/api.ts';
+import { createKnowledgeReader, PART_MAX_BYTES, SCHEMAS } from '../hub/knowledge/api.ts';
 import { FakePacks, FakeExternal, makeWorld, startPostgres, mindMap, casesProducer, DEFAULT_PRODUCERS, catalogXml } from '../hub/knowledge/test-support.ts';
 
 // Production and the cold read share one clock. produced_at and a clarification deadline are fixed-width, so a live clock keeps the byte length and changes the digest.
 const FROZEN = '2026-01-06T00:00:00.000Z';
 const frozenNow = (): Date => new Date(FROZEN);
 type Input = { config: Parameters<typeof openRecords>[0]; keyPath: string; product: ProductHandle; principal: Principal; build: string; directory: string; now: string; allocationProfile?: boolean;pressure?:boolean };
-export type ViewPerfResult = { wallMs: number; maxRSSKiB: number; bytes: number; sha256: string; queries: number; sql: Record<string, { count: number; ms: number ;}>; phases: Record<string, number>; truncated: boolean; totalEntries: number; totalKeys: number; listed: number; totals: unknown ;};
-// Accepted cold-reader peak, including imports and consumer decoding, plus the integrator's 15% regression allowance.
-export const VIEW_PERF_RSS_LIMIT_KIB = Math.ceil(494_448 * 1.15);
+export type ViewPerfResult = { wallMs: number; maxRSSKiB: number; bytes: number; sha256: string; queries: number; sql: Record<string, { count: number; ms: number ;}>; phases: Record<string, number>; truncated: boolean; totalEntries: number; totalKeys: number; listed: number; totals: unknown; held: ViewPerfHeld ;};
+/**
+ * What the cold read holds at once, counted at the store and records boundaries the view streams through. These are
+ * exact for a fixed fixture, unlike process peak RSS, which moves with GC timing.
+ */
+export type ViewPerfHeld = {
+  /**
+   * Composition part batches the view streamed; the most parts and the most verified part text (UTF-16 code units) one
+   * batch held; all part text streamed; the most batches open at once; whole parts read outside the streamed batches.
+   */
+  rowsBatches: number; rowsParts: number; maxBatchParts: number; maxBatchTextUnits: number; partTextUnits: number; maxOpenBatches: number; wholePartReads: number;
+  /** The most entry contents the operation's entry cache held while rows streamed; a scan keeps none. */
+  maxCachedEntries: number;
+  /** How the answer reached the artifact store: transferred (no copy) or copied. */
+  ingested: number; transferred: number;
+};
+/**
+ * The streaming bounds the cold read keeps (decision 54 asks for quantities that do not move with load): one batch of
+ * at most two composition parts open at a time, so the verified part text held at once stays within two parts while the
+ * read covers every part once; scans fill no entry cache; the answer is handed to the artifact store without a copy.
+ * `expectedParts` is the placed fixture's part count (the unplaced layout has its own). Returns the violated bounds; empty when all hold.
+ */
+export function heldBoundViolations(held: ViewPerfHeld, expectedParts?: number): string[] {
+  const out: string[] = [];
+  if (held.maxOpenBatches !== 1) out.push(`${held.maxOpenBatches} composition part batches open at once; streaming opens one`);
+  if (held.maxBatchParts > 2) out.push(`${held.maxBatchParts} composition parts in one batch; streaming reads at most 2`);
+  if (held.maxBatchTextUnits > 2 * PART_MAX_BYTES) out.push(`${held.maxBatchTextUnits} UTF-16 units of part text held by one batch (of ${held.partTextUnits} streamed); two parts stay within ${2 * PART_MAX_BYTES}`);
+  if ((expectedParts !== undefined && held.rowsParts !== expectedParts) || held.wholePartReads !== 0) out.push(`${held.rowsParts} parts streamed and ${held.wholePartReads} read whole; each of the fixture's ${expectedParts ?? 'case'} parts is streamed once`);
+  if (held.maxCachedEntries !== 0) out.push(`${held.maxCachedEntries} entry contents cached during the scan; a scan caches none`);
+  if (held.transferred !== 1) out.push(`${held.transferred} answers transferred to the artifact store; the large answer is transferred once, not copied`);
+  return out;
+}
 const build = 'Rel_ACME_10_6_15';
+/** Case composition parts the placed 49000-entry fixture produces (fixed by its entry digests and PART_* rules). */
+export const VIEW_PERF_PARTS = 91;
 const syntheticProducer = `export default function produce(input) {
   const entries=[];
   for(const doc of input.lists.cases) for(const node of doc.model.nodes) {
@@ -76,8 +107,8 @@ export async function benchmarkView(directory: string, options: { profile?: bool
     await writeFile(resolve(directory, 'result.json'), JSON.stringify(result, null, 2));
     if (options.budget) {
       assert.ok(result.wallMs < 30_000, `cold view ${result.wallMs}ms (loose contention allowance)`);
-      assert.ok(result.maxRSSKiB <= VIEW_PERF_RSS_LIMIT_KIB, `cold view RSS ${result.maxRSSKiB}KiB; regression limit ${VIEW_PERF_RSS_LIMIT_KIB}KiB`);
       assert.ok(result.queries <= 140, `cold view ${result.queries} queries`);
+      assert.deepEqual(heldBoundViolations(result.held, options.unplaced ? undefined : VIEW_PERF_PARTS), []);
     }
     return result;
   } finally { await w.close(); await postgres.stop(); }
@@ -107,6 +138,22 @@ async function worker(input: Input): Promise<void> {
   const memory: Record<string, NodeJS.MemoryUsage> = { start: process.memoryUsage() };
   phases.startMaxRSSKiB = process.resourceUsage().maxRSS;
   const timed = (object: object, key: string) => { const methods = object as Record<string, (...args: unknown[]) => unknown>; const fn = methods[key]; methods[key] = async function (...args: unknown[]) { const start = performance.now(); try { return await fn.apply(object, args); } finally { phases[key] = (phases[key] ?? 0) + performance.now() - start; memory[key] = process.memoryUsage();checkPressure(); } }; };
+  const held: ViewPerfHeld = { rowsBatches: 0, rowsParts: 0, maxBatchParts: 0, maxBatchTextUnits: 0, partTextUnits: 0, maxOpenBatches: 0, wholePartReads: 0, maxCachedEntries: 0, ingested: 0, transferred: 0 };
+  let openBatches = 0, batchText = 0;
+  const records = knowledge.store.records, getTexts = records.getTexts.bind(records);
+  records.getTexts = async (...args) => { const out = await getTexts(...args); if (openBatches > 0) { let units = 0; for (const record of out.values()) units += record.bodyText.length; batchText = Math.max(batchText, units); held.partTextUnits += units; } return out; };
+  const part = knowledge.store.part.bind(knowledge.store);
+  knowledge.store.part = (schema, digest, options) => { if (schema === SCHEMAS.rowsPart) held.wholePartReads++; return part(schema, digest, options); };
+  const forEachRowsParts = knowledge.store.forEachRowsParts.bind(knowledge.store);
+  knowledge.store.forEachRowsParts = async (digests, consume, read) => {
+    held.rowsBatches++; held.rowsParts += digests.length; held.maxBatchParts = Math.max(held.maxBatchParts, digests.length);
+    held.maxOpenBatches = Math.max(held.maxOpenBatches, ++openBatches);
+    try { return await forEachRowsParts(digests, consume, read); }
+    finally { openBatches--; held.maxBatchTextUnits = Math.max(held.maxBatchTextUnits, batchText); batchText = 0; held.maxCachedEntries = Math.max(held.maxCachedEntries, knowledge.store.cachedEntries.entries); }
+  };
+  const ingest = kit.artifacts.ingest.bind(kit.artifacts), ingestTransferred = kit.artifacts.ingestTransferred.bind(kit.artifacts);
+  kit.artifacts.ingest = input => { held.ingested++; return ingest(input); };
+  kit.artifacts.ingestTransferred = input => { held.transferred++; return ingestTransferred(input); };
   timed(knowledge.store, 'forEachRowsParts');timed(knowledge.store,'entries'); timed(kit.artifacts, 'prepareDerived'); timed(kit.artifacts, 'ingest'); timed(kit.artifacts, 'ingestTransferred');
   const profiler = input.allocationProfile ? new Session() : null;
   if (profiler) { profiler.connect(); await profiler.post('HeapProfiler.stopSampling').catch(() => { }); await profiler.post('HeapProfiler.startSampling', { samplingInterval: 65536, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true }); }
@@ -121,7 +168,7 @@ async function worker(input: Input): Promise<void> {
     const artifact = result.artifacts[0].artifact;
     const bytes = await kit.objects.get(artifact.body.sha256); assert.ok(bytes);
     const view = JSON.parse(Buffer.from(bytes).toString());
-    const answer: ViewPerfResult = { wallMs, maxRSSKiB: process.resourceUsage().maxRSS, bytes: bytes.length, sha256: sha256Hex(bytes), queries, sql, phases, truncated: view.truncated, totalEntries: view.total_entries, totalKeys: view.total_keys, listed: Object.keys(view.entries).length, totals: view.totals };
+    const answer: ViewPerfResult = { wallMs, maxRSSKiB: process.resourceUsage().maxRSS, bytes: bytes.length, sha256: sha256Hex(bytes), queries, sql, phases, truncated: view.truncated, totalEntries: view.total_entries, totalKeys: view.total_keys, listed: Object.keys(view.entries).length, totals: view.totals, held };
     await writeFile(resolve(input.directory, 'memory.json'), JSON.stringify(memory, null, 2));
     await writeFile(resolve(input.directory, 'output.json'), bytes);
     process.send?.(answer);
