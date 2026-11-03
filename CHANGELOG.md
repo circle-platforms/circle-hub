@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Prefer the sharer's own signed original before team and granted equal-byte copies while keeping exact attribution boundaries.
+
 - Bound retained team knowledge and memory with administrator quotas that survive personal purge and reuse member capacity controls.
 
 - Release sync write admission when a peer disconnects before body reading, and replay legacy document runs across their actual upgrade boundary.

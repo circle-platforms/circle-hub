@@ -1505,3 +1505,9 @@ import checks the quota under the team-space lock, with sharing preflight before
 removal, purge and a fresh sync epoch never credit retained team copies. Lowering a quota preserves existing data and
 refuses new charge until capacity is available. Only administrators may read or adjust team totals; member refusals
 use the existing capacity code and team wording without disclosing numeric usage.
+
+Sharing resolves unpinned source hashes in this order: the sharer's own currently readable signed capture, an existing
+readable team association, then another currently readable signed private capture. The same choice drives quote
+verification, private-owner locking and the retained team attribution. An equal-byte unsigned capture never inherits
+a declaration; a reusable team or granted copy keeps its actual uploader. Ordinary reads and frozen run bindings keep
+their existing resolution. Rejected/missing choices retain the previous sharing checks and codes.

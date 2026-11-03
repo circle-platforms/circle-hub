@@ -677,16 +677,32 @@ export class KnowledgeSpaces {
     }
     return result;
   }
+  /** Sharing chooses attribution deliberately; ordinary reads and exact run bindings keep their original resolution. */
+  async #sharingSource(by:Principal,sha256:string,tx?:Transaction):Promise<ArtifactSource|null>{
+    const records=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source',tx);
+    const candidates=records.map(record=>({record:record.digest,body:SpaceSourceBody.parse(record.body)}));
+    const team=await this.current('team',tx),published=new Set(team?.body.sources??[]);
+    const groups=[candidates.filter(row=>row.body.space===by.id),candidates.filter(row=>row.body.space==='team'&&published.has(row.record)),candidates.filter(row=>row.body.space!==by.id&&row.body.space!=='team')];
+    for(let group=0;group<groups.length;group++)for(const {body} of groups[group]){
+      if(!await this.mayRead(by,body.space,body.path))continue;
+      const source=await this.source(by,sha256,undefined,'model',body.artifact);if(!source)continue;
+      const proof=await this.#attributionForCapture(by,source.artifact,tx);
+      if(group===1){if(proof?.team||'read' in source.artifact.body.origin&&source.artifact.provenance==='observed')return source;}
+      else if(proof&&!proof.team&&(group!==0||source.artifact.body.author.user===by.id))return source;
+    }
+    // Preserve the existing unsigned, unreadable and observed-source refusals when no signed choice exists.
+    return this.source(by,sha256);
+  }
   async #shareSource(by:Principal,reference:string,sources:Map<string,{sha256:string;artifact:string;size:number;attribution?:string;team?:boolean}>,seen=new Set<string>(),depth=0,quotation?:string,tx?:Transaction):Promise<void>{
     if(depth>64||seen.has(reference))fail('SHARE_GROUND_UNRESOLVED');
     seen=new Set(seen);seen.add(reference);const ref=parseReference(reference);
     if(quotation!==undefined){
-      const resolved=await resolveReference(reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+      const resolved=await resolveReference(reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.#sharingSource(by,hash,tx)}});
       if(!resolved.resolved&&resolved.code==='TEAM_PARSER_REQUIRED')fail(resolved.code);
       if(verifyQuote(resolved,quotation)!==true)fail('SHARE_QUOTE_MISMATCH');
     }
     if(ref.scheme==='src'){
-      const artifact=(await this.source(by,ref.sha256))?.artifact;
+      const artifact=(await this.#sharingSource(by,ref.sha256,tx))?.artifact;
       if(!artifact)fail('SHARE_GROUND_UNRESOLVED');
       if('upload' in artifact.body.origin){
         const proof=await this.#attributionForCapture(by,artifact,tx);if(!proof)fail('SHARE_UPLOAD_UNSIGNED');
@@ -708,7 +724,7 @@ export class KnowledgeSpaces {
     for(const reference of references){
       if(seen.has(reference))continue;seen.add(reference);const ref=parseReference(reference);
       if(ref.scheme==='src'){
-        const source=await this.source(by,ref.sha256);if(!source)continue;
+        const source=await this.#sharingSource(by,ref.sha256);if(!source)continue;
         const captures=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',ref.sha256,'knowledge_space_source');
         for(const capture of captures){const body=SpaceSourceBody.parse(capture.body);if(body.artifact===source.artifact.digest&&body.space!=='team'&&await this.mayRead(by,body.space,body.path))owners.add(body.space);}
       }else if(ref.scheme==='tree'&&ref.entry){
@@ -729,7 +745,7 @@ export class KnowledgeSpaces {
         if(await this.hasWithdrawnGrounds(view.body.grounds.map(g=>g.reference)))fail('GROUNDS_WITHDRAWN');
         const resolved=[];
         for(const ground of view.body.grounds){
-          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.source(by,hash)}});
+          const result=await resolveReference(ground.reference,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read:hash=>this.#sharingSource(by,hash,tx)}});
           if(!result.resolved&&result.code==='TEAM_PARSER_REQUIRED')fail(result.code);
           if(!result.resolved||!result.readable)fail('SHARE_GROUND_UNRESOLVED');resolved.push(result);
         }
@@ -807,7 +823,7 @@ export class KnowledgeSpaces {
       await this.#ctx.records.store.lock('knowledge-space:team',tx);
       by=await lockActive(this.#ctx,by,tx,[...owners]);
       const currentOwners=await this.#sharingOwners(by,view.body.grounds.map(ground=>ground.reference));
-      if([...currentOwners].some(owner=>!owners.has(owner)))fail('SOURCE_UNAVAILABLE');
+      if([...currentOwners].some(owner=>owner!==by.id&&!owners.has(owner)))fail('SOURCE_UNAVAILABLE');
       const previous=await this.current('team',tx);if(!previous)fail('SHARE_GROUND_UNRESOLVED');
       const personal=await this.current(by.id,tx),row=personal?.body.entries.find(row=>row.entry===input.entry&&row.path===input.path);
       const source={space:by.id,root:input.root,path:input.path,entry:input.entry},at=this.#ctx.now().toISOString();

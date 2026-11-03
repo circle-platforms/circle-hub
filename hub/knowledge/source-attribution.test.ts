@@ -39,7 +39,8 @@ test('foreign accounts cannot sign, equal-byte captures do not inherit declarati
  const twin=await prepare(w,'synthetic-capture-b','合成第二采集知识');assert.equal(twin.file.body.sha256,p.file.body.sha256);assert.notEqual(twin.file.digest,p.file.digest);
  await assert.rejects(spaces.attributeSource(w.user,p.source.digest,twin.file.digest),{code:'SOURCE_UNAVAILABLE'});
  assert.equal((await spaces.sourceAttribution(w.user,twin.file.body.sha256,twin.file.digest)).status,'unsigned');
- const read=spaces.source.bind(spaces);spaces.source=(by,hash,run,consumer,capture)=>read(by,hash,run,consumer,capture??(hash===twin.file.body.sha256?twin.file.digest:undefined));
+ // Make the signed capture unavailable so this fixture still isolates the unsigned equal-byte capture.
+ const read=spaces.source.bind(spaces);spaces.source=(by,hash,run,consumer,capture)=>capture===p.file.digest?Promise.resolve(null):read(by,hash,run,consumer,capture??(hash===twin.file.body.sha256?twin.file.digest:undefined));
  assert.equal((await spaces.share(w.user,twin.input)).code,'SHARE_UPLOAD_UNSIGNED');
  await spaces.attributeSource(w.user,twin.source.digest,twin.file.digest);assert.equal((await spaces.share(w.user,twin.input)).status,'merged');
 });
