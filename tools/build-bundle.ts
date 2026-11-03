@@ -1,4 +1,4 @@
-// Builds the release bundle of one platform (owner decision 76): `node tools/build-bundle.ts --platform <platform>
+// Builds the release bundle of one platform (owner decision 123): `node tools/build-bundle.ts --platform <platform>
 // --out <dir> [--version <x.y.z>] [--node <vX.Y.Z>] [--commit <rev>]`. The bundle is a tar.gz holding one directory
 // `circle-hub-<version>-<platform>/` with
 //   app/         git archive of the commit (without foundation/ and references/) and `npm ci --include=dev` for the

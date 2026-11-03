@@ -1,4 +1,4 @@
-// The MCP standard authorization (decision 78; the MCP authorization specification: OAuth 2.1 with PKCE, RFC 8414, RFC 7591,
+// The MCP standard authorization (decision 125; the MCP authorization specification: OAuth 2.1 with PKCE, RFC 8414, RFC 7591,
 // RFC 8707, RFC 9728, RFC 7009, RFC 9207). This Hub is both the protected resource /mcp and its authorization server. An
 // unauthenticated /mcp answer names the resource metadata; a client discovers the authorization server from it, registers
 // itself, and opens the authorization endpoint in a browser, which hands the request to the console's authorization page

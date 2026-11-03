@@ -150,7 +150,7 @@ export function safeNext(value: string | null | undefined): string {
 }
 
 /**
- * One-time login links (decision 78), in memory like the sessions: a client asks for one with its Bearer token
+ * One-time login links (decision 125), in memory like the sessions: a client asks for one with its Bearer token
  * (POST /console/api/login-links); opened within LOGIN_LINK_TTL_MS, it leads to the password sign-in at its page and
  * never opens a session (owner, 2026-11-02). Only the SHA-256 of a link's code is kept; a code works once.
  */

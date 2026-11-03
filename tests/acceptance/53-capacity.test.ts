@@ -1,4 +1,4 @@
-// Decision 91: exact capacity units and historical correction through the real HTTP/MCP boundary.
+// Decision 140: exact capacity units and historical correction through the real HTTP/MCP boundary.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createTestHub} from '../../hub/server/testing-real.ts';

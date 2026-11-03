@@ -1,4 +1,4 @@
-// The authorization page of the MCP standard authorization (decision 78, the "授权" board of the design canvas): the
+// The authorization page of the MCP standard authorization (decision 125, the "授权" board of the design canvas): the
 // authorization endpoint (hub/server/oauth.ts) sends the browser here with an open request. The account is the one an
 // invitation code names (the identity step) or, without one, the browser's console session; the page always names it, and
 // a signed-in browser may still switch to an invitation. Approving sends the browser to the client's redirect URI with a

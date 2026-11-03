@@ -1,4 +1,4 @@
-// Decision 91 block 2: real loopback Hub, synthetic originals, sessions and current access checks.
+// Decision 140 block 2: real loopback Hub, synthetic originals, sessions and current access checks.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import pg from 'pg';

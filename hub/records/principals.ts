@@ -1,7 +1,7 @@
 import {retireReadScope} from './read-scope.ts';
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
 // once; only its SHA-256 is stored. Every change to a user is recorded as an append-only snapshot in user_history.
-// The MCP standard authorization (decision 78) adds the clients that registered themselves and the invitation codes an
+// The MCP standard authorization (decision 125) adds the clients that registered themselves and the invitation codes an
 // administrator issues: a code is twelve characters shown once, kept as its SHA-256, valid INVITATION_TTL_MS and used once,
 // by the client it authorized; a token issued through the authorization names its client.
 import { randomBytes } from 'node:crypto';

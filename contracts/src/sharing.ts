@@ -1,4 +1,4 @@
-// Decision 84 phase 3: receipts and namespace metadata are append-only; publication checks still own their report payload.
+// Decision 131 phase 3: receipts and namespace metadata are append-only; publication checks still own their report payload.
 import { z } from 'zod';
 import { KnowledgeShareStatusSchema, KnowledgeGranteeSchema, KnowledgeGrantActionSchema, PackKindSchema } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, UserId, PackId, PackVersion } from './common.ts';

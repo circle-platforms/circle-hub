@@ -3,7 +3,7 @@ import {technicalCode,stat,facts} from './presentation.ts';
 // 记录 (the design canvas's Audit board): the append-only call log with its filters, the calls per day and tool, per member
 // and per result over the last 14 days, and the lines themselves. Administrators see every call with the admin notes; a
 // member sees their own calls only (the call log answers so itself). /console/admin/calls is the administrators' path of
-// the same page (decision 75).
+// the same page (decision 122).
 import { CALL_RESULT, uiLabelOf, type CallResult } from '../../../contracts/generated/vocabulary.ts';
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import { TRIAL_REPORT_SCHEMA, TrialRecord } from '../../connectors/api.ts';

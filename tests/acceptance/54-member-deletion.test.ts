@@ -1,4 +1,4 @@
-// Decision 91 block 5: real HTTP/MCP, password sessions, exact provenance and durable removable payloads.
+// Decision 140 block 5: real HTTP/MCP, password sessions, exact provenance and durable removable payloads.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomUUID} from 'node:crypto';

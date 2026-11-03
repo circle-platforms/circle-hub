@@ -1,4 +1,4 @@
-// Decision 91: freeze is reversible access suspension, never a private purge or a team-content deletion.
+// Decision 140: freeze is reversible access suspension, never a private purge or a team-content deletion.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createTestHub} from '../../hub/server/testing-real.ts';

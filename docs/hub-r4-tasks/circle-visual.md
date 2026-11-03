@@ -1,4 +1,4 @@
-# 任务：Circle 工作台视觉统一（石墨主题）——决定 93
+# 任务：Circle 工作台视觉统一（石墨主题）——决定 142
 
 依据：
 - 所有者 2026-11-02：“同样的方案也要让circle保持相同设计感”。控制台已选定主题版本 A“石墨”，Circle 工作台改用同一套设计。
@@ -9,7 +9,7 @@
 
 本任务在 Circle 仓库完成。本页放在 circle-hub 仓库，只用来交接与记录。
 
-当前状态（2026-11-03）：视觉统一已获 Claude 批准，Claude 变基为 `ee7466ed` 并打开 Circle PR #405；本轮 CI 回修已在 Circle 本地签署提交 `d2e31542`，完整 67 组件、核心/应用检查与开发版/打包版各 26 阶段原生流程通过，待 Claude 审查并推送。CV-19 的一次旧包 Git 行差异仍未定因，原失败与新增诊断保留，不宣称已修复。决定 90 保持已提交且干净的第一阶段（Circle `9e7d7659`、记录 `7409057f`），回到该阶段的审查点，不向视觉分支混入知识库代码。下文原方案与四阶段记录保留；CI 回修见末节。
+当前状态（2026-11-03）：视觉统一已获 Claude 批准，Claude 变基为 `ee7466ed` 并打开 Circle PR #405；本轮 CI 回修已在 Circle 本地签署提交 `d2e31542`，完整 67 组件、核心/应用检查与开发版/打包版各 26 阶段原生流程通过，待 Claude 审查并推送。CV-19 的一次旧包 Git 行差异仍未定因，原失败与新增诊断保留，不宣称已修复。决定 139 保持已提交且干净的第一阶段（Circle `9e7d7659`、记录 `7409057f`），回到该阶段的审查点，不向视觉分支混入知识库代码。下文原方案与四阶段记录保留；CI 回修见末节。
 
 ## 做法
 
@@ -49,7 +49,7 @@
 
 ## 不在本任务
 
-- Circle 的本机知识库、本机记忆与同步客户端：决定 90，另立任务。
+- Circle 的本机知识库、本机记忆与同步客户端：决定 139，另立任务。
 - 终端界面（TUI）的改版。
 
 ## 实施方案
@@ -72,7 +72,7 @@
 
 - 先清点现有样式覆盖关系，在原有 React 组件内调整，不把规范的静态 HTML 另做一套应用。主要修改边界为 `apps/workbench/src/app/App.tsx`、`app/workspace-layout.ts`、`components/Sidebar.tsx`、`components/MessageView.tsx`、`components/ToolMessage.tsx`、`features/Conversation.tsx`、`features/Composer.tsx`、`features/PlanView.tsx`、`features/InlineRequest.tsx` 及其直接关联样式和测试。主页输入区、设置、菜单与抽屉一并检查新 token 的使用；确需超出此范围时先在本页说明原因。
 - 导航默认 232px、`surface-0`；主区 `surface-1`，会话内容与输入区统一最宽 760px 居中；抽屉默认 380px、最小 300px、`surface-2`，保留拖动与现有面板功能。窗口宽度小于 1180px 时抽屉默认收起为按钮，小于 760px 时导航收起为按钮；用当前布局计算而非仅 CSS 隐藏来维护焦点和打开/关闭状态。保留文件、网页和任务等现有全屏/独立窗口行为，回归已有面板尺寸测试。
-- 导航左上显示色环、小写 `circle` 和经 `t()` 翻译的“工作台”；会话选中项使用中性悬停底与 600 字重。底部仅显示实际运行时状态。规范预览中的平台导航、知识库开关与“已连接到 Hub”是视觉示例，不据此新增决定 90 的功能或 Hub 专属入口/标签。
+- 导航左上显示色环、小写 `circle` 和经 `t()` 翻译的“工作台”；会话选中项使用中性悬停底与 600 字重。底部仅显示实际运行时状态。规范预览中的平台导航、知识库开关与“已连接到 Hub”是视觉示例，不据此新增决定 139 的功能或 Hub 专属入口/标签。
 - 用户消息靠右，`surface-2`、10px、无框；Circle 回复直接排在主区底色上，标题为小色环与 `circle`；思考用次要文字并标“思考”，去掉竖线与套框。工具调用用 `surface-2` 单行，动作、等宽对象、用时可读且可展开。计划同底色、10px，完成点取通过色、当前步骤取紫色并加粗。请求提示是细线框单行，注意点、数量与“查看”；保留实际请求详情和审批、提问、密钥输入的可达性。
 - 将底栏纳入输入区外框，模型/强度选择、模式、附件和发送/停止操作仍接现有运行时。输入框随内容增高，最多 12 行后滚动；空内容不可发送，附件等现有约束保留。输入区下方依次为等宽用量/上下文状态行、后台任务列表；后台任务逐行显示状态、编号、说明/命令和用时。
 - 四态由当前会话与实际待处理请求推导，不另造运行时状态：默认用 `surface-sunken`、1px 控件线；计划为 2px 品牌紫框；工作中为 2px 色环、3.6 秒一圈、停止操作及用时；等待回应为 2px 品牌橙框和请求提示。优先级为当前待回应请求 > 当前回合运行 > 空闲计划模式 > 默认；请求答复后按实际运行状态恢复，模式文字独立反映当前模式。测试覆盖 plan 中开跑、运行中到达请求、答复、结束、中止及跨会话切换，防止只按 `data-state="waiting"` 判定。
@@ -107,7 +107,7 @@
    - 输入区的状态同时有文字说明：模式文字、“等待 Circle 完成中”、请求提示条。颜色不是唯一的提示。
    - 在验证记录里写明这两个实测值和上面的理由；不要为凑数改设定或放宽测试。
 3. **状态点与状态文字**：同意分开。点用 `status-*`，正文与标签用 `status-*-text`。
-4. **预览与说明不一致的地方**：以组件 README 为准，工作中显示停止按钮。设计规范的 WorkbenchShell 预览由 Claude 修正，两个仓库同步。预览里的平台入口、知识库开关和“已连接到 Hub”只是示意，不据此新增功能；决定 90 另有任务。
+4. **预览与说明不一致的地方**：以组件 README 为准，工作中显示停止按钮。设计规范的 WorkbenchShell 预览由 Claude 修正，两个仓库同步。预览里的平台入口、知识库开关和“已连接到 Hub”只是示意，不据此新增功能；决定 139 另有任务。
 5. **验证记录**：同意新增本轮记录，保留旧记录的时间和适用范围。入库的收据去掉本机路径和环境值。
 
 ## 发现
@@ -384,7 +384,7 @@ Circle 新增 `docs/workbench/graphite-validation.md`，由旧 validation/native
 
 ### PR #405 的 CI 回修（2026-11-03，修复与验证结果）
 
-来源：Claude 本轮交接，Circle workflow run `41486669382`；通过 `gh run view --json headSha,status,conclusion,jobs` 核对失败提交确为 `ee7466ed13584e1df6ca75b7f5cfeeeeea5947fc`。代码只在 `circle-visual` / `workbench-graphite-local`，记录只在本页；决定 90 两个工作树已检查为干净提交点，没有 stash 或未完成改动。
+来源：Claude 本轮交接，Circle workflow run `41486669382`；通过 `gh run view --json headSha,status,conclusion,jobs` 核对失败提交确为 `ee7466ed13584e1df6ca75b7f5cfeeeeea5947fc`。代码只在 `circle-visual` / `workbench-graphite-local`，记录只在本页；决定 139 两个工作树已检查为干净提交点，没有 stash 或未完成改动。
 
 - 已获取实际 CI 失败日志和上传证据，保存在 Circle 忽略目录 `apps/desktop/artifacts/graphite/ci-41486669382/`。第一次整组 artifact 下载在 shard 2 的 ZIP 传输中遇到 unexpected EOF；仅重新下载该 artifact 后成功，不把网络下载失败算作测试重跑。未重新运行 GitHub workflow、未推送或评论 PR。
 - 既有本机证据确实只跑过受影响的 11 个组件专项，不能当作完整组件组通过。此次先运行未修复源码的完整组件 runner，前 7 项通过，第 8 项 settings-dialog 在原有“the dialog is inside the window”失败，保留 `ci-405-baseline-components/`，后续未运行项不记通过。
@@ -480,11 +480,11 @@ CV-17 修正后的第二份冻结清单包含同样 1,431 个文件，`ci-405-so
 
 CV-19 继续作为**单次未定因观察**保留：增加只读诊断后，新产品焦点修正版本的开发版与打包版完整流程均通过，Git 比较没有放宽，Git 生产逻辑没有改动；两份 renderer-at-open 诊断都是正确原会话、无会话 changes、初始 Git cache 为空。它们不能解释第一次包内多出 isolation-b.md 的形成过程，因此不将本次通过写成“CV-19 已修复”。如再现，新的 failure JSON 会同时保留实际 renderer context/cache、主进程 snapshot 与 Git 结果。
 
-Circle 本机提交：`d2e3154262d42314016623410678a78fce2856e5`，`Preserve desktop overlay placement and keyboard input through animations`，22 个显式文件，已签署。代码只在 `workbench-graphite-local`；本页只在 `circle-visual-notes` 提交。未推送、未重跑远端 workflow、未评论 PR；本机平台为 macOS arm64，Ubuntu 的最终结果仍待 Claude 推送后的 CI。决定 90 两个工作树复核仍干净，保持 Circle `9e7d7659` / notes `7409057f` 的第一阶段完成审查点，没有 stash、移植半成品或混入知识库改动。
+Circle 本机提交：`d2e3154262d42314016623410678a78fce2856e5`，`Preserve desktop overlay placement and keyboard input through animations`，22 个显式文件，已签署。代码只在 `workbench-graphite-local`；本页只在 `circle-visual-notes` 提交。未推送、未重跑远端 workflow、未评论 PR；本机平台为 macOS arm64，Ubuntu 的最终结果仍待 Claude 推送后的 CI。决定 139 两个工作树复核仍干净，保持 Circle `9e7d7659` / notes `7409057f` 的第一阶段完成审查点，没有 stash、移植半成品或混入知识库改动。
 
 ### PR #405 Ubuntu 地址栏回修（2026-11-03，进行中）
 
-来源：Claude 转交 run `41515273724`、job `125517121067`（components 1），唯一失败 `26-original-browser-shell-ui`。决定 90 第二阶段已安全提交在 Circle `a6c11845`、notes `69dc9a65`，两树干净；本轮不把知识库字节移到视觉分支，也不开始第三阶段。
+来源：Claude 转交 run `41515273724`、job `125517121067`（components 1），唯一失败 `26-original-browser-shell-ui`。决定 139 第二阶段已安全提交在 Circle `a6c11845`、notes `69dc9a65`，两树干净；本轮不把知识库字节移到视觉分支，也不开始第三阶段。
 
 - 已按要求下载该 run 全部 artifacts，另提取 shard 1 作集中调查。Ubuntu 原始失败在 `original-browser-shell-ui.mjs:548`，截图请求已到合成宿主，地址 input 仍存在且值为 fixture URL；原 5 秒 `fill()` 连续报告不可见。失败 DOM、PNG、trace 在 `apps/desktop/artifacts/graphite/ci-405-linux-browser-shell-focused/attempt-iTUU59/26-original-browser-shell-ui/`，原件未覆盖。
 - **CV-20（产品排版缺陷）**：工具栏按内容收缩，地址外壳与内层编辑字段均允许收缩到 0；安全文字、接管按钮、前进/后退/刷新及模式按钮占满约 380px 的抽屉。Linux 字体度量暴露了该退化，原 macOS 规格仍通过。用规范已有的“更大”字号在同一真实 App/合成宿主流程中重现：浏览器 375px、地址外壳 94.5px、字段及 input 宽度 0，input 高 18px；原 5 秒 fill 仍因不可见失败。失败几何、图片及 trace 保留 `ci-405-browser-zero-before/`，不是强制填充或取消可见性检查。
@@ -532,4 +532,4 @@ CI 配置指 WEB_DEBUG=1、DIAGNOSTIC=1、PUSH=1，与 workflow 的既定开关�
 
 失败尝试全部保留。最终配置通过不等于 CV-19 已修复：该旧 Git 缓存差异本轮再次出现，有更完整诊断，仍未定因；CV-21 是省略可选 debug 的 25 项配置中发现的初始化取样竞态，候选修正尚未验证并未提交。它们作为后续调查边界交接，不被替换为绿色结论；本提交只修复 CV-20 地址栏产品缺陷。
 
-本轮未推送、未重跑远端 workflow、未评论 PR。决定 90 的第二阶段仍保持 Circle `a6c11845` / notes `69dc9a65` 的完成审查点，未 stash 或混入本轮提交；结束本轮回修后返回该任务，等待第二阶段审查，不擅自开始第三阶段。
+本轮未推送、未重跑远端 workflow、未评论 PR。决定 139 的第二阶段仍保持 Circle `a6c11845` / notes `69dc9a65` 的完成审查点，未 stash 或混入本轮提交；结束本轮回修后返回该任务，等待第二阶段审查，不擅自开始第三阶段。

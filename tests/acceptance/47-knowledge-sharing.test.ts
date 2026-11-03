@@ -1,6 +1,6 @@
 import {newId} from '../../hub/records/api.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
-// Decision 84 phase 3 uses the real assembly, official MCP client and synthetic password accounts only.
+// Decision 131 phase 3 uses the real assembly, official MCP client and synthetic password accounts only.
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';

@@ -1,4 +1,4 @@
-// install.sh (decision 76) without touching the machine: its syntax under bash, and --dry-run plans for macOS and Linux
+// install.sh (decision 123) without touching the machine: its syntax under bash, and --dry-run plans for macOS and Linux
 // on both architectures, which say every step and change nothing; refusals for other systems and architectures and for
 // contradictory options. The real installation runs in .github/workflows/release.yml on a fresh runner. The helpers of
 // tools/build-bundle.ts are checked here too.

@@ -1,4 +1,4 @@
-// The stores of the MCP standard authorization (decision 78, migration 7): invitation codes kept as their SHA-256, valid a
+// The stores of the MCP standard authorization (decision 125, migration 7): invitation codes kept as their SHA-256, valid a
 // day and used once; registered clients with a bounded registration rate; tokens that name the client they went to; and
 // revocation by a token's value (RFC 7009).
 import assert from 'node:assert/strict';

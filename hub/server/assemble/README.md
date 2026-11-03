@@ -1,6 +1,6 @@
 # hub/server assembly
 
-Decision 85 changes only server-owned display text in this package: registry log prefixes describe publication and
+Decision 132 changes only server-owned display text in this package: registry log prefixes describe publication and
 sandbox notices cover scripts from all published kinds. CLI kind and publication-state text comes from generated display
 labels. Pack validation, engine decisions, permission rules and supplied diagnostic text are unchanged.
 

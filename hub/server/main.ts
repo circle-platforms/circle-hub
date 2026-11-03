@@ -173,7 +173,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     const deps = await assembly.assemble(config, records);
     maintenance=deps.maintenance;
     await maintenance?.startMaintenance();
-    // The console's management actions run the CLI's commands with this process's own configuration (decision 75).
+    // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
     app = createApp(deps, { log: operatorLog, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
     const info = await app.listen();

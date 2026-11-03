@@ -1,13 +1,13 @@
-# 任务：Circle 本机知识库、个人记忆、个人工作流与双向同步（决定 84、88 第四阶段之二，Circle 仓库）
+# 任务：Circle 本机知识库、个人记忆、个人工作流与双向同步（决定 131、135 第四阶段之二，Circle 仓库）
 
-依据：决定 84（所有者原话：“两个都放，前提是circle支持知识库，也支持知识库同步，同步是hub和circle双向的（多客户端可共享，用户自己选择方式）”），决定 88（记忆纳入：个人记忆随本人的各个 Circle 同步，团队记忆供全体成员的 Circle 加载），设计页 [`knowledge-workflows.md`](../design/knowledge-workflows.md)，以及 Hub 端同步接口 [`kw-sync.md`](kw-sync.md)（第 2–9 节与第 13 节的审查结论）写进合约的接口：`contracts/src/sync.ts`、`contracts/src/sync-canonical.ts` 与共享样例 `contracts/test-fixtures/sync/v1/`。界面按《Circle 设计规范》（Circle 仓库 `docs/design/circle-design-system/`）。本页在 Hub 仓库，代码改在 Circle 仓库。
+依据：决定 131（所有者原话：“两个都放，前提是circle支持知识库，也支持知识库同步，同步是hub和circle双向的（多客户端可共享，用户自己选择方式）”），决定 135（记忆纳入：个人记忆随本人的各个 Circle 同步，团队记忆供全体成员的 Circle 加载），设计页 [`knowledge-workflows.md`](../design/knowledge-workflows.md)，以及 Hub 端同步接口 [`kw-sync.md`](kw-sync.md)（第 2–9 节与第 13 节的审查结论）写进合约的接口：`contracts/src/sync.ts`、`contracts/src/sync-canonical.ts` 与共享样例 `contracts/test-fixtures/sync/v1/`。界面按《Circle 设计规范》（Circle 仓库 `docs/design/circle-design-system/`）。本页在 Hub 仓库，代码改在 Circle 仓库。
 
 ## 做法
 
 - **仓库与分支**：
   - Circle 仓库在上一级目录的 `circle`（`../circle`）。不要动它的工作目录（那里有别人未提交的改动）。
   - 开工前先 `git -C ../circle fetch origin`，再开自己的工作树 `../circle-knowledge`，分支 `knowledge-sync`。
-  - 基于工作台视觉统一（决定 93，分支 `workbench-graphite-local`）之后的代码：已合并就从最新的 `origin/main` 开，未合并就从那个分支开，避免两边同时改 `apps/workbench`。
+  - 基于工作台视觉统一（决定 142，分支 `workbench-graphite-local`）之后的代码：已合并就从最新的 `origin/main` 开，未合并就从那个分支开，避免两边同时改 `apps/workbench`。
   - PR #396（MCP 标准授权）已于 2026-11-02 合并。
   - 只在本机提交，推送与建 PR 先问所有者（经 Claude）。
 - **遵守 Circle 仓库的 `AGENTS.md` 与 `CONTRIBUTING.md`**：
@@ -19,7 +19,7 @@
   - 每步跑 `npx tsx --test` 受影响的测试文件。
   - 收尾跑 `npm run check` 和 `npm run check:apps`。
   - 守护测试必须过：工具文档与 `BUILTIN_TOOL_INFO` 一致、提示词预算（`tests/prompt-budget.test.ts`）、命令覆盖（`apps/workbench/test/coverage.test.ts`）。
-- **记录**：先在本页“实施方案”写出做法再动手；完成后在本页写明做了的与验证，并在 Hub 仓库 `docs/hub-r4-progress.md` 记为决定 90（Circle 端的实施，依据决定 84、88）。
+- **记录**：先在本页“实施方案”写出做法再动手；完成后在本页写明做了的与验证，并在 Hub 仓库 `docs/hub-r4-progress.md` 记为决定 139（Circle 端的实施，依据决定 131、135）。
 - **界面用语**：桌面的中文文字按《Circle 设计规范》的“文字”一节，用主流软件的说法（例如“同步方式”“仅保存在本机”“同步到 Hub”“有冲突”“上次同步”“团队记忆”“我的记忆”），不用“你”，不出现哈希、指针、版本号等内部概念。
 
 ## 已知的仓库事实（Claude 2026-11-02 只读调查）
@@ -88,7 +88,7 @@
 - 已读 Circle `AGENTS.md`、`CONTRIBUTING.md`、`desktop-i18n.md`、TUI 合约，知识/工作流设计，`kw-sync.md` 第 2–9、13 节，以及 `sync.ts`、`sync-canonical.ts`、严格 JSON 实现和共享样例。第 13 节覆盖前文建议：新旧账户默认 `hub`；原文/引文保真；团队独立副本不会因个人清除而撤回；不采用按代次加密。
 - 使用现有 Node 24、`node:sqlite`、文件系统、`proper-lockfile`、Ajv、MCP SDK 等依赖，不加依赖。批准后先按锁文件依次运行根目录 `npm ci`、`npm --prefix apps/workbench ci`、`npm --prefix apps/desktop ci`，替换复制来的依赖；记录安装结果，清单/锁文件不变。
 - 新功能主要放 `src/knowledge/`（协议、存储、检索、核验、合并、同步、包清单与会话记忆适配）。必要接入限于 `src/settings.ts`、`mcp_loader.ts` / `mcp_auth.ts`、`memory_sources.ts` / `system_prompt.ts`、runtime/tools/审批、现有技能加载、TUI 命令与状态；新增工具说明和相应测试。桌面接入限于 workbench 的导航/页面/设置/状态、model 类型/命令/工具信息、i18n 与样式，以及 desktop 的 runtime-controller、worker/bridge 类型和受限 IPC、原生测试。新增当前行为文档、CHANGELOG Unreleased 与必要的构建资源复制；不更改设计系统、同步协议、Hub 实现、发布流程或依赖。
-- 本页承担计划和过程交接；最终把决定 90 的实际完成范围交 Claude 汇入 Hub 总进度，不在本阶段修改其他任务或总进度页。全部测试使用临时 `CIRCLE_HOME` / `CIRCLE_WORKBENCH_DATA_DIR`、合成文件与脚本模型；本机提交均 `-s`、显式路径，不推送、不建 PR、不部署或安装。
+- 本页承担计划和过程交接；最终把决定 139 的实际完成范围交 Claude 汇入 Hub 总进度，不在本阶段修改其他任务或总进度页。全部测试使用临时 `CIRCLE_HOME` / `CIRCLE_WORKBENCH_DATA_DIR`、合成文件与脚本模型；本机提交均 `-s`、显式路径，不推送、不建 PR、不部署或安装。
 
 ### 2. 本机存储、版本与并发
 
