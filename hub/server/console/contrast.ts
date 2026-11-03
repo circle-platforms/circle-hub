@@ -26,6 +26,7 @@ export function auditContrast(spec:Tokens):ContrastSample[]{
    for(const state of ['surface-hover','surface-pressed']){const bg=composite(color(state),base);sample(name+'/'+state+'/helper',color('text-secondary'),bg);sample(name+'/'+state+'/text',color('text-primary'),bg);sample(name+'/'+state+'/edge',color(state==='surface-pressed'?'focus-ring':'line-control'),bg,3);}
   }
   for(const name of ['surface-1','surface-2','surface-3']){const base=color(name);
+   const hit=composite(color('surface-pressed'),base);sample(name+'/source-hit/text',color('text-primary'),hit);sample(name+'/source-hit/edge',color('focus-ring'),hit,3);
    for(const state of spec.color.tokens.filter(token=>/^status-.+-bg$/.test(token.name)).map(token=>token.name.slice(7,-3))){const bg=composite(color('status-'+state+'-bg'),base);sample(name+'/badge-'+state,color('status-'+state+'-text'),bg);}
    for(const area of ['area-knowledge','area-workflow','area-task','text-secondary'])for(const opacity of [.08,.09]){
     const accent=color(area),selected=composite([accent[0],accent[1],accent[2],opacity],base),cell=selected;

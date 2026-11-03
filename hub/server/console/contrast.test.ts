@@ -12,4 +12,5 @@ test('both token themes pass text, control, selected-row, badge and chart contra
  assert.ok(samples.length>250);assert.match(DESIGN_CSS,/PR #135/);assert.match(DESIGN_CSS,/\.ch-row-meta[\s\S]+color:var\(--text-secondary\)/);assert.match(DESIGN_CSS,/aria-pressed="true"[\s\S]+var\(--focus-ring\)/);assert.match(CSS,/\.ch-chart\.is-dim \.bar:not\(\.is-hot\)\{opacity:\.9\}/);
  // Decorative hairlines, chart grids, brand marks and disabled controls do not establish a passing sample.
  assert.ok(!samples.some(row=>/hairline|chart-grid|disabled|brand-/.test(row.role)));
+ assert.equal(samples.filter(row=>row.role.includes('/source-hit/')).length,12);assert.match(CSS,/\.ch-source-hit\{color:var\(--text-primary\);background:var\(--surface-pressed\);outline:1px solid var\(--focus-ring\)/);
 });

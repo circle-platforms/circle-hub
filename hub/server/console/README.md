@@ -80,3 +80,45 @@ fixed hash. No script-src self/unsafe-inline/eval is added. Styles, login/error 
 intact. Template comparisons omit only nonce entropy, while policy regressions verify exact header/tag matching,
 rotation, SRI, and rejection of absent/stale nonces. The page probe accepts only fixed asset paths with matching SRI
 and an allowed hash or response nonce, retaining unknown script/nonce bytes in evidence.
+## 上传来源署名（决定 91，第一块）
+
+原文详情使用选中 ListRow 与响应式 Inspector，精确采集随“打开原文”链接保留。词表状态从模型 25 生成；
+“署名为团队来源…”动作与后果说明为静态文案。只有上传人可以确认；查看详情或打开 Dialog 均只读。
+确认沿用既有 Origin、CSRF、会话及 POST/303 路径，调用 knowledge 的本人署名端口，不接受客户端署名人或时间。
+Dialog 明示署名不创建团队知识、不表示内容已验证，以及团队已取得的副本不会因收回文件夹分享而收回。
+
+团队知识 Inspector 通过已授权端口显示“来源署名 · 数量”、声明类型、署名人和时间，并打开团队实际持有的精确
+采集。无权的私人原件与不存在的原件显示相同页面；管理员不能代签，也不能从通用记录入口读取私人署名正文。
+原始用户名、原文与引用保持 evidence 标记及转义；不改共享组件、颜色设定或 CSP。原文归档浏览及引文定位在第二块实现如下。
+
+## 原文归档与定位（决定 91，第二块）
+
+模型 26 在既有分段选择中增加“原文”，继续使用全部、我的、与我共享、团队及授权文件夹；侧栏数量来自实际原文登记。
+Table 行只选择对象，Inspector 展示当前精确采集、元数据、只读预览及底部动作。导入/显式保存使用既有 Origin、CSRF、
+会话和 POST/303；打开列表、详情或 Dialog 均不保存。Dialog 的表单面板让字段留在正文，关闭与主按钮留在底部，继续支持
+原生表单和增强提交。这里不增加任意 URL 抓取、静态文案登记表或 MCP 模式。
+
+知识来源链接固定采集与条目/引文索引；网址不放私人引文正文。服务器重读原引文并返回当前位置，重复匹配分组逐项列出，
+不自动选择第一处。选中位置显示附近的逐字上下文，并可查看完整的有界页面；片段位置不冒充原文件坐标。原文分页在 UTF-8
+字符边界切分，HTML 始终转义显示。固定哈希脚本只把服务器标出的引文滚入视口，不计算或信任客户端匹配结果；原生锚点
+在关闭脚本时也能定位。已定位的中性标签不表示内容已验证。
+
+下载独立 GET 经同一会话、精确采集、完整性及当前读权/读取档位边界；附件响应使用 octet-stream、no-store、nosniff 与
+sandbox CSP，不把 HTML 作为站内页面执行。无权与不存在都为同一中性页面，限制档位和损坏原件不返回下载字节。
+新引文突出显示只用现有 pressed/text/focus 设定；对比度审计增加 12 个实际底色样本，不增加颜色。
+
+`node hub/server/console/testing-source-archive-browser.ts` 是本机 macOS Chrome 的合成截图检查，使用临时 Hub、
+PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。它每次从空白页发起文档导航，并等本次 loader 完成，
+避免同 URL 的片段导航复用旧表单。导入先核对实际选择的目录，选中详情跟随渲染列表的链接，不手拼选择 URL。
+正常状态必须是 HTTP 200 且没有中性错误/内部错误/参数错误；选中详情还必须含指定原文标题及正文。仅明确的撤权
+状态预期 404。故意构造的错误目录链接必须使截图检查失败且不增加图片计数。检查输出临时画廊、矩阵与脚本副本，
+截图与日志不进入 Git；该手动浏览器检查不加入普通单元测试或 Linux CI。
+
+成员停用/启用继续展示既有管理员命令 Dialog。后果说明明确私人空间冻结、分享暂停、团队副本保留和恢复边界；
+不声称远程 Circle 停止或数据清除。停用状态不再显示无法签发的邀请码/访问令牌入口。团队来源仍显示真实署名人及
+生成的账号状态。当前原文的精确采集已在读者个人空间时，Inspector 隐藏“保存到我的原文…”及 Dialog；下载/署名
+保留，另一份同字节未归档采集仍可保存，不增加跨文件夹复制动作。
+
+合成浏览器脚本扩展成员启用、停用/启用 Dialog、已停用、分享暂停、恢复分享及成员恢复共 7 个状态；每个状态仍跑
+深浅主题和 1440/1024/390px。错误页 guard 保留，已归档原文另断言没有重复保存动作。此为本机合成证据，不等同部署
+成员操作、Linux CI 或同步入口验证。

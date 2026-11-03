@@ -15,9 +15,9 @@ async function world(t:{after:(fn:()=>Promise<void>)=>void}){
  const runtime=new Database(createPool({...kit.database,user:role,password}));t.after(()=>runtime.end());
  await kit.personalPayloads!.scope(owner.id);return {kit,db,runtime,admin,owner};
 }
-test('a runtime binding cannot turn an ordinary independent upload into a personal capsule',async t=>{
+test('a runtime binding cannot turn an independently shared upload into a personal capsule',async t=>{
  const w=await world(t),bytes=Buffer.from('synthetic independent pack file');
- const artifact=await w.kit.artifacts.ingest({bytes,mediaType:'text/plain',name:'SKILL.md',origin:{upload:{session:null,message:null}},author:{user:w.owner.id,declared:null},provenanceType:'declared',visibility:{readers:[w.owner.id],admins:false,packs:[],shareable:false}});
+ const artifact=await w.kit.artifacts.ingest({bytes,mediaType:'text/plain',name:'SKILL.md',origin:{upload:{session:null,message:null}},author:{user:w.owner.id,declared:null},provenanceType:'declared',visibility:{readers:[w.owner.id],admins:true,packs:[],shareable:false}});
  const row=(await w.db.query('SELECT * FROM records WHERE digest=$1',[artifact.digest])).rows[0],body=String(row.body),hash=sha256Hex(Buffer.from(body)),size=Buffer.byteLength(body);
  const proof=sha256Hex([artifact.digest,hash,w.owner.id,INITIAL_PERSONAL_EPOCH,size,iso(row.created_at),row.kind,row.provenance,row.schema].join(':'));
  await assert.rejects(w.runtime.transaction(async tx=>{

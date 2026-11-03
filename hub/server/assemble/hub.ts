@@ -28,6 +28,7 @@ import { osIsolationAvailable, type SandboxOptions } from '../../rules/api.ts';
 import {
   createPackCatalog,
   createPackRegistry,
+  sweepPackStages,
   createPacksPort,
   createRunsService,
   recheckEffectChecks,
@@ -65,6 +66,8 @@ export interface AssemblyOptions {
   log?: (line: string) => void;
   /** Where published packs are extracted read-only; default <data dir>/packs (derived data, rebuilt from the objects). */
   extractDir?: string;
+  /** Serve startup only: retire orphaned extraction stages before any parser refresh or request. */
+  sweepStages?:boolean;
   /** How long the connectors reuse the resource list, in ms (default theirs, 5 s; tests 0). */
   resourceCacheMs?: number;
   /** The admin a standing knowledge sync acts as when a call names none (default none: every sync names its admin). */
@@ -120,6 +123,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const notices: string[] = [];
   // 1. The vault master key: read (never created) and checked against the vault before anything else.
   if (options.requireVaultKey !== false) await requireVaultKey(records, { command: options.command === true });
+  if(options.sweepStages===true){const count=await sweepPackStages(options.extractDir??join(config.dataDir,'packs'));notes.log(`已清除发布暂存目录 ${count} 个`);}
 
   const now = options.now;
   const sandbox: SandboxOptions = { requireOsIsolation: options.requireOsIsolation ?? true };
@@ -253,7 +257,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
  */
 export function createAssembly(options: AssemblyOptions = {}): AssembleFunction {
   return async (config, records) => {
-    const hub = await assembleHub(config, records, { requireVaultKey: true, checkSandbox: true, ...options });
+    const hub = await assembleHub(config, records, { requireVaultKey: true, checkSandbox: true, ...options, sweepStages:true });
     for (const notice of hub.notices) hub.notes.log(`注意：${notice}`);
     return hub.deps;
   };
@@ -275,6 +279,7 @@ export function createCommandAssembly(options: AssemblyOptions = {}): (config: H
       requireVaultKey: false,
       checkSandbox: false,
       command: true,
+      sweepStages:false,
     });
     return hub.deps;
   };

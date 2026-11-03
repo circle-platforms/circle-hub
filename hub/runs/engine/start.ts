@@ -1,5 +1,6 @@
 import {groundsAudience,guardedRecords} from './grounds.ts';
 import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
+import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
@@ -23,7 +24,7 @@ import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } 
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, RecordsError, AccessError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -137,7 +138,7 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
   const identity=async(id:string)=>{
     const record=await ctx.deps.records.principals?.get(id);
     if(!record)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','持有人用户资料缺失',{path:'/pack',fix:'请管理员恢复用户资料后重开运行'})]);
-    return {user:id,name:record.name};
+    return {user:id,name:record.deleted_at?uiLabelOf('account_display_name','deleted_member'):record.name};
   };
   return {now:ctx.now().toISOString(),entries:await Promise.all(rows.map(async row=>({key:row.key,since:row.since,until:row.until,run:row.run,mine:false,
     jobs:jobs.filter(job=>job.key===row.key).map(job=>job.job),
@@ -686,7 +687,13 @@ async function startFresh(
   }
   let stored: StoredRecord<RunRecord>;
   try {
-    stored = await putRun(store, record, startedAt);
+    const principals=ctx.deps.records.principals;
+    if(principals?.lockActive){stored=await store.withTransaction(async tx=>{
+      const owners=[workflow.pack.space,...(record.skills??[]).map(skill=>skill.space)].filter((space):space is string=>typeof space==='string'&&isPersonalSpace(space));
+      try{user=await principals.lockActive!(user,tx,owners);}catch(error){if(error instanceof AccessError)throw unavailable('/pack','the actor or a personal owner is disabled');throw error;}
+      if(owners.length&&!await ctx.deps.workflows.forUser(user,record.pack,record.pack_space))throw unavailable('/pack','the personal workflow is no longer available');
+      return putRun(store,record,startedAt,tx);
+    });}else{if(isPersonalSpace(workflow.pack.space))throw unavailable('/pack','the personal commit account boundary is unavailable');stored = await putRun(store, record, startedAt);}
   } catch (error) {
     if (!(error instanceof LimitError)) throw error;
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `这个被判对象投影出 ${items.length} 个条目，运行记录超过 Hub 一条记录的上限，运行没有开始`, { path: subjectPath, fix: SPLIT_FIX })], describe(error));

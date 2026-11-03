@@ -5,7 +5,7 @@
 // note and the operator's log, connector failures only and capped). A temporary socket-only PostgreSQL; no real keychain
 // (a fake security tool), no network beyond loopback.
 import assert from 'node:assert/strict';
-import { access } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -246,6 +246,17 @@ function configOf(kit: { dataDir: string; database: HubConfig['database']; confi
     limits: { ...kit.config.limits },
   };
 }
+
+test('only the serving assembly sweeps crash stages before refresh and logs a count without paths or names',async()=>{
+ const kit=await openTestRecords({postgres});try{
+  const root=join(kit.dataDir,'packs'),team=join(root,'.tmp-'+'a'.repeat(64)+'-123456abcdef'),privateDir=join(root,'personal','.tmp-'+'b'.repeat(64)+'-abcdef123456');
+  for(const dir of [team,privateDir]){await mkdir(dir,{recursive:true});await writeFile(join(dir,'synthetic-private-name'),'synthetic private promotion text');}
+  const lines:string[]=[],options={requireOsIsolation:false,leases:null,log:(line:string)=>lines.push(line)};
+  await createCommandAssembly(options)(configOf(kit),kit,{stderr:line=>lines.push(line)});await access(team);await access(privateDir);assert.deepEqual(lines,[]);
+  await createAssembly(options)(configOf(kit),kit);await assert.rejects(access(team));await assert.rejects(access(privateDir));
+  assert.deepEqual(lines,['已清除发布暂存目录 2 个']);assert.ok(!lines.join('').includes(kit.dataDir));assert.ok(!lines.join('').includes('synthetic-private-name'));
+ }finally{await kit.close();}
+});
 
 describe('the vault key check', () => {
   test('checkVaultKey of hub/records passes with the vault\'s key, refuses a missing or another key, and adds no entry', async () => {

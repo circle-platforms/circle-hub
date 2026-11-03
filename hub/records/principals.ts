@@ -1,3 +1,4 @@
+import {retireReadScope} from './read-scope.ts';
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
 // once; only its SHA-256 is stored. Every change to a user is recorded as an append-only snapshot in user_history.
 // The MCP standard authorization (decision 78) adds the clients that registered themselves and the invitation codes an
@@ -6,7 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange } from './api.ts';
+import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange, Transaction } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
 import type { Database, PgTransaction, Row } from './db.ts';
 import { sha256Hex } from './digest.ts';
@@ -49,6 +50,9 @@ function invitationCode(): string {
   return `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}`;
 }
 
+/** Reused by member deletion, keeping a single named administrator-set namespace. */
+export async function lockAdministratorSet(db:Database,tx:Transaction){await db.query('SELECT pg_advisory_xact_lock($1)',[ADMIN_SET_LOCK],tx);}
+
 function userOf(row: Row): User {
   if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里', { detail: { user: row.id } });
   return {
@@ -56,6 +60,7 @@ function userOf(row: Row): User {
     name: String(row.name),
     role: row.role,
     disabled: row.disabled === true,
+    ...(row.deleted_at?{deleted_at:iso(row.deleted_at)}:{}),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
   };
@@ -138,7 +143,7 @@ export class PgPrincipals implements Principals {
   }
 
   async verifyPassword(name: string, password: string): Promise<{ user: User; revision: number; mustChange: boolean } | null> {
-    const row = typeof name === 'string' && NAME.test(name) ? (await this.#db.query('SELECT * FROM users WHERE name = $1', [name])).rows[0] : undefined;
+    const row = typeof name === 'string' && NAME.test(name) ? (await this.#db.query('SELECT * FROM users WHERE name = $1 AND deleted_at IS NULL', [name])).rows[0] : undefined;
     const matches = await matchesPassword(password, row?.password_hash === undefined || row.password_hash === null ? null : String(row.password_hash));
     if (!matches || row === undefined || row.disabled) return null;
     return {user:userOf(row),revision:Number(row.password_revision),mustChange:row.password_must_change === true};
@@ -193,7 +198,7 @@ export class PgPrincipals implements Principals {
       if (current.role === wanted) return current;
       if (current.role === ADMIN && !current.disabled) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: wanted, disabled: current.disabled }, by.id);
-    });
+    }).finally(retireReadScope);
   }
 
   async setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User> {
@@ -205,7 +210,17 @@ export class PgPrincipals implements Principals {
       if (current.disabled === disabled) return current;
       if (disabled && current.role === ADMIN) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: current.role, disabled }, by.id);
-    });
+    }).finally(retireReadScope);
+  }
+
+  async lockActive(by: Principal, tx: Transaction, owners: readonly string[] = []): Promise<Principal> {
+    const ids = [...new Set([by?.id, ...owners])].sort();
+    if (ids.some(id => typeof id !== 'string' || !USER_ID.test(id))) throw new AccessError('对象不存在或无权读取');
+    // FOR SHARE conflicts with deactivation's FOR UPDATE, but lets independent active writes proceed concurrently.
+    const rows = (await this.#db.query('SELECT * FROM users WHERE id = ANY($1::text[]) ORDER BY id FOR SHARE', [ids], tx)).rows;
+    if (rows.length !== ids.length || rows.some(row => row.disabled)) throw new AccessError('对象不存在或无权读取');
+    const actor = userOf(rows.find(row => row.id === by.id)!);
+    return {id: actor.id, name: actor.name, role: actor.role};
   }
 
   async get(userId: string): Promise<User | null> {
@@ -216,7 +231,7 @@ export class PgPrincipals implements Principals {
 
   async findByName(name: string): Promise<User | null> {
     if (typeof name !== 'string') return null;
-    const row = (await this.#db.query('SELECT * FROM users WHERE name = $1', [name])).rows[0];
+    const row = (await this.#db.query('SELECT * FROM users WHERE name = $1 AND deleted_at IS NULL', [name])).rows[0];
     return row === undefined ? null : userOf(row);
   }
 
@@ -232,6 +247,7 @@ export class PgPrincipals implements Principals {
       name: String(row.name),
       role: validRole(row.role),
       disabled: row.disabled === true,
+      ...(row.deleted_at?{deleted_at:iso(row.deleted_at)}:{}),
       changed_by: row.changed_by === null ? null : String(row.changed_by),
       changed_at: iso(row.changed_at),
       ...(row.password_changed === true ? {password_changed:true as const} : {}),
@@ -416,6 +432,7 @@ export class PgPrincipals implements Principals {
   async #locked(tx: PgTransaction, userId: string): Promise<User> {
     const row = typeof userId === 'string' && USER_ID.test(userId) ? (await this.#db.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [userId], tx)).rows[0] : undefined;
     if (row === undefined) throw new ConflictError('没有这个用户');
+    if(row.deleted_at)throw new ConflictError(labelOf('account_status','deleted'));
     return userOf(row);
   }
 
@@ -428,7 +445,7 @@ export class PgPrincipals implements Principals {
     const at = this.#now().toISOString();
     const id = newId('usr');
     const inserted = await this.#db.query(
-      'INSERT INTO users (id, name, role, disabled, created_at, updated_at, password_hash, password_must_change, password_revision) VALUES ($1, $2, $3, false, $4, $4, $5, $6, $7) ON CONFLICT (name) DO NOTHING RETURNING *',
+      'INSERT INTO users (id, name, role, disabled, created_at, updated_at, password_hash, password_must_change, password_revision) VALUES ($1, $2, $3, false, $4, $4, $5, $6, $7) ON CONFLICT DO NOTHING RETURNING *',
       [id, name, role, at, hash, mustChange, hash === null ? 0 : 1],
       tx,
     );

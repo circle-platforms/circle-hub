@@ -24,6 +24,7 @@ export { scanFunctions, SANDBOX_IMPORT_POLICY } from './packs/imports.ts';
 export type { FunctionEntry, ImportPolicy } from './packs/imports.ts';
 export { PackFileError } from './packs/load.ts';
 export type { TamperEvent } from './packs/extract.ts';
+export {sweepPackStages} from './packs/extract.ts';
 export { compareVersions, highestVersion, isCanonicalVersion, MAX_PACK_REF_LENGTH, parsePackRef } from './packs/versions.ts';
 export { packChanges, type PackFileChange } from './packs/changes.ts';
 export type { PackRef } from './packs/versions.ts';

@@ -12,8 +12,8 @@ export function selectedScope(ctx:PageContext):KnowledgeSearchScope{
 }
 export const inScope=(scope:KnowledgeSearchScope,space:string,viewer:string)=>scope==='all'||(scope==='team'?space==='team':scope==='personal'?space===viewer:space!=='team'&&space!==viewer);
 export function knowledgeTabs(ctx:PageContext):Html{
- const scope=selectedScope(ctx),current=ctx.url.searchParams.get('view')==='memory'?'memory':'knowledge';
- return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='memory'?{view}:{})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}</nav>`;
+ const scope=selectedScope(ctx),current=ctx.url.pathname.endsWith('/sources')?'sources':KnowledgeViewSchema.safeParse(ctx.url.searchParams.get('view')).data??'knowledge';
+ return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='knowledge'?{}:{view})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}</nav>`;
 }
 export async function currentAudience(ctx:PageContext,space:string,path='/',product=false,pack?:string,memory=false){
  const own=space===ctx.principal.id;
@@ -30,9 +30,10 @@ function ancestors(paths:readonly string[]):string[]{
  const directories=new Set<string>(['/']);for(const path of paths){const parts=path.split('/').filter(Boolean);for(let n=1;n<=parts.length;n++)directories.add('/'+parts.slice(0,n).join('/'));}return [...directories].sort();
 }
 export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly PackListing[]):Promise<Html>{
- const scope=selectedScope(ctx),memory=ctx.url.searchParams.get('view')==='memory',base=packs?'/console/packs':'/console/knowledge';
+ const scope=selectedScope(ctx),memory=ctx.url.searchParams.get('view')==='memory',sources=ctx.url.searchParams.get('view')==='sources'||ctx.url.pathname.endsWith('/sources'),base=packs?'/console/packs':'/console/knowledge';
  const memories=memory?await ctx.deps.knowledge.memory?.items(ctx.principal)??[]:[];
  const visible=packs||memory?[]:await ctx.deps.knowledge.spaces?.visible(ctx.principal,'all',undefined,{initialize:false})??[];
+ const archive=sources?await ctx.deps.knowledge.spaces?.archive(ctx.principal,{scope:'all',limit:1}):null;
  const names=new Map(await Promise.all([...new Set([...visible.map(v=>v.space),...memories.map(v=>v.space)])].map(async space=>[space,await ctx.userName(space)] as const)));
  const readable=await ctx.deps.products?.readableProducts(ctx.principal)??new Set<string>();
  const products=await ctx.deps.products?.products?.()??[];
@@ -54,21 +55,21 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
    const allowed=v.version.body.directories.filter(path=>{const related=mounts.filter(m=>containsDirectory(m.path,path)||containsDirectory(path,m.path));return v.paths.some(parent=>containsDirectory(parent,path))&&(!related.length||related.some(m=>readable.has(m.product)));});
    const labels=new Map<string,string>();
    for(const mount of mounts.filter(m=>readable.has(m.product))){const parts=mount.path.split('/').filter(Boolean);labels.set('/'+parts[0],uiLabelOf('knowledge_directory','products'));labels.set('/'+parts.slice(0,-1).join('/'),productNames.get(mount.product)??mount.product);labels.set(mount.path,mount.line??'不分版本');}
-   const url=(path:string)=>'/console/knowledge/space?'+new URLSearchParams({space:v.space,path,scope:s});
+   const url=(path:string)=>(sources?'/console/knowledge?':'/console/knowledge/space?')+new URLSearchParams({...(sources?{view:'sources'}:{}),space:v.space,path,scope:s});
    const label=(path:string)=>labels.get(path)??directoryName(path).split(' › ').at(-1)!;
    const roots=allowed.filter(path=>!allowed.some(parent=>parent!==path&&containsDirectory(parent,path)));
    const selected=ctx.url.searchParams.get('space')===v.space?ctx.url.searchParams.get('path')??'/':undefined;
    const tree=allowed.includes('/')?directoryTree(allowed,url,'/',label,3,selected):html`${roots.map(root=>html`<details open><summary><a href="${url(root)}" title="${label(root)}"${root===selected?html` aria-current="page"`:''}>${label(root)}</a></summary>${directoryTree(allowed,url,root,label,2,selected)}</details>`)}`;
-   return v.space===ctx.principal.id||v.space==='team'?tree:html`<details open><summary>${link('/console/knowledge/space',names.get(v.space),{space:v.space,path:v.paths[0],scope:s})}</summary>${tree}</details>`;
+   return v.space===ctx.principal.id||v.space==='team'?tree:html`<details open><summary>${link(sources?'/console/knowledge':'/console/knowledge/space',names.get(v.space),{...(sources?{view:'sources'}:{}),space:v.space,path:v.paths[0],scope:s})}</summary>${tree}</details>`;
   });
-  const total=memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
-  const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:{})});
+  const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
+  const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:sources?{view:'sources'}:{})});
   return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)} <span class="ch-count">${(subset?count('workflow')+count('skill'):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
  const recentPacks=packs?.filter(p=>(p.kind==='workflow'||p.kind==='skill')&&inScope(scope,p.space??'team',ctx.principal.id));
- const count= recentPacks?new Set(recentPacks.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:
+ const count= sources?archive?.counts[scope]??0:recentPacks?new Set(recentPacks.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:
   memory?memories.filter(item=>inScope(scope,item.space,ctx.principal.id)).length:
   visible.filter(v=>inScope(scope,v.space,ctx.principal.id)).reduce((n,v)=>n+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
- const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${packs?uiLabelOf('pack_kind','workflow'):memory?uiLabelOf('knowledge_view','memory'):'知识库'}</h2><p class="ch-meta">${uiLabelOf('knowledge_search_scope',scope)}</p></section><div class="ch-stat"><span class="ch-stat-label">${packs?'工作流与通用技能':memory?'记忆':'知识'}</span><span class="ch-stat-value">${count.toLocaleString('en-US')}</span></div>${recentPacks?.length?html`<section class="ch-section"><h2 class="ch-section-label">最近发布</h2><ul class="ch-feed">${[...recentPacks].sort((a,b)=>b.published_at.localeCompare(a.published_at)).slice(0,5).map(pack=>html`<li>${link('/console/packs/'+pack.id,pack.title,{space:pack.space,scope})}<span class="ch-meta">${pack.published_at.slice(0,10)}</span></li>`)}</ul></section>`:''}`;
+ const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${packs?uiLabelOf('pack_kind','workflow'):memory?uiLabelOf('knowledge_view','memory'):sources?uiLabelOf('knowledge_view','sources'):'知识库'}</h2><p class="ch-meta">${uiLabelOf('knowledge_search_scope',scope)}</p></section><div class="ch-stat"><span class="ch-stat-label">${packs?'工作流与通用技能':memory?'记忆':sources?'原文':'知识'}</span><span class="ch-stat-value">${count.toLocaleString('en-US')}</span></div>${recentPacks?.length?html`<section class="ch-section"><h2 class="ch-section-label">最近发布</h2><ul class="ch-feed">${[...recentPacks].sort((a,b)=>b.published_at.localeCompare(a.published_at)).slice(0,5).map(pack=>html`<li>${link('/console/packs/'+pack.id,pack.title,{space:pack.space,scope})}<span class="ch-meta">${pack.published_at.slice(0,10)}</span></li>`)}</ul></section>`:''}`;
  return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector===undefined?overview:content.layout.inspector});
 }

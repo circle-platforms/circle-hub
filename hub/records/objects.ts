@@ -1,3 +1,5 @@
+import {PersonalPackVersionBody} from '../../contracts/src/sharing.ts';
+import {canonicalize} from './canonical.ts';
 import {verifiedRecord} from './store.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 // Content-addressed bytes under <root>/ab/<sha256> (adapted from the earlier knowledge object store): atomic write through a
@@ -41,7 +43,7 @@ export class FileObjectStore implements ObjectStore {
     return join(this.root, sha256.slice(0, 2), sha256);
   }
 
-  async put(bytes: Uint8Array, mediaType: string,tx?:Transaction,personalOwner?:string): Promise<ObjectInfo & { created: boolean }> {
+  async put(bytes: Uint8Array, mediaType: string,tx?:Transaction,personalOwner?:string,accountOwned=false): Promise<ObjectInfo & { created: boolean }> {
     if (!(bytes instanceof Uint8Array)) throw new TypeError('object bytes must be a Uint8Array');
     if (!isMediaType(mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(mediaType)}`);
     if (bytes.byteLength > this.#options.maxBytes) {
@@ -51,9 +53,9 @@ export class FileObjectStore implements ObjectStore {
     }
     const sha256 = sha256Hex(bytes);
     const created=personalOwner&&this.#options.personalPayloads?await this.#db.transaction(async t=>{
-      const scope=await this.#options.personalPayloads!.scope(personalOwner,t);
+      const scope=await (accountOwned?this.#options.personalPayloads!.account(personalOwner,t):this.#options.personalPayloads!.scope(personalOwner,t));
       const exists=await this.#db.query('SELECT 1 FROM personal_objects WHERE owner=$1 AND epoch=$2 AND sha256=$3',[scope.owner,scope.epoch,sha256],t);
-      await this.#options.personalPayloads!.object(personalOwner,bytes,t);return !exists.rows.length;
+      await this.#options.personalPayloads!.object(personalOwner,bytes,t,accountOwned);return !exists.rows.length;
     },tx):await this.#write(sha256,bytes);
     const result = await this.#db.query(
       `INSERT INTO objects (sha256, size, media_type, created_at) VALUES ($1, $2, $3, $4)
@@ -66,8 +68,9 @@ export class FileObjectStore implements ObjectStore {
     return { ...info, created: created || result.rowCount === 1 };
   }
 
-  async get(sha256: string): Promise<Uint8Array | null> {
+  async get(sha256: string,tx?:Transaction): Promise<Uint8Array | null> {
     if (!isSha256(sha256)) return null;
+    if(tx)return (await this.#readBytes([sha256],tx)).get(sha256)??null;
     return new Promise((resolve,reject)=>{
       const waiting=this.#pending.get(sha256);if(waiting){waiting.push({resolve,reject});return;}
       this.#pending.set(sha256,[{resolve,reject}]);
@@ -75,14 +78,14 @@ export class FileObjectStore implements ObjectStore {
     });
   }
 
-  async #readBytes(hashes:readonly string[]):Promise<Map<string,Uint8Array>>{
+  async #readBytes(hashes:readonly string[],tx?:Transaction):Promise<Map<string,Uint8Array>>{
     const values=new Map<string,Uint8Array>(),missing:string[]=[];
     await Promise.all(hashes.map(async hash=>{
       let bytes:Buffer;try{bytes=await readFile(this.path(hash));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;missing.push(hash);return;}
       if(sha256Hex(bytes)!==hash)throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）',{detail:{sha256:hash}});
       values.set(hash,bytes);
     }));
-    if(missing.length)for(const [hash,bytes]of await this.#databaseBytes(missing))values.set(hash,bytes);
+    if(missing.length)for(const [hash,bytes]of await this.#databaseBytes(missing,tx))values.set(hash,bytes);
     return values;
   }
 
@@ -92,16 +95,16 @@ export class FileObjectStore implements ObjectStore {
     try{const values=await this.#readBytes([...batch.keys()]);for(const [hash,waiting]of batch)for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}
     catch{await Promise.all([...batch].map(async([hash,waiting])=>{try{const values=await this.#readBytes([hash]);for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}catch(error){for(const call of waiting)call.reject(error);}}));}
   }
-  async #databaseBytes(hashes:readonly string[]):Promise<Map<string,Uint8Array>>{
-    // Keep get()'s precedence: an independent run holder, then the first active account/epoch payload.
+  async #databaseBytes(hashes:readonly string[],tx?:Transaction):Promise<Map<string,Uint8Array>>{
+    // Keep get()'s precedence: independent run/retained holders, then the first active account/epoch payload.
     const rows=await this.#db.query<{sha256:string;data:Buffer|null;independent:boolean;cleared:boolean;registered:boolean}>(`SELECT wanted.sha256,coalesce(h.data,p.data) AS data,h.data IS NOT NULL AS independent,
       EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256)
        AND NOT EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch))) AS cleared,
       EXISTS(SELECT 1 FROM objects o WHERE o.sha256=wanted.sha256) AS registered
       FROM unnest($1::text[]) AS wanted(sha256)
-      LEFT JOIN LATERAL (SELECT r.data FROM run_originals r WHERE r.sha256=wanted.sha256 ORDER BY r.artifact LIMIT 1) h ON true
+      LEFT JOIN LATERAL ((SELECT r.data FROM run_originals r WHERE r.sha256=wanted.sha256 ORDER BY r.artifact LIMIT 1) UNION ALL (SELECT h.data FROM held_objects h WHERE h.sha256=wanted.sha256) LIMIT 1) h ON true
       LEFT JOIN LATERAL (SELECT p.data FROM personal_objects o JOIN personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
-       WHERE $2::bool AND o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch)) ORDER BY o.owner,o.epoch LIMIT 1) p ON h.data IS NULL`,[hashes,!!this.#options.personalPayloads]);
+       WHERE $2::bool AND o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch)) ORDER BY o.owner,o.epoch LIMIT 1) p ON h.data IS NULL`,[hashes,!!this.#options.personalPayloads],tx);
     const values=new Map<string,Uint8Array>();
     for(const row of rows.rows){
       if(row.data!==null){if(sha256Hex(row.data)!==row.sha256)throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）',{detail:{sha256:row.sha256}});values.set(row.sha256,row.independent?Buffer.from(row.data):Uint8Array.from(row.data));}
@@ -117,16 +120,18 @@ export class FileObjectStore implements ObjectStore {
     // Bound traversal metadata; no source bytes are retained in the cache.
     const copied=new Set<string>(),walked=new Set<string>(),cacheLimit=50_000;
     const remember=(cache:Set<string>,key:string)=>{if(cache.size>=cacheLimit)cache.delete(cache.values().next().value!);cache.add(key);};
-    const copy=async(owner:string,epoch:string,hash:string,tree:boolean,depth=0):Promise<void>=>{
+    const copy=async(owner:string,epoch:string,hash:string,tree:boolean,depth=0,record?:string):Promise<void>=>{
       if(depth>64||!isSha256(hash))throw new IntegrityError('个人目录原件结构不完整');
       const key=owner+'\0'+epoch+'\0'+hash;
       if(walked.has(key)||copied.has(key)&&!tree)return;
       const bytes=await this.get(hash);if(!bytes)throw new IntegrityError('缺少待迁移的个人原件');
       if(!copied.has(key)){
-        await this.#db.transaction(async tx=>{const scope=await personal.scope(owner,tx);if(scope.epoch!==epoch)throw new IntegrityError('个人内容转移的代次已变化');await personal.object(owner,bytes,tx);});
+        const scope=(await this.#db.query('SELECT account_epoch FROM personal_spaces WHERE owner=$1',[owner])).rows[0];
+        if(scope?.account_epoch===epoch){if(!record)throw new IntegrityError('私人载荷缺少转移记录');await this.#db.query('SELECT hub_restore_legacy_object($1,$2,$3)',[record,hash,Buffer.from(bytes)]);}
+        else await this.#db.transaction(async tx=>{const scope=await personal.scope(owner,tx);if(scope.epoch!==epoch)throw new IntegrityError('个人内容转移的代次已变化');await personal.object(owner,bytes,tx);});
         remember(copied,key);
       }
-      if(tree){const value=JSON.parse(Buffer.from(bytes).toString());for(const child of value.children??[])await copy(owner,epoch,child.digest,true,depth+1);remember(walked,key);}
+      if(tree){const value=JSON.parse(Buffer.from(bytes).toString());for(const child of value.children??[])await copy(owner,epoch,child.digest,true,depth+1,record);remember(walked,key);}
     };
     for(;;){
       const rows=await this.#db.query('SELECT r.digest,r.kind,b.owner,b.epoch FROM records r JOIN personal_record_bindings b ON b.record=r.digest WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_ready d WHERE d.record=r.digest) AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=b.owner AND x.epoch=b.epoch) ORDER BY r.seq LIMIT 100');
@@ -134,11 +139,17 @@ export class FileObjectStore implements ObjectStore {
       for(const row of rows.rows){
         const record=(await this.#db.query('SELECT * FROM hub_read_records() WHERE digest=$1',[row.digest])).rows[0];
         if(!record)continue;const body=verifiedRecord<Record<string,unknown>>(record).body;
-        if(row.kind==='knowledge_space_version'&&body.tree)await copy(String(row.owner),String(row.epoch),String(body.tree),true);
-        if(row.kind==='source_artifact')await copy(String(row.owner),String(row.epoch),String(body.sha256),false);
+        if(row.kind==='knowledge_space_version'&&body.tree)await copy(String(row.owner),String(row.epoch),String(body.tree),true,0,String(row.digest));
+        if(row.kind==='source_artifact')await copy(String(row.owner),String(row.epoch),String(body.sha256),false,0,String(row.digest));
+        if(row.kind==='personal_pack_version'){
+          const pack=PersonalPackVersionBody.parse(body),manifest=Buffer.from(canonicalize(pack.manifest));if(sha256Hex(manifest)!==pack.digest)throw new IntegrityError('私人包清单与冻结摘要不符');
+          await copy(String(row.owner),String(row.epoch),pack.digest,false,0,String(row.digest));
+          for(const file of pack.manifest.files)await copy(String(row.owner),String(row.epoch),file.sha256,false,0,String(row.digest));
+        }
         await this.#db.query('SELECT hub_finish_personal_record($1)',[row.digest]);
       }
     }
+    await this.#db.query('SELECT hub_finish_independent_objects()');
     const retired=await this.#db.query('SELECT sha256 FROM personal_legacy_retire q WHERE NOT EXISTS(SELECT 1 FROM personal_legacy_retired d WHERE d.sha256=q.sha256)');
     if(!retired.rows.length)return;
     const protectedNodes=new Set<string>();

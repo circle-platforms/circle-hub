@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 106 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 110 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -471,3 +471,63 @@ The model remains 26, generated schemas 176 and MCP tools six. Circle client imp
 Decision 89 visual integration regenerates the model-26 contracts over decision 92's UI labels. Only the existing
 cleared-personal-folder value gains a UI label for the current console wording; its code, protocol label, HTTP shapes,
 shared v1 fixtures and pack protocol mirrors stay unchanged. No model version or migration is renumbered.
+
+Model 25 implements the decision-91 block-one contract list in `9ba31246`, explicitly approved by Claude on 2026-11-03.
+`knowledge_source_attribution` has a strict declared body joining the uploader's personal source registration, exact capture
+and immutable bytes. Only team associations/entries may carry the optional `attribution`/`source_attributions` fields;
+the latter is unique and bounded to 100. The caller-facing entry/share inputs and six tools are unchanged. Generic record
+readers deny the private declaration; team views expose only verified, already-published attribution metadata.
+`SHARE_UPLOAD_UNSIGNED` retains its code with approved next-step text; no rejection code is added. The new B02 display axis
+`source_attribution_status` generates 未署名 and 已署名为团队来源. Their UI labels equal the model labels, so the generator's
+normal fallback supplies them without redundant `ui` annotations. Static consent copy stays in the console.
+The four protocol mirrors are regenerated; HTML/mindmap manifests advance to 1.0.12 and XML/workbook to 1.0.13, with no
+skill business-code changes. No migration is needed. Attribution records belong to the uploader's personal purge scope;
+actual purge integration awaits sync and the coordinator's rebase instruction in block five.
+
+Model 26 implements the decision-91 block-two list in `9f4eb42b`, approved as written by Claude on 2026-11-03. It adds
+`knowledge_view.sources` (原文) and B03's display-only `source_location_status` (已定位 / 多处匹配 / 未定位), with normal UI
+label fallback. B02/K01/B03 record explicit saving, unchanged old capture/run authority, current-access attachment reads
+and exact server-side quote locations. No record kind, stored field, rejection code, reference grammar or MCP mode changes.
+Generation changes only root `protocol.ts` (model version) and `vocabulary.ts`; the four protocol mirrors' bytes do not
+change, so their patch manifests do not advance. Static UI copy remains console code. No migration is introduced.
+
+Model 27 implements only R01's decision-91 member freeze/restore rules approved in `715b2e50`: current actor/owner checks,
+paused private grants, reversible restoration, independent team copies and an ordered committing account boundary.
+B03's frozen-run evaluation authority stays unchanged. Existing account statuses and all shapes/codes/vocabulary remain
+unchanged. Generation changes only the root protocol's model version; protocol mirrors and manifests do not advance.
+
+### Phase 5 capacity (decision 91)
+
+Claude approved contract list `591c4f47`. Model 28 adds R01's record-derived logical history accounting, exact capacity
+adjustment and owner/admin rejection facts, plus the UI-only `capacity_unit` axis (KB/MB/GB). Only the when/fix text of
+`SPACE_CAPACITY_EXCEEDED` changes; record shapes, fields, codes, protocol modes and migrations do not. Static copy stays
+in the console. Regeneration also updates the four skill protocol mirrors, with manifest-only patch bumps to html/mindmap
+1.0.13 and xml/workbook 1.0.14. No skill behavior or source provenance changes.
+
+### Decision 91 integration with decision 89
+
+Replaying the four approved finishing blocks onto sync model 26 yields models 27–30. Model 30 contains all sync and
+finishing rules; it introduces no additional decision. The generated protocol mirrors and manifest-only skill patches
+are html/mindmap 1.0.14 and xml/workbook 1.0.15. Earlier phase paragraphs retain their original model/version history.
+
+### Permanent member deletion (decision 91)
+
+Claude approved proposal d437875f on 2026-11-03. Model 31 adds the account display value `deleted`, deletion-time metadata
+on the user port, and closed `member-deletion@1` and `knowledge-team-source-attribution@1` records. The deletion receipt
+has only operation/member/actor/time/epoch, a canonical digest manifest and nonnegative counts; no plaintext manifest.
+The team credential preserves a previously verified declaration for one exact independent team capture, without private
+paths or text. Both kinds are excluded from arbitrary record-reference readers. No rejection code or MCP tool changes;
+the four skills' code-only protocol mirrors remain byte-identical in this step.
+
+Decision 91 block-5 display polish (Claude, 2026-11-03) sets model 32. account_status.deleted is the status label
+“已删除”; the separate generated account_display_name.deleted_member supplies the identity placeholder “已删除的成员”.
+The two terms are tested independently. No stored record shape, permission, rejection code or migration changes. Four
+skill protocol mirrors are byte-identical because this revision changes only display vocabulary; no skill version bump.
+
+
+PR #139's phase-5 review follow-up (Claude, 2026-11-03) sets model 33. The existing quota shape accepts SpaceId,
+including team, without a new record kind or migration. Team history uses the same verified-record accounting, defaults
+to 10 GiB as directed by Claude pending the owner's final default confirmation, and shares the existing admin control.
+The capacity refusal code now names space generically; team refusals use team wording, with optional space=team in the
+existing numeric capacity detail for admins only. Members receive no team totals. Generated protocol mirrors and their
+four patch manifests change together; no skill business code changes.

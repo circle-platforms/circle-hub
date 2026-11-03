@@ -4,6 +4,41 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Keep team and member management available when the knowledge service or personal spaces feature is absent.
+
+- Prefer the sharer's own signed original before team and granted equal-byte copies while keeping exact attribution boundaries.
+
+- Bound retained team knowledge and memory with administrator quotas that survive personal purge and reuse member capacity controls.
+
+- Release sync write admission when a peer disconnects before body reading, and replay legacy document runs across their actual upgrade boundary.
+
+- Serialize team sharing with private ground owners before copying their originals.
+
+- Retire request-local read proofs after member deletion, deactivation and personal purge while preserving console batching and transaction-bound objects.
+- Batch exact historical capacity reads without trusting cumulative counters or retaining every entry body at once.
+
+- Bound waiting private publication requests and return busy feedback after releasing rejected uploads.
+
+- Remove orphaned personal and team pack staging on service startup while preserving live publishers.
+
+- Preserve fresh shared pack staging during member cleanup without delaying removal of private cache remnants.
+
+- Mask deleted member names in administrator CLI listings while retaining stable member identifiers.
+
+- Narrow frozen upload declarations by the source hash index before decoding registrations during run admission and upgrade.
+
+- Bound private pack staging per member and keep sandbox publication checks outside pooled database transactions.
+
+- Separate deleted-member names from status badges and show readable deletion categories with host-execution instructions.
+
+- Freeze all deleted-account fields and token revocation history, verify deletion manifests inside PostgreSQL, and show tombstones consistently without revival or new-grant actions.
+
+- Purge private installs and original captures with deleted members while preserving exact existing team and frozen-run holders.
+
+- Add permanent member tombstones and guarded digest-only deletion receipts over the existing personal payload purger.
+
+- Share exact native capacity accounting with personal sync admission and freeze archive and attribution requests to their admitted epoch.
+
 - Integrate personal sync with the shared console shell, Inspector, confirmation dialogs and current-state feedback.
 
 - Admit sync requests before appending audit records so unknown routes and rate refusals cannot grow the log.
@@ -32,6 +67,12 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 - Bound repeated legacy personal-tree traversal and keep retirement holder lookups indexed.
 
+- 升级后，私人空间用量从不可变记录确定性重算，修正旧计数少计或多计；成员看到的已用容量可能增加。
+  已有内容及版本保持不变，真实用量达到上限时拒收后续写入。管理员可用 MB/GB 精确调整额度；
+  成员页、我的空间和超限提示统一显示一位小数的 KB/MB/GB，Tooltip 或纯文本保留精确字节。
+
+- 成员停用与恢复使用事务内账号检查，冻结私人写入和分享，保留原件与团队副本；已归档原文隐藏重复保存入口。
+
 The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](docs/hub-r4-brief.md). Nothing below has been released.
 
 ### Removed
@@ -41,6 +82,14 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 - **Breaking: the `CIRCLE_SERVER_*` configuration fallback is gone; circle-server is no longer supported anywhere.** circle-hub reads only `CIRCLE_HUB_*`. From 2026-10-16 the retired server and its scripts refused to start while any `CIRCLE_SERVER_*` variable was set, even an empty one or one beside its `CIRCLE_HUB_*` replacement, and named each variable and its replacement without printing a value; the redesigned Hub keeps this rule (planned). The `hub.environment.deprecated` notice is gone with the fallback.
 
 ### Added
+
+- The knowledge console has a source archive with space-scoped browsing, explicit saving, exact-capture links and
+  server-verified quote locations. Every match is available through bounded pages; HTML remains escaped and downloads
+  are current-access attachments. Saving an ordinary upload preserves its original capture, ACL and frozen run declaration.
+
+- Uploaders can explicitly attribute an exact private upload as a declared team knowledge source. Unsigned sharing is
+  refused with a next step; successful sharing records the signer and a separately authorized team copy while preserving
+  the original private capture and ACL. Console confirmation explains the consequence; attribution alone publishes nothing.
 
 - Console vocabulary values use the model's interface labels, while static copy follows the shared Chinese wording and
   spacing rules. Explanations appear in keyboard-accessible tooltips; rendered-page checks preserve original evidence.

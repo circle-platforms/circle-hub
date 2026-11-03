@@ -51,7 +51,7 @@ export { createDefaultRegistry, defaultParsers, jsonParser, markdownParser, text
 export type { MarkdownBlock, MarkdownModel, MarkdownSection } from './parsers/markdown.ts';
 export type { TextModel } from './parsers/text.ts';
 
-export { candidatesFrom, collapseWhitespace, findQuote, locateQuote, quoteMatches } from './quote.ts';
+export { candidatesFrom, collapseWhitespace, findQuote, locateQuote, quoteMatches, quoteLocations } from './quote.ts';
 export type { QuoteCandidate, QuoteLocation, QuoteMatch, QuoteSearch, QuoteSpan, QuoteStream } from './quote.ts';
 
 export { UNAVAILABLE_MESSAGE, createDocumentCache, fragmentDigest, isGroundable, prefetchReferences, resolveReference, sliceUtf8, verifyQuote } from './resolve.ts';

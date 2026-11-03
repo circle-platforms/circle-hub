@@ -36,7 +36,10 @@
         "memory_document",
         "memory_version",
         "memory_grant",
-        "memory_share"
+        "memory_share",
+        "knowledge_source_attribution",
+        "member_deletion",
+        "knowledge_team_source_attribution"
       ]
     },
     "schema": {

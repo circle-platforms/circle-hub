@@ -104,6 +104,22 @@ export function locateQuote(fragmentText: string, quote: string): QuoteLocation 
   return { from, to: from + utf8Length(fragmentText.slice(first.start, first.end)), occurrences: first.count };
 }
 
+/** All exact occurrences, counted in linear time; retain only one bounded page, including overlapping matches. */
+export function quoteLocations(text:string,quote:string,offset=0,limit=32):{total:number;matches:Array<{ordinal:number;from:number;to:number;line:number}>}{
+  if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new TypeError('invalid quotation page');
+  const matcher=compile(quote),matches:Array<{ordinal:number;from:number;to:number;line:number}>=[];
+  let total=0,previous=0,bytes=0,line=1;
+  if(matcher)matcher.scan(text,0,text.length,(start,end)=>{
+    const ordinal=total++;
+    if(ordinal>=offset&&matches.length<limit){
+      const prefix=text.slice(previous,start);bytes+=Buffer.byteLength(prefix);for(const ch of prefix)if(ch==='\n')line++;
+      matches.push({ordinal,from:bytes,to:bytes+Buffer.byteLength(text.slice(start,end)),line});previous=start;
+    }
+    return true;
+  });
+  return {total,matches};
+}
+
 /** A text shared by nested candidates of one source (one object per parsed document). */
 export interface QuoteStream {
   readonly text: string;

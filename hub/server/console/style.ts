@@ -6,6 +6,8 @@ const BASE_CSS = `
 :where(.hub) b,:where(.hub) strong{font-weight:600}
 :where(.hub) code,:where(.hub) pre,.num,.nowrap,:where(.hub) time{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 :where(.hub) code{font-size:12px;overflow-wrap:anywhere}
+.ch-original-preview{max-height:55vh;overflow:auto}
+.ch-source-hit{color:var(--text-primary);background:var(--surface-pressed);outline:1px solid var(--focus-ring);scroll-margin-block:var(--space-4)}
 :where(.hub) pre{white-space:pre-wrap;overflow:auto;max-width:100%}
 :where(.hub) p{margin:0}
 :where(.hub) :focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}

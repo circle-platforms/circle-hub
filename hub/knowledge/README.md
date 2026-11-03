@@ -42,10 +42,67 @@ content hashes. Missing projection rows are rebuilt from immutable records. Sear
 Team histories and diffs include product mounts; personal histories/diffs are owner-only, including whole-space grantees. Directory pages and search have byte/node caps.
 
 Personal capacity defaults to 1 GiB and is adjustable only by administrators. The accounting includes admitted entry/source
-bytes and successive snapshot metadata, including history; withdrawals do not free history. This is logical space usage,
+bytes, successive snapshot metadata and memory document/revision bodies; withdrawals do not free history. This is logical space usage,
 not a report of filesystem blocks. Grants and capacity changes are append-only records. Writes serialize before opening
 the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
-Local synchronization, upload signing and account-deletion lifecycle remain later phases.
+Local synchronization and account-deletion lifecycle remain later phases on this branch. Upload signing is implemented
+below; it does not implement purge or change the synchronization branch.
+
+## Uploader attribution (decision 91, block one)
+
+Claude approved the contract list in `9ba31246` before model 25 was changed. `spaces.attributeSource` requires the enabled
+authenticated uploader, their current personal source registration and exact upload capture. Full readability and credential
+inspection remain mandatory. A declared `knowledge_source_attribution` record is appended under the personal space lock;
+concurrent repeated confirmations return the existing declaration. Equal bytes, another capture, a caller-supplied author
+or administrator privileges cannot substitute for that uploader's confirmation. The declaration itself publishes nothing.
+
+Sharing rechecks the exact declaration, current read rights, quotations, parser eligibility and complete source bytes.
+Success appends a separately held declared team capture, its explicit source association, the team's actual attribution
+set, snapshot and receipt in the same transaction. A team-copy failure rolls the transaction back. Private capture bytes,
+metadata and ACL remain immutable. Current team readers can reuse the explicitly published copy; administrator revisions
+retain its attribution. `sourceAttribution` and `entryAttributions` return authorized metadata only; raw `rec:` readers deny
+all private declaration records, including to administrators. Indexes locate candidates but never establish authority.
+
+`SourceBinding.upload_declaration` remains run-scoped, and an administrator's ordinary-upload import retains its existing
+separate declaration rule. A team signature does not change either rule or waive private-credential/source restrictions.
+Existing SHA references still select captures under the original read policy; the signature must match that actual capture.
+The source Inspector and SourceBlocks pin exact captures rather than silently substituting equal-byte metadata.
+
+The attribution record is part of its uploader's personal space. Per Claude's 2026-11-03 instruction, block five must
+include it in sync's personal purge scope after the coordinator arranges the rebase. No parallel purge implementation,
+new SQL table or migration is introduced here. Source archive browsing/location is implemented below.
+
+## Source archive (decision 91, block two)
+
+Claude approved the contract list in `9f4eb42b` before model 26 was changed. `spaces.archive` projects only current authorized
+space snapshots and their exact source registrations, with optional folder/history selection. It never initializes a space,
+enumerates the global original pool or saves on GET. Pagination binds account, scope, folder, snapshot and grant paths;
+metadata and counts are rechecked before returning. Permission changes during the read refuse the page, rather than
+returning stale private counts. Selection can locate its authorized page without exposing other accounts' registrations.
+
+`archiveSource` is an explicit, transaction-bound save under the existing space lock. Own ordinary declared uploads become
+separate private captures; their original records/ACLs and frozen run declarations remain unchanged. The submitted archive
+request declares its message identity as `archive:<selected capture>` in the existing upload-origin field. This distinguishes
+equal-byte captures and makes retries find the same private copy without a new stored field. The server checks that identity
+against the selected capture, current uploader, bytes, metadata and target registration; it is not an authorization token or
+an observed chat-session identifier. New copies have no inherited team attribution. Historical copies and client-captured
+or generated content do not acquire ordinary-upload eligibility by being displayed.
+
+Connector captures can be registered by their actual named reader in that reader's private space; only administrators can
+register eligible observed team reads for the team. Private-credential reads cannot enter a shared folder or gain a grant.
+Grant pre-check/confirmation now pins every registered capture, so an equal-byte team original cannot lend eligibility.
+Quota and snapshot writes are atomic, and duplicate saves consume no further capacity. The empty-space initialization
+exemption now requires no originals, mounts or incoming bytes: the first file at the root must also be charged. Existing
+immutable historical counters are not rewritten; the capacity ledger below corrects their interpretation on every read/write.
+
+`spaces.original` loads the quotation from the authorized entry/ground index, not from URL text or client-reported offsets.
+It pins the exact capture, resolves the declared parser/fragment and rechecks the entry/source after asynchronous parsing.
+All exact occurrences are counted and paged; a single match is selected automatically, multiple matches require selection.
+The view uses bounded decoded-text pages or a small context around a selected quote. Presentation offsets describe that
+decoded fragment, never asserted raw-file coordinates. Source bytes, quote whitespace and immutable records are unchanged.
+Missing parsers, byte-integrity failures and unreadable tiers never create a guessed match. Downloads use the same current
+capture/access/tier boundary and attachment-only HTTP responses; no new MCP mode or fetcher is added. Sync/purge integration
+and member lifecycle remain later blocks.
 
 
 Model elements **K01** (knowledge tree), **K02** (entries), **K03** (three writer layers), **K04** (placement by the typed
@@ -1271,8 +1328,9 @@ previews preserve that safe location information. Neither preview creates a docu
 Memory metadata lists and directory share preflight own a read scope, or join the enclosing console scope. Heads and
 usage are reused per space only within that scope; version and original-content reads coalesce through the verified
 record store, after each path's existing permission test. Principals and grant pages are request-scoped too. Transaction
-arguments bypass memoization and writes through the scoped store clear it, as for knowledge entries; raw writers must
-finish their outer read scope first (records README). No authorization result is cached across requests.
+arguments bypass memoization and writes through the scoped store clear it, as for knowledge entries. Account deactivation,
+deletion and personal purge retire the request generation, including retained memory adapters and outstanding reads.
+Other raw writers must finish their outer scope first (records README). No authorization result is cached across requests.
 Preflight collects per-head read results before scanning in original head order, preserving its first failure. A missing
 batch result falls back to the scalar record reader so an active missing payload still raises an integrity incident;
 a completed purge remains unavailable, and team copies are unaffected. Versions retain document/space and body-pointer
@@ -1363,3 +1421,93 @@ The sync rebase retains local-mode paths, epoch admission and cleared-ground dow
 Readonly mode/cleared answers are reused only inside the request; raw sync writes must remain outside that scope.
 The native candidate/count/batch ports use hub_read_records(), never physical capsule bodies. Purged roots and former
 grants stay absent after resume, and private-only sync entries are excluded from grantee counts before pagination.
+## Decision 91 member freeze and restore
+
+Space initialization, knowledge/directory/withdrawal writes, source imports/explicit saves/attribution, grants and team
+sharing recheck the committing actor using records' transaction-scoped `lockActive` after the space business locks.
+Team-only writers recheck the locked actor's current role. Memory writes/grants/shares/rebuild use the same boundary.
+A deactivation completed before it refuses the write; after it, deactivation waits for that transaction. The records port
+is required, not an optional fallback. Access failures retain the existing neutral `SOURCE_UNAVAILABLE`.
+
+Current private owner checks pause member and all-administrator grants without appending revocations. Final entry,
+original and memory reads recheck after asynchronous loads. Restoring an account exposes the same stored versions under
+still-current grants, while expressly revoked grants remain revoked. Team copies use their own authority, so deactivating
+the original submitter neither hides nor purges them. Source signer identity remains real with its existing account status.
+`ownsSource` checks exact-capture registration in the reader's current personal version for the console's save-action rule;
+equal bytes in another capture do not establish ownership. Explicit save retries remain idempotent.
+
+`member-freeze.test.ts` deterministically gates knowledge, source import, explicit archive save and memory writes in both
+orders, observes the database lock wait and checks no admitted records on refusal and unchanged versions after restore.
+The integration test additionally checks stale sessions/principals, private grants, byte preservation and team copies.
+Sync HTTP and personal purge remain deferred to the coordinator's later rebase and block five.
+
+## Record-derived capacity (decision 91, phase 5 block 4)
+
+`capacity.ts` recomputes logical usage from immutable admitted space versions and memory documents/revisions, not the
+stored `used_bytes` or mutable memory history counters. Each personal version contributes its actual canonical body
+size; entry/source payload additions relative to its parent contribute canonical entry bodies or registered original
+bytes. Carried references do not charge again. Only an initial completely empty root is free. Explicit duplicate archive
+saves append nothing and charge nothing. Memory includes document metadata and every revision, including disabled or
+superseded bodies, but not grants/refusal receipts. Missing required accounting records fail closed. Counts use checked
+integers; snapshot metadata includes its final counter's own serialized length.
+
+The ledger deterministically corrects both low and inflated old counters without changing any old record, source, hash,
+quota or schema, and without appending on GET. A future accepted snapshot projects the corrected knowledge total. Hence
+usage displayed after upgrade may increase (see CHANGELOG), and a formerly admitted space can now be over quota.
+Reducing a quota to zero or below usage retains existing originals, versions and valid shares; remaining is zero and new
+writes fail atomically. The space business lock serializes the quota record and knowledge/source/memory admission,
+including cross-instance writers. Refusals carry used/limit/remaining/requested numbers from that same transaction in
+internal error detail. `usage` exposes only totals to the owner or current administrator, never private bodies/titles.
+
+Capacity refusals are re-evaluated on a memory retry with the same client key, so a raised quota can admit it; accepted
+writes still replay their immutable receipt. Other cached refusals retain their previous idempotency semantics. Active
+memory/context limits remain separate. Personal workflow/skill bytes, sync staging, indexes and physical storage blocks
+are outside this ledger's approved scope. Synchronization admission and purge wait for the sync rebase/block 5.
+
+### Native capacity and sync integration
+
+Capacity projections and native admission use the records package's shared verified ledger, including existing staged
+sync metadata. Sync projections use the same committing account guard as native writes. Archive and attribution
+admission freeze the personal epoch before asynchronous work and recheck it inside the space transaction; an old
+request cannot recreate private state after purge/resume. A saved personal upload copy is scoped storage, preserving
+the original upload's independent run declaration and access.
+
+### Team provenance after permanent deletion
+
+Team attribution display accepts the separately preserved, exact team-source credential after the private declaration,
+registration and original have been purged. It still requires the published team association and current source read
+permission; another equal-byte capture cannot borrow the declaration. Personal saved observations use a scoped copy,
+retaining their observed origin. Permanent deletion clears imports, archives, declarations, knowledge/memory history and
+projections, while independent team and other-member captures retain their original rights. Missing private grounds use
+the existing current unverified projection; immutable historic receipts are not rewritten.
+
+Saved observed originals preserve the exact original captured_at timestamp: saving to a private archive is not a new
+observation. Deleted accounts cannot receive new folder or memory grants, while an owner can still revoke their historical
+grants. Username reuse never reattaches a fresh account to the old grant identity. The deletion scenario covers real
+console/MCP/sync invalidation alongside retained independent team originals, attribution and team memory.
+
+Batched entry hydration preserves exact source/capture metadata. A final batched path-permission check keeps the deletion
+guard without repeating the same authorization query for each entry. Deleted personal bodies remain unavailable while
+team and independently run-held originals retain their original access.
+
+Team sharing freezes the readable private ground owners before copying. Private space locks are deduplicated and sorted,
+then the team space lock is acquired, preserving the private-before-team order used by memory sharing. Account row locks
+cover both submitter and dependency owners; the full inspection runs afterward. A changed candidate that introduces an
+unlocked owner refuses this attempt. Unrelated equal-byte private captures never enter the lock set or confer authority.
+
+### Retained team-space capacity
+
+The team space defaults to 10 GiB under the coordinator's implementation authorization, pending the owner's default
+confirmation. Administrators adjust it through the same quota record and console control used for member capacity.
+Knowledge, captured originals, space-version metadata and memory history share the verified retained-history ledger;
+external product mounts and workflow executable files are outside this charge. Every team revision, share and admin
+import checks the quota under the team-space lock, with sharing preflight before original-byte promotion. Personal
+removal, purge and a fresh sync epoch never credit retained team copies. Lowering a quota preserves existing data and
+refuses new charge until capacity is available. Only administrators may read or adjust team totals; member refusals
+use the existing capacity code and team wording without disclosing numeric usage.
+
+Sharing resolves unpinned source hashes in this order: the sharer's own currently readable signed capture, an existing
+readable team association, then another currently readable signed private capture. The same choice drives quote
+verification, private-owner locking and the retained team attribution. An equal-byte unsigned capture never inherits
+a declaration; a reusable team or granted copy keeps its actual uploader. Ordinary reads and frozen run bindings keep
+their existing resolution. Rejected/missing choices retain the previous sharing checks and codes.

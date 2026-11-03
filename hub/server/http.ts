@@ -130,6 +130,9 @@ export type BodyResult = { ok: true; bytes: Buffer } | { ok: false; reason: 'too
  * stops the same way and the result is `busy`.
  */
 export function readBody(request: IncomingMessage, limit: number, hold?: BodyHold): Promise<BodyResult> {
+  // Database/authentication work may yield until after the peer has already disconnected.
+  // An emitted abort will not be replayed to listeners installed below.
+  if (request.aborted || request.destroyed) return Promise.resolve({ ok: false, reason: 'aborted' });
   const declared = request.headers['content-length'];
   if (declared !== undefined && (!/^[0-9]{1,15}$/.test(declared) || Number(declared) > limit)) {
     request.resume();

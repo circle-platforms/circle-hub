@@ -555,3 +555,9 @@ KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 
 每条运行绑定引用原运行记录和发布记录，标明迁移时点事后声明、管理员、时间和迁移验证测试名；复核的结果锁与有效条件包含追加摘要及声明记录。未补绑时明确返回“运行未锁定技能包摘要”和 `skill bind-legacy` 出口。同一摘要重复执行只补缺失记录，不重复追加；改变映射拒绝。扫描按页处理，整批事务失败不留下半批绑定。
 
 Team verification uses `ResolveContext.teamParsersOnly`: the current team parser set is used without personal run locks or personal-namespace fallback. Missing team capability returns `TEAM_PARSER_REQUIRED`. Personal reference reads keep their current grant and frozen-skill checks.
+
+Decision 91 block two adds `quoteLocations` through `api.ts` for the source archive. It uses the existing exact KMP matcher
+to count every occurrence, including overlaps, while retaining only a bounded page (at most 100 locations; the console
+uses 32). UTF-8 offsets and line numbers refer to the supplied decoded fragment, not implicitly to raw file bytes. No
+whitespace folding, normalization, parser syntax or `verifyQuote` behavior changes. Knowledge owns source authorization,
+integrity resolution and post-parser rechecks; this helper's matches alone establish no reading or evidence permission.

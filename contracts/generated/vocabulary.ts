@@ -60,7 +60,8 @@ export const AXES = {
   pack_status: { label: '发布状态', ui: '状态', owner: 'T01', values: [{ code: 'published', label: '已发布' }, { code: 'retired', label: '已退役' }, { code: 'enabled', label: '已启用' }, { code: 'inactive', label: '未启用' }] },
   environment: { label: '环境类别', ui: '环境', owner: 'D01', values: [{ code: 'test', label: '测试' }, { code: 'shared', label: '共享' }, { code: 'production', label: '生产', ui: '正式' }] },
   permission_role: { label: '权限角色', ui: '角色', owner: 'R01', values: [{ code: 'user', label: '用户', ui: '成员' }, { code: 'admin', label: '管理员' }] },
-  account_status: { label: '账户状态', owner: 'R01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }] },
+  account_status: { label: '账户状态', owner: 'R01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'deleted', label: '已删除' }] },
+  account_display_name: { label: '账户显示名称', owner: 'R01', values: [{ code: 'deleted_member', label: '已删除的成员' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
   validity_status: { label: '有效条件状态', owner: 'B01', values: [{ code: 'valid', label: '有效' }, { code: 'rule_withdrawn', label: '规则已撤回' }, { code: 'grounds_withdrawn', label: '根据已撤回' }, { code: 'cited_fragment_changed', label: '被引片段已变' }, { code: 'credential_unreadable', label: '含凭据，原文不可读' }, { code: 'premise_failed', label: '依赖的前提失效' }, { code: 'expired', label: '已过期' }, { code: 'contradicted', label: '出现矛盾主张' }, { code: 'not_evaluated', label: '未评估' }] },
   qualifier_mark: { label: '限定标记', owner: 'B01', values: [{ code: 'target_reported', label: '目标自报' }, { code: 'report_for_dispatch', label: '目标对本次派发的报告' }, { code: 'local_ops_not_excluded', label: '未排除本地操作' }, { code: 'human_intervention', label: '有人工干预' }, { code: 'discrimination_not_established', label: '判别力未建立' }, { code: 'semantics_unasserted', label: '语义未断言' }, { code: 'unverified_submission', label: '未经平台验证' }, { code: 'client_preview', label: '客户端预览' }, { code: 'model_relay', label: '模型转述，未经校验' }, { code: 'no_reuse', label: '无复用' }, { code: 'author_samples_only', label: '仅作者样例' }, { code: 'conditional_on_judgment', label: '以判断为前提' }, { code: 'independence_declared', label: '独立性为客户端声明' }, { code: 'not_realtime', label: '非实时' }, { code: 'partial', label: '部分' }, { code: 'intermittent', label: '间歇' }, { code: 'decision_shape_unruled', label: '判定形状未裁定' }, { code: 'legacy_keyword_rules', label: '旧规则（关键词）' }, { code: 'possible_credentials', label: '可能含凭据' }] },
@@ -98,7 +99,7 @@ export const AXES = {
   knowledge_share_status: { label: '提交共享状态', ui: '分享到团队状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
   audience_scope: { label: '可见范围', ui: '分享范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人', ui: '仅自己可见' }, { code: 'members', label: '本人及 {n} 名成员', ui: '已分享给 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）', ui: '已分享给全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）', ui: '已分享给 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）', ui: '全员可见' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
   share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析', ui: '来源可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目', ui: '引用私人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读', ui: '依赖的私人条目或技能可读' }] },
-  knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }] },
+  knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }, { code: 'sources', label: '原文' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
   memory_share_effect: { label: '团队记忆写入', owner: 'K02', values: [{ code: 'create', label: '新写入一篇' }, { code: 'replace', label: '取代 {title}' }] },
   memory_action: { label: '记忆操作', owner: 'K01', values: [{ code: 'create', label: '新建记忆' }, { code: 'edit', label: '编辑记忆' }, { code: 'save', label: '保存记忆' }, { code: 'history', label: '版本历史', ui: '版本记录' }, { code: 'share', label: '提交共享', ui: '分享到团队' }, { code: 'share_preview', label: '记忆共享预检', ui: '分享到团队预检' }, { code: 'enable_memory', label: '启用记忆' }, { code: 'disable_memory', label: '停用记忆' }] },
@@ -109,6 +110,9 @@ export const AXES = {
   sync_status: { label: '同步状态', owner: 'K01', values: [{ code: 'idle', label: '尚未同步' }, { code: 'syncing', label: '等待同步中' }, { code: 'conflicted', label: '有冲突' }, { code: 'purging', label: '等待清除中' }, { code: 'complete', label: '同步完成' }] },
   sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
   sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }] },
+  source_attribution_status: { label: '团队来源署名', owner: 'B02', values: [{ code: 'unsigned', label: '未署名' }, { code: 'attributed', label: '已署名为团队来源' }] },
+  source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
+  capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -684,13 +688,23 @@ export function isPermissionRole(value: unknown): value is PermissionRole {
 }
 
 /** 账户状态 (R01) */
-export const ACCOUNT_STATUS = ['enabled', 'disabled'] as const;
+export const ACCOUNT_STATUS = ['enabled', 'disabled', 'deleted'] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUS)[number];
-export const ACCOUNT_STATUS_LABEL = { 'enabled': '已启用', 'disabled': '已停用' } as const satisfies { readonly [K in AccountStatus]: string };
-export const ACCOUNT_STATUS_UI = { 'enabled': '已启用', 'disabled': '已停用' } as const satisfies { readonly [K in AccountStatus]: string };
+export const ACCOUNT_STATUS_LABEL = { 'enabled': '已启用', 'disabled': '已停用', 'deleted': '已删除' } as const satisfies { readonly [K in AccountStatus]: string };
+export const ACCOUNT_STATUS_UI = { 'enabled': '已启用', 'disabled': '已停用', 'deleted': '已删除' } as const satisfies { readonly [K in AccountStatus]: string };
 export const AccountStatusSchema = z.enum(ACCOUNT_STATUS);
 export function isAccountStatus(value: unknown): value is AccountStatus {
   return (ACCOUNT_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 账户显示名称 (R01) */
+export const ACCOUNT_DISPLAY_NAME = ['deleted_member'] as const;
+export type AccountDisplayName = (typeof ACCOUNT_DISPLAY_NAME)[number];
+export const ACCOUNT_DISPLAY_NAME_LABEL = { 'deleted_member': '已删除的成员' } as const satisfies { readonly [K in AccountDisplayName]: string };
+export const ACCOUNT_DISPLAY_NAME_UI = { 'deleted_member': '已删除的成员' } as const satisfies { readonly [K in AccountDisplayName]: string };
+export const AccountDisplayNameSchema = z.enum(ACCOUNT_DISPLAY_NAME);
+export function isAccountDisplayName(value: unknown): value is AccountDisplayName {
+  return (ACCOUNT_DISPLAY_NAME as readonly unknown[]).includes(value);
 }
 
 /** 引用形式 (B03) */
@@ -1064,10 +1078,10 @@ export function isShareCheck(value: unknown): value is ShareCheck {
 }
 
 /** 知识库内容 (K01) */
-export const KNOWLEDGE_VIEW = ['knowledge', 'memory'] as const;
+export const KNOWLEDGE_VIEW = ['knowledge', 'memory', 'sources'] as const;
 export type KnowledgeView = (typeof KNOWLEDGE_VIEW)[number];
-export const KNOWLEDGE_VIEW_LABEL = { 'knowledge': '知识', 'memory': '记忆' } as const satisfies { readonly [K in KnowledgeView]: string };
-export const KNOWLEDGE_VIEW_UI = { 'knowledge': '知识', 'memory': '记忆' } as const satisfies { readonly [K in KnowledgeView]: string };
+export const KNOWLEDGE_VIEW_LABEL = { 'knowledge': '知识', 'memory': '记忆', 'sources': '原文' } as const satisfies { readonly [K in KnowledgeView]: string };
+export const KNOWLEDGE_VIEW_UI = { 'knowledge': '知识', 'memory': '记忆', 'sources': '原文' } as const satisfies { readonly [K in KnowledgeView]: string };
 export const KnowledgeViewSchema = z.enum(KNOWLEDGE_VIEW);
 export function isKnowledgeView(value: unknown): value is KnowledgeView {
   return (KNOWLEDGE_VIEW as readonly unknown[]).includes(value);
@@ -1173,6 +1187,36 @@ export function isSyncField(value: unknown): value is SyncField {
   return (SYNC_FIELD as readonly unknown[]).includes(value);
 }
 
+/** 团队来源署名 (B02) */
+export const SOURCE_ATTRIBUTION_STATUS = ['unsigned', 'attributed'] as const;
+export type SourceAttributionStatus = (typeof SOURCE_ATTRIBUTION_STATUS)[number];
+export const SOURCE_ATTRIBUTION_STATUS_LABEL = { 'unsigned': '未署名', 'attributed': '已署名为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
+export const SOURCE_ATTRIBUTION_STATUS_UI = { 'unsigned': '未署名', 'attributed': '已署名为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
+export const SourceAttributionStatusSchema = z.enum(SOURCE_ATTRIBUTION_STATUS);
+export function isSourceAttributionStatus(value: unknown): value is SourceAttributionStatus {
+  return (SOURCE_ATTRIBUTION_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 原文定位状态 (B03) */
+export const SOURCE_LOCATION_STATUS = ['resolved', 'ambiguous', 'unresolved'] as const;
+export type SourceLocationStatus = (typeof SOURCE_LOCATION_STATUS)[number];
+export const SOURCE_LOCATION_STATUS_LABEL = { 'resolved': '已定位', 'ambiguous': '多处匹配', 'unresolved': '未定位' } as const satisfies { readonly [K in SourceLocationStatus]: string };
+export const SOURCE_LOCATION_STATUS_UI = { 'resolved': '已定位', 'ambiguous': '多处匹配', 'unresolved': '未定位' } as const satisfies { readonly [K in SourceLocationStatus]: string };
+export const SourceLocationStatusSchema = z.enum(SOURCE_LOCATION_STATUS);
+export function isSourceLocationStatus(value: unknown): value is SourceLocationStatus {
+  return (SOURCE_LOCATION_STATUS as readonly unknown[]).includes(value);
+}
+
+/** 容量单位 (R01) */
+export const CAPACITY_UNIT = ['kb', 'mb', 'gb'] as const;
+export type CapacityUnit = (typeof CAPACITY_UNIT)[number];
+export const CAPACITY_UNIT_LABEL = { 'kb': 'KB', 'mb': 'MB', 'gb': 'GB' } as const satisfies { readonly [K in CapacityUnit]: string };
+export const CAPACITY_UNIT_UI = { 'kb': 'KB', 'mb': 'MB', 'gb': 'GB' } as const satisfies { readonly [K in CapacityUnit]: string };
+export const CapacityUnitSchema = z.enum(CAPACITY_UNIT);
+export function isCapacityUnit(value: unknown): value is CapacityUnit {
+  return (CAPACITY_UNIT as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1232,6 +1276,7 @@ export interface AxisValues {
   environment: Environment;
   permission_role: PermissionRole;
   account_status: AccountStatus;
+  account_display_name: AccountDisplayName;
   reference_scheme: ReferenceScheme;
   validity_status: ValidityStatus;
   qualifier_mark: QualifierMark;
@@ -1280,6 +1325,9 @@ export interface AxisValues {
   sync_status: SyncStatus;
   sync_object_kind: SyncObjectKind;
   sync_field: SyncField;
+  source_attribution_status: SourceAttributionStatus;
+  source_location_status: SourceLocationStatus;
+  capacity_unit: CapacityUnit;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1341,6 +1389,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   environment: ENVIRONMENT_LABEL,
   permission_role: PERMISSION_ROLE_LABEL,
   account_status: ACCOUNT_STATUS_LABEL,
+  account_display_name: ACCOUNT_DISPLAY_NAME_LABEL,
   reference_scheme: REFERENCE_SCHEME_LABEL,
   validity_status: VALIDITY_STATUS_LABEL,
   qualifier_mark: QUALIFIER_MARK_LABEL,
@@ -1389,6 +1438,9 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   sync_status: SYNC_STATUS_LABEL,
   sync_object_kind: SYNC_OBJECT_KIND_LABEL,
   sync_field: SYNC_FIELD_LABEL,
+  source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
+  source_location_status: SOURCE_LOCATION_STATUS_LABEL,
+  capacity_unit: CAPACITY_UNIT_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1450,6 +1502,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   environment: ENVIRONMENT_UI,
   permission_role: PERMISSION_ROLE_UI,
   account_status: ACCOUNT_STATUS_UI,
+  account_display_name: ACCOUNT_DISPLAY_NAME_UI,
   reference_scheme: REFERENCE_SCHEME_UI,
   validity_status: VALIDITY_STATUS_UI,
   qualifier_mark: QUALIFIER_MARK_UI,
@@ -1498,6 +1551,9 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   sync_status: SYNC_STATUS_UI,
   sync_object_kind: SYNC_OBJECT_KIND_UI,
   sync_field: SYNC_FIELD_UI,
+  source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
+  source_location_status: SOURCE_LOCATION_STATUS_UI,
+  capacity_unit: CAPACITY_UNIT_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

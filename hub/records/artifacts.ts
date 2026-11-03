@@ -241,16 +241,34 @@ export class RecordArtifacts implements Artifacts {
   }
 
   ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> {
-    return input.personalOwner?this.#personalIngest(input,false,tx):this.#ingest(input,false,tx);
+    return this.#owned(input,false,tx).then(snapshot=>snapshot.personalOwner?this.#personalIngest(snapshot,true,tx):this.#ingest(snapshot,true,tx));
   }
 
-  #personalIngest(input:IngestInput,consume:boolean,outer?:Transaction):Promise<SourceArtifact>{
+  async #owned(input:IngestInput,consume:boolean,tx?:Transaction):Promise<IngestInput>{
+    if(!(input.bytes instanceof Uint8Array))throw new TypeError('bytes must be a Uint8Array');
+    if(!isMediaType(input.mediaType))throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
+    const origin=validOrigin(input.origin),author=validAuthor(input.author),visibility=validVisibility(input.visibility,origin);
+    if(input.bytes.length>this.#options.maxBytes)throw new LimitError(`文件 ${input.bytes.length} 字节，超过上限 ${this.#options.maxBytes} 字节；不会截断保存`,{detail:{size:input.bytes.length,limit:this.#options.maxBytes}});
+    let bytes:Uint8Array;if(consume&&input.bytes.buffer instanceof ArrayBuffer&&input.bytes.byteOffset===0&&input.bytes.byteLength===input.bytes.buffer.byteLength){try{bytes=structuredClone(input.bytes,{transfer:[input.bytes.buffer]});}catch(error){if((error as Error).name!=='DataCloneError')throw error;bytes=Uint8Array.from(input.bytes);}}else bytes=Uint8Array.from(input.bytes);
+    const snapshot={...input,bytes,origin,author,visibility,...(input.capturedAt!==undefined?{capturedAt:normalizeTime(input.capturedAt,'capturedAt')}:{})};
+    if(input.personalOwner)return snapshot;
+    const owner='upload'in origin&&!visibility.admins?author.user:'read'in origin&&!visibility.admins&&visibility.readers.length===1?visibility.readers[0]:null;
+    // External asserted identities without a local account are not silently made into Hub members.
+    const account=owner?(await this.#db.query('SELECT id FROM users WHERE id=$1',[owner],tx)).rows[0]:null;
+    return account?{...snapshot,personalOwner:owner!,accountOwned:true}:snapshot;
+  }
+  #refusals=new WeakMap<RecordsError,RefusedUpload>();
+  async #personalIngest(input:IngestInput,consume:boolean,outer?:Transaction):Promise<SourceArtifact>{
     const snapshot={...input,bytes:consume?input.bytes:Uint8Array.from(input.bytes)};
-    return this.#store.withTransaction(async tx=>{
-      // Personal writes always acquire the space lock before the ingest deduplication lock.
-      await this.#store.lock('knowledge-space:'+input.personalOwner,tx);
-      return this.#ingest(snapshot,true,tx,await this.#personal.scope(input.personalOwner!,tx));
-    },outer);
+    try{return await this.#store.withTransaction(async tx=>{
+      if(!input.accountOwned)await this.#store.lock('knowledge-space:'+input.personalOwner,tx);
+      return this.#ingest(snapshot,true,tx,await (input.accountOwned?this.#personal.account(input.personalOwner!,tx):this.#personal.scope(input.personalOwner!,tx)));
+    },outer);}catch(error){
+      // A standalone attempt retains its existing refusal audit only after its failed payload transaction releases.
+      const refused=error instanceof RecordsError?this.#refusals.get(error):undefined;
+      if(!outer&&input.accountOwned&&refused&&error instanceof RecordsError){const action=await this.#recordRefusedUpload(refused,'CREDENTIAL_IN_UPLOAD');throw new RecordsError(error.message,{code:error.code,fix:error.fix,detail:{...error.detail,action:action.digest}});}
+      throw error;
+    }
   }
 
   async recordUploadRefusal(input:Pick<IngestInput,'bytes'|'mediaType'|'origin'|'author'|'run'>,code:ProtocolCode){
@@ -260,13 +278,13 @@ export class RecordArtifacts implements Artifacts {
     return this.#recordRefusedUpload({sha256:sha256Hex(bytes),size:bytes.length,mediaType:input.mediaType,origin,author,run:input.run??null,scan:this.#scan(bytes)},code);
   }
 
-  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return input.personalOwner?this.#personalIngest(input,true):this.#ingest(input, true); }
+  ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#owned(input,true).then(snapshot=>snapshot.personalOwner?this.#personalIngest(snapshot,true):this.#ingest(snapshot,true)); }
 
   async #ingest(input: IngestInput, consume: boolean,outer?:Transaction,personalScope?:PersonalScope): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
-    if(outer&&!('upload' in origin))throw new TypeError('transactional ingestion requires an upload');
+    if(outer&&!('upload' in origin)&&!(personalScope&&'read'in origin))throw new TypeError('transactional ingestion requires an upload');
     const author = validAuthor(input.author);
     if (!isProvenanceType(input.provenanceType)) throw new TypeError('unknown provenance type');
     const requestedTier = input.readTier ?? MODEL_READABLE;
@@ -316,7 +334,7 @@ export class RecordArtifacts implements Artifacts {
       origin,
       author,
       captured_at: capturedAt,
-      ...(personalScope?{personal_scope:personalScope}:{}),
+      ...(personalScope&&!input.accountOwned?{personal_scope:personalScope}:{}),
       // An upload says whether its client declared the capture time. Any other artifact has no client capture to declare
       // and keeps exactly the record it had before the field existed, so its identity and every view built on it do not move.
       ...('upload' in origin ? { captured_at_declared: input.capturedAt !== undefined } : {}),
@@ -332,7 +350,7 @@ export class RecordArtifacts implements Artifacts {
     // the same answer again reuses its record (round-four review, item 7).
     const dedupe = digestOf({
       sha256,
-      ...(personalScope?{personal_scope:personalScope}:{}),
+      ...(personalScope&&!input.accountOwned?{personal_scope:personalScope}:{}),
       ...('upload' in origin && input.capturedAt !== undefined ? { captured_at: capturedAt } : {}),
       media_type: input.mediaType,
       name,
@@ -354,13 +372,13 @@ export class RecordArtifacts implements Artifacts {
       ...('read' in origin ? [{ key: 'artifact.object', value: origin.read.object }] : []),
       ...(author.user === null ? [] : [{ key: 'artifact.author', value: author.user }]),
     ]);
-    await this.#objects.put(bytes, input.mediaType,outer,input.personalOwner);
+    await this.#objects.put(bytes, input.mediaType,outer,input.personalOwner,input.accountOwned);
     return this.#store.withTransaction(async (tx) => {
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [INGEST_LOCK_SPACE, dedupe], tx);
       const existing = await this.#store.find<SourceArtifactBody>({ key: 'artifact.dedupe', value: dedupe, kind: 'source_artifact', limit: 1 }, tx);
       if (existing.items[0] !== undefined) return existing.items[0];
       return this.#store.put<SourceArtifactBody>(
-        { personalOwner:input.personalOwner,kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
+        { personalOwner:input.personalOwner,accountOwned:input.accountOwned,kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: input.provenanceType, body, created_at: this.#options.now().toISOString(), index },
         tx,
       );
     },outer);
@@ -427,6 +445,10 @@ export class RecordArtifacts implements Artifacts {
     const parsed = RunRecord.safeParse(record?.body??options.pending);
     if (!parsed.success || parsed.data.run !== run) return null;
     const snapshot = parsed.data;
+    if(snapshot.pack_space&&snapshot.pack_space!=='team'&&snapshot.runner!==viewer.id&&!await this.#viewer({id:snapshot.pack_space,name:'',role:'user'})){
+      const owner=(await this.#db.query('SELECT deleted_at FROM users WHERE id=$1',[snapshot.pack_space])).rows[0];
+      if(!owner?.deleted_at||!record||!(await this.#db.query('SELECT 1 FROM run_pack_records WHERE owner=$1 AND digest=$2',[snapshot.pack_space,snapshot.pack_digest])).rowCount)return null;
+    }
     const visible = (!snapshot.pack_space||snapshot.pack_space==='team')&&viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now(),viewer.role);
     if (!visible || ![...snapshot.sources.map(binding=>binding.reference),...snapshot.items.map(item=>item.location)].some(reference => /^src:([0-9a-f]{64})(?:\/|$)/.exec(reference)?.[1] === sha256)) return null;
     const captures=[...new Set(snapshot.sources.filter(binding=>binding.artifact!==undefined&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256).map(binding=>binding.artifact!))];
@@ -438,7 +460,7 @@ export class RecordArtifacts implements Artifacts {
         if(await this.canRead(principal,stored as SourceArtifact)){sources.push(stored as SourceArtifact);continue;}
         const binding=snapshot.sources.find(binding=>binding.artifact===digest&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256);
         const declaration=binding?.upload_declaration;
-        const declared=!!declaration&&declaration.by===(snapshot.runner??snapshot.configurer)&&stored.body.author.user===declaration.by&&await this.mayDeclareUpload({id:declaration.by,role:'user',name:''},digest);
+        const declared=!!declaration&&declaration.by===(snapshot.runner??snapshot.configurer)&&stored.body.author.user===declaration.by&&'upload'in stored.body.origin&&stored.provenance==='declared'&&stored.body.provenance_type==='declared'&&!stored.body.personal_scope&&(record?!!(await this.#db.query('SELECT 1 FROM run_upload_declarations WHERE run_record=$1 AND artifact=$2 AND uploader=$3',[record.digest,digest,declaration.by])).rowCount:await this.mayDeclareUpload({id:declaration.by,name:'',role:'user'},digest));
         const teamRead='read' in stored.body.origin&&stored.body.visibility.admins&&stored.body.provenance_type==='observed';
         if(!declared&&!teamRead&&!('generated'in stored.body.origin))return null;
         sources.push(stored as SourceArtifact);
@@ -755,7 +777,7 @@ export class RecordArtifacts implements Artifacts {
       .map((finding) => `第 ${finding.line} 行第 ${finding.column} 列（${finding.detector}）`)
       .join('、');
     const more = refused.scan.findings.length > 5 || refused.scan.truncated ? ' 等' : '';
-    throw new RecordsError(`${PROTOCOL_CODES.CREDENTIAL_IN_UPLOAD.when}：${places}${more}。上传未受理，原文没有保存`, {
+    const error=new RecordsError(`${PROTOCOL_CODES.CREDENTIAL_IN_UPLOAD.when}：${places}${more}。上传未受理，原文没有保存`, {
       code: 'CREDENTIAL_IN_UPLOAD',
       detail: {
         sha256: refused.sha256,
@@ -766,5 +788,6 @@ export class RecordArtifacts implements Artifacts {
         action: action.digest,
       },
     });
+    if(tx)this.#refusals.set(error,refused);throw error;
   }
 }

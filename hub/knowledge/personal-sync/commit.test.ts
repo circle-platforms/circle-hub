@@ -183,3 +183,22 @@ test('sync retains capture provenance and read tiers when renaming a source, and
  const first=await s.sync.commit(w.user,s.session,{schema:'personal-sync-commit@1',epoch:s.state.epoch,operation_id:randomUUID(),expected_state:s.state.state_version,base_snapshot:s.state.snapshot,snapshot:personalSyncObjectId(v.snapshot)}),current=(await spaces.current(w.user.id))!,link=await w.kit.store.get<z.infer<typeof import('../../../contracts/src/spaces.ts').SpaceSourceBody>>(current.body.sources[0]);assert.equal(link?.body.artifact,capture.digest);assert.equal(link?.body.name,'synthetic-renamed.txt');assert.equal((await spaces.source(w.user,capture.body.sha256))?.readTier,'function_bytes_only');assert.equal(await spaces.source(w.outsider,capture.body.sha256,undefined,'function'),null);assert.equal((await spaces.sources(w.outsider,w.user.id)).length,0);assert.deepEqual(await spaces.basisSources(w.outsider,current.root),[]);
  const changed=object('source_revision',{...original.body,parents:[personalSyncObjectId(renamed)],media_type:'application/json'}),next=snapshot(rows.map(r=>r.item_id===sourceRow.item_id?{...r,heads:[personalSyncObjectId(changed)]}:r),[first.state.snapshot!]);await upload(w,s,[changed,next.page,next.snapshot]);await assert.rejects(s.sync.commit(w.user,s.session,{schema:'personal-sync-commit@1',epoch:s.state.epoch,operation_id:randomUUID(),expected_state:first.state.state_version,base_snapshot:first.state.snapshot,snapshot:personalSyncObjectId(next.snapshot)}),{code:'SYNC_OBJECT_INVALID'});
 });
+
+
+test('native and sync capacity expose one exact ledger including staged transport metadata',async t=>{
+ const w=await makeWorld(pg);t.after(w.close);const spaces=w.knowledge.spaces!;
+ await spaces.importFile(w.user,Buffer.from('合成原生与同步共同计量'),'text/plain','合成.txt');
+ const s=await session(w);const same=async()=>assert.equal((await spaces.usage(w.user)).used,(await s.raw.state(w.user)).used_bytes);
+ await same();await upload(w,s,[object('bytes',{bytes_base64:Buffer.from('合成暂存').toString('base64')})]);await same();
+ const usage=await spaces.usage(w.user);await spaces.setCapacity(w.admin,w.user.id,usage.used);await assert.rejects(spaces.write(w.user,{kind:'observation',statement:'合成满额拒收'}),{code:'SPACE_CAPACITY_EXCEEDED'});await same();
+});
+for(const kind of ['archive','attribution'])test(`a queued ${kind} cannot recreate private state across a purge and resume`,async t=>{
+ const w=await makeWorld(pg);t.after(w.close);const spaces=w.knowledge.spaces!,file=await spaces.importFile(w.user,Buffer.from('合成代次原文'),'text/plain','合成.txt');
+ const source=(await spaces.current(w.user.id))!.body.sources[0],state=await w.kit.personalSync!.state(w.user);
+ const {barrier,reaches}=await import('../../testing/member-freeze.ts');const entered=barrier(),release=barrier(),lock=w.kit.store.lock.bind(w.kit.store);let count=0;
+ w.kit.store.lock=async(key,tx)=>{if(key==='knowledge-space:'+w.user.id&&++count===2){entered.release();await release.promise;}return lock(key,tx);};
+ const pending=kind==='archive'?spaces.archiveSource(w.user,{artifact:file.digest,space:w.user.id,path:'/归档',message:'archive:'+file.digest}):spaces.attributeSource(w.user,source,file.digest);
+ const refused=assert.rejects(pending,{code:'SYNC_EPOCH_CHANGED'});void refused.catch(()=>{});
+ try{await reaches(entered,pending);await w.kit.personalPayloads!.purge(w.user,state.epoch);const local=await w.kit.personalSync!.state(w.user);await w.kit.personalSync!.resume(w.user,local.epoch,local.state_version);}finally{release.release();}
+ await refused;assert.equal(await spaces.current(w.user.id),null);
+});

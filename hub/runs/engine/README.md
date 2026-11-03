@@ -1061,3 +1061,19 @@ business candidate, not a reason to fail every reader's listing. If the ordered 
 the append fallback, skips/logs malformed headers and then applies the same visibility/order/cursor rules to valid runs.
 The fallback also skips them now (it previously displayed them). Diagnostics contain the record digest, never its body.
 NULL headers cannot bypass continuation predicates or become a cursor; envelope integrity failures still fail closed.
+## Decision 91 new personal-run commit boundary
+
+A new run's stored snapshot is committed in a transaction that rechecks and locks the current actor and personal workflow/
+skill owners through records' `lockActive`. A personal workflow is resolved again for current use permission there; a
+missing boundary port refuses a personal start. Disabled actors/owners return the existing neutral `SOURCE_UNAVAILABLE`
+and do not store a run. `putRun` accepts the caller's transaction rather than opening another one. Barrier tests disable
+runner and workflow owner after projection but before this account boundary and verify that neither start can commit.
+
+Human grant-based reads through a personal workflow also check its current owner. The initiator's own stored-run authority
+remains distinct. No frozen evaluator, internal source-reading authority, maintenance policy or B03 frozen-input rule is
+rewritten by these checks; they apply to admission and current human access, not a new interpretation of old results.
+
+Deleted owners do not invalidate exact already-frozen workflow evaluation or an existing run's genuine ordinary-upload
+declaration. This custody adds no current namespace access or new-run eligibility. MCP lease context resolves historical
+holder and registration-owner names through the generated deleted-account interface label, while stable identity keys
+and stored run bytes stay unchanged.

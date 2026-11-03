@@ -899,11 +899,14 @@ method; key construction does not invoke getters or toJSON. Proxies are scoped b
 a port data argument. The engine's full input snapshots remain unchanged. This keeps the round-2 derivation cache without
 making an exception for functions passed as method arguments.
 
-Invalidation is guaranteed only for intercepted scopedRecordStore put/addIndex/withTransaction operations. Raw service
-handles (artifacts, principals, knowledge stores included) are not universally hooked; some writers happen to pass through
-an intercepted store, but callers must not assume that. Finish the outer read scope before a raw service write, then start
-a fresh read scope afterward. A nested withReadScope reuses its active outer scope and is not an invalidation barrier.
-POST actions stay outside the read scope; no cross-request authorization cache is introduced.
+Intercepted scopedRecordStore put/addIndex/withTransaction operations clear the current scope's memos. Account role or
+activation changes, member deletion prepare/finish, personal purge and sync-mode changes additionally retire a shared
+request generation. Retained adapters bypass the retired memo; outstanding reads reload their original frozen arguments
+before returning, and nested scopes share the retirement generation. A later nested scope cannot retain a pre-deletion
+proof when an older parent performs deletion. Failed destructive operations conservatively retire the generation too.
+Other raw service writers are not universally hooked: finish the outer scope before those writes, then start a fresh
+scope. A nested withReadScope normally reuses its active parent and is not a general invalidation barrier. Console POST
+actions remain outside the GET scope; no cross-request authorization cache is introduced.
 
 ### Batched reads over personal payloads
 
@@ -914,10 +917,12 @@ visibility before paging; selected bodies still pass integrity and service autho
 
 Object get() coalesces only simultaneously queued I/O, detaches the queue before any await and retains no completed
 bytes or authorization result across calls. Files keep priority. Missing files use one SQL batch with the former
-fallback precedence: independent run bytes, then an active personal owner/epoch payload, then cleared-versus-missing
+fallback precedence: independent run bytes, then independently held bytes, then an active personal owner/epoch payload,
+then cleared-versus-missing
 registration handling. Every returned byte stream is hashed; a bad sibling falls back to isolated reads and cannot
 hide healthy bytes. Returned arrays are detached per caller. This trusted byte port grants no access: callers still
-use exact source/capture and read-tier guards. New reads recheck purge; no cross-request authorization cache is added.
+use exact source/capture and read-tier guards. Explicit transaction reads bypass coalescing and use the caller transaction,
+including its uncommitted private objects. New reads recheck purge; no cross-request authorization cache is added.
 
 Memoized method arguments are copied synchronously at admission, after plain-JSON eligibility/key validation and
 before the deferred method or batch can run. Find/count batches and scalar fallbacks consume that same snapshot;
@@ -928,3 +933,138 @@ queryRead already freezes its complete encoded input before supplying the loader
 Find keys cover the entire validated query, including future JSON fields. Known default aliases remain normalized;
 top-level field order is canonical for this field-based API. The batch and fallback receive exactly that normalized
 snapshot, so a new field cannot influence execution while being omitted from the cache identity.
+## Member deactivation and committing account locks
+
+`principals.lockActive(by, tx, owners)` re-reads the actor and any personal owners in the caller's transaction, takes
+`FOR SHARE` user-row locks in stable id order and returns the actor's current role. Missing/disabled accounts are the
+same `AccessError`. The locks persist through commit/rollback and conflict with `setDisabled`'s existing `FOR UPDATE`.
+Knowledge, source, memory and personal-pack writers take their business locks before the account boundary. Thus a
+completed deactivation defeats an older queued request; an already-authorized committing transaction finishes first.
+No new table, migration, advisory namespace or process-wide freeze queue is introduced. User history remains append-only.
+
+Deactivation preserves private records, grants, captures and tokens. Authentication refuses disabled accounts; restoration
+re-enables only still-live tokens and current grants. Closed console sessions and revoked tokens are not revived.
+`sourceForRun` also refuses grant-based access through a disabled personal workflow owner; the run's own reader authority
+and the engine's frozen internal evaluation remain separate. Synthetic concurrency tests observe the waiting PostgreSQL
+row lock rather than inferring lock order from a delay. No personal purge or sync path is implemented here.
+
+### Capacity ledger across personal sync and native writes
+
+`historyUsage`, `chargedBytes`, `safeBytes` and their aggregate types are exported through `api.ts`. The ledger reads
+verified logical record bodies and exact source sizes, never their historical cumulative counters. Knowledge and sync
+admission share this implementation; `personalSync.usageForSpace` adds the existing scoped transport ledger without
+creating a personal root or exporting a snapshot. It is an internal metadata port: callers enforce owner/admin access.
+The epoch is part of native version metadata before its fixed-point charge is calculated. No migration or additional
+pack charge is introduced by this integration.
+
+### Permanent member tombstones and deletion coordination
+
+`memberDeletions.preview/prepare/finish/status` is the administrator-only metadata port. Preparation checks a stable
+manifest under the space lock, the principals package's existing administrator-set lock and committing account locks.
+It permits a disabled target but never removes the last active administrator. `deleted_at` seals the identity, removes
+its password hash and revokes tokens; SQL guards prohibit restoration and resuming a deleted personal scope. Names
+remain in the tombstone/history, while a partial unique index lets a new account reuse a login name with a different id.
+
+Migration 19 additionally encapsulates inline personal attribution records using the original logical digest. The
+conversion window requires the real table owner and the unrecorded migration, accepts only attribution capsules with
+exact ownership/proofs, and cannot change other row columns. Closed epochs stay closed. The runtime role receives
+only SELECT on deletion intents and narrowly defined function execution, with no new UPDATE/DELETE grant.
+
+Completion first drains the existing durable object retirement, then calls the same `hub_purge_personal` function and
+appends a digest/count-only receipt in one transaction. Failure leaves a sealed identity and resumable intent, not a
+completion receipt. Self-deletion can finish its already authorized operation; a new operation still requires a live
+administrator. Unscoped private packs/originals refuse deletion until their payload preparation is complete. The public
+record-reference reader exposes neither deletion receipts nor team attribution credentials; status is the dedicated
+administrator metadata boundary. Private pack/frozen-holder cleanup and the guarded console/CLI path use the same
+coordinator, as detailed below.
+
+### Account-owned installs and independent frozen holders
+
+Migration 20 adds a non-sync account epoch in the same personal payload store for private pack versions, grants,
+retirements, transfers, file captures and ordinary private uploads/sole-reader observations. It preserves every logical
+record body/digest; ordinary uploads gain no `personal_scope` field and keep their run declaration semantics. Local-only
+mode purges its sync epoch while keeping account-owned installs; permanent deletion uses the same purge core for both.
+The owner-only, once-20 inline transform cannot be enabled by the runtime role and never reopens migrations 14/15.
+
+Actual frozen run namespaces/digests and dependency locks retain exact version bodies and objects before a personal
+link is removed. Team sources and independent equal-byte owners remain separate holders. Custody never creates an ACL:
+current public namespace resolution still rejects the deleted owner. Extraction holds the account row only while writing extracted files; deletion retires unheld caches and private name/external-object lookup values durably. A cleanup failure
+leaves the tombstone and same-operation recovery intent, without a completion receipt.
+
+Both local-mode purge and member deletion preserve a minimal team attribution credential only after checking the full
+private declaration/registration/capture and exact team copy. Credentials carry no private paths, names or original text;
+invalid joins do not manufacture a declaration. The logical record view stays an inlineable invoker function, with
+indexed digest and frozen-holder lookups. Runtime grants for the additional holder tables are SELECT only.
+
+Migration 21 freezes ordinary upload declarations at the actual run insertion boundary and extends independent
+capture retention to the reviewed typed storage graph. A self-asserted declaration on a personal-space capture never
+becomes a frozen permission. Pre-publication cache ownership is journalled before bytes appear; writing holds the user
+row until staging is complete. Deletion includes failed/unpublished cache digests, and shares the same durable cleanup
+across the personal and team extraction roots. Its journal stores only identity and digest and adds no capacity charge.
+
+### Deletion integrity and the narrow removable-index exception
+
+Migration 22 refuses deletion when an existing run's exact private workflow or dependency holder cannot be verified.
+A new independent holder or team share invalidates the application's read-only pre-check even if private counts stay
+unchanged. Migration 23 freezes every column of a tombstone, and token revocation is one-way for all accounts: neither
+the original revocation time nor its actor can be cleared or replaced. No runtime grant is widened.
+
+The deletion owner function now derives the canonical digest manifest and all six counts from the database under the
+member row lock, and refuses caller values that differ. Its helper is owner-only, schema-qualified and pins pg_temp last;
+the runtime cannot call it to inspect arbitrary private scopes. The helper hashes the same fixed-key manifest as the
+application and does not add unrelated content-integrity scans.
+
+There is a deliberate, narrow exception to the append-only record-index invariant introduced in migration 20.
+The table owner may remove artifact.object rows only after their personal binding's epoch has been purged, including
+local-only mode purges. It may remove personal.pack.id, personal.pack.grant and personal.pack.retired rows only for a
+purged binding whose member has a deletion intent and permanent tombstone. Other index keys and record envelopes remain
+append-only. The runtime still has no DELETE or UPDATE grant on record_index; the owner-defined purger performs only
+these scoped removals. Regression tests exercise local and deletion purges, reject runtime deletes, reject owner removal
+before a purge, and reject removal of an unrelated index key after a purge.
+
+Deletion previews expose display-only scope_counts separately from the unchanged technical audit counts. Knowledge and
+memory count scoped content versions; originals count exact source captures, excluding only captures explicitly named
+by scoped private pack file maps. Same-byte independent uploads still count as originals. Attribution and archive rows
+and private pack versions retain their actual scoped counts. Only private-version metadata is loaded to classify file
+captures; no new content hash validation is added. Display counts are not mutation inputs, purge manifests or persisted
+receipt fields. The existing owner-function audit recomputation and purge boundary are unchanged.
+
+### Bounded pre-publication work
+
+Private publication and promotion pre-checks share a process-local admission queue on the records kit: two checks at
+once and one per member, including across registry instances. Waiting and sandbox samples own no database connection.
+The extraction callback alone holds the member row; journal insertion commits first so crashes remain recoverable.
+Direct extraction has its own two-slot, one-per-member bound, leaving eight of the normal ten pool connections available.
+After sample checks, current account eligibility is re-read, and publication/promotion retain the committing account
+lock. Deletion can seal an account during a slow sample without waiting for a sandbox or allowing later cache revival.
+
+### Indexed upload declaration freezing
+
+Migration 21's run trigger and one-time backfill first select `knowledge.space.source_hash` index candidates by the
+capture SHA-256, then decode only those logical bodies. The materialized candidate boundary keeps unrelated source
+bodies out of per-upload parsing. Exact capture identity, personal/team scope and the run's sequence boundary remain
+required; equal bytes alone do not freeze a declaration, and later registrations do not change an earlier run.
+The owner explicitly allowed this in-place SQL correction before deployment; migrations 1–18 are unchanged, including
+frozen 14/15. Migrations 19–23 are frozen from the integration PR onward; subsequent corrections append migrations.
+
+
+Cache root registration marks shared team extraction roots separately. Deletion gives `.tmp-<digest>-*` directories in
+those shared roots a 24-hour grace period, including independent publishers in another process; stale shared remnants
+remain removable. Private roots have no grace: even fresh failed/unpublished private trees are removed after the account
+is sealed. Published team and exact frozen-run caches still follow the existing independent-holder checks.
+
+
+Staging admission also bounds waiting work: at most two queued jobs per member and eight in the records kit, in addition
+to its two running jobs (one per member). Overflow rejects immediately with the existing `LimitError`, no protocol code,
+and a bounded busy message. Refusal owns no connection or queue entry; completing/failing work releases its slot.
+
+Exact historical capacity recomputation groups admission deltas by record identity, hydrates at most 512 entry/source
+bodies per batch, and batches their exact capture metadata separately. Deduplicating I/O does not deduplicate charges:
+removal and re-addition still counts each admitted delta. Root metadata, memory history and integrity refusals retain
+their original rules; stored cumulative counters remain untrusted. This keeps sync-state and console capacity reads
+from issuing one query per historical version, without holding every historical entry body in one new live batch.
+
+Team knowledge and memory use the same verified historical capacity ledger as personal spaces. Team versions are no
+longer omitted: added entry registrations and exact capture sizes are charged along with version metadata and memory
+history, using bounded batches rather than trusting cumulative counters. Quota records accept the existing team space
+identifier as well as account ids. This change adds no tables, migration, runtime grants or mutable ledger authority.

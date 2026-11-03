@@ -1099,3 +1099,105 @@ Token-scope decision (Claude, fourth review of 5509e847): v1 access tokens have 
 member's MCP access Bearer can also call that member's sync API and, after a fresh pre-check and explicit confirmation,
 purge their Hub copy through `/mode`. This is accepted for v1: local copies are unaffected and can be synchronized again.
 The API remains outside the six model tools; per-route token scopes are deferred, not implemented or implied here.
+
+## Exact capacity controls (decision 91, phase 5 block 4)
+
+`capacity.ts` is the shared one-decimal KB/MB/GB formatter for member metadata, my space, memory limits and quota errors.
+Exact byte evidence remains in focusable design-system Tooltips, or alongside formatted values in MCP/CLI plain text.
+Only owner/current-admin metadata is exposed; no new ProtocolError fields or tool modes are introduced. Over-limit
+messages use the committing transaction's used/limit/remaining/requested facts rather than a later read of the quota.
+
+Team's administrator inspector opens an adjustment Dialog with separate decimal amount and generated MB/GB unit fields.
+The server uses BigInt rational conversion: no negative, exponent, unknown unit, fractional byte or unsafe integer is
+accepted. Exact finite decimal backfill preserves old non-MB quotas without rounding to the one-decimal display. An
+extra client `bytes` field has no authority. Existing session, current-admin, CSRF and Origin checks apply. Lowering the
+limit preserves content and shares; the Dialog explains that later writes stop until capacity is available. This is the
+logical retained knowledge/original/version and memory charge, not filesystem free space or active context quota.
+
+### Permanent member deletion
+
+`circle-hub user delete <member-id> --dry-run --json` reads the exact current deletion scope and returns a confirmation
+command. Execution requires `--confirm`, that operation id, the checked state and epoch. An intervening write invalidates
+the check. After preparation has sealed the account, a live administrator can retry `user delete <member-id>
+--operation-id=<id> --confirm`; the same operation returns its existing digest-only completion receipt. The last active
+administrator cannot be deleted. Names are not accepted as deletion targets, avoiding accidental deletion of a fresh
+same-name identity.
+
+The password-console team Inspector links to a GET-only deletion preview and shared Dialog. It shows counts and the
+command without private names, paths or bodies; the console has no direct deletion POST or command bridge action.
+`GET /console/api/members/<id>/deletion` exposes only the same administrator preview/progress. A sealed unfinished
+operation displays waiting and recovery instructions, never a false success. Deleted identities use the generated
+account_display_name placeholder throughout team provenance and member views, with the separate account_status badge;
+they retain deletion time and offer no reset,
+re-enable, quota or token controls. Team content and exact already-authorized frozen copies keep their original rights.
+
+Deletion follow-up checks remove tombstones from name-based member search and refuse them as new private knowledge,
+memory or pack grant targets. A new account with the same username is a separate identity. Team/member/record display,
+run inventory and MCP lease-context holder names use the generated deleted-account label; immutable source/audit records
+keep their original identity references. The migration owner function checks the actual purge manifest and counts again
+before sealing; CLI callers cannot make the deletion receipt report a different scope.
+
+Synthetic visual reproduction uses Node 24 with CHROME_BIN and console/testing-member-deletion-browser.ts. It starts an
+isolated loopback Hub and browser profile, verifies real HTTP status/content, checks keyboard focus and internal table
+scrolling, and writes six deletion and team-list states in both themes at 1440, 1024 and 390 px. It neither opens a
+personal browser profile nor touches a deployed Hub. The task page records the actual inspected matrix and checks.
+
+Deletion display polish uses account_status.deleted (“已删除”) separately from the account_display_name.deleted_member
+placeholder (“已删除的成员”). A tombstone Inspector places the content-width member tag beside a neutral status badge.
+The preview shows six content categories, including prior versions and exact original captures; technical storage counts
+and the manifest remain inside the closed “查看清除清单摘要” disclosure in preview, pending and completed states. The
+console instructs execution in Circle on the Hub host and has no deletion confirmation button or write route.
+
+
+Administrator CLI listings use the generated deleted-member display term too: `user list` masks names in text and JSON
+without changing ids or stored tombstones. Pack owners/assignees, lease owners/holders and share subjects render the
+placeholder with the stable member id, so two deleted identities remain distinguishable without printing stored names.
+Token listings (all accounts or one id) also mask tombstone names, retain member and token ids, and never print token
+secrets. Historical publish-right revocation and assignment removal use the placeholder in their confirmations too.
+
+
+The serving assembly sweeps orphaned pack extraction stages after the vault check and before parser refresh/listening;
+command-time assembly never performs this sweep. Startup logs the removed count only. Cleanup failure stops startup
+with a fixed path-free message, and neither private-root links nor matching stage links are followed outside the roots.
+
+
+A full private publication queue returns HTTP 429 with “发布校验繁忙，请稍后重试”, using `LimitError` without a new protocol
+code. Upload refusal awaits deletion of the unpacked root before replying; accepted work still follows the checked
+30-minute stage/confirmation flow. Queue admission is two running overall, one per member, plus eight waiting overall
+and two waiting per member. A refused request neither occupies a slot nor waits for another publication to finish.
+
+
+The console's principal-name resolver uses the request-scoped principal port directly, without a second untracked name
+cache. Team rows use their already batched identity projection and mask tombstones; deleted members produce no active
+Circle rows. Destructive account and personal-payload operations retire the enclosing read generation, so retained
+adapters cannot serve pre-deletion identities or private content within that request.
+
+Deletion screenshot checks additionally observe the real external CSS response, parsed stylesheet rules, SRI metadata,
+per-response script nonce against the actual CSP and live theme switching. The synthetic browser uses an isolated profile;
+no owner profile, deployed Hub or private credentials participate.
+
+### Sync admission after an early disconnect
+
+Body reading checks an already-aborted or destroyed request before reserving bytes or attaching stream listeners.
+Authentication, the started audit and the locked sync-state/capacity read can yield while the peer disconnects; an
+earlier abort event is not replayed. Such a request finishes with the existing 499 audit and releases the body budget
+and account write admission through the normal finally path. It does not keep a write slot until a later request or
+rate-window reset. The real HTTP regression pauses both state reads, observes both server aborts before resuming them,
+then requires two aborted audits and an unchanged 200 for the next write.
+
+The named-document regression creates its legacy-shaped private runs in an empty database at migration 18 and then
+applies every remaining migration. It still refuses the old personal run, including one owned by an administrator,
+for an administrator-only named document. Inserting that missing-package shape after upgrade is also required to fail;
+the frozen-package trigger and all reviewed migrations stay unchanged.
+
+### Administrator team-space capacity
+
+The team Inspector shows retained team usage only to administrators and reuses the member capacity Dialog, exact
+MB/GB conversion, CSRF checks and quota action. The team header exposes an Inspector link so the control remains
+reachable when narrow layouts hide the default Inspector. Lowering the limit keeps existing data; later writes can
+retry after an administrator increases capacity. Member views expose neither the control nor team numeric usage,
+and the same restriction is enforced on service reads, writes and capacity-error details.
+
+Team/member management pages omit capacity metadata and controls when a management-only host has no knowledge port
+or has not enabled spaces. Password sign-in and member-management forms remain available; absent capacity is not
+reported as zero usage. Errors from a present capacity service still propagate rather than hiding failed accounting.

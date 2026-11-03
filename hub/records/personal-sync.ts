@@ -1,3 +1,5 @@
+import {retireReadScope} from './read-scope.ts';
+import {historyUsage} from './personal-capacity.ts';
 // Scoped transport storage only: uploaded objects never become knowledge, memory or executable packs here.
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -62,8 +64,7 @@ export class PgPersonalSync {
  }
  async #usage(scope:Scope,tx:Transaction){
   const native=(await this.#db.query("SELECT r.digest,r.body FROM hub_read_records() r JOIN personal_record_bindings b ON b.record=r.digest WHERE b.owner=$1 AND b.epoch=$2 AND r.kind='knowledge_space_version' ORDER BY r.seq DESC LIMIT 1",[scope.owner,scope.epoch],tx)).rows[0];
-  const knowledge=native?JSON.parse(String(native.body)).used_bytes??0:0;
-  const memory=(await this.#db.query('SELECT history_bytes FROM memory_space_usage WHERE space=$1',[scope.owner],tx)).rows[0];
+  const history=await historyUsage(this.#store,scope.owner,tx);
   const extra=(await this.#db.query(`SELECT COALESCE(sum(charge),0)::text AS bytes,bool_or(charge IS NULL) AS missing FROM (
     SELECT id,charge_bytes AS charge FROM personal_sync_objects WHERE owner=$1 AND epoch=$2 AND NOT EXISTS(SELECT 1 FROM personal_sync_exports e WHERE e.owner=$1 AND e.epoch=$2 AND e.object_id=id) UNION
     SELECT c.name_payload,octet_length(p.data) FROM personal_sync_clients c LEFT JOIN personal_payloads p
@@ -72,12 +73,20 @@ export class PgPersonalSync {
    ) x`,[scope.owner,scope.epoch],tx)).rows[0];
   if(extra.missing&&scope.mode===SyncModeSchema.enum.hub)throw new IntegrityError('同步元数据载荷不完整');
   const ledger=(await this.#db.query('SELECT COALESCE((SELECT sum(bytes) FROM personal_sync_native_credits WHERE owner=$1 AND epoch=$2),0)::text AS credits,COALESCE((SELECT sum(x.charge_bytes) FROM personal_sync_exports e JOIN personal_sync_objects x ON (x.owner,x.epoch,x.id)=(e.owner,e.epoch,e.object_id) WHERE e.owner=$1 AND e.epoch=$2),0)::text AS exported',[scope.owner,scope.epoch],tx)).rows[0];
-  const nativeBytes=Number(knowledge)+Number(memory?.history_bytes??0),baseline=scope.mode===SyncModeSchema.enum.local?0:nativeBytes-Number(ledger.credits);if(baseline<0)throw new IntegrityError('个人同步容量登记不完整');
+  const nativeBytes=history.used,baseline=scope.mode===SyncModeSchema.enum.local?0:nativeBytes-Number(ledger.credits);if(baseline<0)throw new IntegrityError('个人同步容量登记不完整');
   const quota=(await this.#store.find({key:'knowledge.space.quota',value:scope.owner,kind:'knowledge_space_quota',newestFirst:true,limit:1},tx)).items[0];
   const capacity=quota?SpaceQuotaBody.parse(quota.body).bytes:1024**3;
   const used=scope.mode===SyncModeSchema.enum.local?0:Math.max(baseline,Number(ledger.exported))+Number(extra.bytes);
   if(!Number.isSafeInteger(used)||used<0)throw new IntegrityError('个人容量计量不完整');
-  return {native:nativeBytes,used,capacity,knowledge:native?.digest??null};
+  return {native:nativeBytes,used,capacity,knowledge:native?.digest??null,knowledge_bytes:history.knowledge,memory_bytes:history.memory};
+ }
+ /** Internal aggregate-only port; knowledge callers enforce owner/administrator metadata visibility. */
+ async usageForSpace(owner:string,tx?:Transaction):Promise<import('./personal-capacity.ts').CapacityUsage>{
+  if(!tx)return this.#db.transaction(t=>this.usageForSpace(owner,t));
+  await this.#store.lock('knowledge-space:'+owner,tx);
+  const row=(await this.#db.query('SELECT epoch,mode FROM personal_spaces WHERE owner=$1',[owner],tx)).rows[0];
+  const usage=await this.#usage({owner,epoch:row?String(row.epoch):INITIAL_PERSONAL_EPOCH,mode:row?SyncModeSchema.parse(row.mode):SyncModeSchema.enum.hub},tx);
+  return {knowledge:usage.knowledge_bytes,memory:usage.memory_bytes,used:usage.used,limit:usage.capacity,remaining:Math.max(0,usage.capacity-usage.used),over:Math.max(0,usage.used-usage.capacity)};
  }
  async #capacity(scope:Scope,tx:Transaction){const usage=await this.#usage(scope,tx);if(usage.used>usage.capacity)fail('SPACE_CAPACITY_EXCEEDED');}
  async #state(scope:Scope,tx:Transaction):Promise<State>{
@@ -101,7 +110,7 @@ export class PgPersonalSync {
    await this.#db.query('INSERT INTO personal_sync_heads(owner,epoch) VALUES($1,$2)',[by.id,next.epoch],tx);
    await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now().toISOString(),previous_mode:scope.mode,mode:next.mode,previous_epoch:scope.epoch,epoch:next.epoch},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
    return this.#state(next,tx);
-  },undefined,true);
+  },undefined,true).finally(retireReadScope);
  }
  /** Only bounded synchronization metadata is exposed on a member detail page. */
  async memberMetadata(by:Principal,owner:string){
@@ -142,7 +151,7 @@ export class PgPersonalSync {
    await this.#db.query('INSERT INTO personal_sync_mode_operations VALUES($1,$2,$3,$4,$5)',[by.id,request.epoch,request.operation_id,identity,canonicalize(result)],tx);
    await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:result.receipt.at,previous_mode:scope.mode,mode:request.mode,previous_epoch:scope.epoch,epoch:after.epoch,operation:hash(request.operation_id),previous_state:before.state_version,state:after.state_version,personal_bytes:impact.personal_bytes,directory_grants:impact.directory_grants,team_copies_preserved:impact.team_copies_preserved},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
    return result;
-  },undefined,true);
+  },undefined,true).finally(retireReadScope);
  }
  async stableItem(by:Principal,kind:z.infer<typeof PersonalSyncItem>['kind'],identity:string,outer?:Transaction):Promise<string>{
   PersonalSyncItem.shape.kind.parse(kind);if(!identity||Buffer.byteLength(identity)>4000)return fail('SYNC_OBJECT_INVALID');

@@ -117,8 +117,8 @@ export const PROTOCOL_CODES = {
     "fix": "收窄受众，或由管理员补身份映射与覆盖确切内容的分享许可"
   },
   "SPACE_CAPACITY_EXCEEDED": {
-    "when": "个人空间容量不足",
-    "fix": "请管理员调整容量后重试"
+    "when": "本次写入计入版本记录后超过空间容量上限",
+    "fix": "请管理员调整容量后重试；撤回或停用内容不会释放版本记录占用"
   },
   "SPACE_ENTRY_INVALID": {
     "when": "条目、依据或目录不符合知识空间约束",
@@ -165,8 +165,8 @@ export const PROTOCOL_CODES = {
     "fix": "先通过团队连接重新读取并核对引文"
   },
   "SHARE_UPLOAD_UNSIGNED": {
-    "when": "上传文件尚无团队依据所需的署名",
-    "fix": "等待上传署名能力，或改用团队连接读取的原文"
+    "when": "上传原文需上传人署名",
+    "fix": "请上传人在原文详情中选择“署名为团队来源…”，确认后重新预检"
   },
   "SHARE_GROUND_UNREADABLE": {
     "when": "依据条目尚不能被团队全部读者读取",

@@ -50,7 +50,7 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(textOf(parse(own.body)),/知识库 › 我的 › 方法/);assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
  assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已验证<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>待验证<\/span>/);
- assert.match(own.body,/\/ 1\.0 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
+ assert.match(textOf(parse(own.body)),/\/ 上限 1\.0 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
  assert.match(own.body,/<details class="ch-section" id="knowledge-history"><summary[^>]*>知识版本记录<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本记录/);
  assert.match(own.body,/<span class="nowrap" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}">版本 2 · (?:今天 \d{2}:\d{2}|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2})<\/span> ·/);
  assert.equal((own.body.match(/href="#grant-knowledge"/g)??[]).length,1);
@@ -59,7 +59,7 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(checkedPage.body,/<option value="administrators" selected>/);assert.equal((await hub.hub.knowledge.spaces!.grants(owner.principal)).length,0,'preview grants nothing');
  const shared=await browser.get(knowledge('shared'));assert.match(shared.body,/来自 合成控制台接收人/);assert.match(shared.body,/合成接收范围观察/);
  const outsider=await adminBrowser.get(knowledge('shared'));assert.doesNotMatch(outsider.body,/合成接收范围观察/);
- const metadata=await adminBrowser.get('/console/team/'+owner.user.id);assert.equal(metadata.status,200,metadata.body);assert.match(metadata.body,/私人空间已用（含版本记录）/);assert.doesNotMatch(metadata.body,/合成认证观察|合成待验证笔记|本文件夹条目/);
+ const metadata=await adminBrowser.get('/console/team/'+owner.user.id);assert.equal(metadata.status,200,metadata.body);assert.match(metadata.body,/私人空间容量/);assert.doesNotMatch(metadata.body,/合成认证观察|合成待验证笔记|本文件夹条目/);
 });
 
 test('a duplicate stops the preview before credential scanning and team rows retain their actual source', {skip},async()=>{

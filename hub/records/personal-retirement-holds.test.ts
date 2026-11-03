@@ -33,7 +33,7 @@ for(const holder of ['authorization','pack-file','personal-pack','memo','list','
   case 'run-source':await old('run','run@1',{run:'run_'+'0'.repeat(26),sources:[{reference:'src:'+hash,artifact}]});break;
   case 'authorization':await old('authorization','authorization@1',{bound:hash,by:admin.id,at});break;
   case 'pack-file':await old('pack_version','pack-version@1',{manifest:{files:[{path:'synthetic.json',sha256:hash}]}});break;
-  case 'personal-pack':await old('personal_pack_version','personal-pack-version@1',{space:owner.id,files:{'synthetic.json':artifact},manifest:{files:[{path:'synthetic.json',sha256:hash}]}});break;
+  case 'personal-pack':{const definition=(await objects.put(Buffer.from(canonicalize({schema:'skill@1',parsers:[]})),'application/json')),manifest={schema:'pack@1',id:'synthetic-old-private-skill',version:'1.0.0',kind:'skill',title:'合成旧技能',description:'合成私人文件',files:[{path:'SKILL.md',sha256:hash,size:bytes.length},{path:'skill.json',sha256:definition.sha256,size:definition.size}]},digest=(await objects.put(Buffer.from(canonicalize(manifest)),'application/json')).sha256;await old('personal_pack_version','personal-pack-version@1',{space:owner.id,pack:manifest.id,version:manifest.version,kind:manifest.kind,digest,title:manifest.title,description:manifest.description,manifest,publisher:owner.id,at,report:{samples:{sources:[]}},files:{'SKILL.md':artifact}});break;}
   case 'memo':await old('action','action@1',{component:'knowledge.producer@1',detail:{output:{sha256:hash}}});break;
   case 'list':await old('action','action@1',{component:'knowledge.produce@1',detail:{lists:[{externals:hash}]}});break;
   case 'feeding-cache':await old('action','action@1',{component:'hub.feeding@2',detail:{sha256:hash}});break;
@@ -43,9 +43,10 @@ for(const holder of ['authorization','pack-file','personal-pack','memo','list','
  }
  await migrate(db);
  const kit=await openRecords({database,dataDir,logDir:join(dataDir,'logs'),limits:{...DEFAULT_LIMITS}},{migrate:false});t.after(()=>kit.close());
- await access(objects.path(hash));
- if(holder==='personal-pack'||holder==='composition'||holder==='run-source')assert.equal(await kit.personalPayloads!.inspect(artifact),null,'a non-space record owns this artifact too');
+ const scoped=['personal-pack','composition','run-source'].includes(holder),relocated=holder==='personal-pack'||holder==='run-source';
+ if(scoped){assert.equal((await kit.personalPayloads!.inspect(artifact))?.owner,owner.id,'the personal link is independently removable');}if(relocated)await assert.rejects(access(objects.path(hash)));else await access(objects.path(hash));
+ if(holder==='composition'||holder==='run-source')assert.equal((await db.query('SELECT count(*)::int n FROM run_originals WHERE artifact=$1',[artifact])).rows[0].n,1,'the exact independent holder keeps its own original');
  await kit.personalPayloads!.purge(owner,INITIAL_PERSONAL_EPOCH);
- await access(objects.path(hash));assert.deepEqual(Buffer.from((await kit.objects.get(hash))!),bytes);
+ if(!relocated)await access(objects.path(hash));assert.deepEqual(Buffer.from((await kit.objects.get(hash))!),bytes);
  if(holder==='personal-pack'||holder==='composition'||holder==='run-source')assert.ok(await kit.store.get(artifact));
 });

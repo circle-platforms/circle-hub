@@ -25,6 +25,8 @@ const libpq = await libpqAvailable();
 /** A column per table that a statement may name; for users, tokens and pointers one the runtime role may not update. */
 const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
+  member_deletion_intents:'member',
+  personal_cache_installs:'owner',run_upload_declarations:'run_record',run_pack_records:'record',held_objects:'sha256',held_object_targets:'sha256',original_targets:'artifact',
   records: 'body',
   object_holds:'record',
   run_originals:'artifact',

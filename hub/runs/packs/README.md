@@ -317,3 +317,48 @@ loaded once per catalog call. Publication, owner, withdrawal, expiry and account
 no new cross-request authorization cache is introduced. Real-registry regressions grow from 3 to 8 workflows for admin
 and member readers and recheck grants, withdrawals and disabled accounts on subsequent calls. Missing optional native
 batch ports retain the existing single-operation fallback.
+## Decision 91 personal publication freeze
+
+Personal workflow and skill publication takes the personal-pack business lock, then locks the current actor and resolved
+personal dependency owners through `principals.lockActive` in its committing transaction. Captures, file indexes, manifest
+registration and the personal version now share that transaction; an account rejected at this boundary creates none of
+them. Grants and retirement use the same account boundary. Promotion holds the actor's account lock across the existing
+team publisher and its personal transfer receipt, so deactivation cannot split that operation. Team publishing still uses
+its own existing transaction and validation; this does not promise a distributed rollback of arbitrary publisher faults.
+
+Resolution/source reads recheck current owner access after asynchronous loads. Deactivation pauses personal use grants
+without rewriting them; restore honors explicit revocations. Independent team publications remain available. Synthetic
+workflow and skill tests exercise both row-lock orders, no new captures on refusal, restoration and team preservation.
+No personal executable purge, sync integration or new record/schema/code is included.
+
+### Deletion of a private publisher
+
+Private installs and files use the records package's account-owned removable payloads. Local-only knowledge mode keeps
+these installs; permanent deletion removes them without transfer to administrators. Explicit team publications and exact
+existing run dependency locks are independent holders. Their files remain available for the original frozen context,
+while current resolve, grant, publish and new run eligibility still require a live owner. Extraction shares the committing
+account boundary, and only independently held digests keep usable caches. The registry registers its extraction root with
+the records deletion coordinator, including non-default roots in synthetic tests.
+
+New grants explicitly refuse deleted target identities, even for a dependency-free skill; historical grants remain
+revocable. An unverifiable legacy exact private workflow/dependency holder blocks deletion instead of fabricating a
+replacement. A new actual holder invalidates an older deletion confirmation without changing the private payload count.
+
+Private publish/check and promotion pre-check admission is shared through the records kit (two at once, one per member).
+Only `Extractor.stage` runs under the cache journal's account lock; sandbox samples run after that transaction commits.
+The current account is checked again after samples and locked at commit/promotion, so deletion during a check refuses
+publication and discards the private temporary tree. Queued or running samples cannot consume all database connections.
+
+The registry identifies its team extraction root as shared. Member deletion keeps fresh (under 24 hours) team temporary
+trees of an equal digest, so another publisher's sample check can still promote/discard them; old abandoned team trees
+are swept. Private temporary trees have no age exemption and are purged immediately after account sealing.
+
+
+Serve startup retires orphaned `.tmp-*` extraction stages in the team and private roots before parser refresh or requests,
+regardless of age. Published trees and quarantine stay untouched. New stage names carry a process id: live CLI publishers
+and the current process's active trees are preserved; dead-owner and legacy stages are removed. PID liveness follows the
+platform lock's conservative policy. Failed stage writes clean their partial tree. No paths or names enter cleanup logs.
+
+Private check/publication waiting is bounded too: two queued per member, eight overall. The existing one-per-member,
+two-overall execution bound stays. Overflow never starts the publisher's directory read, validators or extractor; callers release the
+unpacked upload in their existing awaited `finally`. No new refusal code or permission rule is introduced.

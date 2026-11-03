@@ -14,7 +14,7 @@ import { LimitError, validPassword } from '../../records/api.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { RecordsError, type Principal } from '../../records/api.ts';
+import { RecordsError, IntegrityError, sha256Hex, type Principal } from '../../records/api.ts';
 import { KnowledgeError } from '../../knowledge/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
@@ -33,6 +33,8 @@ import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
 import {withReadScope,memoReadPort} from '../../records/api.ts';
+import {sourceArchivePage} from './source-archive.ts';
+import {Sha256} from '../../../contracts/src/common.ts';
 import {performMemoryAction} from './memory.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -549,7 +551,7 @@ const ROUTES: Record<string, Route> = {
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);
     if (rest.length > 1) return Promise.resolve(neutralPage(ctx));
-    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage,'share-batch':batchSharePage };
+    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage,sources:sourceArchivePage,'share-batch':batchSharePage };
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/')==='-/publish'?personalPublishPage(ctx,options.staging):rest.length===1?packPage(ctx,rest[0]):Promise.resolve(neutralPage(ctx))),
@@ -639,7 +641,6 @@ async function action(request: IncomingMessage, response: ServerResponse, option
 
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
 function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL, principal: Principal, session: ConsoleSession, secure: boolean): PageContext {
-  const names = new Map<string, Promise<string>>();
   const notice = request.method === 'GET' && request.headers['circle-hub-refresh'] !== 'live' ? session.notice : undefined;
   if (notice) delete session.notice;
   return {
@@ -654,12 +655,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
     chrome: (title, extra = {}) => ({ title, notice, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
     userName: (userId) => {
       if (userId === null || userId === undefined) return Promise.resolve('—');
-      let pending = names.get(userId);
-      if (pending === undefined) {
-        pending = memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.name ?? userId);
-        names.set(userId, pending);
-      }
-      return pending;
+      return memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.deleted_at?uiLabelOf('account_display_name','deleted_member'):user?.name ?? userId);
     },
   };
 }
@@ -851,6 +847,13 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: PageResult | null;
   try {
+    if(segments.join('/')==='knowledge/download'){
+      const sha=url.searchParams.get('sha256')??'',artifact=url.searchParams.get('artifact')??'';
+      const source=Sha256.safeParse(sha).success&&Sha256.safeParse(artifact).success?await options.deps.knowledge.spaces?.source(principal,sha,undefined,'model',artifact):null;
+      if(!source?.bytes||!(await options.deps.records.artifacts.canRead(principal,source.artifact)||await options.deps.knowledge.spaces!.mayReadSource(principal,sha,undefined,'model',artifact)))return sendHtml(response,404,neutralPage(ctx).body);
+      if(source.bytes.length!==source.size||sha256Hex(source.bytes)!==sha)throw new IntegrityError('原文完整性暂不可核对');
+      setCommonHeaders(response);response.writeHead(200,{'content-type':'application/octet-stream','content-disposition':"attachment; filename=\"original\"; filename*=UTF-8''"+encodeURIComponent(source.artifact.body.name||'原文').replace(/['()*]/g,ch=>'%'+ch.charCodeAt(0).toString(16).toUpperCase()),'content-length':String(source.bytes.length),'content-security-policy':"default-src 'none'; sandbox; frame-ancestors 'none'",'cache-control':'no-store','x-content-type-options':'nosniff'});response.end(source.bytes);return;
+    }
     if(isKnowledgeAction){
       if(!sameOrigin(request,options.ownOrigins())){request.resume();return forbidden(response,'表单只能从本控制台提交');}
       let values:URLSearchParams|Map<string,string>;
@@ -881,6 +884,9 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     }
   } catch (error) {
     if(error instanceof KnowledgeError&&error.code){result=spaceActionFailure(ctx,error);}
+    else if(error instanceof LimitError&&isKnowledgeAction&&segments[0]==='packs'){
+      result={status:429,body:page(ctx.chrome('发布校验未完成',{active:'packs'}),html`<p class="error">${error.message}</p><p>${link('/console/packs/-/publish','返回发布列表')}</p>`)};
+    }
     else if(error instanceof UploadError&&isKnowledgeAction){result={status:400,body:page(ctx.chrome('原文上传未完成'),html`<p class="error">${error.message}</p>`)};}
     else if (error instanceof RecordsError && (error.code === null||isKnowledgeAction&&error.code==='CREDENTIAL_IN_UPLOAD') && !(error.name === 'IntegrityError')) {
       result = { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">${error.message}</p>`) };

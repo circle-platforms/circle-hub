@@ -12,7 +12,8 @@ import { requirementSummary } from '../start.ts';
 
 export class FakeWorkflowStore implements WorkflowStore {
   owner: string | null;
-  constructor(owner: string | null = null) { this.owner = owner; }
+  readonly freezePersonal?: (workflow:LoadedWorkflow)=>Promise<void>;
+  constructor(owner: string | null = null,freezePersonal?:(workflow:LoadedWorkflow)=>Promise<void>) { this.owner = owner; this.freezePersonal=freezePersonal; }
   async ownerOf(_digest: string): Promise<string | null> { return this.owner; }
   readonly #byDigest = new Map<string, LoadedWorkflow>();
   readonly #versions = new Map<string, LoadedWorkflow[]>();
@@ -68,7 +69,9 @@ export class FakeWorkflowStore implements WorkflowStore {
     if (this.#withdrawn.has(id)) return null;
     if (user.role !== 'admin' && !this.#assigned.get(user.id)?.has(id)) return null;
     const versions = this.#versions.get(id) ?? [];
-    return (version === null ? versions[versions.length - 1] : versions.find((v) => v.pack.version === version)) ?? null;
+    const selected=(version === null ? versions[versions.length - 1] : versions.find((v) => v.pack.version === version)) ?? null;
+    if(selected?.pack.space&&selected.pack.space!=='team')await this.freezePersonal?.(selected);
+    return selected;
   }
 
   async byDigest(digest: string): Promise<LoadedWorkflow | null> {

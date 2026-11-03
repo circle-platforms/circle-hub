@@ -1,8 +1,9 @@
+export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
-export {withReadScope,scopedRecordStore,memoReadPort,memoReadValue} from './read-scope.ts';
+export {withReadScope,retireReadScope,scopedRecordStore,memoReadPort,memoReadValue} from './read-scope.ts';
 export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
 // Field names of stored bodies are snake_case like the contracts; enumerations come from the generated vocabulary.
@@ -54,6 +55,7 @@ export interface Principal {
 }
 
 export interface User extends Principal {
+  deleted_at?: string | null;
   disabled: boolean;
   created_at: string;
   updated_at: string;
@@ -61,6 +63,7 @@ export interface User extends Principal {
 
 /** One snapshot of a user row after a change: who changed it and when (role changes are recorded this way). */
 export interface UserChange {
+  deleted_at?: string | null;
   password_changed?: true;
   user: string;
   name: string;
@@ -131,6 +134,8 @@ export interface Principals {
   changePassword(by: Principal, current: string, next: string): Promise<boolean>;
   setRole(by: Principal, userId: string, role: PermissionRole): Promise<User>;
   setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User>;
+  /** Recheck the actor and personal owners, holding shared user-row locks until this transaction ends. */
+  lockActive(by: Principal, tx: Transaction, owners?: readonly string[]): Promise<Principal>;
   get(userId: string): Promise<User | null>;
   findByName(name: string): Promise<User | null>;
   list(): Promise<User[]>;
@@ -178,6 +183,8 @@ export interface IndexEntry {
 export interface RecordInput<B = unknown> {
   /** Internal personal-space storage scope; never supplied by a model input. */
   personalOwner?:string;
+  /** Internal non-sync ownership; never serialized into source bodies. */
+  accountOwned?:boolean;
   kind: RecordKind;
   /**
    * `name@major` as contracts SchemaId (`^[a-z][a-z0-9_-]*@(0|[1-9][0-9]*)$`: lowercase letters, digits, `_` and `-`, no
@@ -296,12 +303,12 @@ export interface ObjectInfo {
 
 /** Immutable content-addressed bytes. Personal originals use removable account/epoch-scoped payloads. */
 export interface ObjectStore {
-  put(bytes: Uint8Array, mediaType: string, tx?:Transaction, personalOwner?:string): Promise<ObjectInfo & { created: boolean }>;
+  put(bytes: Uint8Array, mediaType: string, tx?:Transaction, personalOwner?:string, accountOwned?:boolean): Promise<ObjectInfo & { created: boolean }>;
   /**
    * Null when absent. Throws IntegrityError when the stored bytes no longer hash to their name or when a registered object's
    * file is missing. No read-tier check: for trusted callers; readers go through Artifacts.source().
    */
-  get(sha256: string): Promise<Uint8Array | null>;
+  get(sha256: string,tx?:Transaction): Promise<Uint8Array | null>;
   stat(sha256: string,tx?:Transaction): Promise<ObjectInfo | null>;
   has(sha256: string): Promise<boolean>;
 }
@@ -429,6 +436,8 @@ export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 export interface IngestInput {
   /** Internal scope for personal original imports. */
   personalOwner?:string;
+  /** Internal non-sync ownership; never serialized into source bodies. */
+  accountOwned?:boolean;
   /** An opaque matcher prepared for exactly this origin/author; revalidated before admission. */
   derivedCoverage?: DerivedCoverage;
   /** Source byte digests for a Hub-generated derivative; never a global pool of accepted text. */
@@ -851,10 +860,11 @@ export interface CallLog {
 // ---------------------------------------------------------------- the kit
 
 export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
-export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
+export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
+  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'>;
   personalSync?:PersonalSyncStore;
-  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

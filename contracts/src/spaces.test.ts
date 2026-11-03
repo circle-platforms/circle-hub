@@ -1,3 +1,4 @@
+import {SpaceQuotaBody} from './spaces.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GetNodesInput, UploadFileInput } from './tools.ts';
@@ -25,4 +26,10 @@ test('space reads retain the six-tool interface and member grants name exactly o
   const grant = { space: 'usr_' + '0'.repeat(26), path: '/', audience: 'member', member: null, action: 'grant', by: 'usr_' + '0'.repeat(26), at: '2026-11-02T00:00:00.000Z' };
   assert.equal(SpaceGrantBody.safeParse(grant).success, false);
   assert.equal(SpaceGrantBody.safeParse({ ...grant, audience: 'administrators' }).success, true);
+});
+
+
+test('quota records accept the existing team identifier without accepting arbitrary owners',()=>{
+ const base={bytes:10*1024**3,by:'usr_01arzte2b0dy6pj8cd4avj118p',at:'2026-11-03T00:00:00.000Z'};
+ assert.equal(SpaceQuotaBody.parse({...base,space:'team'}).space,'team');assert.ok(SpaceQuotaBody.safeParse({...base,space:base.by}).success);assert.equal(SpaceQuotaBody.safeParse({...base,space:'unknown'}).success,false);
 });

@@ -194,6 +194,8 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
 
 /** A workflow grant never lends the initiator's private input data to another reader. */
 export async function runReadableBy(ctx:EngineContext,by:Principal,run:RunRecord):Promise<boolean>{
+  if(ctx.deps.records.principals){const account=await ctx.deps.records.principals.get(by.id);if(!account||account.disabled)return false;by=account;}
+  if(run.pack_space&&run.pack_space!=='team'&&run.runner!==by.id&&run.configurer!==by.id){const owner=await ctx.deps.records.principals?.get(run.pack_space);if(!owner||owner.disabled)return false;}
   if(!await canViewRun(by,run,ctx.deps.records.store))return false;
   return run.runner===by.id||run.configurer===by.id||await groundsReadableBy(ctx,run,run.sources,by);
 }

@@ -1,3 +1,4 @@
+import {knowledgeMessage} from './capacity.ts';
 // The administrator commands the assembly registers with the server CLI: pack, resource, secret, knowledge, init-admin and
 // operator-token. Every command that changes state acts as the admin of the operator token: CIRCLE_HUB_TOKEN, or when it is
 // not set the keychain item of the deployment (account operator-token beside the vault master key, hub/platform
@@ -113,7 +114,8 @@ async function decided<T>(fn: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof RecordsError) throw new CliError(error.message, error.fix ?? null);
     if (error instanceof DocsError) throw new CliError(error.message, error.hint);
-    if (error instanceof ConnectorError || error instanceof KnowledgeError || error instanceof SecretInputError) throw new CliError(error.message);
+    if(error instanceof KnowledgeError)throw new CliError(knowledgeMessage(error),error.fix);
+    if (error instanceof ConnectorError || error instanceof SecretInputError) throw new CliError(error.message);
     throw error;
   }
 }
@@ -285,7 +287,7 @@ class Session {
 
   /** User id -> name, for listings. */
   async names(): Promise<Map<string, string>> {
-    return new Map((await (await this.records()).principals.list()).map((user) => [user.id, user.name]));
+    return new Map((await (await this.records()).principals.list()).map((user) => [user.id, user.deleted_at?`${uiLabelOf('account_display_name','deleted_member')}（${user.id}）`:user.name]));
   }
 }
 
@@ -457,7 +459,7 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       const kit = await session.records();
       if (sub === 'grant-publish') await decided(() => kit.authorizations.grantPublishRight(admin, user.id));
       else await decided(() => kit.authorizations.revokePublishRight(admin, user.id));
-      session.out(`${user.name}（${user.id}）${sub === 'grant-publish' ? '有了发布权' : '的发布权已撤销'}`);
+      session.out(`${user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name}（${user.id}）${sub === 'grant-publish' ? '有了发布权' : '的发布权已撤销'}`);
       return 0;
     }
     case 'assign':
@@ -469,7 +471,8 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
       const hub = await session.hub();
       if (sub === 'assign') await decided(() => hub.registry.assign(admin, user.id, packId));
       else await decided(() => hub.registry.unassign(admin, user.id, packId));
-      session.out(sub === 'assign' ? `已把 ${packId} 分配给 ${user.name}（${user.id}）` : `${user.name}（${user.id}）不再能用 ${packId}`);
+      const name=user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name;
+      session.out(sub === 'assign' ? `已把 ${packId} 分配给 ${name}（${user.id}）` : `${name}（${user.id}）不再能用 ${packId}`);
       return 0;
     }
     case 'retire': {

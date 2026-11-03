@@ -34,8 +34,8 @@ test('an aborted run append does not create an independent original holder',asyn
 
 test('the migration backfill preserves a pre-existing run holder and exact source digest',async t=>{
  const w=await setup(t),source=await w.capture('synthetic older run bytes'),db=new Database(createPool(w.kit.database));t.after(()=>db.end());
- // Simulate the pre-17 insertion boundary without disabling any append-only protection.
- await db.query('ALTER TABLE records DISABLE TRIGGER records_run_originals');const run=await w.run(source.artifact.digest,source.artifact.body.sha256);await db.query('ALTER TABLE records ENABLE TRIGGER records_run_originals');assert.equal((await db.query('SELECT 1 FROM run_originals')).rowCount,0);
+ // Simulate the pre-17 insertion boundary before either original keeper existed; append-only protection stays on.
+ await db.query('ALTER TABLE records DISABLE TRIGGER records_run_originals');await db.query('ALTER TABLE object_holds DISABLE TRIGGER object_holds_original');let run:Awaited<ReturnType<typeof w.run>>;try{run=await w.run(source.artifact.digest,source.artifact.body.sha256);}finally{await db.query('ALTER TABLE object_holds ENABLE TRIGGER object_holds_original');await db.query('ALTER TABLE records ENABLE TRIGGER records_run_originals');}assert.equal((await db.query('SELECT 1 FROM run_originals')).rowCount,0);
  await db.query('SELECT public.hub_keep_run_originals($1,false)',[run.digest]);await w.kit.personalPayloads!.purge(w.owner,INITIAL_PERSONAL_EPOCH);assert.deepEqual((await w.kit.store.get(source.artifact.digest))?.body,source.artifact.body);assert.deepEqual(Buffer.from((await w.kit.objects.get(source.artifact.body.sha256))!),source.bytes);
 });
 

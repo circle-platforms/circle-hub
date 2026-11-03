@@ -120,7 +120,7 @@ async function described(ctx: PageContext, operation: string, object: string): P
     case 'user-invite':
     case 'token-issue': {
       const found = await user();
-      if (found === null) return null;
+      if (found === null||found.deleted_at) return null;
       if (operation === 'user-invite') return found.disabled ? null : commands.userInvite(found);
       if (operation === 'token-issue') return commands.tokenIssue(found);
       return operation === 'user-disable' ? commands.userDisable(found) : commands.userEnable(found);

@@ -1,3 +1,5 @@
+import {deletionCheck} from '../member-deletion.ts';
+import {RecordsError} from '../../records/api.ts';
 // /console/api: the read-only JSON interface of the console (the reserved interfaces of the doc “circle-hub 控制台前端：
 // 模块与接口”, owner's choice of 2026-11-01 to build the read part first). Same session and same visibility as the pages,
 // built from the same helpers, so a page and its interface never disagree: GET only; absent and forbidden alike answer 404
@@ -6,7 +8,7 @@
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
 import {tokensForMembers} from './member-reads.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { ACTION_RESULT, TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { AccountStatusSchema,ACTION_RESULT, TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CallLogLine, User, TokenInfo } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
@@ -394,14 +396,21 @@ async function records(ctx: PageContext): Promise<ApiResult> {
 
 async function memberOf(ctx: PageContext, user: User,provided?:TokenInfo[]): Promise<Record<string, unknown>> {
   const tokens = provided??await ctx.deps.records.principals.tokens(user.id);
+  const status=user.deleted_at?AccountStatusSchema.enum.deleted:user.disabled?AccountStatusSchema.enum.disabled:AccountStatusSchema.enum.enabled;
   const used = tokens.map((t) => t.last_used_at).filter((at): at is string => at !== null).sort();
   return {
-    id: user.id, name: user.name, role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
+    id: user.id, name: user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name, deleted_at:user.deleted_at??null, status,status_label:uiLabelOf('account_status',status), role: user.role, role_label: uiLabelOf('permission_role', user.role), disabled: user.disabled, created_at: user.created_at,
     circles: tokens.filter((t) => t.revoked_at === null).length, last_active_at: used.at(-1) ?? null,
     tokens: tokens.map((t) => ({ id: t.id, label: t.label, client: t.client, created_at: t.created_at, last_used_at: t.last_used_at, revoked_at: t.revoked_at })),
   };
 }
 
+async function memberDeletion(ctx:PageContext,id:string):Promise<ApiResult>{
+ if(!ctx.admin||!USER_ID.test(id)||!ctx.deps.records.memberDeletions)return neutral();
+ const user=await ctx.deps.records.principals.get(id);if(!user)return neutral();
+ if(user.deleted_at)return ok({status:await ctx.deps.records.memberDeletions.status(ctx.principal,id)});
+ try{return ok(await deletionCheck(ctx.deps.records,ctx.principal,id));}catch(error){if(!(error instanceof RecordsError))throw error;return {status:409,body:{code:null,message:error.message}};}
+}
 async function members(ctx: PageContext): Promise<ApiResult> {
   if (!ctx.admin) return neutral();
   const users=await ctx.deps.records.principals.list(),tokens=await tokensForMembers(ctx.deps.records.principals,users.map(user=>user.id));
@@ -468,6 +477,7 @@ export async function handleApi(ctx: PageContext, rest: readonly string[], optio
   }
   if (rest.length === 2 && head === 'tasks') return task(ctx, second);
   if (rest.length === 2 && head === 'packs') return pack(ctx, second);
+  if(rest.length===3&&head==='members'&&third==='deletion')return memberDeletion(ctx,second);
   if (rest.length === 2 && head === 'members') return member(ctx, second);
   if (head === 'knowledge') {
     if (rest.length === 2 && second === 'lines') return lines(ctx);
