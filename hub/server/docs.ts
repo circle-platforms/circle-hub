@@ -175,37 +175,38 @@ export function createDocs(deps: DocsDeps): Docs {
     const startedAt = now().toISOString();
     const bare = id.includes('@') ? id.slice(0, id.indexOf('@')) : id;
     const parsed = parseDocId(id);
-    if (parsed === null) return { ok: false, id: bare, reason: '不是命名文档的标识' };
-    // The caller always gets the engine's neutral SOURCE_UNAVAILABLE; the reason here is for the admin note.
-    const neutral = `账号 ${context.principal.id} 不能读命名文档 ${parsed.name}（没有这个文档，或者不能经这次运行读它）`;
+    if (parsed === null) return { ok: false, id: bare, reason: '不是命名文档的标识', inputError: { message: '不是命名文档的标识', fix: '按 doc:doc:<名字> 或 doc:doc:<名字>@<摘要> 写' } };
+    // Not found or no permission (D05 R[3], decision 112): whether the document exists is checked first; the reason is
+    // also kept for the admin note.
+    const neutral = `账号 ${context.principal.id} 读命名文档 ${parsed.name}`;
     const principal = context.principal;
     const storedRun=context.run&&RunId.safeParse(context.run).success?(await records.store.find<Pick<RunRecord,'runner'|'pack_digest'|'pack_space'>>({key:'runs.id',value:context.run,kind:'run',limit:1})).items[0]:undefined;
     if(storedRun?.body.pack_space&&storedRun.body.pack_space!=='team')return {ok:false,id:bare,reason:`个人工作流不能读取命名文档；${neutral}`};
+    const absent = (message: string): ExternalRead => ({ ok: false, id: bare, reason: `${message}；${neutral}`, inputError: { code: 'SOURCE_ABSENT', message, fix: '核对文档名；命名文档由管理员发布（circle-hub doc put）' } });
+    const forbidden = (why: string): ExternalRead => ({ ok: false, id: bare, reason: `${why}；${neutral}`, inputError: { code: 'SOURCE_NOT_PERMITTED', message: `命名文档 ${parsed.name} 存在，你没有读取权限：${why}`, fix: '经你自己的、工作流声明了命名文档输入的运行读取它；没有这样的工作流时请管理员分配' } });
+    const lost = (message: string): ExternalRead => ({ ok: false, id: bare, reason: message, inputError: { code: 'SOURCE_INTEGRITY_UNPROVEN', message, fix: '请管理员从备份恢复这份命名文档后重读' } });
+    const pointer = await records.pointers.get(docPointerName(parsed.name));
+    if (pointer === null) return absent(`Hub 里没有命名文档 ${parsed.name}`);
     if (principal.role !== 'admin') {
       // Through a run only: the run must exist and be this user's, and its pack must declare the doc input type.
       // A run that is not stored yet is being started: bindInputs has already checked the assignment and the slot.
-      if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) {
-        return { ok: false, id: bare, reason: `命名文档只经运行读取；${neutral}` };
-      }
+      if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) return forbidden('命名文档只经运行读取');
       const record = storedRun;
       if (record !== undefined) {
-        if (record.body.runner !== principal.id) return { ok: false, id: bare, reason: `运行 ${context.run} 不是这个账号的；${neutral}` };
+        if (record.body.runner !== principal.id) return forbidden(`运行 ${context.run} 不是你的`);
         const workflow = typeof record.body.pack_digest === 'string' ? await deps.workflows.byDigest(record.body.pack_digest,record.body.pack_space) : null;
         const declares = workflow?.workflow.inputs.some((slot) => slot.accepts.includes(DOC_EXTERNAL_TYPE)) ?? false;
-        if (!declares) return { ok: false, id: bare, reason: `运行 ${context.run} 的工作流没有声明命名文档输入；${neutral}` };
+        if (!declares) return forbidden(`运行 ${context.run} 的工作流没有声明命名文档输入`);
       }
     }
-    const pointer = await records.pointers.get(docPointerName(parsed.name));
-    if (parsed.sha256 === null && pointer === null) return { ok: false, id: bare, reason: `没有命名文档 ${parsed.name}；${neutral}` };
-    if (parsed.sha256 !== null && pointer === null) return { ok: false, id: bare, reason: `没有命名文档 ${parsed.name}；${neutral}` };
-    const target = parsed.sha256 ?? (pointer as { target: string }).target;
-    if (parsed.sha256 !== null && target !== (pointer as { target: string }).target && !(await revisions(parsed.name)).has(target)) {
-      return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 没有过这份摘要的内容；${neutral}` };
+    const target = parsed.sha256 ?? pointer.target;
+    if (parsed.sha256 !== null && target !== pointer.target && !(await revisions(parsed.name)).has(target)) {
+      return absent(`命名文档 ${parsed.name} 没有过这份摘要的内容`);
     }
     const bytes = await records.artifacts.trustedBytes(target);
-    if (bytes === null) return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 的字节（${target.slice(0, 12)}）不在对象库里` };
+    if (bytes === null) return lost(`命名文档 ${parsed.name} 的字节（${target.slice(0, 12)}）不在对象库里`);
     const storedRecord = docRecord(await records.artifacts.records(target), parsed.name, target);
-    if (storedRecord === undefined) return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 的源文件记录（${target.slice(0, 12)}）找不到` };
+    if (storedRecord === undefined) return lost(`命名文档 ${parsed.name} 的源文件记录（${target.slice(0, 12)}）找不到`);
     const visibility = { readers: [principal.id], admins: true, packs: [], shareable: false };
     const run = context.run !== undefined && context.run !== null && RunId.safeParse(context.run).success ? context.run : null;
     const inputs = [`src:${target}`];

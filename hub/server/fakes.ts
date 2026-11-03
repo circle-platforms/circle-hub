@@ -39,7 +39,8 @@ import type {
 import { canonicalize, sha256Hex, type Page, type Principal, type RecordsKit } from '../records/api.ts';
 import type { ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import type { ProductionResult, StartRunDetail, StoredResult } from '../runs/api.ts';
-import { pointerOfPath, unavailable } from './tools.ts';
+import { effectiveSubmission } from '../runs/engine/api.ts';
+import { missingObject, pointerOfPath } from './tools.ts';
 import type { z } from 'zod';
 import type { ResolveReferenceOutput, StartRunOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
 
@@ -60,6 +61,8 @@ export interface FakePack {
   summary: PackSummary | null;
   /** The workflow binds expected sources at start_run (workflow `expected_sources`), so start_run reads outside. */
   expectedSources?: boolean;
+  /** The workflow declares a hub_template effect row, so an accepted submit_result can make the Hub dispatch (decision 105). */
+  hubTemplate?: boolean;
 }
 
 const REQUIREMENTS: PackSummary['requirements'] = [
@@ -71,7 +74,7 @@ const REQUIREMENTS: PackSummary['requirements'] = [
  * A synthetic workflow pack with one subject input slot that accepts `accepts`. `factsOnly`: its requirements are facts
  * only, so the fake run service computes its result at start_run (a production run).
  */
-export function fakeWorkflowPack(id: string, title: string, accepts: string[], options: { expectedSources?: boolean; factsOnly?: boolean } = {}): FakePack {
+export function fakeWorkflowPack(id: string, title: string, accepts: string[], options: { expectedSources?: boolean; factsOnly?: boolean; hubTemplate?: boolean } = {}): FakePack {
   const version = '1.0.0';
   return {
     id,
@@ -82,6 +85,7 @@ export function fakeWorkflowPack(id: string, title: string, accepts: string[], o
     digest: sha(`pack:${id}@${version}`),
     owner: null,
     ...(options.expectedSources ? { expectedSources: true } : {}),
+    ...(options.hubTemplate ? { hubTemplate: true } : {}),
     summary: {
       pack: `${id}@${version}`,
       id,
@@ -89,6 +93,7 @@ export function fakeWorkflowPack(id: string, title: string, accepts: string[], o
       kind: 'workflow',
       title,
       description: `${title}（合成）`,
+      digest: sha(`pack:${id}@${version}`),
       products: [...PRODUCT.names],
       inputs: [{ slot: 'subject', role: 'subject', description: '被评审的文档', accepts, required: true, many: false }],
       parameters: [{ name: 'strict', description: '严格模式', required: false }],
@@ -214,6 +219,7 @@ function loaded(pack: FakePack): LoadedWorkflow {
     manifest,
     workflow,
     requirements,
+    ...(pack.hubTemplate ? { effects: [{ id: 'submit_verified', resource_kind: 'executor', action: 'submit', effect_class: 'job', parameters: { policy: 'policies/dispatch.json', check: 'dispatch_policy' }, release: { requirements: ['structure'], artifact: 'structure' }, trigger: 'hub_template', budget: { count: 1, duration_ms: 1000 }, deadline_ms: 86400000, optional: false, policy_checks: ['dispatch_policy'] }] as LoadedWorkflow['effects'] } : {}),
     checks: [],
     slots,
     knowledge: null,
@@ -427,6 +433,14 @@ export class FakeKnowledge implements KnowledgePort {
         }
         return null;
       },
+      // Whether the fake holds the root or entry at all, whoever may read it (D05 R[3]).
+      async rootExists(root: string): Promise<boolean> {
+        return self.#trees.has(root);
+      },
+      async entryExists(entry: string): Promise<boolean> {
+        for (const [root, nodes] of self.#trees) for (const node of nodes) if (node.entries.some((e) => sha(`${root}${node.path}#${e.statement}`) === entry)) return true;
+        return false;
+      },
     };
   }
 
@@ -462,6 +476,7 @@ interface StoredRun {
   recordDigest: string;
   submissions: RunSubmissionView[];
   results: Map<string, { record: string; result: ValidationResult }>;
+  resultsBySession: Map<string, { record: string; result: ValidationResult }>;
   latest: { record: string; result: ValidationResult } | null;
   /** The result a fact-only pack computed at start_run. */
   production: ProductionResult | null;
@@ -481,7 +496,6 @@ const FAKE_SLOT_SCHEMA = {
   required: ['findings'],
 } as const;
 
-const UNAVAILABLE: ProtocolError = unavailable();
 const RUN_ID = /^run_[0-7][0-9a-hjkmnp-tv-z]{25}$/;
 
 /** Items a fake run projects when the test does not choose its own: invented cases. */
@@ -498,6 +512,8 @@ export class FakeRuns implements RunsService {
   readonly #workflows: FakeWorkflows;
   readonly #now: () => Date;
   readonly runs = new Map<string, StoredRun>();
+  /** Submission bodies by run and canonical digest, as the engine stores them (for exportRun). */
+  readonly #bodies = new Map<string, Record<string, unknown>>();
   readonly script = new Script();
   /** The contexts the service was called with, newest last. */
   readonly contexts: CallContext[] = [];
@@ -528,8 +544,9 @@ export class FakeRuns implements RunsService {
     if (scripted !== undefined) return scripted.value as StartOut;
     const pack = this.#workflows.find(input.pack);
     if (pack === undefined || pack.kind !== 'workflow' || !(await this.#workflows.usable(user)).includes(pack)) {
+      // Not found or no permission, as the engine answers (D05 R[3], decision 112).
       this.#note(context, pack === undefined ? `pack ${input.pack} does not exist` : `pack ${input.pack} is not assigned to ${user.id}`);
-      return { call_result: 'error', errors: [UNAVAILABLE] };
+      return { call_result: 'error', errors: [{ ...missingObject(pack !== undefined, `任务包 ${input.pack}`), path: '/pack' }] };
     }
     const summary = pack.summary!;
     const sources: RunSummary['sources'] = [];
@@ -539,14 +556,15 @@ export class FakeRuns implements RunsService {
           const digest = /^src:([0-9a-f]{64})/.exec(binding.reference)?.[1];
           if (digest === undefined || (await this.#records.artifacts.readable(user, digest)) === null) {
             this.#note(context, `input ${binding.reference} is absent or not readable`);
-            return { call_result: 'error', errors: [UNAVAILABLE] };
+            const exists = digest !== undefined && (await this.#records.artifacts.records(digest)).length > 0;
+            return { call_result: 'error', errors: [{ ...missingObject(exists, `原件 ${binding.reference}`), path: `/inputs/${slot}` }] };
           }
           sources.push({ reference: binding.reference, role: 'subject', slot });
         } else if ('external' in binding) {
           sources.push({ reference: `src:${sha(binding.external)}`, role: 'subject', slot, external: binding.external });
         } else {
           this.#note(context, `input run ${binding.run} is absent or not readable`);
-          return { call_result: 'error', errors: [UNAVAILABLE] };
+          return { call_result: 'error', errors: [{ ...missingObject(this.runs.has(binding.run), `运行 ${binding.run}`), path: `/inputs/${slot}` }] };
         }
       }
     }
@@ -581,14 +599,15 @@ export class FakeRuns implements RunsService {
       instructions_digest: sha(instructions),
       ...(input.predecessor === undefined ? {} : { predecessor: input.predecessor }),
       ...(context.sessionId === null ? {} : { session: context.sessionId }),
+      ...(input.model_identity === undefined ? {} : { model_identity: input.model_identity }),
       started_at: this.#now().toISOString(),
       runner: user.id,
       host: 'local_circle',
       trigger: 'session',
       parameters: input.parameters ?? {},
     };
-    const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run }] });
-    const kept: StoredRun = { record, recordDigest: stored.digest, submissions: [], results: new Map(), latest: null, production: null };
+    const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run },{key:'runs.id',value:run}] });
+    const kept: StoredRun = { record, recordDigest: stored.digest, submissions: [], results: new Map(), resultsBySession: new Map(), latest: null, production: null };
     this.runs.set(run, kept);
     if (summary.requirements.every((r) => r.accepted_producer === 'fact')) kept.production = await this.#produce(kept, context);
     const { runner: _runner, host: _host, trigger: _trigger, parameters: _parameters, ...shown } = record;
@@ -675,7 +694,7 @@ export class FakeRuns implements RunsService {
     const stored = await this.#visible(user, runId);
     if (stored === null) {
       this.#note(context, `run ${runId} is absent or not visible to ${user.id}`);
-      return { call_result: 'error', acceptance: 'not_accepted', errors: [UNAVAILABLE] };
+      return { call_result: 'error', acceptance: 'not_accepted', errors: [{ ...missingObject(this.runs.has(runId), `运行 ${runId}`), path: '/run' }] };
     }
     let text: string;
     try {
@@ -684,9 +703,12 @@ export class FakeRuns implements RunsService {
       text = JSON.stringify(args);
     }
     const digest = sha(text);
-    const repeated = stored.results.get(digest);
-    if (repeated !== undefined) return this.#answer(repeated.result);
+    this.#bodies.set(`${runId}:${digest}`, { ...args });
     const parsed = Submission.safeParse(args);
+    const effective = parsed.success ? effectiveSubmission(parsed.data,stored.record,context.sessionId) : null;
+    const observer=JSON.stringify([digest,context.sessionId,effective?.model??null]);
+    const repeated = stored.resultsBySession.get(observer);
+    if (repeated !== undefined) return this.#answer(repeated.result);
     const received = await this.#records.store.put({ kind: 'submission', schema: parsed.success ? 'submission@1' : 'submission-received@1', provenance: 'declared', body: { ...args } });
     const base = {
       schema: 'validation@1' as const,
@@ -713,6 +735,8 @@ export class FakeRuns implements RunsService {
         partitions: empty,
         cross_item: [],
       };
+    } else if (effective === null) {
+      result = { ...base, acceptance: 'not_accepted', errors: [{code:'SUBMISSION_SCHEMA_VIOLATION',message:'本次提交没有可沿用或显式声明的模型身份',fix:'本会话显式声明 model_identity，或带原先声明身份的同一 Circle 会话重交',path:'/model_identity'}], partitions: empty, cross_item: [] };
     } else if (parsed.data.notes === 'quote-mismatch') {
       result = {
         ...base,
@@ -722,10 +746,11 @@ export class FakeRuns implements RunsService {
         cross_item: [],
       };
     } else {
-      result = { ...base, acceptance: 'accepted', errors: [], partitions: this.#partition(stored.record, parsed.data), cross_item: [] };
+      result = { ...base, acceptance: 'accepted', errors: [], partitions: this.#partition(stored.record, effective), cross_item: [] };
     }
     const resultRecord = await this.#records.store.put({ kind: 'validation_result', schema: 'validation@1', provenance: 'projected', body: result });
     stored.results.set(digest, { record: resultRecord.digest, result });
+    stored.resultsBySession.set(observer, { record: resultRecord.digest, result });
     stored.submissions.push({ record: received.digest, received_at: this.#now().toISOString(), acceptance: result.acceptance, errors: result.errors, result: result.acceptance === 'accepted' ? resultRecord.digest : null });
     if (result.acceptance === 'accepted') stored.latest = { record: resultRecord.digest, result };
     return this.#answer(result);
@@ -737,7 +762,7 @@ export class FakeRuns implements RunsService {
   }
 
   /** Handled items are delivered (an `unknown: true` slot leaves the static layer unchecked), skipped and uncovered ones incomplete. */
-  #partition(run: RunRecord, submission: z.infer<typeof Submission>): Partitions {
+  #partition(run: RunRecord, submission: z.infer<typeof Submission> & {model:string}): Partitions {
     const parts = Object.fromEntries(PARTITION.map((p) => [p, [] as unknown[]])) as Record<string, unknown[]>;
     const due = new Date(this.#now().getTime() + 72 * 60 * 60 * 1000).toISOString();
     const exit = { action: 'request' as const, request_kind: 'repair' as const, audience: { user: (run.runner ?? run.configurer)! }, due };
@@ -782,7 +807,7 @@ export class FakeRuns implements RunsService {
       const stored = await this.#visible(user, input.run);
       if (stored === null) {
         this.#note(context, `run ${input.run} is absent or not visible to ${user.id}`);
-        return { call_result: 'error', errors: [UNAVAILABLE], references: [], diagnostics: [] };
+        return { call_result: 'error', errors: [{ ...missingObject(this.runs.has(input.run), `运行 ${input.run}`), path: '/run' }], references: [], diagnostics: [] };
       }
       const found = stored.record.items.filter((item) => item.label.includes(input.text));
       if (found.length === 0) return { call_result: 'ok', errors: [], resolution: 'unresolved', references: [], diagnostics: [`没有找到 ${input.text}`] };
@@ -817,6 +842,13 @@ export class FakeRuns implements RunsService {
     const stored = await this.#visible(user, run);
     return stored === null ? null : { run: stored.record, submissions: [...stored.submissions], latest: stored.latest,
       production:stored.production === null ? null : {record:stored.production.record,result:stored.production.result} };
+  }
+
+  async exportRun(user: Principal, run: string): Promise<{ run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
+    const stored = await this.#visible(user, run);
+    if (stored === null || (stored.record.runner !== user.id && !(await isAdmin(this.#records, user)))) return null;
+    const result = stored.latest?.result.acceptance === 'accepted' ? stored.latest.result : null;
+    return { run: stored.record, result, submission: result ? this.#bodies.get(`${run}:${result.submission}`) ?? null : null };
   }
 
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecordView>> {

@@ -1,4 +1,4 @@
-import { readEnvironmentCalls, readRunJobs } from '../../dispatch/api.ts';
+import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
@@ -190,7 +190,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
-    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);}},
+    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),runs:()=>dispatch?dispatchedRuns(records):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready)=>dispatch?acceptedDispatch(records,dispatch,run,ready):Promise.resolve([]),inFlight:(run)=>dispatch?runInFlight(records,dispatch,run):Promise.resolve(null)},
     records,
     personalPacks:registry.personal,
     workflows,
@@ -204,12 +204,21 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     ...(leases !== undefined ? { leases, leaseJobs: async (keys: readonly string[]) => {
       if (!dispatch) throw new Error('作业读取端口未就绪，请管理员检查装配');
       return dispatch.activeLeaseJobs(keys);
+    }, observations: {
+      latest: async () => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.latestDeviceObservations();
+      },
+      observe: async (user, run, targets) => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.observeDevices(user, run, targets);
+      },
     } } : {}),
     adminLog: notes.engine,
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ records, leases, runs, workflows,adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     config,

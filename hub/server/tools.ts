@@ -19,6 +19,7 @@ import { SyncModeSchema, labelOf, type Acceptance, type CallResult } from '../..
 import { annotationsFor, type ToolAnnotations } from '../../contracts/src/annotations.ts';
 import { RunId, type ProtocolError } from '../../contracts/src/common.ts';
 import type { PackSummary } from '../../contracts/src/run.ts';
+import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import {
   GetNodesInput,
   ListTaskPacksInput,
@@ -30,13 +31,17 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
-import { IntegrityError, RecordsError, isSha256, type Principal } from '../records/api.ts';
-import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { localToolsOf } from '../runs/packs/ports.ts';
+import { IntegrityError, RecordsError, disclosedExistence, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
+import { callStatus } from './call-status.ts';
+import { cachedReadReply } from './read-replies.ts';
+import { recoverRead } from './recover-read.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -120,9 +125,21 @@ export function errorAnswer(tool: ToolName, errors: ProtocolError[], extra: Answ
   return { call_result: 'error', errors, ...EMPTY[tool], ...extra };
 }
 
-/** The neutral answer for absent and forbidden alike (D05 R[3]); the real reason goes to the admin note only. */
+/** The neutral answer, for the credential and login classes only (D05 R[3]); the real reason goes to the admin note only. */
 export function unavailable(): ProtocolError {
   return { code: 'SOURCE_UNAVAILABLE', message: UNAVAILABLE_MESSAGE, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix };
+}
+
+/** The fixes for a knowledge root a caller cannot read, the same in get_nodes and resolve_reference. */
+export const ROOT_ABSENT_FIX = '核对知识根；知识根来自运行或 get_nodes';
+export const ROOT_FORBIDDEN_FIX = '请管理员给你分配一个绑定这条产品线的任务包；或改读你的运行锁定的根';
+
+/** Not found or no permission (D05 R[3], decision 112): `what` as the caller wrote it, e.g. "运行 run_…". */
+export function missingObject(exists: boolean, what: string, fix?: string): ProtocolError {
+  const gap = /[\x21-\x7e]$/.test(what) ? ' ' : '';
+  return exists
+    ? { code: 'SOURCE_NOT_PERMITTED', message: `${what}${gap}存在，你没有读取权限`, fix: fix ?? PROTOCOL_CODES.SOURCE_NOT_PERMITTED.fix }
+    : { code: 'SOURCE_ABSENT', message: `Hub 里没有${what}`, fix: fix ?? '核对写法；运行号来自 start_run，知识根来自运行或 get_nodes' };
 }
 
 /** RFC 6901 JSON Pointer of a zod issue path. */
@@ -172,17 +189,15 @@ export function internalError(trace: string): McpError {
  * less (hub/refs/README.md, Skill parser limits). Any other failure is the administrator's to look into.
  */
 export function sandboxError(error: SandboxError): ProtocolError {
-  if (error.detail.limit === 'document_cache_bytes') return { code: 'SOURCE_RETRYABLE', message: `文档缓存估算超过预算：${error.code}`, fix: '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' };
-  const tooLarge = error.detail.limit === 'memory' ? '解析原件超过沙箱内存上限' : error.code === 'SANDBOX_OUTPUT_TOO_LARGE' ? '解析结果超过沙箱输出上限' : undefined;
-  if (tooLarge !== undefined) return { code: 'SOURCE_RETRYABLE', message: `${tooLarge}：${error.code}`, fix: '原样重读仍会失败；请来源维护者拆分原件后重读，或请解析器维护者降低解析所需的内存和输出' };
-  return { code: 'SOURCE_RETRYABLE', message: `来源片段暂时未核对：通用技能沙箱 ${error.code}`, fix: '管理员核对通用技能和沙箱状态，恢复后重新读取' };
+  const diagnostic = sandboxReadDiagnostic(error);
+  return { code: 'SOURCE_RETRYABLE', message: diagnostic.message, fix: diagnostic.fix };
 }
 
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
   if (error instanceof SandboxError) {
-    // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
-    call.context.adminNote(`通用技能沙箱失败：${error.code}`);
+    // Pack-controlled diagnostics and stdout may contain source bytes; retain only the code and safe declaration identity.
+    call.context.adminNote(sandboxReadDiagnostic(error).admin);
     return errorAnswer(tool, [sandboxError(error)]);
   }
   const code = protocolCodeOf(error);
@@ -246,9 +261,27 @@ export async function startRunReadsExternal(deps: ServerDeps, principal: Princip
   return false;
 }
 
-/** The six tools with the published schemas and the caller's annotations (D06 F[2]: start_run is open-world when it reads outside). */
+/** D06 R[4], decision 105: submit_result makes the Hub dispatch for this caller when one of the caller's packs declares a
+ * hub_template effect row; a pack that cannot be loaded counts as dispatching, so the hints stay conservative. */
+export async function submitDispatchesJobs(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<boolean> {
+  for (const summary of await deps.workflows.summaries(principal)) {
+    let loaded;
+    try {
+      loaded = await deps.workflows.forUser(principal, summary.pack);
+    } catch (error) {
+      note(`pack ${summary.pack} could not be loaded to derive the submit_result annotation: ${describeError(error)}`);
+      return true;
+    }
+    if (loaded?.effects?.some((row) => row.trigger === 'hub_template')) return true;
+  }
+  return false;
+}
+
+/** The six tools with the published schemas and the caller's annotations (D06 F[2]: start_run is open-world when it reads outside;
+ * D06 R[4]: submit_result carries the widest effect class of the rows it may make the Hub dispatch). */
 export async function listTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<PublishedTool[]> {
   const external = await startRunReadsExternal(deps, principal, note);
+  const dispatches = await submitDispatchesJobs(deps, principal, note);
   return TOOLS.map((tool) => {
     const published = PUBLISHED.get(tool.name)!;
     return {
@@ -257,7 +290,7 @@ export async function listTools(deps: ServerDeps, principal: Principal, note: (r
       description: published.description,
       inputSchema: published.inputSchema,
       outputSchema: published.outputSchema,
-      annotations: annotationsFor(tool.effect, tool.writesHubRecords, { readsExternal: tool.readsExternal === true && external, idempotent: tool.idempotent === true }),
+      annotations: annotationsFor(tool.name === 'submit_result' && dispatches ? 'job' : tool.effect, tool.writesHubRecords, { readsExternal: tool.readsExternal === true && external, idempotent: tool.idempotent === true }),
     };
   });
 }
@@ -268,8 +301,24 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
   const packs = await deps.workflows.summaries(call.principal);
-  const kind = parsed.data.kind;
-  return { answer: { call_result: 'ok', errors: [], packs: kind === undefined ? packs : packs.filter((pack) => pack.kind === kind) } };
+  const { kind, pack_id: packId, offset = 0 } = parsed.data;
+  const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
+  // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
+  const index = filtered.map((pack) => ({ pack: pack.pack, title: pack.title, kind: pack.kind }));
+  let context: Awaited<ReturnType<NonNullable<ServerDeps['runs']['packContext']>>> = null;
+  let contextUnread = false;
+  if (deps.runs.packContext !== undefined) {
+    try {
+      context = await deps.runs.packContext(call.principal, filtered);
+    } catch (error) {
+      contextUnread = true;
+      call.context.adminNote(`list_task_packs: the run context of the listed packs was not read: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+    }
+  }
+  return {
+    answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
+    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}) } },
+  };
 };
 
 const NAME = /^[^\p{Cc}]{1,300}$/u;
@@ -413,8 +462,45 @@ const startRun: Handler = async (deps, call, args) => {
   }
   const run = (answer.run as { run?: unknown } | undefined)?.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
+  if (answer.call_result === 'ok') {
+    try {
+      const accepted = await acceptedBy(deps, call.principal, answer);
+      if (accepted.length > 0) answer = { ...answer, accepted_by: accepted };
+    } catch (error) {
+      call.context.adminNote(`start_run: the packs accepting the read sources were not listed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+    }
+    // The tools/ files of the very version this run froze (script-distribution, step 2), as an answer-level fact: the run
+    // record never changes. The frozen pack_digest is the authority; a pack that cannot be loaded again leaves the fact out.
+    const summary = answer.run as { pack?: unknown; pack_digest?: unknown } | undefined;
+    if (typeof summary?.pack === 'string' && isSha256(summary.pack_digest)) {
+      try {
+        const loaded = await deps.workflows.forUser(call.principal, summary.pack);
+        if (loaded !== null && loaded.pack.digest === summary.pack_digest) {
+          const tools = localToolsOf({ id: loaded.pack.id, version: loaded.pack.version, digest: loaded.pack.digest, manifest: loaded.manifest });
+          if (tools !== null) answer = { ...answer, local_tools: tools };
+        }
+      } catch (error) {
+        call.context.adminNote(`start_run: the local tools of ${summary.pack} were not listed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+      }
+    }
+  }
   return { answer, text };
 };
+
+/**
+ * The inputs of the reader's packs that accept the type of a source the run read (decision 113): the type is `system:kind`
+ * of the external object, compared by exact equality with each input's declared accepts; nothing is matched by wording.
+ */
+export async function acceptedBy(deps: Pick<ServerDeps, 'workflows'>, principal: Principal, answer: Answer): Promise<Array<{ type: string; inputs: Array<{ pack: string; slot: string; role: PackSummary['inputs'][number]['role'] }> }>> {
+  const sources = (answer.run as { sources?: ReadonlyArray<{ external?: unknown }> } | undefined)?.sources ?? [];
+  const types = [...new Set(sources.flatMap((s) => typeof s.external === 'string' && ExternalObjectId.safeParse(s.external).success ? [s.external.slice(0, s.external.indexOf(':', s.external.indexOf(':') + 1))] : []))];
+  if (types.length === 0) return [];
+  const packs = await deps.workflows.summaries(principal);
+  return types.flatMap((type) => {
+    const inputs = packs.flatMap((p) => p.inputs.filter((i) => i.accepts.includes(type)).map((i) => ({ pack: p.pack, slot: i.slot, role: i.role })));
+    return inputs.length > 0 ? [{ type, inputs }] : [];
+  });
+}
 
 const resolveTool: Handler = async (deps, call, args) => {
   const parsed = ResolveReferenceInput.safeParse(args);
@@ -466,6 +552,24 @@ const getNodes: Handler = async (deps, call, args) => {
     catch(error){if(error instanceof KnowledgeError&&error.code)return {answer:errorAnswer('get_nodes',[{code:error.code,message:knowledgeMessage(error),fix:error.fix!}])};throw error;}
   }
   const note = call.context.adminNote;
+  if(input.call_query!==undefined){
+    const mixed=(['pack','pack_space','file','space','search','scope','run','root','paths','depth','reference','cursor'] as const).find(key=>input[key]!==undefined);
+    if(mixed)return {answer:errorAnswer('get_nodes',[violation('get_nodes',`/${mixed}`,'查询调用状态时只给 call_query','把调用状态查询与读取内容分开')])};
+    const tool=input.call_query.start_run!==undefined?'start_run':'get_nodes';
+    // Hash the original argument object, not a schema-transformed copy (for example a JSON __proto__ member).
+    const rawQuery=args.call_query as Record<string,unknown>;
+    const original=rawQuery[tool] as Record<string,unknown>;
+    const trace=input.call_query.trace,status=await callStatus(deps,call.principal,tool,original,trace);
+    if(tool==='get_nodes'&&trace&&status.active_total===0&&!status.truncated&&status.completed.length===1&&status.completed[0].call_result==='ok'){
+      const cached=cachedReadReply(deps,call.principal.id,original,trace);
+      if(cached){
+        const restored=await recoverRead(deps,call.principal,original,cached.answer,trace,cached.at);
+        if(restored){const {trace:_trace,...answer}=restored;const originalInput=GetNodesInput.safeParse(original);return {answer,text:{cursor:originalInput.success&&originalInput.data.cursor?originalInput.data.cursor:null}};}
+        status.missing='暂存的原回答未能按当前权限或来源状态核对';status.next_action='请管理员核对来源、权限和凭据状态；也可按当前权限重读原引用或路径';
+      }
+    }
+    return {answer:{call_result:'ok',errors:[],call_status:status}};
+  }
   if(input.pack!==undefined){
     if(!deps.registry||input.run!==undefined||input.search!==undefined||input.reference!==undefined||input.root!==undefined||input.paths!==undefined||input.depth!==undefined||input.space!==undefined||input.scope!==undefined)return {answer:errorAnswer('get_nodes',[violation('get_nodes','/pack','读取工作流或通用技能文件时只给 pack、pack_space、file 与 cursor')])};
     const space=input.pack_space??'team';
@@ -497,11 +601,21 @@ const getNodes: Handler = async (deps, call, args) => {
     if (detail === null) note(`run ${run} is absent or not visible to ${call.principal.id}`);
     return detail;
   };
+  // A run the caller cannot read: absent, or present and not theirs nor shared with them (D05 R[3]).
+  const runMissing = async (run: string): Promise<ProtocolError> => {
+    const found = deps.records?.store ? await deps.records.store.find({ key: 'runs.id', value: run, kind: 'run', limit: 1 }).catch(() => null) : null;
+    if (found === null) return unavailable();
+    // A run of another account's personal workflow stays neutral (D05 R[3]).
+    const existence = disclosedExistence(call.principal.id, found.items);
+    if (existence === 'neutral') return unavailable();
+    const exists = existence === 'exists';
+    return missingObject(exists, `运行 ${run}`, exists ? '读你自己的运行，或请这个运行的运行者分享给你' : '核对运行号；运行号来自 start_run 的回答');
+  };
   if (input.reference !== undefined) {
     // A cursor goes with the reference it pages (TextContext.cursor); a subtree read never mixes in.
     const mixed = (['root', 'paths', 'depth', 'space'] as const).filter((key) => input[key] !== undefined);
     if (mixed.length > 0) return { answer: errorAnswer('get_nodes', [violation('get_nodes', `/${mixed[0]}`, '按引用读取时不再给 root、paths 或 depth', READ_FIX)]) };
-    if (input.run !== undefined && (await runDetail(input.run)) === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    if (input.run !== undefined && (await runDetail(input.run)) === null) return { answer: errorAnswer('get_nodes', [await runMissing(input.run)]) };
     return readReference(deps, call, input.reference, input.run, cursor);
   }
   let root = input.root;
@@ -519,7 +633,7 @@ const getNodes: Handler = async (deps, call, args) => {
   let feedingOffset:import('../../contracts/src/feeding.ts').FeedingOffset|undefined;
   if (input.run !== undefined) {
     const detail = await runDetail(input.run);
-    if (detail === null) return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    if (detail === null) return { answer: errorAnswer('get_nodes', [await runMissing(input.run)]) };
     if(input.space!==undefined&&root===undefined&&deps.knowledge.spaces){
       const locks=detail.run.knowledge_spaces;
       if(input.space===call.principal.id&&locks?.owner===call.principal.id&&locks.personal===null&&!cursor)return {answer:{call_result:'ok',errors:[],nodes:[],coverage:{complete:true,examined:0,total:0},next:null}};
@@ -560,7 +674,10 @@ const getNodes: Handler = async (deps, call, args) => {
   }
   if (page === null) {
     note(`knowledge root ${root} (paths ${clipNote(JSON.stringify(input.paths ?? ['/']), 300)}) is absent or not readable by ${call.principal.id}`);
-    return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    // Without a tree reader that can tell, the answer stays neutral; a probe is never a reason for an internal error.
+    const probe = typeof deps.knowledge.treeReader === 'function' ? deps.knowledge.treeReader().rootExists : undefined;
+    const exists = probe ? await Promise.resolve(probe(root)).catch(() => null) : null;
+    return { answer: errorAnswer('get_nodes', [exists === null ? unavailable() : missingObject(exists, `知识树根 ${root}`, exists ? ROOT_FORBIDDEN_FIX : ROOT_ABSENT_FIX)]) };
   }
   return { answer: { call_result: 'ok', errors: [], root, nodes: page.nodes, coverage: page.coverage, next: page.next } };
 };
@@ -600,7 +717,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     now:deps.now?.bind(deps),
     reader,
     parsers: deps.parsers,
-    sources:{read:async(hash,identity)=>{const original=deps.knowledge.spaces?await deps.knowledge.spaces.source(call.principal,hash,identity?.run,'function'):await sources.read(hash,identity);return original??await deps.registry?.personal?.source(call.principal,hash,identity?.run)??null;}},
+    sources:{exists:sources.exists,read:async(hash,identity)=>{const original=deps.knowledge.spaces?await deps.knowledge.spaces.source(call.principal,hash,identity?.run,'function'):await sources.read(hash,identity);return original??await deps.registry?.personal?.source(call.principal,hash,identity?.run)??null;}},
     trees: deps.knowledge.treeReader(),
     records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
@@ -660,6 +777,17 @@ export interface ToolResult {
 
 /** Runs one tool call and returns the MCP result; an answer that violates the output schema throws an internal error instead. */
 export async function callTool(deps: ServerDeps, call: ToolCall, name: string, args: Record<string, unknown> | undefined): Promise<ToolResult> {
+  if (!DEFINITIONS.has(name) || !isToolName(name)) return callToolWithPermissions(deps,call,name,args);
+  try { return await withRequestPermissions(deps.records?.artifacts,call.principal,()=>callToolWithPermissions(deps,call,name,args)); }
+  catch (error) {
+    if (error instanceof McpError) throw error;
+    call.state.callResult = 'error';
+    call.context.adminNote(`request permissions: ${describeInternalError(error)}`);
+    throw internalError(call.context.traceId);
+  }
+}
+
+async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: string, args: Record<string, unknown> | undefined): Promise<ToolResult> {
   const definition = DEFINITIONS.get(name);
   if (definition === undefined || !isToolName(name)) {
     call.state.callResult = 'error';

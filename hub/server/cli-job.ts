@@ -30,6 +30,7 @@ function output(s: JobCommandSession, state: JobStatus): void {
   if(state.marks?.length)s.out(`效果标记：${state.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
   if(state.disposition)s.out(`处置：${labelOf('disposition',state.disposition)}；决定人 ${state.decided_by ?? '未记录'}；时间 ${state.decided_at ?? '未记录'}`);
   if(state.unprobed_devices?.length)s.out(`未探测（非派发目标）：${state.unprobed_devices.map(device=>`清单第 ${device.index + 1} 台（类型 ${device.type ?? '清单未声明'}）`).join('、')}；只按清单身份参与拓扑与地址绑定，不派发命令`);
+  if(state.unjudged?.length)s.out(`未对照：${state.unjudged.map(item=>item.pointer!==undefined?`条件 ${JSON.stringify(item.pointer)}`:`座位 ${JSON.stringify(item.seat ?? '')} 的 ${item.check ?? 'version'}`).join('、')}；没有运行锁定的构建，只把设备自述记为观察，不按任何版本判断；派发时按运行锁定的构建核对`);
   for(const condition of state.failed_conditions ?? [])s.out(`未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
   for(const check of state.failed_checks ?? [])s.out(`未满足核对：步骤 ${JSON.stringify(check.step)}${check.seat!==undefined?`；座位 ${JSON.stringify(check.seat)}`:''}${check.check!==undefined?`；检查 ${JSON.stringify(check.check)}`:''}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
   if(state.admin_release)for(const check of state.admin_release.filter(check=>check.satisfied!==true))s.out('管理员放行说明：'+JSON.stringify(check));
@@ -191,7 +192,7 @@ export async function bedCommand(s: JobCommandSession, args: readonly string[]):
       if (!values.reason || !values.reason.trim() || values.reason.includes('\n') || values.reason.includes('\r')) throw new UsageError('结清理由必须是一行非空说明');
       const result = await dispatch.clearBedHold(by, positionals[0], values.reason.trim());
       if (!result.cleared) { s.out('没有未结清的占用'); return 0; }
-      s.out(`已结清占用：执行器 ${positionals[0]}；台架 ${result.bed}；作业 ${result.job.slice(0, 12)}；方式 admin`);
+      s.out(`已结清占用：执行器 ${positionals[0]}；自动化测试环境 ${result.bed}；作业 ${result.job.slice(0, 12)}；方式 admin`);
       return 0;
     }
     if (sub === 'record') {

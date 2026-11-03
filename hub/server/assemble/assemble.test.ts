@@ -83,6 +83,38 @@ describe('start-up order and failure modes', () => {
     assert.equal(keyAsked, 0, 'the key provider is never asked');
   });
 
+  test('serve listens before the first maintenance pass ends and asks a pass in progress to stop when it stops', async () => {
+    const deployment = await harness.deployment();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const calls: string[] = [];
+    const assembly = async (): Promise<AssemblyModule> => {
+      const module = await realAssembly();
+      return {
+        assemble: async (config, records) => {
+          const deps = await module.assemble(config, records);
+          // A first pass that does not end until it is asked to stop: serve must not wait for it to listen.
+          deps.maintenance = {
+            startMaintenance: async () => { calls.push('start'); await held; },
+            stopMaintenance: async (options) => { calls.push(`stop abort=${options?.abort === true}`); release(); },
+          };
+          return deps;
+        },
+      };
+    };
+    let listening: ListenInfo | null = null;
+    let stop: () => void = () => {};
+    const stopped = new Promise<void>((resolve) => (stop = resolve));
+    const serving = deployment.run(['serve'], { assembly, stopSignal: () => stopped, onListening: (info) => (listening = info) });
+    for (let i = 0; i < 400 && listening === null; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.notEqual(listening, null, 'listening while the first pass is still running');
+    assert.deepEqual(calls, ['start']);
+    stop();
+    const result = await serving;
+    assert.equal(result.code, 0, result.text);
+    assert.deepEqual(calls, ['start', 'stop abort=true'], 'the pass in progress is asked to stop at its next run');
+  });
+
   test('serve on a database the owner never migrated refuses before the assembly runs', async () => {
     const deployment = await harness.deployment({ migrate: false });
     const spy = spyAssembly();
@@ -204,7 +236,7 @@ describe('start-up order and failure modes', () => {
         assert.deepEqual(listed.structuredContent?.packs, [], 'the real registry: nothing published yet');
         const run = (await client.callTool({ name: 'start_run', arguments: { pack: 'demo-none', inputs: {} } })) as { isError?: boolean; structuredContent?: { errors?: { code: string }[] } };
         assert.equal(run.isError, true);
-        assert.equal(run.structuredContent?.errors?.[0]?.code, 'SOURCE_UNAVAILABLE');
+        assert.equal(run.structuredContent?.errors?.[0]?.code, 'SOURCE_ABSENT');
       } finally {
         await client.close();
       }
@@ -372,7 +404,7 @@ describe('call notes', () => {
       const RLO = String.fromCodePoint(0x202e);
       const pack = `x is unknown\n2026-10-22T09:00:00Z circle-hub 已停止（数据库保持运行）\r\n\u001b]0;pwned\u0007\u009b2J${RLO}`;
       const answer = await hub.runs.startRun({ id: admin.id, name: admin.name, role: admin.role }, { pack, inputs: {} }, { traceId: trace, sessionId: null, adminNote: () => {} });
-      assert.equal(answer.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+      assert.equal(answer.errors[0]?.code, 'SOURCE_ABSENT');
       for (const line of log) assert.ok(![...'\n\r\u001b\u0007\u009b', RLO].some((char) => line.includes(char)), JSON.stringify(line));
       const engine = log.filter((line) => line.startsWith('运行引擎'));
       assert.equal(engine.length, 1, 'one line, no forged second one');
@@ -435,7 +467,7 @@ describe('the wiring of the engine', () => {
     }
   });
 
-  test('the engine notes a neutral answer\'s reason on the call itself, once, through the assembled service', async () => {
+  test('the engine notes a refusal\'s reason on the call itself, once, through the assembled service', async () => {
     const kit = await openTestRecords({ postgres });
     try {
       const log: string[] = [];
@@ -443,7 +475,7 @@ describe('the wiring of the engine', () => {
       const admin = (await kit.principals.bootstrapAdmin('管理员')).user;
       const notes: string[] = [];
       const answer = await hub.runs.startRun({ id: admin.id, name: admin.name, role: admin.role }, { pack: 'demo-none', inputs: {} }, { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', sessionId: null, adminNote: (reason) => notes.push(reason) });
-      assert.equal(answer.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+      assert.equal(answer.errors[0]?.code, 'SOURCE_ABSENT');
       assert.equal(notes.filter((note) => note.startsWith('start_run: pack demo-none is unknown')).length, 1, `once: ${JSON.stringify(notes)}`);
       assert.ok(log.some((line) => line.includes('start_run: pack demo-none is unknown')), 'and the operator log has it');
     } finally {

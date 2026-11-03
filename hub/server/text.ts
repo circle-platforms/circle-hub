@@ -9,7 +9,7 @@ import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary
 // says it pages (TextContext.paging); otherwise byte ranges and text@1 line ranges of sources, record pointers and the
 // console page. structuredContent keeps the whole answer as JSON.
 import { createHash } from 'node:crypto';
-import { applicabilityText } from '../knowledge/api.ts';
+import { applicabilityText, viewIdExample } from '../knowledge/api.ts';
 import { ZodError, type z } from 'zod';
 import { REFERENCE_FORMS } from '../../contracts/generated/protocol.ts';
 import {
@@ -61,6 +61,8 @@ type SubmitOut = z.infer<typeof SubmitResultOutput>;
  * budget and names only ways to read that work without it (sources by range, records by pointer, the console page).
  */
 export interface TextContext {
+  /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
+  packList?: { offset: number; kind?: string; packId?: string; contextUnread?: boolean };
   /** The server takes get_nodes {reference, cursor} and passes the cursor back here: only then are page cursors offered. */
   paging?: boolean;
   /** get_nodes with a reference: the page cursor the caller gave (made by pageCursor for an earlier page). */
@@ -149,14 +151,55 @@ class Clip {
   }
 }
 
+/**
+ * The claim fields of an error after its statement (B01, D05 R[8]): qualifier, grounds, rule, the missing fact and the
+ * candidate causes, the residual 其他 always last; open hypotheses are not told apart (V08 R[2]). `field` clips a value.
+ */
+function errorClaimParts(e: ProtocolError, field: (text: string, what: string) => string): string[] {
+  const parts: string[] = [];
+  const qualifier = [
+    e.provenance !== undefined ? labelOf('provenance_type', e.provenance) : null,
+    e.collected_at !== undefined ? `采集于 ${e.collected_at}` : null,
+    e.coverage !== undefined ? `查找范围${coverageText(e.coverage)}` : null,
+  ].filter((part): part is string => part !== null);
+  if (qualifier.length > 0) parts.push(`限定：${qualifier.join('，')}`);
+  if (e.grounds !== undefined && e.grounds.length > 0) parts.push(`根据：${e.grounds.map((g) => field(g, '根据的超出部分')).join('、')}`);
+  if (e.warrant !== undefined) parts.push(`规则：${field(e.warrant, '规则的超出部分')}`);
+  if (e.missing !== undefined) parts.push(`缺失事实：${field(e.missing, '缺失事实的超出部分')}`);
+  if (e.hypotheses !== undefined && e.hypotheses.length > 0) {
+    const open = e.hypotheses.filter((h) => h.status === 'open').length + 1;
+    const listed = e.hypotheses.map((h, i) => {
+      const about = [
+        labelOf('hypothesis_status', h.status),
+        h.prediction !== undefined ? `规则的预测：${field(h.prediction, '预测的超出部分')}` : null,
+        h.support !== undefined && h.support.length > 0 ? `支持：${h.support.map((s) => field(s, '支持的超出部分')).join('、')}` : null,
+        h.refute !== undefined && h.refute.length > 0 ? `反驳：${h.refute.map((s) => field(s, '反驳的超出部分')).join('、')}` : null,
+      ].filter((part): part is string => part !== null);
+      return `${i + 1}. ${field(h.statement, '假设的超出部分')}（${about.join('；')}）`;
+    });
+    listed.push(`${e.hypotheses.length + 1}. 其他（${labelOf('hypothesis_status', 'open')}：以上都不是）`);
+    parts.push(`原因未定，假设${open > 1 ? `（${open} 个开放，未区分）` : ''}：${listed.join('；')}`);
+  }
+  return parts;
+}
+
+/** The options of an error with their coverage: how many there are, how many are listed and where the rest are (A05 R[1]). */
+function optionsPart(e: ProtocolError, option: (text: string) => string): string | null {
+  if (e.options === undefined || e.options.length === 0) return null;
+  const coverage = e.options_coverage;
+  const head = coverage === undefined ? '可选' : `可选（${coverage.complete ? `共 ${coverage.examined} 个，全部列出` : `列出 ${coverage.examined} 个${coverage.total !== undefined ? `，共 ${coverage.total} 个` : '，总数未知'}`}${coverage.note ? `；${coverage.note}` : ''}）`;
+  return `${head}：${e.options.map(option).join('、')}`;
+}
+
 export function errorLine(e: ProtocolError): string {
-  const parts = [`- ${e.code}：${oneLine(e.message)}`];
+  const parts = [`- ${e.code}：${oneLine(e.message)}`, ...errorClaimParts(e, (text) => oneLine(text))];
   if (e.fix) parts.push(`修正：${oneLine(e.fix)}`);
   if (e.path !== undefined) parts.push(`位置 ${e.path === '' ? '（整份）' : oneLine(e.path)}`);
   if (e.item !== undefined) parts.push(`条目 ${oneLine(e.item)}`);
   if (e.requirement !== undefined) parts.push(`要求项 ${oneLine(e.requirement)}`);
   if (e.rounds_left !== undefined) parts.push(`剩余修复轮数 ${e.rounds_left}`);
-  if (e.options !== undefined && e.options.length > 0) parts.push(`可选：${e.options.map(oneLine).join('、')}`);
+  const options = optionsPart(e, oneLine);
+  if (options !== null) parts.push(options);
   return parts.join('；');
 }
 
@@ -233,15 +276,15 @@ function errorList(errors: readonly ProtocolError[], limits: Limits, shared: boo
   const entries = errors.map((e, i) => {
     const clip = new Clip(whole(i), more);
     const parts = [`- ${clip.field(e.code, limits.code, '错误代码的超出部分')}：${clip.field(e.message, limits.message, '错误说明的超出部分')}`];
+    parts.push(...errorClaimParts(e, (text, what) => clip.field(text, limits.message, what)));
     if (e.fix && fixOf.get(e.code) !== e.fix) parts.push(`修正：${clip.field(e.fix, limits.fix, '修正说明的超出部分')}`);
     if (e.path !== undefined) parts.push(`位置 ${e.path === '' ? '（整份）' : clip.field(e.path, limits.path, '错误位置的超出部分')}`);
     if (e.item !== undefined) parts.push(`条目 ${oneLine(e.item)}`);
     if (e.requirement !== undefined) parts.push(`要求项 ${clip.field(e.requirement, limits.code, '要求项名的超出部分')}`);
     if (e.rounds_left !== undefined) parts.push(`剩余修复轮数 ${e.rounds_left}`);
-    if (e.options !== undefined && e.options.length > 0) {
-      const shown = e.options.slice(0, 20).map((o) => clip.field(o, limits.code, '可选项的超出部分'));
-      parts.push(`可选：${shown.join('、')}${e.options.length > 20 ? ` 等 ${e.options.length} 个` : ''}`);
-    }
+    // Every option the error carries is listed; a cut list says so through options_coverage, never by silence.
+    const options = optionsPart(e, (o) => clip.field(o, limits.code, '可选项的超出部分'));
+    if (options !== null) parts.push(options);
     return clip.entry(parts.join('；'));
   });
   return { summary, entries };
@@ -317,6 +360,9 @@ export function pageCursorProblem(reference: string, cursor: string): string | n
 
 /** The input binding an example call gives for one accepted type: an upload reference, or an external object identity. */
 function bindingExample(accepts: string): { reference: string } | { external: string } {
+  // A knowledge view is not named by one number: show the form its parser requires, with the required parameters.
+  const view = accepts.startsWith('knowledge:') ? viewIdExample(accepts.slice('knowledge:'.length)) : null;
+  if (view !== null) return { external: view };
   return EXTERNAL_TYPE.test(accepts) ? { external: `${accepts}:<编号>` } : { reference: EXAMPLE_SOURCE };
 }
 
@@ -360,20 +406,62 @@ function packEntry(p: PackSummary): Entry {
   }
   for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
   if(p.space)lines.push(`  ${labelOf('knowledge_space_kind','personal')}：${p.space}`);
+  if (p.local_tools !== undefined) lines.push(`  本地工具 ${p.local_tools.count} 个；安装：${clip.field(p.local_tools.install, CLIP.line, '安装命令的超出部分')}；清单见 structuredContent`);
   lines.push(p.kind==='skill'&&p.requirements.length===0?`  读取做法 get_nodes：${JSON.stringify({pack:p.pack,...(p.space?{pack_space:p.space}:{}),file:'SKILL.md'})}`:`  示例 start_run：${startRunExample(p)}`);
   for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
 }
 
-function listText(v: ListOut): string {
+/** The run context of the listed packs right now (decision 113): lease views and device observations, never who holds a key. */
+function contextEntries(c: NonNullable<ListOut['context']>): Entry[] {
+  const clip = new Clip(null, '在控制台任务包页 /console/packs 查看');
+  const entries: Entry[] = c.leases.map((l) => {
+    const registered = l.registrations.length > 0 ? l.registrations.map((r) => `${clip.field(r.prefix, CLIP.code, '登记前缀的超出部分')}（${r.mine ? '你登记的' : '有主人'}）`).join('、') : '没有';
+    const held = l.held.slice(0, HELD_SHOWN).map((h) => `${clip.field(h.key, CLIP.code, '租约键的超出部分')}（运行 ${h.run}，起于 ${h.since}${h.until !== null ? `，到 ${h.until}` : ''}${h.jobs.length > 0 ? `，未结束的作业 ${h.jobs.join('、')}` : ''}${h.mine ? '，你占着' : ''}）`);
+    const rest = l.held.length > HELD_SHOWN ? `；其余 ${l.held.length - HELD_SHOWN} 个开运行后在运行上下文里读` : '';
+    return clip.entry(`- 租约前缀 ${clip.field(l.prefix, CLIP.code, '租约前缀的超出部分')}（${l.packs.join('、')} 用）：已登记的前缀 ${registered}；占用中的键 ${l.held.length} 个${held.length > 0 ? `：${held.join('；')}${rest}` : ''}`);
+  });
+  const observed = c.observations;
+  const users = observed[0]?.packs ?? [];
+  if (observed.length > 0) {
+    entries.push(clip.entry(`- 设备最近一次观察（${users.join('、')} 的上下文；只对观察时刻成立）：${observed.map((o) => `${clip.field(o.label, CLIP.name, '设备标签的超出部分')} ${o.build === null ? '没有抽到构建' : `构建 ${clip.field(o.build, CLIP.name, '构建名的超出部分')}`}${o.base !== null && o.base !== o.build ? `（基础构建 ${clip.field(o.base, CLIP.name, '构建名的超出部分')}）` : ''}，观察于 ${o.observed_at}`).join('；')}`));
+  }
+  return entries;
+}
+const HELD_SHOWN = 30;
+
+function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
-  const head = [`可用的工作流 ${v.packs.length} 个`];
+  const index = v.index ?? v.packs.map((p) => ({ pack: p.pack, title: p.title, kind: p.kind }));
+  const offset = context.packList?.offset ?? 0;
+  const head = [`可用的工作流 ${index.length} 个${offset > 0 ? `；详情从第 ${offset + 1} 个起` : ''}`];
   if (v.packs.some((p) => p.inputs.length > 0 || p.parameters.length > 0)) {
     const product = v.packs.some((p) => p.products.length > 0) ? '；product 换成被判对象所属产品线的名字（“产品”里列出的任一个）' : '';
     head.push(`示例 start_run 里的 ${EXAMPLE_SOURCE.slice(0, 8)}… 换成 upload_file 返回的引用，尖括号里的占位换成真实的编号或取值${product}`);
   }
-  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: () => '工作流：在控制台工作流页 /console/packs 查看' };
-  return fit([{ priority: 0, head }, packs], { tail: [traceLine(v.trace)] }).text;
+  const indexClip = new Clip(null, '在控制台工作流页 /console/packs 查看');
+  const listed: Block = {
+    priority: 0,
+    head: [`索引（${index.length} 个，同样的筛选下的全部工作流和通用技能；编号@版本${SEPARATOR}标题${SEPARATOR}类型）：`],
+    entries: index.map((row) => indexClip.entry(`- ${row.pack}${SEPARATOR}${indexClip.field(row.title, CLIP.name, '标题的超出部分')}${SEPARATOR}${uiLabelOf('pack_kind', row.kind)}`)),
+    unit: uiLabelOf('pack_kind', 'workflow'), measure: '个',
+  };
+  const blocks: Block[] = [{ priority: 0, head }, listed];
+  if (v.context !== undefined && (v.context.leases.length > 0 || v.context.observations.length > 0)) {
+    blocks.push({ priority: 0, head: ['运行上下文（声明了租约或设备观察的工作流开运行时 Hub 给的事实；这里是此刻的摘要，开运行时重新冻结）：'], entries: contextEntries(v.context), unit: '运行上下文', measure: '行' });
+  } else if (context.packList?.contextUnread === true) {
+    blocks.push({ priority: 0, head: ['运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'] });
+  }
+  const packs: Block = { priority: 1, head: ['详情（每个工作流的产品、输入、参数、示例和要求项）：'], entries: v.packs.map(packEntry), unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
+    const list = context.packList;
+    if (!list) return '工作流：在控制台工作流页 /console/packs 查看';
+    if (from === 0 && list.packId === v.packs[0]?.id) return '单个工作流详情超出回答预算；在控制台工作流页 /console/packs 查看';
+    if (from === 0) return `单个工作流详情超出回答预算；按精确 ID 查询 list_task_packs ${JSON.stringify({ pack_id: v.packs[0]?.id })}，或在控制台工作流页 /console/packs 查看`;
+    const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
+    return `工作流：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台工作流页 /console/packs 查看`;
+  } };
+  blocks.push(packs);
+  return fit(blocks, { tail: [traceLine(v.trace)] }).text;
 }
 
 // ---------------------------------------------------------------- upload_file
@@ -558,14 +646,15 @@ const isProductionRun = (run: RunSummary): boolean => run.requirements.length > 
  * item slots, one cross-item judgment. Once the lists are filled it parses with Submission.
  */
 export function submitExample(run: RunSummary): string {
+  const model = run.model_identity !== undefined && run.session !== undefined ? {} : {model: MODEL_PLACEHOLDER};
   if (isProductionRun(run)) {
-    const commentary = (grounds: string[]) => ({ run: run.run, model: MODEL_PLACEHOLDER, items: [], cross_item: [{ nature: 'judgment', statement: '<你的评论>', grounds }] });
+    const commentary = (grounds: string[]) => ({ run: run.run, ...model, items: [], cross_item: [{ nature: 'judgment', statement: '<你的评论>', grounds }] });
     const grounded = commentary(run.items.length > 0 ? [run.items[0].location] : []);
     return JSON.stringify(Submission.safeParse(grounded).success ? grounded : commentary([]));
   }
   const keys = slotKeys(run.slots);
   const items = run.items.slice(0, 2).map((item) => ({ item: item.id, handling: 'handled', slots: Object.fromEntries(keys.map((key) => [key, []])) }));
-  const example = { run: run.run, model: MODEL_PLACEHOLDER, items, ...(crossKeys(run.slots).length > 0 ? { cross_item: [] } : {}) };
+  const example = { run: run.run, ...model, items, ...(crossKeys(run.slots).length > 0 ? { cross_item: [] } : {}) };
   return JSON.stringify(Submission.safeParse(example).success ? example : { run: run.run, model: MODEL_PLACEHOLDER, items: [] });
 }
 
@@ -812,6 +901,7 @@ function startText(v: StartOut, context: TextContext): string {
   let supportedBlock:(Block & {entries:readonly Entry[]})|undefined;
   const headClip = new Clip(null, seeConsole(r.run));
   const head = [`运行 ${r.run}：工作流 ${headClip.field(r.pack, CLIP.name, '工作流编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
+  if(r.model_identity!==undefined&&r.session!==undefined)head.push('同一开始会话提交可省略 model 和 model_identity；其他会话须明确声明自己的模型身份');
   const production = v.result ?? null;
   const full = production !== null ? (context.production ?? null) : null;
   const layout = full !== null ? resultLayout(full, production!.reference) : null;
@@ -828,8 +918,9 @@ function startText(v: StartOut, context: TextContext): string {
   if (target.length > 0) head.push(target.join('，'));
   head.push(r.root !== undefined ? `锁定的知识根 ${r.root}` : '知识根：没有锁定');
   if (r.unversioned_root !== undefined) head.push(`不分版本的知识根 ${r.unversioned_root}（构建未声明）`);
-  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：同步这条产品线');
+  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
+  if (v.local_tools !== undefined) head.push(`本地工具 ${v.local_tools.count} 个（客户端按包号核对后安装）；安装：${headClip.field(v.local_tools.install, CLIP.line, '安装命令的超出部分')}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if(r.criterion_changes?.length)blocks.push({priority:1,head:['判据变更声明：'],entries:r.criterion_changes.map(change=>{
     const clip=new Clip(null,seeConsole(r.run));
@@ -893,6 +984,20 @@ function startText(v: StartOut, context: TextContext): string {
       more: () => `版本依据：${seeConsole(r.run)}`,
     });
   }
+  // What the booked devices showed when the booking was granted (decision 112): observed claims, each with its moment.
+  if (r.device_observations !== undefined && r.device_observations.length > 0) {
+    blocks.push({
+      priority: 2,
+      head: ['预订时在设备上看到的构建：'],
+      entries: r.device_observations.map((c) => {
+        const clip = new Clip(null, seeConsole(r.run));
+        return clip.entry(`- ${claimText(c, clip, CLIP.field)}`);
+      }),
+      unit: '设备观察',
+      measure: '条',
+      more: () => `设备观察：${seeConsole(r.run)}`,
+    });
+  }
   // A page of the run record's text has the same lines as here, so a cursor names the same line in both.
   const paged = (pointer: string, from: number): string | null => {
     if (record === null || !paging) return null;
@@ -933,6 +1038,15 @@ function startText(v: StartOut, context: TextContext): string {
     }),
   ];
   blocks.push({ priority: 1, head: [sources.length + gaps.length > 0 ? '来源：' : '来源：没有绑定'], entries: [...sources, ...gaps], unit: '来源', measure: '个', more: () => `来源：${seeConsole(r.run)}` });
+  if (v.accepted_by !== undefined && v.accepted_by.length > 0) {
+    blocks.push({
+      priority: 1,
+      head: ['接受这类对象的任务包输入（你能用的任务包里，接受类型与来源的外部对象类型逐字相同的输入；怎么用见 list_task_packs 的详情）：'],
+      entries: v.accepted_by.map((a) => `- ${a.type}：${a.inputs.map((i) => `${i.pack} 输入 ${i.slot}（${labelOf('source_role', i.role)}）`).join('；')}`),
+      unit: '对象类型', measure: '个',
+      more: () => '其余接受这类对象的输入：list_task_packs 详情里每个输入的“接受”',
+    });
+  }
   const items = itemLines(r.items, record, r.run);
   const itemsMore = (from: number): string => {
     const next = paged('/items', from);
@@ -1079,6 +1193,12 @@ function nodesText(v: NodesOut, context: TextContext): string {
   if(v.memory_document){const doc=v.memory_document;return `记忆 · ${oneLine(doc.title)}；${uiLabelOf('memory_status',doc.state)}\n文档 ${doc.document}\n版本 ${doc.version}\n所属空间 ${doc.space}；不作为运行输入或依据\n正文偏移 ${doc.offset}${doc.next?'；部分，继续读取时保留 memory 参数并传入 memory.cursor '+doc.next:'；本段结束'}\n\n${doc.markdown}\n${traceLine(v.trace)}`;}
   if(v.memory_page){const result=v.memory_page;return `记忆 ${result.items.length} 篇 · ${uiLabelOf('knowledge_search_scope',result.scope)}${result.conflict_count?' · '+uiLabelOf('sync_status','conflicted')+' '+result.conflict_count+'\n'+(result.conflicts??[]).map(c=>c.item_id+' · '+c.heads.length).join('\n'):''}\n${result.items.map(doc=>oneLine(doc.title)+' · '+uiLabelOf('memory_status',doc.state)+' · '+doc.bytes+' 字节\n文档 '+doc.document+'\n版本 '+doc.version+'\n所属空间 '+doc.space+'；会话加载资格 '+(doc.auto_load_allowed?'具备':'不具备')).join('\n\n')}${result.next?'\n部分；继续列出时保留 memory 参数并传入 memory.cursor '+result.next:''}\n${traceLine(v.trace)}`;}
   if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索${v.warnings?.length?'；部分范围未检索':''}）`,...(v.warnings??[]).map(warning=>`${warning.code}：${oneLine(warning.message)}；${oneLine(warning.fix??'')}`)],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
+  if(v.call_status){
+    const status=v.call_status;
+    const head=[`调用查询 ${status.tool}：当前进程在途 ${status.active_total} 个，最近日志匹配 ${status.completed.length} 条`,...(status.truncated?['调用或日志范围未列全']:[]),...(status.missing?[`缺失事实：${status.missing}`]:[]),`下一步：${status.next_action}`];
+    const entries=[...status.active.map(call=>`- 进行中：追踪 ${call.trace}，开始 ${call.started_at}`),...status.completed.map(call=>`- 已结束：追踪 ${call.trace}，${call.call_result}${call.error_code?`，${call.error_code}`:''}，耗时 ${call.duration_ms} 毫秒${call.run?`，运行 ${call.run}`:''}${call.run_record?`，运行记录 ${call.run_record}`:''}${call.result_record?`，结果 ${call.result_record}`:''}`)];
+    return fit([{priority:0,head},{priority:1,entries,unit:'调用',measure:'条',more:()=>null}],{tail:[traceLine(v.trace)]}).text;
+  }
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];
   const root = v.root ?? '';
@@ -1279,6 +1399,17 @@ interface Position {
   offset: number;
 }
 
+/** A concise model-facing access outcome; detailed tiers and the reason remain in the structured answer and note. */
+function sourceAccess(c: Content): string {
+  return c.readable && c.read_tier === 'model_readable' ? labelOf('read_tier', c.read_tier) : '原文不可读';
+}
+
+/** A source held back for credentials (B02 R[4]) names the way out: an administrator reviews the findings and may accept a
+ * false hit; a real credential or a policy that requires retain_only is not lifted. */
+function heldStep(c: Content): string[] {
+  return !c.readable && c.read_tier === 'retain_only' ? ['下一步：请管理员核看这份来源为何只保留；凭据误报经管理员接受后，用同一引用重读；含真凭据或按策略只保留的不会放行'] : [];
+}
+
 /** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */
 function insidePair(text: string, at: number): boolean {
   if (at <= 0 || at >= text.length) return false;
@@ -1303,7 +1434,7 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
   const {parser,summary,...rest}=c.structure!;
   const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
   const lines=Object.entries({...fields,...rest}).map(([key,value])=>`  ${oneLine(key)} ${valueText(value)}`);
-  const head=[`内容 ${c.reference}：${labelOf('read_tier',c.read_tier)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
+  const head=[`内容 ${c.reference}：${sourceAccess(c)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...heldStep(c),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
   const tail=[traceLine(trace)];
   if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
   const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
@@ -1335,9 +1466,10 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
 function contentText(c: Content, trace: string, context: TextContext): string {
   if(c.text===undefined && c.structure!==undefined)return structurePage(c,trace,context);
   const tail = [traceLine(trace)];
-  const head = [`内容 ${c.reference}：${labelOf('read_tier', c.read_tier)}`];
+  const head = [`内容 ${c.reference}：${sourceAccess(c)}`];
   if (c.sha256 !== undefined) head.push(`sha256 ${c.sha256}`);
   if (c.note !== undefined) head.push(oneLine(c.note));
+  head.push(...heldStep(c));
   const blocks: Block[] = [{ priority: 0, head }];
   if (c.structure !== undefined) {
     const structure = structureLines(c.structure, null);
@@ -1464,6 +1596,8 @@ function submitText(v: SubmitOut, context: TextContext): string {
     for (const entry of c.stored) head.push(`回注条目 ${oneLine(entry.item)}：rec:${entry.record}`);
     for (const entry of c.not_stored) head.push(`未入层条目 ${oneLine(entry.item)}：${oneLine(entry.reason)}`);
   }
+  // Decision 105: jobs the Hub dispatched for this accepted run, or why it did not; a repeat of this submission reads progress.
+  for (const note of v.dispatch ?? []) head.push(`派发：${oneLine(note.text)}`);
   const blocks: Block[] = [{ priority: 0, head }];
   if (accepted) blocks.push({ priority: 0, head: ['要求项（满足状态与各层终态的条目数）：', ...requirementCounts(result)] });
   if (v.errors.length > 0) {
@@ -1545,7 +1679,10 @@ export function feedingText(text:string,value:unknown):string {
   const v=recordsOf(value),more='完整喂入清单和未知见本次回答的 structuredContent；运行详情见控制台运行页';
   const rows:string[]=[];
   if(Array.isArray(v.feeding_pending))for(const pending of v.feeding_pending){const p=recordsOf(pending);rows.push('喂入未知：'+String(p.missing)+'；下一步：'+String(p.next_action));}
-  if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+('feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'；缺冻结序号：旧运行需另开运行'));
+  // The frozen offset belongs to a run (W06): an answer about no run (a content read) has none to name, and a run record
+  // without one is a run started before offsets were frozen, whose feeding horizon stays unknown (decision 113).
+  const offset='feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'run'in v?'；这个运行没有冻结喂入序号，喂入边界未知':'';
+  if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+offset);
   if(!rows.length)return text;
   // Fit disclosures first so that even a large feeding receipt cannot consume the whole answer.
   const disclosure=fit([{priority:0,entries:rows,unit:'喂入说明',measure:'条',more:()=>more}],{budget:6000,fallback:more}).text;

@@ -11,15 +11,18 @@ import { setCommonHeaders } from './http.ts';
 import { newTraceId } from './trace.ts';
 const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
+/** D05 R[3]: the version exists and is not assigned to the reader; the fix names who can assign it. */
+const UNASSIGNED = Buffer.from('这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n');
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 /** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
 const DISTRIBUTION_REUSE_MS = 60_000;
 const DISTRIBUTION_CACHE_MAX = 32;
-type LoadedForDownload = NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>;
+type LoadedForDownload = Pick<NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>, 'pack' | 'manifest'>;
 const distributionCache = new Map<string, { at: number; loaded: LoadedForDownload }>();
 const ABSENCE_NOTE = {
   unknown: '版本不存在',
   unassigned: '版本没有分配给这个用户',
+  uninstalled: '技能包版本没有安装',
   withdrawn: '版本已下架',
   disabled: '账号已停用',
 } as const;
@@ -51,17 +54,21 @@ async function openForDownload(deps: ServerDeps, principal: Principal, ref: stri
     distributionCache.delete(key);
     return null;
   }
-  const loaded = await deps.workflows.forUser(principal, ref);
+  const loaded = await deps.workflows.forUser(principal, ref) ?? await deps.workflows.skillForTools?.(principal, ref) ?? null;
   if (loaded !== null && ask !== undefined) rememberDistribution(key, loaded);
   return loaded;
 }
 
-async function absenceNote(deps: ServerDeps, principal: Principal, ref: string): Promise<string> {
+/** Why a version is not handed out: the admin note, and the answer D05 R[3] gives (absent, not assigned, not a valid account). */
+async function absence(deps: ServerDeps, principal: Principal, ref: string): Promise<{ note: string; status: number; bytes: Buffer }> {
   const ask = deps.workflows.absence;
-  if (ask === undefined) return '版本不存在、未分配或已下架';
+  if (ask === undefined) return { note: '版本不存在、未分配或已下架', status: 404, bytes: ABSENT };
   const why = await ask(principal, ref);
-  if (why === null) return '版本已发布并分配，但不能作为本地工具下发';
-  return ABSENCE_NOTE[why];
+  if (why === null) return { note: '版本已发布并分配，但不能作为本地工具下发', status: 404, bytes: ABSENT };
+  if (why === 'unassigned') return { note: ABSENCE_NOTE[why], status: 403, bytes: UNASSIGNED };
+  // An account disabled after it authenticated: the same neutral answer as an unusable token.
+  if (why === 'disabled') return { note: ABSENCE_NOTE[why], status: 401, bytes: UNAUTHENTICATED };
+  return { note: ABSENCE_NOTE[why], status: 404, bytes: ABSENT };
 }
 export const digestHeader = (bytes: Uint8Array): string => `sha-256=:${Buffer.from(sha256Hex(bytes), 'hex').toString('base64')}:`;
 export function localToolsTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/local-tools(?:[\/\\%]|$)/i.test(target ?? ''); }
@@ -110,7 +117,7 @@ export async function handleLocalTools(request: IncomingMessage, response: Serve
             headers['content-type'] = path === '' ? 'application/json' : 'application/octet-stream';
           } else note = '清单外路径';
         } else if (loaded) note = '这个版本没有本地工具';
-        else note = await absenceNote(deps, principal, ref);
+        else ({ note, status, bytes } = await absence(deps, principal, ref));
       }
     }
   } catch { status = 500; bytes = Buffer.from('Hub 内部错误\n'); note = '存储被改动过或读取失败'; log('本地工具出口：存储被改动过或读取失败'); }

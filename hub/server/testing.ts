@@ -31,6 +31,8 @@ export interface TestServerOptions {
   live?: AppOptions['live'];
   /** A command bridge over this test's scratch records, created before its HTTP listener starts. */
   bridge?: (records: TestRecordsKit) => NonNullable<AppOptions['bridge']>;
+  /** Keepalive timing for long tool calls (see AppOptions). */
+  keepalive?: { headersAfterMs: number; keepaliveMs: number };
 }
 
 export interface TestUser {
@@ -147,7 +149,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
-    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}) });
+    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}), ...(options.keepalive ? { keepalive: options.keepalive } : {}) });
     const info = await app.listen();
     // Administrators sign in to the console with a password too (owner, 2026-11-02); the synthetic one never needs changing.
     const boot = await records.principals.bootstrapAdmin('管理员', { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });

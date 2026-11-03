@@ -14,7 +14,7 @@ import { LimitError, validPassword } from '../../records/api.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { RecordsError, IntegrityError, sha256Hex, type Principal } from '../../records/api.ts';
+import { RecordsError, IntegrityError, sha256Hex, withRequestPermissions, type Principal } from '../../records/api.ts';
 import { KnowledgeError } from '../../knowledge/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
@@ -883,7 +883,8 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
       if (result === null) return;
     } else {
       const route = Object.hasOwn(ROUTES, segments[0]) ? ROUTES[segments[0]] : undefined;
-      result = route === undefined ? neutralPage(ctx) : await withReadScope(()=>route(ctx, segments.slice(1), options, session!));
+      // A page reads with the permissions captured when its request started (decision 82).
+      result = route === undefined ? neutralPage(ctx) : await withRequestPermissions(options.deps.records.artifacts, principal, () => withReadScope(()=>route(ctx, segments.slice(1), options, session!)));
     }
   } catch (error) {
     if(error instanceof KnowledgeError&&error.code){result=spaceActionFailure(ctx,error);}

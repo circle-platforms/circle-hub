@@ -24,10 +24,10 @@ import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
-import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatSeedReport, formatSyncReport, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
+import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatReprojectReport, formatSeedReport, formatSyncReport, knowledgeReproject, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeReprojectArgs, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeReprojectArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
-import type { ProductHandle } from '../ports.ts';
-import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import type { ProductHandle, RunsService } from '../ports.ts';
+import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordStore, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { packChanges, unruledShapes, parsePackRef, type PackProblem, type PublishCheck, type PublishReport } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -63,7 +63,7 @@ export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <工作流> [--reason <理由>] | list [--object <对象>]';
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
+export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | reproject <产品> <版本线> | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，密码从标准输入读取或随机生成；操作令牌存进私有密钥文件，不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进私有密钥文件（账户 operator-token）；令牌文件丢失时用，已有的不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进私有密钥文件，不显示；已有的不覆盖 | remove --confirm-only-operator-token   仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
@@ -843,6 +843,36 @@ export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, 
   }
 }
 
+const objectOf = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
+/**
+ * `knowledge retract --run`: the contribution records a run stored, in receipt order, as its accepted validation results
+ * list them (`contributions.stored`); a contribution record names no run. The run is read through the runs service, as
+ * `run show` and `share run` read it. Every accepted result the run's detail names is read, not only the latest: a later
+ * accepted submission's receipt lists only its own items, and an abandoned run's latest result is the management projection,
+ * which has no receipt. Stored results are read as stored, so older result shapes still give their receipts. Null when the
+ * run is absent; the retraction screen then refuses it.
+ */
+export async function runContributionEntries(runs: Pick<RunsService, 'getRun'>, store: Pick<RecordStore, 'get'>, by: Principal, run: string): Promise<string[] | null> {
+  const detail = await runs.getRun(by, run);
+  if (detail === null) return null;
+  const results = new Map<string, unknown>();
+  for (const submission of detail.submissions) if (submission.result !== null) results.set(submission.result, null);
+  if (detail.latest !== null) results.set(detail.latest.record, detail.latest.result);
+  const entries: string[] = [];
+  for (const [digest, known] of results) {
+    const stored = known === null ? await store.get(digest) : null;
+    const result = objectOf(known ?? (stored?.kind === 'validation_result' ? stored.body : null));
+    if (result === null || result.run !== run || result.acceptance !== 'accepted') continue;
+    const rows = objectOf(result.contributions)?.stored;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const record = objectOf(row)?.record;
+      if (typeof record === 'string' && isSha256(record) && !entries.includes(record)) entries.push(record);
+    }
+  }
+  return entries;
+}
+
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'view') {
@@ -907,6 +937,20 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     for (const line of formatSeedReport(report).trimEnd().split('\n')) session.out(line);
     return report.ok ? 0 : 1;
   }
+  if (sub === 'reproject') {
+    // Re-projects a line's existing fed cases onto its current seedling root, as seed does before it moves the pointer.
+    let parsed: KnowledgeReprojectArgs;
+    try {
+      parsed = parseKnowledgeReprojectArgs(rest);
+    } catch (error) {
+      throw new UsageError(messageOf(error));
+    }
+    const admin = await session.admin();
+    const hub = await session.hub(true);
+    const report = await decided(() => knowledgeReproject(hub.knowledge, hub.packs, admin, parsed));
+    for (const line of formatReprojectReport(report).trimEnd().split('\n')) session.out(line);
+    return report.ok ? 0 : 1;
+  }
   if (sub === 'retract') {
     const { values } = parse(rest, { entry: { type: 'string', multiple: true }, run: { type: 'string', multiple: true }, object: { type: 'string', multiple: true }, reason: { type: 'string' } }, 0);
     const entries = values.entry ?? [];
@@ -922,7 +966,18 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     const hub = await session.hub(true);
     const feeding = hub.knowledge.feeding;
     if (!feeding) throw new CliError('喂入层没有装上', '用当前 Hub 装配后重试');
-    const report = await decided(() => knowledgeRetract(feeding, admin, { entries, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
+    // A run's contributions join the entries of the same command, so the entry record lists them and the read side marks
+    // each one; entries an earlier record already lists are skipped as covered, as any other target is.
+    const included: Array<{ run: string; count: number }> = [];
+    const targets = [...entries];
+    for (const run of new Set(runs)) {
+      const stored = await decided(() => runContributionEntries(hub.deps.runs, hub.records.store, admin, run));
+      if (stored === null) continue;
+      included.push({ run, count: stored.length });
+      targets.push(...stored);
+    }
+    const report = await decided(() => knowledgeRetract(feeding, admin, { entries: targets, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
+    for (const row of included) session.out(`运行 ${row.run} 存下的回注条目 ${row.count} 个一并列为撤回目标`);
     for (const line of formatKnowledgeRetract(report)) session.out(line);
     return 0;
   }

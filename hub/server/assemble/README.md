@@ -75,6 +75,7 @@ circle-hub secret list                              # administrator metadata onl
 circle-hub doc put <name> <file> | list | show <name> # named documents (C4): put is admin-only; non-admins get the missing answer
 circle-hub knowledge sync --product <name or id> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]
 circle-hub knowledge seed --product <product> --line <line> [--build <build>] --basis <one line> [--dry-run]
+circle-hub knowledge reproject <product> <line>      # re-project a line's fed cases onto its current seedling
 circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 ```
 
