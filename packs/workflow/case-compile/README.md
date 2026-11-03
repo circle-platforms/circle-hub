@@ -601,3 +601,15 @@ second device's peer, covered by the runner's own cleanup, was skipped, its expl
 - The skill and pack descriptions say in everyday words what the pack does: compile a whole test mind map into an
   automation-case Excel workbook and run it on the automation test environment, given the mind map's document id on the
   agile platform.
+
+### 3.9.17: an uploaded mind map is named by its root node (owner's decision)
+
+- Without an agile document id (an uploaded file) and without a parser meta id, the document id, the first part of every
+  item id `<document>:<node>`, is now the root node's id, as the `documentIdOf` comment always said; until 3.9.16 it was
+  the first case's node id. A tree whose root carries no id (an outline without node ids) is named
+  `tree-<sha256>`: the SHA-256 of the canonical JSON of the whole tree reduced to each node's text and its children in
+  order (`rootDocumentId` in `functions/cases.ts`). It is computed, not inferred: the same texts and shape give the same id
+  on every run, and any change of a text or of the shape gives another.
+- Runs started before 3.9.17 keep the item ids recorded with them; records are append-only and nothing is rewritten. Only
+  runs started with 3.9.17 or later use the new rule, so the same uploaded file can have item ids of both forms in records
+  from before and after this release. The example item is now `fixture-document:fixture-case`.

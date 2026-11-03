@@ -13,6 +13,7 @@ test('start-run, submit-result and case-mindmap examples agree on the subject, t
   assert.deepEqual(start.inputs.subject, { reference: derived.subject }, 'the subject is the upload of examples/case-mindmap.json');
   assert.deepEqual(derived.items.map((item) => item.autoid), [start.parameters.autoid]);
   assert.deepEqual(submission.items.map((item: any) => item.item), derived.items.map((item) => item.id), 'item ids are the projected ones');
+  assert.deepEqual(derived.items.map((item) => item.id), ['fixture-document:fixture-case'], 'an uploaded mind map is named by its root node (3.9.17)');
   const quotes = quotesOf(submission); assert.ok(quotes.length >= 2);
   for (const quote of quotes) assert.equal(quote.reference, derived.references.get(quote.text), `quote ${quote.text} cites its own node of the uploaded mind map`);
   for (const item of submission.items) for (const claim of item.slots.plan) assert.equal(claim.data.bucket, derived.bed, 'the plan names the profile bed');

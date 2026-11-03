@@ -3,6 +3,8 @@
 // no tags is a case under the default marked rule, only counted (marked_only) under tagged. Group nodes (priority 1)
 // are walked through. Inside a case: a child with children is a step, its leaves the step's expected results; a
 // direct leaf is an expected result of the case.
+import { createHash } from 'node:crypto';
+import { canonicalJson } from './canonical-json.ts';
 import { isRecord } from './text.ts';
 
 export type CaseRule = 'tagged' | 'marked';
@@ -76,6 +78,23 @@ function metadata(value: unknown): string | null {
   if (typeof value === 'string') return value;
   if (typeof value === 'boolean' || typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
   return null;
+}
+
+/** The fallback document id of a mind map without an agile document id (3.9.17): the root node's id; for a tree whose root
+ * carries no id (an outline without node ids), `tree-` and the SHA-256 of the canonical JSON of the whole tree reduced to
+ * each node's text and its children in order. Deterministic: the same texts and shape give the same id, any change another. */
+export function rootDocumentId(model: unknown): string {
+  const nodes = nodesOf(model);
+  const root = nodes[0];
+  if (root !== undefined && typeof root.data.id === 'string' && root.data.id !== '') return root.data.id;
+  const seen = new Set<number>();
+  const tree = (index: number): unknown => {
+    const node = nodes[index];
+    if (node === undefined || seen.has(index)) return null;
+    seen.add(index);
+    return { text: node.text, children: node.children.map(tree) };
+  };
+  return 'tree-' + createHash('sha256').update(canonicalJson(nodes.length ? tree(0) : null), 'utf8').digest('hex');
 }
 
 /** The document id of a bound mind map: the external id's name, the parser meta id, else the root node's id. */

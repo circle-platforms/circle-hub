@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '3.9.16',
+  version: '3.9.17',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'},{pack:'workbook-format'}],
   title: '用例编译',

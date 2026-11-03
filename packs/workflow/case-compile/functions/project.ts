@@ -10,7 +10,7 @@ import { parseManifest } from './manifest.ts';
 import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
 import { readWorkbookModel } from './xlsx-model.ts';
-import { documentIdOf, extractCases, type CaseRule } from './cases.ts';
+import { documentIdOf, extractCases, rootDocumentId, type CaseRule } from './cases.ts';
 
 interface Slot {
   slot: string;
@@ -127,7 +127,9 @@ export function projectItems(input: unknown): unknown {
   // selector instead, which names one node.
   const nodeIdCount = new Map<string, number>();
   for (const node of Array.isArray(model.nodes) ? model.nodes : []) if (isRecord(node) && isRecord(node.data) && typeof node.data.id === 'string' && node.data.id !== '') nodeIdCount.set(node.data.id, (nodeIdCount.get(node.data.id) ?? 0) + 1);
-  const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, extraction.cases[0]?.id ?? null);
+  // Since 3.9.17 a mind map without an agile document id is named by its root node (rootDocumentId), no longer by its first
+  // case's node id. Runs started earlier keep the item ids recorded with them; only new runs use this rule.
+  const documentId = documentIdOf(typeof subject.external === 'string' ? subject.external : null, isRecord(model.meta) ? model.meta : null, rootDocumentId(subject.model));
   const warnings: PackWarning[] = [];
   if (extraction.cases.length === 0) warnings.push({ code: 'case-compile.no_cases', message: `文档 ${documentId} 里按规则取不到用例（${extraction.ruleSummary}）` });
   if (extraction.candidates > 0) warnings.push({ code: 'case-compile.candidate_only', message: `${extraction.candidates} 个节点只靠标记识别，case_rule 为 tagged 时不是用例（要取用请加标签，或改用默认规则）` });

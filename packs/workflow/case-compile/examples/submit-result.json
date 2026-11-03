@@ -3,7 +3,7 @@
   "model": "synthetic-model",
   "items": [
     {
-      "item": "fixture-case:fixture-case",
+      "item": "fixture-document:fixture-case",
       "handling": "handled",
       "slots": {
         "plan": [

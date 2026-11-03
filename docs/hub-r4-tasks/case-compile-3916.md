@@ -28,7 +28,7 @@
 - `testing/examples.ts`：用包自己的投影（`projectItems`，kityminder@1 解析）从 `examples/case-mindmap.json` 推出上传引用 `src:f568a541…`、条目号和每条引文的 `src:<sha>/kityminder@1/<选择器>`；`--write` 改写 `start-run.json` 和 `submit-result.json`。`tools/normalize-mindmap.ts` 对这份脑图不做任何改动，前后摘要相同。
 - `start-run.json`：subject 改成上传的 `src:` 引用，产品和构建写占位，说明里写清要先发布哪几份文件、需自备产品包。
 - `examples.test.ts`：示例与推导结果不一致就失败（对旧的 submit-result 已确认会失败）。
-- 留下没改的一点：上传的脑图没有文档号时，`documentIdOf` 拿第一个用例的节点号当文档号，所以条目号是 `fixture-case:fixture-case`，不是根节点号。这个规则会影响已有的条目号，本次不改。
+- 3.9.16 没改的一点：上传的脑图没有文档号时，`documentIdOf` 拿第一个用例的节点号当文档号。所有者已决定改，见下面 3.9.17。
 
 ## 3. 技能说明用日常话（#143）
 
@@ -37,3 +37,12 @@
 ## 版本
 
 3.9.16：`pack-files.ts`、`pack.json`、`tables/workbook-format.json`、`pack.test.ts`、`publish.test.ts`；`node testing/samples.ts` 和 `node pack-files.ts --write` 已重跑。本包没有签名。
+
+## 3.9.17：上传的脑图用根节点命名（所有者决定）
+
+- 没有敏捷文档号（上传的文件）、解析器也没给文档号时，文档号（条目号 `<文档>:<节点>` 的前半段）改用根节点的节点号，和 `documentIdOf` 的注释一致；3.9.16 及以前用的是第一个用例的节点号。
+- 根节点没有节点号的树（不带节点号的大纲）用 `tree-<sha256>` 命名：把整棵树只留每个节点的原文和子节点顺序，按规范 JSON 算 SHA-256（`functions/cases.ts` 的 `rootDocumentId`）。这是算出来的，不是猜的：原文和结构不变，每次都一样；改了任何一处文字或结构，就不一样。
+- 已经开始的运行保留它们记录里的条目号：记录只追加，不改写。只有用 3.9.17 及以后开始的新运行才按新规则，所以同一份上传文件，在这个版本前后的记录里可能有两种条目号。
+- 示例用 `node testing/examples.ts --write` 重新生成，条目号现在是 `fixture-document:fixture-case`。
+- 测试（`functions/whole-mindmap.test.ts`）：kityminder 根节点号命名，敏捷文档号仍然优先；无节点号的树两次开始得到同一个摘要，改一个期望或分组文字就变。
+- 版本 3.9.17：改动的文件同 3.9.16；`node testing/samples.ts`、`node pack-files.ts --write` 已重跑。
