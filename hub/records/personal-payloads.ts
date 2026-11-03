@@ -24,6 +24,22 @@ export function captureRecordOwner(body:unknown):string|null{
  const owner=b?.origin?.upload!=null&&b.visibility?.admins===false?b.author?.user:b?.origin?.read!=null&&b.visibility?.admins===false&&Array.isArray(b.visibility.readers)&&b.visibility.readers.length===1?b.visibility.readers[0]:null;
  return typeof owner==='string'&&/^usr_[0-9a-z]{26}$/.test(owner)?owner:null;
 }
+/** The personal owner of a stored object, or null when it is team, product or system content. */
+export function personalOwnerOf(record:{kind:RecordKind;body:unknown}):string|null{
+ const owner=personalRecordOwner(record.kind,record.body);if(owner)return owner;
+ if(record.kind==='run'){const space=(record.body as {pack_space?:unknown}|null)?.pack_space;return typeof space==='string'&&/^usr_[0-9a-z]{26}$/.test(space)?space:null;}
+ if(record.kind!=='source_artifact')return null;
+ const scoped=(record.body as {personal_scope?:{owner?:unknown}}|null)?.personal_scope?.owner;
+ return typeof scoped==='string'?scoped:captureRecordOwner(record.body);
+}
+/** D05 R[3]: what a reader who cannot read an object may be told. Team, product and system objects say absent or
+ * exists; when every stored copy sits in another account's personal space the answer stays neutral. */
+export function disclosedExistence(reader:string,stored:readonly {kind:RecordKind;schema?:string;body:unknown}[]):'absent'|'exists'|'neutral'{
+ // Memory refusal and unchanged audits do not exist for any generic reader: they answer as an unknown digest does.
+ const records=stored.filter(record=>!(record.kind==='action'&&typeof record.schema==='string'&&/^memory-(refusal|unchanged)@/.test(record.schema)));
+ if(!records.length)return 'absent';
+ return records.some(record=>{const owner=personalOwnerOf(record);return owner===null||owner===reader;})?'exists':'neutral';
+}
 export class PgPersonalPayloads {
  beforePurge?:(owner:string,by:Principal,tx:Transaction)=>Promise<void>;
  readonly db:Database;

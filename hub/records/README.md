@@ -118,7 +118,9 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
 
 1. **Bodies are stored as their RFC 8785 text, not as jsonb.** jsonb and text both reject a raw U+0000, while a submission
    must be stored verbatim (B05 R[3]); the canonical text escapes it. Every read recomputes the digest from the stored row and
-   throws `IntegrityError` when it differs.
+   throws `IntegrityError` when it differs. A row this process verified already and reads again with the same envelope and the
+   same body text is the same bytes, so its digest is not computed again (a bounded cache of verified copies, kept only for
+   byte-canonical rows); any difference is checked in full, so a row changed behind the triggers is still refused (B05 R[5]).
 2. **`created_at` is the exact `toISOString()` form** (UTC, milliseconds, years 0001-9999: timestamptz refuses the extended
    forms). It is part of the digest, so a put is idempotent only when the caller passes the same `created_at`; without one
    the Hub clock is used. An identical digest returns the existing record (`created: false`) and still adds any new index

@@ -19,6 +19,20 @@ export function withReadScope<T>(read:()=>T):T{
  const close=()=>{scope.active=false;for(const clear of scope.clearers)clear();};
  return scopes.run(scope,()=>{try{const result=read();if(result&&typeof (result as {then?:unknown}).then==='function')return Promise.resolve(result).finally(close) as T;close();return result;}catch(error){close();throw error;}});
 }
+const scopedValues=new WeakMap<Scope,Map<object,Map<string,unknown>>>();
+/**
+ * One value per owner and key for the current read scope, created on first use and disposed when the scope closes or is
+ * retired; null outside a current scope. Unlike the memos it is not frozen: it is for request state such as a permission snapshot.
+ */
+export function readScopeValue<T>(owner:object,key:string,create:()=>T,dispose:(value:T)=>void):T|null{
+ const scope=scopes.getStore();if(!scope||!current(scope))return null;
+ let owners=scopedValues.get(scope);if(!owners){owners=new Map();scopedValues.set(scope,owners);}
+ let values=owners.get(owner);if(!values){values=new Map();owners.set(owner,values);}
+ if(values.has(key))return values.get(key) as T;
+ const value=create();values.set(key,value);
+ const held=values;scope.clearers.add(()=>{if(held.get(key)===value){held.delete(key);dispose(value);}});
+ return value;
+}
 /** Key and execute every validated field, retaining known defaults and deterministic top-level member order. */
 function findInput(data:ReadValues,query:FindQuery):{id:string;query:FindQuery}|null{
  const source=plainFields(query);if(!source)return null;
