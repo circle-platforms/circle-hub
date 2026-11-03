@@ -3,6 +3,7 @@
 // sibling would run calls the call log never sees). The bearer token is checked on every request (a revoked token or a
 // disabled account stops at once); the body is bounded per request and over all requests. Every request of an authenticated
 // caller gets one call-log line (B08), refusals at the transport included, after its answer is ready and before it is sent.
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -71,6 +72,11 @@ function stateOf(message: JsonRpcRequest, started: number): CallState {
   };
 }
 
+/** A session id this Hub issued (a UUID); anything else binds nothing. */
+function mcpSessionOf(header: string | string[] | undefined): string | null {
+  return typeof header === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(header) ? header : null;
+}
+
 /** MCP initialize clientInfo (name, version) as the client reported it; bounded, kept only as a declaration. */
 function clientInfoOf(value: unknown): { client?: ClientDeclaration } {
   if (!isPlainObject(value)) return {};
@@ -124,7 +130,7 @@ function headersOf(request: IncomingMessage): Headers {
  * Writes one call-log line; a failure to write is reported to the operator and never changes the answer. A note records
  * refuses never costs the line: it is written once more without the note, and the operator's log says so.
  */
-async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState, tokenId: string | null = null): Promise<void> {
+async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState, tokenId: string | null = null, mcpSessionId: string | null = null): Promise<void> {
   const tool = LOGGED_TOOL.test(state.tool) ? state.tool : state.method === 'tools/call' ? 'tools/call' : 'mcp';
   const errorCode = state.errorCode !== null && LOGGED_CODE.test(state.errorCode) ? state.errorCode : null;
   const note=state.notes.length===0?null:`管理员理由 ${state.notes.length} 条；详见管理员调用日志详情`;
@@ -142,7 +148,7 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
     durationMs: Math.max(0, performance.now() - state.started),
     adminNote: note,
     adminReasons:[...state.notes],
-    ...(state.client ? { client: state.client, tokenId } : {}),
+    ...(state.client ? { client: state.client, tokenId, mcpSessionId } : {}),
   };
   try {
     await options.deps.records.callLog.append(input);
@@ -283,7 +289,7 @@ async function answer(
   server.setRequestHandler(CallToolRequestSchema, async (message, extra) => {
     const state = stateFor(extra.requestId);
     const declared = deps.records.callLog.declaredClient;
-    const client = declared ? () => declared.call(deps.records.callLog, principal.id, sessionId, tokenId) : undefined;
+    const client = declared ? () => declared.call(deps.records.callLog, principal.id, mcpSessionOf(request.headers['mcp-session-id']), tokenId) : undefined;
     const call: ToolCall = { principal, state, context: { traceId, sessionId, adminNote: noteOn(state), ...(client ? { client } : {}) } };
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
@@ -320,12 +326,16 @@ async function answer(
       }
       for (const state of states) state.callResult ??= 'error';
     }
-    for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId);
+    // Streamable HTTP sessions: the Hub stays stateless but issues an Mcp-Session-Id at a successful initialize, so a
+    // client's declared clientInfo is bound to the writes it makes in that session and to no other client's.
+    const issued = own?.state.method === 'initialize' && reply.status < 400 && own.state.callResult === 'ok' ? randomUUID() : null;
+    for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null);
     setCommonHeaders(response);
     const headers: Record<string, string> = {};
     reply.headers.forEach((value, name) => {
       headers[name] = value;
     });
+    if (issued !== null) headers['mcp-session-id'] = issued;
     headers['content-length'] = String(Buffer.byteLength(text));
     response.writeHead(reply.status, headers);
     response.end(text);

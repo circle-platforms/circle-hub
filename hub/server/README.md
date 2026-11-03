@@ -1114,8 +1114,11 @@ names the sync base, capabilities, the `<issuer>/mcp` resource, the local-tools 
 team memory reads and sharing, checked against the generated tool contract at startup.
 
 Provenance (decision 137, owner additions of 2026-11-03): an MCP `initialize` with `clientInfo` appends an
-`mcp-client-declaration@1` record linked to its call-log line and indexed by session and token; personal entries and
-team entries written through `upload_file` in that session store it as `client` (a declaration). Entries projected by
+`mcp-client-declaration@1` record linked to its call-log line. The Hub stays stateless but issues an `Mcp-Session-Id`
+(a UUID) in every successful initialize answer, and the declaration is indexed by account, token and that id only;
+`Circle-Session-Id` is kept in the declaration when sent. Personal and team entries written through `upload_file`
+store it as `client` (a declaration) only when the request carries that issued id with the same token; otherwise they
+name no client and the console shows 客户端. There is no fallback to another session or to the token alone. Entries projected by
 a sync commit name the audited sync request as their `session`, and the sync audit is indexed by request. The
 console's entry detail shows 写入来源 to the author and administrators: writer, time, session and the client name as
 recorded (the reported clientInfo, the OAuth client's registered name or the administrator's token label, as written;

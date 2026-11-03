@@ -750,7 +750,9 @@ requester records a purge to local as an append-only `personal-sync-purge-reques
 `personal.sync.purge.request.by`) instead of performing it; `purgeRequests` lists the owner's unexpired, unexecuted
 requests of the current epoch and `confirmPurge` performs one as recorded, adding its digest to the mode audit. No
 migration is added. The call log keeps an MCP client's `initialize` declaration as a separate
-`mcp-client-declaration@1` record linked to the line, so the `call_log@1` body and its digest check are unchanged.
+`mcp-client-declaration@1` record linked to the line, so the `call_log@1` body and its digest check are unchanged. It
+is indexed (`mcp.client.session`) by account, server token and the `Mcp-Session-Id` the server issued in that answer;
+`declaredClient` finds it only by all three.
 
 `personalSync` is an account-scoped internal port, not an MCP tool or an HTTP handler. It rechecks the account and epoch
 inside the existing personal-space transaction lock. Heads and stable UUID mappings persist across restarts; mappings

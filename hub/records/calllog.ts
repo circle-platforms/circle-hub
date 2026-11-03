@@ -65,8 +65,11 @@ function sessionOf(value: string | null | undefined): string | null {
 /** A preview the credential scanner flags is not kept: the call log never stores a secret (B08 R[1]). */
 /** What an MCP client reported in initialize (clientInfo), linked to that call-log line; a declaration, never verified. */
 export const CLIENT_DECLARATION_SCHEMA = 'mcp-client-declaration@1';
+/** Index of a declaration: account, server token and the Mcp-Session-Id the Hub issued at initialize. */
 const CLIENT_SESSION_KEY = 'mcp.client.session';
-const CLIENT_TOKEN_KEY = 'mcp.client.token';
+const MCP_SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const sessionKey = (user: string, token: string | null | undefined, session: string | null | undefined): string | null =>
+  typeof token === 'string' && token.length > 0 && token.length <= 200 && typeof session === 'string' && MCP_SESSION.test(session) ? `${user}/${token}/${session}` : null;
 /** A client's own name and version, bounded; control and format characters removed (shown in the console as written). */
 function clientOf(value: { name: string; version: string | null }): { name: string; version: string | null } {
   const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
@@ -180,17 +183,16 @@ export class PgCallLog implements CallLog {
     };
     // The client declaration is a separate record linked to this line: the call_log@1 body keeps its exact shape.
     const client = input.client ? clientOf(input.client) : null;
-    const declared = client === null || entry.user === null ? [] : [
-      ...(entry.session !== null ? [{ key: CLIENT_SESSION_KEY, value: entry.user + '/' + entry.session }] : []),
-      ...(typeof input.tokenId === 'string' && input.tokenId.length > 0 && input.tokenId.length <= 200 ? [{ key: CLIENT_TOKEN_KEY, value: input.tokenId }] : []),
-    ];
+    // Bound only to the MCP session the Hub issued at this initialize; without one the declaration names no later write.
+    const bound = client === null || entry.user === null ? null : sessionKey(entry.user, input.tokenId, input.mcpSessionId);
+    const declared = bound === null ? [] : [{ key: CLIENT_SESSION_KEY, value: bound }];
     const { record, note } = await this.#store.withTransaction(async (tx) => {
       const stored = await this.#store.put<CallLogEntry>(
         { kind: 'call_log', schema: RECORD_SCHEMAS.call_log, provenance: 'observed', body: entry, created_at: at },
         tx,
       );
       if (stored.created && client !== null && declared.length) {
-        await this.#store.put({ kind: 'action', schema: CLIENT_DECLARATION_SCHEMA, provenance: 'declared', body: { kind: ActionKindSchema.enum.read, call: stored.digest, user: entry.user, session: entry.session, at, client }, index: declared, created_at: at }, tx);
+        await this.#store.put({ kind: 'action', schema: CLIENT_DECLARATION_SCHEMA, provenance: 'declared', body: { kind: ActionKindSchema.enum.read, call: stored.digest, user: entry.user, mcp_session: input.mcpSessionId, session: entry.session, at, client }, index: declared, created_at: at }, tx);
       }
       if (stored.created) {
         await this.#db.query(
@@ -221,13 +223,11 @@ export class PgCallLog implements CallLog {
     return line;
   }
 
-  async declaredClient(userId: string, session: string | null, tokenId: string | null): Promise<{ name: string; version: string | null } | null> {
-    for (const [key, value] of [[CLIENT_SESSION_KEY, session === null ? null : userId + '/' + session], [CLIENT_TOKEN_KEY, tokenId]] as const) {
-      if (value === null) continue;
-      const row = (await this.#store.find<{ user: string; client: { name: string; version: string | null } }>({ kind: 'action', key, value, newestFirst: true, limit: 1 })).items[0];
-      if (row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId) return row.body.client;
-    }
-    return null;
+  async declaredClient(userId: string, mcpSession: string | null, tokenId: string | null): Promise<{ name: string; version: string | null } | null> {
+    const value = sessionKey(userId, tokenId, mcpSession);
+    if (value === null) return null;
+    const row = (await this.#store.find<{ user: string; client: { name: string; version: string | null } }>({ kind: 'action', key: CLIENT_SESSION_KEY, value, newestFirst: true, limit: 1 })).items[0];
+    return row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId ? row.body.client : null;
   }
 
   async query(principal: Principal, query: CallLogQuery = {}): Promise<Page<CallLogLine>> {

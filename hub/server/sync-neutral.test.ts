@@ -67,20 +67,29 @@ test('a Bearer token alone never purges: the owner confirms the exact request in
  await assert.rejects(hub.records.personalSync!.confirmPurge(owner.principal,waiting[0].digest),{code:'SOURCE_UNAVAILABLE'});assert.equal((await http(hub,token.token,'/state')).json.mode,'hub');
 });
 
-test('entry versions keep the MCP client declaration per session and the console shows the reported name as written',async t=>{
+test('entry versions keep the clientInfo declared in their own Mcp-Session-Id; anything unbound shows 客户端',async t=>{
  const hub=await createTestHub(options);t.after(()=>hub.close());const owner=await hub.createUser('合成客户端声明');
- const session=await hub.client(owner.token,{sessionId:'synthetic-session-1'});t.after(()=>session.close());
+ const session=await hub.client(owner.token,{sessionId:'synthetic-circle-session'});t.after(()=>session.close());
+ const issued=(session.client.transport as unknown as {sessionId?:string}).sessionId;assert.match(issued??'',/^[0-9a-f-]{36}$/,'the Hub issues an Mcp-Session-Id at initialize');
  const written=await session.call('upload_file',{personal_entry:{kind:'observation',statement:'合成带客户端声明的条目',path:'/notes'}});assert.equal(written.isError,false,JSON.stringify(written));
- const view=await hub.hub.knowledge.spaces!.current(owner.user.id);assert.ok(view);const row=view.body.entries.find(e=>e.path==='/notes');assert.ok(row);
- const body=SpaceEntryBody.parse((await hub.records.store.get(row.record))!.body);assert.deepEqual(body.client,{name:'hub-test-real',version:'0.0.0'});assert.equal(body.session,'synthetic-session-1');
- const line=(await hub.records.callLog.query(owner.principal,{tool:'initialize'})).items[0];assert.ok(line);
- const declaration=(await hub.records.store.find<{call:string;client:unknown}>({kind:'action',key:'mcp.client.session',value:owner.user.id+'/synthetic-session-1',limit:5})).items.find(r=>r.schema==='mcp-client-declaration@1');
- assert.equal(declaration?.body.call,line.digest);assert.deepEqual(declaration?.body.client,{name:'hub-test-real',version:'0.0.0'});assert.equal(declaration?.provenance,'declared');
- const direct=await hub.hub.knowledge.spaces!.write(owner.principal,{kind:'observation',statement:'合成未报告客户端的条目',path:'/other'});assert.ok(direct.root);
- const browser=await openConsole(hub,owner.token);
- const shown=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:view.root,path:'/notes',entry:row.entry}));assert.equal(shown.status,200);
- assert.match(shown.body,/写入来源/);assert.match(shown.body,/hub-test-real 0\.0\.0/);assert.match(shown.body,/MCP initialize clientInfo/);assert.doesNotMatch(shown.body,/自报|Circle 客户端/);
- const latest=await hub.hub.knowledge.spaces!.current(owner.user.id),plain=latest!.body.entries.find(e=>e.path==='/other')!;
- const unreported=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:latest!.root,path:'/other',entry:plain.entry}));assert.equal(unreported.status,200);
- assert.match(unreported.body,/<dd>客户端<\/dd>|>客户端</);assert.doesNotMatch(unreported.body,/hub-test-real/);
+ // The same token in another client: its own initialize, its own session, its own name.
+ const rpc=async(body:unknown,headers:Record<string,string>={})=>requestHttp(hub.port,'/mcp',{method:'POST',headers:{authorization:'Bearer '+owner.token,'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18',...headers},body:JSON.stringify(body)});
+ const init=await rpc({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'synthetic-second-client',version:'9.9'}}});assert.equal(init.status,200,init.body);
+ const second=String(init.headers['mcp-session-id']);assert.match(second,/^[0-9a-f-]{36}$/);assert.notEqual(second,issued);
+ const call=(path:string,statement:string,headers:Record<string,string>={})=>rpc({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'upload_file',arguments:{personal_entry:{kind:'observation',statement,path}}}},headers);
+ assert.equal((await call('/second','合成第二个客户端的条目',{'mcp-session-id':second})).status,200);
+ assert.equal((await call('/unbound','合成未带会话的条目')).status,200);
+ assert.equal((await call('/forged','合成伪造会话的条目',{'mcp-session-id':randomUUID()})).status,200);
+ const view=await hub.hub.knowledge.spaces!.current(owner.user.id);assert.ok(view);
+ const body=async(path:string)=>SpaceEntryBody.parse((await hub.records.store.get(view.body.entries.find(e=>e.path===path)!.record))!.body);
+ assert.deepEqual((await body('/notes')).client,{name:'hub-test-real',version:'0.0.0'});assert.equal((await body('/notes')).session,'synthetic-circle-session');
+ assert.deepEqual((await body('/second')).client,{name:'synthetic-second-client',version:'9.9'},'one token, two clients: no mislabel');
+ assert.equal((await body('/unbound')).client,undefined);assert.equal((await body('/forged')).client,undefined);
+ const line=(await hub.records.callLog.query(owner.principal,{tool:'initialize'})).items.find(l=>l.session==='synthetic-circle-session');assert.ok(line);
+ const token=(await hub.records.principals.identify!('Bearer '+owner.token))!.token_id;
+ const declaration=(await hub.records.store.find<{call:string;client:unknown;mcp_session:string;session:string}>({kind:'action',key:'mcp.client.session',value:owner.user.id+'/'+token+'/'+issued,limit:5})).items.find(r=>r.schema==='mcp-client-declaration@1');
+ assert.equal(declaration?.body.call,line.digest);assert.equal(declaration?.body.session,'synthetic-circle-session');assert.deepEqual(declaration?.body.client,{name:'hub-test-real',version:'0.0.0'});assert.equal(declaration?.provenance,'declared');
+ const browser=await openConsole(hub,owner.token),page=(path:string)=>browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:view.root,path,entry:view.body.entries.find(e=>e.path===path)!.entry}));
+ const shown=await page('/notes');assert.equal(shown.status,200);assert.match(shown.body,/写入来源/);assert.match(shown.body,/hub-test-real 0\.0\.0/);assert.match(shown.body,/MCP initialize clientInfo/);assert.doesNotMatch(shown.body,/自报|Circle 客户端/);
+ for(const path of ['/unbound','/forged']){const plain=await page(path);assert.equal(plain.status,200);assert.match(plain.body,/>客户端</);assert.doesNotMatch(plain.body,/hub-test-real|synthetic-second-client/);}
 });

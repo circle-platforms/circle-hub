@@ -807,8 +807,10 @@ export interface CallLogInput {
   adminReasons?:readonly string[];
   /** What the client reported in MCP initialize (clientInfo): kept as an `mcp-client-declaration@1` record linked to the line, never verified. */
   client?:{name:string;version:string|null}|null;
-  /** The server token of the call; indexes the client declaration, never stored in the body. */
+  /** The server token of the call; with mcpSessionId it binds the client declaration, never stored in the body. */
   tokenId?:string|null;
+  /** initialize only: the Mcp-Session-Id the Hub issued in this answer (Streamable HTTP); binds the declaration. */
+  mcpSessionId?:string|null;
 }
 
 /** Body of a `call_log@1` record: one MCP call (B08). The admin note is not part of it. */
@@ -859,8 +861,8 @@ export interface CallLog {
    * on every query (a disabled account sees nothing, a demoted admin only their own calls). Newest first by default.
    */
   query(principal: Principal, query?: CallLogQuery): Promise<Page<CallLogLine>>;
-  /** The newest initialize declaration of this session (by Circle-Session-Id), else of this token; null when none was reported. */
-  declaredClient?(userId:string,session:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;
+  /** The initialize declaration of this account, token and Hub-issued Mcp-Session-Id; null when the session declared none. */
+  declaredClient?(userId:string,mcpSession:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;
   /** Appends to the JSONL files every call logged in [from, to) that its file is missing (after a crash). Returns the lines written. */
   repairFiles(range: { from: string; to: string }): Promise<number>;
 }

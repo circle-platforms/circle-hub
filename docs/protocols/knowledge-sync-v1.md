@@ -349,8 +349,12 @@ before they are stored (`SPACE_CREDENTIALS_DETECTED`, `MEMORY_CREDENTIALS_DETECT
 is `SPACE_CONTENT_UNINSPECTABLE`). Audit metadata records actor, token, the verified OAuth client, the declared
 client ID, route template, times, counts, state hashes and the status, never titles, paths, device names or content.
 On circle-hub an entry version committed through sync names its audited request as its `session`, so the console can
-show which token and OAuth client wrote it; an entry written through MCP keeps the `clientInfo` the client reported in
-`initialize` as a declaration. Names are shown as recorded and are never treated as verified identities.
+show which token and OAuth client wrote it. An entry written through MCP keeps the `clientInfo` the client reported in
+`initialize` as a declaration only when the write carries the `Mcp-Session-Id` the server issued in that `initialize`
+answer (MCP Streamable HTTP) with the same token; a write without such a session, or with a session that declared
+nothing, names no client and is shown as 客户端. One token used by two clients therefore never mislabels either.
+`Circle-Session-Id`, when sent, is kept alongside. Names are shown as recorded and are never treated as verified
+identities.
 Bytes already sent to a client cannot be recalled by a purge, and a purge does not erase offline backups.
 
 ## 15. Discovery and capabilities
