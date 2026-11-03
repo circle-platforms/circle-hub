@@ -27,7 +27,7 @@ function neutralShape(answer: { call_result: string; run?: unknown; errors: unkn
   return { call_result: answer.call_result, run: answer.run, errors: answer.errors };
 }
 
-test('a shared draft and original admit another assigned reviewer, while absent and revoked shares stay neutral', async () => {
+test('a shared draft and original admit another assigned reviewer, while an unshared or revoked draft is not permitted', async () => {
   const target = await bed.upload(bed.reviewer, fixtureBytes('review-150.km.json'), 'review-150.km.json');
   const draft = await bed.service.startRun(bed.reviewer, {
     pack: 'case-review', product: 'FAMX', version: LINE,
@@ -61,13 +61,13 @@ test('a shared draft and original admit another assigned reviewer, while absent 
 
   const unshared = await startVerification();
   assert.equal(unshared.call_result, 'error');
-  assert.ok(unshared.errors.some(error => error.code === 'SOURCE_UNAVAILABLE' && error.path === '/predecessor'));
+  assert.ok(unshared.errors.some(error => error.code === 'SOURCE_NOT_PERMITTED' && error.path === '/predecessor'), JSON.stringify(unshared.errors));
   const before = neutralShape(unshared);
 
   await bed.kit.authorizations.share(bed.admin, draft.run.run, [other.id], '合成分享初评运行');
   const withoutOriginal = await startVerification();
   assert.equal(withoutOriginal.call_result, 'error');
-  assert.ok(withoutOriginal.errors.some(error => error.code === 'SOURCE_UNAVAILABLE'));
+  assert.ok(withoutOriginal.errors.some(error => error.code === 'SOURCE_NOT_PERMITTED'), JSON.stringify(withoutOriginal.errors));
 
   const originals = await bed.kit.artifacts.records(target.slice(4));
   const original = originals.find(row => row.body.name === 'review-150.km.json' && row.body.author.user === bed.reviewer.id);
