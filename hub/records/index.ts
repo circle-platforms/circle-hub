@@ -68,6 +68,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,()=>objects.materializePersonalObjects(),now);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));
+  memberDeletions.registerCacheRoot(join(config.dataDir,'packs'));
   let closed: Promise<void> | undefined;
   return {
     memberDeletions,

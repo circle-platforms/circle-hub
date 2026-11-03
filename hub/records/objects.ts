@@ -68,8 +68,9 @@ export class FileObjectStore implements ObjectStore {
     return { ...info, created: created || result.rowCount === 1 };
   }
 
-  async get(sha256: string): Promise<Uint8Array | null> {
+  async get(sha256: string,tx?:Transaction): Promise<Uint8Array | null> {
     if (!isSha256(sha256)) return null;
+    if(tx)return (await this.#readBytes([sha256],tx)).get(sha256)??null;
     return new Promise((resolve,reject)=>{
       const waiting=this.#pending.get(sha256);if(waiting){waiting.push({resolve,reject});return;}
       this.#pending.set(sha256,[{resolve,reject}]);
@@ -77,14 +78,14 @@ export class FileObjectStore implements ObjectStore {
     });
   }
 
-  async #readBytes(hashes:readonly string[]):Promise<Map<string,Uint8Array>>{
+  async #readBytes(hashes:readonly string[],tx?:Transaction):Promise<Map<string,Uint8Array>>{
     const values=new Map<string,Uint8Array>(),missing:string[]=[];
     await Promise.all(hashes.map(async hash=>{
       let bytes:Buffer;try{bytes=await readFile(this.path(hash));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;missing.push(hash);return;}
       if(sha256Hex(bytes)!==hash)throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）',{detail:{sha256:hash}});
       values.set(hash,bytes);
     }));
-    if(missing.length)for(const [hash,bytes]of await this.#databaseBytes(missing))values.set(hash,bytes);
+    if(missing.length)for(const [hash,bytes]of await this.#databaseBytes(missing,tx))values.set(hash,bytes);
     return values;
   }
 
@@ -94,7 +95,7 @@ export class FileObjectStore implements ObjectStore {
     try{const values=await this.#readBytes([...batch.keys()]);for(const [hash,waiting]of batch)for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}
     catch{await Promise.all([...batch].map(async([hash,waiting])=>{try{const values=await this.#readBytes([hash]);for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}catch(error){for(const call of waiting)call.reject(error);}}));}
   }
-  async #databaseBytes(hashes:readonly string[]):Promise<Map<string,Uint8Array>>{
+  async #databaseBytes(hashes:readonly string[],tx?:Transaction):Promise<Map<string,Uint8Array>>{
     // Keep get()'s precedence: an independent run holder, then the first active account/epoch payload.
     const rows=await this.#db.query<{sha256:string;data:Buffer|null;independent:boolean;cleared:boolean;registered:boolean}>(`SELECT wanted.sha256,coalesce(h.data,p.data) AS data,h.data IS NOT NULL AS independent,
       EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256)
@@ -103,7 +104,7 @@ export class FileObjectStore implements ObjectStore {
       FROM unnest($1::text[]) AS wanted(sha256)
       LEFT JOIN LATERAL ((SELECT r.data FROM run_originals r WHERE r.sha256=wanted.sha256 ORDER BY r.artifact LIMIT 1) UNION ALL (SELECT h.data FROM held_objects h WHERE h.sha256=wanted.sha256) LIMIT 1) h ON true
       LEFT JOIN LATERAL (SELECT p.data FROM personal_objects o JOIN personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
-       WHERE $2::bool AND o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch)) ORDER BY o.owner,o.epoch LIMIT 1) p ON h.data IS NULL`,[hashes,!!this.#options.personalPayloads]);
+       WHERE $2::bool AND o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch)) ORDER BY o.owner,o.epoch LIMIT 1) p ON h.data IS NULL`,[hashes,!!this.#options.personalPayloads],tx);
     const values=new Map<string,Uint8Array>();
     for(const row of rows.rows){
       if(row.data!==null){if(sha256Hex(row.data)!==row.sha256)throw new IntegrityError('保存的原件字节与它的 SHA-256 不符（文件被改动或损坏）',{detail:{sha256:row.sha256}});values.set(row.sha256,row.independent?Buffer.from(row.data):Uint8Array.from(row.data));}

@@ -81,3 +81,13 @@ test('a queued administrator preview rechecks the actor after deactivation befor
  try{await reaches(entered,preview);await w.kit.principals.setDisabled(other,w.admin.id,true);}finally{release.release();}await refused;
  assert.equal((await w.db.query('SELECT count(*)::int n FROM member_deletion_intents')).rows[0].n,0);
 });
+
+test('deleting an uploader retains only a genuine frozen ordinary-upload declaration for the original run readers',async t=>{
+ const w=await world(t),{runRecord}=await import('../../contracts/src/fixtures.ts'),other=await w.kit.principals.createUser(w.admin,'synthetic-run-reader');
+ const artifact=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic frozen ordinary original'),mediaType:'text/plain',origin:{upload:{session:'synthetic-deletion-run'}},author:{user:w.member.id},provenanceType:'declared',visibility:{readers:[w.member.id],admins:false,packs:[],shareable:false}});
+ const snapshot={...runRecord,runner:w.member.id,sources:[{role:'subject',slot:'map',reference:'src:'+artifact.body.sha256,artifact:artifact.digest,upload_declaration:{by:w.member.id}}]},run=await w.kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:snapshot,index:[{key:'runs.id',value:snapshot.run}]});
+ await w.kit.authorizations.share(w.admin,snapshot.run,[other.id]);assert.ok(await w.kit.artifacts.sourceForRun(other,artifact.body.sha256,snapshot.run));
+ const {intent}=await prepare(w);await w.deletions.finish(w.admin,w.member.id,intent.operation_id);
+ assert.ok(await w.kit.artifacts.sourceForRun(other,artifact.body.sha256,snapshot.run));assert.ok(await w.kit.artifacts.sourceForRun(w.admin,artifact.body.sha256,snapshot.run));assert.equal(await w.kit.artifacts.source(other,artifact.body.sha256),null);assert.equal(await w.kit.artifacts.source(w.admin,artifact.body.sha256),null);assert.deepEqual((await w.kit.store.get(run.digest))?.body,snapshot);
+ assert.equal((await w.db.query('SELECT count(*)::int n FROM personal_payloads WHERE owner=$1',[w.member.id])).rows[0].n,0);
+});

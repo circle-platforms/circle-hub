@@ -1252,11 +1252,50 @@ BEGIN
  DELETE FROM public.record_index i USING public.personal_record_bindings b WHERE i.digest=b.record AND b.owner=o AND i.key IN ('personal.pack.id','personal.pack.grant','personal.pack.retired');
 END $fn$;
 `},
+ {version:21,name:'private_storage_holders',sql:`CREATE TABLE public.personal_cache_installs(owner pg_catalog.text NOT NULL REFERENCES public.users(id),digest pg_catalog.text NOT NULL CHECK(digest ~ '^[0-9a-f]{64}$'),PRIMARY KEY(owner,digest));
+${APPEND_ONLY('personal_cache_installs')}
+CREATE FUNCTION public.hub_active_cache_insert() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN PERFORM 1 FROM public.users WHERE id=NEW.owner AND NOT disabled AND deleted_at IS NULL FOR SHARE;IF NOT FOUND THEN RAISE EXCEPTION 'inactive personal scope';END IF;RETURN NEW;END $fn$;
+REVOKE ALL ON FUNCTION public.hub_active_cache_insert() FROM PUBLIC;
+CREATE TRIGGER personal_cache_active BEFORE INSERT ON public.personal_cache_installs FOR EACH ROW EXECUTE FUNCTION public.hub_active_cache_insert();
+CREATE TABLE public.run_upload_declarations(run_record pg_catalog.text NOT NULL REFERENCES public.records(digest),artifact pg_catalog.text NOT NULL REFERENCES public.records(digest),uploader pg_catalog.text NOT NULL REFERENCES public.users(id),PRIMARY KEY(run_record,artifact));
+${APPEND_ONLY('run_upload_declarations')}
+CREATE FUNCTION public.hub_freeze_upload_declarations(r pg_catalog.text) RETURNS pg_catalog.void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+DECLARE run_body pg_catalog.jsonb;run_seq pg_catalog.int8;binding pg_catalog.jsonb;capture pg_catalog.record;b pg_catalog.jsonb;u pg_catalog.text;
+BEGIN
+ SELECT seq,pg_catalog.replace(body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb INTO run_seq,run_body FROM public.records WHERE digest=r AND kind='run';IF NOT FOUND THEN RETURN;END IF;
+ u:=COALESCE(run_body->>'runner',run_body->>'configurer');
+ FOR binding IN SELECT value FROM pg_catalog.jsonb_array_elements(COALESCE(run_body->'sources','[]'::pg_catalog.jsonb)) LOOP
+ IF binding->'upload_declaration' IS NULL OR u IS NULL OR NOT EXISTS(SELECT 1 FROM public.users WHERE id=u) OR binding->'upload_declaration'->>'by' IS DISTINCT FROM u OR binding->>'slot' IS NULL THEN CONTINUE;END IF;
+ SELECT x.* INTO capture FROM public.hub_read_records() x WHERE x.digest=binding->>'artifact' AND x.kind='source_artifact' AND x.schema='source_artifact@1' AND x.provenance='declared';IF NOT FOUND THEN CONTINUE;END IF;
+ b:=pg_catalog.replace(capture.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb;
+ IF b->'author'->>'user' IS DISTINCT FROM u OR b->>'provenance_type'<>'declared' OR b->'origin'->'upload' IS NULL OR b->'personal_scope' IS NOT NULL OR pg_catalog.substring(binding->>'reference','^src:([0-9a-f]{64})(?:/|$)') IS DISTINCT FROM b->>'sha256' THEN CONTINUE;END IF;
+ IF EXISTS(SELECT 1 FROM public.personal_record_bindings p JOIN public.personal_spaces q ON q.owner=p.owner WHERE p.record=capture.digest AND p.epoch IS DISTINCT FROM q.account_epoch) THEN CONTINUE;END IF;
+ IF EXISTS(SELECT 1 FROM public.hub_read_records() a WHERE a.kind='knowledge_space_source' AND a.seq<=run_seq AND (pg_catalog.replace(a.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'space'<>'team' AND (pg_catalog.replace(a.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb)->>'artifact'=capture.digest) THEN CONTINUE;END IF;
+ INSERT INTO public.run_upload_declarations VALUES(r,capture.digest,u) ON CONFLICT DO NOTHING;
+ END LOOP;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_freeze_upload_declarations(pg_catalog.text) FROM PUBLIC;
+CREATE FUNCTION public.hub_freeze_run_uploads() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN PERFORM public.hub_freeze_upload_declarations(NEW.digest);RETURN NULL;END $fn$;
+REVOKE ALL ON FUNCTION public.hub_freeze_run_uploads() FROM PUBLIC;
+CREATE TRIGGER records_frozen_uploads AFTER INSERT ON public.records FOR EACH ROW WHEN(NEW.kind='run') EXECUTE FUNCTION public.hub_freeze_run_uploads();
+DO $backfill$ DECLARE r pg_catalog.record;BEGIN FOR r IN SELECT digest FROM public.records WHERE kind='run' LOOP PERFORM public.hub_freeze_upload_declarations(r.digest);END LOOP;END $backfill$;
+-- The reviewed storage graph owns exact captures independently; textual mentions do not.
+CREATE FUNCTION public.hub_keep_storage_original() RETURNS pg_catalog.trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $fn$
+BEGIN
+ IF NEW.artifact AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=NEW.record) THEN PERFORM public.hub_keep_capture(NEW.record,NEW.sha256,true);END IF;RETURN NULL;
+END $fn$;
+REVOKE ALL ON FUNCTION public.hub_keep_storage_original() FROM PUBLIC;
+CREATE TRIGGER object_holds_original AFTER INSERT ON public.object_holds FOR EACH ROW EXECUTE FUNCTION public.hub_keep_storage_original();
+DO $holders$ DECLARE h pg_catalog.record;BEGIN FOR h IN SELECT a.record,a.sha256 FROM public.object_holds a WHERE a.artifact AND NOT EXISTS(SELECT 1 FROM public.personal_record_bindings b WHERE b.record=a.record) LOOP PERFORM public.hub_keep_capture(h.record,h.sha256,false);END LOOP;END $holders$;
+
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
-  member_deletion_intents:'SELECT',
+  member_deletion_intents:'SELECT',run_upload_declarations:'SELECT',personal_cache_installs:'SELECT, INSERT',
   run_pack_records:'SELECT',held_object_targets:'SELECT',held_objects:'SELECT',original_targets:'SELECT',
   personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at,native_state,memory_projection,conflicts)',
   personal_sync_bindings:'SELECT, INSERT',

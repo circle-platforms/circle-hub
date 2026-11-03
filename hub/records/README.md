@@ -990,3 +990,9 @@ Both local-mode purge and member deletion preserve a minimal team attribution cr
 private declaration/registration/capture and exact team copy. Credentials carry no private paths, names or original text;
 invalid joins do not manufacture a declaration. The logical record view stays an inlineable invoker function, with
 indexed digest and frozen-holder lookups. Runtime grants for the additional holder tables are SELECT only.
+
+Migration 21 freezes ordinary upload declarations at the actual run insertion boundary and extends independent
+capture retention to the reviewed typed storage graph. A self-asserted declaration on a personal-space capture never
+becomes a frozen permission. Pre-publication cache ownership is journalled before bytes appear; writing holds the user
+row until staging is complete. Deletion includes failed/unpublished cache digests, and shares the same durable cleanup
+across the personal and team extraction roots. Its journal stores only identity and digest and adds no capacity charge.

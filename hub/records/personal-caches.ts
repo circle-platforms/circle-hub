@@ -3,7 +3,7 @@ import {readdir,lstat,chmod,rm,open} from 'node:fs/promises';
 import {join,isAbsolute} from 'node:path';
 import type {Database} from './db.ts';
 export async function retirePersonalCaches(db:Database,owner:string,roots:ReadonlySet<string>){
- const rows=await db.query("SELECT value FROM record_index WHERE key='personal.pack.digest' AND value LIKE $1",[owner+'/%']);
+ const rows=await db.query("SELECT value FROM record_index WHERE key='personal.pack.digest' AND value LIKE $1 UNION SELECT owner||'/'||digest FROM personal_cache_installs WHERE owner=$2",[owner+'/%',owner]);
  const digests=new Set(rows.rows.map(row=>String(row.value).slice(owner.length+1)).filter(hash=>/^[0-9a-f]{64}$/.test(hash)));
  const remove=async(path:string):Promise<void>=>{let entry;try{entry=await lstat(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}if(entry.isDirectory()){await chmod(path,0o700);for(const name of await readdir(path))await remove(join(path,name));}await rm(path,{force:true,recursive:true});};
  const sync=async(path:string)=>{const handle=await open(path,'r');try{await handle.sync();}finally{await handle.close();}};

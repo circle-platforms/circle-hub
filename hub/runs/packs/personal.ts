@@ -22,7 +22,7 @@ import type {SkillDependency} from '../../../contracts/src/skills.ts';
 
 export class PersonalPacks {
   #options:PackRegistryOptions; #team:PackRegistry; #extractor:Extractor; #writes:Promise<unknown>=Promise.resolve();
-  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
+  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));options.records.memberDeletions?.registerCacheRoot(options.extractDir);this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
   #now(){return (this.#options.now?.()??new Date()).toISOString();}
   async #account(by:Principal){const account=await this.#team.account(by);if(!account)throw new AccessError('对象不存在或无权读取');return account;}
   async #own(by:Principal,space=by.id){by=await this.#account(by);if(by.id!==space)throw new AccessError('对象不存在或无权读取');return by;}
@@ -62,13 +62,13 @@ export class PersonalPacks {
   }
   async versions(space:string,pack:string,tx?:Transaction){if(!UserId.safeParse(space).success||!PackId.safeParse(pack).success)return [];const records=await this.#all('personal_pack_version','personal.pack.id',personalPackKey(space,pack),tx);return (await Promise.all(records.map(record=>this.#info(record,tx)))).sort((a,b)=>compareVersions(b.version,a.version));}
   async resolve(by:Principal,space:string,ref:string){const parsed=parsePackRef(ref);if(!parsed||!await this.mayUse(by,space,parsed.id))return null;const info=(await this.versions(space,parsed.id)).find(info=>!info.withdrawn&&(parsed.version===null||info.version===parsed.version))??null;return info&&await this.mayUse(by,space,parsed.id)?info:null;}
-  async byDigest(space:string,digest:string){const record=(await this.#options.records.store.find({kind:'personal_pack_version',key:'personal.pack.digest',value:space+'/'+digest,limit:1})).items[0];return record?this.#info(record):null;}
+  async byDigest(space:string,digest:string,tx?:Transaction){const record=(await this.#options.records.store.find({kind:'personal_pack_version',key:'personal.pack.digest',value:space+'/'+digest,limit:1},tx)).items[0];return record?this.#info(record,tx):null;}
   async open(space:string,digest:string):Promise<OpenedPack|null>{
     return this.#options.records.store.withTransaction(async tx=>{
     if(this.#options.records.personalPayloads&&!await this.#options.records.personalPayloads.holdPack(space,digest,tx))return null;
-    const info=await this.byDigest(space,digest);if(!info)return null;
-    const extraction=await this.#extractor.extract(digest,async()=>({manifest:info.manifest,read:sha=>this.#options.records.objects.get(sha)}));
-    const files=new Map<string,Uint8Array>();for(const file of info.manifest.files){if(!['workflow.json','requirements.json','checks.json','slots.schema.json','knowledge.json','ledger.json','skill.json','SKILL.md'].includes(file.path))continue;const bytes=await this.#options.records.objects.get(file.sha256);if(!bytes)throw new IntegrityError('个人包声明文件暂不可读');files.set(file.path,bytes);}
+    const info=await this.byDigest(space,digest,tx);if(!info)return null;
+    const extraction=await this.#extractor.extract(digest,async()=>({manifest:info.manifest,read:sha=>this.#options.records.objects.get(sha,tx)}));
+    const files=new Map<string,Uint8Array>();for(const file of info.manifest.files){if(!['workflow.json','requirements.json','checks.json','slots.schema.json','knowledge.json','ledger.json','skill.json','SKILL.md'].includes(file.path))continue;const bytes=await this.#options.records.objects.get(file.sha256,tx);if(!bytes)throw new IntegrityError('个人包声明文件暂不可读');files.set(file.path,bytes);}
     return {info,handle:{space,id:info.id,version:info.version,digest,kind:info.kind,directory:extraction.directory},declarations:parseDeclarations(info.kind,files),readJson:packJsonReader(extraction.directory,info.manifest,digest)};
     });
   }
@@ -103,8 +103,8 @@ export class PersonalPacks {
     const dependencyErrors=await this.#dependencyProblems(by,manifest.dependencies??[]);if(dependencyErrors.length)return refuse(dependencyErrors);
     let staged:StagedTree|null=null;
     try{
-      if(needsSandbox(validation.pack))staged=await this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));
-      const report=await runPublishCheck({pack:validation.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});report.warnings.unshift(...validation.pack.warnings);const errors=refusalsOf(report,validation.pack);if(errors.length)return refuse(errors,report);
+      const samples=async()=>{if(needsSandbox(validation.pack))staged=await this.#extractor.stage(digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));return runPublishCheck({pack:validation.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});};
+      const report=await (this.#options.records.personalPayloads?this.#options.records.personalPayloads.stage(by.id,digest,samples):samples());report.warnings.unshift(...validation.pack.warnings);const errors=refusalsOf(report,validation.pack);if(errors.length)return refuse(errors,report);
       const checkExisting=async(tx?:Transaction)=>{
         const owners=new Set<string>(),dependencies=await this.#dependencyProblems(by,manifest.dependencies??[],false,undefined,owners);if(tx&&!dependencies.length){by=await this.#options.records.principals.lockActive(by,tx,[...owners]);dependencies.push(...await this.#dependencyProblems(by,manifest.dependencies??[]));}if(dependencies.length)return {failure:refuse(dependencies,report)};
         const versions=await this.versions(by.id,manifest.id,tx),existing=versions.find(info=>info.version===manifest.version)??null;
@@ -128,7 +128,7 @@ export class PersonalPacks {
         const hashes=[...new Set(manifest.files.map(file=>file.sha256))];for(let at=0;at<hashes.length;at+=100)await this.#options.records.store.addIndex(stored.digest,hashes.slice(at,at+100).map(value=>({key:'personal.pack.file',value})),tx);
         return {ok:true,created:true,version:{space:by.id,id:manifest.id,version:manifest.version,kind:manifest.kind,digest,title:manifest.title,description:manifest.description,owner:by.id,publisher:by.id,published_at:body.at,withdrawn:false,withdrawn_at:null,record:stored.digest,publication:stored.digest,samples:report.samples.sources,report,manifest},report} as PublishOutcome;
       });});this.#writes=writing.then(()=>undefined,()=>undefined);const outcome=await writing;if(outcome.ok&&staged){await this.#options.records.store.withTransaction(async tx=>{await this.#options.records.principals.lockActive(by,tx);await staged!.promote();});staged=null;}return outcome;
-    }finally{if(staged)await staged.discard();}
+    }finally{await (staged as StagedTree|null)?.discard();}
   }
   async precheckPromotion(by:Principal,ref:string){
     by=await this.#own(by);const checks:SharingCheck[]=ShareCheckSchema.extract(['permission','structure','sandbox','references','credentials']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
@@ -141,7 +141,7 @@ export class PersonalPacks {
       const read=await readPackDirectory(opened.handle.directory,{limits:this.#options.limits});if(!read.ok)return reject(read.problems);
       const validated=await validatePack(read.pack,{policy:this.#options.policy,deferCredentials:true});if(!validated.ok)return reject(validated.problems);
       checks[phase++].state='pass';
-      if(needsSandbox(validated.pack))staged=await this.#extractor.stage(info.digest,read.pack.manifestBytes,read.pack.files.map(file=>({path:file.path,bytes:file.bytes})));
+      if(needsSandbox(validated.pack)){const stage=()=>this.#extractor.stage(info.digest,read.pack!.manifestBytes,read.pack!.files.map(file=>({path:file.path,bytes:file.bytes})));staged=await (this.#options.records.personalPayloads?this.#options.records.personalPayloads.stage(by.id,info.digest,stage):stage());}
       const report=await runPublishCheck({pack:validated.pack,packDir:staged?.directory??null,sandbox:this.#options.sandbox,onError:this.#options.onError});const errors=refusalsOf(report,validated.pack);if(errors.length)return reject(errors);
       checks[phase++].state='pass';
       if(info.manifest.dependencies?.some(dep=>dep.space))return reject([problem('personal.dependency','pack.json','团队发布不能依赖个人空间中的技能','先将依赖发布到团队并更新个人版本')]);

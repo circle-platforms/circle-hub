@@ -36,3 +36,12 @@ test('explicit team publication and a second owner keep equal-byte versions with
  assert.ok(await bed.registry.resolve(pack.id));assert.ok(await personal.resolve(bed.alice,bed.alice.id,pack.id));assert.equal(await personal.resolve(bed.admin,bed.carol.id,pack.id),null);
  const opened=await personal.open(bed.alice.id,two.version.digest);assert.ok(opened);await access(join(opened.handle.directory,'SKILL.md'));
 });
+
+test('deletion waits for active pre-publication staging and retires journalled crash remnants without a publication record',async t=>{
+ const bed=await openPackTestbed({postgres:pg});t.after(()=>bed.close());const {barrier,reaches,waitForUserUpdateLock}=await import('../../testing/member-freeze.ts'),{mkdir,writeFile}=await import('node:fs/promises'),{sha256Hex}=await import('../../records/api.ts'),entered=barrier(),release=barrier(),hash=sha256Hex('synthetic uncommitted staged private pack'),root=join(bed.extractDir,'personal'),directory=join(root,'.tmp-'+hash+'-synthetic');
+ const staging=bed.kit.personalPayloads!.stage(bed.carol.id,hash,async()=>{await mkdir(directory,{recursive:true,mode:0o700});await writeFile(join(directory,'SKILL.md'),'synthetic pre-publication private text',{mode:0o400});entered.release();await release.promise;});
+ await reaches(entered,staging);const api=bed.kit.memberDeletions!,preview=await api.preview(bed.admin,bed.carol.id),preparing=api.prepare(bed.admin,{...preview,operation_id:randomUUID()});
+ try{await waitForUserUpdateLock(bed.kit,'SELECT updated_at FROM users WHERE id=$1 FOR UPDATE');assert.equal((await bed.kit.principals.get(bed.carol.id))?.disabled,false);}finally{release.release();}
+ await staging;const intent=await preparing;await api.finish(bed.admin,bed.carol.id,intent.operation_id);await assert.rejects(access(directory));await assert.rejects(bed.kit.personalPayloads!.stage(bed.carol.id,hash,async()=>assert.fail('deleted staging cannot run')));
+ assert.equal((await bed.kit.store.list({kind:'personal_pack_version'})).items.length,0);
+});

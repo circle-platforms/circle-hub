@@ -460,7 +460,7 @@ export class RecordArtifacts implements Artifacts {
         if(await this.canRead(principal,stored as SourceArtifact)){sources.push(stored as SourceArtifact);continue;}
         const binding=snapshot.sources.find(binding=>binding.artifact===digest&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256);
         const declaration=binding?.upload_declaration;
-        const declared=!!declaration&&declaration.by===(snapshot.runner??snapshot.configurer)&&stored.body.author.user===declaration.by&&'upload'in stored.body.origin&&stored.provenance==='declared'&&stored.body.provenance_type==='declared'&&!stored.body.personal_scope;
+        const declared=!!declaration&&declaration.by===(snapshot.runner??snapshot.configurer)&&stored.body.author.user===declaration.by&&'upload'in stored.body.origin&&stored.provenance==='declared'&&stored.body.provenance_type==='declared'&&!stored.body.personal_scope&&(record?!!(await this.#db.query('SELECT 1 FROM run_upload_declarations WHERE run_record=$1 AND artifact=$2 AND uploader=$3',[record.digest,digest,declaration.by])).rowCount:await this.mayDeclareUpload({id:declaration.by,name:'',role:'user'},digest));
         const teamRead='read' in stored.body.origin&&stored.body.visibility.admins&&stored.body.provenance_type==='observed';
         if(!declared&&!teamRead&&!('generated'in stored.body.origin))return null;
         sources.push(stored as SourceArtifact);

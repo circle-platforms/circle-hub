@@ -308,7 +308,7 @@ export interface ObjectStore {
    * Null when absent. Throws IntegrityError when the stored bytes no longer hash to their name or when a registered object's
    * file is missing. No read-tier check: for trusted callers; readers go through Artifacts.source().
    */
-  get(sha256: string): Promise<Uint8Array | null>;
+  get(sha256: string,tx?:Transaction): Promise<Uint8Array | null>;
   stat(sha256: string,tx?:Transaction): Promise<ObjectInfo | null>;
   has(sha256: string): Promise<boolean>;
 }
@@ -864,7 +864,7 @@ export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'usageForSpace'|'stabl
 export interface RecordsKit {
   memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'>;
   personalSync?:PersonalSyncStore;
-  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

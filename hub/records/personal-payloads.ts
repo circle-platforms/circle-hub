@@ -46,6 +46,12 @@ export class PgPersonalPayloads {
   if(!tx)return this.db.transaction(t=>this.account(owner,t));
   try{const row=(await this.db.query('SELECT hub_account_scope($1,$2) AS epoch',[owner,randomUUID()],tx)).rows[0];return {owner,epoch:String(row.epoch)};}catch(cause){if(['P0001','P0002','42501'].includes(String((cause as {code?:unknown}).code)))throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE',cause});throw cause;}
  }
+ /** Journal ownership before any pre-publication cache can appear, even if the process later crashes. */
+ async stage<T>(owner:string,digest:string,work:()=>Promise<T>):Promise<T>{
+  const active=async(tx:Transaction)=>{const row=(await this.db.query('SELECT disabled,deleted_at FROM users WHERE id=$1 FOR SHARE',[owner],tx)).rows[0];if(!row||row.disabled||row.deleted_at)throw new RecordsError(PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,{code:'SOURCE_UNAVAILABLE'});};
+  await this.db.transaction(async tx=>{await active(tx);await this.db.query('INSERT INTO personal_cache_installs(owner,digest) VALUES($1,$2) ON CONFLICT DO NOTHING',[owner,digest],tx);});
+  return this.db.transaction(async tx=>{await active(tx);return work();});
+ }
  /** Internal frozen readers hold the account row until extraction finishes; this grants no reader ACL. */
  async holdPack(owner:string,digest:string,tx:Transaction):Promise<boolean>{
   const user=(await this.db.query('SELECT deleted_at FROM users WHERE id=$1 FOR SHARE',[owner],tx)).rows[0];
@@ -83,9 +89,9 @@ export class PgPersonalPayloads {
   const scope=await (accountOwned?this.account(owner,tx):this.scope(owner,tx)),hash=await this.put(scope,bytes,tx);
   await this.db.query('INSERT INTO personal_objects(owner,epoch,sha256) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[owner,scope.epoch,hash],tx);return hash;
  }
- async anyObject(hash:string):Promise<Uint8Array|null>{
-  const rows=await this.db.query('SELECT o.owner,o.epoch FROM personal_objects o WHERE sha256=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) ORDER BY owner,epoch',[hash]);
-  for(const row of rows.rows){const bytes=await this.get({owner:String(row.owner),epoch:String(row.epoch)},hash);if(bytes)return bytes;}return null;
+ async anyObject(hash:string,tx?:Transaction):Promise<Uint8Array|null>{
+  const rows=await this.db.query('SELECT o.owner,o.epoch FROM personal_objects o WHERE sha256=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE x.owner=o.owner AND x.epoch=o.epoch) ORDER BY owner,epoch',[hash],tx);
+  for(const row of rows.rows){const bytes=await this.get({owner:String(row.owner),epoch:String(row.epoch)},hash,tx);if(bytes)return bytes;}return null;
  }
  /** Metadata-only, monotonic flag for authorized views; no personal plaintext is loaded. */
  async cleared(digest:string,tx?:Transaction):Promise<boolean>{

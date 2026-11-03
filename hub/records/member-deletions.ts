@@ -32,8 +32,9 @@ export class PgMemberDeletions {
   const records=(await this.db.query('SELECT b.record,r.kind FROM personal_record_bindings b JOIN records r ON r.digest=b.record WHERE b.owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(b.owner,b.epoch)) ORDER BY b.record',[member],tx)).rows;
   const payloads=(await this.db.query('SELECT epoch,sha256 FROM personal_payloads WHERE owner=$1 ORDER BY epoch,sha256',[member],tx)).rows;
   const objects=(await this.db.query('SELECT o.epoch,o.sha256 FROM personal_objects o WHERE owner=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges p WHERE (p.owner,p.epoch)=(o.owner,o.epoch)) ORDER BY epoch,sha256',[member],tx)).rows;
+  const caches=(await this.db.query('SELECT digest FROM personal_cache_installs WHERE owner=$1 ORDER BY digest',[member],tx)).rows.map(row=>String(row.digest));
   const counts=MemberDeletionCounts.parse({records:records.length,payloads:payloads.length,objects:objects.length,attributions:records.filter(r=>r.kind==='knowledge_source_attribution').length,archives:records.filter(r=>r.kind==='knowledge_space_source').length,private_versions:records.filter(r=>r.kind==='personal_pack_version').length});
-  const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
+  const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects,caches})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
   return {member,epoch,purge_manifest,counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
  }
  async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#preview(member,tx);});}
@@ -71,7 +72,7 @@ export class PgMemberDeletions {
    if(by.id!==member||intent.by!==by.id)await this.#admin(by,tx);
    const existing=await this.store.getByKey<Receipt>('member_deletion',operation_id,tx);if(existing)return {record:existing.digest,...MemberDeletionBody.parse(existing.body)};
    await this.payloads.beforePurge?.(member,by,tx);
-   try{await this.db.query('SELECT hub_finish_member_deletion($1,$2)',[member,operation_id],tx);}catch(cause){throw new ConflictError('个人内容尚未完成清除，请修复存储后重试同一删除操作',{cause});}
+   try{await this.db.query('SELECT hub_finish_member_deletion($1,$2)',[member,operation_id],tx);}catch(cause){throw new ConflictError('私人内容尚未完成清除，请修复存储后重试同一删除操作',{cause});}
    const record=await this.store.put({kind:'member_deletion',schema:'member-deletion@1',provenance:'observed',body:{...intent,by:by.id,at:this.now().toISOString()},unique_key:operation_id,index:[{key:'member.deletion.member',value:member}]},tx);
    return {record:record.digest,...MemberDeletionBody.parse(record.body)};
   });
