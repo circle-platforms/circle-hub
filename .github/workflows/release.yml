@@ -1,6 +1,6 @@
 name: Release bundles
 
-# The one-click install bundles (owner decision 76): macOS and Linux on arm64 and x64, built by tools/build-bundle.ts.
+# The one-click install bundles (owner decision 123, formerly 76): macOS and Linux on arm64 and x64, built by tools/build-bundle.ts.
 # A pull request that touches the installer or the bundle code builds the Linux and macOS bundles of this runner and
 # installs them for real: install.sh on a fresh Ubuntu runner (service account, systemd user service, AppArmor policy,
 # PostgreSQL 18 client, HTTPS) and the bundled Node and PostgreSQL on macOS (no launchd changes there).
