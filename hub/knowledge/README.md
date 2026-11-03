@@ -1489,3 +1489,8 @@ console/MCP/sync invalidation alongside retained independent team originals, att
 Batched entry hydration preserves exact source/capture metadata. A final batched path-permission check keeps the deletion
 guard without repeating the same authorization query for each entry. Deleted personal bodies remain unavailable while
 team and independently run-held originals retain their original access.
+
+Team sharing freezes the readable private ground owners before copying. Private space locks are deduplicated and sorted,
+then the team space lock is acquired, preserving the private-before-team order used by memory sharing. Account row locks
+cover both submitter and dependency owners; the full inspection runs afterward. A changed candidate that introduces an
+unlocked owner refuses this attempt. Unrelated equal-byte private captures never enter the lock set or confer authority.

@@ -693,6 +693,23 @@ export class KnowledgeSpaces {
     if(version){const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);const body=row?await this.#entry(row):null;if(!body||!body.grounds.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of body.grounds)await this.#shareSource(by,ground.reference,sources,seen,depth+1,ground.quotation,tx);}
     else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(!read?.grounds?.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of read.grounds)await this.#shareSource(by,ground,sources,seen,depth+1,undefined,tx);}
   }
+  /** Freeze only readable private dependencies; unrelated equal-byte captures confer no authority. */
+  async #sharingOwners(by:Principal,references:readonly string[],owners=new Set<string>(),seen=new Set<string>(),depth=0):Promise<Set<string>>{
+    if(depth>64)return owners;
+    for(const reference of references){
+      if(seen.has(reference))continue;seen.add(reference);const ref=parseReference(reference);
+      if(ref.scheme==='src'){
+        const source=await this.source(by,ref.sha256);if(!source)continue;
+        const captures=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',ref.sha256,'knowledge_space_source');
+        for(const capture of captures){const body=SpaceSourceBody.parse(capture.body);if(body.artifact===source.artifact.digest&&body.space!=='team'&&await this.mayRead(by,body.space,body.path))owners.add(body.space);}
+      }else if(ref.scheme==='tree'&&ref.entry){
+        const version=await this.version(ref.root);
+        if(version){if(!await this.mayRead(by,version.body.space,ref.path))continue;if(version.body.space!=='team')owners.add(version.body.space);const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path),body=row?await this.#entry(row):null;if(body)await this.#sharingOwners(by,body.grounds.map(ground=>ground.reference),owners,seen,depth+1);}
+        else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(read?.grounds)await this.#sharingOwners(by,read.grounds,owners,seen,depth+1);}
+      }
+    }
+    return owners;
+  }
   async #inspectSharing(by:Principal,input:z.infer<typeof KnowledgeShareInput>,view:SpaceEntryView,personal:SpaceVersion|null,previous:SpaceVersion|null,teamPath:string,tx?:Transaction){
       const row=personal?.body.entries.find(row=>row.entry===input.entry&&row.path===input.path);
       const checks:SharingCheck[]=SHARING_CHECKS.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
@@ -775,8 +792,13 @@ export class KnowledgeSpaces {
     const origin=await this.version(input.root);if(!origin||origin.body.space!==by.id)fail('SOURCE_UNAVAILABLE');
     const view=await this.entry(by,input.root,input.path,input.entry);if(!view)fail('SOURCE_UNAVAILABLE');
     await this.ensure(by,'team');
+    const owners=await this.#sharingOwners(by,view.body.grounds.map(ground=>ground.reference));
     return this.#write('team',()=>this.#ctx.records.store.withTransaction(async tx=>{
-      await this.#ctx.records.store.lock('knowledge-space:'+by.id,tx);await this.#ctx.records.store.lock('knowledge-space:team',tx);by=await lockActive(this.#ctx,by,tx);
+      for(const space of [...new Set([by.id,...owners])].sort())await this.#ctx.records.store.lock('knowledge-space:'+space,tx);
+      await this.#ctx.records.store.lock('knowledge-space:team',tx);
+      by=await lockActive(this.#ctx,by,tx,[...owners]);
+      const currentOwners=await this.#sharingOwners(by,view.body.grounds.map(ground=>ground.reference));
+      if([...currentOwners].some(owner=>!owners.has(owner)))fail('SOURCE_UNAVAILABLE');
       const previous=await this.current('team',tx);if(!previous)fail('SHARE_GROUND_UNRESOLVED');
       const personal=await this.current(by.id,tx),row=personal?.body.entries.find(row=>row.entry===input.entry&&row.path===input.path);
       const source={space:by.id,root:input.root,path:input.path,entry:input.entry},at=this.#ctx.now().toISOString();

@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Serialize team sharing with private ground owners before copying their originals.
+
 - Retire request-local read proofs after member deletion, deactivation and personal purge while preserving console batching and transaction-bound objects.
 - Batch exact historical capacity reads without trusting cumulative counters or retaining every entry body at once.
 
