@@ -252,8 +252,8 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   input, so the budget ends at about 3.5 to 5.5 MB of them. A lower `maxBytes` would refuse lighter documents that parse
   today, such as 8.5 MB of text-heavy XML, while a 2 MiB block of links still runs out of memory: what a parse needs
   follows a document's structure, not its size. A document that the memory or output limit stops is answered like one
-  over the cache budget (`sandboxError` in `hub/server/tools.ts`): rereading it as it is fails again, so the source
-  maintainer splits it, or the parser maintainer makes the parser need less.
+  over the cache budget (`sandboxReadDiagnostic` in `sandbox-diagnostic.ts`): rereading it as it is fails again, so the
+  source maintainer splits it, or the parser maintainer makes the parser need less.
 
 ## Decisions and deviations from the brief
 

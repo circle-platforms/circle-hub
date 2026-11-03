@@ -53,6 +53,8 @@ export const READ_EXITS: Record<ConnectorErrorCode, ReadExit> = {
   PLAN_INVALID: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.PLAN_INVALID, '缺少符合契约的完整读取计划；由系统包负责人核对规划函数与路由，修复后重读'), admin: 'show' },
   PROJECTION_FAILED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.PROJECTION_FAILED, '缺少符合投影契约的出件；由系统包负责人核对投影输入、输出与回读，修复后重读'), admin: 'show' },
   FUNCTION_FAILED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.FUNCTION_FAILED, '缺少包函数的成功出件；由系统包负责人修复函数后重读'), admin: 'show' },
+  // The Hub's own sandbox could not run or watch the function (decision 114): Hub already retried once, nothing is wrong with the pack.
+  SANDBOX_UNAVAILABLE: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SANDBOX_UNAVAILABLE, 'Hub 已在服务内重试过一次；原样重读；连续出现时请 Hub 管理员检查沙箱的进程观测、系统负载和隔离'), admin: 'show' },
   READ_LIMIT: { caller: caller('SOURCE_READ_LIMIT', CONNECTOR_ERRORS.READ_LIMIT, '由资源管理员调整声明或缩小读取范围后重新完整读取'), admin: 'show' },
   STORE_FAILED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.STORE_FAILED, '缺少已保存并可回读的来源原件；由 Hub 管理员修复对象存储，必要时从备份恢复后重读'), admin: 'show' },
   RESOURCE_UNAVAILABLE: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.RESOURCE_UNAVAILABLE, SHOW_FIX), admin: 'list' },

@@ -31,6 +31,15 @@ export const PLM_BUILDS: Record<string, unknown[]> = {
 export const PLM_BUGS: Record<string, Record<string, unknown>> = {
   '4242': { id: 4242, title: '组件参数超出范围时没有报错', status: 'resolved', openedDate: '2026-01-02 09:30:00', steps: '<p>设置参数 <b>99999</b></p><p>预期：报错</p>' },
   '4343': { id: '4343', title: '组件列表为空时显示异常', status: 'active', openedDate: '2026-01-05T08:00:00Z', steps: '<ol><li>清空列表</li></ol>' },
+  // Bugs that name the build they were opened on: one build record is readable, one carries text a credential scan flags.
+  '4545': { id: 4545, title: '组件重载后参数丢失', status: 'active', openedBuild: '601', openedDate: '2026-02-01 09:00:00', steps: '<p>重载组件</p>' },
+  '4646': { id: '4646', title: '组件导出时文件名乱码', status: 'active', openedBuild: '602', openedDate: '2026-02-02 09:00:00', steps: '<p>导出文件</p>' },
+};
+
+/** Single build records by id (GET /plmquery/build/<id>/), in the envelope; 602 carries a synthetic credential-like note. */
+export const PLM_BUILD_RECORDS: Record<string, Record<string, unknown>> = {
+  '601': { id: 601, name: 'Rel_DEMO_2_3_0_1', date: '2026-01-30 10:00:00' },
+  '602': { id: '602', name: 'Rel_DEMO_2_3_0_2', date: '2026-01-31 10:00:00', desc: '部署说明：' + ['pass', 'word=Zq8-', 'Hunter2-Secret-77'].join('') },
 };
 
 export const PLM_STORIES: Record<string, Record<string, unknown>> = {
@@ -54,6 +63,8 @@ export async function startPlmStub(options: PlmOptions): Promise<PlmStub> {
     if (request.method === 'GET' && request.path === '/plmquery/product/all/') return json({ code: 1000, msg: '', data: PLM_PRODUCTS });
     // A plain array, not an envelope and not paginated.
     if (request.method === 'GET' && request.path === '/plmquery/build/') return json(PLM_BUILDS[request.query.product ?? ''] ?? []);
+    const build = request.method === 'GET' ? /^\/plmquery\/build\/([0-9]+)\/$/.exec(request.path) : null;
+    if (build !== null) return PLM_BUILD_RECORDS[build[1]!] ? json({ code: 1000, msg: '', data: PLM_BUILD_RECORDS[build[1]!] }) : notFound();
     if (request.method === 'POST' && request.path === '/plmquery/bug/detail/') return json({ code: 1000, msg: '', data: ids(request, 'bug_ids').flatMap((id) => (PLM_BUGS[id] ? [PLM_BUGS[id]] : [])) });
     if (request.method === 'POST' && request.path === '/plmquery/story/detail/') return json({ code: 1000, msg: '', data: ids(request, 'story_ids').flatMap((id) => (PLM_STORIES[id] ? [PLM_STORIES[id]] : [])) });
     return notFound();

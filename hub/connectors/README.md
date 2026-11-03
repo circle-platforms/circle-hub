@@ -102,14 +102,20 @@ projection (`project`); `max_requests` (default 50, at most 1000) and `max_bytes
    `retain_only` (a credential-scan hit no acceptance covers, or an echo as above) reaches no function: its view keeps
    status, media type, size and ETag but has no `json`, `text` or `model`, `ok: false` and the code
    `SOURCE_CREDENTIAL` (or the transport code when the answer was an error). Echoed credentials make the original administrator-only; the manifest request has null digest and artifact, and the function sees no received-byte digest. Other scan hits retain their existing digest diagnostics. As
-   the original it fails the read before any projection runs; elsewhere it lowers the coverage.
+   the original it fails the read before any projection runs; elsewhere it lowers the coverage. "Stored at `retain_only`"
+   means the reader's effective tier of the bytes (`artifacts.source(…, {consumer: 'function', record})`), not the tier of
+   the one record this read wrote or deduplicated to: a newer scanner's hit in another record of the same bytes or an
+   acceptance revoked since holds the answer back as well (issue 109).
 6. **Nested reads.** A planner may ask for other external objects (`reads`); they are read through the resource that
    declares them, at most one level deep, and served from a cache per (resource, configuration decision, pack digest,
    reader, object) for an hour unless the planner asks for a refresh, which happens at most once per object per read. Only
    nested reads add entries; a top-level read refreshes an entry that exists. The cache holds at most 500 entries and
    64 MiB of stored artifacts (`nestedCacheBytes`), oldest out first; an update, enable or disable of a resource clears
    it. This is how a mind-map read finds the title and folders of its document: the configured root trees are read once
-   and cached. A derived artifact stored at `retain_only` gives nested readers `content` or `meta` null.
+   and cached. A derived artifact stored at `retain_only` gives nested readers `content` or `meta` null. An entry keeps,
+   for every record the read stored or used (answers, derived and nested artifacts), whether it was held from functions;
+   a hit is checked again against the reader's effective tier and served only when nothing changed, otherwise the entry
+   is dropped and the object read again (issue 109).
 7. **Projection.** The projection gets the same input plus the original's key and returns derived artifacts (`text` stored
    as UTF-8, `json` as RFC 8785 canonical JSON, or `response` naming a stored answer itself), an optional revision, a
    completeness flag that can only lower coverage, and warnings; or `{error}`. Derived artifacts are `source_artifact@1`
