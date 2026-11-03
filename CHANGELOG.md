@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Release sync write admission when a peer disconnects before body reading, and replay legacy document runs across their actual upgrade boundary.
+
 - Serialize team sharing with private ground owners before copying their originals.
 
 - Retire request-local read proofs after member deletion, deactivation and personal purge while preserving console batching and transaction-bound objects.

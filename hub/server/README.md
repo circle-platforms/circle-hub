@@ -1175,3 +1175,17 @@ adapters cannot serve pre-deletion identities or private content within that req
 Deletion screenshot checks additionally observe the real external CSS response, parsed stylesheet rules, SRI metadata,
 per-response script nonce against the actual CSP and live theme switching. The synthetic browser uses an isolated profile;
 no owner profile, deployed Hub or private credentials participate.
+
+### Sync admission after an early disconnect
+
+Body reading checks an already-aborted or destroyed request before reserving bytes or attaching stream listeners.
+Authentication, the started audit and the locked sync-state/capacity read can yield while the peer disconnects; an
+earlier abort event is not replayed. Such a request finishes with the existing 499 audit and releases the body budget
+and account write admission through the normal finally path. It does not keep a write slot until a later request or
+rate-window reset. The real HTTP regression pauses both state reads, observes both server aborts before resuming them,
+then requires two aborted audits and an unchanged 200 for the next write.
+
+The named-document regression creates its legacy-shaped private runs in an empty database at migration 18 and then
+applies every remaining migration. It still refuses the old personal run, including one owned by an administrator,
+for an administrator-only named document. Inserting that missing-package shape after upgrade is also required to fail;
+the frozen-package trigger and all reviewed migrations stay unchanged.

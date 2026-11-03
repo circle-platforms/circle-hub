@@ -83,6 +83,34 @@ test('two in-flight writes cap each account before reading bodies and release ad
  assert.equal((await http(hub,owner.token,'/clients',{client_id:randomUUID(),name:'synthetic released'})).status,200);
 });
 
+test('disconnects during the pre-body state read release both write slots', {timeout:10000}, async t=>{
+ const {createServer,request}=await import('node:http'),{handlePersonalSync,SyncAdmission}=await import('./personal-sync.ts'),{BodyBudget}=await import('./http.ts');
+ const hub=await createTestHub(options);t.after(()=>hub.close());const owner=await hub.createUser('合成读取前断连');
+ const ready=Promise.withResolvers<void>(),resume=Promise.withResolvers<void>(),finished=Promise.withResolvers<void>(),aborted=Promise.withResolvers<void>();
+ let entered=0,completed=0,disconnected=0;
+ const original=hub.records.personalSync!.state.bind(hub.records.personalSync);
+ t.mock.method(hub.records.personalSync!,'state',async(...args:Parameters<typeof original>)=>{if(++entered<=2){if(entered===2)ready.resolve();await resume.promise;}return original(...args);});
+ const admission=new SyncAdmission(),budget=new BodyBudget(1024*1024);
+ const server=createServer((req,res)=>{
+  req.once('aborted',()=>{if(++disconnected===2)aborted.resolve();});
+  void handlePersonalSync(req,res,new URL(req.url!,'http://127.0.0.1'),{deps:hub.deps,admission,budget,origins:new Set(),log:()=>{}}).then(()=>{if(++completed===3)finished.resolve();},finished.reject);
+ });
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const port=(server.address() as import('node:net').AddressInfo).port;
+ const pending:import('node:http').ClientRequest[]=[];
+ t.after(async()=>{resume.resolve();for(const req of pending)req.destroy();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
+ for(let n=0;n<2;n++){
+  const req=request({host:'127.0.0.1',port,path:'/api/sync/v1/clients',method:'POST',headers:{authorization:'Bearer '+owner.token,'content-type':'application/json','content-length':'1000'}},res=>res.resume());
+  req.on('error',()=>{});req.flushHeaders();req.write('{');pending.push(req);
+ }
+ await ready.promise;
+ const send=()=>requestHttp(port,'/api/sync/v1/clients',{method:'POST',headers:{authorization:'Bearer '+owner.token,'content-type':'application/json'},body:JSON.stringify({client_id:randomUUID(),name:'synthetic released slot'})});
+ assert.equal((await send()).status,429);
+ for(const req of pending)req.destroy();await aborted.promise;resume.resolve();await finished.promise;
+ const audits=await hub.records.store.findMany<{status:number}>({kind:'action',key:'personal.sync.http.by',values:[owner.user.id]});
+ assert.equal(audits.filter(row=>row.body.status===499).length,2);
+ assert.equal((await send()).status,200,'already-aborted requests must not retain either admitted slot');
+});
+
 test('strict wire limits, query validation and refusal audits expose no request text',async t=>{
  const hub=await createTestHub({...options,limits:{maxRequestBytes:2048}});t.after(()=>hub.close());const owner=await hub.createUser('合成请求上限');
  const large=await http(hub,owner.token,'/clients',{client_id:randomUUID(),name:'synthetic-private-'+ 'z'.repeat(3000)});assert.equal(large.status,413,large.body);assert.equal(large.json.code,'SYNC_BATCH_LIMIT');
