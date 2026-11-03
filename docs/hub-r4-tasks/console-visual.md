@@ -1345,3 +1345,19 @@ node --test --test-concurrency=3 \
 三个页面的 SQL 在两档规模都逐项相同：完整规模仍 **55 / 36 / 64**，没有以省略授权、校验或可见行获得收益。全部六个页面/规模组合的 HTML 最小和最大字节、CSS/JS 字节逐项完全一致，最大 HTML **288921 B**，无页面超过 500 KB；仍为 0 B 内联 CSS、256 B 预绘制引导 JS，外置资源与 CSP 不变。前后测的临时 Hub、PostgreSQL 和 profiler 均正常退出。原始样本、逐页 SQL、profile 与红/绿回归证据保留为本机审阅产物；没有提交日志、绝对路径或真实内容。
 
 本轮只有本地签署提交；未 fetch/push，未安装依赖。实现与检查在独立克隆中完成，结果记录单独提交，供 Claude 获取后续分支。
+
+### A 叠加完成阶段：冻结结果与作用域退役
+
+按 Claude 审查要求，保留旧头 `1e358dcd` 为 `console-perf-2-pre-finish`，将 `console-perf-2-local` rebase 到已提供的 `source/kw-finish-local`（#139，`94f43b1f`）。未 fetch/push。冲突仅在 records 的 read-scope、API 导出、store 导入及 README；保留完成阶段的账户归属/载荷 guards、API 与全部记录/迁移，不修改既有迁移或模型。两组 README 说明均保留。
+
+合并后，活动 generation 内仍只快照/编码一次、深冻结一次并共享同一结果。`retireReadScope` 递增共享 generation；memo 值、端口、get/find/count 和通用批次在 await 后检查退役，丢弃旧冻结结果并按原调用快照重读。摘要证明只在当前 generation 内复用，父作用域退役使子作用域的证明也失效；旧 getMany 不能给后来的缓存播入记录。新 withReadScope 建立新 generation 后继续共享冻结结果。
+
+新增回归覆盖所有缓存路径中“已冻结且命中过的结果，在再次交付前退役”、新 generation 的冻结共享、engine proof 原调用参数重读和摘要缓存退役绕过。#139 原成员删除 read-scope 用例原样保留。去掉 memo 交付前退役守卫的临时变体使新增回归失败，恢复后定向 **37 通过，0 失败/跳过**；类型、179 文件生成契约与生成样式检查通过。临时变体没有提交。以下补充完整检查和同法三页重测。
+
+#### 叠加完成阶段的检查结果
+
+统一检查 **4285 通过，0 失败、0 跳过、0 取消**，耗时 **1016.5 s**；运行前后所有相对 #139 的 TypeScript 改动指纹完全一致。覆盖完整 records、knowledge、engine/workflow、运行包、控制台，额外执行删除相关 CLI/管理 CLI，以及验收 12、13、19、27、30、36、45、46–54、T7-4。#139 的 member-deletion-read-scope 原测试保持全绿；记录、载荷、私人工作流、冻结持有者、删除恢复/重启、知识、控制台和验收 54 的删除场景均在完整范围内，没有跳过。
+
+命令沿用上文“A 的最终检查”所列的统一命令，继续使用 `node --test --test-concurrency=3` 和全部包/控制台文件模式；额外增加 `hub/server/cli.test.ts`、`hub/server/assemble/cli-admin.test.ts`、`tests/acceptance/50-upload-attribution.test.ts`、`tests/acceptance/51-source-archive.test.ts`、`tests/acceptance/52-member-freeze.test.ts`、`tests/acceptance/53-capacity.test.ts`、`tests/acceptance/54-member-deletion.test.ts`，没有移除原验收文件。
+
+类型检查、179 文件生成契约检查和生成样式检查通过；新增回归纳入索引后，文档检查 **315 通过，0 失败、0 跳过**，最终全套与文档合计 **4600** 项，不重复计入定向与红色变体。没有新增产品调用者复制。未改变模型、迁移、参数限制或普通写入失效规则，未 fetch/push 或安装依赖。

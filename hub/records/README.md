@@ -1090,3 +1090,15 @@ created_at and body text) inside the active read scope. A changed raw body or me
 than borrowing the claimed digest's proof; failures are not cached. Explicit transaction readers bypass this cache,
 intercepted writes clear it, and every new request hashes again. Noncanonical fallback and personal-payload loss/purge
 checks remain in force. No digest-only, principal or authorization cache survives the request.
+
+### Frozen results and destructive generation retirement
+
+The frozen-result memo and the deletion generation share the same read scope. Each memo/port/batch delivery checks
+whether its captured scope was retired after its await; a retired hit reloads through the raw port using the original
+call-time argument snapshot. Frozen values and getMany priming cannot revive an old generation. Record-verification
+memoization also bypasses retired scopes, including children invalidated through their parent's shared generation.
+A later withReadScope creates a fresh generation with its own immutable-result and exact-envelope caches. Values
+already delivered before retirement stay immutable; retirement prevents their reuse by subsequent reads rather than
+rewriting references a prior caller already holds. Parameter restrictions, ordinary write invalidation and transaction
+bypasses retain their existing behavior. Member-deletion, deactivation, purge and pending-result regressions cover this
+boundary alongside the frozen-cache-hit and engine-proof regressions.
