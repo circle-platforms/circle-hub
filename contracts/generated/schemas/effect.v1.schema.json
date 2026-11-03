@@ -313,7 +313,8 @@
                 "SYNC_MODE_LOCAL",
                 "SYNC_EPOCH_CHANGED",
                 "SYNC_RATE_LIMITED",
-                "SYNC_PURGE_CONFIRMATION_REQUIRED"
+                "SYNC_PURGE_CONFIRMATION_REQUIRED",
+                "GROUNDS_PURGED"
               ]
             },
             "row": {

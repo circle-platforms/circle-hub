@@ -91,7 +91,7 @@ test('a submitted personal revision supersedes only its own earlier team entry a
   const revision=await spaces.write(w.user,{...note('合成保留规则修订','/revised-personal'),grounds,replaces:first.entry});
   const raw={root:revision.root,path:'/revised-personal',entry:revision.entry,team_path:'/chosen/new-directory'};
   const shared=await spaces.share(w.user,raw);assert.equal(shared.status,'merged',JSON.stringify(shared));assert.ok(shared.team_root);
-  assert.equal(shared.target_path,raw.team_path);assert.equal(shared.source.path,raw.path);assert.equal(shared.reference,`tree:${shared.team_root}${raw.team_path}@${revision.entry}`);
+  assert.equal(shared.target_path,raw.team_path);assert.equal(shared.source?.path,raw.path);assert.equal(shared.reference,`tree:${shared.team_root}${raw.team_path}@${revision.entry}`);
   const current=(await spaces.current('team'))!;assert.ok(current.body.directories.includes(raw.team_path));
   assert.equal(current.body.entries.find(row=>row.entry===first.entry)?.status,'superseded');
   assert.equal((await spaces.entry(w.outsider,merged.team_root,'/notes',first.entry))?.row.status,'superseded','historical reads derive the current replacement state');
@@ -108,7 +108,7 @@ test('default team paths and refused custom targets are explicit in receipts wit
   const shared=await share(w,entry);assert.equal(shared.target_path,'/notes');
   const noteOnly=await spaces.write(w.user,note('合成未核验路径','/private-path'));
   const rejected=await spaces.share(w.user,{root:noteOnly.root,path:'/private-path',entry:noteOnly.entry,team_path:'/target/rejected'});
-  assert.equal(rejected.code,'SHARE_UNVERIFIED');assert.equal(rejected.target_path,'/target/rejected');assert.equal(rejected.source.path,'/private-path');
+  assert.equal(rejected.code,'SHARE_UNVERIFIED');assert.equal(rejected.target_path,'/target/rejected');assert.equal(rejected.source?.path,'/private-path');
   assert.ok(!(await spaces.current('team'))!.body.directories.includes('/target/rejected'),'a rejected submission creates no team directory');
   const source=await observed(w),other=await spaces.write(w.user,{...note('合成保留新规则'),grounds:[{reference:'src:'+source.body.sha256,quotation:'每次保留两份'}],replaces:entry.entry});
   const reserved=await spaces.share(w.user,{root:other.root,path:'/notes',entry:other.entry,team_path:'/产品/synthetic/1.0'});

@@ -3,6 +3,7 @@ export {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export type { MemberHandover, MemberHandoverItem, MemberDeletionPreview } from './member-deletions.ts';
 export {withReadScope,retireReadScope,scopedRecordStore,memoReadPort,memoReadValue,memoReadCall} from './read-scope.ts';
 export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
@@ -875,9 +876,9 @@ export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type {PurgeRequester,PurgePending,PurgeRequestBody} from './personal-sync.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'purgeRequests'|'confirmPurge'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
-  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'>;
+  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerHandover'>;
   personalSync?:PersonalSyncStore;
-  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'>;
+  personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'|'purgedRunOriginals'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
   spaceIndex?: import('./space-index.ts').SpaceSearchIndex;
   config: Pick<HubConfig, 'dataDir' | 'logDir' | 'limits'>;

@@ -11,5 +11,9 @@ its bytes, identities or expected outcomes. The specification is `docs/protocols
   server with an unknown code and an unknown member, which a client must handle as a generic failure showing `detail`.
   `detail` is the registered explanation and next step of the code; timestamps are synthetic.
 
+The discovery document also lists `first-sync-notice` and `share-single-item` (owner rulings on issue 141). Their
+shapes are `personal-sync-state@1` (`never_synced`), `personal-sync-share@1` and `personal-sync-share-result@1` in
+`contracts/generated/schemas/`; `hub/server/sync-rulings.test.ts` exercises them over HTTP with synthetic objects.
+
 `contracts/src/sync.test.ts` parses these vectors; `hub/server/sync-discovery.test.ts` compares `discovery.json` with
 the server's own document and serves it over HTTP. These vectors establish shapes, not authorization or a deployment.

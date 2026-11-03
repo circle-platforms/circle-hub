@@ -870,6 +870,18 @@ checks present and absent digest reads as both migration owner and runtime role,
 planner settings. Every SECURITY DEFINER retains its fixed search path. Migrations 14 and 15 are now frozen separately
 in the reviewed SQL snapshots; this correction changes migration 17 only.
 
+Owner ruling 3 on issue 141 (2026-11-03) replaces the retention above: migration 24 adds append-only
+`run_original_purges` (artifact, holder, owner, epoch, raw SHA-256, time) and replaces the `run_originals` append-only
+trigger with `hub_guard_run_originals`, which allows a DELETE only by the table owner and only for a row whose removal
+is already recorded. `hub_purge_personal` records and removes every independent copy of the purged epoch's originals
+whose holder is not a team knowledge source (`hub_run_citations`), before it finishes independent objects and clears
+payloads; `hub_finish_independent_objects` skips purged targets. Records and their digests are unchanged; the
+capture simply reads as absent afterwards. `PgPersonalPayloads.purgedRunOriginals(run)` returns the metadata of the
+removed copies a run holds for callers that already authorized the run. Runtime has SELECT on the new table and
+EXECUTE on `hub_run_citations`; mode pre-checks count copies and affected runs. Account-epoch run inputs and frozen
+pack files keep their independent holders. Member deletion (ruling 4) appends a hand-over of private pack versions
+to the deleting administrator through a hook registered by the packs package, inside the `prepare` transaction.
+
 ### Sync mode receipts and access-token authentication (decision 89, step 5)
 
 Migration 18 adds append-only, content-free personal_sync_mode_operations, keyed by account/epoch/operation. The

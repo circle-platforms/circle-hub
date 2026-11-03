@@ -1,6 +1,6 @@
 // Native personal knowledge/memory and portable revisions meet only inside the same owner/epoch transaction.
 import {z} from 'zod';
-import {PersonalSyncObject,PersonalSyncCommit,PERSONAL_SYNC_LIMITS,type PersonalSyncProjection,type PersonalSyncVerification} from '../../../contracts/src/sync.ts';
+import {PersonalSyncObject,PersonalSyncCommit,PersonalSyncShare,PersonalSyncShareResult,PERSONAL_SYNC_CAPABILITY_ROUTES,PERSONAL_SYNC_LIMITS,type PersonalSyncProjection,type PersonalSyncVerification} from '../../../contracts/src/sync.ts';
 import {encodePersonalSyncObject,decodePersonalSyncObject} from '../../../contracts/src/sync-canonical.ts';
 import {SpaceEntryBody,SpaceSourceBody} from '../../../contracts/src/spaces.ts';
 import {MemoryVersionBody} from '../../../contracts/src/memory.ts';
@@ -30,6 +30,39 @@ export class PersonalKnowledgeSync{
  changeMode(by:Principal,input:unknown,via:PurgeRequester|undefined):Promise<Awaited<ReturnType<PersonalSyncStore['changeMode']>>|PurgePending>;
  changeMode(by:Principal,input:unknown,via?:PurgeRequester){return via?this.transport.changeMode(by,input,via):this.transport.changeMode(by,input);}
  #graph(by:Principal,epoch:string,tx:Transaction){return new SyncGraph(id=>this.transport.object(by,epoch,id,tx));}
+ /**
+  * Capability share-single-item (owner ruling 1, issue 141): share one team-marked entry and only its own sources in
+  * either mode, also `local`. Nothing is staged or projected into the personal space; KnowledgeSpaces.shareSingle runs
+  * the normal sharing checks on these bytes and records the receipt.
+  */
+ async shareItem(by:Principal,input:unknown,request_id:string|null=null):Promise<z.infer<typeof PersonalSyncShareResult>>{
+  const parsed=PersonalSyncShare.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');const request=parsed.data;
+  const state=await this.transport.state(by);if(request.epoch!==state.epoch)return fail('SYNC_EPOCH_CHANGED');
+  if(request.objects.length>state.limits.batch_objects)return fail('SYNC_BATCH_LIMIT');
+  const objects=new Map<string,PersonalSyncObject>();let total=0;
+  for(const row of request.objects){const bytes=Buffer.from(row.bytes_base64,'base64');total+=bytes.length;if(bytes.length>state.limits.object_bytes||total>state.limits.batch_bytes)return fail('SYNC_BATCH_LIMIT');
+   if(sha256Hex(bytes)!==row.id)return fail('SYNC_OBJECT_HASH_MISMATCH');let object:PersonalSyncObject;try{object=decodePersonalSyncObject(bytes,row.id);}catch{return fail('SYNC_OBJECT_INVALID');}objects.set(row.id,object);}
+  const get=(id:string)=>objects.get(id)??fail('SYNC_OBJECT_MISSING'),text=(id:string)=>{const object=get(id);if(object.kind!==kinds.bytes)return fail();try{return new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(Buffer.from(object.body.bytes_base64,'base64'));}catch{return fail();}};
+  const entry=get(request.item);if(entry.kind!==kinds.entry_revision)return fail();
+  const needed=new Set([request.item]),grounds:Parameters<KnowledgeSpaces['shareSingle']>[1]['grounds']=[],sources:Parameters<KnowledgeSpaces['shareSingle']>[1]['sources']=new Map();
+  for(const ground of entry.body.grounds){needed.add(ground.quotation);const quotation=text(ground.quotation);
+   if('entry'in ground){grounds.push({quotation,entry:true});continue;}
+   if('reference'in ground){grounds.push({reference:ground.reference,quotation});continue;}
+   needed.add(ground.source);const revision=get(ground.source);if(revision.kind!==kinds.source_revision)return fail();
+   if(revision.body.size>this.transport.sourceBytes)return fail();
+   const parts:Buffer[]=[];for(const chunk of revision.body.chunks){needed.add(chunk);const part=get(chunk);if(part.kind!==kinds.bytes)return fail();parts.push(Buffer.from(part.body.bytes_base64,'base64'));}
+   const bytes=Buffer.concat(parts);if(bytes.length!==revision.body.size)return fail();if(sha256Hex(bytes)!==revision.body.raw_sha256)return fail('SYNC_OBJECT_HASH_MISMATCH');
+   const previous=sources.get(revision.body.raw_sha256);if(previous&&previous.mediaType!==revision.body.media_type)return fail();
+   sources.set(revision.body.raw_sha256,{bytes,name:revision.body.name,mediaType:revision.body.media_type});
+   grounds.push({reference:'src:'+revision.body.raw_sha256+'/'+ground.parser+'/'+ground.selector,quotation,source:revision.body.raw_sha256});
+  }
+  // Only this item and its own sources: anything else in the batch is refused rather than silently ignored.
+  for(const id of objects.keys())if(!needed.has(id))return fail();
+  const identity=hash({path:PERSONAL_SYNC_CAPABILITY_ROUTES.share.path,request}),operation=hash({owner:by.id,epoch:request.epoch,operation:request.operation_id});
+  const receipt=await this.#spaces.shareSingle(by,{item_id:entry.body.item_id,object:request.item,epoch:request.epoch,operation,request:identity,path:request.path,...(request.team_path?{team_path:request.team_path}:{}),content:entry.body.content,grounds,sources},request_id);
+  const latest=await this.transport.state(by);if(latest.epoch!==request.epoch)return fail('SYNC_EPOCH_CHANGED');
+  return PersonalSyncShareResult.parse({operation_id:request.operation_id,epoch:request.epoch,request:identity,item_id:entry.body.item_id,object:request.item,status:receipt.status,code:receipt.code,message:receipt.message,team_root:receipt.team_root,reference:receipt.reference,record:receipt.record,at:receipt.at});
+ }
  async state(by:Principal){const state=await this.transport.state(by);if(state.mode===SyncModeSchema.enum.local)return state;return this.transport.transact(by,state.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);return this.transport.state(by,tx);});}
  async openSession(by:Principal,input:unknown){const request=z.object({epoch:z.uuid()}).parse(input);return this.transport.transact(by,request.epoch,async(scope,tx)=>{await this.#refresh(by,scope.epoch,tx);return this.transport.openSession(by,input,tx);});}
  async #refresh(by:Principal,epoch:string,tx:Transaction){

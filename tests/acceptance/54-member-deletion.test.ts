@@ -35,3 +35,17 @@ test('permanent deletion removes private knowledge, archive, memory and sync dat
  const member=await manager.get('/console/team/'+owner.user.id);assert.equal(member.status,200);assert.match(member.body,/私人内容已清除/);assert.doesNotMatch(member.body,/重置密码|签发邀请码|合成私人路径/);assert.deepEqual(wordingProblems(member.body),[]);
  const fresh=await hub.createUser(owner.user.name);assert.notEqual(fresh.user.id,owner.user.id);assert.equal((await api.state(fresh.principal)).used_bytes,0);assert.equal(await hub.records.store.get(secret.digest),null);await assert.rejects(api.inventory(fresh.principal,session.session_id,initial.epoch));assert.deepEqual(await deleteMember(hub.records,hub.admin.principal,owner.user.id,preview.operation_id),done);
 });
+
+test('deleting a member hands the private workflow to the deleting administrator, named in the dialog, recorded and usable',async t=>{
+ const hub=await createTestHub(options);t.after(()=>hub.close());const member=await hub.createUser('合成移交工作流成员'),manager=await openConsole(hub,hub.admin.token);
+ const {mkdtemp,rm}=await import('node:fs/promises'),{tmpdir}=await import('node:os'),{writePack,workflowPack}=await import('../../hub/runs/packs/testing/builder.ts');const directory=await mkdtemp(join(tmpdir(),'synthetic-handover-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const pack=workflowPack({id:'synthetic-handover-flow',product:{catalogs:[]}});pack.files['knowledge.json']={schema:'knowledge@1',requires:[]};const published=await hub.hub.registry.personal!.publish(member.principal,(await writePack(join(directory,'flow'),pack)).dir);assert.ok(published.ok,JSON.stringify(published));if(!published.ok)return;
+ const page=await manager.get('/console/team/'+member.user.id+'?deletion=preview');assert.equal(page.status,200,page.body);assert.deepEqual(wordingProblems(page.body),[]);
+ const visible=page.body.replace(/<[^>]+>/g,'');assert.match(visible,new RegExp('接收人：'+hub.admin.principal.name+'（执行删除的管理员）'));assert.match(visible,new RegExp('（synthetic-handover-flow@'+published.version.version+'）：转给执行删除的管理员'));
+ const check=JSON.parse((await manager.get('/console/api/members/'+member.user.id+'/deletion')).body);
+ const done=await deleteMember(hub.records,hub.admin.principal,member.user.id,check.operation_id,check.preview.state,check.preview.epoch);assert.equal(done.counts.private_versions,1);
+ const moved=await hub.hub.registry.personal!.resolve(hub.admin.principal,hub.admin.principal.id,pack.id);assert.equal(moved?.digest,published.version.digest);assert.equal(moved?.owner,hub.admin.principal.id);
+ assert.equal(await hub.hub.registry.personal!.resolve(hub.admin.principal,member.user.id,pack.id),null,'the deleted namespace stays gone');
+ const records=await hub.records.store.findMany<{from:string;space:string}>({kind:'personal_pack_transfer',key:'personal.pack.handover.from',values:[member.user.id]});assert.deepEqual(records.map(row=>[row.body.from,row.body.space]),[[member.user.id,hub.admin.principal.id]]);
+ const packs=await manager.get('/console/packs');assert.equal(packs.status,200);assert.match(packs.body,/synthetic-handover-flow/);
+});

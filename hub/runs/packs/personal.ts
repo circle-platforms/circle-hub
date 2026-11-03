@@ -2,8 +2,8 @@
 import { join, extname } from 'node:path';
 import { PersonalPackVersionBody, PersonalPackGrantBody, PersonalPackRetirementBody, PersonalPackTransferBody } from '../../../contracts/src/sharing.ts';
 import { PackId, UserId } from '../../../contracts/src/common.ts';
-import { AccessError, IntegrityError, personalPackKey, personalPackGrants, mayUsePersonalPack, type Principal, type RecordKind, type StoredRecord, type Page, type Transaction, type Artifacts } from '../../records/api.ts';
-import { ShareCheckSchema } from '../../../contracts/generated/vocabulary.ts';
+import { AccessError, IntegrityError, personalPackKey, personalPackGrants, mayUsePersonalPack, type Principal, type RecordKind, type StoredRecord, type Page, type Transaction, type Artifacts, type MemberHandoverItem } from '../../records/api.ts';
+import { ShareCheckSchema, MemberHandoverStatusSchema } from '../../../contracts/generated/vocabulary.ts';
 import type {SharingCheck} from '../../knowledge/api.ts';
 import {readFile} from 'node:fs/promises';
 import {scanForCredentials} from '../../records/api.ts';
@@ -20,9 +20,11 @@ import { problem } from './problems.ts';
 import {personalPackProblems} from './personal-capabilities.ts';
 import type {SkillDependency} from '../../../contracts/src/skills.ts';
 
+/** Index of the hand-over records of a deleted member's private versions (owner ruling 4, issue 141). */
+export const PERSONAL_PACK_HANDOVER_KEY='personal.pack.handover.from';
 export class PersonalPacks {
   #options:PackRegistryOptions; #team:PackRegistry; #extractor:Extractor; #writes:Promise<unknown>=Promise.resolve();
-  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));options.records.memberDeletions?.registerCacheRoot(options.extractDir,{shared:true});this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
+  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));options.records.memberDeletions?.registerCacheRoot(options.extractDir,{shared:true});options.records.memberDeletions?.registerHandover({plan:(admin,member,tx)=>this.handoverPlan(admin,member,tx),transfer:(by,member,tx)=>this.handover(by,member,tx)});this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
   #now(){return (this.#options.now?.()??new Date()).toISOString();}
   async #account(by:Principal){const account=await this.#team.account(by);if(!account)throw new AccessError('对象不存在或无权读取');return account;}
   async #own(by:Principal,space=by.id){by=await this.#account(by);if(by.id!==space)throw new AccessError('对象不存在或无权读取');return by;}
@@ -173,6 +175,50 @@ export class PersonalPacks {
     if(info.manifest.dependencies?.some(dep=>dep.space))return {ok:false,report:null,problems:[problem('personal.dependency','pack.json','团队发布不能依赖个人空间中的技能','先将依赖发布并安装到团队，修改依赖后重新发布')]};
     const outcome=await this.#team.publish(by,opened.handle.directory);if(!outcome.ok)return outcome;
     await this.#options.records.store.put({kind:'personal_pack_transfer',schema:'personal-pack-transfer@1',provenance:'declared',body:PersonalPackTransferBody.parse({space:by.id,pack:info.id,version:info.version,digest:info.digest,source:info.record,target:outcome.version.record,by:by.id,at:this.#now()}),index:[{key:'personal.pack.transferred',value:info.digest}]},tx);return outcome;});
+  }
+  /**
+   * Owner ruling 4 on issue 141: what member deletion hands to the deleting administrator. Every private version of the
+   * member is listed; one the administrator already holds with the same digest is `present`, one whose pack and version
+   * (or pack kind) the administrator's space already uses differently is a `conflict` and is not transferred.
+   */
+  async handoverPlan(admin:string,member:string,tx?:Transaction):Promise<MemberHandoverItem[]>{
+    if(admin===member||!UserId.safeParse(admin).success||!UserId.safeParse(member).success)return [];
+    const out:MemberHandoverItem[]=[];
+    for(const record of await this.#all('personal_pack_version','personal.pack.owner',member,tx)){
+      const info=await this.#info(record,tx),theirs=await this.versions(admin,info.id,tx),same=theirs.find(v=>v.version===info.version);
+      const handover=MemberHandoverStatusSchema.enum,status=same?(same.digest===info.digest?handover.present:handover.conflict):theirs.some(v=>v.kind!==info.kind)?handover.conflict:handover.transfer;
+      out.push({pack:info.id,version:info.version,kind:info.kind as MemberHandoverItem['kind'],title:info.title,digest:info.digest,status});
+    }
+    return out.sort((a,b)=>a.pack.localeCompare(b.pack)||compareVersions(a.version,b.version));
+  }
+  /**
+   * Inside the deletion transaction: append exact copies (manifest, files, captures and the original check report) in
+   * the administrator's own space, each with a personal_pack_transfer record naming the member. Grants do not move.
+   */
+  async handover(by:Principal,member:string,tx:Transaction):Promise<number>{
+    const plan=(await this.handoverPlan(by.id,member,tx)).filter(item=>item.status===MemberHandoverStatusSchema.enum.transfer);if(!plan.length)return 0;
+    await this.#options.records.store.lock('knowledge-space:'+by.id,tx);
+    for(const pack of [...new Set(plan.map(item=>item.pack))].sort())await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);
+    by=await this.#options.records.principals.lockActive(by,tx);
+    const artifacts=this.#options.records.artifacts,store=this.#options.records.store;if(!store.addIndex)throw new IntegrityError('个人包文件索引端口暂不可用');
+    let count=0;
+    for(const item of plan){
+      const record=(await this.#options.records.store.find({kind:'personal_pack_version',key:'personal.pack.digest',value:member+'/'+item.digest,limit:1},tx)).items[0];if(!record)throw new IntegrityError('待转移的个人包版本暂不可读');
+      const source=PersonalPackVersionBody.parse(record.body),files:Record<string,string>={};
+      for(const file of source.manifest.files){
+        const bytes=await this.#options.records.objects.get(file.sha256,tx);if(!bytes)throw new IntegrityError('待转移的个人包文件暂不可读');
+        await this.#options.records.objects.put(bytes,'application/octet-stream',tx,by.id,true);
+        if(artifacts&&source.files[file.path]){const artifact=await artifacts.ingest({personalOwner:by.id,accountOwned:true,bytes,mediaType:extname(file.path)==='.json'?'application/json':'text/plain',name:file.path,origin:{upload:{session:null,message:null}},author:{user:by.id,declared:null},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);files[file.path]=artifact.digest;}
+      }
+      const manifest=await this.#options.records.objects.get(source.digest,tx);if(!manifest)throw new IntegrityError('待转移的个人包清单暂不可读');
+      await this.#options.records.objects.put(manifest,'application/json',tx,by.id,true);
+      const at=this.#now(),body=PersonalPackVersionBody.parse({...source,space:by.id,publisher:by.id,at,files});
+      const stored=await this.#options.records.store.put({kind:'personal_pack_version',schema:'personal-pack-version@1',provenance:'declared',body,index:[{key:'personal.pack.owner',value:by.id},{key:'personal.pack.id',value:personalPackKey(by.id,body.pack)},{key:'personal.pack.digest',value:by.id+'/'+body.digest}]},tx);
+      const hashes=[...new Set(body.manifest.files.map(file=>file.sha256))];for(let at=0;at<hashes.length;at+=100)await store.addIndex!(stored.digest,hashes.slice(at,at+100).map(value=>({key:'personal.pack.file',value})),tx);
+      await this.#options.records.store.put({kind:'personal_pack_transfer',schema:'personal-pack-transfer@1',provenance:'declared',body:PersonalPackTransferBody.parse({space:by.id,pack:body.pack,version:body.version,digest:body.digest,source:record.digest,target:stored.digest,by:by.id,at,from:member}),index:[{key:PERSONAL_PACK_HANDOVER_KEY,value:member}]},tx);
+      count++;
+    }
+    return count;
   }
   async transferred(digest:string){return (await this.#options.records.store.find({kind:'personal_pack_transfer',key:'personal.pack.transferred',value:digest,limit:1})).items.length>0;}
   async source(by:Principal,sha256:string,runId?:string,capture?:string){

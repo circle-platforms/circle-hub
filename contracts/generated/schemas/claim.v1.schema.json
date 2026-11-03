@@ -297,6 +297,7 @@
             "valid",
             "rule_withdrawn",
             "grounds_withdrawn",
+            "grounds_purged",
             "cited_fragment_changed",
             "credential_unreadable",
             "premise_failed",

@@ -104,6 +104,9 @@
             "session_seconds"
           ],
           "additionalProperties": false
+        },
+        "never_synced": {
+          "type": "boolean"
         }
       },
       "required": [

@@ -1,5 +1,5 @@
 // All controls are read-only confirmations; the console never executes permanent member deletion.
-import {deletionCheck,deletionRetryCommand,DELETION_EFFECT} from '../member-deletion.ts';
+import {deletionCheck,deletionRetryCommand,DELETION_EFFECT,handoverLines} from '../member-deletion.ts';
 import {RecordsError} from '../../records/api.ts';
 import type {MemberDeletionBody} from '../../../contracts/src/spaces.ts';
 import type {PageContext} from './pages.ts';
@@ -12,8 +12,10 @@ function manifestSummary(manifest:string,c:MemberDeletionBody['counts']):Html{
 export async function memberDeletionDialog(ctx:PageContext,member:string):Promise<Html>{
  try{
   const check=await deletionCheck(ctx.deps.records,ctx.principal,member),c=check.preview.scope_counts;
-  const categories=[['知识',c.knowledge],['记忆',c.memory],['原文',c.originals],['来源署名',c.attributions],['归档的原文',c.archived_originals],['私人工作流与技能',c.private_versions]];
-  return dialog(deletionDialogId,'确认永久删除成员',html`<p>${DELETION_EFFECT}</p><p>${tooltip('清除范围','数量包括此前保存的版本；原文按采集次数计数，私人工作流与技能按版本计数。团队和已有任务独立持有的副本保留。')}</p><dl class="ch-section ch-list" data-deletion-scope>${categories.map(([label,count])=>html`<div class="ch-source-head"><dt>${label}</dt><dd>${count}</dd></div>`)}</dl><p>在 Hub 所在主机上执行下列命令完成删除；内容变化后须重新检查。</p>${manifestSummary(check.preview.purge_manifest,check.preview.counts)}<pre class="ch-quote">${check.command}</pre>`);
+  const categories=[['知识',c.knowledge],['记忆',c.memory],['原文',c.originals],['来源署名',c.attributions],['归档的原文',c.archived_originals]];
+  const handover=check.preview.handover,to=handover?.to?await ctx.userName(handover.to):null,lines=handoverLines(check.preview);
+  const transfer=html`<section class="ch-section" data-deletion-handover><h3>${tooltip('转给管理员的私人工作流与技能','按版本计数；原清单、文件和检查报告原样追加到管理员的私人空间，分享不随之转移。')}</h3><p>${to?html`接收人：${to}（执行删除的管理员）`:handover?'不转移':'—'}</p>${lines.length?html`<ul class="ch-feed">${lines.map(line=>html`<li>${line}</li>`)}</ul>`:html`<p class="ch-meta">该成员没有私人工作流或技能。</p>`}</section>`;
+  return dialog(deletionDialogId,'确认永久删除成员',html`<p>${DELETION_EFFECT}</p><p>${tooltip('清除范围','数量包括此前保存的版本；原文按采集次数计数。团队独立持有的副本保留，运行引用过的私人知识原文一并清除。')}</p><dl class="ch-section ch-list" data-deletion-scope>${categories.map(([label,count])=>html`<div class="ch-source-head"><dt>${label}</dt><dd>${count}</dd></div>`)}</dl>${transfer}<p>在 Hub 所在主机上执行下列命令完成删除；内容变化后须重新检查。</p>${manifestSummary(check.preview.purge_manifest,check.preview.counts)}<pre class="ch-quote">${check.command}</pre>`);
  }catch(error){if(!(error instanceof RecordsError))throw error;return dialog(deletionDialogId,'删除检查未通过',html`<p role="alert">${error.message}</p><p>尚未删除成员；修正后重新检查。</p>`,actionLink('/console/team/'+member+'?deletion=preview#'+deletionDialogId,'重新检查'));}
 }
 export async function memberDeletionProgress(ctx:PageContext,member:string):Promise<Html>{

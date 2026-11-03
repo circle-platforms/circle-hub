@@ -56,7 +56,12 @@ the base: a client MUST NOT rewrite them, and a server MUST serve exactly these 
 | `/mode/check` | POST | `personal-sync-mode-check@1` | `personal-sync-mode-impact@1` |
 | `/mode` | POST | `personal-sync-mode-change@1` | `personal-sync-mode-result@1` |
 
-The same table is published as data in `contracts/test-fixtures/sync/v1/http.json` (`personal-sync-http@1`).
+The same table is published as data in `contracts/test-fixtures/sync/v1/http.json` (`personal-sync-http@1`). Routes a
+capability adds (section 15) are listed with that capability and are not part of this frozen table:
+
+| Route | Method | Request body | Answer body (200) | Capability |
+|---|---|---|---|---|
+| `/share` | POST | `personal-sync-share@1` | `personal-sync-share-result@1` | `share-single-item` |
 
 Message rules:
 
@@ -143,7 +148,8 @@ A complete exchange is: state → client → session → inventory → missing �
 1. **State.** `GET /state` returns the account's `epoch`, `mode`, `status` (`sync_status`: `idle`, `syncing`,
    `complete`, `conflicted`), `state_version` (an opaque hash of the current personal content, used for CAS),
    `snapshot` (the current snapshot ID or null), `last_synced_at`, `used_bytes`, `capacity_bytes` and the effective
-   `limits` (section 11). Reading state never creates content.
+   `limits` (section 11). Reading state never creates content. A server advertising `first-sync-notice` also
+   reports `never_synced` (section 15).
 2. **Client.** `POST /clients` registers the client's random `client_id` (UUID) and a display `name` (1–100 characters).
    It is idempotent; the same ID with another name is `IDEMPOTENCY_MISMATCH`. The client ID is a device declaration,
    not an identity: it does not authenticate anything.
@@ -211,18 +217,26 @@ not an error of the commit. `last_synced_at` changes only on a successful commit
 
 The `sync_mode` of an account is `hub` (sync to the server, the default for every account) or `local` (keep personal
 content on the client only). The wire value `hub` names the mode, not a product; clients choose their own display text.
+The default stays `hub`; a client tells the account holder so on first connection (capability `first-sync-notice`,
+section 15).
 
 - Every return from `local` to `hub` starts a new opaque `epoch`. Sessions, objects, heads, cursors and operation
   keys are scoped to account and epoch; an old epoch's requests are refused with `SYNC_EPOCH_CHANGED`. A new epoch
   never restores grants or content from before a purge; the client uploads its local copy again as new content.
 - `POST /mode/check` with `{mode}` returns the impact of a change without writing anything: `check` (an opaque hash of
   the impact and its inputs), `expected_state`, `personal_bytes`, `directory_grants` that would end, `pending_shares`
-  (null when the server cannot count them) and `team_copies_preserved`.
+  (null when the server cannot count them) and `team_copies_preserved`. It may also carry `run_held_originals` and
+  `affected_runs` (below); a client that does not know them ignores them.
 - `POST /mode` with `{epoch, operation_id, mode, expected_state, check, confirm_purge}` changes the mode. Switching to
   `local` **purges** the server's copy of the epoch: personal knowledge, originals, folders, memory, staged objects and
   their projections are removed and the account's folder grants end. It requires `confirm_purge: true` and the `check`
   of a fresh `/mode/check`; a stale `expected_state` or `check` is `SYNC_VERSION_CONFLICT`. Team copies made by
   sharing stay, local copies are untouched, and a server backup taken before the purge still holds the old content.
+- The purge also removes every copy of the epoch's originals that the server held independently for runs (the run, its
+  claims, submissions and results), except copies a team knowledge source holds. Those runs' grounds become
+  unavailable for the registered reason `GROUNDS_PURGED`; run records, capture records and their digests are not
+  rewritten, and the removal is recorded append-only. `/mode/check` reports how many such copies the purge removes
+  (`run_held_originals`) and how many runs hold them (`affected_runs`), and both are part of the `check` hash.
 - A server that advertises `purge-confirmation` (section 15) does not purge on a Bearer token alone: it records the
   request and answers 403 `SYNC_PURGE_CONFIRMATION_REQUIRED` with `confirmation`; the purge runs only after the
   account holder confirms that exact request outside the sync API, and the client's identical retry then returns the
@@ -398,6 +412,44 @@ Sync capabilities defined for version 1:
   result. If the content changed before confirmation, the confirmation fails with `SYNC_VERSION_CONFLICT` and the
   client starts again with `/mode/check`. An expired request is never performed. Purging from the server's own
   console is unaffected, and so is switching back to `hub`.
+
+- **`first-sync-notice`.** `personal-sync-state@1` carries `never_synced`: `true` while no client of the account has
+  ever uploaded, committed, aborted a session or changed the mode on this server, in any epoch; native edits in the
+  server's console or through MCP do not count. A client connecting to a server SHOULD show the account holder, before
+  its first upload, that personal content will be synced to the server and that the mode can be changed to `local` at
+  any time, when `never_synced` is `true` and the mode is `hub`. The server only reports the fact; it never changes the
+  mode on the client's behalf, and the default mode stays `hub`. Clients of servers without the capability decide from
+  their own records.
+- **`share-single-item`.** Share one entry and only its own sources to team knowledge without a server copy of the
+  personal space, in either mode, including `local`.
+  - The **team mark** is a client-local flag on one entry item (`item_id`), set only by the account holder's explicit
+    action (for example 分享到团队). It is not part of any object, does not change object IDs and never syncs as
+    content. A client in mode `local` that is connected to a server advertising this capability sends a single-item
+    share only for an item carrying the mark; otherwise the item stays on the client.
+  - `POST /share` with `personal-sync-share@1`: `{schema, epoch, operation_id, team_mark: true, item, path,
+    team_path?, objects: [{id, bytes_base64}]}`. `item` is the object ID of the entry revision to share, `path` the
+    folder the item has on the client (the default team folder) and `team_path` the team folder to use instead.
+    `team_mark` MUST be `true`. `objects` holds exactly the entry revision, its quotation `bytes`, and the
+    `source_revision` objects its `source` grounds name with their chunks; any other object is `SYNC_OBJECT_INVALID`,
+    a missing one `SYNC_OBJECT_MISSING`. The objects follow sections 5 and 11 (canonical bytes, claimed IDs,
+    `limits.batch_objects`, `limits.object_bytes`, `limits.batch_bytes`). A ground on another entry revision is
+    refused (only the item and its sources travel); a `reference` ground names something the server already holds.
+  - The server re-verifies exactly as for normal sharing, in the same order: the entry has grounds, each ground
+    resolves with team parsers only, every quotation is verbatim, every source may be shared (an uploaded source is the
+    account's own declaration through `team_mark`), the team has no equal entry, and entry, folder name and sources pass
+    the credential scan. A refusal is not an error: the answer has `status: "rejected"` and a registered `code`
+    (`SHARE_UNVERIFIED`, `SHARE_GROUND_UNRESOLVED`, `TEAM_PARSER_REQUIRED`, `SHARE_QUOTE_MISMATCH`,
+    `SHARE_GROUND_UNREADABLE`, `SHARE_DUPLICATE`, `SHARE_CREDENTIALS`, `GROUNDS_WITHDRAWN`, `SPACE_CONTENT_UNINSPECTABLE`).
+    On `merged` the server appends a team entry and team-held copies of the sources; nothing personal is staged,
+    projected or kept, and the account's mode, state and capacity are unchanged. Team capacity applies
+    (`SPACE_CAPACITY_EXCEEDED`).
+  - Either way the server records a share receipt naming the item, the entry revision, the team mark and the raw
+    SHA-256 of the uploaded sources (never their bytes or names). `personal-sync-share-result@1` returns
+    `{operation_id, epoch, request, item_id, object, status, code, message, team_root, reference, record, at}`;
+    `reference` names the team entry when merged. A later single-item share of the same `item_id` by the same account
+    replaces only that account's own earlier team entry.
+  - The operation key follows section 9: the identical request returns the original answer, the same key with another
+    request is `IDEMPOTENCY_MISMATCH`, and a changed epoch is `SYNC_EPOCH_CHANGED`.
 
 The request shapes of existing operations are unchanged by these capabilities, and so are the frozen vectors in
 `contracts/test-fixtures/sync/v1/`. The additive vectors are in `contracts/test-fixtures/sync/v1-capabilities/`.

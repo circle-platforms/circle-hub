@@ -7,6 +7,7 @@ import { digestOf } from '../../records/api.ts';
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isEntryKind, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
+import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult, type ValidationResult } from '../../../contracts/src/validation.ts';
@@ -86,9 +87,11 @@ function errorsTable(errors: readonly ProtocolError[]): Html {
 }
 
 /** Current rule status is a view qualifier, never a replacement for the immutable receipt. */
-export function ruleWithdrawalNotice(detail:Pick<RunDetail,Extract<ValidityStatus,'rule_withdrawn'|'grounds_withdrawn'>> & Pick<RunDetail,'grounds_withdrawn_hidden_count'>):Html{
+export function ruleWithdrawalNotice(detail:Pick<RunDetail,Extract<ValidityStatus,'rule_withdrawn'|'grounds_withdrawn'|'grounds_purged'>> & Pick<RunDetail,'grounds_withdrawn_hidden_count'>):Html{
+  // Owner ruling 3 (issue 141): name the unavailable grounds and the registered reason.
+  const purged=detail.grounds_purged?.length?html`<p class="notice" data-grounds-purged><strong>${uiLabelOf('validity_status','grounds_purged')}</strong>；${PROTOCOL_CODES.GROUNDS_PURGED.when}（${detail.grounds_purged.length} 项来源）。${PROTOCOL_CODES.GROUNDS_PURGED.fix}。</p>${detail.grounds_purged.map(row=>technical(code(row.reference),'查看不可用的引用'))}`:html``;
   const grounds=detail.grounds_withdrawn?.length||detail.grounds_withdrawn_hidden_count?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；来源当前已撤回，原有回执保留。${detail.grounds_withdrawn_hidden_count?`另有 ${detail.grounds_withdrawn_hidden_count} 项来源不可读取。`:''}</p>`:html``;
-  return html`${grounds}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
+  return html`${grounds}${purged}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
 }
 
 export function claimBlock(claim: Claim): Html {
