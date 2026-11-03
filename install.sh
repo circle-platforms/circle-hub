@@ -2,7 +2,7 @@
 # One-click installer of circle-hub (owner decision 76): macOS and Linux only.
 #
 #   curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash -s -- --https-host 192.168.1.20
+#   curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash -s -- --https-host 192.0.2.20
 #
 # It downloads the release bundle for this machine (Node 24, the Hub with its dependencies and PostgreSQL), checks it
 # against the SHA-256 list of the GitHub release, and sets the Hub up with its own commands: init (HTTP on loopback, HTTPS

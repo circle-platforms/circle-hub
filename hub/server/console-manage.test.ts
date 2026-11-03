@@ -213,7 +213,11 @@ test('the first administrator is created with the setup code; the token shown on
   assert.match(change.body, /首次登录必须修改密码/);
   const changed = await send('POST', '/console/password', { cookie: forced, body: form({ csrf: csrfOf(change.body), current: initial, password: ADMIN_PASSWORD, confirm: ADMIN_PASSWORD, next: '/console/overview' }) });
   assert.equal(changed.status, 200, changed.body);
-  assert.match(changed.body, /请用新密码重新登录/);
+  assert.match(changed.body, /密码已修改；该账户其他的控制台会话已失效/);
+  const continued = cookieValue(changed, 'circle_hub_session');
+  assert.ok(continued !== '' && continued !== cookieValue(first, 'circle_hub_session'), 'the change continues in a fresh session');
+  assert.equal((await send('GET', '/console/password', { cookie: `circle_hub_session=${continued}` })).status, 200, 'no second sign-in after the change');
+  assert.equal((await send('GET', '/console/password', { cookie: forced })).status, 303, 'the session of the initial password ends');
   assert.equal((await signIn({ username: 'root', password: initial })).status, 401, 'the initial password is spent');
   const signedIn = await signIn({ username: 'root', password: ADMIN_PASSWORD });
   assert.equal(signedIn.location, '/console/overview');

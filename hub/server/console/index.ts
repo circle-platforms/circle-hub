@@ -208,6 +208,7 @@ async function passwordPage(request: IncomingMessage, response: ServerResponse, 
   const show = (status: number, message = '') => sendHtml(response,status,page(anonymous('修改密码'),html`
 <p>${principal.name}</p>${mustChange ? html`<p class="notice">首次登录必须修改密码。</p>` : ''}${message ? html`<p class="error">${message}</p>` : ''}
 <form method="post" action="/console/password"><input type="hidden" name="csrf" value="${session.csrf}"><input type="hidden" name="next" value="${safeNext(url.searchParams.get('next'))}">
+<input type="text" name="username" value="${principal.name}" autocomplete="username" hidden readonly>
 <div class="ch-field"><label class="ch-field-label" for="current-password">当前密码</label><div class="ch-input"><input id="current-password" type="password" name="current" autocomplete="current-password" maxlength="256" required></div></div>
 <div class="ch-field"><label class="ch-field-label" for="new-password" title="12 至 256 个字符，不含控制字符">新密码</label><div class="ch-input"><input id="new-password" type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></div></div>
 <div class="ch-field"><label class="ch-field-label" for="confirm-password">再次输入新密码</label><div class="ch-input"><input id="confirm-password" type="password" name="confirm" autocomplete="new-password" maxlength="256" required></div></div><button type="submit" class="ch-btn ch-btn--primary">修改密码</button></form>`));
@@ -221,10 +222,20 @@ async function passwordPage(request: IncomingMessage, response: ServerResponse, 
   try {
     const password=form.get('password') ?? '';
     if (!validPassword(password) || password !== form.get('confirm')) return show(400,'新密码须为 12 至 256 个字符，不含控制字符，且两次输入一致');
-    if (!await options.deps.records.principals.changePassword(principal,form.get('current') ?? '',password)) return show(400,'当前密码无效，或新密码与当前密码相同');
+    const principals=options.deps.records.principals;
+    if (!await principals.changePassword(principal,form.get('current') ?? '',password)) return show(400,'当前密码无效，或新密码与当前密码相同');
     options.sessions.clearLoginAttempts(key);
     options.sessions.close(session.id);
-    sendHtml(response,200,page(anonymous('密码已修改'),html`<p>请用新密码重新登录。</p><p>${link('/console/login','登录',{next:safeNext(form.get('next'))})}</p>`),{'set-cookie':cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE,'','/console',0,secure)});
+    // The change revoked every console session of the account. Whoever just proved both passwords continues in a fresh
+    // session bound to the new revision, so no second sign-in follows the change (owner report, 2026-11-02); a reset
+    // that lands in between leaves only the sign-in.
+    const next=safeNext(form.get('next')), state=await principals.passwordState(principal.id);
+    const token=state.mustChange ? null : (await principals.openConsoleSession(principal.id,state.revision))?.token ?? null;
+    if (token !== null) {
+      const fresh=options.sessions.open(token,secure);
+      return sendHtml(response,200,page(anonymous('密码已修改'),html`<p>密码已修改；该账户其他的控制台会话已失效。</p><p>${link(next,'继续')}</p>`),{'set-cookie':cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE,fresh.id,'/console',undefined,secure)});
+    }
+    sendHtml(response,200,page(anonymous('密码已修改'),html`<p>请用新密码重新登录。</p><p>${link('/console/login','登录',{next})}</p>`),{'set-cookie':cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE,'','/console',0,secure)});
   } catch(error) {
     if (error instanceof LimitError) return show(429,'密码校验繁忙，请稍后重试');
     if (error instanceof TypeError) return show(400,'密码格式不正确');

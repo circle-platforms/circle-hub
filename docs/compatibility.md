@@ -4,14 +4,14 @@
 
 三个仓库各自版本化：circle（agent）、circle-hub（MCP 服务器）、circle-packs（包）。谁依赖谁、以什么为准，都写在这里；改动任何一行都是一次有意识的升级，不是顺手为之。
 
-## 现状（2026-10-21）
+## 现状（2026-11-02）
 
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
-| circle-hub | hub-redesign 分支，第一个里程碑建设中；上一个发行 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md) | 重建中，还没有可部署的版本；发行元数据不代表生产可用 |
-| 合约 | 通用模型第 5 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
-| MCP | `@modelcontextprotocol/sdk` 1.32.1 | 根 `package.json` | 六个工具，streamable HTTP，Bearer 令牌；服务器已在本机持久部署 |
-| Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | 已在 Circle 的本地分支 `hub-mcp-client` 上做完（28 个提交，最后一个 67a0d6bc，2026-10-22，没有推送）：D06 R[1] 的六项通用 MCP 客户端改进和删去旧 hub 扩展；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md#authorizations-and-limits)，授权记在 [Hub r4 进度](hub-r4-progress.md#决定)第 8 条。已发行的 Circle 里的 hub 扩展调用已退役的 `/v1` 客户端接口，连不上重建后的 Hub |
+| circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；带安装包的发行从 0.3.0 起，还没有发布，上一个发行 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md) | 所有者的持久部署目前从私有集成分支部署；按所有者 2026-11-02 的决定，两条线合成一条，此后部署从 main 出 |
+| 合约 | 通用模型第 22 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
+| MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权或 Bearer 令牌 |
+| Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | Circle main 已合入六项通用 MCP 客户端改进并删去内置 Hub（circle#309，2026-10-26）和按 MCP 标准授权在浏览器登录（circle#396，2026-11-02）；Circle 里不出现 Hub 专用的界面或标签（D06 R[1]）；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | circle-packs | 见其 CHANGELOG | circle-packs 仓库 | 存放已退役服务器用的包（`modules.json`、`product-line/1`、`hub-*/1`），重建后的 Hub 不读取它们；第一个里程碑不改这个仓库 |
 
