@@ -257,7 +257,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.deepEqual((dataB?.blind ?? []).map((b) => [b.address, b.subnet]), [['192.0.2.194', '192.0.2.192/26']], 'afamx1 has a blind address on the segment without a trigger');
   });
 
-  test('a manifest with a duplicate address refuses the whole call with the pointer, and an unassigned user gets SOURCE_UNAVAILABLE', async () => {
+  test('a manifest with a duplicate address refuses the whole call with the pointer, and an unassigned user gets SOURCE_NOT_PERMITTED', async () => {
     const dup = await client.call('start_run', {
       pack: 'test-bed',
       inputs: { inventory: { external: 'doc:doc:bed-topology-dup' } },
@@ -275,7 +275,8 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
       parameters: { action: 'search' },
     });
     assert.equal(neutral.isError, true);
-    assert.equal((neutral.out as { errors?: Array<{ code: string }> }).errors?.[0]?.code, 'SOURCE_UNAVAILABLE');
+    // A team pack that exists and is not assigned is answered as not permitted (D05 R[3], model 37).
+    assert.equal((neutral.out as { errors?: Array<{ code: string }> }).errors?.[0]?.code, 'SOURCE_NOT_PERMITTED');
   });
   test('A registers, B books, C sees no holder identity, and owner release fences the former lineage',async()=>{
     const {adminCommands}=await import('../../hub/server/cli-admin.ts');

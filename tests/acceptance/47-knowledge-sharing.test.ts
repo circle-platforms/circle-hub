@@ -79,7 +79,8 @@ test('personal workflow runs freeze the namespace and require grounds readable b
   const cachedRefusal=await client.call('submit_result',submission);assert.equal(cachedRefusal.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE');assert.equal(cachedRefusal.out.result,undefined);
   assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,true,'revoking the input grant also blocks the immutable record endpoint');
   const rawDenied=await reader.call('get_nodes',{reference:acceptedRaw}),rawMissing=await reader.call('get_nodes',{reference:'rec:'+'e'.repeat(64)});
-  assert.equal(rawDenied.isError,true,rawDenied.text);assert.deepEqual(rawDenied.out.errors,rawMissing.out.errors);
+  // Content of a personal run is neutral to others, an unknown digest is absent (D05 R[3], model 37).
+  assert.equal(rawDenied.isError,true,rawDenied.text);assert.equal(rawDenied.out.errors?.[0]?.code,'SOURCE_UNAVAILABLE');assert.equal(rawMissing.out.errors?.[0]?.code,'SOURCE_ABSENT');
   const rawRebound=await reader.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:acceptedRaw}}});
   assert.equal(rawRebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rawRebound.text);assert.equal(rawRebound.out.run,undefined,'the accepted raw submission cannot copy withdrawn private ground access into a new source');
   assert.equal((await client.call('get_nodes',{reference:acceptedRaw})).isError,false,'its submitter retains the received raw record');
@@ -243,7 +244,7 @@ test('rejected raw submissions never disclose copied private quotations through 
   const own=await client.call('get_nodes',{reference:raw});assert.equal(own.isError,false,own.text);assert.ok(own.text.includes(privateQuote),'the received raw submission is preserved for its submitter');
   for(const actor of [reader,admin]){
     const denied=await actor.call('get_nodes',{reference:raw}),missing=await actor.call('get_nodes',{reference:'rec:'+'e'.repeat(64)});
-    assert.equal(denied.isError,true,denied.text);assert.deepEqual(denied.out.errors,missing.out.errors);assert.ok(!denied.text.includes(privateQuote));
+    assert.equal(denied.isError,true,denied.text);assert.equal(denied.out.errors?.[0]?.code,'SOURCE_UNAVAILABLE');assert.equal(missing.out.errors?.[0]?.code,'SOURCE_ABSENT');assert.ok(!denied.text.includes(privateQuote));
     const rebound=await actor.call('start_run',{pack:packId,inputs:{target:{reference:raw}}});assert.equal(rebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rebound.text);assert.equal(rebound.out.run,undefined);assert.ok(!rebound.text.includes(privateQuote));
   }
 });
