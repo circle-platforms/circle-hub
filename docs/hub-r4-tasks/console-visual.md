@@ -1273,3 +1273,48 @@ Claude 批准集成 `858ef17f` 后，追加修正记忆列表/详情的 N+1，�
 CI 核查：截至 2026-11-03 03:00 UTC，[#138 的 Hub checks](https://github.com/circle-platforms/circle-hub/actions/runs/41568729396) 的 types、contracts、docs、references 已通过，测试分片仍运行，未见失败；pages 已通过。此状态不是 CI 全绿结论。
 
 分析复核：三个现有 profile 的请求窗口重算完成；`node --test ".github/checks/*.test.ts"` 314 通过、0 失败、0 跳过，`git diff --check` 通过。此次仅本地提交本任务页，未 push。
+
+
+### 总览后续 A：请求内冻结与一次快照
+
+Claude 已授权后续 A。`console-perf-2-local` 从含分析的 `7960b993` 开出，`console-perf-local` 已回到 `origin/console-perf` 的 `28ac2931`，不重启 #138 的 CI。本轮不 push，不修改契约/迁移或任何授权、撤回、未知、游标与同步清空语义。
+
+缓存 JSON 结果在首次交付前原地深冻结，之后共享同一值；需要编辑的调用者自行复制。Map/Set 一次形成私有只读视图并冻结原外壳与内容，防止借用原型或 forEach 暴露可变内部槽；不再逐调用者复制。原文字节不放入此 memo，只缓存精确来源/权限选择，每次按原对象边界获得本地字节。参数按原限制一次校验/快照/编码，原始值不复制；同一快照同时用于键与执行。只读派生复用该路径。记录按完整原始信封只在请求内校验一次；原始字段变化、事务、写入失效和新请求都不能借用旧证明。
+
+实现先在临时副本准备。原文稿目录被 Codex 后台服务的系统文件权限阻塞后，Claude 提供文稿外的独立克隆 `circle-hub-perf2`；本轮此后只在该克隆的 `console-perf-2-local` 工作，不访问名为 source 的原仓库远端，不 fetch/push。依赖已由 Claude 实际复制，无安装。访问中断的基线及依赖断链时未启动的尝试均作废，不能计入耗时；独立冻结/参数 smoke 已通过。正式基线改在可读克隆的干净导出上重跑，再运行指定全套检查、记录需本地复制的调用者并同法测量。未完成的检查不计通过。
+
+#### A 的隔离回归与调用者
+
+- 新增首个调用者之前即深冻结、所有调用者共享相同对象、局部复制可编辑、Map/Set 原型与 forEach 绕过失败，以及冻结参数仍拒绝共享/循环图的回归。原参数突变、future FindQuery 字段、读者/端口隔离、损坏批次隔离、事务、写入与逃逸作用域回归保留。
+- 完整原始信封的真实 SHA 回归固定：同请求同字节只摘要一次；伪造相同 digest 的不同原文仍拒绝；事务绕过、写入清空和新请求重新验证。另固定旧 getMany 在写入后完成时不能给新的单条缓存播入旧记录。
+- 定向检查发现原生集合的二次冻结边界：生产者在新请求再次返回同一个 Map/Set，外壳已有内部只读保护方法。新增回归先失败再修正，只识别固定、已冻结、永远抛错的内部保护函数；普通函数参数仍不 memo。新请求重新调用生产者并形成新视图，生产者后来修改的原生槽不会改变旧视图。
+- 需要调整的可变调用者均为测试夹具：`engine/dispatch-results.test.ts` 先复制 getRun 记录再构造不同重复策略；`console-manage.test.ts` 的内存账号存根返回独立列表，避免冻结它仍要追加账号的内部存储。没有为产品调用者增加复制。`read-scope.test.ts` 与 `query-scope.test.ts` 的原突变断言改为要求 TypeError，并继续核对后续读取未被污染；原语义断言没有删除。
+- 初次引擎/工作流 2994 项中上述夹具导致 1 失败，复制后完整复跑 2994 通过；初次 records/knowledge 800 通过，控制台及验收 301 项中账号存根导致 2 失败。三项失败均保留并修正，未跳过。两处夹具及集合重入修正的定向 44 项全部通过；最终统一全套结果以下方完成记录为准。
+
+#### A 的同法对照方法
+
+基线是可读克隆内的干净 `7960b993` 导出（产品代码为 #138 的 `28ac2931`），后版使用本轮已冻结并提交的产品代码。两边各自独立临时 loopback Hub/PostgreSQL，仅合成夹具；没有访问 source 远端、真实环境、真实数据或安装依赖。沿用上文 CPU 增强脚本，仅选择 `/console/overview`、`/console/runs`、`/console/knowledge` 三页并去掉成员增长探针；两边脚本 SHA-256 都为 `cd875f7af13abcb35fafa7aa5694bf9e3e0592328f94f414e86b763202c28823`。
+
+复跑步骤：分别导出两个冻结提交、复用已有依赖，把同一测量脚本放在导出根目录，以 `node --cpu-prof --cpu-prof-dir=../profiles measure.ts` 启动。按同一时钟、5 成员、12 工作流、3 系统、每成员 5 记忆依次追加至 500/2000 条知识、125/500 上传原文及 50/200 运行，保留全部配套记录。每个 URL 两次预热后串行 20 次，共每版 120 个统计样本；最近秩 p50/p95，所有样本保留。两版测试进程均先退出，再分别测量；不并行运行本轮检查与测量。
+
+墙钟、process.cpuUsage user+system、物理 pg.Client SQL 均取服务器 request → response.end 窗口，含认证。资源在计时窗口外统计，HTML/CSS/JS 为未压缩 UTF-8 字节；CSS/JS 含内联及外置资源，不能直接与 HTML 相加。每次响应要求 200 且无错误页文案；资源摘要/SRI/immutable 缓存、测量前后 GET 记录水位、后台 SQL 归属守卫沿用原脚本。CPU 不含 PostgreSQL 子进程，V8 profile 全程同样开启；负载范围与原始样本保留，墙钟不被当作同负载因果承诺。
+
+#### A 的最终检查
+
+最终统一运行 **4096 通过，0 失败、0 跳过、0 取消**，耗时 1089.6 s；运行前后所有改动 TypeScript 文件的 SHA-256 完全一致。范围为完整 records/knowledge **801**、engine/workflow/运行包及调度 **2994**、控制台与指定/受影响验收 **301**。其中验收覆盖 12、13、19、27、30、36、45、46–49 和 T7-4；部分可见读者分页、隐藏最新结果不回退、摘要对照、精确 capture、同步清空/epoch/local-mode 均通过。命令如下（同一进程，文件由 Node 去重）：
+
+```sh
+node --test --test-concurrency=3 \
+  "packs/workflow/**/*.test.ts" "hub/runs/engine/**/*.test.ts" "hub/runs/packs/**/*.test.ts" hub/dispatch/review-first.test.ts \
+  "hub/records/**/*.test.ts" "hub/knowledge/**/*.test.ts" \
+  "hub/server/console*.test.ts" "hub/server/console/**/*.test.ts" \
+  hub/server/units.test.ts hub/server/standard-authorization.test.ts hub/server/personal-sync.test.ts \
+  tests/acceptance/12-console-security.test.ts tests/acceptance/13-idempotence.test.ts tests/acceptance/19-concurrency.test.ts \
+  tests/acceptance/27-check-reads-bound-sources.test.ts tests/acceptance/30-shared-results.test.ts \
+  tests/acceptance/36-source-unreachable-exit.test.ts tests/acceptance/45-r5-capture-boundary.test.ts \
+  tests/acceptance/46-knowledge-spaces.test.ts tests/acceptance/47-knowledge-sharing.test.ts \
+  tests/acceptance/48-knowledge-console-memory.test.ts tests/acceptance/49-personal-sync.test.ts \
+  tests/acceptance/T7-4-withdrawal-read-lifecycle.test.ts
+```
+
+`node node_modules/typescript/bin/tsc --noEmit`、`node tools/gen-contracts.ts --check`、`node tools/gen-console-style.ts --check` 与 `git diff --check` 通过；新增文件纳入索引后再次运行 `node --test ".github/checks/*.test.ts"`，**314 通过，0 失败、0 跳过**。本轮共 4410 项最终全套/文档通过，定向与初跑不重复计入。没有产品调用者需要新增局部复制；两处测试夹具的复制已在上文列明。

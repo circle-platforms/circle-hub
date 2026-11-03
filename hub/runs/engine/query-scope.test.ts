@@ -8,7 +8,7 @@ test('query derivation shares complete input identities only within one read req
  const ctx=context(),other=context();let calls=0;const load=async()=>({value:++calls});
  await withReadScope(async()=>{
   await withQueryReads(ctx,async current=>{
-   const first=await queryRead(current,['proof',{reader:'a',body:{capture:1}}],load);first.value=999;
+   const first=await queryRead(current,['proof',{reader:'a',body:{capture:1}}],load);assert.throws(()=>{first.value=999;},TypeError);
    assert.deepEqual(await queryRead(current,['proof',{reader:'a',body:{capture:1}}],load),{value:1});
    assert.deepEqual(await queryRead(current,['proof',{reader:'b',body:{capture:1}}],load),{value:2});
    assert.deepEqual(await queryRead(current,['proof',{reader:'a',body:{capture:2}}],load),{value:3});
