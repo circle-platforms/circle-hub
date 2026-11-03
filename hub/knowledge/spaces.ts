@@ -506,15 +506,17 @@ export class KnowledgeSpaces {
       for(const row of current?.body.entries??[])if(!states.has(row.entry))states.set(row.entry,row.status);
       const selected=wanted.map(w=>paths.some(path=>withinSpacePath(w.path,path))?rows.get(canonicalize([w.path,w.entry])):undefined);
       await this.#ctx.records.store.getMany(selected.flatMap(row=>row?[row.record]:[]));
-      return Promise.all(selected.map(async row=>{
+      const results=await Promise.all(selected.map(async row=>{
         if(!row)return null;
         const body=await this.#entry(row);if(!body||body.space!==version.body.space||body.sync_private&&by.id!==body.space)return null;
         let state=states.get(row.entry)??row.status;
         if(body.space==='team'&&state===KnowledgeEntryStatusSchema.enum.verified&&await this.#clearedGrounds(body.grounds.map(g=>g.reference),version))state=KnowledgeEntryStatusSchema.enum.unverified;
         const result={row:{...row,status:state},body,root,reference:refOf(root,row.path,row.entry),
           ...await this.withdrawalState(body.grounds.map(g=>g.reference),by),cited_count:version.body.space==='team'||by.id===version.body.space?await this.#citations(version.body.space,row.entry):null};
-        return await this.mayRead(by,version.body.space,row.path)?result:null;
+        return result;
       }));
+      const readable=await this.paths(by,version.body.space);
+      return results.map(view=>view&&readable.some(path=>withinSpacePath(view.row.path,path))?view:null);
     });
   }
   /** Page the authorized timestamp candidates before loading entry bodies; equal times keep snapshot iteration order. */

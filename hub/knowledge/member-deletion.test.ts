@@ -4,6 +4,7 @@ import {before,after,test} from 'node:test';
 import {randomUUID} from 'node:crypto';
 import {makeWorld,startPostgres} from './test-support.ts';
 import {Database,createPool} from '../records/db.ts';
+import {withReadScope} from '../records/api.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 for(const permanent of [false,true])test(`team declarations survive exact private payload removal without retaining paths: ${permanent}`,async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,text=Buffer.from('合成成员删除署名原文，精确保留。'),file=await spaces.importFile(w.user,text,'text/plain','合成私人文件.txt','/合成私人路径');
@@ -51,4 +52,16 @@ test('deleted identities cannot be new knowledge or memory grant targets and fre
  const preview=await w.kit.memberDeletions!.preview(w.admin,old.id),intent=await w.kit.memberDeletions!.prepare(w.admin,{...preview,operation_id:randomUUID()});await w.kit.memberDeletions!.finish(w.admin,old.id,intent.operation_id);
  await assert.rejects(spaces.grant(w.user,{path:'/',audience:'member',member:old.id}),{code:'SOURCE_UNAVAILABLE'});await assert.rejects(memory.grant(w.user,{path:'/',audience:'member',member:old.id}),{code:'SOURCE_UNAVAILABLE'});await spaces.grant(w.user,{path:'/',audience:'member',member:old.id,revoke:true});await memory.grant(w.user,{path:'/',audience:'member',member:old.id,revoke:true});
  const fresh=await w.kit.principals.createUser(w.admin,old.name);assert.notEqual(fresh.id,old.id);assert.equal(await spaces.entry(fresh,entry.root,'/',entry.entry),null);assert.equal((await memory.items(fresh,'shared')).length,0);
+});
+
+
+test('batched knowledge and memory reads drop a deleted grant owner within the same request',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,memory=w.knowledge.memory!;
+ const entry=await spaces.write(w.user,{kind:'observation',statement:'合成请求内删除知识'});await spaces.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});
+ await memory.write(w.user,{client_key:'synthetic-read-scope-memory',expected_version:null,title:'合成请求内记忆',markdown:'合成私人偏好'});await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});
+ await withReadScope(async()=>{
+  assert.ok((await spaces.entries(w.outsider,entry.root,[{path:'/',entry:entry.entry}]))[0]);assert.ok((await spaces.recent(w.outsider,'shared')).items.length);assert.equal((await memory.items(w.outsider,'shared')).length,1);
+  const api=w.kit.memberDeletions!,preview=await api.preview(w.admin,w.user.id),intent=await api.prepare(w.admin,{...preview,operation_id:randomUUID()});await api.finish(w.admin,w.user.id,intent.operation_id);
+  assert.deepEqual(await spaces.entries(w.outsider,entry.root,[{path:'/',entry:entry.entry}]),[null]);assert.deepEqual((await spaces.recent(w.outsider,'shared')).items,[]);assert.deepEqual(await memory.items(w.outsider,'shared'),[]);
+ });
 });

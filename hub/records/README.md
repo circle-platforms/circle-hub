@@ -899,11 +899,14 @@ method; key construction does not invoke getters or toJSON. Proxies are scoped b
 a port data argument. The engine's full input snapshots remain unchanged. This keeps the round-2 derivation cache without
 making an exception for functions passed as method arguments.
 
-Invalidation is guaranteed only for intercepted scopedRecordStore put/addIndex/withTransaction operations. Raw service
-handles (artifacts, principals, knowledge stores included) are not universally hooked; some writers happen to pass through
-an intercepted store, but callers must not assume that. Finish the outer read scope before a raw service write, then start
-a fresh read scope afterward. A nested withReadScope reuses its active outer scope and is not an invalidation barrier.
-POST actions stay outside the read scope; no cross-request authorization cache is introduced.
+Intercepted scopedRecordStore put/addIndex/withTransaction operations clear the current scope's memos. Account role or
+activation changes, member deletion prepare/finish, personal purge and sync-mode changes additionally retire a shared
+request generation. Retained adapters bypass the retired memo; outstanding reads reload their original frozen arguments
+before returning, and nested scopes share the retirement generation. A later nested scope cannot retain a pre-deletion
+proof when an older parent performs deletion. Failed destructive operations conservatively retire the generation too.
+Other raw service writers are not universally hooked: finish the outer scope before those writes, then start a fresh
+scope. A nested withReadScope normally reuses its active parent and is not a general invalidation barrier. Console POST
+actions remain outside the GET scope; no cross-request authorization cache is introduced.
 
 ### Batched reads over personal payloads
 
@@ -914,10 +917,12 @@ visibility before paging; selected bodies still pass integrity and service autho
 
 Object get() coalesces only simultaneously queued I/O, detaches the queue before any await and retains no completed
 bytes or authorization result across calls. Files keep priority. Missing files use one SQL batch with the former
-fallback precedence: independent run bytes, then an active personal owner/epoch payload, then cleared-versus-missing
+fallback precedence: independent run bytes, then independently held bytes, then an active personal owner/epoch payload,
+then cleared-versus-missing
 registration handling. Every returned byte stream is hashed; a bad sibling falls back to isolated reads and cannot
 hide healthy bytes. Returned arrays are detached per caller. This trusted byte port grants no access: callers still
-use exact source/capture and read-tier guards. New reads recheck purge; no cross-request authorization cache is added.
+use exact source/capture and read-tier guards. Explicit transaction reads bypass coalescing and use the caller transaction,
+including its uncommitted private objects. New reads recheck purge; no cross-request authorization cache is added.
 
 Memoized method arguments are copied synchronously at admission, after plain-JSON eligibility/key validation and
 before the deferred method or batch can run. Find/count batches and scalar fallbacks consume that same snapshot;
@@ -1052,3 +1057,9 @@ is sealed. Published team and exact frozen-run caches still follow the existing 
 Staging admission also bounds waiting work: at most two queued jobs per member and eight in the records kit, in addition
 to its two running jobs (one per member). Overflow rejects immediately with the existing `LimitError`, no protocol code,
 and a bounded busy message. Refusal owns no connection or queue entry; completing/failing work releases its slot.
+
+Exact historical capacity recomputation groups admission deltas by record identity, hydrates at most 512 entry/source
+bodies per batch, and batches their exact capture metadata separately. Deduplicating I/O does not deduplicate charges:
+removal and re-addition still counts each admitted delta. Root metadata, memory history and integrity refusals retain
+their original rules; stored cumulative counters remain untrusted. This keeps sync-state and console capacity reads
+from issuing one query per historical version, without holding every historical entry body in one new live batch.

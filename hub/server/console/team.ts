@@ -22,13 +22,13 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  const circleId=ctx.url.searchParams.get('circle'),workflow=ctx.url.searchParams.get('workflow');
  const members:unknown[][]=[],circles:unknown[][]=[],devices:Array<{id:string;name:string;owner:string;token:Awaited<ReturnType<typeof principals.tokens>>[number]}>=[];
  const [assignedByUser,tokensByUser]=await Promise.all([assignmentsForMembers(authorizations,users.map(user=>user.id)),tokensForMembers(principals,users.map(user=>user.id))]);
- const names=await circleNames(principals,users.filter(user=>!user.disabled).flatMap(user=>(tokensByUser.get(user.id)??[]).filter(token=>token.revoked_at===null)));
+ const names=await circleNames(principals,users.filter(user=>!user.disabled&&!user.deleted_at).flatMap(user=>(tokensByUser.get(user.id)??[]).filter(token=>token.revoked_at===null)));
  for(const user of users){
   const assigned=assignedByUser.get(user.id)??[];
-  const name=await ctx.userName(user.id);
+  const name=user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name;
   members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),user.deleted_at?'—':user.role==='admin'?'全部工作流':assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读').join('、')||'—']);
   for(const token of tokensByUser.get(user.id)??[]){
-   if(token.revoked_at!==null||user.disabled)continue;
+   if(token.revoked_at!==null||user.disabled||user.deleted_at)continue;
    const name=names.get(token.id)!,url=href('/console/team',{circle:token.id});
    devices.push({id:token.id,name,owner:user.name,token});
    circles.push([link(url,name),user.name,when(token.last_used_at)]);

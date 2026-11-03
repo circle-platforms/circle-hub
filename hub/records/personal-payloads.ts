@@ -1,3 +1,4 @@
+import {retireReadScope} from './read-scope.ts';
 import {randomUUID} from 'node:crypto';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {SyncModeSchema,type SyncMode} from '../../contracts/generated/vocabulary.ts';
@@ -119,6 +120,6 @@ export class PgPersonalPayloads {
    await this.lock('knowledge-space:'+by.id,tx);
    await this.beforePurge?.(by.id,by,tx);
    await this.db.query('SELECT hub_purge_personal($1,$2)',[by.id,epoch],tx);
-  },outer);
+  },outer).finally(retireReadScope);
  }
 }

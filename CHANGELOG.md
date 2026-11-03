@@ -4,6 +4,9 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Retire request-local read proofs after member deletion, deactivation and personal purge while preserving console batching and transaction-bound objects.
+- Batch exact historical capacity reads without trusting cumulative counters or retaining every entry body at once.
+
 - Bound waiting private publication requests and return busy feedback after releasing rejected uploads.
 
 - Remove orphaned personal and team pack staging on service startup while preserving live publishers.

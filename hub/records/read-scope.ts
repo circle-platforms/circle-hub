@@ -1,15 +1,21 @@
 // A read operation owns its caches. Nothing survives its asynchronous boundary or participates in a write transaction.
-// Invalidation sees writes through scopedRecordStore only. Raw artifacts/principals/knowledge writers are not universally hooked:
-// finish the outer read scope before using them to write, then start a new scope for subsequent reads.
+// Ordinary scoped writes clear caches; destructive account/payload writes retire the request generation, including nested scopes.
+// Other raw service writers still require callers to finish their outer scope before writing.
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {types} from 'node:util';
 import type {RecordStore,FindQuery,Page,StoredRecord,IndexEntry} from './api.ts';
 interface Variant {methods:Set<PropertyKey>;proxy:object}
-interface Scope {active:boolean;ports:WeakMap<object,Variant[]>;stores:WeakMap<object,RecordStore>;values:WeakMap<object,Map<string,Promise<unknown>>>;clearers:Set<()=>void>}
+interface Scope {active:boolean;generation:number;version:{current:number};ports:WeakMap<object,Variant[]>;stores:WeakMap<object,RecordStore>;values:WeakMap<object,Map<string,Promise<unknown>>>;clearers:Set<()=>void>}
 const scopes=new AsyncLocalStorage<Scope>();
+const current=(scope:Scope)=>scope.active&&scope.generation===scope.version.current;
+const retired=(scope:Scope)=>scope.generation!==scope.version.current;
+/** After a destructive account write, retained adapters and outstanding memoized results must reload current state. */
+export function retireReadScope():void{const scope=scopes.getStore();if(!scope)return;scope.version.current++;for(const clear of scope.clearers)clear();}
+
 export function withReadScope<T>(read:()=>T):T{
- if(scopes.getStore()?.active)return read();
- const scope:Scope={active:true,ports:new WeakMap(),stores:new WeakMap(),values:new WeakMap(),clearers:new Set()};
+ const parent=scopes.getStore();if(parent&&current(parent))return read();
+ const version=parent?.version??{current:0};
+ const scope:Scope={active:true,generation:version.current,version,ports:new WeakMap(),stores:new WeakMap(),values:new WeakMap(),clearers:new Set()};
  const close=()=>{scope.active=false;for(const clear of scope.clearers)clear();};
  return scopes.run(scope,()=>{try{const result=read();if(result&&typeof (result as {then?:unknown}).then==='function')return Promise.resolve(result).finally(close) as T;close();return result;}catch(error){close();throw error;}});
 }
@@ -48,26 +54,26 @@ function findInput(query:FindQuery):{id:string;query:FindQuery}|null{
 }
 /** Loader is control flow, not a memo argument. Only its explicit data key is memoized, within the caller's owner/scope. */
 export async function memoReadValue<T>(owner:object,key:readonly unknown[],load:()=>Promise<T>):Promise<T>{
- const scope=scopes.getStore(),id=memoKey(key);if(!scope?.active||id===null)return load();
+ const scope=scopes.getStore(),id=memoKey(key);if(!scope||!current(scope)||id===null)return load();
  let memo=scope.values.get(owner);if(!memo){memo=new Map();scope.values.set(owner,memo);const values=memo;scope.clearers.add(()=>values.clear());}
  let value=memo.get(id);if(!value){value=Promise.resolve().then(load);memo.set(id,value);const values=memo;value.catch(()=>{if(values.get(id)===value)values.delete(id);});}
- return value.then(result=>clone(result as T));
+ const result=await value;return retired(scope)?load():clone(result as T);
 }
 /** Only explicitly named, read-only methods may be memoized; callers keep every authorization predicate. */
 export function memoReadPort<T extends object>(port:T,methods:readonly (keyof T)[]):T{
- const scope=scopes.getStore();if(!scope?.active)return port;
+ const scope=scopes.getStore();if(!scope||!current(scope))return port;
  const allowed=new Set<PropertyKey>(methods.map(key=>typeof key==='symbol'?key:String(key))),variants=scope.ports.get(port)??[];
  const existing=variants.find(variant=>variant.methods.size===allowed.size&&[...allowed].every(key=>variant.methods.has(key)));if(existing)return existing.proxy as T;
  const memos=new Map<PropertyKey,Map<string,Promise<unknown>>>();scope.clearers.add(()=>{for(const memo of memos.values())memo.clear();});
  const proxy=new Proxy(port,{get(target,key){const method=Reflect.get(target,key,target);if(typeof method!=='function')return method;
   if(!allowed.has(key))return method.bind(target);
   let memo=memos.get(key);if(!memo){memo=new Map();memos.set(key,memo);}const values=memo;
-  return async(...args:unknown[])=>{if(!scope.active||scopes.getStore()!==scope)return method.apply(target,args);const id=memoKey(args);if(id===null)return method.apply(target,args);let value=values.get(id);if(!value){const snapshot=clone(args);value=Promise.resolve().then(()=>method.apply(target,snapshot));values.set(id,value);value.catch(()=>{if(values.get(id)===value)values.delete(id);});}return clone(await value);};
+  return async(...args:unknown[])=>{if(!current(scope)||scopes.getStore()!==scope)return method.apply(target,args);const id=memoKey(args);if(id===null)return method.apply(target,args);const snapshot=clone(args);let value=values.get(id);if(!value){value=Promise.resolve().then(()=>method.apply(target,snapshot));values.set(id,value);value.catch(()=>{if(values.get(id)===value)values.delete(id);});}const result=await value;return retired(scope)?method.apply(target,snapshot):clone(result);};
  }});variants.push({methods:allowed,proxy});scope.ports.set(port,variants);return proxy;
 }
 /** Verified records are batched once and copied for each caller, preserving the store's mutable-return isolation. */
 export function scopedRecordStore(store:RecordStore):RecordStore{
- const scope=scopes.getStore();if(!scope?.active)return store;
+ const scope=scopes.getStore();if(!scope||!current(scope))return store;
  const old=scope.stores.get(store);if(old)return old;
  type CountQuery={index:readonly IndexEntry[];kind?:import('./api.ts').RecordKind;since?:string;cap?:number};
  let counts=new Map<string,Promise<{count:number;capped:boolean}>>();
@@ -90,13 +96,14 @@ export function scopedRecordStore(store:RecordStore):RecordStore{
  });
  const clear=()=>{for(const invalidate of scope.clearers)invalidate();};
  const proxy=new Proxy(store,{get(target,key){
-  if(key==='get')return async(id:string,tx?:unknown)=>{if(tx||typeof id!=='string'||!scope.active||scopes.getStore()!==scope)return target.get(id,tx as never);let value=gets.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingGets.set(id,{resolve,reject});if(pendingGets.size===1)queueMicrotask(()=>{void flushGets();});});gets.set(id,value);value.catch(()=>{if(gets.get(id)===value)gets.delete(id);});}return clone(await value);};
-  if(key==='find')return async(query:FindQuery,tx?:unknown)=>{if(tx||!scope.active||scopes.getStore()!==scope)return target.find(query,tx as never);const input=findInput(query);if(input===null)return target.find(query,tx as never);const id=input.id;let value=finds.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingFinds.set(id,{query:input.query,resolve,reject});if(pendingFinds.size===1)queueMicrotask(()=>{void flushFinds();});});finds.set(id,value);value.catch(()=>{if(finds.get(id)===value)finds.delete(id);});}return clone(await value);};
-  if(key==='countIndexed'&&target.countIndexed)return async(query:CountQuery,tx?:unknown)=>{if(tx||!scope.active||scopes.getStore()!==scope)return target.countIndexed!(query,tx as never);const id=memoKey([query]);if(id===null)return target.countIndexed!(query,tx as never);let value=counts.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingCounts.set(id,{query:clone(query),resolve,reject});if(pendingCounts.size===1)queueMicrotask(()=>{void flushCounts();});});counts.set(id,value);value.catch(()=>{if(counts.get(id)===value)counts.delete(id);});}return clone(await value);};
+  if(key==='get')return async(id:string,tx?:unknown)=>{if(tx||typeof id!=='string'||!current(scope)||scopes.getStore()!==scope)return target.get(id,tx as never);let value=gets.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingGets.set(id,{resolve,reject});if(pendingGets.size===1)queueMicrotask(()=>{void flushGets();});});gets.set(id,value);value.catch(()=>{if(gets.get(id)===value)gets.delete(id);});}const result=await value;return retired(scope)?target.get(id):clone(result);};
+  if(key==='find')return async(query:FindQuery,tx?:unknown)=>{if(tx||!current(scope)||scopes.getStore()!==scope)return target.find(query,tx as never);const input=findInput(query);if(input===null)return target.find(query,tx as never);const id=input.id;let value=finds.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingFinds.set(id,{query:input.query,resolve,reject});if(pendingFinds.size===1)queueMicrotask(()=>{void flushFinds();});});finds.set(id,value);value.catch(()=>{if(finds.get(id)===value)finds.delete(id);});}const result=await value;return retired(scope)?target.find(input.query):clone(result);};
+  if(key==='countIndexed'&&target.countIndexed)return async(query:CountQuery,tx?:unknown)=>{if(tx||!current(scope)||scopes.getStore()!==scope)return target.countIndexed!(query,tx as never);const id=memoKey([query]);if(id===null)return target.countIndexed!(query,tx as never);const snapshot=clone(query);let value=counts.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingCounts.set(id,{query:snapshot,resolve,reject});if(pendingCounts.size===1)queueMicrotask(()=>{void flushCounts();});});counts.set(id,value);value.catch(()=>{if(counts.get(id)===value)counts.delete(id);});}const result=await value;return retired(scope)?target.countIndexed!(snapshot):clone(result);};
   const method=Reflect.get(target,key,target);if(typeof method!=='function')return method;
   if(['put','addIndex','withTransaction'].includes(String(key)))return(...args:unknown[])=>{clear();const result=method.apply(target,args);return Promise.resolve(result).finally(clear);};
   if(['getMany','findMany','findFirstMany','getByKey','getById','list','runCandidates','entryTimes','entryCandidates'].includes(String(key)))return async(...args:unknown[])=>{
-   if(args[1]||!scope.active||scopes.getStore()!==scope)return method.apply(target,args);const encoded=memoKey(args);if(encoded===null)return method.apply(target,args);const id=String(key)+encoded;let value=other.get(id);if(!value){const snapshot=clone(args);value=Promise.resolve().then(()=>method.apply(target,snapshot));other.set(id,value);value.catch(()=>{if(other.get(id)===value)other.delete(id);});}const result=await value;
+   if(args[1]||!current(scope)||scopes.getStore()!==scope)return method.apply(target,args);const encoded=memoKey(args);if(encoded===null)return method.apply(target,args);const id=String(key)+encoded,snapshot=clone(args);let value=other.get(id);if(!value){value=Promise.resolve().then(()=>method.apply(target,snapshot));other.set(id,value);value.catch(()=>{if(other.get(id)===value)other.delete(id);});}const result=await value;
+   if(retired(scope))return method.apply(target,snapshot);
    if(key==='getMany')for(const [digest,record]of result as Map<string,StoredRecord>)if(!gets.has(digest))gets.set(digest,Promise.resolve(record));
    return clone(result);
   };

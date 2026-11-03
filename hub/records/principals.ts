@@ -1,3 +1,4 @@
+import {retireReadScope} from './read-scope.ts';
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
 // once; only its SHA-256 is stored. Every change to a user is recorded as an append-only snapshot in user_history.
 // The MCP standard authorization (decision 78) adds the clients that registered themselves and the invitation codes an
@@ -197,7 +198,7 @@ export class PgPrincipals implements Principals {
       if (current.role === wanted) return current;
       if (current.role === ADMIN && !current.disabled) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: wanted, disabled: current.disabled }, by.id);
-    });
+    }).finally(retireReadScope);
   }
 
   async setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User> {
@@ -209,7 +210,7 @@ export class PgPrincipals implements Principals {
       if (current.disabled === disabled) return current;
       if (disabled && current.role === ADMIN) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: current.role, disabled }, by.id);
-    });
+    }).finally(retireReadScope);
   }
 
   async lockActive(by: Principal, tx: Transaction, owners: readonly string[] = []): Promise<Principal> {

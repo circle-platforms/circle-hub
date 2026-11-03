@@ -15,7 +15,6 @@ export async function knowledgeHome(ctx:PageContext,team:Html=html``):Promise<Ht
  const spaces=ctx.deps.knowledge.spaces!; const scope=selectedScope(ctx);
  const local=await personalLocal(ctx),selectedSync=syncSelected(ctx)&&(scope==='personal'||scope==='all');
  const syncPanel=scope==='personal'||scope==='all'?await personalSyncNotice(ctx):html``;
- const visible=await spaces.visible(ctx.principal,'all',undefined,{initialize:false});
  const rows:Array<{cells:unknown[];at:string}>=[];
  const recent=await spaces.recent(ctx.principal,scope,100);
  for(const entry of recent.items){

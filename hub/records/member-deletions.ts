@@ -1,3 +1,4 @@
+import {retireReadScope} from './read-scope.ts';
 import {retirePersonalCaches} from './personal-caches.ts';
 import {isAbsolute} from 'node:path';
 // Administrator coordination shares the native payload purger; progress contains digests and counts only.
@@ -74,7 +75,7 @@ export class PgMemberDeletions {
    const receipt=MemberDeletionBody.parse({operation_id:input.operation_id,member:input.member,epoch:input.epoch,purge_manifest:input.purge_manifest,counts:input.counts,by:by.id,at:this.now().toISOString()});
    try{await this.db.query('SELECT hub_begin_member_deletion($1,$2,$3,$4,$5,$6,$7,$8)',[by.id,input.member,input.epoch,input.operation_id,input.purge_manifest,JSON.stringify(input.counts),receipt.at,user.updated_at],tx);}catch(cause){throw new ConflictError('删除检查未通过；成员、清除范围或存储准备已变化',{cause});}
    return receipt;
-  });
+  }).finally(retireReadScope);
  }
  async intent(member:string,tx?:Transaction):Promise<Receipt|null>{
   const r=(await this.db.query('SELECT * FROM member_deletion_intents WHERE member=$1',[member],tx)).rows[0];return r?MemberDeletionBody.parse({operation_id:r.operation_id,member:r.member,by:r.by_user,epoch:r.epoch,at:iso(r.at),purge_manifest:r.purge_manifest,counts:r.counts}):null;
@@ -92,6 +93,6 @@ export class PgMemberDeletions {
    try{await this.db.query('SELECT hub_finish_member_deletion($1,$2)',[member,operation_id],tx);}catch(cause){throw new ConflictError('私人内容尚未完成清除，请修复存储后重试同一删除操作',{cause});}
    const record=await this.store.put({kind:'member_deletion',schema:'member-deletion@1',provenance:'observed',body:{...intent,by:by.id,at:this.now().toISOString()},unique_key:operation_id,index:[{key:'member.deletion.member',value:member}]},tx);
    return {record:record.digest,...MemberDeletionBody.parse(record.body)};
-  });
+  }).finally(retireReadScope);
  }
 }

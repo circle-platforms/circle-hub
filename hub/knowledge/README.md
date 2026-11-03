@@ -1328,8 +1328,9 @@ previews preserve that safe location information. Neither preview creates a docu
 Memory metadata lists and directory share preflight own a read scope, or join the enclosing console scope. Heads and
 usage are reused per space only within that scope; version and original-content reads coalesce through the verified
 record store, after each path's existing permission test. Principals and grant pages are request-scoped too. Transaction
-arguments bypass memoization and writes through the scoped store clear it, as for knowledge entries; raw writers must
-finish their outer read scope first (records README). No authorization result is cached across requests.
+arguments bypass memoization and writes through the scoped store clear it, as for knowledge entries. Account deactivation,
+deletion and personal purge retire the request generation, including retained memory adapters and outstanding reads.
+Other raw writers must finish their outer scope first (records README). No authorization result is cached across requests.
 Preflight collects per-head read results before scanning in original head order, preserving its first failure. A missing
 batch result falls back to the scalar record reader so an active missing payload still raises an integrity incident;
 a completed purge remains unavailable, and team copies are unaffected. Versions retain document/space and body-pointer
@@ -1484,3 +1485,7 @@ Saved observed originals preserve the exact original captured_at timestamp: savi
 observation. Deleted accounts cannot receive new folder or memory grants, while an owner can still revoke their historical
 grants. Username reuse never reattaches a fresh account to the old grant identity. The deletion scenario covers real
 console/MCP/sync invalidation alongside retained independent team originals, attribution and team memory.
+
+Batched entry hydration preserves exact source/capture metadata. A final batched path-permission check keeps the deletion
+guard without repeating the same authorization query for each entry. Deleted personal bodies remain unavailable while
+team and independently run-held originals retain their original access.

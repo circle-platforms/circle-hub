@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createTestHub } from '../testing-real.ts';
 import { openConsole } from '../../../tests/acceptance/support/console.ts';
 import { wordingProblems } from './testing-wording.ts';
+import {CONSOLE_THEME,CONSOLE_LIVE} from './assets.ts';
 const dir = await mkdtemp(join(tmpdir(), 'circle-hub-finish-block5-browser-')), profile = join(dir, 'profile');
 const hub = await createTestHub({ repositoryPacks: false, stubs: false, mindmapSkill: false, workbookSkill: false, xmlSkill: false, htmlSkill: false });
 let chrome: ReturnType<typeof spawn> | undefined, ws: WebSocket | undefined;
@@ -18,7 +19,8 @@ const pending = new Map<number, {
     width: number;
     theme: string;
 }> = [], checks: string[] = [], loads = new Set<string>(), statuses = new Map<string, number>();
-let id = 0, lastStatus: number | undefined;
+const assetRequests=new Set<string>(),assetResponses:Array<{path:string;status:number;type:string}>=[],policies=new Map<string,string>(),seenNonces=new Set<string>();
+let id = 0, lastStatus: number | undefined, lastPolicy='';
 try {
     const user = await hub.createUser('合成删除成员'), peer = await hub.createUser('合成团队读者'), owner = await openConsole(hub, hub.admin.token), reader = await openConsole(hub, peer.token), spaces = hub.hub.knowledge.spaces;
     assert.ok(spaces);
@@ -41,10 +43,14 @@ try {
         webSocketDebuggerUrl: string;
     }) => t.type === 'page').webSocketDebuggerUrl);
     await new Promise(r => ws!.onopen = () => r(undefined));
-    ws.onmessage = e => { const m = JSON.parse(e.data); if (m.method === 'Runtime.exceptionThrown')
+    ws.onmessage = e => { const m = JSON.parse(e.data);
+        if(m.method==='Network.requestWillBeSent'&&new URL(m.params.request.url).pathname.startsWith('/console/assets/'))assetRequests.add(m.params.requestId);
+        if(m.method==='Network.loadingFailed'&&assetRequests.has(m.params.requestId))errors.push({assetFailure:m.params.errorText});
+        if(m.method==='Network.responseReceived'&&new URL(m.params.response.url).pathname.startsWith('/console/assets/'))assetResponses.push({path:new URL(m.params.response.url).pathname,status:m.params.response.status,type:m.params.response.mimeType});
+        if (m.method === 'Runtime.exceptionThrown')
         errors.push(m.params.exceptionDetails); if (m.method === 'Page.lifecycleEvent' && m.params.name === 'load')
         loads.add(m.params.loaderId); if (m.method === 'Network.responseReceived' && m.params.type === 'Document')
-        statuses.set(m.params.loaderId, m.params.response.status); if (m.id) {
+        {statuses.set(m.params.loaderId, m.params.response.status);policies.set(m.params.loaderId,String(m.params.response.headers['Content-Security-Policy']??m.params.response.headers['content-security-policy']??''));} if (m.id) {
         const p = pending.get(m.id);
         pending.delete(m.id);
         m.error ? p!.reject(new Error(JSON.stringify(m.error))) : p!.resolve(m.result);
@@ -61,13 +67,19 @@ try {
         for (let n = 0; !loads.has(navigation.loaderId) && n < 200; n++)
             await new Promise(r => setTimeout(r, 50));
         assert.ok(loads.has(navigation.loaderId), 'this navigation must finish loading');
-        lastStatus = statuses.get(navigation.loaderId);
+        lastStatus = statuses.get(navigation.loaderId);lastPolicy=policies.get(navigation.loaderId)??'';
     } await wait("document.readyState==='complete'&&location.href===" + JSON.stringify(new URL(url).href)); };
     const shot = async (name: string) => { const size = await evaluate('({width:innerWidth,height:innerHeight})'), r = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, ...size, scale: 1 } }); await writeFile(join(dir, name + '.png'), Buffer.from(r.data, 'base64')); };
     const capture=async(name:string,url:string,expected:RegExp)=>{
       for(const width of [1440,1024,390])for(const theme of ['dark','light']){
         await cdp('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:false});await open(url);assert.equal(lastStatus,200,name+' actual HTTP response');
         await evaluate("document.querySelector('[data-theme-choice="+theme+"]').click()");await new Promise(resolve=>setTimeout(resolve,100));
+        assert.equal(await evaluate("document.documentElement.getAttribute('data-theme')"),theme,'the external theme controller must run under CSP');
+        const css=await evaluate("[...document.querySelectorAll('link[rel=stylesheet]')].map(node=>({path:new URL(node.href).pathname,integrity:node.integrity,loaded:!!node.sheet,rules:node.sheet?.cssRules.length??0}))");
+        assert.equal(css.length,1);assert.ok(css.every((sheet:any)=>sheet.path.startsWith('/console/assets/')&&sheet.path.endsWith('.css')&&sheet.integrity.startsWith('sha256-')&&sheet.loaded&&sheet.rules>0),'external CSS must load and parse');
+        const scripts=await evaluate("[...document.querySelectorAll('script[src]')].map(node=>({path:new URL(node.src).pathname,integrity:node.integrity,nonce:node.nonce}))");
+        assert.deepEqual(scripts.map((script:any)=>script.path),await evaluate("!!document.querySelector('[data-live]')")?[CONSOLE_THEME.path,CONSOLE_LIVE.path]:[CONSOLE_THEME.path]);assert.ok(scripts.every((script:any)=>script.path.startsWith('/console/assets/')&&script.integrity.startsWith('sha256-')&&script.nonce&&script.nonce===scripts[0].nonce));
+        assert.ok(lastPolicy.includes("'nonce-"+scripts[0].nonce+"'"),'the actual response CSP must authorize these scripts');assert.ok(!seenNonces.has(scripts[0].nonce),'each document response must rotate its nonce');seenNonces.add(scripts[0].nonce);
         const body=await evaluate('document.body.innerText');assert.match(body,expected);assert.doesNotMatch(body,/该内容不存在或无权查看|Hub 内部错误|请求参数不对|登录控制台/);
         assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false,name+' horizontal overflow '+width+' '+theme);
         assert.deepEqual(wordingProblems(await evaluate('document.documentElement.outerHTML')),[],name);
@@ -89,7 +101,7 @@ try {
         await cdp('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});await cdp('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
         const focus=await evaluate("(()=>{const nodes=[document.querySelector('.ch-dialog:target .ch-dialog-foot a'),...document.querySelectorAll('[data-inspector-content] a,.ch-inspector a,main a,header a,button')];const node=nodes.find(node=>node&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');if(!node)return null;node.focus();const css=getComputedStyle(node);return {visible:node.matches(':focus-visible'),outline:css.outlineStyle,width:css.outlineWidth,shadow:css.boxShadow};})()");
         assert.ok(focus?.visible,name+' '+theme+' '+width+' visible keyboard target');assert.ok(focus.outline!=='none'&&parseFloat(focus.width)>0||focus.shadow!=='none');
-        checks.push(name+' '+theme+' '+width+' HTTP 200 content, keyboard focus and internal scrolling verified');
+        checks.push(name+' '+theme+' '+width+' HTTP 200 content, external CSS/SRI, fresh script nonce, live theme, keyboard focus and internal scrolling verified');
       }
     };
     await cdp('Page.enable');await cdp('Page.setLifecycleEventsEnabled',{enabled:true});await cdp('Runtime.enable');await cdp('Network.enable');await cdp('Network.setCookie',{name:'circle_hub_session',value:owner.sessionCookie,url:hub.url});
@@ -106,7 +118,7 @@ try {
     await capture('deletion-complete',member,/私人内容已清除/);
     await capture('team-list',hub.url+'/console/team',/已删除的成员/);
     await capture('team-tombstone',hub.url+'/console/knowledge/space?'+new URLSearchParams({space:'team',root:shared.team_root,path:'/',entry:entry.entry}),/已删除的成员/);
-    assert.deepEqual(errors,[]);await writeFile(join(dir,'result.json'),JSON.stringify({matrix,checks,errors},null,2));
+    assert.deepEqual(errors,[]);assert.ok(assetResponses.some(asset=>asset.path.endsWith('.css')&&asset.status===200&&asset.type==='text/css'));assert.ok(assetResponses.every(asset=>asset.status===200||asset.status===304));await writeFile(join(dir,'result.json'),JSON.stringify({matrix,checks,errors,assetResponses,nonceResponses:seenNonces.size},null,2));
     await writeFile(join(dir,'index.html'),'<!doctype html><meta charset="utf-8"><title>合成删除页面核对</title><style>body{font-family:sans-serif}img{max-width:100%;border:1px solid gray}section{margin:30px 0}</style>'+matrix.map(item=>{const file=item.name+'-'+item.theme+'-'+item.width+'.png';return '<section><h2>'+file+'</h2><img src="'+file+'"></section>';}).join(''));
     console.log(JSON.stringify({dir,images:matrix.length,checks},null,2));
 }finally{

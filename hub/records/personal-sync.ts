@@ -1,3 +1,4 @@
+import {retireReadScope} from './read-scope.ts';
 import {historyUsage} from './personal-capacity.ts';
 // Scoped transport storage only: uploaded objects never become knowledge, memory or executable packs here.
 import {randomUUID} from 'node:crypto';
@@ -109,7 +110,7 @@ export class PgPersonalSync {
    await this.#db.query('INSERT INTO personal_sync_heads(owner,epoch) VALUES($1,$2)',[by.id,next.epoch],tx);
    await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:this.#now().toISOString(),previous_mode:scope.mode,mode:next.mode,previous_epoch:scope.epoch,epoch:next.epoch},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
    return this.#state(next,tx);
-  },undefined,true);
+  },undefined,true).finally(retireReadScope);
  }
  /** Only bounded synchronization metadata is exposed on a member detail page. */
  async memberMetadata(by:Principal,owner:string){
@@ -150,7 +151,7 @@ export class PgPersonalSync {
    await this.#db.query('INSERT INTO personal_sync_mode_operations VALUES($1,$2,$3,$4,$5)',[by.id,request.epoch,request.operation_id,identity,canonicalize(result)],tx);
    await this.#store.put({kind:'action',schema:'personal-sync-mode@1',provenance:'observed',body:{kind:ActionKindSchema.enum.validate,by:by.id,at:result.receipt.at,previous_mode:scope.mode,mode:request.mode,previous_epoch:scope.epoch,epoch:after.epoch,operation:hash(request.operation_id),previous_state:before.state_version,state:after.state_version,personal_bytes:impact.personal_bytes,directory_grants:impact.directory_grants,team_copies_preserved:impact.team_copies_preserved},index:[{key:'personal.sync.mode.by',value:by.id}]},tx);
    return result;
-  },undefined,true);
+  },undefined,true).finally(retireReadScope);
  }
  async stableItem(by:Principal,kind:z.infer<typeof PersonalSyncItem>['kind'],identity:string,outer?:Transaction):Promise<string>{
   PersonalSyncItem.shape.kind.parse(kind);if(!identity||Buffer.byteLength(identity)>4000)return fail('SYNC_OBJECT_INVALID');

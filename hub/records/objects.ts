@@ -96,7 +96,7 @@ export class FileObjectStore implements ObjectStore {
     catch{await Promise.all([...batch].map(async([hash,waiting])=>{try{const values=await this.#readBytes([hash]);for(const call of waiting)call.resolve(values.has(hash)?Buffer.isBuffer(values.get(hash))?Buffer.from(values.get(hash)!):Uint8Array.from(values.get(hash)!):null);}catch(error){for(const call of waiting)call.reject(error);}}));}
   }
   async #databaseBytes(hashes:readonly string[],tx?:Transaction):Promise<Map<string,Uint8Array>>{
-    // Keep get()'s precedence: an independent run holder, then the first active account/epoch payload.
+    // Keep get()'s precedence: independent run/retained holders, then the first active account/epoch payload.
     const rows=await this.#db.query<{sha256:string;data:Buffer|null;independent:boolean;cleared:boolean;registered:boolean}>(`SELECT wanted.sha256,coalesce(h.data,p.data) AS data,h.data IS NOT NULL AS independent,
       EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256)
        AND NOT EXISTS(SELECT 1 FROM personal_objects o WHERE o.sha256=wanted.sha256 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch))) AS cleared,

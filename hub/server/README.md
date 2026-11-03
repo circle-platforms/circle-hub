@@ -1165,3 +1165,13 @@ A full private publication queue returns HTTP 429 with “发布校验繁忙，�
 code. Upload refusal awaits deletion of the unpacked root before replying; accepted work still follows the checked
 30-minute stage/confirmation flow. Queue admission is two running overall, one per member, plus eight waiting overall
 and two waiting per member. A refused request neither occupies a slot nor waits for another publication to finish.
+
+
+The console's principal-name resolver uses the request-scoped principal port directly, without a second untracked name
+cache. Team rows use their already batched identity projection and mask tombstones; deleted members produce no active
+Circle rows. Destructive account and personal-payload operations retire the enclosing read generation, so retained
+adapters cannot serve pre-deletion identities or private content within that request.
+
+Deletion screenshot checks additionally observe the real external CSS response, parsed stylesheet rules, SRI metadata,
+per-response script nonce against the actual CSP and live theme switching. The synthetic browser uses an isolated profile;
+no owner profile, deployed Hub or private credentials participate.

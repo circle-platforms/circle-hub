@@ -630,7 +630,6 @@ async function action(request: IncomingMessage, response: ServerResponse, option
 
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
 function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL, principal: Principal, session: ConsoleSession, secure: boolean): PageContext {
-  const names = new Map<string, Promise<string>>();
   const notice = request.method === 'GET' && request.headers['circle-hub-refresh'] !== 'live' ? session.notice : undefined;
   if (notice) delete session.notice;
   return {
@@ -645,12 +644,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
     chrome: (title, extra = {}) => ({ title, notice, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
     userName: (userId) => {
       if (userId === null || userId === undefined) return Promise.resolve('—');
-      let pending = names.get(userId);
-      if (pending === undefined) {
-        pending = memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.deleted_at?uiLabelOf('account_display_name','deleted_member'):user?.name ?? userId);
-        names.set(userId, pending);
-      }
-      return pending;
+      return memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.deleted_at?uiLabelOf('account_display_name','deleted_member'):user?.name ?? userId);
     },
   };
 }

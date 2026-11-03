@@ -5,6 +5,7 @@ import {createKnowledge} from './api.ts';
 import {createTestParserRegistry} from '../testing/parsers.ts';
 import {makeWorld,startPostgres} from './test-support.ts';
 import {legacyRootSource} from './testing-capacity.ts';
+import {historyUsage,chargedBytes,type RecordStore,type Transaction} from '../records/api.ts';
 import {barrier,reaches} from '../testing/member-freeze.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
@@ -26,7 +27,7 @@ test('an inflated legacy counter is metadata, not charged bytes, and memory hist
 test('usage is owner/admin metadata, requires intact records, and does not initialize an empty space',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,mark=await w.kit.store.watermark!();
  assert.equal((await spaces.usage(w.user)).used,0);assert.equal(await spaces.current(w.user.id),null);assert.equal(await w.kit.store.watermark!(),mark);await assert.rejects(spaces.usage(w.outsider,w.user.id),{code:'SOURCE_UNAVAILABLE'});
- const legacy=await legacyRootSource(w.kit,w.user),get=w.kit.store.get.bind(w.kit.store);w.kit.store.get=async(...args)=>args[0]===legacy.file.digest?null:get(...args);
+ const legacy=await legacyRootSource(w.kit,w.user),many=w.kit.store.getMany.bind(w.kit.store);w.kit.store.getMany=async <B>(ids:readonly string[],tx?:Transaction)=>{const records=await many<B>(ids,tx);records.delete(legacy.file.digest);return records;};
  await assert.rejects(spaces.usage(w.user),{name:'IntegrityError'});
 });
 for(const path of ['knowledge','source','memory'])test(`${path} charges the exact admission size, refuses one byte short and retries with the same request after a raise`,async t=>{
@@ -48,4 +49,16 @@ test('an already locked write commits first, then a lower quota preserves its co
  const writing=spaces.write(w.user,{kind:'observation',statement:'合成先提交内容'});await reaches(entered,writing);const reducing=other.setCapacity(w.admin,w.user.id,0),client=new pg.Client({...w.kit.database,ssl:false});await client.connect();
  try{let blocked=false;for(let n=0;n<500;n++){const r=await client.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query=$1 AND cardinality(pg_blocking_pids(pid))>0",['SELECT pg_advisory_xact_lock($1, hashtext($2))']);if(r.rowCount){blocked=true;break;}await new Promise(r=>setTimeout(r,10));}assert.ok(blocked,'the quota setter must wait for the committing space lock');}finally{release.release();await client.end();}
  const saved=await writing;await reducing;assert.ok(await spaces.entry(w.user,saved.root,'/',saved.entry));assert.ok((await spaces.usage(w.user)).over>0);await assert.rejects(spaces.write(w.user,{kind:'observation',statement:'合成后续拒收'}),{code:'SPACE_CAPACITY_EXCEEDED'});
+});
+
+
+test('exact historical capacity batches admitted entries and originals independently of the number of versions',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,legacy=await legacyRootSource(w.kit,w.user);let expected=legacy.expected;
+ for(let n=0;n<12;n++){
+  const saved=await spaces.write(w.user,{kind:'observation',statement:'合成容量批量条目 '+n}),version=await spaces.version(saved.root),row=version!.body.entries.find(row=>row.entry===saved.entry)!,entry=await w.kit.store.get(row.record);
+  expected+=chargedBytes(version!.body)+chargedBytes(entry!.body);
+  if(n!==2&&n!==11)continue;
+  let batches=0,scalars=0;const store=new Proxy(w.kit.store,{get(target,key){const method=Reflect.get(target,key,target);if(key==='getMany')return(...args:unknown[])=>{batches++;return Reflect.apply(method,target,args);};if(key==='get')return(...args:unknown[])=>{scalars++;return Reflect.apply(method,target,args);};return typeof method==='function'?method.bind(target):method;}}) as RecordStore;
+  assert.deepEqual(await historyUsage(store,w.user.id),{knowledge:expected,memory:0,used:expected});assert.equal(batches,2,'one admission-body batch and one exact-capture batch');assert.equal(scalars,0,'a version or source must not add a scalar read');
+ }
 });
