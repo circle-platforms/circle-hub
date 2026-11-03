@@ -980,3 +980,17 @@ Claude 转交独立审查（针对 `54b6649c`）：未发现授权回归。确�
 按 Claude 后续审查，撤销正常页面的“至多”展示：`entryCandidates` 接收与候选逐项对应的空间头，在 SQL 中先比较再计数/分页；授权快照路径仍由原读取守卫筛选，非原生端口用同样的空间头比较。跨空间回归在 limit 5/100 均计 6 条；内容摘要损坏的同空间记录仍计 7 条、只显示 6 条，加载时进入有界完整性诊断（只含记录标识与固定说明）。该异常计数可能包含损坏记录，直到完整性检查报告，不作为正常可见性的不确定性。页面显示普通知识数字，移除上限 Tooltip。新增 SQL 空间头/NUL/分页回归，保留跨空间与内容摘要回归。
 
 变基前定向检查：space-pages、read-scope、noncanonical、console-knowledge 共 29 通过，0 失败、0 跳过；类型检查退出 0。新增非规范 JSON 的空间头过滤检查，保留原正文与摘要验证。
+
+#### CSP 实际执行验证
+
+保留 `35f34d74` 的 hash-only `script-src`，没有增加 `'self'`：下列三个实际引擎均执行外部 SRI 主题脚本和实时模块，无 `securitypolicyviolation` 或页面脚本异常。浏览器使用机器已有的 Playwright（运行时 1.62.1，Circle 工作台已有 1.64.0）；只下载其浏览器缓存，不修改 Hub/Circle 依赖，不安装 npm 包。
+
+| 引擎 | 实际版本 | 主题按钮改变主题 | 实时订阅并刷新 | CSP 违规 |
+| --- | --- | --- | --- | --- |
+| Chromium / Google Chrome | 155.0.8059.84 | 通过 | 通过 | 0 |
+| WebKit | 26.5（Playwright revision 2336） | 通过 | 通过 | 0 |
+| Firefox | 157.0（Playwright revision 1555） | 通过 | 通过 | 0 |
+
+方法：临时 loopback TestHub、合成管理员、全新浏览器 context/profile；在新文档注册 `securitypolicyviolation` 监听，保存主题为 dark。打开 `/console/login`，验证主题控件不再 hidden，点击 light 并断言根节点主题改变；用该合成会话打开 `/console/overview`，验证主题脚本、`circleHubRestartLive` 已执行。Playwright 只对该页面的 SSE 路由返回有限合成 `task.updated` 事件，断言出现订阅请求及带 `circle-hub-refresh: live` 的页面请求，确认不是只下载脚本。有限流关闭后页面显示重连是预期夹具行为。检查登录/总览脚本的 SRI 属性、状态 200、两个文档的 CSP 事件与 pageerror 均为空；六张截图逐张查看。现有 CSP 精确断言仍保留，无 unsafe-inline/eval、通配符或任意远程来源。
+
+本机 macOS 27.0.1 上，默认 Firefox 153/157 启动尝试失败，未计作 CSP 通过。按 [Mozilla 的隔离 app-data 说明](https://bugzilla.mozilla.org/show_bug.cgi?id=2069536)，为最终 Firefox 子进程设置全新临时 `MOZ_APP_DATA` 与 `MOZ_LOCAL_APP_DATA` 后正常启动，使用默认浏览器 sandbox/GPU 参数；未访问个人 Firefox 数据或调整系统权限。以上 Firefox 157 为该正常启动后的实际页面结果。可重复方式：从现有 Playwright 包导入对应 browser type，`launch({headless:true, env:{...process.env, MOZ_APP_DATA:<fresh-dir>, MOZ_LOCAL_APP_DATA:<fresh-dir>}})`（Firefox 专用），其余步骤如上。该结果证明所列版本，未声称覆盖历史引擎。
