@@ -27,7 +27,6 @@ nav_order: 3
 | `contracts/test-fixtures/sync/v1/README.md` | decision 89（即 138） | 冻结的 v1 兼容样例目录，字节不变 |
 | `docs/design/circle-design-system/README.md`、`assets/Logos/README.md`、`components/bundle.css` | 决定 82 / decision 82（即 129） | 与 Circle 共用的设计规范，字节由 `docs/design/circle-design-system.sha256` 固定 |
 | `hub/server/console/style.generated.ts` | decision 82（即 129） | 由 `bundle.css` 生成，随它不变 |
-| `.github/workflows/release.yml` 的注释 | decision 76（即 123） | 改发行工作流须所有者决定 |
 
 ## 阶段清单
 
