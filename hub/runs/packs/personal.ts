@@ -22,7 +22,7 @@ import type {SkillDependency} from '../../../contracts/src/skills.ts';
 
 export class PersonalPacks {
   #options:PackRegistryOptions; #team:PackRegistry; #extractor:Extractor; #writes:Promise<unknown>=Promise.resolve();
-  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));options.records.memberDeletions?.registerCacheRoot(options.extractDir);this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
+  constructor(options:PackRegistryOptions,team:PackRegistry){this.#options=options;this.#team=team;options.records.memberDeletions?.registerCacheRoot(join(options.extractDir,'personal'));options.records.memberDeletions?.registerCacheRoot(options.extractDir,{shared:true});this.#extractor=new Extractor({root:join(options.extractDir,'personal'),onTamper:options.onTamper});}
   #now(){return (this.#options.now?.()??new Date()).toISOString();}
   async #account(by:Principal){const account=await this.#team.account(by);if(!account)throw new AccessError('对象不存在或无权读取');return account;}
   async #own(by:Principal,space=by.id){by=await this.#account(by);if(by.id!==space)throw new AccessError('对象不存在或无权读取');return by;}

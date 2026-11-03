@@ -348,3 +348,7 @@ Private publish/check and promotion pre-check admission is shared through the re
 Only `Extractor.stage` runs under the cache journal's account lock; sandbox samples run after that transaction commits.
 The current account is checked again after samples and locked at commit/promotion, so deletion during a check refuses
 publication and discards the private temporary tree. Queued or running samples cannot consume all database connections.
+
+The registry identifies its team extraction root as shared. Member deletion keeps fresh (under 24 hours) team temporary
+trees of an equal digest, so another publisher's sample check can still promote/discard them; old abandoned team trees
+are swept. Private temporary trees have no age exemption and are purged immediately after account sealing.

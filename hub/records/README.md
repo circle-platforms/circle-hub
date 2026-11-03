@@ -1041,3 +1041,9 @@ bodies out of per-upload parsing. Exact capture identity, personal/team scope an
 required; equal bytes alone do not freeze a declaration, and later registrations do not change an earlier run.
 The owner explicitly allowed this in-place SQL correction before deployment; migrations 1–18 are unchanged, including
 frozen 14/15. Migrations 19–23 are frozen from the integration PR onward; subsequent corrections append migrations.
+
+
+Cache root registration marks shared team extraction roots separately. Deletion gives `.tmp-<digest>-*` directories in
+those shared roots a 24-hour grace period, including independent publishers in another process; stale shared remnants
+remain removable. Private roots have no grace: even fresh failed/unpublished private trees are removed after the account
+is sealed. Published team and exact frozen-run caches still follow the existing independent-holder checks.

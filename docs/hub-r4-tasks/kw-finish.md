@@ -941,3 +941,30 @@ Claude 对原提交 20e37368／2b549f3d 的独立复核未发现安全缺陷，�
 
 
    复核 CLI 其他输出时，补齐 token list（全部账户及指定编号）和历史发布权撤销／取消分配提示的姓名遮蔽；原始墓碑、令牌编号、成员编号与撤销历史不变。新增断言验证令牌原文不出现、删除显示及历史操作提示；两份聚焦回归再次 2 通过、0 失败、0 跳过。此补充并入第三项提交，第四项单独提交。
+
+
+4. **清理不移除新建的团队提取目录**：注册提取根时区分私人和团队目录；只给共享团队根下的 .tmp-<digest>-* 一个保守的 24 小时窗口，兼容不同进程的发布检查。老残留仍移除，稳定目录继续按精确独立持有规则处理。私人根没有窗口，即使刚创建的未发布／失败目录也立即清除；没有把团队临时文件保留规则套在私人内容上，没有新增持久记录、权限或配置变量。
+
+   回归创建两个独立提取器，在团队根暂存同一摘要，另建超过两天的共享残留及刚创建的私人残留。删除成员后两个团队临时目录仍可读，能提升／丢弃；老共享残留与新私人残留均消失。临时恢复旧清理实现后，新回归在读取团队暂存目录时得到 ENOENT，复现原问题；恢复修复后新旧删除回归共 8 通过、0 失败、0 跳过。最终包／平台定向组随后补录。
+
+
+   验证：全部 hub/runs/packs 测试、新提取回归、records 成员删除／删除完整性／迁移快照，连同 environment／diagnostics／PG 18 ownership／lock-namespaces 的定向组：239 通过、0 失败、0 跳过，退出 0。类型检查退出 0，无诊断；生成一致性检查 179 文件一致。本轮涉及运行输入声明边界，按 E.4 再跑完整工作流／引擎定向组及 12、46～54 受影响验收，结果在下方统一记录；不扩成全量 unit／acceptance。
+
+
+本轮代码稳定后的统一验证（各组存在重叠，不相加为通过总数）：
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 工作流／引擎 | 设置 HUB_UNIT_CONCURRENCY=4、PG 18 工具目录；node --test --test-concurrency=4 'packs/workflow/**/*.test.ts' 'hub/runs/engine/**/*.test.ts'。2770 通过、0 失败、0 取消、0 跳过，退出 0，约 493 秒。沙箱相关项实际执行，未改运行／依据／派发规则或旧断言。 |
+| CLI 最后补充 | 最后姓名修正后，node --test --test-name-pattern='member deletion commands&#124;administrator listings mask&#124;stored text reaches'，文件为 hub/server/cli.test.ts 和 hub/server/assemble/cli-admin.test.ts。3 通过、0 失败、0 跳过，退出 0；包含令牌列表、历史撤销提示及既有终端转义。前面完整 CLI／平台组的 100 通过与本组分别记录。 |
+| 类型／合约 | 最后生产代码下 node node_modules/typescript/bin/tsc --noEmit 退出 0，无诊断；node tools/gen-contracts.ts --check 为 179 文件一致。没有模型、生成物、配置变量或运行角色授权的变化。 |
+| 文档 | node --test --test-concurrency=2 '.github/checks/*.test.ts'，315 通过、0 失败、0 取消、0 跳过，退出 0；补录本节实际结果后再复核 docs.test.ts。 |
+
+本轮不改控制台 HTML／样式，沿用已批准 4068afd0 的页面截图，不重拍无变化页面。未运行全量 unit／全量 acceptance、Linux isolation／GitHub CI、真实模型／业务系统或任何部署；来源工具／批准导入未改，verify:references／test:references 未运行。未运行不算通过；实际执行组的跳过数分别如实记录。恢复旧实现的预期失败、新夹具错误与修正均已保留在本页，没有删测试、放宽阈值或改固定知识视图摘要。
+
+
+受影响验收最终结果：设置 HUB_UNIT_CONCURRENCY=4 和 CIRCLE_HUB_LIBPQ_BIN=$HOME/.local/pgsql-18.6/bin，node --test --test-concurrency=1，显式选取 tests/acceptance/12-console-security.test.ts、28-device-run.test.ts、28-jev-skill.test.ts、46-knowledge-spaces.test.ts、47-knowledge-sharing.test.ts、48-knowledge-console-memory.test.ts、49-personal-sync.test.ts、50-upload-attribution.test.ts、51-source-archive.test.ts、52-member-freeze.test.ts、53-capacity.test.ts、54-member-deletion.test.ts。59 通过、0 失败、0 取消、0 跳过，退出 0，约 494 秒。两个场景 28 验证普通上传与声明的完整运行／派发／客户端脚本路径；其中客户端判断服务为合成脚本，未调用真实模型。私人授权、精确原件、团队署名、同步 CAS／旧代次、停用、容量及永久删除均通过。
+
+最终迁移差异仅为获准的迁移 21 候选查询及对应源码快照；迁移 1～18（含 14／15）完整源码前缀与 4068afd0 一致，19／20／22／23 不变。没有新增配置变量、持久表、合约状态、拒绝码或运行角色权限。git diff --check 通过。前三项本机提交为 0f891481、a1347170、10bed521；第四项与本节最终记录在同一次署名提交中。全部实际执行组均 0 跳过；本轮验证后停止，等待性能分支集成通知，不变基、不推送、不建 PR。
+
+最后补录结果后的 docs.test.ts 专项为 249 通过、0 失败、0 取消、0 跳过，退出 0；再次生成一致性检查为 179 文件一致。所有本轮修正均有回归，未留下未解释的失败。
