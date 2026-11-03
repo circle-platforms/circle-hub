@@ -31,6 +31,8 @@ export type IndexViewData = {
   truncated: boolean;
   /** Whether every raw index key in scope was enumerated; null on legacy views. */
   key_space_complete: boolean | null;
+  /** For a view narrowed by only=: whether every key matching a requested value (stories by normalized id) is listed; null when absent. */
+  only_complete: boolean | null;
   /** The Hub's source scope completeness, when present. */
   scope_complete: boolean | null;
   /** Entries omitted by the producing read, or null when that read did not declare the fact for these bytes. */

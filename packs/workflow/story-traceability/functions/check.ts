@@ -45,7 +45,7 @@ export default function check(input: unknown): CheckOutcome[] {
         data.next_actions.push('请管理员核对索引遗漏来源并重读完整视图');
       }
       const view = isRecord(facts.view) ? facts.view : {};
-      Object.assign(data, { coverage: { root: facts.root, source: view.source, complete: row.coverage_complete ?? true, entries: view.listed_entries, keys: view.listed_keys, cut_keys: view.cut_keys ?? [], ...(typeof view.key_space_complete==='boolean'?{key_space_complete:view.key_space_complete}:{}), ...(typeof view.scope_complete==='boolean'?{scope_complete:view.scope_complete}:{}) } });
+      Object.assign(data, { coverage: { root: facts.root, source: view.source, complete: row.coverage_complete ?? true, entries: view.listed_entries, keys: view.listed_keys, cut_keys: view.cut_keys ?? [], ...(typeof view.key_space_complete==='boolean'?{key_space_complete:view.key_space_complete}:{}), ...(typeof view.only_complete==='boolean'?{only_complete:view.only_complete}:{}), ...(typeof view.scope_complete==='boolean'?{scope_complete:view.scope_complete}:{}) } });
       const base = { item: item.id, pointer: `/items/${at}/fields`, tier: 'advisory' as const, grounds: [String(view.source), ...row.references, ...row.cases.map(c => c.reference)], data };
       if (offending.length) return { ...base, verdict: 'refute', code: 'story-traceability.join_mismatch', statement: '列出的用例原始需求编号不含被判需求；请任务包维护人修复索引连接后重跑' };
       const partial = row.case_count_lower_bound ? '缺少完整索引数量或遗漏事实；下一步：核对视图范围和遗漏来源后重读；' : '';

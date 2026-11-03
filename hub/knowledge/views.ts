@@ -37,6 +37,7 @@ import { readRootNote } from './root-note.ts';
 import {KnowledgeError} from './errors.ts';
 import {seedlingOfRoot} from './seedling.ts';
 import type { FeedingCut } from './feeding-types.ts';
+import { onlyMatcher, rootIndependentField, rootIndependentValues } from './fed-case-fields.ts';
 
 /** The feeding-layer context a view read carries: the run's frozen cut (null offset: everything now in the layer). */
 type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null; identity: string | null };
@@ -51,7 +52,8 @@ import type { KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, type EntryContent } from './digest.ts';
 import {requestKnowledgeFact} from './requests.ts';
 import {documentScope} from './scope.ts';
-import type {KnowledgeViewScope,ScopedDocument} from '../../contracts/src/views.ts';
+import type {FedScope,KnowledgeViewScope,ScopedDocument} from '../../contracts/src/views.ts';
+import {MAX_FED_SCOPE_DOCUMENTS} from '../../contracts/src/views.ts';
 import {keepProblemRows} from './problem-journal.ts';
 import { describeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
@@ -388,29 +390,97 @@ function feedingIdentity(cut:FeedingCut,reader:string):string {
   return sha256Hex(canonicalize({reader,offset:cut.offset,objects,cases,...(builds.length?{builds}:{}),bindings,retracted:[...cut.retracted].sort(compareText),contradicted:[...cut.contradicted].sort(compareText)}));
 }
 
-function rootlessCases(cut:FeedingCut,root:string,key?:string,only?:ReadonlySet<string>|null):number {
+/** One original whose fed cases lack a projection under the queried root: its document, capture and the cases' records. */
+export interface RootlessOriginal { document: string | null; sha256: string | null; external: string | null; cases: number; records: string[] }
+export interface RootlessCases { missing: number; originals: RootlessOriginal[] }
+
+/**
+ * Whether a root-less projection can be left out of an `only=` view: for a root-independent field (stories, defects,
+ * document, title) the root-less projection states the same values as a projection under any root, so a case none of
+ * whose stated values is requested cannot carry one. A field the projection does not state, or a field that depends on
+ * the root (commands, path), keeps the case unknown.
+ */
+function outsideOnly(body: Record<string, unknown>, key: string | undefined, selects: ((value: string) => boolean) | null): boolean {
+  if (selects === null || !rootIndependentField(key)) return false;
+  const values = rootIndependentValues(body, key);
+  return values !== null && !values.some(selects);
+}
+
+/** The external read a cut's case source key names (canonical {source,node,external}), or null. */
+function externalOfSourceKey(sourceKey: string): string | null {
+  try { const parsed = JSON.parse(sourceKey) as { external?: unknown }; return typeof parsed.external === 'string' ? parsed.external : null; } catch { return null; }
+}
+
+export function rootlessCases(cut:FeedingCut,root:string,key?:string,only?:readonly string[]|ReadonlySet<string>|null):RootlessCases {
   const rooted=cut.casesByRoot?.get(root),unrooted=cut.casesByRoot?.get(null);
+  const selects=key===undefined||only===undefined||only===null?null:onlyMatcher(key,only);
+  const originals=new Map<string,RootlessOriginal>();
+  const note=(body:Record<string,unknown>,external:string|null,recordDigest:string|null)=>{
+    const source=record(body.source),document=typeof source?.document==='string'?source.document:null,sha=typeof source?.bytes==='string'?source.bytes:null;
+    const at=canonicalize([sha,document,external]);let row=originals.get(at);
+    if(!row){row={document,sha256:sha,external,cases:0,records:[]};originals.set(at,row);}
+    row.cases++;if(recordDigest!==null)row.records.push(recordDigest);
+  };
+  let missing=0;
   if(cut.casesByRoot){
-    let missing=0;
     for(const [id,sources] of unrooted??[]){
       const rootSources=rooted?.get(id);
       for(const [sourceKey,projection] of sources){
         if(rootSources?.has(sourceKey))continue;
-        const source=record(projection.body.source);
-        if(key==='document'&&only&&typeof source?.document==='string'&&!only.has(source.document))continue;
-        missing++;break;
+        if(outsideOnly(projection.body,key,selects))continue;
+        missing++;note(projection.body,externalOfSourceKey(sourceKey),projection.record);break;
       }
     }
-    return missing;
+  }else{
+    for(const object of cut.objects.values()){
+      if(object.schema!=='fed-case@1'||object.root!==null)continue;
+      if(outsideOnly(object,key,selects))continue;
+      missing++;note(object,null,null);
+    }
   }
-  let missing=0;
-  for(const object of cut.objects.values()){
-    if(object.schema!=='fed-case@1'||object.root!==null)continue;
-    const source=record(object.source);
-    if(key==='document'&&only&&typeof source?.document==='string'&&!only.has(source.document))continue;
-    missing++;
-  }
-  return missing;
+  const sorted=[...originals.values()].sort((a,b)=>compareText(a.document??'',b.document??'')||compareText(a.sha256??'',b.sha256??'')||compareText(a.external??'',b.external??''));
+  return {missing,originals:sorted};
+}
+
+/**
+ * The feeding-layer originals behind the fed cases of a case view over a seedling root, with case counts: cases projected
+ * onto the root and cases with only a root-less projection (unknown to the view until re-read). Read from the view's cut.
+ */
+export function fedScope(cut: FeedingCut, root: string): FedScope | null {
+  if (!cut.casesByRoot) return null;
+  const rows = new Map<string, { external: string | null; sha256: string; document: string | null; projected: Set<string>; rootless: Set<string> }>();
+  const add = (id: string, sourceKey: string, body: Record<string, unknown>, which: 'projected' | 'rootless'): void => {
+    const source = record(body.source), sha = typeof source?.bytes === 'string' ? source.bytes : null;
+    if (sha === null) return;
+    const external = externalOfSourceKey(sourceKey), document = typeof source?.document === 'string' ? source.document : null;
+    const at = canonicalize([sha, document, external]);
+    let row = rows.get(at);
+    if (!row) { row = { external, sha256: sha, document, projected: new Set(), rootless: new Set() }; rows.set(at, row); }
+    row[which].add(id);
+  };
+  const rooted = cut.casesByRoot.get(root);
+  for (const [id, sources] of rooted ?? []) for (const [sourceKey, value] of sources) add(id, sourceKey, value.body, 'projected');
+  for (const [id, sources] of cut.casesByRoot.get(null) ?? []) for (const [sourceKey, value] of sources) if (!rooted?.get(id)?.has(sourceKey)) add(id, sourceKey, value.body, 'rootless');
+  const documents = [...rows.values()].map((row) => {
+    const rootless = [...row.rootless].filter((id) => !row.projected.has(id)).length;
+    return { external: row.external, sha256: row.sha256, document: row.document, cases: row.projected.size + rootless, projected: row.projected.size, rootless };
+  }).sort((a, b) => compareText(a.document ?? '', b.document ?? '') || compareText(a.sha256, b.sha256) || compareText(a.external ?? '', b.external ?? ''));
+  const sum = (field: 'cases' | 'projected' | 'rootless') => documents.reduce((n, row) => n + row[field], 0);
+  return { root, originals: documents.length, cases: sum('cases'), projected: sum('projected'), rootless: sum('rootless'), documents: documents.slice(0, MAX_FED_SCOPE_DOCUMENTS) };
+}
+
+/** At most this many originals are named in a note; the rest are counted. */
+const NAMED_ORIGINALS = 20;
+
+/**
+ * The note for fed cases without a projection under the queried root: which originals, how many cases each, that the
+ * Hub queued a recorded re-read under the reader's own account, and the exact call that re-reads one by hand.
+ */
+function rootlessNote(rootless: RootlessCases, kind: EntryKind, root: string, product: string, build: string, where: string): string {
+  const named = rootless.originals.slice(0, NAMED_ORIGINALS).map((row) => `${row.external ?? (row.sha256 ? `src:${row.sha256}` : '（来源未记录）')}${row.document ? `（文档 ${cutText(row.document, 80)}` : '（'}，${row.cases} 个${labelOf('entry_kind', kind)}${row.sha256 && row.external ? `，src:${row.sha256}` : ''}）`);
+  const rest = rootless.originals.length - named.length;
+  const list = named.length ? `：原件 ${named.join('、')}${rest > 0 ? ` 等，另有 ${rest} 份原件` : ''}` : '';
+  return `${rootless.missing} 个${labelOf('entry_kind', kind)}缺所查树苗 ${root.slice(0, 12)} 的投影，未计入${where}${list}；Hub 已按你的账号排队重读这些原件并按本根投影（有界后台任务，完成与否以喂入回执为准）。下一步：稍后重读本视图；仍缺时用 start_run 重读原件：pack 写 source-read，顶层写 product ${product} 和 build ${build}，把上列外部标识放进接受它的输入槽`;
 }
 
 /** Facets count content once; indexes preserve the separately citable sources of that content. */
@@ -710,10 +780,12 @@ export class KnowledgeViews {
     return summary===null ? {} : {unversioned_entries:summary.totals.entries,unversioned_documents:summary.totals.documents};
   }
 
-  #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null): string {
+  #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null, kind?: EntryKind): string {
+    // Fed cases are projected onto the version root; the product-wide root adds only its own entries.
+    const cases = kind === 'case' ? '；不分版本的根只补它自己的条目，不影响用例投影' : '';
     if(summary===null)return scopeLocked
-      ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时请管理员先同步这条产品线）'
-      : '这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）';
+      ? `本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时请管理员先同步这条产品线）${cases}`
+      : `这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）${cases}`;
     let note=`不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
     if(summary.skipped_sources>0){
       const producers=[...new Set((scope?.body.skipped??[]).map(row=>row.producer))].sort(compareText);
@@ -983,7 +1055,8 @@ export class KnowledgeViews {
     const counts = new Map<string, { values: FacetValue[]; count: number; unversioned: number }>();
     const empty = Object.fromEntries(by.map(field => [field, 0]));
     const odd = { count: 0 };
-    const unrooted=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root):0;
+    const rootless=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root):null;
+    const unrooted=rootless?.missing??0;
     const limit = Math.max(1, this.#context.limits.facetCombinations);
     let cut = 0;
     let unlisted = 0;
@@ -1062,7 +1135,7 @@ export class KnowledgeViews {
     if(feedingConflicts)notes.push(`${feedingConflicts} 个喂入对象的多个来源在请求字段上不一致，未计入本页；缺少一致的来源事实，下一步由来源维护者核对后重新读取`);
     if(feedingUnknown)notes.push(`${feedingUnknown} 个用例缺期望节点的结构判定，未计入本页；下一步用新版产品包按锁定树苗重读原件`);
     if(feedingCommandsUnknown)notes.push(`${feedingCommandsUnknown} 个用例缺完整命令身份，未计入命令分面；下一步核对锁定命令树或补完整命令后重读，不把未知当作没有命令`);
-    if(unrooted)notes.push(`${unrooted} 个用例缺所查树苗的投影，未计入本页；下一步用绑定树苗的运行重读原件，不把未核命令当作没有命令`);
+    if(rootless&&unrooted)notes.push(`${rootlessNote(rootless,kind,at.root,product,at.build,'本页')}；不把未核命令当作没有命令`);
     // truncated says something is not in the lists; unknown_entries and unknown_only say whether that is all there is to it.
     const undelivered = page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0;
     const unknownEntries = feedingConflicts + feedingUnknown + feedingCommandsUnknown + unrooted;
@@ -1081,7 +1154,7 @@ export class KnowledgeViews {
       ...(unknownEntries > 0 ? { unknown_entries: unknownEntries } : {}),
       ...(unknownEntries > 0 && !undelivered ? { unknown_only: true as const } : {}),
       skipped: skippedCount(composition) + skippedCount(scope),
-      notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
+      notes: [...notes,this.#scopeNote(summary,scopeLocked,scope,kind)],
     };
     if(rows.length===0&&page.offset<all.length)throw new ImpactRefusal('单行分面超过视图页上限；减少 by 字段后重读');
     return conforming(FacetView, view, 'facet-view@1');
@@ -1109,13 +1182,18 @@ export class KnowledgeViews {
     const composition = pinned===undefined?await this.#buildView(product,at):pinned.composition;
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
-    const onlySet = only === null ? null : new Set(only);
+    // Identity fields (stories, defects) match a requested value by normalized id, every other field by its exact text.
+    const selects = onlyMatcher(key, only);
+    const pick = (value: string): boolean => selects === null || selects(value);
+    // A fed row whose root-independent indexed field states none of the requested values cannot carry one of them.
+    const selectedFed = (data: Record<string, unknown>): boolean => selects === null || !rootIndependentField(key) || !Object.hasOwn(data, key) || indexKeys(data, key).some(selects);
     // A build's fed fixed-bug records join the defect entries of its seedling root, as fed cases join its case entries.
     const fedDefects=at.seedling&&kind==='defect'&&feeding?.cut?fedDefectRows(at.root,at.build,feeding.cut):null;
-    const unrooted=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,onlySet):(fedDefects?.unrooted.filter(row=>indexKeys(row.content.data,key).some(value=>onlySet===null||onlySet.has(value))).length??0);
+    const rootless=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,only):null;
+    const unrooted=rootless?rootless.missing:(fedDefects?.unrooted.filter(row=>indexKeys(row.content.data,key).some(pick)).length??0);
     // Position membership is collected before the index-key filter; the count covers every entry of the kind.
     const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
-    const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(value => onlySet === null || onlySet.has(value)), scopePlaced === null ? undefined : row => {
+    const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(pick), scopePlaced === null ? undefined : row => {
       if (!row.unplaced) scopePlaced.add(row.entry);
     });
     const budget = this.#budget(pinned?.reserve);
@@ -1153,7 +1231,7 @@ export class KnowledgeViews {
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
         if(kind==='case'&&['stories','defects','commands','command_identities'].includes(key)&&!Array.isArray(row.content.data[key])){keyFactsUnknown++;unknownEntryIds.add(row.entry);}
-        const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
+        const values = indexKeys(row.content.data, key).filter(pick);
         if (values.length === 0) return;
         if(typeof row.reference==='string'&&row.reference.startsWith('rec:')){feedingRecords++;if(typeof row.content.data.object==='string')feedingObjects.add(row.content.data.object);}
         const value = projected(row);
@@ -1207,9 +1285,9 @@ export class KnowledgeViews {
     }
     let feedingConflicts=0,feedingCommandsUnknown=0;
     if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut,true)) {
-      if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document)){feedingConflicts++;unknownEntryIds.add(row.entry);}continue;}
+      if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(selectedFed(row.content.data)){feedingConflicts++;unknownEntryIds.add(row.entry);}continue;}
       const needsCommands=key==='commands'||key==='command_identities'||fields===null||fields.includes('commands')||fields.includes('command_identities');
-      const selectedDocument=key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document);
+      const selectedDocument=selectedFed(row.content.data);
       if(needsCommands&&selectedDocument&&typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0){feedingCommandsUnknown++;unknownEntryIds.add(row.entry);}
       absorb(row);
     }
@@ -1292,9 +1370,9 @@ export class KnowledgeViews {
       if(feedingConflicts)out.push(`${feedingConflicts} 条用例来源的版本层有冲突，未计入本索引；下一步由来源维护者核对目录后重读`);
       if(feedingCommandsUnknown)out.push(`${feedingCommandsUnknown} 条用例来源缺完整命令身份，不能认为命令集合为空；下一步核对锁定命令树或补完整命令后重读`);
       if(keyFactsUnknown)out.push(`${keyFactsUnknown} 个用例缺少索引字段 ${key} 的结构事实，不能据此判断键不存在；下一步由作者补声明或用新版生产器重读原件`);
-      if(unrooted)out.push(`${unrooted} 个${labelOf('entry_kind', kind)}缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
+      if(unrooted)out.push(rootless?rootlessNote(rootless,kind,at.root,product,at.build,'本索引'):`${unrooted} 个${labelOf('entry_kind', kind)}缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
       if (only !== null) {
-        const absent = only.filter((value) => !keys.has(value));
+        const absent = only.filter((value) => { const match = onlyMatcher(key, [value])!; for (const listed of keys.keys()) if (match(listed)) return false; return true; });
         if (absent.length > 0 && keys.size > 0) out.push(`这些取值没有条目：${cutText(absent.slice(0, 20).join('、'), 500)}${absent.length > 20 ? ` 等 ${absent.length} 个` : ''}`);
       }
       const perKeyCut = kept.slice(0, count).filter((item) => item.cut).length;
@@ -1308,7 +1386,7 @@ export class KnowledgeViews {
       const skipped = skippedNote(at, composition);
       if (skipped !== null) out.push(skipped);
       if (at.seedlingNote) out.push(at.seedlingNote);
-      out.push(this.#scopeNote(summary,scopeLocked,scope));
+      out.push(this.#scopeNote(summary,scopeLocked,scope,kind));
       return out;
     };
     const build = (count: number): IndexView => {
@@ -1319,7 +1397,8 @@ export class KnowledgeViews {
       const undelivered=page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0;
       const unknownEntries=unrooted+unknownEntryIds.size;
       const truncated=undelivered || unknownEntries>0;
-      const keySpaceComplete=only===null&&skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
+      const narrowedComplete=skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
+      const keySpaceComplete=only===null&&narrowedComplete;
       const discloseKeySpace=kind==='case'&&(Boolean(feeding?.cut)||keyFactsUnknown>0||!truncated||keySpaceComplete);
       const answer: IndexView = {
         schema: 'index-view@1',
@@ -1335,6 +1414,7 @@ export class KnowledgeViews {
         keys: Object.fromEntries(items.map((item) => [item.value, item.listed])),
         entries,
         ...(only !== null ? { only: [...new Set(only)].sort(compareText) } : {}),
+        ...(only !== null && kind === 'case' ? { only_complete: narrowedComplete } : {}),
         cut_keys: items.filter((item) => item.cut).map((item) => item.value),
         ...(discloseKeySpace?{key_space_complete:keySpaceComplete}:{}),
         total_keys: keys.size,
@@ -1545,6 +1625,8 @@ export class KnowledgeViews {
     let key: string;
     let compute: (exclude: ReadonlySet<string>) => Promise<ImpactView | FacetView | IndexView>;
     let title: string;
+    // A case view over a seedling root: its fed cases' originals join the scope, and root-less ones are queued for re-reading.
+    let caseAt: At | null = null;
     if (request.type === 'impact') {
       const from = await resolveOnce(request.from);
       if ('absent' in from) return absentRead(bare, from);
@@ -1558,6 +1640,7 @@ export class KnowledgeViews {
       const at = await resolveOnce(request.build);
       if ('absent' in at) return absentRead(bare, at);
       roots = [at.root];
+      if (request.kind === 'case' && at.seedling) caseAt = at;
       if (request.type === 'facets') {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by, after:request.after??null });
         compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
@@ -1640,6 +1723,14 @@ export class KnowledgeViews {
       const question=await requestKnowledgeFact(this.#context,{kind:'clarification',subject:`知识范围核对 ${sha256Hex(canonicalize(rawScope.roots))}`,missing:'缺少额外根覆盖清单，不能确定这些未入当前根的来源是否已由其他根覆盖',action,inputs});
       scoped.request={...question,action};
     }
+    if(caseAt&&feeding?.cut){
+      const fed=fedScope(feeding.cut,caseAt.root);if(fed)scoped.fed=fed;
+      // Root-less cases are re-read under the reader's own account through the bounded observe path: recorded, never
+      // projected in memory here. The view itself still counts them unknown until a later read sees the projections.
+      const layer=this.#context.feeding;
+      const rootless=rootlessCases(feeding.cut,caseAt.root,request.type==='index'?request.key:undefined,request.type==='index'?request.only:null);
+      if(layer&&this.#context.feedingReader===layer&&rootless.missing>0)await layer.rereadRootless(principal,rootless.originals.flatMap(row=>row.records),{product,root:caseAt.root,composition:caseAt.composition??null});
+    }
     reserve=Math.max(VIEW_MARGIN,canonicalBytes(scoped).byteLength+16*1024);
     key=canonicalize({query:key,scope:sha256Hex(canonicalBytes(scoped))});
     const credentialRefusal=async(held:SourceArtifact,references:string[]):Promise<ExternalRead>=>{
@@ -1690,7 +1781,7 @@ export class KnowledgeViews {
     };
     if(flagged.excluded.size>0&&view.next){view.next=null;view.notes.push('本页有未受理凭据，先由管理员处理这些来源或用 only 收窄；处理后从首页重读，不沿偏移后的页继续');}
     view.scope=scoped;
-    if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete)view.key_space_complete=false;
+    if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete){view.key_space_complete=false;if(view.only_complete!==undefined)view.only_complete=false;}
     const finalEncoded = view.schema === 'index-view@1' ? this.#encodedIndexes.get(view) : undefined;
     const finalKeys = finalEncoded ? new Set(finalEncoded.keys()) : partKeys(view);
     const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
@@ -1707,7 +1798,7 @@ export class KnowledgeViews {
       view = await compute(flagged.allHits);
       annotate(view,0,flagged.limited.size,covered);
       view.scope=scoped;
-      if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete)view.key_space_complete=false;
+      if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete){view.key_space_complete=false;if(view.only_complete!==undefined)view.only_complete=false;}
       if(view.next)view.next=continuationId(bare,view.next,revision);
       bytes = this.#bytes(view);
       large = tooLarge(bytes);

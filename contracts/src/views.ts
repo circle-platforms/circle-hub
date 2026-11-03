@@ -79,6 +79,23 @@ export const ScopeRoot=z.strictObject({root:Sha256,composition:Sha256,build:z.st
 export const ScopedDocument=z.strictObject({external:z.string().nullable(),sha256:Sha256.optional(),at:z.array(Sha256).optional(),uses:z.array(z.strictObject({producer:z.string(),slot:z.string()})).optional(),producer:z.string().optional(),slot:z.string().optional(),reason:ReasonSchema.optional(),explanation:z.string().optional(),observation:z.string().optional(),next_action:z.string().optional()});
 export type ScopedDocument=z.infer<typeof ScopedDocument>;
 export const ScopeCollection=z.strictObject({total:z.number().int().nonnegative().describe('source observations; versions of one external id are distinguished by composition and byte digest'),parts:z.array(z.strictObject({reference:z.string(),sha256:Sha256,rows:z.number().int().positive()}))});
+/** Most originals a view scope lists one by one; the totals still count every original. */
+export const MAX_FED_SCOPE_DOCUMENTS=200;
+export const FedScopeDocument=z.strictObject({
+  external:z.string().nullable().describe('The external read the projections were made from; null when the records name none'),
+  sha256:Sha256.describe('Digest of the captured original'),
+  document:z.string().nullable().describe('The document identity the projections state'),
+  cases:z.number().int().nonnegative().describe('Distinct fed cases of this original that join the queried root or have only a root-less projection'),
+  projected:z.number().int().nonnegative().describe('Of those, cases projected onto the queried root'),
+  rootless:z.number().int().nonnegative().describe('Of those, cases with a root-less projection and none under the queried root: unknown to the view until re-read'),
+});
+export type FedScopeDocument=z.infer<typeof FedScopeDocument>;
+export const FedScope=z.strictObject({
+  root:Sha256.describe('The seedling root the fed cases join'),
+  originals:z.number().int().nonnegative(),cases:z.number().int().nonnegative(),projected:z.number().int().nonnegative(),rootless:z.number().int().nonnegative(),
+  documents:z.array(FedScopeDocument).max(MAX_FED_SCOPE_DOCUMENTS).describe('Originals sorted by document, sha256 and external; at most MAX_FED_SCOPE_DOCUMENTS, the totals count all'),
+}).describe('Feeding-layer originals behind the fed cases of a case view over a seedling root, read at the view\'s feeding cut; composition sources stay in listed_documents');
+export type FedScope=z.infer<typeof FedScope>;
 export const KnowledgeViewScope=z.strictObject({
   note:z.string().optional().describe('Explicit extent of the document observations, not a claim about every enterprise document'),
   roots:z.array(ScopeRoot),additional_roots:z.array(ScopeRoot),additional_roots_declared:z.boolean(),
@@ -87,6 +104,7 @@ export const KnowledgeViewScope=z.strictObject({
   listed_documents:ScopeCollection,elsewhere_documents:ScopeCollection,omitted_documents:ScopeCollection.nullable(),pending_documents:ScopeCollection,missing_optional_sources:ScopeCollection,
   unplaced_entries:z.number().int().nonnegative(),unplaced_cases:z.strictObject({from:z.number().int().nonnegative(),to:z.number().int().nonnegative()}).optional(),
   request:z.strictObject({reference:z.string(),audience_user:z.string(),deadline:z.string(),action:z.string()}).optional(),
+  fed:FedScope.optional(),
 });
 export type KnowledgeViewScope=z.infer<typeof KnowledgeViewScope>;
 
@@ -203,6 +221,7 @@ export const IndexView = z.strictObject({
   fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
   only: z.array(z.string()).optional().describe('the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter'),
   cut_keys: z.array(z.string()).optional().describe('listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included'),
+  only_complete: z.boolean().optional().describe('Case indexes narrowed by only: true only when this page lists every key that matches a requested value — identity fields (stories, defects) match by normalized id, where an all-digit literal drops its leading zeros, every other field by exact text — and no known skipped source, unresolved feeding projection, conflicting version level or missing indexed field could add a matching key, within a complete source scope. A requested value without a key is then absent from the frozen view; it does not cover unobserved sources. Absent on views without only and on legacy views'),
   key_space_complete: z.boolean().optional().describe('true only when this page lists every raw key in the frozen view and no known skipped source, unresolved feeding projection or missing indexed field can add a key; it does not cover unobserved sources; absent on legacy views'),
   totals: z.strictObject({...ScopeCounts,entry_counts:KnowledgeEntryCounts.optional().describe('All distinct entries of the requested kind, even without the indexed key or outside only; the carrier total remains total_entries')}).optional(),
   total_keys: z.number().int().nonnegative(),

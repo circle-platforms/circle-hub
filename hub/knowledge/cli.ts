@@ -1,4 +1,5 @@
-// The server CLI's `knowledge sync --product <name> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]`: argument
+// The server CLI's `knowledge sync --product <name> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]` (beside
+// `knowledge seed` and `knowledge reproject <product> <line>`): argument
 // parsing, the run, and the Chinese report text. The server wires the subcommand and the admin principal; this module never
 // reads the environment.
 import type { PacksPort, ResourceCatalogPort } from '../ports.ts';
@@ -7,6 +8,7 @@ import { KnowledgeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
 import { KNOWLEDGE_SEED_USAGE, formatSeedReport, knowledgeSeed, parseKnowledgeSeedArgs } from './seed.ts';
 import type { BuildOutcome, SyncReport } from './sync.ts';
+import { KNOWLEDGE_REPROJECT_USAGE, formatReprojectReport, knowledgeReproject, parseKnowledgeReprojectArgs } from './reproject.ts';
 
 export interface KnowledgeSyncArgs {
   /** Any name of the product, or its line id. */
@@ -103,10 +105,10 @@ export interface KnowledgeCliCommand {
 export function knowledgeCliCommand(open: () => Promise<{ knowledge: Knowledge; packs: PacksPort; resources?: ResourceCatalogPort }>): KnowledgeCliCommand {
   return {
     name: 'knowledge',
-    summary: `知识：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]；${KNOWLEDGE_SEED_USAGE} [--as <管理员>]`,
+    summary: `知识：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]；${KNOWLEDGE_SEED_USAGE} [--as <管理员>]；${KNOWLEDGE_REPROJECT_USAGE} [--as <管理员>]`,
     async run(args, context) {
-      if (args[0] !== 'sync' && args[0] !== 'seed') {
-        context.io.stderr(`用法：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]\n${KNOWLEDGE_SEED_USAGE} [--as <管理员>]`);
+      if (args[0] !== 'sync' && args[0] !== 'seed' && args[0] !== 'reproject') {
+        context.io.stderr(`用法：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]\n${KNOWLEDGE_SEED_USAGE} [--as <管理员>]\n${KNOWLEDGE_REPROJECT_USAGE} [--as <管理员>]`);
         return 2;
       }
       const rest = [...args.slice(1)];
@@ -119,6 +121,25 @@ export function knowledgeCliCommand(open: () => Promise<{ knowledge: Knowledge; 
         if (as === undefined || as === '' || as.startsWith('--')) {
           context.io.stderr('--as 缺少取值');
           return 2;
+        }
+      }
+      if (args[0] === 'reproject') {
+        let parsed;
+        try {
+          parsed = parseKnowledgeReprojectArgs(rest);
+        } catch (error) {
+          context.io.stderr((error as Error).message);
+          return 2;
+        }
+        try {
+          const by = await context.actingAdmin(as);
+          const opened = await open();
+          const report = await knowledgeReproject(opened.knowledge, opened.packs, by, parsed);
+          for (const line of formatReprojectReport(report).trimEnd().split('\n')) context.io.stdout(line);
+          return report.ok ? 0 : 1;
+        } catch (error) {
+          context.io.stderr((error as Error).message);
+          return 1;
         }
       }
       if (args[0] === 'seed') {

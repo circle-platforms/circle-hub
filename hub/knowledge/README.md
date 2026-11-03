@@ -1262,7 +1262,7 @@ not assert whether the unparsed steps contain commands.
 An index may carry `key_space_complete`: it is true only when the page covers every raw key in the frozen unfiltered
 view, no listed source was skipped, and no known unresolved feeding projection or missing indexed field can add a key.
 A page may have complete keys while some entries under a listed key remain paginated. The flag says nothing about sources
-not observed in that view, and does not make `only=` a normalized-id query; legacy views without the flag
+not observed in that view, and a narrowed view carries `only_complete` instead (see re-projection below); legacy views without the flag
 cannot prove an absent key. When all pages of one frozen index are bound together, the final page must carry the new
 structural flag, the combined keys must cover the reported key count, and the unfiltered source scope must be complete
 before the combined view can assert key-space completeness. A legacy paginated view is not upgraded from its old
@@ -1273,6 +1273,41 @@ read, even when the individual feeding record is readable. This limit does not g
 The shared `ViewEntry` contract also allows record references in impact and links views, but their current producers still
 emit only tree references and regression-scope and maintenance-sweep accept only those. Before adding feeding records to
 an impact view, narrow that shared contract or update the affected consumers together.
+
+### Re-projection when a seedling pointer moves (fed-case-reprojection)
+
+A fed case joins a seedling root only through a projection under that root. `produceSeedling` therefore re-projects the
+line's existing fed cases onto the new root between the seedling@1 claim and the pointer move (`FeedingLayer.reproject`):
+the cases are chosen by their version bindings (a binding counts only for the source it was read from, lines compared by
+the pack's `normalize_line`) and by the current head of their source (retracted or superseded records are not chosen),
+never by the root they were projected under before. Each original is re-read once on the ordinary observe path under the
+seeding admin, so the rows are what any read writes (producer function, judgment false), grounded in the generate action
+and the seedling record. Each row names the original record it re-projects in `reprojection_of`; `recordVisible` and
+`recordsVisible` decide a re-projection as that original, so it is visible exactly when the original is
+(`feeding-reprojection.test.ts` keeps the two equal). The seed report counts the selected, already projected and
+re-projected cases and the originals re-read. `circle-hub knowledge reproject <product> <line>` does the same for a backlog
+onto the line's current seedling. A failed re-projection does not stop the pointer move; the report and the views say what
+is missing.
+
+`fed-case-fields.ts` marks the fed-case@1 fields that do not depend on the root: stories, defects, document and title
+(commands, command_tree_root and path do). For those keys a root-less projection decides `only=` membership, so a case
+none of whose stated values is requested is not unknown; a projection that does not state the field stays unknown.
+Identity fields (stories, defects) match `only=` by normalized id (all-digit literals without leading zeros); every other
+field by its exact text. A case index narrowed by `only=` carries `only_complete`: true when every matching key is listed
+and no skipped source, unresolved projection, conflicting version level or missing indexed field could add one, within a
+complete source scope. `key_space_complete` stays false on narrowed views. The continuation merge and the engine's only=
+slice merge keep `only_complete` true only when every part is.
+
+When cases still lack a projection, the note names the originals (external read, document and case count, at most 20,
+the rest counted) and the exact next call (`start_run` with `source-read` and the view's product and build). The read also
+queues a recorded re-read of those originals under the reader's own account through `observeSourceBounded`; nothing is
+projected in memory, and the view counts the cases unknown until a later read sees the projections. Case views over a
+seedling root list the feeding-layer originals in `scope.fed` with their case, projected and root-less counts. The note
+asking an admin to sync the product line appears only when the product-wide root is missing, and on case views it says
+that this does not affect case projections.
+
+Limits: root-less cases bound to another version line still count as unknown in a view over this root (the view does not
+filter root-less cases by binding), and the re-projection only covers cases bound to the seeded line.
 
 ### Fed fixed-bug lists in the defect index (feed-fixed-bugs, decision 94)
 
