@@ -2,6 +2,7 @@ export {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export {withReadScope,scopedRecordStore,memoReadPort,memoReadValue} from './read-scope.ts';
 export { knowledgeTokens } from './space-index.ts';
 // Public surface of the records package (B01 B02 B04 B05 B08, R01, R02). Other packages code against this file only.
 // Field names of stored bodies are snake_case like the contracts; enumerations come from the generated vocabulary.
@@ -25,7 +26,7 @@ export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
 export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
 export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
-export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
+export { recordIntegrityNotes, noteRecordIntegrity, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
 export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
@@ -141,6 +142,8 @@ export interface Principals {
   /** Revokes the live token with this value (RFC 7009: whoever holds a token may revoke it). False when there is none. */
   revokeTokenValue(token: string): Promise<boolean>;
   tokens(userId: string): Promise<TokenInfo[]>;
+  /** Same public metadata and ordering as tokens; console-session credentials remain excluded. */
+  tokensMany?(userIds:readonly string[]):Promise<Map<string,TokenInfo[]>>;
   /** Admins invite an enabled account: a code valid INVITATION_TTL_MS that the authorization page takes once. */
   invite(by: Principal, userId: string): Promise<IssuedInvitation>;
   /** Looks a code up without using it. */
@@ -151,6 +154,7 @@ export interface Principals {
   /** Registers a client; refused (LimitError) while too many registered in the last minutes. */
   registerClient(name: string, redirectUris: readonly string[]): Promise<OAuthClient>;
   client(clientId: string): Promise<OAuthClient | null>;
+  clientsMany?(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>;
   /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
   authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
@@ -232,6 +236,14 @@ export interface ListQuery extends PageQuery {
 }
 
 export interface RecordStore {
+  /** Knowledge candidate timestamps, optionally restricted to matching space headers and the reader’s sync-private visibility; callers authorize snapshot rows and verify selected bodies before display. */
+  entryCandidates?(query:{digests:readonly string[];spaces?:readonly string[];reader?:string;offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>;
+  entryTimes?(digests:readonly string[],tx?:Transaction):Promise<Map<string,string>>;
+  countIndexedBatch?(queries:readonly {index:readonly IndexEntry[];kind?:RecordKind;since?:string;cap?:number}[],tx?:Transaction):Promise<{count:number;capped:boolean}[]>;
+  /** Native batches of the existing indexed page operation, preserving each query's cursor/order and verification. */
+  findBatch?<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>;
+  /** Descending (started_at,run) candidates, before engine visibility checks; malformed headers stay available for engine diagnosis/fallback, never an authorization decision. */
+  runCandidates?<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>;
   /** Internal append-log position; never part of a record digest. Snapshot horizons may contain gaps. */
   position?(digest:string,tx?:Transaction):Promise<number|null>;
   watermark?(tx?:Transaction):Promise<number>;
@@ -669,9 +681,11 @@ export interface Authorizations {
   shares(by: Principal, object?: string): Promise<AuthorizationRecord[]>;
 
   packsFor(userId: string): Promise<string[]>;
+  packsForMany?(userIds:readonly string[]):Promise<Map<string,string[]>>;
   canUse(userId: string, packId: string): Promise<boolean>;
   canPublish(userId: string): Promise<boolean>;
   usersOf(packId: string): Promise<string[]>;
+  usersOfMany?(packIds:readonly string[]):Promise<Map<string,string[]>>;
   isSharedWith(userId: string, object: string): Promise<boolean>;
 
   /** Owner of a pack id: the subject of its first publication, or null when it was never published. */

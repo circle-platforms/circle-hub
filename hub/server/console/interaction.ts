@@ -1,4 +1,4 @@
-// Fixed, hash-allowed DOM enhancement. It reads only server-rendered links, forms and chart readouts.
+// Fixed, SRI-pinned DOM enhancement. It reads only server-rendered links, forms and chart readouts.
 export const INTERACTION_SCRIPT = `(() => {
  if (!document.querySelector) return;
  let request = null, sequence = 0, changedHistory = false, activeDialog = null, dialogOpener = null, lastPath = location.pathname + location.search;

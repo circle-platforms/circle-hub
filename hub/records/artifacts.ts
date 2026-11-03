@@ -1,4 +1,5 @@
 import {PgPersonalPayloads,type PersonalScope} from './personal-payloads.ts';
+import {scopedRecordStore,memoReadPort} from './read-scope.ts';
 import {SpaceSourceBody} from '../../contracts/src/spaces.ts';
 // Source artifacts (B02): content-addressed bytes plus a `source_artifact@1` record with provenance, author, capture time,
 // provenance type, read tier, visibility and the credential scan conclusion. An upload with a credential hit is refused
@@ -216,7 +217,15 @@ export interface ArtifactsOptions {
 export class RecordArtifacts implements Artifacts {
   readonly #db: Database;
   readonly #personal:PgPersonalPayloads;
-  readonly #store: RecordStore;
+  readonly #rawStore: RecordStore;
+  get #store():RecordStore{return scopedRecordStore(this.#rawStore);}
+  readonly #readView={
+    viewer:(id:string):Promise<Viewer|null>=>this.#viewer({id,name:id,role:'user'}),
+    source:(by:Principal,sha:string,options:{consumer?:ProducerKind;record?:string}):Promise<ArtifactSource|null>=>this.#source(by,sha,options),
+    readable:(by:Principal,sha:string):Promise<SourceArtifact|null>=>this.#readable(by,sha),
+  };
+  get #reads(){return memoReadPort(this.#readView,['viewer','source','readable']);}
+  #readViewer(by:Principal):Promise<Viewer|null>{return typeof by?.id==='string'&&USER_ID.test(by.id)?this.#reads.viewer(by.id):Promise.resolve(null);}
   readonly #objects: ObjectStore;
   readonly #authorizations: Authorizations;
   readonly #options: ArtifactsOptions;
@@ -225,7 +234,7 @@ export class RecordArtifacts implements Artifacts {
   constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, options: ArtifactsOptions) {
     this.#db = db;
     this.#personal=new PgPersonalPayloads(db,(key,tx)=>store.lock(key,tx));
-    this.#store = store;
+    this.#rawStore = store;
     this.#objects = objects;
     this.#authorizations = authorizations;
     this.#options = options;
@@ -374,16 +383,24 @@ export class RecordArtifacts implements Artifacts {
     return viewer !== null && (await this.#mayRead(viewer, artifact));
   }
 
-  async readable(principal: Principal, sha256: string): Promise<SourceArtifact | null> {
-    const viewer = await this.#viewer(principal);
+  readable(principal: Principal, sha256: string): Promise<SourceArtifact | null> {return this.#reads.readable({...principal},sha256);}
+  async #readable(principal: Principal, sha256: string): Promise<SourceArtifact | null> {
+    const viewer = await this.#readViewer(principal);
     return viewer === null ? null : ((await this.#choose(viewer, sha256, null))?.artifact ?? null);
   }
 
   async source(principal: Principal, sha256: string, options: { consumer?: ProducerKind; record?: string } = {}): Promise<ArtifactSource | null> {
+    // Validate before memo identity serialization: invalid values must never alias an ordinary unpinned/model read.
+    const consumer=options.consumer??MODEL;
+    if(!isProducerKind(consumer))throw new TypeError('consumer must be a producer kind');
+    const record=pinned(options.record);
+    return this.#reads.source({...principal},sha256,{consumer,...(record===null?{}:{record})});
+  }
+  async #source(principal: Principal, sha256: string, options: { consumer?: ProducerKind; record?: string }): Promise<ArtifactSource | null> {
     const consumer = options.consumer ?? MODEL;
     if (!isProducerKind(consumer)) throw new TypeError('consumer must be a producer kind');
     const record = pinned(options.record);
-    const viewer = await this.#viewer(principal);
+    const viewer = await this.#readViewer(principal);
     const choice = viewer === null ? null : await this.#choose(viewer, sha256, record);
     if (choice === null) return null;
     return this.#sourceChoice(choice, consumer);

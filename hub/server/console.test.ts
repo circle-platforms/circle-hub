@@ -1,3 +1,6 @@
+import {withoutNonces} from './console/testing-security.ts';
+import {THEME_TAGS} from './console/html.ts';
+import {CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE} from './console/assets.ts';
 // The console: every account signs in with its password, never a token (with the Origin a browser derives under the pages' Referrer-Policy), cookie flags, CSRF
 // and same-origin refusals, the strict CSP, escaping of stored case text, the pages (runs, run detail with the three groups,
 // item cells, partitions, claims and the submissions marked unverified, knowledge, packs, admin) with their visibility, and
@@ -8,7 +11,6 @@ import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { NEUTRAL } from './console/pages.ts';
-import { THEME_SCRIPT } from './console/theme.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -132,7 +134,7 @@ describe('the mark of circle-hub', () => {
     assert.equal(icon.status, 200);
     assert.equal(icon.headers['content-type'], 'image/svg+xml; charset=utf-8');
     assert.equal(icon.headers['x-content-type-options'], 'nosniff');
-    assert.equal(icon.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'");
+    assert.match(String(icon.headers['content-security-policy']), /^default-src 'none'; style-src 'sha256-[A-Za-z0-9+/=]+'$/);
     assert.match(icon.body, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 64 64">/);
     assert.equal((await send('/console/favicon.svg', { method: 'HEAD' })).body, '');
     assert.equal((await send('/console/favicon.svg', { method: 'POST' })).status, 405);
@@ -145,13 +147,13 @@ describe('sign-in', () => {
     assert.equal(page.status, 200);
     const csp = String(page.headers['content-security-policy']);
     assert.match(csp, /default-src 'none'/);
-    assert.match(csp, /style-src 'sha256-[A-Za-z0-9+/=]+'/);
+    assert.match(csp, /style-src 'self'(?:;|$)/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.match(csp, /form-action 'self'/);
-    assert.match(csp, /script-src 'sha256-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'only the fixed live and theme scripts by hash');
+    assert.match(csp, /script-src 'nonce-[A-Za-z0-9+/=]+' 'sha256-[A-Za-z0-9+/=]+'(?:;|$)/, 'response nonce and the bootstrap hash');
     assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
-    assert.ok(page.body.includes(`<script data-console-theme>${THEME_SCRIPT}</script>`));
-    assert.doesNotMatch(page.body.replace(`<script data-console-theme>${THEME_SCRIPT}</script>`, ''), /<script/i);
+    assert.ok(withoutNonces(page.body).includes(THEME_TAGS));
+    assert.doesNotMatch(withoutNonces(page.body).replace(THEME_TAGS, ''), /<script/i);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     const login = cookieHeader(page, 'circle_hub_login') ?? '';
     assert.match(login, /; Path=\/console\/login; HttpOnly; SameSite=Strict; Max-Age=900$/);
@@ -295,7 +297,7 @@ describe('pages', () => {
     assert.ok(page.body.includes('沙箱复验：本层不适用'), 'a layer no requirement declares');
     // Display rule 5: unknown has its own colour.
     assert.match(page.body, /<span class="t-unknown">？ 引用校验：未检查/);
-    assert.match(page.body, /\.t-unknown\{color:/);
+    assert.match(CONSOLE_CSS.body, /\.t-unknown\{color:/);
     // Display rule 13: the three groups derived from the partition list.
     const adopted = page.body.indexOf('已采用的成果（已交付');
     const open = page.body.indexOf('仍需处理的事项（已拒收、派发结果未确认、未完成');
@@ -354,13 +356,13 @@ describe('pages', () => {
     const forbidden = await get(`/console/runs/${run}`, session);
     const absent = await get('/console/runs/run_7zzzzzzzzzzzzzzzzzzzzzzzzz', session);
     assert.equal(forbidden.status, 404);
-    assert.equal(forbidden.body, absent.body);
+    assert.equal(withoutNonces(forbidden.body),withoutNonces(absent.body));
     assert.ok(forbidden.body.includes(NEUTRAL));
     assert.ok(!(await get('/console/runs', session)).body.includes(run), 'a user lists only their own runs');
     for (const path of ['/console/__proto__', '/console/constructor', '/console/knowledge/__proto__', '/console/runs/a/b']) {
       const reply = await get(path, session);
       assert.equal(reply.status, 404, path);
-      assert.equal(reply.body, absent.body, path);
+      assert.equal(withoutNonces(reply.body),withoutNonces(absent.body), path);
     }
     const admin = await signIn(server.admin.token);
     assert.equal((await get(`/console/runs/${run}`, admin)).status, 200, 'admins see every run');
@@ -392,7 +394,7 @@ describe('pages', () => {
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
-    assert.equal(hidden.body, missing.body);
+    assert.equal(withoutNonces(hidden.body),withoutNonces(missing.body));
     assert.equal((await get(`/console/knowledge/diff?from=${ROOT_1}&to=${ROOT_2}`, strangerSession)).status, 404);
     assert.equal((await get('/console/knowledge/product?id=line-a', strangerSession)).status, 404);
   });
@@ -488,4 +490,29 @@ test('full administrator reasons are escaped in console details and unavailable 
  const session=await signIn(server.admin.token);const path=`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`;
  const calls=await get(path,session);assert.equal(calls.status,200);assert.match(calls.body,/完整理由（1 条）/);assert.match(calls.body,/合成完整理由 &lt;script&gt;unsafe&lt;\/script&gt;/);assert.ok(!calls.body.includes('<script>unsafe</script>'));
  assert.equal((await get(path,await signIn(user.token))).status,404);
+});
+
+describe('immutable console assets',()=>{
+ test('anonymous clients receive exact hashed bytes, immutable caching and conditional GET without a session',async()=>{
+  for(const value of [CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE]){
+   const reply=await send(value.path);assert.equal(reply.status,200);assert.equal(withoutNonces(reply.body),withoutNonces(value.body));
+   assert.equal(reply.headers['content-type'],value.type);assert.equal(reply.headers['cache-control'],'public, max-age=31536000, immutable');
+   assert.equal(reply.headers['set-cookie'],undefined);assert.equal(reply.headers['x-content-type-options'],'nosniff');
+   assert.equal(reply.headers['content-length'],String(Buffer.byteLength(value.body)));
+   assert.equal((await send(value.path,{method:'HEAD'})).body,'');
+   const cached=await send(value.path,{headers:{'if-none-match':String(reply.headers.etag)}});assert.equal(cached.status,304);assert.equal(cached.body,'');
+   assert.equal((await send(value.path,{method:'POST'})).status,405);
+   assert.equal((await send(value.path+'?download=1')).status,404);
+  }
+  assert.equal((await send('/console/assets/'+'0'.repeat(64)+'.js')).status,404);
+  assert.equal((await send('/console/assets/private.json')).status,404);
+ });
+ test('login and signed-in error documents carry the same pinned stylesheet and pre-paint bootstrap',async()=>{
+  const user=await person();
+  for(const reply of [await send('/console/login'),await send('/console/not-a-page',{headers:{cookie:await signIn(user.token)}})]){
+   assert.ok(reply.body.includes(`href="${CONSOLE_CSS.path}" integrity="${CONSOLE_CSS.integrity}"`));
+   assert.ok(withoutNonces(reply.body).includes(THEME_TAGS));assert.doesNotMatch(reply.body,/<style\b|\sstyle=|\sonclick=/i);
+   assert.doesNotMatch(String(reply.headers['content-security-policy']),/unsafe|\*/);
+  }
+ });
 });

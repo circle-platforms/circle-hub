@@ -54,6 +54,8 @@ export const DEFAULT_CLIENT_KEY_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const CHECK_PARALLELISM = 8;
 
 export interface EngineContext {
+  /** Installed only by read-only entry points; never used by admission or commit paths. */
+  queryRead?: <T>(key: readonly unknown[], read: () => Promise<T>) => Promise<T>;
   deps: RunsEngineDeps;
   parsers: ParserRegistry;
   documents: DocumentCache;

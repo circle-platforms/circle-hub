@@ -6,7 +6,8 @@ import { runInNewContext } from 'node:vm';
 import { parse } from 'parse5';
 import { CONTENT_SECURITY_POLICY, FAVICON_SVG, THEME_SCRIPT_HASH, html, page } from './html.ts';
 import { CSS } from './style.ts';
-import { THEME_SCRIPT } from './theme.ts';
+import { THEME_SCRIPT,THEME_BOOTSTRAP } from './theme.ts';
+import {CONSOLE_CSS,CONSOLE_THEME} from './assets.ts';
 
 /** A deliberately small DOM: no fetch or EventSource is provided, so this script cannot open a connection. */
 function browser(saved: string | null = null, blocked = false) {
@@ -111,16 +112,17 @@ test('selection persists, resetting to system removes the override, and other ta
 test('anonymous, setup and signed-in pages render exactly the fixed CSP-allowed resources', () => {
   for (const user of [null, { name: '合成成员', role: '成员', admin: false }]) for (const wide of [false, true]) {
     const body = page({ title: '合成页面', user, csrf: null, wide }, html`<p>${'<script>stored text</script>'}</p>`).text;
-    assert.ok(body.indexOf('<script data-console-theme>') < body.indexOf('<style>'), 'restore before paint');
+    assert.ok(body.indexOf('<script data-console-theme>') < body.indexOf('<link rel="stylesheet"'), 'restore before paint');
     const scripts = [...body.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)];
-    assert.equal(scripts.length, 1);
-    assert.equal(scripts[0][1], THEME_SCRIPT);
+    assert.equal(scripts.length, 2);
+    assert.equal(scripts[0][1], THEME_BOOTSTRAP);
     assert.equal(createHash('sha256').update(scripts[0][1]).digest('base64'), THEME_SCRIPT_HASH);
     const allowed = CONTENT_SECURITY_POLICY.split('; ').find((part) => part.startsWith('script-src '))!;
     assert.ok(allowed.includes(`'sha256-${THEME_SCRIPT_HASH}'`));
-    const style = /<style>([\s\S]*?)<\/style>/.exec(body)![1];
-    assert.equal(style, CSS);
-    assert.ok(CONTENT_SECURITY_POLICY.includes(`style-src 'sha256-${createHash('sha256').update(style).digest('base64')}'`));
+    assert.ok(body.includes(`href="${CONSOLE_CSS.path}" integrity="${CONSOLE_CSS.integrity}"`));
+    assert.ok(body.includes(`defer src="${CONSOLE_THEME.path}" integrity="${CONSOLE_THEME.integrity}"`));
+    assert.doesNotMatch(body, /<style\b/);
+    assert.ok(CONTENT_SECURITY_POLICY.includes("style-src 'self'"));
     assert.doesNotMatch(CONTENT_SECURITY_POLICY, /unsafe|\*|https?:/);
     assert.doesNotMatch(body, /\sstyle=|\sonclick=|<script>stored text/);
     assert.match(body, /<noscript><span class="ch-meta">主题跟随系统<\/span><\/noscript>/);
@@ -150,4 +152,12 @@ test('fonts remain local, the orbit uses shared brand tokens, and favicon bytes 
   assert.match(CSS, /--area: var\(--text-secondary\)/);
   assert.doesNotMatch(readFileSync(new URL('./style.ts', import.meta.url), 'utf8'), /#[\da-f]{6}\b|prefers-color-scheme/);
   assert.equal(createHash('sha256').update(FAVICON_SVG).digest('hex'), 'd3bc8f8ba78cbaee47786d2344735e72848f3d7b2dcd7dbd511778e57ff6b76f');
+});
+
+test('the pre-paint bootstrap needs only the root and storage, including blocked or corrupt storage',()=>{
+ for(const saved of ['dark','light','system','corrupt',null])for(const blocked of [false,true]){
+  const attributes=new Map([['data-theme','old']]);
+  runInNewContext(THEME_BOOTSTRAP,{document:{documentElement:{setAttribute:(key:string,value:string)=>attributes.set(key,value),removeAttribute:(key:string)=>attributes.delete(key)}},localStorage:{getItem:()=>{if(blocked)throw Error('blocked');return saved;}}});
+  assert.equal(attributes.get('data-theme'),!blocked&&(saved==='dark'||saved==='light')?saved:undefined);
+ }
 });

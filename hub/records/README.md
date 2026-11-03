@@ -862,3 +862,69 @@ SELECT/INSERT on mode receipts. Migrations 14 and 15 remain frozen, and migratio
 The principals port now distinguishes access Bearers from password-console session credentials and returns the
 server's token/OAuth-client IDs for auditing, without exposing token values. Existing internal console authentication
 is unchanged. Member sync metadata rechecks the current actor's enabled/admin role and exposes mode/time only.
+
+Console performance reads use an asynchronous, read-only scope. Verified digest reads and indexed pages coalesce into
+native batches; callers receive independent copies. Explicit transaction reads bypass the scope. Scope closure, writes
+through the adapter and failed reads invalidate or evict their entries. A failed batch retries its members individually,
+so one corrupt sibling cannot hide healthy records. No authorization value survives a request or an escaped adapter.
+`runCandidates` orders contract ASCII headers by `(started_at, run)` before engine checks; the original text is still
+verified. Its SQL-only projection masks escaped NUL outside those headers because PostgreSQL JSON extraction otherwise
+rejects valid unrelated parameter strings. This is not a visibility port. No migration or record format changes.
+
+
+Knowledge list candidates can read only the canonical entry timestamp header, before the service hydrates the visible
+page. The header query neither grants access nor returns content; equivalent noncanonical text falls back to the existing verified parser without rewriting it. Citation counter batches retain distinct-record union,
+kind/time filters, caps and unknown-at-cap semantics. Request-scoped counter reads coalesce; transactions still bypass
+memoization. Header NUL handling and counter equivalence have real-database regressions. No migration is required.
+
+
+Member metadata batches read only the authorized identity set supplied by callers. Token rows retain their original
+ordering and revocation metadata and exclude console sessions; no bearer value, token digest or password material is
+selected. Client names batch separately. Assignment batches retain each index scope's original append order, latest
+triple, expiry test and sorted terms, including complete history beyond a single record page. Authorization store reads
+reuse verified pages only while a read scope is active; writes and explicit transaction reads still use their original
+boundaries. Regression coverage includes 5/20 members, revocation, expiry, console-session exclusion and metadata shape.
+
+Source reads now reuse the same readonly record scope for distinct digest lookups. A separate explicit readonly port
+memoizes source/readability decisions and the current viewer only during that scope; exact capture, producer and reader
+remain in the key. Every new proof retains scan/tier/provenance checks and object-byte integrity. Returned byte arrays
+are copied. Administrative and ingestion identity checks remain fresh, and later requests observe revocation/disable.
+
+Independent review hardening: memo arguments accept finite primitive/undefined values and plain JSON trees only. Keys
+explicitly distinguish null, undefined, omitted fields and -0. Sets, Maps, functions, symbols, bigint, nonfinite numbers,
+custom prototypes, proxies, accessors, symbol fields and cyclic/shared graphs bypass memoization and call the original
+method; key construction does not invoke getters or toJSON. Proxies are scoped by the port and its exact method set
+(order/duplicates do not matter); specialized record-store views have a separate namespace. Symbol methods retain identity.
+`memoReadValue(owner, key, loader)` caches a trusted read by an explicit JSON data key; its loader is control flow, never
+a port data argument. The engine's full input snapshots remain unchanged. This keeps the round-2 derivation cache without
+making an exception for functions passed as method arguments.
+
+Invalidation is guaranteed only for intercepted scopedRecordStore put/addIndex/withTransaction operations. Raw service
+handles (artifacts, principals, knowledge stores included) are not universally hooked; some writers happen to pass through
+an intercepted store, but callers must not assume that. Finish the outer read scope before a raw service write, then start
+a fresh read scope afterward. A nested withReadScope reuses its active outer scope and is not an invalidation barrier.
+POST actions stay outside the read scope; no cross-request authorization cache is introduced.
+
+### Batched reads over personal payloads
+
+All native indexed batches, candidate headers and counters use the same hub_read_records() logical view as scalar
+reads; purge and independently run-held originals keep their existing semantics. Physical append positions remain
+physical positions for cursors/watermarks. Header counting compares the expected space and reader's sync-private
+visibility before paging; selected bodies still pass integrity and service authorization checks.
+
+Object get() coalesces only simultaneously queued I/O, detaches the queue before any await and retains no completed
+bytes or authorization result across calls. Files keep priority. Missing files use one SQL batch with the former
+fallback precedence: independent run bytes, then an active personal owner/epoch payload, then cleared-versus-missing
+registration handling. Every returned byte stream is hashed; a bad sibling falls back to isolated reads and cannot
+hide healthy bytes. Returned arrays are detached per caller. This trusted byte port grants no access: callers still
+use exact source/capture and read-tier guards. New reads recheck purge; no cross-request authorization cache is added.
+
+Memoized method arguments are copied synchronously at admission, after plain-JSON eligibility/key validation and
+before the deferred method or batch can run. Find/count batches and scalar fallbacks consume that same snapshot;
+mutating or reusing the caller's query cannot change an existing proof under its old key. Unsupported arguments and
+transaction calls still bypass memoization. Trusted memoReadValue loaders remain responsible for their captured inputs;
+queryRead already freezes its complete encoded input before supplying the loader.
+
+Find keys cover the entire validated query, including future JSON fields. Known default aliases remain normalized;
+top-level field order is canonical for this field-based API. The batch and fallback receive exactly that normalized
+snapshot, so a new field cannot influence execution while being omitted from the cache identity.

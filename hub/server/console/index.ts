@@ -1,4 +1,6 @@
 import {tooltip,technical} from './presentation.ts';
+import {sendConsoleAsset} from './assets.ts';
+import {createHash} from 'node:crypto';
 import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
 import { LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
@@ -22,7 +24,7 @@ import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPag
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { handleApiWrite } from './api-write.ts';
-import { CONTENT_SECURITY_POLICY, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
+import { CONTENT_SECURITY_POLICY, secureConsoleResponse, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
 import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
@@ -30,6 +32,7 @@ import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
+import {withReadScope,memoReadPort} from '../../records/api.ts';
 import {performMemoryAction} from './memory.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
@@ -80,13 +83,14 @@ const HOME = '/console/overview';
 
 function sendHtml(response: ServerResponse, status: number, body: Html, headers: Record<string, string | string[]> = {}): void {
   setCommonHeaders(response);
-  const text = body.text;
+  const custom= headers['content-security-policy'];
+  const secured=secureConsoleResponse(body,typeof custom==='string'?custom:CONTENT_SECURITY_POLICY),text=secured.text;
   response.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
-    'content-security-policy': CONTENT_SECURITY_POLICY,
     'cross-origin-opener-policy': 'same-origin',
     'content-length': String(Buffer.byteLength(text)),
     ...headers,
+    'content-security-policy': secured.policy,
   });
   response.end(text);
 }
@@ -652,7 +656,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
       if (userId === null || userId === undefined) return Promise.resolve('—');
       let pending = names.get(userId);
       if (pending === undefined) {
-        pending = options.deps.records.principals.get(userId).then((user) => user?.name ?? userId);
+        pending = memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.name ?? userId);
         names.set(userId, pending);
       }
       return pending;
@@ -687,7 +691,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: ApiResult;
   try {
-    result = await handleApi(ctx, rest, { jobs: options.jobs, run: bridgeRun(options, session!) });
+    result = await withReadScope(()=>handleApi(ctx, rest, { jobs: options.jobs, run: bridgeRun(options, session!) }));
   } catch (error) {
     if ((error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') || error instanceof TypeError) {
       options.log(`控制台接口参数不对（${url.pathname}）：${error instanceof Error ? error.message : String(error)}`);
@@ -772,6 +776,7 @@ async function apiWrite(request: IncomingMessage, response: ServerResponse, url:
 
 /** Handles every path under /console. */
 export async function handleConsole(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions): Promise<void> {
+  if(url.pathname.startsWith('/console/assets/'))return sendConsoleAsset(request,response,url);
   const segments = url.pathname.split('/').slice(2).filter((s) => s.length > 0);
   const secure = options.secureRequest(request);
   const cookieValue = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE);
@@ -786,7 +791,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     response.writeHead(200, {
       'content-type': 'image/svg+xml; charset=utf-8',
       'cache-control': 'public, max-age=86400',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+      'content-security-policy': `default-src 'none'; style-src 'sha256-${createHash('sha256').update(/<style>([\s\S]*?)<\/style>/.exec(FAVICON_SVG)![1]).digest('base64')}'`,
       'x-content-type-options': 'nosniff',
     });
     response.end(request.method === 'HEAD' ? undefined : FAVICON_SVG);
@@ -872,7 +877,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
       if (result === null) return;
     } else {
       const route = Object.hasOwn(ROUTES, segments[0]) ? ROUTES[segments[0]] : undefined;
-      result = route === undefined ? neutralPage(ctx) : await route(ctx, segments.slice(1), options, session!);
+      result = route === undefined ? neutralPage(ctx) : await withReadScope(()=>route(ctx, segments.slice(1), options, session!));
     }
   } catch (error) {
     if(error instanceof KnowledgeError&&error.code){result=spaceActionFailure(ctx,error);}

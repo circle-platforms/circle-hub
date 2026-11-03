@@ -30,23 +30,18 @@ export async function requestRecords(ctx:RequestContext,run?:string):Promise<Req
   const out:RequestView[]=[];let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RequestBody>>=run===undefined?await ctx.deps.records.store.list<RequestBody>({kind:'request',limit:500,cursor},ctx.transaction):await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.run',value:run,limit:500,cursor},ctx.transaction);
-    for(const record of page.items){
-      if(record.schema!=='request@1')continue;
-      const answer=await ctx.deps.records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:record.digest,limit:1,newestFirst:true},ctx.transaction);
-      out.push({...record.body,record:record.digest,answered_by:answer.items[0]?.body.detail.answer??null});
-    }
+    const records=page.items.filter(record=>record.schema==='request@1');
+    const queries=records.map(record=>({kind:'action' as const,key:'runs.request.answer',value:record.digest,limit:1,newestFirst:true}));
+    const answers=ctx.deps.records.store.findBatch?await ctx.deps.records.store.findBatch<{detail:{answer:string}}>(queries,ctx.transaction):await Promise.all(queries.map(query=>ctx.deps.records.store.find<{detail:{answer:string}}>(query,ctx.transaction)));
+    records.forEach((record,i)=>out.push({...record.body,record:record.digest,answered_by:answers[i].items[0]?.body.detail.answer??null}));
     cursor=page.next;
   }while(cursor!==null);
   return out;
 }
 export async function requestsOf(ctx:RequestContext,user:Principal,run?:string):Promise<RequestView[]>{
-  const visible:RequestView[]=[];
-  for(const request of await requestRecords(ctx,run)){
-    if(user.role==='admin'){visible.push(request);continue;}
-    if(request.run){if(await ctx.canReadRun?.(user,request.run))visible.push(request);}
-    else if(request.audience===user.id)visible.push(request);
-  }
-  return visible;
+  const records=await requestRecords(ctx,run);
+  const allowed=await Promise.all(records.map(request=>user.role==='admin'?true:request.run?ctx.canReadRun?.(user,request.run):request.audience===user.id));
+  return records.filter((_,i)=>allowed[i]);
 }
 
 /** Trusted components verify responding identity and the actual answering step before calling answer. */

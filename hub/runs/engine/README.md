@@ -1037,3 +1037,27 @@ Generic record readers refuse memory documents/grants/shares and their private c
 memory-unchanged@1) before the administrator/run branches. A rec: lookup, input binding or exact ground resolver receives
 the same absence as for a missing record; no audit or idempotency receipt becomes evidence. Optional knowledge integrations
 remain optional. Dedicated memory and console summary views keep their separate, narrower permission rules.
+
+
+Console performance: read-only run/list/result/request calls create or reuse one asynchronous records scope. The native
+store supplies ordered candidates, and the engine applies the existing recursive readership predicates to every candidate
+until it has a full visible page plus one. Reader/pack-bound cursors still use body time and run ID; append order is not
+presentation order. Partial readers may require additional candidate batches. All unanswered requests, including those
+outside the page, remain in the listing; their answers and grounds reads are batched, not truncated. Recursive proofs,
+cycle/depth limits, withdrawal and unknown results are not memoized. Standalone/mock stores without the candidate port
+retain the previous scan. No mutation path uses the read scope. Pagination, partial readership, exact-capture grants and
+revocations, off-page requests and constant page query batches have database-backed regressions.
+
+Console performance round 2: readonly queries memoize the complete protected request listing and complete top-level
+result readability check, keyed by engine, reader and full run/result bodies, within the existing request scope only.
+Failures are evicted, returned structures are isolated, and writes/admission never install this query port. Recursive
+proofs retain their depth/cycle checks. A result-head summary port supplies list rows and the fixed 120-task aggregate
+window without enumerating submission receipts, per-run request answers or detail-only withdrawal/criterion decoration.
+It shares management/latest selection with full detail, never substitutes an older visible head, and independently
+checks the last readable production result. No chart total or unknown partition changes; the full run route is retained.
+
+Independent console-performance review: a verified run envelope with missing/invalid started_at or run is a malformed
+business candidate, not a reason to fail every reader's listing. If the ordered batch encounters one, the engine scans
+the append fallback, skips/logs malformed headers and then applies the same visibility/order/cursor rules to valid runs.
+The fallback also skips them now (it previously displayed them). Diagnostics contain the record digest, never its body.
+NULL headers cannot bypass continuation predicates or become a cursor; envelope integrity failures still fail closed.

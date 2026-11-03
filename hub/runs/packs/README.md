@@ -308,3 +308,12 @@ Decision 88 audit summaries add `personal.pack.grant_owner` alongside the existi
 use grant/revocation. The console queries only the participant's indexes, or the all-administrators index for administrators,
 and verifies the body audience before rendering. This first phase-3 index adds no migration or permission and never exposes
 another member's named grant through administrative audit views.
+
+
+Console metadata performance: a catalog read owns one read-only scope. Registry record/account lookups and authorization
+history pages batch within it; active assignments for all listed workflows use one verified batch. Member lookups run in
+parallel while their original order and ordinary-user assignment filtering remain intact. Installed-skill metadata is
+loaded once per catalog call. Publication, owner, withdrawal, expiry and account checks keep their existing predicates;
+no new cross-request authorization cache is introduced. Real-registry regressions grow from 3 to 8 workflows for admin
+and member readers and recheck grants, withdrawals and disabled accounts on subsequent calls. Missing optional native
+batch ports retain the existing single-operation fallback.

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { writePack } from '../../hub/runs/api.ts';
 import { reviewPack, REVIEW_PACK, locatePack, LOCATE_PACK } from '../../hub/server/assemble/test-packs.ts';
 import { openConsole } from './support/console.ts';
+import { withoutNonces } from '../../hub/server/console/testing-security.ts';
 import { createTestHub, type TestHub } from '../../hub/server/testing-real.ts';
 import { connect, type McpClient, type Answer, type Outputs } from './support/mcp.ts';
 import { citationIndex } from '../../hub/runs/api.ts';
@@ -198,7 +199,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const hidden = await otherConsole.get(spacePath(owner.user.id, '/合成/目录', saved.root));
   const absent = await otherConsole.get(spacePath('usr_' + '0'.repeat(26), '/合成/目录', saved.root));
   assert.equal(hidden.status, 404);
-  assert.equal(hidden.body, absent.body);
+  assert.equal(withoutNonces(hidden.body), withoutNonces(absent.body));
   assert.equal((await adminConsole.get(spacePath(owner.user.id, '/合成/目录', saved.root))).status, 404);
   const outsiderPage = await otherConsole.get(spacePath(other.user.id));
   const outsiderCsrf = csrf(outsiderPage.body);

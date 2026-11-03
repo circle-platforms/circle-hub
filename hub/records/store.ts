@@ -6,7 +6,7 @@ import { RecordsError } from './errors.ts';
 import { noteNoncanonical, NONCANONICAL_EXPLANATION } from './integrity-notes.ts';
 import { parseStrictJson } from './strict-json.ts';
 export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-notes.ts';
-import { SchemaId } from '../../contracts/src/common.ts';
+import { SchemaId,IsoTime } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { FindQuery, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
@@ -201,6 +201,67 @@ export class PgRecordStore implements RecordStore {
     return { count, capped: count >= cap };
   }
 
+  async countIndexedBatch(queries:readonly {index:readonly IndexEntry[];kind?:import('./api.ts').RecordKind;since?:string;cap?:number}[],tx?:Transaction):Promise<{count:number;capped:boolean}[]>{
+    const input=queries.map((q,n)=>{
+      if(!Array.isArray(q.index)||q.index.length>1000)throw new TypeError('countIndexed takes at most 1000 index entries');
+      for(const entry of q.index)if(typeof entry?.key!=='string'||!INDEX_KEY.test(entry.key))throw new TypeError('invalid index key');
+      if(q.kind!==undefined&&!RecordKindSchema.safeParse(q.kind).success)throw new TypeError('unknown record kind');
+      const cap=q.cap??10000;if(!Number.isInteger(cap)||cap<1||cap>100000)throw new TypeError('cap is an integer from 1 to 100000');
+      const pairs=q.index.filter(entry=>isIndexValue(entry.value));
+      return {n,pairs,kind:q.kind??null,since:pairs.length&&q.since!==undefined?normalizeTime(q.since,'since'):null,cap};
+    });
+    if(!input.length)return [];
+    const result=await this.#db.query<{n:number;count:number}>(`SELECT q.n,(SELECT count(*)::int FROM (
+      SELECT DISTINCT r.digest FROM jsonb_to_recordset(q.pairs) AS wanted(key text,value text)
+      JOIN record_index i ON i.key=wanted.key AND i.value=wanted.value JOIN hub_read_records() r ON r.digest=i.digest
+      WHERE (q.kind IS NULL OR r.kind=q.kind) AND (q.since IS NULL OR r.created_at>=q.since) LIMIT q.cap
+    ) found) AS count FROM jsonb_to_recordset($1::jsonb) AS q(n int,pairs jsonb,kind text,since timestamptz,cap int)`,[JSON.stringify(input)],tx);
+    const counts=new Map(result.rows.map(row=>[Number(row.n),Number(row.count)]));
+    return input.map(q=>{const count=counts.get(q.n)??0;return {count,capped:count>=q.cap};});
+  }
+
+  async entryCandidates(query:{digests:readonly string[];spaces?:readonly string[];reader?:string;offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>{
+    const limit=pageLimit(query.limit);if(!Number.isSafeInteger(query.offset)||query.offset<0)throw new TypeError('entry offset must be a nonnegative safe integer');
+    if(query.spaces&&query.spaces.length!==query.digests.length)throw new TypeError('entry spaces must match candidate digests');
+    if(!query.digests.length)return {items:[],total:0};
+    const result=await this.#db.query<{items:{index:number;at:string}[];total:string;legacy:string[]}>(`WITH headers AS MATERIALIZED (
+      SELECT (wanted.n-1)::int AS n,r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
+      FROM unnest($1::text[], $4::text[]) WITH ORDINALITY AS wanted(digest,space,n) JOIN hub_read_records() r ON r.digest=wanted.digest
+      WHERE r.kind='knowledge_space_entry' AND (wanted.space IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=wanted.space
+        OR (replace(r.body,'\\u0000','\\uFFFD')::json->>'owner'=wanted.space
+          AND replace(r.body,'\\u0000','\\uFFFD')::json->>'record'=r.digest
+          AND replace(r.body,'\\u0000','\\uFFFD')::json->>'personal_payload' IS NOT NULL))
+        AND ($5::text IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=$5 OR replace(r.body,'\\u0000','\\uFFFD')::json->>'sync_private' IS DISTINCT FROM 'true')
+    ), selected AS (SELECT n,at FROM headers ORDER BY at COLLATE "C" DESC NULLS FIRST,n OFFSET $2 LIMIT $3)
+    SELECT (SELECT count(*) FROM headers)::text AS total,
+      COALESCE((SELECT json_agg(json_build_object('index',n,'at',at) ORDER BY at COLLATE "C" DESC NULLS FIRST,n) FROM selected),'[]'::json) AS items,
+      ARRAY(SELECT digest FROM headers WHERE at IS NULL) AS legacy`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit,query.spaces??query.digests.map(()=>null),query.reader??null],tx);
+    const row=result.rows[0];
+    if(row.legacy.length){
+      // An active capsule without its body must reach verified hydration and fail integrity, never look like empty space.
+      const times=await this.entryTimes(query.digests,tx);
+      const bodies=query.spaces||query.reader?await this.getMany<{space:string;sync_private?:boolean}>(query.digests,tx):null;
+      const ordered=query.digests.flatMap((digest,index)=>times.has(digest)&&(!query.spaces||bodies?.get(digest)?.body.space===query.spaces[index])&&(!query.reader||bodies?.get(digest)?.body.space===query.reader||!bodies?.get(digest)?.body.sync_private)?[{index,at:times.get(digest)!}]:[]).sort((a,b)=>b.at.localeCompare(a.at));
+      return {items:ordered.slice(query.offset,query.offset+limit),total:ordered.length};
+    }
+    for(const item of row.items)if(!IsoTime.safeParse(item.at).success)throw new IntegrityError('知识条目时间字段不完整');
+    return {items:row.items,total:Number(row.total)};
+  }
+
+  async entryTimes(digests:readonly string[],tx?:Transaction):Promise<Map<string,string>>{
+    const wanted=[...new Set(digests.filter(isSha256))];if(!wanted.length)return new Map();
+    // JCS puts the strict entry body's ASCII `at` header first. Read only that header, including bodies with escaped NUL.
+    const rows=await this.#db.query<{digest:string;at:string}>(`SELECT digest,substring(body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
+      FROM hub_read_records() WHERE kind='knowledge_space_entry' AND digest=ANY($1::text[])`,[wanted],tx);
+    const times=new Map<string,string>(),legacy:string[]=[];
+    for(const row of rows.rows)if(IsoTime.safeParse(row.at).success)times.set(row.digest,row.at);else legacy.push(row.digest);
+    // Equivalent noncanonical JSON has always been readable. Fall back to its original verified parse, never rewrite it.
+    if(legacy.length)for(const [digest,record]of await this.getMany<{at:string}>(legacy,tx)){
+      if(!IsoTime.safeParse(record.body?.at).success)throw new IntegrityError('知识条目时间字段不完整');times.set(digest,record.body.at);
+    }
+    return times;
+  }
+
   async findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: import('./api.ts').RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
     if (!INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
     if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
@@ -249,6 +310,47 @@ export class PgRecordStore implements RecordStore {
       tx,
     );
     return page<B>(result.rows, limit);
+  }
+
+  async findBatch<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>{
+    const input=queries.map((q,n)=>{
+      if(typeof q.key!=='string'||!INDEX_KEY.test(q.key))throw new TypeError(`invalid index key ${JSON.stringify(q.key)}`);
+      if(!isIndexValue(q.value))return null;
+      if(q.kind!==undefined&&!RecordKindSchema.safeParse(q.kind).success)throw new TypeError('unknown record kind');
+      return {n,key:q.key,value:q.value,kind:q.kind??null,after:decodeCursor(q.cursor),lim:pageLimit(q.limit),descending:q.newestFirst===true};
+    }).filter(q=>q!==null);
+    const groups=new Map<number,Row[]>();
+    if(input.length){const result=await this.#db.query(`SELECT q.n,r.*
+      FROM jsonb_to_recordset($1::jsonb) AS q(n int,key text,value text,kind text,after bigint,lim int,descending boolean)
+      CROSS JOIN LATERAL (
+        SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+        FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
+        WHERE i.key=q.key AND i.value=q.value AND (q.kind IS NULL OR r.kind=q.kind)
+          AND (q.after IS NULL OR (q.descending AND i.record_seq<q.after) OR (NOT q.descending AND i.record_seq>q.after))
+        ORDER BY CASE WHEN q.descending THEN i.record_seq END DESC,CASE WHEN NOT q.descending THEN i.record_seq END ASC
+        LIMIT q.lim+1
+      ) r ORDER BY q.n`,[JSON.stringify(input)],tx);
+      for(const row of result.rows){const n=Number(row.n);const rows=groups.get(n)??[];rows.push(row);groups.set(n,rows);}
+    }
+    // Lateral rows retain the requested order; the outer group ordering alone is not an SQL order guarantee.
+    return queries.map((q,n)=>{if(!isIndexValue(q.value))return {items:[],next:null};const rows=groups.get(n)??[];rows.sort((a,b)=>{const order=BigInt(String(a.seq))-BigInt(String(b.seq));return order===0n?0:(order>0n?1:-1)*(q.newestFirst===true?-1:1);});return page<B>(rows,pageLimit(q.limit));});
+  }
+
+  async runCandidates<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>{
+    const limit=pageLimit(query.limit);if(query.pack!==undefined&&!isIndexValue(query.pack))return [];
+    // Only the contract's ASCII headers are ordered. Mask an unrelated escaped NUL in this SQL projection,
+    // never in the selected record text: PostgreSQL JSON text extraction otherwise rejects the whole body.
+    const values:unknown[]=['run','\\u0000','\\uFFFD',limit];
+    const body="replace(r.body,$2::text,$3::text)::json",at=`(${body}->>'started_at')`,id=`(${body}->>'run')`;
+    let where='r.kind=$1';
+    // Cursor strings are untrusted. Both contract headers are ASCII without controls, so U+0001 has the same
+    // ordering against every valid header as an embedded NUL, which PostgreSQL text parameters cannot carry.
+    if(query.after){values.push(...query.after.map(value=>value.replaceAll('\0','\u0001')));where+=` AND (${at} COLLATE "C",${id} COLLATE "C")<($5::text COLLATE "C",$6::text COLLATE "C")`;}
+    if(query.pack!==undefined){values.push(query.pack);where+=` AND EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='runs.pack' AND i.value=$${values.length})`;}
+    const result=await this.#db.query(`SELECT ${COLUMNS.split(', ').map(c=>'r.'+c).join(', ')} FROM hub_read_records() r WHERE ${where}
+      ORDER BY ${at} COLLATE "C" DESC NULLS FIRST,${id} COLLATE "C" DESC NULLS FIRST LIMIT $4`,values,tx);
+    // Preserve verified malformed records for the engine's diagnostic/fallback path; a business header is not envelope integrity.
+    return result.rows.map(row=>verifiedRecord<B>(row));
   }
 
   async list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>> {

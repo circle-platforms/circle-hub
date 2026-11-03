@@ -6,7 +6,7 @@ import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } f
 import { SpaceId, SpaceEntryInput, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, type SpaceRow, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
+import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
@@ -63,7 +63,11 @@ type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise
 export interface SharingCheck {check:ShareCheck;state:StaticTerminal;code:ProtocolCode|null;message:string;fix:string}
 const SHARING_CHECKS=ShareCheckSchema.extract(['grounds','quotations','sources','duplicates','credentials']).options;
 export class KnowledgeSpaces {
-  #ctx: KnowledgeContext;
+  #rawCtx: KnowledgeContext;
+  get #ctx():KnowledgeContext {
+    const ctx=this.#rawCtx;
+    return {...ctx,records:{...ctx.records,store:scopedRecordStore(ctx.records.store),...(ctx.records.personalPayloads?{personalPayloads:memoReadPort(ctx.records.personalPayloads,['mode','cleared'])}:{}),principals:memoReadPort(ctx.records.principals,['get','list'])}};
+  }
   #writes=new Map<string,WriteQueue>();
   #legacy: TreeReader;
   #mounts: () => Promise<SpaceVersionBody['products']>;
@@ -76,7 +80,7 @@ export class KnowledgeSpaces {
   constructor(ctx: KnowledgeContext, legacy: TreeReader, mounts: () => Promise<SpaceVersionBody['products']> = async () => [], legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null> = async () => null, legacyIndex: LegacySpaceIndex = async () => null, legacyPaths: (root: string) => Promise<Array<{
     path: string;
     entry: string;
-  }>> = async () => []) { this.#ctx = ctx; this.#legacy = legacy; this.#mounts = mounts; this.#legacyNodes = legacyNodes; this.#legacyIndex = legacyIndex; this.#legacyPaths = legacyPaths; }
+  }>> = async () => []) { this.#rawCtx = ctx; this.#legacy = legacy; this.#mounts = mounts; this.#legacyNodes = legacyNodes; this.#legacyIndex = legacyIndex; this.#legacyPaths = legacyPaths; }
   #write<T>(space:string,work:()=>Promise<T>):Promise<T>{
     let queue=this.#writes.get(space);if(!queue){queue=new WriteQueue();this.#writes.set(space,queue);}
     return queue.run(work);
@@ -219,16 +223,22 @@ export class KnowledgeSpaces {
     }
     return out;
   }
-  async precheckGrant(by:Principal,path:string){
+  precheckGrant(by:Principal,path:string){return withReadScope(()=>this.#precheckGrant(by,path));}
+  async #precheckGrant(by:Principal,path:string){
     by=await this.#user(by);path=pathCheck(path);const version=await this.current(by.id);
     const checks:SharingCheck[]=ShareCheckSchema.extract(['credentials','personal_sources','local_only']).options.map(check=>({check,state:'unchecked',code:null,message:'',fix:''}));let phase=0;
     try{
       if(!version||!version.body.directories.includes(path))fail('SOURCE_UNAVAILABLE');
-      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry||entry.sync_private)fail('SPACE_ENTRY_INVALID');this.#scan(entry);}
-      for(const source of await this.sources(by))if(withinSpacePath(source.path,path)){const original=await this.source(by,source.sha256);if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
+      const rows=version.body.entries.filter(row=>withinSpacePath(row.path,path)),bodies=await Promise.allSettled(rows.map(row=>this.#entry(row)));
+      const entries:SpaceEntryBody[]=[];
+      for(const result of bodies){if(result.status==='rejected')throw result.reason;const entry=result.value;if(!entry||entry.sync_private)fail('SPACE_ENTRY_INVALID');this.#scan(entry);entries.push(entry);}
+      const sources=(await this.sources(by)).filter(source=>withinSpacePath(source.path,path));
+      const originals=await Promise.allSettled(sources.map(source=>this.source(by,source.sha256)));
+      for(const result of originals){if(result.status==='rejected')throw result.reason;const original=result.value;if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
       checks[phase++].state='pass';
-      for(const row of version.body.entries.filter(row=>withinSpacePath(row.path,path))){const entry=await this.#entry(row);if(!entry)fail('SPACE_ENTRY_INVALID');for(const ground of entry.grounds)await this.#grantableGround(by,ground.reference);}
-      for(const source of await this.sources(by))if(withinSpacePath(source.path,path))await this.#grantableGround(by,'src:'+source.sha256);
+      const references=[...entries.flatMap(entry=>entry.grounds.map(ground=>ground.reference)),...sources.map(source=>'src:'+source.sha256)];
+      const grantable=await Promise.allSettled(references.map(reference=>this.#grantableGround(by,reference)));
+      for(const result of grantable)if(result.status==='rejected')throw result.reason;
       checks[phase++].state='pass';checks[phase].state='pass';
     }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:error instanceof KnowledgeError&&code!=='SPACE_CONTENT_UNINSPECTABLE'&&code!=='SHARE_GROUND_UNRESOLVED'?'violation':'incomplete',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
     return checks;
@@ -461,22 +471,59 @@ export class KnowledgeSpaces {
     if (record?.kind !== 'knowledge_space_entry')
       return null;
     const body = SpaceEntryBody.parse(record.body);
-    return body.entry === row.entry && sha256Hex(canonicalize(body.content)) === row.entry ? body : null;
+    if(body.entry!==row.entry||sha256Hex(canonicalize(body.content))!==row.entry){noteRecordIntegrity(record.id,record.digest,'知识条目内容与摘要不一致');return null;}
+    return body;
   }
   async entry(by: Principal, root: string, path: string, digest: string): Promise<SpaceEntryView | null> {
-    const version = await this.version(root);
-    if (!version || !(await this.mayRead(by, version.body.space, path)))
-      return null;
-    const row = version.body.entries.find(r => r.path === path && r.entry === digest);
-    if (!row)
-      return null;
-    const body = await this.#entry(row);
-    if (!body || body.space !== version.body.space ||body.sync_private&&by.id!==body.space)
-      return null;
-    const current = await this.current(version.body.space);
-    let state = current?.body.entries.find(r => r.entry === digest)?.status ?? row.status;
-    if(body.space==='team'&&state===KnowledgeEntryStatusSchema.enum.verified&&await this.#clearedGrounds(body.grounds.map(g=>g.reference),version))state=KnowledgeEntryStatusSchema.enum.unverified;
-    return { row: { ...row, status: state }, body, root, reference: refOf(root, path, digest),...await this.withdrawalState(body.grounds.map(g=>g.reference),by), cited_count: version.body.space === 'team' || by.id === version.body.space ? await this.#citations(version.body.space, digest) : null };
+    return (await this.entries(by,root,[{path,entry:digest}]))[0]??null;
+  }
+  /** One authorized immutable snapshot, one current state, then the requested bodies and their existing read guards. */
+  async entries(by:Principal,root:string,wanted:readonly {path:string;entry:string}[]):Promise<(SpaceEntryView|null)[]>{
+    return withReadScope(async()=>{
+      const version=await this.version(root);if(!version)return wanted.map(()=>null);
+      const paths=await this.paths(by,version.body.space),current=await this.current(version.body.space);
+      const rows=new Map<string,SpaceRow>(),states=new Map<string,SpaceRow['status']>();
+      for(const row of version.body.entries){const key=canonicalize([row.path,row.entry]);if(!rows.has(key))rows.set(key,row);}
+      for(const row of current?.body.entries??[])if(!states.has(row.entry))states.set(row.entry,row.status);
+      const selected=wanted.map(w=>paths.some(path=>withinSpacePath(w.path,path))?rows.get(canonicalize([w.path,w.entry])):undefined);
+      await this.#ctx.records.store.getMany(selected.flatMap(row=>row?[row.record]:[]));
+      return Promise.all(selected.map(async row=>{
+        if(!row)return null;
+        const body=await this.#entry(row);if(!body||body.space!==version.body.space||body.sync_private&&by.id!==body.space)return null;
+        let state=states.get(row.entry)??row.status;
+        if(body.space==='team'&&state===KnowledgeEntryStatusSchema.enum.verified&&await this.#clearedGrounds(body.grounds.map(g=>g.reference),version))state=KnowledgeEntryStatusSchema.enum.unverified;
+        return {row:{...row,status:state},body,root,reference:refOf(root,row.path,row.entry),
+          ...await this.withdrawalState(body.grounds.map(g=>g.reference),by),cited_count:version.body.space==='team'||by.id===version.body.space?await this.#citations(version.body.space,row.entry):null};
+      }));
+    });
+  }
+  /** Page the authorized timestamp candidates before loading entry bodies; equal times keep snapshot iteration order. */
+  async recent(by:Principal,scope:KnowledgeSearchScope='all',limit=100):Promise<{items:SpaceEntryView[];total:number}>{
+    if(!Number.isSafeInteger(limit)||limit<1||limit>100)fail('SPACE_ENTRY_INVALID');
+    return withReadScope(async()=>{
+      const visible=await this.visible(by,scope,undefined,{initialize:false});
+      const candidates=visible.flatMap(s=>s.version.body.entries.filter(row=>s.paths.some(path=>withinSpacePath(row.path,path))).map(row=>({root:s.version.root,space:s.space,row})));
+      const store=this.#ctx.records.store;
+      const digests=candidates.map(c=>c.row.record);
+      let fallback:{index:number;at:string}[]|undefined;
+      if(!store.entryCandidates){
+        const records=await store.getMany<SpaceEntryBody>(digests);
+        fallback=candidates.flatMap((c,index)=>{const r=records.get(c.row.record);return r?.kind==='knowledge_space_entry'&&r.body.space===c.space&&(!r.body.sync_private||by.id===r.body.space)?[{index,at:SpaceEntryBody.parse(r.body).at}]:[];}).sort((a,b)=>b.at.localeCompare(a.at));
+      }
+      const items:SpaceEntryView[]=[];let total=0,offset=0;
+      while(items.length<limit){
+        const page=store.entryCandidates?await store.entryCandidates({digests,spaces:candidates.map(c=>c.space),reader:by.id,offset,limit:limit-items.length}):{items:fallback!.slice(offset,offset+limit-items.length),total:fallback!.length};
+        // Space headers are filtered before counting. Content integrity is checked on hydration and reported separately.
+        total=page.total;if(!page.items.length)break;offset+=page.items.length;
+        const selected=page.items.map(item=>({candidate:candidates[item.index],at:item.at}));
+        const groups=new Map<string,typeof selected>();for(const item of selected){const rows=groups.get(item.candidate.root)??[];rows.push(item);groups.set(item.candidate.root,rows);}
+        const loaded=new Map<object,SpaceEntryView|null>();
+        await Promise.all([...groups].map(async([root,rows])=>{const views=await this.entries(by,root,rows.map(c=>c.candidate.row));rows.forEach((item,i)=>loaded.set(item,views[i]));}));
+        for(const item of selected){const view=loaded.get(item);if(view){if(view.body.at!==item.at)fail('SPACE_ENTRY_INVALID');items.push(view);}}
+        if(offset>=page.total)break;
+      }
+      return {items,total};
+    });
   }
   /** Cleared personal dependencies also invalidate indirect team grounds without changing their records. */
   async #clearedGrounds(references:readonly string[],version:SpaceVersion,visiting=new Set<string>(),depth=0):Promise<boolean>{
@@ -908,8 +955,10 @@ export class KnowledgeSpaces {
       const stored = await this.#node(version, path);
       if (!stored)
         continue;
-      for (const row of version.body.entries.filter(r => r.path === path && active(r)).sort((a, b) => a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0)) {
-        const view = await this.entry(by, query.root, path, row.entry);
+      const pageRows=version.body.entries.filter(r=>r.path===path&&active(r)).sort((a,b)=>a.entry<b.entry?-1:a.entry>b.entry?1:0);
+      const pageViews=await this.entries(by,query.root,pageRows);
+      for (let i=0;i<pageRows.length;i++) {
+        const row=pageRows[i],view=pageViews[i];
         if (view)
           entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, applicability: view.body.content.applicability ? canonicalize(view.body.content.applicability) : '未声明', data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, grounds_withdrawn:view.grounds_withdrawn,...(view.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:view.grounds_withdrawn_hidden_count}:{}), cited_count: view.cited_count });
       }
@@ -999,7 +1048,7 @@ export class KnowledgeSpaces {
   /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
   async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
     const artifacts=this.#ctx.records.artifacts;
-    const records=await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({key:'knowledge.space.source_hash',values:[sha256],kind:'knowledge_space_source'});
+    const records=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     const captures=new Set(records.filter(row=>row.body.space!=='team').map(row=>row.body.artifact));
     const run=runId?(await this.#ctx.records.store.find<any>({key:'runs.id',value:runId,kind:'run',limit:1})).items[0]?.body:null;
     const pins=capture?[capture]:[...new Set<string>((run?.sources??[]).filter((binding:any)=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact;}).map((binding:any)=>String(binding.artifact)))];
@@ -1022,7 +1071,7 @@ export class KnowledgeSpaces {
   }
   /** Space authorization alone, for exact-reference scope checks; never falls back to an unrelated capture. */
   async spaceSource(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
-    const records = await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({ key: 'knowledge.space.source_hash', values: [sha256], kind: 'knowledge_space_source' });
+    const records = await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     for (const record of records) {
       const body = SpaceSourceBody.parse(record.body);
       if(capture&&body.artifact!==capture)continue;
@@ -1056,7 +1105,7 @@ export class KnowledgeSpaces {
   }
   /** Space authorization alone, for exact-reference scope checks; never falls back to an unrelated capture. */
   async mayReadSource(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<boolean> {
-    const records = await this.#ctx.records.store.findMany<z.infer<typeof SpaceSourceBody>>({ key: 'knowledge.space.source_hash', values: [sha256], kind: 'knowledge_space_source' });
+    const records = await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     for (const record of records) {
       const body = SpaceSourceBody.parse(record.body);
       if(capture&&body.artifact!==capture)continue;

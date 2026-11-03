@@ -7,11 +7,12 @@ import { requestsOf } from './requests.ts';
 // Absent and forbidden give the same null or empty page. Phase and counts are derived, never stored.
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
+import {RunId,IsoTime} from '../../../contracts/src/common.ts';
 import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
 import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
-import type { RunDetail, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
+import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun } from './readers.ts';
 import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionsOf, INDEX, keyOwner } from './store.ts';
@@ -52,17 +53,38 @@ async function ruleWithdrawal(ctx:EngineContext,user:Principal,run:RunRecord):Pr
   return await ctx.deps.workflows.absence?.(user,run.pack,run.pack_space)==='withdrawn'?{rule_withdrawn:true}:{};
 }
 
+/** The same management/technical head and visibility rule for summaries and full detail. Never fall back past a hidden head. */
+async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord<RunRecord>){
+  const store=ctx.deps.records.store,run=stored.body.run;
+  const technicalLatest=await latestAccepted(store,run),management=await abandonDecision(ctx,run);
+  const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
+  const selected=management?managementResult:technicalLatest;
+  const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
+  return {latest,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{})};
+}
+
+/** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
+export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
+  const stored=await visibleRun(ctx,user,run);if(!stored)return null;
+  const [candidates,head]=await Promise.all([resultsOf(ctx.deps.records.store,run),selectedHead(ctx,user,stored)]);
+  let production:RunSummary['production']=null;
+  // Full detail takes the last readable production result, preserving its ordering even for legacy records.
+  for(const candidate of candidates.toReversed())if(candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){
+    production={record:candidate.digest,result:candidate.body};break;
+  }
+  return {run:await withRulingSummary(ctx,stored.body),latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
+}
+
 export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
   const stored = await visibleRun(ctx, user, run);
   if (stored === null) return null;
   const store = ctx.deps.records.store;
   // A shared view includes accepted validation bodies only; rejected receipts fall back to public action codes.
   const owner = canSeeRun(user, stored.body);
-  const results=[] as StoredRecord<ValidationResult>[];
-  for(const record of await resultsOf(store,run))if(await resultReadableBy(ctx,stored.body,record.body,user))results.push(record);
+  const candidates=await resultsOf(store,run),readable=await Promise.all(candidates.map(record=>resultReadableBy(ctx,stored.body,record.body,user)));
+  const results=candidates.filter((_,i)=>readable[i]);
   const byDigest = new Map(results.filter(r=>r.body.system_input===undefined).map((r) => [r.body.submission, r]));
-  const submissions: RunSubmissionView[] = [];
-  for (const record of await submissionsOf(store, run)) {
+  const submissions: RunSubmissionView[] = await Promise.all((await submissionsOf(store,run)).map(async record=>{
     const action = await actionOfSubmission(store, record.digest);
     const detail = action !== null && isObject(action.body.detail) ? action.body.detail : {};
     const submission = typeof detail.submission === 'string' ? detail.submission : isVerbatimObject(record) ? null : receivedDigest(record.body).digest;
@@ -70,23 +92,19 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
     const privateReceipt=!owner||stored.body.runner!==user.id&&!await groundsReadableBy(ctx,stored.body,record.body,user);
     const codes = action?.body.codes ?? [];
     const hubError = action?.body.result === 'error' && detail.hub_error === true;
-    submissions.push({
+    return {
       record: record.digest,
       received_at: record.created_at,
       acceptance: hubError || action === null && result === undefined ? null : result?.body.acceptance ?? action?.body.acceptance ?? 'not_accepted',
       errors: privateReceipt && result===undefined ? publicReceiptErrors(codes) : action===null&&result===undefined ? [{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带原会话原样重交'}] : hubError ? [{code: action?.body.error_code ?? 'check_error', message: '未校验（中断）', ...(typeof detail.fix === 'string' ? {fix: detail.fix} : {})}] : result?.body.errors ?? publicReceiptErrors(codes),
       result: result !== undefined && result.body.acceptance === 'accepted' ? result.digest : null,
-    });
-  }
-  const technicalLatest = await latestAccepted(store, run);
-  const management=await abandonDecision(ctx,run);
-  const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
-  const selected=management?managementResult:technicalLatest;
-  const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
+    };
+  }));
+  const {latest,management}=await selectedHead(ctx,user,stored);
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
   const notices=await criterionNotices(ctx,stored.body);
   const withdrawn=await withdrawalState(ctx,results.map(row=>row.body),user,true);
-  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
@@ -103,17 +121,40 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
     } catch { return { items: [], next: null }; }
   }
   const rows: RunRecord[] = [];
-  let cursor: string | null = null;
-  do {
+  const store=ctx.deps.records.store;
+  const validHeader=(record:StoredRecord<RunRecord>)=>RunId.safeParse(record.body?.run).success&&IsoTime.safeParse(record.body?.started_at).success;
+  const diagnose=(record:StoredRecord<RunRecord>)=>ctx.log({traceId:null,run:RunId.safeParse(record.body?.run).success?record.body.run:null,what:'list_runs',detail:'Malformed run ordering headers; record '+record.digest});
+  let fallback=!store.runCandidates;
+  if(store.runCandidates){
+    let candidateAfter:readonly [string,string]|undefined=after?[after.at,after.id]:undefined;
+    while(rows.length<=limit){
+      const count=Math.min(500,Math.max(32,limit+1-rows.length));
+      let candidates:StoredRecord<RunRecord>[];
+      try{candidates=await store.runCandidates<RunRecord>({...(candidateAfter?{after:candidateAfter}:{}),...(query.pack===undefined?{}:{pack:query.pack}),limit:count});}
+      catch(error){if(error instanceof TypeError||error instanceof RangeError||error instanceof RecordsError&&error.name==='RecordsError')return {items:[],next:null};throw error;}
+      // A malformed header cannot be a continuation boundary. Scan once and skip/log it in the same fallback as adapters.
+      if(candidates.some(record=>!validHeader(record))){fallback=true;rows.length=0;break;}
+      const readable=await Promise.all(candidates.map(record=>runReadableBy(ctx,user,record.body)));
+      for(let i=0;i<candidates.length&&rows.length<=limit;i++)if(readable[i])rows.push(candidates[i].body);
+      if(candidates.length<count)break;
+      const last=candidates.at(-1)!;candidateAfter=[last.body.started_at,last.body.run];
+    }
+  }
+  if(fallback){
+   let cursor: string | null = null;
+   do {
     let page: Page<StoredRecord<RunRecord>>;
     try { page = await listRunRecords(ctx.deps.records.store, query.pack === undefined ? {} : {pack:query.pack}, { limit:500, cursor }); }
     catch (error) {
       if (error instanceof TypeError || error instanceof RangeError || error instanceof RecordsError && error.name === 'RecordsError') return {items:[],next:null};
       throw error;
     }
-    for (const record of page.items) if (await runReadableBy(ctx,user,record.body)) rows.push(record.body);
+    const candidates=page.items.filter(record=>{if(validHeader(record))return true;diagnose(record);return false;});
+    const readable=await Promise.all(candidates.map(record=>runReadableBy(ctx,user,record.body)));
+    rows.push(...candidates.filter((_,i)=>readable[i]).map(record=>record.body));
     cursor = page.next;
-  } while (cursor !== null);
+   } while (cursor !== null);
+  }
   const compare = (a: string,b: string): number => a === b ? 0 : a < b ? -1 : 1;
   const order = (a: RunRecord,b: RunRecord): number => compare(b.started_at,a.started_at) || compare(b.run,a.run);
   rows.sort(order);
@@ -123,10 +164,10 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const last = items.at(-1);
   const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
   let requests=(await requestsOf(ctx,user)).filter(r=>r.answered_by===null);
-  if(query.pack){const matches=[] as typeof requests;for(const request of requests){const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);if(pack?.split('@')[0]===query.pack)matches.push(request);}requests=matches;}
+  if(query.pack){const matches=await Promise.all(requests.map(async request=>{const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);return pack?.split('@')[0]===query.pack;}));requests=requests.filter((_,i)=>matches[i]);}
   const overdue_requests=requests.filter(request=>Date.parse(request.due)<=ctx.now().getTime());
-  const open_runs:string[]=[];
-  for(const run of items){const superseded=await hasSuccessor(ctx,run);if((superseded||await abandonDecision(ctx,run.run))&&!requests.some(r=>r.run===run.run))continue;const latest=await latestAccepted(ctx.deps.records.store,run.run);if(!latest||requests.some(r=>r.run===run.run)||latest.body.partitions.incomplete.length||latest.body.partitions.quarantined.length||latest.body.errors.some(e=>(e.rounds_left??0)>0))open_runs.push(run.run);}
+  const open=await Promise.all(items.map(async run=>{const superseded=await hasSuccessor(ctx,run);if((superseded||await abandonDecision(ctx,run.run))&&!requests.some(r=>r.run===run.run))return false;const latest=await latestAccepted(ctx.deps.records.store,run.run);return !latest||requests.some(r=>r.run===run.run)||latest.body.partitions.incomplete.length>0||latest.body.partitions.quarantined.length>0||latest.body.errors.some(e=>(e.rounds_left??0)>0);}));
+  const open_runs=items.filter((_,i)=>open[i]).map(run=>run.run);
   return {items,next,...(overdue_requests.length?{overdue_requests}:{}),...(requests.length?{requests}:{}),...(open_runs.length?{open_runs}:{})};
 }
 

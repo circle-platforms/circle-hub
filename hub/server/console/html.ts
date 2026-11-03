@@ -1,14 +1,14 @@
 // Server-rendered HTML for the console: a tagged template that escapes every interpolated value, a fixed
-// stylesheet, a fixed pre-paint theme script and an optional live module allowed by their hashes in a strict
+// content-hashed stylesheet and scripts, a tiny hash-allowed pre-paint bootstrap, and a strict
 // Content-Security-Policy. Dynamic values only ever go into element text or double-quoted attributes; links are built
 // from fixed paths and encoded query parameters. Every page of a signed-in account has the side navigation of the design
 // canvas; all pages have the theme script, and only pages with live modules have the live script.
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { KnowledgeSearchScopeSchema, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { LiveEventName } from './live.ts';
 import { LIVE_SCRIPT } from './script.ts';
-import { CSS } from './style.ts';
-import { THEME_SCRIPT } from './theme.ts';
+import { THEME_BOOTSTRAP } from './theme.ts';
+import {CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE} from './assets.ts';
 
 /** Markup that is already safe: produced by `html` or a constant of this module. */
 export class Html {
@@ -101,24 +101,33 @@ export function pre(value: unknown): Html {
   return html`<pre>${value}</pre>`;
 }
 
-const CSS_HASH = createHash('sha256').update(CSS, 'utf8').digest('base64');
 export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
-export const THEME_SCRIPT_HASH = createHash('sha256').update(THEME_SCRIPT, 'utf8').digest('base64');
+export const THEME_SCRIPT_HASH = createHash('sha256').update(THEME_BOOTSTRAP, 'utf8').digest('base64');
+const THEME_RUNTIME_TAG=`<script defer src="${CONSOLE_THEME.path}" integrity="${CONSOLE_THEME.integrity}" crossorigin="anonymous"></script>`;
+export const THEME_TAGS=`<script data-console-theme>${THEME_BOOTSTRAP}</script>${THEME_RUNTIME_TAG}`;
+export const LIVE_TAG=`<script type="module" src="${CONSOLE_LIVE.path}" integrity="${CONSOLE_LIVE.integrity}" crossorigin="anonymous"></script>`;
 
 /**
- * No external asset and no framing; only the fixed stylesheet, theme script and live module by their hashes, its event
+ * No framing or third-party assets: the fixed same-origin stylesheet, external scripts pinned by SRI and a response nonce, the hash-allowed bootstrap, its event
  * stream and page fetches to this server, the console's own icon (favicon.svg) and forms to this console.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
-  `style-src 'sha256-${CSS_HASH}'`,
-  `script-src 'sha256-${SCRIPT_HASH}' 'sha256-${THEME_SCRIPT_HASH}'`,
+  "style-src 'self'",
+  `script-src 'sha256-${THEME_SCRIPT_HASH}'`,
   "connect-src 'self'",
   "img-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
 ].join('; ');
+
+/** Final response boundary: grant this response's nonce only to our two fixed SRI script tags. */
+export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):{text:string;policy:string}{
+ const nonce=randomBytes(18).toString('base64');
+ const tag=(source:string)=>source.replace('<script ',`<script nonce="${nonce}" `);
+ return {text:body.text.replaceAll(THEME_RUNTIME_TAG,tag(THEME_RUNTIME_TAG)).replaceAll(LIVE_TAG,tag(LIVE_TAG)),policy:policy.replace('script-src ',`script-src 'nonce-${nonce}' `)};
+}
 
 /** The eight places; only the current place may expand its authorized navigation. */
 export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings';
@@ -200,8 +209,8 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
 function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg"><script data-console-theme>${new Html(THEME_SCRIPT)}</script><style>${new Html(CSS)}</style></head>
-<body class="hub">${body}${script ? html`<script type="module">${new Html(LIVE_SCRIPT)}</script>` : ''}</body></html>`;
+<title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg">${new Html(THEME_TAGS)}<link rel="stylesheet" href="${CONSOLE_CSS.path}" integrity="${CONSOLE_CSS.integrity}" crossorigin="anonymous"></head>
+<body class="hub">${body}${script ? new Html(LIVE_TAG) : ''}</body></html>`;
 }
 
 /** A page of the console: the side navigation and the signed-in account, then the title and the body. */

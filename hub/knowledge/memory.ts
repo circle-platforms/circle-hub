@@ -4,7 +4,7 @@ import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,MemoryWriteReceipt,type MemoryMetadata} from '../../contracts/src/memory.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {SyncObjectKindSchema,SyncModeSchema,ActionKindSchema,ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
-import {canonicalize,sha256Hex,scanForCredentials,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
+import {withReadScope,scopedRecordStore,memoReadPort,canonicalize,sha256Hex,scanForCredentials,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
 import {pathOf,pathSegments} from '../refs/api.ts';
 import {KnowledgeError} from './errors.ts';
 import {WriteQueue,type KnowledgeContext} from './context.ts';
@@ -20,8 +20,12 @@ function cursor(raw:string|undefined,snapshot:string,mode:string):number{
 }
 export interface MemorySharingResult {ok:boolean;checks:SharingCheck[];effect:MemoryShareBody['effect'];replaces:string|null;title:string;target_path?:string;share?:MemoryShareBody;record?:string}
 export class MemoryDocuments{
- #ctx:KnowledgeContext;#spaces:KnowledgeSpaces;#queues=new Map<string,WriteQueue>();
- constructor(ctx:KnowledgeContext,spaces:KnowledgeSpaces){this.#ctx=ctx;this.#spaces=spaces;}
+ #rawCtx:KnowledgeContext;#spaces:KnowledgeSpaces;#queues=new Map<string,WriteQueue>();
+ constructor(ctx:KnowledgeContext,spaces:KnowledgeSpaces){this.#rawCtx=ctx;this.#spaces=spaces;}
+ get #ctx():KnowledgeContext{
+  const ctx=this.#rawCtx;
+  return {...ctx,records:{...ctx.records,store:scopedRecordStore(ctx.records.store),principals:memoReadPort(ctx.records.principals,['get']),...(ctx.records.memoryIndex?{memoryIndex:memoReadPort(ctx.records.memoryIndex,['heads','usage'])}:{})}};
+ }
  #index(){return this.#ctx.records.memoryIndex??fail('SOURCE_UNAVAILABLE');}
  #now(){return this.#ctx.now().toISOString();}
  async #user(by:Principal){const user=await this.#ctx.records.principals.get(by.id);return user&&!user.disabled?user:fail('SOURCE_UNAVAILABLE');}
@@ -34,13 +38,18 @@ export class MemoryDocuments{
   const owner=await this.#ctx.records.principals.get(space);if(!owner||owner.disabled)return false;
   return (await this.#grants(space,tx)).some(g=>withinSpacePath(path,g.path)&&(g.audience==='member'?g.member===by.id:by.role==='admin'));
  }
+ async #record(digest:string,tx?:Transaction){
+  const record=await this.#ctx.records.store.get(digest,tx);
+  // A batch miss can mean a missing active payload. Keep the scalar store's capsule integrity check before treating it as absence.
+  return record??await this.#rawCtx.records.store.get(digest,tx);
+ }
  async #version(head:MemoryHead,version=head.version,tx?:Transaction){
-  const record=await this.#ctx.records.store.get(version,tx);if(record?.kind!=='memory_version')return fail('SOURCE_UNAVAILABLE');const body=MemoryVersionBody.parse(record.body);
+  const record=await this.#record(version,tx);if(record?.kind!=='memory_version')return fail('SOURCE_UNAVAILABLE');const body=MemoryVersionBody.parse(record.body);
   if(body.document!==head.document||body.space!==head.space)return fail('SOURCE_UNAVAILABLE');return {record,body};
  }
  async #text(body:MemoryVersionBody,tx?:Transaction):Promise<string>{
   if(body.markdown!==null)return body.markdown;
-  const record=body.content_version?await this.#ctx.records.store.get(body.content_version,tx):null;
+  const record=body.content_version?await this.#record(body.content_version,tx):null;
   if(record?.kind!=='memory_version')return fail('SOURCE_UNAVAILABLE');const source=MemoryVersionBody.parse(record.body);
   if(source.document!==body.document||source.space!==body.space||source.markdown===null||source.bytes!==body.bytes)return fail('SOURCE_UNAVAILABLE');return source.markdown;
  }
@@ -50,26 +59,28 @@ export class MemoryDocuments{
   if(active.some(head=>head.bytes>limits.documentBytes))return fail('MEMORY_DOCUMENT_LIMIT');
   if(active.length>limits.spaceDocuments||active.reduce((sum,head)=>sum+head.contextBytes,0)>limits.spaceBytes)return fail('MEMORY_SPACE_LIMIT');
  }
- async items(by:Principal,scope:KnowledgeSearchScope='all',forSession=false):Promise<MemoryMetadata[]>{
+ items(by:Principal,scope:KnowledgeSearchScope='all',forSession=false):Promise<MemoryMetadata[]>{return withReadScope(()=>this.#items(by,scope,forSession));}
+ async #items(by:Principal,scope:KnowledgeSearchScope,forSession:boolean):Promise<MemoryMetadata[]>{
   by=await this.#user(by);const ids=new Set<string>();if(scope==='all'||scope==='personal')ids.add(by.id);if(scope==='all'||scope==='team')ids.add('team');
   if(scope==='all'||scope==='shared')for(const record of await this.#ctx.records.store.findMany({kind:'memory_grant',key:'memory.grant.grantee',values:[by.id,...(by.role==='admin'?['administrators']:[])]})){const body=MemoryGrantBody.parse(record.body);if(body.space!==by.id)ids.add(body.space);}
   const items:MemoryMetadata[]=[];
   for(const space of ids){
    if(forSession&&space!==by.id&&space!=='team')continue;
    const heads=await this.#index().heads(space);if(forSession)this.#sessionLimits(heads);
-   for(const head of heads){
-   if(!await this.#mayRead(by,space,head.path))continue;
-   const {body}=await this.#version(head);if(space!==by.id&&!(space==='team'&&by.role==='admin')&&body.state!=='enabled')continue;
-   const allowed=(space==='team'||space===by.id)&&body.state==='enabled';if(forSession&&!allowed)continue;
-   items.push({...this.#metadata(head,body),auto_load_allowed:allowed});
-   }
+   const rows=await Promise.all(heads.map(async head=>{
+    if(!await this.#mayRead(by,space,head.path))return null;
+    const {body}=await this.#version(head);if(space!==by.id&&!(space==='team'&&by.role==='admin')&&body.state!=='enabled')return null;
+    const allowed=(space==='team'||space===by.id)&&body.state==='enabled';if(forSession&&!allowed)return null;
+    return {...this.#metadata(head,body),auto_load_allowed:allowed};
+   }));
+   for(const row of rows)if(row)items.push(row);
   }
   return items.sort((a,b)=>a.document.localeCompare(b.document));
  }
  async read(by:Principal,document:string,version?:string,forSession=false){
-  by=await this.#user(by);const doc=await this.#ctx.records.store.get(document);if(doc?.kind!=='memory_document')return fail('SOURCE_UNAVAILABLE');const identity=MemoryDocumentBody.parse(doc.body);
+  by=await this.#user(by);const doc=await this.#record(document);if(doc?.kind!=='memory_document')return fail('SOURCE_UNAVAILABLE');const identity=MemoryDocumentBody.parse(doc.body);
   const heads=await this.#index().heads(identity.space),head=heads.find(h=>h.document===document);
-  if(!head&&version&&identity.space===by.id&&!forSession){const record=await this.#ctx.records.store.get(version);if(record?.kind!=='memory_version')return fail('SOURCE_UNAVAILABLE');const body=MemoryVersionBody.parse(record.body);if(body.document!==document||body.space!==by.id)return fail('SOURCE_UNAVAILABLE');return {document,version,space:by.id,title:body.title,path:body.path,state:'superseded' as const,bytes:body.bytes,updated_at:body.at,updated_by:body.by,auto_load_allowed:false,current_version:null,markdown:await this.#text(body)};}
+  if(!head&&version&&identity.space===by.id&&!forSession){const record=await this.#record(version);if(record?.kind!=='memory_version')return fail('SOURCE_UNAVAILABLE');const body=MemoryVersionBody.parse(record.body);if(body.document!==document||body.space!==by.id)return fail('SOURCE_UNAVAILABLE');return {document,version,space:by.id,title:body.title,path:body.path,state:'superseded' as const,bytes:body.bytes,updated_at:body.at,updated_by:body.by,auto_load_allowed:false,current_version:null,markdown:await this.#text(body)};}
   if(!head||!await this.#mayRead(by,head.space,head.path))return fail('SOURCE_UNAVAILABLE');
   const current=await this.#version(head);if(head.space!==by.id&&!(head.space==='team'&&by.role==='admin')&&current.body.state!=='enabled')return fail('SOURCE_UNAVAILABLE');
   const own=head.space===by.id,adminTeam=head.space==='team'&&by.role==='admin';
@@ -103,10 +114,16 @@ export class MemoryDocuments{
   const items=rows.slice(offset,offset+50).map(record=>{const body=MemoryVersionBody.parse(record.body);return {version:record.digest,title:body.title,path:body.path,state:record.digest===current.current_version?body.state:'superseded',bytes:body.bytes,at:body.at,by:body.by};});
   return {items,next:offset+50<rows.length?nextCursor({snapshot,mode,offset:offset+50}):null};
  }
- async precheckGrant(by:Principal,path:string):Promise<SharingCheck[]>{
+ precheckGrant(by:Principal,path:string):Promise<SharingCheck[]>{return withReadScope(()=>this.#precheckGrant(by,path));}
+ async #precheckGrant(by:Principal,path:string):Promise<SharingCheck[]>{
   by=await this.#user(by);path=pathCheck(path);
   const check:SharingCheck={check:ShareCheckSchema.enum.credentials,state:'pass',code:null,message:'',fix:''};
-  try{for(const head of await this.#index().heads(by.id))if(withinSpacePath(head.path,path)){const {body}=await this.#version(head);this.#scan(body.title,body.path,await this.#text(body));}}
+  try{
+   const heads=(await this.#index().heads(by.id)).filter(head=>withinSpacePath(head.path,path));
+   const rows=await Promise.allSettled(heads.map(async head=>{const {body}=await this.#version(head);return {body,text:await this.#text(body)};}));
+   // Prefetch in batches, but preserve the scalar head order and the first scan/integrity failure.
+   for(const row of rows){if(row.status==='rejected')throw row.reason;const {body,text}=row.value;this.#scan(body.title,body.path,text);}
+  }
   catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';Object.assign(check,{state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix});}
   return [check];
  }

@@ -100,3 +100,24 @@ test('probe rejects a username or password no console account can have before an
     assert.deepEqual(calls, [], 'nothing was sent');
   });
 });
+
+test('external scripts count unless the same-origin content path, SRI and script CSP all agree',()=>{
+ const bytes='synthetic fixed asset',hash=createHash('sha256').update(bytes).digest(),path='/console/assets/'+hash.toString('hex')+'.js',integrity='sha256-'+hash.toString('base64');
+ const tag=`<script defer src="${path}" integrity="${integrity}"></script>`,csp=`default-src 'none'; script-src '${integrity}'`;
+ assert.equal(summarizePage(tag,csp).scripts,0);
+ for(const bad of [tag.replace('integrity=','data-integrity='),tag.replace(path,'https://192.0.2.1'+path),tag.replace(path,path+'?x=1'),tag.replace('</script>','alert(1)</script>'),tag.replace(path,'/console/assets/'+'f'.repeat(64)+'.js')])assert.equal(summarizePage(bad,csp).scripts,1,bad);
+ assert.equal(summarizePage(tag,"script-src 'self'").scripts,1,'the probe still requires exact hashes');
+});
+
+test('nonce-authorized external scripts still bind path and SRI and stable evidence excludes only authorized nonce entropy',()=>{
+ const digest='a'.repeat(64),path='/console/assets/'+digest+'.js',integrity='sha256-'+Buffer.from(digest,'hex').toString('base64');
+ const tag=(nonce:string)=>`<script nonce="${nonce}" defer src="${path}" integrity="${integrity}"></script>`;
+ const a='a'.repeat(24),b='b'.repeat(24),policy=(nonce:string)=>`default-src 'none'; script-src 'nonce-${nonce}'`;
+ assert.equal(summarizePage(tag(a),policy(a)).scripts,0);assert.equal(summarizePage(tag(b),policy(a)).scripts,1);
+ assert.equal(summarizePage(tag(a).replace(` nonce="${a}"`,''),policy(a)).scripts,1);
+ assert.equal(summarizePage(tag(a).replace(integrity,'sha256-wrong'),policy(a)).scripts,1);
+ assert.equal(summarizePage(tag(a).replace(path,path+'?x=1'),policy(a)).scripts,1);
+ assert.equal(summarizePage(`<script nonce="${a}">alert(1)</script>`,policy(a)).scripts,1,'nonce never allows an arbitrary inline body in the evidence probe');
+ assert.equal(summarizePage(tag(a),policy(a)).sha256,summarizePage(tag(b),policy(b)).sha256);
+ assert.notEqual(summarizePage(tag(b),policy(a)).sha256,summarizePage(tag(a),policy(a)).sha256);
+});

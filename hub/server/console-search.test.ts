@@ -1,3 +1,4 @@
+import {withoutNonces} from './console/testing-security.ts';
 // Search and a knowledge node's citations on the console, over HTTP with the fake services and real records: each kind of
 // match with the visibility of its page (member, administrator, a member who reads no product line), the bounds and the
 // partial flag, the sidebar's search box, and the node detail with its 30-day citations from the runs engine's index.
@@ -177,7 +178,7 @@ describe('a knowledge node\'s citations', () => {
     const hidden = await send(`/console/api/knowledge/node?root=${ROOT_1}&path=%2Fcatalog%2Falpha`, { headers: { cookie: stranger } });
     const missing = await send(`/console/api/knowledge/node?root=${'e'.repeat(64)}&path=%2F`, { headers: { cookie: stranger } });
     assert.equal(hidden.status, 404);
-    assert.equal(hidden.body, missing.body);
+    assert.equal(withoutNonces(hidden.body), withoutNonces(missing.body));
     assert.equal(JSON.parse(hidden.body).message, NEUTRAL);
   });
 

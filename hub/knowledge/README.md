@@ -1268,6 +1268,17 @@ Knowledge sharing previews likewise return a target directory only after its cre
 refusals. Memory credential refusals identify generated field labels and line numbers, never matched text; grant and share
 previews preserve that safe location information. Neither preview creates a document, team root or refusal audit.
 
+Memory metadata lists and directory share preflight own a read scope, or join the enclosing console scope. Heads and
+usage are reused per space only within that scope; version and original-content reads coalesce through the verified
+record store, after each path's existing permission test. Principals and grant pages are request-scoped too. Transaction
+arguments bypass memoization and writes through the scoped store clear it, as for knowledge entries; raw writers must
+finish their outer read scope first (records README). No authorization result is cached across requests.
+Preflight collects per-head read results before scanning in original head order, preserving its first failure. A missing
+batch result falls back to the scalar record reader so an active missing payload still raises an integrity incident;
+a completed purge remains unavailable, and team copies are unaffected. Versions retain document/space and body-pointer
+checks, disabled recipient visibility and session limits. SQL regressions cover 25 to 100 documents per owner, ordinary
+grantees and administrator recipients, including revisions that refer to original text.
+
 Memory revocation accepts an existing disabled recipient, so re-enabling the account cannot revive a revoked grant.
 Disabled personal documents remain visible to their owner, but not to recipients, including all-administrator grantees;
 team administrators retain management access to disabled team documents.
@@ -1324,3 +1335,31 @@ The step-5 HTTP and console mode adapters delegate to the same personal-sync ser
 boundary, so it does not first export a private snapshot merely to remove it. The accepted purge is atomic with its
 receipt/audit; re-enable starts empty in a new epoch through the owner-defined storage function. Team copies and
 independently run-held originals keep their existing read rules. The HTTP transport is not a seventh model tool.
+
+Console recent-change pages read timestamp candidates only after resolving the currently authorized space/path snapshots,
+use database order/limit with equal-time snapshot order, and hydrate at most the displayed 100 entry bodies. Every displayed body still goes
+through strict parsing, content hashing, current state, withdrawal visibility and the existing citation cap. Folder/node
+reads hydrate their selected entries in one batch; source citation counts reuse that folder batch. `entries` preserves
+positional nulls, while a recent page fills past unavailable candidates. Current roots and grants are scoped to the read,
+never stored as cross-request authorization. The SQL timestamp projection uses the first ASCII `at` member of a canonical
+strict entry body and returns no statement or grounds; it is a candidate projection, never a permission decision. Equivalent noncanonical bodies fall back to the original verified parse without rewriting them. Mock
+stores without it retain verified full-record reads for sorting. Snapshot and displayed-byte limits remain unchanged.
+
+Folder source lookups batch their existing registration index reads through the readonly record scope, including all
+continuation pages. Sharing prechecks issue entry/source/ground reads concurrently within each existing phase, then
+inspect settled results in the original order. A later I/O failure cannot overtake an earlier credential or unresolved
+source failure. Every source byte stream is still inspected, every distinct ground checked, and phase/first-error
+semantics are preserved. Synthetic regression: 2 and 12 distinct originals both require 7 SQL statements after personal-payload integration for the parallel
+read, with exact-capture, owner/grantee/admin isolation, mutable-byte isolation and later revocation checks.
+
+The recent-page `total` counts matching kind/space/sync-private headers inside the currently authorized snapshot paths. SQL drops
+cross-space candidates before counting or paging; fallback stores apply the same header filter. The console displays an
+ordinary exact count. Selected bodies still pass strict parsing and content hashing: content-hash
+mismatches are omitted and recorded in the bounded maintenance integrity diagnostics (identifiers and fixed explanation,
+never private text). Such damaged records can remain in the header count until integrity checking reports them; this is
+an integrity incident, not normal visibility uncertainty, and does not authorize hydrating every off-page body.
+
+The sync rebase retains local-mode paths, epoch admission and cleared-ground downgrade checks in batched entry reads.
+Readonly mode/cleared answers are reused only inside the request; raw sync writes must remain outside that scope.
+The native candidate/count/batch ports use hub_read_records(), never physical capsule bodies. Purged roots and former
+grants stay absent after resume, and private-only sync entries are excluded from grantee counts before pagination.

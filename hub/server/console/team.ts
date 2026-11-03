@@ -2,7 +2,8 @@ import {stat,dialog,actionLink,field} from './presentation.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {commands} from './commands.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
-import {circleName} from './circles.ts';
+import {tokensForMembers,assignmentsForMembers} from './member-reads.ts';
+import {circleNames} from './circles.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import {neutralPage,type PageContext,type PageResult} from './pages.ts';
 import {button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
@@ -17,13 +18,14 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  const packs=(await ctx.deps.packs.list(ctx.principal)).filter(pack=>pack.kind==='workflow'&&!pack.space&&!pack.withdrawn);
  const circleId=ctx.url.searchParams.get('circle'),workflow=ctx.url.searchParams.get('workflow');
  const members:unknown[][]=[],circles:unknown[][]=[],devices:Array<{id:string;name:string;owner:string;token:Awaited<ReturnType<typeof principals.tokens>>[number]}>=[];
- const assignedByUser=new Map<string,string[]>();
+ const [assignedByUser,tokensByUser]=await Promise.all([assignmentsForMembers(authorizations,users.map(user=>user.id)),tokensForMembers(principals,users.map(user=>user.id))]);
+ const names=await circleNames(principals,users.filter(user=>!user.disabled).flatMap(user=>(tokensByUser.get(user.id)??[]).filter(token=>token.revoked_at===null)));
  for(const user of users){
-  const assigned=await authorizations.packsFor(user.id);assignedByUser.set(user.id,assigned);
+  const assigned=assignedByUser.get(user.id)??[];
   members.push([link('/console/team/'+user.id,user.name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),user.role==='admin'?'全部工作流':assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读').join('、')||'—']);
-  for(const token of await principals.tokens(user.id)){
+  for(const token of tokensByUser.get(user.id)??[]){
    if(token.revoked_at!==null||user.disabled)continue;
-   const name=await circleName(principals,token),url=href('/console/team',{circle:token.id});
+   const name=names.get(token.id)!,url=href('/console/team',{circle:token.id});
    devices.push({id:token.id,name,owner:user.name,token});
    circles.push([link(url,name),user.name,when(token.last_used_at)]);
   }
