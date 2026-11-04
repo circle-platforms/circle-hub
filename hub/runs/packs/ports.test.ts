@@ -162,16 +162,19 @@ test('summaries: the packs a user may use, with the names of the bound product l
   assert.deepEqual(bound.products, ['Sprocket'], 'a workflow with product.id binds that line only');
 });
 
-test('summaries read the listed packs: the versions of the owner\'s other packs cost neither a row nor a statement', async (t) => {
+test('summaries read each publish decision once: a further version costs its row, not a row per pack listed', async (t) => {
   const bed = await testbed(t);
-  await bed.publish(bed.alice, workflowPack());
-  await bed.registry.assign(bed.admin, bed.bob.id, 'demo-review');
+  for (const id of ['first-review', 'second-review', 'third-review']) {
+    await bed.publish(bed.alice, workflowPack({ id }));
+    await bed.registry.assign(bed.admin, bed.bob.id, id);
+  }
   const store = createWorkflowStore(bed.registry);
   await store.summaries(bed.bob);
   const before = await usageOf(() => store.summaries(bed.bob));
-  for (const version of ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4']) await bed.publish(bed.alice, workflowPack({ id: 'other-review', version }));
+  const versions = ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4'];
+  for (const version of versions) await bed.publish(bed.alice, workflowPack({ id: 'other-review', version }));
   const after = await usageOf(() => store.summaries(bed.bob));
-  assert.equal(after['db.rows'], before['db.rows'], 'on a real deployment every version of every pack was read for each pack listed');
+  assert.equal(after['db.rows'], (before['db.rows'] ?? 0) + versions.length, 'on a real deployment every decision was read again for each pack listed');
   assert.equal(after['db.queries'], before['db.queries']);
 });
 

@@ -218,39 +218,6 @@ test('a publication needs the publish right, a SHA-256 bound and the pack owner;
   assert.equal(await a.isPublished('case-review@1.0.0'), true);
 });
 
-test('packPublications: one pack\'s decisions, oldest first, with its withdrawals, and nothing of the owner\'s other packs', async (t) => {
-  const kit = await openTestRecords({ postgres });
-  t.after(() => kit.close());
-  const { admin, alice, bob } = await setup(kit);
-  const a = kit.authorizations;
-  const v1 = digestOf({ files: ['pack.json'], version: '1.0.0' });
-  const v2 = digestOf({ files: ['pack.json'], version: '1.1.0' });
-  const publish = (by: Principal, object: string, bound: string) => a.grant(by, { permission: 'publish', subject: by.id, object, bound });
-  await a.grantPublishRight(admin, alice.id);
-  await a.grantPublishRight(admin, bob.id);
-  assert.equal(await a.packPublications('case-review'), null);
-  assert.equal(await a.packPublications('not a pack'), null);
-  await publish(alice, 'case-review@1.0.0', v1);
-  await publish(alice, 'other-pack@1.0.0', v1);
-  await publish(alice, 'case-review@1.1.0', v2);
-  await publish(bob, 'third-pack@1.0.0', v2);
-  await a.revoke(admin, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.0', note: '下架' });
-  // Not the owner's decision: it says nothing about the pack, as for isPublished.
-  await a.revoke(admin, { permission: 'publish', subject: bob.id, object: 'case-review@1.1.0' });
-  await publish(alice, 'case-review@1.0.0', v1);
-  const read = await a.packPublications('case-review');
-  assert.equal(read?.owner, alice.id);
-  assert.deepEqual(read?.decisions.map(({ body }) => [body.object, body.revoked]), [
-    ['case-review@1.0.0', false],
-    ['case-review@1.1.0', false],
-    ['case-review@1.0.0', true],
-    ['case-review@1.0.0', false],
-  ]);
-  // The same decisions the history of the owner holds for this pack, in the same order.
-  const history = (await a.history({ permission: 'publish', subject: alice.id, newestFirst: false, limit: 500 })).items.filter(({ body }) => body.object.startsWith('case-review@'));
-  assert.deepEqual(read?.decisions.map(({ digest }) => digest), history.map(({ digest }) => digest));
-});
-
 test('two first publications of one new pack race: exactly one account becomes its owner', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());

@@ -32,7 +32,7 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
-import { IntegrityError, RecordsError, recordExistence, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
+import { IntegrityError, RecordsError, recordExistence, isSha256, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
 import { step } from '../telemetry/api.ts';
@@ -282,7 +282,11 @@ export async function submitDispatchesJobs(deps: ServerDeps, principal: Principa
 
 /** The six tools with the published schemas and the caller's annotations (D06 F[2]: start_run is open-world when it reads outside;
  * D06 R[4]: submit_result carries the widest effect class of the rows it may make the Hub dispatch). */
-export async function listTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<PublishedTool[]> {
+export function listTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<PublishedTool[]> {
+  return withReadScope(() => publishedTools(deps, principal, note));
+}
+
+async function publishedTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void): Promise<PublishedTool[]> {
   const summaries = await deps.workflows.summaries(principal);
   const external = await startRunReadsExternal(deps, principal, note, summaries);
   const dispatches = await submitDispatchesJobs(deps, principal, note, summaries);

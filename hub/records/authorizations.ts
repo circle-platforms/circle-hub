@@ -287,30 +287,6 @@ export class RecordAuthorizations implements Authorizations {
     return page.items[0] ?? null;
   }
 
-  /**
-   * One pack's publish decisions in two statements, whatever else its owner has published: the grants name the versions, and
-   * the decisions on those versions include the withdrawals, which are not indexed by pack.
-   */
-  async packPublications(pack: string): Promise<{ owner: string; decisions: AuthorizationRecord[] } | null> {
-    if (!isTerm(pack)) return null;
-    const granted: AuthorizationRecord[] = [];
-    let cursor: string | null = null;
-    do {
-      const page: Page<AuthorizationRecord> = await this.#store.find<AuthorizationBody>({ key: 'authz.published-pack', value: pack, kind: 'authorization', limit: 500, cursor });
-      granted.push(...page.items);
-      cursor = page.next;
-    } while (cursor !== null);
-    const owner = granted[0]?.body.subject;
-    if (owner === undefined) return null;
-    const keys = [...new Set(granted.filter((record) => record.body.subject === owner).map((record) => `${PUBLISH}|${owner}|${record.body.object}`))];
-    const decisions = await this.#db.query(
-      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
-       FROM record_index i JOIN records r ON r.digest=i.digest
-       WHERE i.key='authz.key' AND i.value=ANY($1::text[]) AND r.kind='authorization'
-       ORDER BY i.record_seq`,[keys]);
-    return { owner, decisions: decisions.rows.map((row) => verifiedRecord<AuthorizationBody>(row)) };
-  }
-
   /** The owner of a pack id is the subject of its first publication (R01 R[0]: new versions only by the owner). */
   async #ownerOf(pack: string, tx?: Transaction): Promise<string | null> {
     const first = await this.#store.find<AuthorizationBody>({ key: 'authz.published-pack', value: pack, kind: 'authorization', limit: 1 }, tx);

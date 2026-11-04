@@ -116,7 +116,8 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
       const handles = await Promise.all((await registry.activeProducts()).map((a) => productHandle(registry, a)));
       return handles.filter((h): h is ProductHandle => h !== null);
     },
-    async readableProducts(user: Principal): Promise<ReadonlySet<string>> {
+    readableProducts(user: Principal): Promise<ReadonlySet<string>> {
+     return withReadScope(async():Promise<ReadonlySet<string>>=>{
       const account = await registry.account(user);
       if (account === null) return new Set();
       const active = await registry.activeProducts();
@@ -131,6 +132,7 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
         for (const bound of boundProducts(declarations, active)) out.add(bound.product.id);
       }
       return out;
+     });
     },
   };
 }
@@ -161,13 +163,15 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
     };
   };
   return {
-    async forUser(user: Principal, ref: string, space?:string): Promise<LoadedWorkflow | null> {
+    forUser(user: Principal, ref: string, space?:string): Promise<LoadedWorkflow | null> {
+     return withReadScope(async()=>{
       if(space&&space!=='team'){const info=await registry.personal?.resolve(user,space,ref);return info?load(info):null;}
       const account = await registry.account(user);
       const parsed = parsePackRef(ref);
       if (account === null || parsed === null || !(await registry.canUse(account.id, parsed.id))) return null;
       const info = await registry.resolve(ref);
       return info === null || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest) ? null : load(info);
+     });
     },
     async skillForTools(user: Principal, ref: string) {
       const account = await registry.account(user);
@@ -200,7 +204,8 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const info = (space&&space!=='team'?await registry.personal?.byDigest(space,digest):await registry.byDigest(digest))??null;
       return info === null ? null : load(info);
     },
-    async summaries(user: Principal): Promise<PackSummary[]> {
+    summaries(user: Principal): Promise<PackSummary[]> {
+     return withReadScope(async()=>{
       const account = await registry.account(user);
       if (account === null) return [];
       const active = await registry.activeProducts();
@@ -219,6 +224,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const personalActive=active.filter(product=>readable.has(product.product.id));
       const personalIds=new Set<string>();for(const info of await registry.personal?.list(account)??[]){const key=info.owner+'/'+info.id;if(info.withdrawn||personalIds.has(key))continue;personalIds.add(key);const opened=await registry.personal!.open(info.space!,info.digest);const method=opened?.declarations.kind==='skill'?opened.declarations.method:opened?.declarations;if(method?.kind==='workflow')out.push(packSummary(info,method,boundProducts(method,personalActive)));else if(info.kind==='skill')out.push(skillSummary(info));}
       return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+     });
     },
   };
 }
