@@ -17,8 +17,8 @@ before(async()=>{
  const read=h.external.read.bind(h.external);h.external.read=async(...args)=>{if(retryMissing && args[0].endsWith(':absent'))return {ok:false,id:args[0],reason:'synthetic transport outage',retry:{code:'SOURCE_TIMEOUT',attempts:3,at:'2026-10-24T00:01:00.000Z'}};const value=await read(...args);return value.ok&&args[0].endsWith(':absent')?{...value,absent:{...absent,object:args[0]},revision:null}:value;};
 });
 after(async()=>{await h?.close();if(dir)await rm(dir,{recursive:true,force:true});await postgres?.stop();});
-async function pack(){
- const spec=locatePack();spec.id='synthetic-absence';
+async function pack(change:(spec:ReturnType<typeof locatePack>)=>void=()=>{}){
+ const spec=locatePack();spec.id='synthetic-absence';change(spec);
  spec.files['functions/project.ts']="export default function(i){return {items:i.inputs.find(s=>s.slot==='map').model.cases.map((n,k)=>({id:n.id,label:n.id,location:{parser:'json@1',selector:'p/cases/'+k},fields:{document:'synthetic',path:['root'],expected:['state']}})),warnings:[]};}";
  const flow=spec.files['workflow.json'] as {json:Record<string,unknown>};flow.json.expected_sources={module:'functions/expected.ts'};
  spec.files['functions/expected.ts']="export default function(){return {sources:[{external:'toy:manual:absent',role:'expected',reason:'合成预期'}],warnings:[]}}";
@@ -37,6 +37,12 @@ test('expected absence binds a readable determined observation and reaches the c
 test('a required absent input is refused with system object and observation time',{skip},async()=>{
  const id=await pack();const answer=await h.service.startRun(h.alice,{pack:id,inputs:{map:{external:'toy:mindmap:absent'}}},h.call());
  assert.equal(answer.call_result,'error');assert.equal(answer.errors[0].code,'SOURCE_ABSENT');assert.equal(answer.errors[0].path,'/inputs/map');assert.match(answer.errors[0].message,/不在 toy 里.*2026-10-24/);
+});
+
+test('an absent object says what else this workflow reads in that system: the same number can name another kind of object',{skip},async()=>{
+ const id=await pack(spec=>{spec.id='synthetic-absence-other';((spec.files['workflow.json'] as {json:{inputs:unknown[]}}).json.inputs).push({slot:'other',role:'subject',description:'合成的另一类对象',accepts:['toy:other'],required:false,many:false});});
+ const answer=await h.service.startRun(h.alice,{pack:id,inputs:{map:{external:'toy:mindmap:absent'}}},h.call());
+ assert.equal(answer.errors[0].code,'SOURCE_ABSENT');assert.match(answer.errors[0].fix??'',/toy:other/);
 });
 
 test('exhausted expected and required reads disclose the missing observation and next retry time',{skip},async()=>{

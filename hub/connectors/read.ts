@@ -285,6 +285,27 @@ export class ReadEngine {
    * of the same bytes counts (a newer scanner's hit in another record, an acceptance revoked since), not only the record
    * a read wrote or found; a record the reader may not read is held too.
    */
+  /**
+   * The setting `accept_scan_detectors` of a resource names the detectors whose hits are no secret of that system: lab accounts
+   * in the text of its records. It is the decision of the administrator who put the resource in force, so an answer with hits of
+   * those detectors alone is accepted in that administrator's name, each with its own acceptance record; a hit of any other
+   * detector still holds the answer, and an acceptance withdrawn by hand stays withdrawn.
+   */
+  async #acceptedByResource(runtime: ResourceRuntime, artifact: SourceArtifact): Promise<boolean> {
+    const named = runtime.resource.settings.accept_scan_detectors;
+    const found = [...new Set(artifact.body.scan.findings.map((hit) => hit.detector))];
+    if (!Array.isArray(named) || found.length === 0 || !found.every((detector) => named.includes(detector))) return false;
+    try {
+      const decision = await this.#o.store.get<{ decided_by: string }>(runtime.decision);
+      const admin = decision === null ? null : await this.#o.principals.get(decision.body.decided_by);
+      if (admin === null || admin.disabled) return false;
+      await this.#o.artifacts.acceptFindings({ id: admin.id, name: admin.name, role: admin.role }, artifact.body.sha256, `资源 ${runtime.resource.id} 的设置 accept_scan_detectors`, { detectors: found, automatic: true });
+      return (await this.#o.artifacts.source({ id: admin.id, name: admin.name, role: admin.role }, artifact.body.sha256, { consumer: 'function', record: artifact.digest }))?.bytes != null;
+    } catch {
+      return false;
+    }
+  }
+
   async #held(principal: Principal | null, artifact: SourceArtifact): Promise<boolean> {
     if (principal === null) return true;
     const source = await this.#o.artifacts.source(principal, artifact.body.sha256, { consumer: 'function', record: artifact.digest });
@@ -361,7 +382,8 @@ export class ReadEngine {
           ...(echoed ? { readTier: RETAIN_ONLY } : {}),
         });
         if(echoed){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,route:exchange.route.id,status:exchange.status,record:artifact.digest});}
-        const held = echoed || artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
+        const retained = artifact.body.read_tier === RETAIN_ONLY && (echoed || !await this.#acceptedByResource(runtime, artifact));
+        const held = echoed || retained || await this.#held(principal, artifact);
         if (held) heldRecords.add(artifact.digest);
         return { artifact, echoed, held };
       } catch (error) {

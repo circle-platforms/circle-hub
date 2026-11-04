@@ -273,7 +273,9 @@ export async function bindInputs(
     }
     if(read.absent) {
       const observation=read.absent;
-      errors.push(protocolError('SOURCE_ABSENT',`输入 ${observation.object} 不在 ${observation.system} 里（读于 ${observation.observed_at}）`,{path}));
+      // The same number can name another kind of object of that system: what else this workflow reads there is the next step.
+      const others=workflow.workflow.inputs.filter(input=>input.slot!==slot.slot).flatMap(input=>input.accepts).filter(type=>type.startsWith(observation.system+':'));
+      errors.push(protocolError('SOURCE_ABSENT',`输入 ${observation.object} 不在 ${observation.system} 里（读于 ${observation.observed_at}）`,{path,...(others.length?{fix:`核对编号或名称；同一个编号可能是这个系统的另一类对象，这个工作流还能读：${others.join('、')}`}:{})}));
       return null;
     }
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
