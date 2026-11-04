@@ -4,6 +4,13 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+## 0.3.0 - 2026-11-04
+
+The first release of the redesigned Hub (milestone 1 and the work after it) and the first with the one-click install bundles for macOS and Linux on arm64 and x64. Public main is the single code line: the integration line was ported in four sanitized batches and sealed, and the owner's production deployment now runs main (decisions 136, 144 and 145 in `docs/hub-r4-progress.md`; the state, what is proven and what cannot be, in `docs/hub-status-2026-11.md`).
+
+- End the lease and dispatch pools an administrator command opened, so a command exits once it has printed instead of 30 seconds later (#175).
+- Size the managed PostgreSQL settings from host memory (or the cgroup limit) and preload `pg_stat_statements` when the binaries ship it, creating the extension in the `postgres` maintenance database only (#176).
+
 - Merge the integration line's model changes into model 37 (consolidation step 3): read failures answer `SOURCE_ABSENT` or the new `SOURCE_NOT_PERMITTED` for team, product and business-system content and stay neutral only for another member's personal space and credential or login failures (D05 R[3], decision 136 ③); errors and fixes are claims (D05 R[8]); choice lists list every option first (A05 R[1]); requests keep their starting permissions (B03, B04) and a session may reuse its declared model identity (W07 F[0]); 台架 and 运行环境 read 自动化测试环境; `fed-case@1` gains ten optional fields. The code follows in step 4. html-format and mindmap-format 1.0.18, workbook-format and xml-format 1.0.19 and knowledge-contribution 1.3.19 carry only the regenerated contract files.
 
 - Unify the decision registry in `docs/hub-r4-progress.md`: public main's former decisions 74–88 are now 121–135 and 89–94 are now 138–143 (table at the top of the page), with sanitized summaries of the integration line's decisions 71–120 and the owner's decisions 136 and 137; citations across the repository follow, and model 36 changes only cited numbers.

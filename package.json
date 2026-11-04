@@ -1,6 +1,6 @@
 {
   "name": "circle-hub",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "circle-hub: the team hub for Circle - task packs, verified results and a knowledge tree over standard MCP",
   "type": "module",

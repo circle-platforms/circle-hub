@@ -40,7 +40,7 @@ For other computers on the internal network, add this machine's address: `… | 
 
 ## Status
 
-Milestone 1 is built and deployed, and nothing here is a supported release. The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, web console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment listening on loopback are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
+Milestone 1 is built and deployed, and 0.3.0 is the first release of the redesigned Hub, with one-click install bundles for macOS and Linux ([CHANGELOG](CHANGELOG.md), [current status](docs/hub-status-2026-11.md)). The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, web console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
 
 ## Run the checks
 

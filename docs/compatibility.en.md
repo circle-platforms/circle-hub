@@ -4,12 +4,12 @@ This page translates the [Chinese original](compatibility.md); where the two dif
 
 The three repositories are versioned separately: circle (the agent), circle-hub (the MCP server) and circle-packs (packs). Who depends on whom, and what is authoritative, is written here. Changing any row is a deliberate upgrade, not something done in passing.
 
-## Current state (2026-11-02)
+## Current state (2026-11-04)
 
 | Component | Version / commit | Authoritative source | Notes |
 |---|---|---|---|
-| circle-hub | public main: the web console (administrators also manage the Hub there), built-in HTTPS, the one-click installer, personal and team knowledge spaces; release bundles start with 0.3.0, which is not published yet, and the last release, 0.2.0, is the retired server | [Hub r4 progress](hub-r4-progress.md) | The owner's persistent deployment is still deployed from the private integration branch; under the owner's decision of 2026-11-02 the two lines become one and deployments then come from main |
-| Contracts | generic model version 22 (`MODEL_VERSION`) | `contracts/model.json`, `contracts/codes.json`; generated files in `contracts/generated` | `npm run verify:contracts` checks that the generated files match their sources |
+| circle-hub | public main: the web console (administrators also manage the Hub there), built-in HTTPS, the one-click installer, personal and team knowledge spaces; release 0.3.0 (2026-11-04) is the first release of the redesigned Hub, with install bundles; the earlier 0.2.0 is the retired server | [Hub r4 progress](hub-r4-progress.md), [current status](hub-status-2026-11.md) | The owner's persistent deployment is deployed from main since 2026-11-04 (decision 145); the private integration branch is sealed |
+| Contracts | generic model version 37 (`MODEL_VERSION`) | `contracts/model.json`, `contracts/codes.json`; generated files in `contracts/generated` | `npm run verify:contracts` checks that the generated files match their sources |
 | MCP | `@modelcontextprotocol/sdk` 1.32.2 | the root `package.json` | Six tools, streamable HTTP; the MCP authorization or a Bearer token |
 | Circle | connects as an ordinary MCP client and needs no hub extension | the MCP protocol and the tool schemas | Circle main has merged the six generic MCP-client improvements with the removal of the bundled Hub (circle#309, 2026-10-26) and the browser sign-in for the MCP authorization (circle#396, 2026-11-02); Circle shows no Hub-specific interface or label (D06 R[1]); changing Circle needs the owner's explicit authorization, scope in [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** source baseline, frozen | the source record in `references/README.md` | Source reference only: it is not installed, and its installer is not run; it is not a runtime dependency of hub |
@@ -74,3 +74,4 @@ The following belonged to the retired task-and-approval server (up to 0.2.0) and
 - 2026-10-29: the tests of the pack sandbox run in the `Linux isolation` jobs under bubblewrap and AppArmor on every pull request; the isolation section names this layer on Linux.
 - 2026-11-03: the Key storage section is added (decision 137: no macOS keychain, key files on every platform, `CIRCLE_HUB_KEYCHAIN_SERVICE` and `_ACCOUNT` retired); the CI paragraph no longer lists the keychain among the macOS-only paths.
 - 2026-11-03: as the owner approved that day, a pull request runs only the fast checks, and the unit, acceptance and `Linux isolation` shards run in the merge queue and on a push to main; a newer push to a pull request cancels its older run, and no other run is ever cancelled.
+- 2026-11-04: hub v0.3.0 is released, the first release of the redesigned Hub, with one-click install bundles for macOS and Linux; the owner's persistent deployment is deployed from main from that day (decision 145); the contracts row is corrected to model version 37.
