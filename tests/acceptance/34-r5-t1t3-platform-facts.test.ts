@@ -229,5 +229,39 @@ describe('T2 平台事实端到端验收', () => {
       assert.ok(res.out.errors.some((e) => e.code === 'quality-board.no_cases'));
       assert.ok(res.text.includes('没有用例条目') || res.text.includes('确认这个构建的用例索引已经同步'));
     });
+
+    it('refuses a view id that lacks a required parameter at once, naming the parameter and the way to write it, before any view is built', async () => {
+      const res = await client.call('start_run', {
+        pack: 'quality-board',
+        inputs: {
+          facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_57?kind=case' },
+          placement: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_57?kind=case&by=commands' },
+        },
+      });
+      assert.equal(res.out.call_result, 'error');
+      const refused = res.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.path === '/inputs/facets');
+      assert.ok(refused, JSON.stringify(res.out.errors));
+      assert.match(refused.message, /要有参数 by/);
+      assert.match(refused.fix ?? '', /knowledge:<视图>:<产品>:<构建>/);
+      assert.ok(!res.out.errors.some((e) => e.code === 'SOURCE_UNAVAILABLE'), 'not the bare unavailable answer');
+      assert.ok(!res.out.errors.some((e) => e.code === 'quality-board.no_cases'), 'the other input was not built into a view after the mistake was known');
+    });
+
+    it('names a parameter value the knowledge grammar refuses (an empty only) instead of the bare unavailable answer', async () => {
+      // A model that follows a fix and leaves only= empty is told what the grammar refuses, not "unavailable" again.
+      const res = await client.call('start_run', {
+        pack: 'traceability',
+        inputs: {
+          defects: { external: 'knowledge:index:famx:Rel_FAMX_10_6_1_57?kind=defect&key=bug&only=' },
+          cases: { external: 'knowledge:index:famx:Rel_FAMX_10_6_1_57?kind=case&key=defects' },
+        },
+      });
+      assert.equal(res.out.call_result, 'error');
+      const refused = res.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.path === '/inputs/defects');
+      assert.ok(refused, JSON.stringify(res.out.errors));
+      assert.match(refused.message, /only 要列 1 到/);
+      assert.match(refused.fix ?? '', /knowledge:<视图>:<产品>:<构建>/);
+      assert.ok(!res.out.errors.some((e) => e.code === 'SOURCE_UNAVAILABLE' && e.path === '/inputs/defects'), 'not the bare unavailable answer');
+    });
   });
 });
