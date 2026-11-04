@@ -1,7 +1,8 @@
 // The directory binding knowledge sync's plan and knowledge seed both use: each book is its own directory,
-// one revision, the whole subtree, no batch cut.
+// one revision, the whole subtree, no batch cut. The walk is the adoc-format skill's generic module, reached only
+// through that pack's api.ts; the version-line directory spelling is the layout the product pack declares.
 import type { Producer } from '../../contracts/src/product.ts';
-import { ADOC_LIMITS, ManualSourceError, booksOf, directoryOf, listedSources, mainsOf, rootId } from '../../packs/product/famx/functions/adoc/tree.ts';
+import { DIRECTORY_LIMITS, DirectorySourceError, booksOf, directoryOf, listedSources, mainsOf, rootId } from '../../packs/skill/adoc-format/api.ts';
 import { readSource } from './page.ts';
 import type { SourceLoader } from './sources.ts';
 
@@ -31,12 +32,14 @@ export type DirectoryBind =
 
 /**
  * When `root` is a directory template, bind the meta role to that listing and the list role to each main file's
- * directory. A null root binds nothing. A missing page fails closed and names that page.
+ * directory. A null root binds nothing. A missing page fails closed and names that page. `layout` is the producer's
+ * declared directory layout (its `layout` parameter), which spells `{line_dir}`; without it only `{line}` expands.
  */
 export async function bindDirectorySources(input: {
   producer: Producer;
   line: string;
   root: unknown;
+  layout?: unknown;
   mains?: { cli: unknown; app: unknown };
   loader: SourceLoader;
   maxBytes: number;
@@ -48,9 +51,9 @@ export async function bindDirectorySources(input: {
   const role = declared.many?.role ?? declared.meta?.role ?? 'meta';
   let path: string | null;
   try {
-    path = directoryOf(input.root === undefined ? null : input.root, input.line);
+    path = directoryOf(input.root === undefined ? null : input.root, input.line, input.layout);
   } catch (error) {
-    if (error instanceof ManualSourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
+    if (error instanceof DirectorySourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
     throw error;
   }
   if (path === null) return { ok: true, sources: null };
@@ -77,13 +80,13 @@ export async function bindDirectorySources(input: {
   try {
     mains = mainsOf(input.mains?.cli, input.mains?.app);
   } catch (error) {
-    if (error instanceof ManualSourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
+    if (error instanceof DirectorySourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
     throw error;
   }
   const readWalk = (): ReturnType<typeof booksOf> => booksOf(path, mains, (id) => models.get(id));
   let walk = readWalk();
   try {
-    for (let step = 0; step < ADOC_LIMITS.directories * 2 + 1 && walk.pending.length > 0; step++) {
+    for (let step = 0; step < DIRECTORY_LIMITS.directories * 2 + 1 && walk.pending.length > 0; step++) {
       const pending = walk.pending.find((id) => !models.has(id));
       if (pending === undefined) break;
       const read = await load(pending);
@@ -92,7 +95,7 @@ export async function bindDirectorySources(input: {
       walk = readWalk();
     }
   } catch (error) {
-    if (error instanceof ManualSourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
+    if (error instanceof DirectorySourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
     throw error;
   }
   if (walk.pending.length > 0 || walk.revision === '') return fail(walk.pending[0] ?? rootId(path), '目录清单仍未读全');
