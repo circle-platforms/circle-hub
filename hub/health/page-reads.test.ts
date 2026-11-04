@@ -88,7 +88,7 @@ test('releases come newest first with their first start and last event; a proces
   await insertEvent(db, event(2000, { release: 'aaaaaaaaaaaa', boot: 'boot-2', kind: 'stop', uptime_ms: 1000 }));
   await insertEvent(db, event(3000, { release: 'bbbbbbbbbbbb', boot: 'boot-3' }));
   await insertEvent(db, event(4000, { release: null, boot: 'boot-4' }));
-  assert.deepEqual(await reader.releases(ADMIN, { limit: 5, events: 100 }), { rows: [{ release: 'bbbbbbbbbbbb', first_start: at(3000), last_event: at(3000), previous: 'aaaaaaaaaaaa' }, { release: 'aaaaaaaaaaaa', first_start: at(0), last_event: at(2000), previous: null }], total: 2 });
+  assert.deepEqual(await reader.releases(ADMIN, { limit: 5, events: 100 }), { rows: [{ release: 'bbbbbbbbbbbb', first_start: at(3000), last_event: at(3000) }, { release: 'aaaaaaaaaaaa', first_start: at(0), last_event: at(2000) }], total: 2 });
   const shown = await reader.releases(ADMIN, { limit: 1, events: 100 });
   assert.deepEqual([shown.rows.length, shown.total], [1, 2], 'the page can say how many there are');
   const end = await reader.releases(ADMIN, { limit: 5, events: 1 });
@@ -111,9 +111,9 @@ for (const [kind, ending] of [['stop', { kind: 'stop', uptime_ms: 20 * DAY_MS }]
     await insertEvent(db, event(20 * DAY_MS, { release: a, boot: 'boot-a', ...ending }));
     await insertEvent(db, event(20 * DAY_MS + 1000, { release: b, boot: 'boot-b' }));
     assert.equal((await pruneExpired(db, new Date(START + 20 * DAY_MS + MINUTE_MS - RETENTION_MS), 'boot-b')).events, 1, 'the first pass of the new process');
-    assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100, current: b })).rows, [
-      { release: b, first_start: at(20 * DAY_MS + 1000), last_event: at(20 * DAY_MS + 1000), previous: a },
-      { release: a, first_start: at(0), last_event: at(20 * DAY_MS), previous: null },
+    assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100 })).rows, [
+      { release: b, first_start: at(20 * DAY_MS + 1000), last_event: at(20 * DAY_MS + 1000) },
+      { release: a, first_start: at(0), last_event: at(20 * DAY_MS) },
     ]);
   });
 }
@@ -125,7 +125,7 @@ test('a process whose start was refused still ran: what follows it names it, not
   await insertEvent(db, event(1000, { release: z, boot: 'boot-z', kind: 'stop', uptime_ms: 1000 }));
   await insertEvent(db, event(3000, { release: a, boot: 'boot-a', kind: 'stop', uptime_ms: 1500 }));
   await insertEvent(db, event(4000, { release: b, boot: 'boot-b' }));
-  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100 })).rows.map((row) => [row.release, row.first_start, row.previous]), [[b, at(4000), a], [a, at(1500), z], [z, at(0), null]]);
+  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100 })).rows.map((row) => [row.release, row.first_start]), [[b, at(4000)], [a, at(1500)], [z, at(0)]]);
 });
 
 test('an ending that comes after the next start, its own start gone, still comes before that start', async (t) => {
@@ -133,10 +133,10 @@ test('an ending that comes after the next start, its own start gone, still comes
   const [a, b] = ['aaaaaaaaaaaa', 'bbbbbbbbbbbb'];
   await insertEvent(db, event(1000, { release: b, boot: 'boot-b' }));
   await insertEvent(db, event(1500, { release: a, boot: 'boot-a', kind: 'stop', uptime_ms: 5000 }));
-  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100 })).rows.map((row) => [row.release, row.previous]), [[b, a], [a, null]]);
+  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100 })).rows.map((row) => row.release), [b, a]);
 });
 
-test('a release that comes back starts a new run: it is read by that one, and a restart starts none', async (t) => {
+test('a release that comes back is a run of its own, and a restart is none', async (t) => {
   const { db, reader } = await world(t);
   const [a, b] = ['aaaaaaaaaaaa', 'bbbbbbbbbbbb'];
   await insertEvent(db, event(0, { release: a }));
@@ -146,30 +146,25 @@ test('a release that comes back starts a new run: it is read by that one, and a 
   await insertEvent(db, event(2000, { release: a }));
   await insertEvent(db, event(3000, { release: a }));
   assert.deepEqual(await reader.releases(ADMIN, { limit: 5, events: 100 }), {
-    rows: [{ release: a, first_start: at(2000), last_event: at(3000), previous: b }, { release: b, first_start: at(1000), last_event: at(1000), previous: a }],
-    total: 2,
+    rows: [
+      { release: a, first_start: at(2000), last_event: at(3000) },
+      { release: b, first_start: at(1000), last_event: at(1000) },
+      { release: a, first_start: at(0), last_event: at(1500) },
+    ],
+    total: 3,
   });
 });
 
-test('however many releases came between, one that came back is the newest, and each row names what ran before it', async (t) => {
+test('however many releases came between, one that came back is the newest run', async (t) => {
   const { db, reader } = await world(t);
   const releases = ['aaaaaaaaaaaa', 'bbbbbbbbbbbb', 'cccccccccccc', 'dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', 'aaaaaaaaaaaa'];
   for (const [index, release] of releases.entries()) await insertEvent(db, event(index * 1000, { release }));
   const { rows, total } = await reader.releases(ADMIN, { limit: 6, events: 100 });
-  assert.equal(total, 6);
-  assert.deepEqual(rows.map((row) => [row.release, row.first_start, row.previous]), [
-    ['aaaaaaaaaaaa', at(6000), 'ffffffffffff'], ['ffffffffffff', at(5000), 'eeeeeeeeeeee'], ['eeeeeeeeeeee', at(4000), 'dddddddddddd'],
-    ['dddddddddddd', at(3000), 'cccccccccccc'], ['cccccccccccc', at(2000), 'bbbbbbbbbbbb'], ['bbbbbbbbbbbb', at(1000), 'aaaaaaaaaaaa'],
+  assert.equal(total, 7);
+  assert.deepEqual(rows.map((row) => [row.release, row.first_start]), [
+    ['aaaaaaaaaaaa', at(6000)], ['ffffffffffff', at(5000)], ['eeeeeeeeeeee', at(4000)],
+    ['dddddddddddd', at(3000)], ['cccccccccccc', at(2000)], ['bbbbbbbbbbbb', at(1000)],
   ]);
-});
-
-test('the release that is running comes first, even when the events do not hold its latest start', async (t) => {
-  const { db, reader } = await world(t);
-  for (const [index, release] of ['aaaaaaaaaaaa', 'bbbbbbbbbbbb', 'cccccccccccc'].entries()) await insertEvent(db, event(index * 1000, { release }));
-  const [first] = (await reader.releases(ADMIN, { limit: 1, events: 100, current: 'aaaaaaaaaaaa' })).rows;
-  assert.equal(first!.release, 'aaaaaaaaaaaa');
-  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100, current: 'not-in-the-events' })).rows.map((row) => row.release), ['cccccccccccc', 'bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
-  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100, current: null })).rows.map((row) => row.release), ['cccccccccccc', 'bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
 });
 
 test('every read is for administrators, in the reader too', async (t) => {

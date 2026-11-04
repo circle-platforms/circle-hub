@@ -150,9 +150,9 @@ export interface ClientQuery {
 
 export interface ReleaseTotal {
   release: string;
-  /** Its newest MCP call within `retained`; null without one. */
+  /** The run's newest MCP call within `retained`; null without one. */
   newest_at: string | null;
-  /** MCP calls of the last `windowMs` of that release's own run, at most MAX_RELEASE_CALLS_READ: the p95 is of those. */
+  /** MCP calls of the last `windowMs` of that run, at most MAX_RELEASE_CALLS_READ: the p95 is of those. */
   calls: number;
   /** That stretch held more calls than were read. */
   capped: boolean;
@@ -160,9 +160,10 @@ export interface ReleaseTotal {
 }
 
 export interface ReleaseQuery {
-  releases: readonly string[];
+  /** A release can run twice with another between, and only the time tells the calls of its runs apart. */
+  runs: readonly { release: string; from: string; until: string | null }[];
   retained: string;
-  /** The stretch of each release's run that counts, back from its newest call, so that two releases compare like with like. */
+  /** The stretch of each run that counts, back from its newest call, so that two runs compare like with like. */
   windowMs: number;
 }
 
@@ -355,26 +356,26 @@ export class TraceReader {
     };
   }
 
-  /** The MCP calls of the given releases, each over the last stretch of its own run. Runs off trace_spans_mcp_releases. */
+  /** The MCP calls of the given runs, each over its last stretch, in the order asked. Runs off trace_spans_mcp_releases. */
   async releases(principal: Principal, query: ReleaseQuery): Promise<ReleaseTotal[]> {
-    if ((await this.#viewer(principal))?.admin !== true || query.releases.length === 0) return [];
+    if ((await this.#viewer(principal))?.admin !== true || query.runs.length === 0) return [];
     const rows = await this.#db.query(
       `SELECT r.release, n.newest_at, w.calls, w.p95_ms
-         FROM unnest($1::text[]) WITH ORDINALITY AS r(release, position)
+         FROM unnest($1::text[], $6::timestamptz[], $7::timestamptz[]) WITH ORDINALITY AS r(release, began, until, position)
          LEFT JOIN LATERAL (
            SELECT t.started_at AS newest_at FROM trace_spans t
-            WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2 AND t.name <> ALL($5::text[])
+            WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2 AND t.started_at >= r.began AND t.started_at < coalesce(r.until, 'infinity') AND t.name <> ALL($5::text[])
             ORDER BY t.started_at DESC LIMIT 1
          ) n ON true
          LEFT JOIN LATERAL (
            SELECT count(*)::bigint AS calls, percentile_cont(0.95) WITHIN GROUP (ORDER BY c.ms) AS p95_ms
              FROM (SELECT extract(epoch FROM t.ended_at - t.started_at)::double precision * 1000 AS ms FROM trace_spans t
-                    WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2 AND t.name <> ALL($5::text[])
+                    WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2 AND t.started_at >= r.began AND t.started_at < coalesce(r.until, 'infinity') AND t.name <> ALL($5::text[])
                       AND t.started_at > n.newest_at - $3::double precision * interval '1 millisecond'
                     ORDER BY t.started_at DESC LIMIT $4) c
          ) w ON true
         ORDER BY r.position`,
-      [query.releases, normalizeTime(query.retained, 'retained'), query.windowMs, this.#bounds.releaseCalls, NOT_CALLS],
+      [query.runs.map((run) => run.release), normalizeTime(query.retained, 'retained'), query.windowMs, this.#bounds.releaseCalls, NOT_CALLS, query.runs.map((run) => normalizeTime(run.from, 'from')), query.runs.map((run) => (run.until === null ? null : normalizeTime(run.until, 'until')))],
     );
     return rows.rows.map((row) => ({
       release: String(row.release),

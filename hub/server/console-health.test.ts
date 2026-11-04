@@ -96,7 +96,7 @@ const REPORT = { file: 'report.20261104.040230.4242.0.001.json', readable: true,
 async function events(db: Database, w: Pick<World, 'server' | 'memberUser'>, older: number): Promise<void> {
   await db.query(
     `INSERT INTO process_events(at,kind,boot,pid,release,node_version,heap_limit_bytes) SELECT $1::timestamptz-i*interval '1 minute','start','boot-older-'||i,4242,$2,'v24.0.0',2147483648 FROM generate_series(1,$3::int) AS g(i)`,
-    [iso(NOW.getTime() - 5 * DAY_MS), OLDEST, older],
+    [iso(NOW.getTime() - 6 * DAY_MS), OLDEST, older],
   );
   await event(db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'start', boot: 'boot-previous', release: PREVIOUS });
   await event(db, { at: NOW.getTime() - DAY_MS, kind: 'stop', boot: 'boot-previous', release: PREVIOUS, uptime: DAY_MS });
@@ -326,7 +326,7 @@ test('by release: the p95 of each over the end of its own run, what changed, and
   await everything(w);
   const page = await shown(w.admin);
   const releases = section(page, '按发布');
-  assert.match(releases, /MCP 调用 · 每个发布运行的最后 24 小时，只算 14 天保留期内/);
+  assert.match(releases, /MCP 调用 · 每次部署运行的最后 24 小时，只算 14 天保留期内/);
   assert.match(releases, /发布 运行时段 调用 p95 比上一个发布 发布号/);
   assert.match(releases, /部署 当前 已运行 23 小时 59 分 42 2\.4 秒 慢了 1\.5 秒/);
   assert.match(releases, /运行 24 小时 0 分 12 900 毫秒 没有变化/);
@@ -349,7 +349,7 @@ test('an exchange on /mcp that is no call adds no client, no call and nothing to
   assert.match(section(page, '按发布'), /已运行 1 小时 0 分 21 2\.0 秒/);
 });
 
-test('going back to an earlier release: it comes first, runs from its return and compares with the release it replaced', async (t) => {
+test('going back to an earlier release: a line of its own that comes first, and every line compares with the run below it', async (t) => {
   const w = await world(t);
   await event(w.db, { at: NOW.getTime() - 3 * DAY_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
   await event(w.db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'stop', boot: 'boot-first', release: CURRENT, uptime: DAY_MS });
@@ -361,21 +361,58 @@ test('going back to an earlier release: it comes first, runs from its return and
   await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 400, end: NOW.getTime() - 1000, release: CURRENT });
   const releases = section(await shown(w.admin), '按发布');
   assert.match(releases, /部署 当前 已运行 1 小时 0 分 12 400 毫秒 快了 500 毫秒/);
-  assert.match(releases, /部署 运行 47 小时 0 分 12 900 毫秒 慢了 500 毫秒/, 'what ran before it is the release it replaced, though that one came back');
+  assert.match(releases, /部署 运行 47 小时 0 分 12 900 毫秒 快了 1\.5 秒/, 'the run it replaced, though that release came back');
+  assert.match(releases, /部署 运行 24 小时 0 分 12 2\.4 秒 未知/);
   assert.ok(releases.indexOf('当前') < releases.indexOf('47 小时 0 分'), 'the release running now comes first');
+  assert.equal(releases.split('当前').length, 2, 'only the run that is going on is the current one');
 });
 
-test('the release running now always has its line, however many releases came between or started later', async (t) => {
+test('a release that came back after a short run of another keeps its two runs apart: each counts its own calls, and the one between compares with what it replaced', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - 3 * HOUR_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
+  await event(w.db, { at: NOW.getTime() - 2 * HOUR_MS, kind: 'stop', boot: 'boot-first', release: CURRENT, uptime: HOUR_MS });
+  await event(w.db, { at: NOW.getTime() - 2 * HOUR_MS, kind: 'start', boot: 'boot-between', release: PREVIOUS });
+  await event(w.db, { at: NOW.getTime() - 10 * MINUTE_MS, kind: 'stop', boot: 'boot-between', release: PREVIOUS, uptime: 110 * MINUTE_MS });
+  await event(w.db, { at: NOW.getTime() - 10 * MINUTE_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 2400, end: NOW.getTime() - 2 * HOUR_MS - MINUTE_MS, release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 900, end: NOW.getTime() - HOUR_MS, release: PREVIOUS });
+  await roots(w.db, { name: 'get_nodes', n: 5, every: MINUTE_MS, ms: 400, end: NOW.getTime() - 1000, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 10 分 0 秒 5 400 毫秒 快了 500 毫秒/, 'only the calls of this run, though the earlier ones are within 24 hours');
+  assert.match(releases, /部署 运行 1 小时 50 分 12 900 毫秒 快了 1\.5 秒/, 'against what it replaced, not what came after it');
+  assert.match(releases, /部署 运行 1 小时 0 分 12 2\.4 秒 未知/);
+});
+
+test('the release running now always has its line, however many releases came between', async (t) => {
   const w = await world(t);
   const others = ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000', '111111111111', '222222222222'];
   await event(w.db, { at: NOW.getTime() - 9 * DAY_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
   for (const [index, release] of others.entries()) await event(w.db, { at: NOW.getTime() - (8 - index) * DAY_MS, kind: 'start', boot: `boot-${release}`, release });
   await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, release: CURRENT });
   const returned = section(await shown(w.admin), '按发布');
-  assert.match(returned, /部署 当前 已运行 1 小时 0 分/);
-  assert.match(returned, /显示 5 \/ 共 7/);
-  await w.db.query(`DELETE FROM process_events WHERE boot = 'boot-now'`);
-  assert.match(section(await shown(w.admin), '按发布'), /部署 当前 已运行 9 天/, 'a start the database refused leaves the release its line');
+  assert.match(returned, /部署 当前 已运行 1 小时 0 分 3 10 毫秒/);
+  assert.match(returned, /显示 5 \/ 共 8/);
+});
+
+test('a process whose start the database refused is a run of its own, and every run below keeps what it replaced', async (t) => {
+  const w = await world(t);
+  const [fourth, fifth] = ['dddddddddddd', 'eeeeeeeeeeee'];
+  const ran: [string, number, number][] = [[fourth, 5, 2400], [CURRENT, 4, 900], [PREVIOUS, 3, 400], [fifth, 2, 200]];
+  for (const [release, days, ms] of ran) {
+    await event(w.db, { at: NOW.getTime() - days * DAY_MS, kind: 'start', boot: `boot-${days}`, release });
+    await event(w.db, { at: NOW.getTime() - (days - 1) * DAY_MS, kind: 'stop', boot: `boot-${days}`, release, uptime: DAY_MS });
+    await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms, end: NOW.getTime() - (days - 1) * DAY_MS - HOUR_MS, release });
+  }
+  // The process serving the page started at NOW, and its release ran before: only its start is missing.
+  await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, ms: 100, end: NOW.getTime() + 3000, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 0 毫秒 3 100 毫秒 快了 100 毫秒/, 'its own calls, not those of its earlier run, and against what ran last');
+  assert.match(releases, /12 200 毫秒 快了 200 毫秒/);
+  assert.match(releases, /12 400 毫秒 快了 500 毫秒/, 'what it replaced is the earlier run of the release that is running now');
+  assert.match(releases, /12 900 毫秒 快了 1\.5 秒/);
+  assert.match(releases, /12 2\.4 秒 未知/);
+  assert.equal(releases.split('当前').length, 2, 'that earlier run has ended');
 });
 
 test('a deploy after a process that outlived the retention compares with it, and that row says how long it ran', async (t) => {
@@ -571,7 +608,7 @@ test('what does not fit is counted: 显示 N / 共 M', async (t) => {
   const requests = Array.from({ length: 200 }, (_, index) => ({ trace: null, origin: 'mcp', name: 'get_nodes', user: null, started_at: iso(CRASH - 1000 - index) }));
   await event(w.db, { at: CRASH + 30_000, kind: 'abnormal_exit', boot: null, reports: [], requests, omitted: 57 });
   for (let index = 0; index < 34; index += 1) await roots(w.db, { name: 'get_nodes', n: 1, every: 1000, client: `client-extra-${index}` });
-  for (const [index, release] of ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000'].entries()) await event(w.db, { at: NOW.getTime() - (index + 1) * 1000, kind: 'start', boot: `boot-release-${index}`, release });
+  for (const [index, release] of ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000'].entries()) await event(w.db, { at: NOW.getTime() - (index + 7) * DAY_MS, kind: 'start', boot: `boot-release-${index}`, release });
   const page = await shown(w.admin);
   assert.match(section(page, '崩溃和重启'), /显示 20 \/ 共 257 · 先开始的在前/);
   assert.match(section(page, '崩溃和重启'), /当时在处理 257 个请求/);

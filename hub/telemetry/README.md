@@ -153,7 +153,7 @@ there (`capped`):
 | --- | --- | --- | --- |
 | `background` | `trace_spans_root_names`, a range per task | a window, `MAX_ROUNDS_READ` a task, the closed list of tasks | at most one row a task |
 | `clients` | `trace_spans_roots` | a window, `MAX_ROOTS_READ` | at most `limit` rows, and how many groups there were |
-| `releases` | `trace_spans_mcp_releases` | the retention, the last `windowMs` of each release's run, `MAX_RELEASE_CALLS_READ` a release | one row a release asked for |
+| `releases` | `trace_spans_mcp_releases` | the retention, the times of each run and its last `windowMs`, `MAX_RELEASE_CALLS_READ` a run | one row a run asked for |
 
 `clients` leaves out what no client calls: background rounds, CLI commands, `stream-console` (it lasts as long as a page stays
 open) and `serve-http`. `releases` leaves out `serve-http` too, so on the MCP entry both count the lines of the call log and
