@@ -164,25 +164,12 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   }, (query, by) => reading.getNodes(query, by), async mount => {
     const composition = await reading.compositionOf(mount.root);
     if (!composition) return null;
-    const index = context.records.spaceIndex;
-    if (!index) throw new KnowledgeError('知识搜索索引暂不可用');
-    if (await index.ready(composition.record, mount.path)) return { version: composition.record, rows: [] };
-    // Bound transient text memory while deriving a large legacy product's index.
-    const batch: Array<{path:string;entry:string}> = [];
-    const flush = async () => {
-      const records = await context.records.store.findFirstMany({ key: INDEX.entry, values: batch.map(row => row.entry), kind: 'tree_node' });
-      const rows = batch.map(row => {
-        const record = records.get(row.entry);
-        if (!record) throw new KnowledgeError('产品知识来源的条目记录暂不可读');
-        const body = KnowledgeEntryBody.parse(record.body);
-        return { space: 'team', path: mount.path + (row.path === '/' ? '' : row.path), entry: row.entry, record: record.digest, text: canonicalize([body.statement, body.data]) };
-      });
-      await index.add(composition.record, rows,undefined,'product:'+mount.path);
-      batch.length = 0;
+    return {
+      version: composition.record,
+      rows: () => composition.rows(),
+      records: entries => context.records.store.firstDigests({ key: INDEX.entry, values: entries, kind: 'tree_node' }),
+      contents: entries => context.store.entries(entries, undefined, { cache: false }),
     };
-    for await (const row of composition.rows()) { batch.push(row); if (batch.length === 256) await flush(); }
-    if (batch.length) await flush();
-    return { version: composition.record, rows: [] };
   }, async root => {
     const composition = await reading.compositionOf(root);
     const rows = [];

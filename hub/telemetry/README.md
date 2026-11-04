@@ -51,7 +51,7 @@ asked (`AsyncLocalStorage.snapshot()`), or that work runs in the wrong trace. `h
 | `/api/sync/…` | `sync` | `sync-<route>`, `serve-sync` before a route is known |
 | any other path (`/healthz`, OAuth, local tools, run export) | `console` | `serve-http` |
 | CLI commands, platform commands included | `cli` | `run-<command>`, `run-command` for a name the CLI does not know |
-| maintenance pass, citation index, scheduled knowledge sync, console live tick, staging cleanup, lease heartbeat, document projection job, trace retention | `background` | `maintain-runs`, `index-citations`, `sync-knowledge`, `poll-console`, `clean-staging`, `renew-lease`, `project-document`, `purge-traces` |
+| maintenance pass, citation index, knowledge search index, scheduled knowledge sync, console live tick, staging cleanup, lease heartbeat, document projection job, trace retention | `background` | `maintain-runs`, `index-citations`, `index-knowledge`, `sync-knowledge`, `poll-console`, `clean-staging`, `renew-lease`, `project-document`, `purge-traces` |
 
 An HTTP trace starts in `createApp`'s handler, around everything the request does, the last-resort 500 included. The root of
 an MCP request has the call log line's trace id and span id, one call one span. `traceparent` is read from the header and,

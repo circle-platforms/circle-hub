@@ -1547,6 +1547,12 @@ CREATE INDEX process_events_at ON public.process_events(at);
 CREATE UNIQUE INDEX process_events_start ON public.process_events(boot) WHERE kind='start';
 CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind<>'start';
 `},
+ // The search projection is built in the background: the limit a version's build passed stays beside its counter, so the
+ // build is tried once and not again until that limit rises. Purges already delete these rows by quota scope.
+ {version:31,name:'knowledge_search_refusals',sql:`ALTER TABLE public.knowledge_space_search_totals
+ ADD COLUMN refused_space_bytes pg_catalog.int8 CHECK(refused_space_bytes>0),
+ ADD COLUMN refused_entry_bytes pg_catalog.int8 CHECK(refused_entry_bytes>0);
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
@@ -1588,7 +1594,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   knowledge_space_search: 'SELECT, INSERT',
   knowledge_space_search_documents: 'SELECT, INSERT',
   knowledge_space_search_ready: 'SELECT, INSERT',
-  knowledge_space_search_totals:'SELECT, INSERT, UPDATE (token_bytes)',
+  knowledge_space_search_totals:'SELECT, INSERT, UPDATE (token_bytes,refused_space_bytes,refused_entry_bytes)',
   schema_migrations: 'SELECT',
   records: 'SELECT, INSERT',
   record_index: 'SELECT, INSERT',

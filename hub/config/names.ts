@@ -44,7 +44,8 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_MAX_MEMORY_DOCUMENT_BYTES:'单篇记忆的 UTF-8 正文字节上限，默认 24,000，可配置',
   CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES:'每空间启用记忆的标题、目录与正文 UTF-8 总量上限，默认 48,000，可配置',
   CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS:'每空间当前启用记忆的篇数上限，默认 20，可配置',
-  CIRCLE_HUB_MAX_SPACE_INDEX_BYTES:'个人、团队或每个产品挂载的当前版本索引逻辑字节上限，分别计量，默认 64 MiB，可设 1 KiB 到 4 GiB；历史引用仍占磁盘',
+  CIRCLE_HUB_MAX_SPACE_INDEX_BYTES:'个人或团队当前版本的索引逻辑字节上限，成员写入受它约束，分别计量，默认 64 MiB，可设 1 KiB 到 4 GiB；历史引用仍占磁盘',
+  CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES:'每个产品挂载当前版本的索引逻辑字节上限，只有同步写入，分别计量，默认 1 GiB，可设 1 KiB 到 16 GiB；历史引用仍占磁盘',
 } as const;
 
 export type HubEnvironmentName = keyof typeof HUB_ENVIRONMENT;

@@ -226,7 +226,11 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     runs,
     runsDetail: runs,
     registry,
-    ...(options.command?{}:{maintenance:engine}),
+    // Beside the runs' maintenance, the build of the knowledge search index: no request does that work (hub/knowledge README).
+    ...(options.command?{}:{maintenance:{
+      startMaintenance(){knowledge.spaces?.startIndexing(detail=>notes.engine({traceId:null,run:null,what:'knowledge index',detail}));return engine.startMaintenance();},
+      async stopMaintenance(stopping){await Promise.all([engine.stopMaintenance(stopping),knowledge.spaces?.stopIndexing()]);},
+    }}),
     knowledge,
     workflows,
     packs: catalog,

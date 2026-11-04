@@ -75,7 +75,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     personalSync:new PgPersonalSync(db,store,store.personalPayloads,config.limits,now),
     personalPayloads:store.personalPayloads,
     memoryIndex:new PgMemoryIndex(db,{documentBytes:config.limits.maxMemoryDocumentBytes,spaceBytes:config.limits.maxMemorySpaceBytes,spaceDocuments:config.limits.maxMemorySpaceDocuments}),
-    spaceIndex: new PgSpaceSearchIndex(db,{entryBytes:config.limits.maxEntryIndexBytes,spaceBytes:config.limits.maxSpaceIndexBytes}),
+    spaceIndex: new PgSpaceSearchIndex(db,{entryBytes:config.limits.maxEntryIndexBytes,spaceBytes:config.limits.maxSpaceIndexBytes,productBytes:config.limits.maxProductIndexBytes}),
     config: { dataDir: config.dataDir, logDir: config.logDir, limits: { ...config.limits } },
     store,
     objects,

@@ -30,18 +30,37 @@ entries alone feed new space versions, so withdrawals and replacements free curr
 Product mounts use independent quota scopes, even though their visible space is team. A damaged completed projection reconciles
 only that version's counter before rebuilding missing rows.
 
-The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 1 KiB–16 MiB) and
-`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64
-per referenced document in the current version, independently of personal content/history capacity. Entry overflow asks for
-shorter or split content; current-version overflow asks for withdrawal/replacement or an increased configured limit. Both use
-`SPACE_INDEX_LIMIT` and transactional admission. Search skips an over-limit or incomplete scope and reports warnings alongside
-available matches. Raising the limit permits unfinished product projection work to resume; failed batches are not marked ready.
+The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 1 KiB–16 MiB),
+`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB) and `CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES` (default 1 GiB,
+1 KiB–16 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64 per referenced document in the current version,
+independently of personal content/history capacity. Entry overflow asks for shorter or split content; current-version overflow
+asks for withdrawal/replacement or an increased configured limit, and for a product only the latter. All use
+`SPACE_INDEX_LIMIT`, and writes to personal and team spaces are admitted transactionally. Search skips an over-limit or
+incomplete scope and reports warnings alongside available matches. Raising a limit permits unfinished projection work to
+resume; failed batches are not marked ready.
+
+The limits protect the database, not memory: nothing loads an index into the process, and a search reads by GIN. The space
+limit is what bounds a member, who can write up to a capacity of 1 GiB and whose writes are refused at the limit. Nobody but a
+sync writes a product mount, and a product's knowledge is as large as the product: at the default limit of the spaces, 64 MiB,
+a real product version no longer fitted and a whole line went unsearched. Hence a separate bound, set to catch a sync that runs
+away (a pack that multiplies entries) and not to size a product. A synthetic corpus of 60,400 entries took 94 MB of logical
+tokens as 211 MB of document heap, TOAST and indexes, 92 MB of it GIN, and 39 MB of reference rows: 2.7 times the logical size.
+
+Searches only read this projection. `states` tells, in one statement over the ready and counter rows, which scopes may be
+searched, whatever their size. Building is the background round's (`hub/knowledge` README), and `ready`, which counts a
+version's references and repairs a damaged counter, is a build's check, never a search's. `present` says which rows of a batch
+have their reference already: that is how a build resumes. Documents go in multi-row statements, in record order, at most 500
+documents or 1 MiB of tokens each; `document` tokenizes outside a transaction for a caller that wants to.
+
+Migration 31 adds `refused_space_bytes` and `refused_entry_bytes` to the counter row of a version: the limit its build passed.
+While that limit stands `states` reports the refusal and the build is not tried again, in this process or the next; a limit
+that rose ends the refusal without a write. A purge needs no change: it deletes these rows by quota scope.
 
 Historical token documents, version/path references, counters, GIN and B-tree indexes still occupy PostgreSQL disk. They are not
 reclaimed by withdrawal and their physical bytes are not the logical token quota or content quota: the independent synthetic
 review measured reference rows at about 2.7 times their charged snapshot metadata. That observation is not a deployment size
 estimate. Administrators must provision and monitor database/backup disk separately. Runtime grants allow updating only the
-counter's `token_bytes`; its quota/version identity and history remain protected. Existing migrations retain their SQL bytes;
+counter's `token_bytes` and refusal columns; its quota/version identity and history remain protected. Existing migrations retain their SQL bytes;
 only the pre-existing whole-source freeze assertion is refreshed. No new data SHA check is added.
 
 `objects.put/stat` accept the caller transaction; upload-only `artifacts.ingest` does too. Space import registers the object,
