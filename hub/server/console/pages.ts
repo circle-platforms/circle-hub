@@ -21,7 +21,7 @@ import type { HubFacts } from './settings.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, icon, link, liveModule, page, pageLayout, pre, section, table, type Html, type PageChrome } from './html.ts';
-import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell } from './tasks.ts';
+import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell, waitingRequests } from './tasks.ts';
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
 import { awaitingRequests } from './requests.ts';
@@ -114,7 +114,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const wanted = param(ctx, 'result');
   const filtering = pack !== undefined || wanted !== undefined;
   if (wanted !== undefined && !isTaskResult(wanted)) return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), html`<p class="error">筛选的任务结果不对</p>`) };
-  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: TASKS_PER_PAGE, cursor: cursor ?? null });
+  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: TASKS_PER_PAGE, cursor: cursor ?? null, requests: false });
   const [tasks, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
   const counts = new Map<TaskResult, number>();
   for (const task of tasks) if (task.result !== null) counts.set(task.result, (counts.get(task.result) ?? 0) + 1);
@@ -140,7 +140,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   ], '按任务结果筛选');
   const filter = html`<form class="ch-actions" data-filters method="get" action="/console/runs"><label>按${uiLabelOf('pack_kind','workflow')}筛选 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p>${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
-  const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
+  const requests=await waitingRequests(ctx,tasks);
   const empty = tasks.length === 0 && !filtering;
   const list = empty
     ? card({ title: '尚无任务' }, html`<p class="ch-meta">客户端启动任务后在此列出。</p>`)
@@ -148,7 +148,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: page(ctx.chrome('任务', { active: 'tasks', hint: '客户端提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
-${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, listing.overdue_requests, true))}`,{inspector:html`<h2 class="ch-panel-title">任务</h2>${stat('本页任务',tasks.length)}${stat('筛选后',shown.length)}${card({title:'任务结果'},html`<ul class="ch-feed">${[...counts].map(([result,count])=>html`<li>${uiLabelOf('task_result',result)}<span class="num">${count}</span></li>`)}</ul>`)}`})),
+${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, true))}`,{inspector:html`<h2 class="ch-panel-title">任务</h2>${stat('本页任务',tasks.length)}${stat('筛选后',shown.length)}${card({title:'任务结果'},html`<ul class="ch-feed">${[...counts].map(([result,count])=>html`<li>${uiLabelOf('task_result',result)}<span class="num">${count}</span></li>`)}</ul>`)}`})),
   };
 }
 
