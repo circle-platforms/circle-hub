@@ -320,6 +320,42 @@ test('an exchange on /mcp that is no call adds no client, no call and nothing to
   assert.match(section(page, '按发布'), /已运行 1 小时 0 分 21 2\.0 秒/);
 });
 
+test('going back to an earlier release: it comes first, runs from its return and compares with the release it replaced', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - 3 * DAY_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
+  await event(w.db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'stop', boot: 'boot-first', release: CURRENT, uptime: DAY_MS });
+  await event(w.db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'start', boot: 'boot-between', release: PREVIOUS });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'stop', boot: 'boot-between', release: PREVIOUS, uptime: 2 * DAY_MS - HOUR_MS });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 2400, end: NOW.getTime() - 2 * DAY_MS - HOUR_MS, release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 900, end: NOW.getTime() - 2 * HOUR_MS, release: PREVIOUS });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 400, end: NOW.getTime() - 1000, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 1 小时 0 分 12 400 毫秒 快了 500 毫秒/);
+  assert.match(releases, /部署 运行 47 小时 0 分 12 900 毫秒 慢了 500 毫秒/, 'what ran before it is the release it replaced, though that one came back');
+  assert.ok(releases.indexOf('当前') < releases.indexOf('47 小时 0 分'), 'the release running now comes first');
+});
+
+test('the release running now always has its line, however many releases came between or started later', async (t) => {
+  const w = await world(t);
+  const others = ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000', '111111111111', '222222222222'];
+  await event(w.db, { at: NOW.getTime() - 9 * DAY_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
+  for (const [index, release] of others.entries()) await event(w.db, { at: NOW.getTime() - (8 - index) * DAY_MS, kind: 'start', boot: `boot-${release}`, release });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  const returned = section(await shown(w.admin), '按发布');
+  assert.match(returned, /部署 当前 已运行 1 小时 0 分/);
+  assert.match(returned, /显示 5 \/ 共 7/);
+  await w.db.query(`DELETE FROM process_events WHERE boot = 'boot-now'`);
+  assert.match(section(await shown(w.admin), '按发布'), /部署 当前 已运行 9 天/, 'a start the database refused leaves the release its line');
+});
+
+test('a release with no release before it in the events does not blame the retention alone', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, release: CURRENT });
+  assert.match(await shown(w.admin), /title="进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了"/);
+});
+
 test('observation itself: the writer of this process and the samples of the day', async (t) => {
   const w = await world(t);
   await everything(w);

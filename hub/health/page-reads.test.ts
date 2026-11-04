@@ -87,7 +87,7 @@ test('releases come newest first with their first start and last event; a proces
   await insertEvent(db, event(2000, { release: 'aaaaaaaaaaaa', boot: 'boot-2', kind: 'stop', uptime_ms: 1000 }));
   await insertEvent(db, event(3000, { release: 'bbbbbbbbbbbb', boot: 'boot-3' }));
   await insertEvent(db, event(4000, { release: null, boot: 'boot-4' }));
-  assert.deepEqual(await reader.releases(ADMIN, { limit: 5, events: 100 }), { rows: [{ release: 'bbbbbbbbbbbb', first_start: at(3000), last_event: at(3000) }, { release: 'aaaaaaaaaaaa', first_start: at(0), last_event: at(2000) }], total: 2 });
+  assert.deepEqual(await reader.releases(ADMIN, { limit: 5, events: 100 }), { rows: [{ release: 'bbbbbbbbbbbb', first_start: at(3000), last_event: at(3000), previous: 'aaaaaaaaaaaa' }, { release: 'aaaaaaaaaaaa', first_start: at(0), last_event: at(2000), previous: null }], total: 2 });
   const shown = await reader.releases(ADMIN, { limit: 1, events: 100 });
   assert.deepEqual([shown.rows.length, shown.total], [1, 2], 'the page can say how many there are');
   const end = await reader.releases(ADMIN, { limit: 5, events: 1 });
@@ -98,6 +98,42 @@ test('a release whose start the retention took away still has a beginning: its e
   const { db, reader } = await world(t);
   await insertEvent(db, event(2000, { release: 'aaaaaaaaaaaa', kind: 'stop', uptime_ms: 1000 }));
   assert.equal((await reader.releases(ADMIN, { limit: 5, events: 100 })).rows[0]!.first_start, at(2000));
+});
+
+test('a release that comes back starts a new run: it is read by that one, and a restart starts none', async (t) => {
+  const { db, reader } = await world(t);
+  const [a, b] = ['aaaaaaaaaaaa', 'bbbbbbbbbbbb'];
+  await insertEvent(db, event(0, { release: a }));
+  await insertEvent(db, event(1000, { release: b }));
+  // The earlier process's ending can come after the next start: an ending is no start of a run.
+  await insertEvent(db, event(1500, { release: a, boot: 'boot-0', kind: 'stop', uptime_ms: 1500 }));
+  await insertEvent(db, event(2000, { release: a }));
+  await insertEvent(db, event(3000, { release: a }));
+  assert.deepEqual(await reader.releases(ADMIN, { limit: 5, events: 100 }), {
+    rows: [{ release: a, first_start: at(2000), last_event: at(3000), previous: b }, { release: b, first_start: at(1000), last_event: at(1000), previous: a }],
+    total: 2,
+  });
+});
+
+test('however many releases came between, one that came back is the newest, and each row names what ran before it', async (t) => {
+  const { db, reader } = await world(t);
+  const releases = ['aaaaaaaaaaaa', 'bbbbbbbbbbbb', 'cccccccccccc', 'dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', 'aaaaaaaaaaaa'];
+  for (const [index, release] of releases.entries()) await insertEvent(db, event(index * 1000, { release }));
+  const { rows, total } = await reader.releases(ADMIN, { limit: 6, events: 100 });
+  assert.equal(total, 6);
+  assert.deepEqual(rows.map((row) => [row.release, row.first_start, row.previous]), [
+    ['aaaaaaaaaaaa', at(6000), 'ffffffffffff'], ['ffffffffffff', at(5000), 'eeeeeeeeeeee'], ['eeeeeeeeeeee', at(4000), 'dddddddddddd'],
+    ['dddddddddddd', at(3000), 'cccccccccccc'], ['cccccccccccc', at(2000), 'bbbbbbbbbbbb'], ['bbbbbbbbbbbb', at(1000), 'aaaaaaaaaaaa'],
+  ]);
+});
+
+test('the release that is running comes first, even when the events do not hold its latest start', async (t) => {
+  const { db, reader } = await world(t);
+  for (const [index, release] of ['aaaaaaaaaaaa', 'bbbbbbbbbbbb', 'cccccccccccc'].entries()) await insertEvent(db, event(index * 1000, { release }));
+  const [first] = (await reader.releases(ADMIN, { limit: 1, events: 100, current: 'aaaaaaaaaaaa' })).rows;
+  assert.equal(first!.release, 'aaaaaaaaaaaa');
+  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100, current: 'not-in-the-events' })).rows.map((row) => row.release), ['cccccccccccc', 'bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
+  assert.deepEqual((await reader.releases(ADMIN, { limit: 5, events: 100, current: null })).rows.map((row) => row.release), ['cccccccccccc', 'bbbbbbbbbbbb', 'aaaaaaaaaaaa']);
 });
 
 test('every read is for administrators, in the reader too', async (t) => {

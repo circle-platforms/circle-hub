@@ -385,22 +385,21 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
 }
 
 function releaseTable(runs: { rows: readonly ReleaseRun[]; total: number } | null, totals: readonly ReleaseTotal[] | null, current: string | null, now: Date): Html {
-  const hint = `部署时间是这个发布第一次启动的时间。全部 MCP 调用都算，超过 ${count(MAX_RELEASE_CALLS_READ)} 次时只算最新的 ${count(MAX_RELEASE_CALLS_READ)} 次。每个发布算它运行的最后 24 小时，比较的是上一个发布的 p95。`;
+  const hint = `部署时间是这个发布最近一次部署后第一次启动的时间：回到早先的发布也是部署，重启不是。全部 MCP 调用都算，超过 ${count(MAX_RELEASE_CALLS_READ)} 次时只算最新的 ${count(MAX_RELEASE_CALLS_READ)} 次。每个发布算它运行的最后 24 小时，比较的是上一个发布的 p95。`;
   if (runs === null || totals === null) return card({ title: '按发布', hint }, unreadable('发布'));
   if (runs.rows.length === 0) return card({ title: '按发布' }, emptyBlock({ title: '还没有发布的调用记录', text: '有了调用之后，这里列出每个发布的 p95，部署前后是快了还是慢了一眼可比。' }));
   const totalOf = new Map(totals.map((total) => [total.release, total]));
   const retained = now.getTime() - RETENTION_MS;
   // One more was read than is shown: the last line shown still has a release to compare with.
   const listed = runs.rows.slice(0, RELEASES_SHOWN);
-  const rows = listed.map((run, index) => {
+  const rows = listed.map((run) => {
     const total = totalOf.get(run.release);
-    const previous = runs.rows[index + 1];
-    const before = previous === undefined ? undefined : totalOf.get(previous.release);
+    const before = run.previous === null ? undefined : totalOf.get(run.previous);
     const p95 = total?.p95_ms ?? null;
     const change = p95 === null
       ? '—'
-      : previous === undefined
-        ? unknown('上一个发布已过 14 天保留期')
+      : run.previous === null
+        ? unknown('进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了')
         : before?.p95_ms === null || before?.p95_ms === undefined
           ? unknown('上一个发布没有 MCP 调用')
           : Math.round(Math.abs(p95 - before.p95_ms)) === 0 ? '没有变化' : `${p95 > before.p95_ms ? '慢了' : '快了'} ${duration(Math.abs(p95 - before.p95_ms))}`;
@@ -468,7 +467,7 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
   }
   const tasks = await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained }));
   const clients = await read('客户端', (s) => s.traces.clients(by, { since: from.toISOString(), limit: CLIENTS_SHOWN }));
-  const runs = await read('发布', (s) => s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }));
+  const runs = await read('发布', (s) => s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ, current: ctx.hub?.release ?? null }));
   const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { releases: runs.rows.map((run) => run.release), retained, windowMs: DAY_MS }));
 
   const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));

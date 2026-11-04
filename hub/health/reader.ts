@@ -75,11 +75,18 @@ export interface CurveQuery {
   boot?: string;
 }
 
-/** A release as the process events know it: the first start the retention still holds and the latest event of any kind. */
+/**
+ * A release as the process events know it, by its latest run: a deploy of an older commit brings an earlier release back under
+ * its own id, and that starts a run of its own, as any other release's start does. A restart goes on with the run it is in.
+ */
 export interface ReleaseRun {
   release: string;
+  /** The first start of that run the retention still holds; with no start at all, the earliest event of the release. */
   first_start: string;
+  /** Its latest event of any kind. */
   last_event: string;
+  /** What ran before that run; null when the events read do not say. */
+  previous: string | null;
 }
 
 export interface HealthReader {
@@ -90,8 +97,8 @@ export interface HealthReader {
   eventCount(by: Principal, input: { limit: number }): Promise<number>;
   /** Exactly `points` points, oldest first. */
   curve(by: Principal, input: CurveQuery): Promise<CurvePoint[]>;
-  /** Newest first, from the latest `events` events; `total` is how many releases those name. */
-  releases(by: Principal, input: { limit: number; events: number }): Promise<{ rows: ReleaseRun[]; total: number }>;
+  /** `current` first, then the newest run first, from the latest `events` events; `total` is how many releases those name. */
+  releases(by: Principal, input: { limit: number; events: number; current?: string | null }): Promise<{ rows: ReleaseRun[]; total: number }>;
 }
 
 const number = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value));
@@ -183,15 +190,19 @@ export function healthReader(db: HealthDatabase): HealthReader {
       return curve;
     },
 
-    async releases(by, { limit, events }) {
+    async releases(by, { limit, events, current = null }) {
       requireAdmin(by);
       const { rows } = await db.query(
-        `SELECT release,coalesce(min(at) FILTER (WHERE kind='start'),min(at)) AS first_start,max(at) AS last_event,count(*) OVER () AS total
-           FROM (SELECT release,at,kind FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2) e
-          GROUP BY release ORDER BY first_start DESC LIMIT $1`,
-        [limit, events],
+        `WITH e AS (SELECT seq,release,at,kind FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2),
+              runs AS (SELECT DISTINCT ON (release) release,at,previous
+                         FROM (SELECT seq,release,at,lag(release) OVER (ORDER BY seq) AS previous FROM e WHERE kind='start') s
+                        WHERE previous IS DISTINCT FROM release ORDER BY release,seq DESC)
+         SELECT e.release,coalesce(r.at,min(e.at)) AS first_start,max(e.at) AS last_event,r.previous,count(*) OVER () AS total
+           FROM e LEFT JOIN runs r ON r.release=e.release GROUP BY e.release,r.at,r.previous
+          ORDER BY e.release IS NOT DISTINCT FROM $3 DESC,first_start DESC LIMIT $1`,
+        [limit, events, current],
       );
-      return { rows: rows.map((row) => ({ release: String(row.release), first_start: time(row.first_start)!, last_event: time(row.last_event)! })), total: rows.length === 0 ? 0 : Number(rows[0]!.total) };
+      return { rows: rows.map((row) => ({ release: String(row.release), first_start: time(row.first_start)!, last_event: time(row.last_event)!, previous: row.previous === null ? null : String(row.previous) })), total: rows.length === 0 ? 0 : Number(rows[0]!.total) };
     },
   };
 }

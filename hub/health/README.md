@@ -131,7 +131,9 @@ it for that alone. `summary` over the last 24 hours gives the values now and the
 intervals aggregated in SQL off `resource_samples_sampled_at` (or `resource_samples_boot` for one process), exactly the points
 asked for, each the most its interval held, free disk the least, and null where nothing was read; a window of 24 hours is at
 most 8,640 samples per process whatever the table holds. `events` and `eventCount` are bounded by their limits, `releases` by
-its latest events.
+its latest events. A row of `releases` is a release's latest run: a deploy of an older commit reuses the release, so its id can
+run twice with another between, and only the start events tell the runs apart. A restart goes on with its run. The release
+that is running comes first, so it has a row even when a start the database refused left the events behind.
 
 ## How to test
 
