@@ -17,7 +17,7 @@ import type { Layout } from './layout.ts';
 import { toolVersion, type PostgresControl } from './postgres.ts';
 import { runCommand, tailLines, toolEnvironment, type CommandRunner } from './process.ts';
 import { applicationRoleError, inspectRole, rolePrivileges } from './roles.ts';
-import { summarizeTables, type TableSummary } from './sql.ts';
+import { DIAGNOSTIC_TABLES, summarizeTables, type TableSummary } from './sql.ts';
 
 /** @3: table digests per TABLE_DIGEST in sql.ts (bucketed) and the application role's privileges. */
 export const BACKUP_SCHEMA = 'circle-hub-backup@3';
@@ -275,6 +275,7 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
           `--dbname=${target.database}`,
           '--no-password',
           `--snapshot=${String(snapshot?.id ?? '')}`,
+          ...DIAGNOSTIC_TABLES.map((table) => `--exclude-table-data=public.${table}`),
         ],
         { env: toolEnvironment(), timeoutMs: 6 * 60 * 60 * 1000 },
       );

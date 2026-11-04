@@ -10,7 +10,7 @@ export {
   unknownHubVariables,
 } from './environment.ts';
 export { messageOf, PlatformError } from './errors.ts';
-export { DATA_ROOT_VARIABLE, defaultDataRoot, ensureLayout, layoutAt, resolveLayout, type Layout } from './layout.ts';
+export { DATA_ROOT_VARIABLE, defaultDataRoot, ensureLayout, layoutAt, reportsDirectory, resolveLayout, type Layout } from './layout.ts';
 export {
   APPLICATION_ROLE,
   DATABASE_NAME,

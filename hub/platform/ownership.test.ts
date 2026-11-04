@@ -73,6 +73,8 @@ const COLUMN: Record<string, string> = {
   knowledge_space_search_totals:'quota_space',
   run_original_purges:'at',
   trace_spans:'name',
+  resource_samples:'boot',
+  process_events:'kind',
 };
 
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */
@@ -84,7 +86,7 @@ function tamperingStatements(): string[] {
     out.push(
       // The ownership registry is mutable derived state; registered clients that never led to a token and diagnostic rows
       // past their retention are removed (still never updated); every other table keeps its original forbidden-row probes.
-      ...(table === 'lease_registrations' ? [] : table === 'oauth_clients' || table === 'trace_spans' ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
+      ...(table === 'lease_registrations' ? [] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,

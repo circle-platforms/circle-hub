@@ -34,6 +34,7 @@ import {
   type PlatformSettingsFile,
 } from './settings.ts';
 import { withSession } from './sql.ts';
+import { DEFAULT_TOP_LIMIT, isStatementOrder, statementLines, STATEMENT_ORDERS, topStatements } from './statements.ts';
 import { RENEW_WITHIN_DAYS, certificateHosts, daysLeft, initTls, readTlsState } from './tls.ts';
 
 export interface PlatformIo {
@@ -69,6 +70,7 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
     '',
     `  init --environment <环境类别> [--port <端口>] [--https-port <端口> [--https-host <地址>]]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
+    `  db top [--by ${Object.keys(STATEMENT_ORDERS).join('|')}] [--limit <N>] [--json]   最费资源的语句（pg_stat_statements，在 postgres 维护库里读；默认按 total_ms，${DEFAULT_TOP_LIMIT} 条）`,
     `  key init [--set-aside-vault]|status|export --confirm|import   建立或查看${VAULT_KEY_ITEM.label}；密钥只经管道传输且不覆盖`,
     `  service install|uninstall|start|stop|status    ${platform === 'linux' ? 'systemd' : 'launchd'} 用户服务 circle-hub serve`,
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
@@ -231,10 +233,28 @@ const tls: Handler = async (args, context, io) => {
   return 0;
 };
 
+const dbTop: Handler = async (args, context, io) => {
+  const { values, positionals } = parse(args, { by: { type: 'string' }, limit: { type: 'string' }, json: { type: 'boolean' } });
+  noArguments(positionals);
+  const by = values.by ?? 'total_ms';
+  if (!isStatementOrder(by)) throw new UsageError(`--by 只能是 ${Object.keys(STATEMENT_ORDERS).join('、')}`);
+  const limit = values.limit === undefined ? DEFAULT_TOP_LIMIT : parseCount(values.limit, '--limit');
+  const cluster = postgresFor(context, (await readCurrentRelease(context.layout))?.dir);
+  const top = await topStatements(cluster, by, limit);
+  if (values.json === true) io.stdout(JSON.stringify(top.available ? { by, statements: top.statements } : top, null, 2));
+  else if (top.available) for (const line of statementLines(cluster.target.database, by, top.statements)) io.stdout(line);
+  else {
+    io.stdout(top.reason);
+    io.stdout(`处理：${top.hint}`);
+  }
+  return top.available ? 0 : NOT_RUNNING;
+};
+
 const db: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
+  if (action === 'top') return dbTop(rest, context, io);
   noArguments(rest);
-  if (action !== 'start' && action !== 'stop' && action !== 'status') throw new UsageError('用法：circle-hub db start|stop|status');
+  if (action !== 'start' && action !== 'stop' && action !== 'status') throw new UsageError('用法：circle-hub db start|stop|status|top');
   const cluster = postgresFor(context, (await readCurrentRelease(context.layout))?.dir);
   if (action === 'start') {
     const { started } = await ensureDatabaseRunning(cluster);

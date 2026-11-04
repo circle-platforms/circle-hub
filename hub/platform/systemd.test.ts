@@ -3,7 +3,9 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { defaultSystemdDirectory, renderSystemdUnit, systemdAgent } from './systemd.ts';
-import type { ServiceDefinition } from './launchd.ts';
+import { layoutAt } from './layout.ts';
+import { serviceDefinition, type ServiceDefinition } from './launchd.ts';
+import { newSettingsFile, resolveSettings } from './settings.ts';
 import { exit, ok, recordingRunner, removeDir, tempDir } from './test-support.ts';
 
 const definition: ServiceDefinition = {
@@ -27,6 +29,22 @@ test('systemd unit preserves argv, exact environment and service recovery withou
   assert.throws(() => renderSystemdUnit({...definition, workingDirectory: '/tmp/a\nExecStart=/bad'}), /控制字符/);
   assert.throws(() => renderSystemdUnit({...definition, programArguments: ['node']}), /绝对路径/);
   assert.throws(() => renderSystemdUnit({...definition, environment: {'BAD\nNAME': 'x'}}), /变量名/);
+});
+
+test('the unit runs Node with the crash report flags and the heap limit, and allows no memory dump: LimitCORE=0 alone still let apport write memory', () => {
+  const layout = layoutAt('/srv/synthetic-hub');
+  const settings = resolveSettings(newSettingsFile({ environment: 'shared', port: 7420 }), {});
+  const identity = { home: '/srv/synthetic-hub', user: 'circle-hub', database: { port: 5432, name: 'circle_hub', role: 'circle_hub' } };
+  const unit = (memoryBytes: number) => renderSystemdUnit(serviceDefinition(layout, settings, { node: '/usr/bin/node', ...identity, memoryBytes }));
+  const text = unit(16 * 1024 ** 3);
+  assert.match(text, /^ExecStart="\/usr\/bin\/node" "--max-old-space-size=4096" "--report-on-fatalerror" "--report-directory=\/srv\/synthetic-hub\/logs\/reports" "--report-exclude-env" "--report-compact" "\/srv\/synthetic-hub\/current\/bin\/circle-hub" "serve"$/m);
+  assert.match(text, /^LimitCORE=0$/m);
+  assert.match(text, /^CoredumpFilter=0$/m);
+  assert.ok(text.split('\n').includes(`RuntimeDirectory=${settings.label}`), 'the in-flight log is memory, named after the unit');
+  assert.match(text, /^RuntimeDirectoryMode=0700$/m);
+  assert.match(text, /^RuntimeDirectoryPreserve=yes$/m, 'a restart must leave it for the next start to read');
+  assert.ok(text.indexOf('[Service]') < text.indexOf('LimitCORE=0') && text.indexOf('CoredumpFilter=0') < text.indexOf('[Install]'), 'both belong to the service section');
+  for (const [gib, limit] of [[2, 2048], [12, 3072], [64, 8192]] as const) assert.match(unit(gib * 1024 ** 3), new RegExp(`"--max-old-space-size=${limit}"`));
 });
 
 test('install, stop, start and uninstall manipulate only the given user manager and fail closed on unknown status', async t => {

@@ -106,13 +106,22 @@ const RENDERING = [
 ];
 
 /** Row count and digest of every ordinary table outside the system schemas. Run it inside the snapshot being compared. */
+/**
+ * Diagnostic tables (B08 R[5]): kept 14 days, outside the record chain, never grounds. A backup holds their definitions and
+ * none of their rows: fourteen daily copies would otherwise outlive the retention and grow with the traffic. The summaries
+ * leave them out, so what a restore compares is what a backup holds.
+ */
+export const DIAGNOSTIC_TABLES = ['process_events', 'resource_samples', 'trace_spans'] as const;
+
 export async function summarizeTables(session: SqlSession): Promise<TableSummary[]> {
   for (const statement of RENDERING) await session.query(statement);
   const tables = await session.query(
     `SELECT n.nspname AS schema, c.relname AS name
        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
       WHERE c.relkind = 'r' AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\\_%'
+        AND NOT (n.nspname = 'public' AND c.relname = ANY($1::text[]))
       ORDER BY 1, 2`,
+    [[...DIAGNOSTIC_TABLES]],
   );
   const out: TableSummary[] = [];
   for (const row of tables) {

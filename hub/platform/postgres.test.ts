@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
-import { createPostgres, majorOf, managedConf, managedHba, managedIdent, statementStatisticsLibrary, tuningLines } from './postgres.ts';
+import { createPostgres, heapLimitMb, majorOf, managedConf, managedHba, managedIdent, statementStatisticsLibrary, tuningLines } from './postgres.ts';
 import { exit, ok, recordingRunner, removeDir, tempDir, type Call } from './test-support.ts';
 import type { CommandResult } from './process.ts';
 
@@ -38,6 +38,12 @@ function fakeTools(state: { running: boolean; onStart?: () => CommandResult }) {
     { real: false },
   );
 }
+
+test('the heap limit is a quarter of memory, at least 2 GB and at most 8 GB', () => {
+  const GiB = 1024 ** 3;
+  assert.deepEqual([1, 4, 8, 9, 12, 16, 32, 33, 128].map((size) => heapLimitMb(size * GiB)), [2048, 2048, 2048, 2304, 3072, 4096, 8192, 8192, 8192]);
+  assert.equal(heapLimitMb(0), 2048, 'an unknown size gets the floor');
+});
 
 test('majorOf reads the major version of PostgreSQL tools', () => {
   assert.equal(majorOf('postgres (PostgreSQL) 18.4'), 18);

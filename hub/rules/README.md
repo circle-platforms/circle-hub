@@ -232,6 +232,9 @@ line to stderr, `hub sandbox unavailable: <detail as JSON>`, and the error is re
 (reason, limits, timings, host errors), never the function's output. The `Linux isolation` jobs of the Hub checks set it, so
 a rare unavailable call names its reason in the log, whichever caller met it (#96).
 
+`sandboxStats()` is the read-only view hub/health samples: running, limit and waiting from the slot pool, and since the process
+started the calls a full line refused and the attempts that ended `SANDBOX_TIMEOUT`. It holds no input or output.
+
 ## Limits
 
 - Linux requires the bubblewrap and AppArmor policy described above; without them the default is `SANDBOX_UNAVAILABLE`.

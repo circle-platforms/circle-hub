@@ -743,6 +743,8 @@ circle-hub user rename <user> <new name>                              # administ
 circle-hub token issue <user> [--label <l>] [--raw] | token revoke <tok_…> | token list [<user>]
 circle-hub logs export [--from <time>] [--to <time>] [--user <u>] [--tool <t>] [--run <r>] [--out <file>] [--as <account>]
 circle-hub run list [--pack <id>] [--user <user>] [--state 受理|未受理|进行中] [--since <ISO time>] [--unknown] [--limit <N>] [--cursor <cursor>] [--json] [--as <admin>]
+circle-hub health [--since <span or time>] [--json] [--as <admin>]
+circle-hub crashes [--limit <N>] [--json] [--as <admin>]
 circle-hub run show <run> [--json] [--as <account>]                   # the assembly module's assembleCommand
 circle-hub setup-code                                                 # no admin yet: a one-time code for /console/setup, shown once
 circle-hub trace list|show|top …                                      # administrators: traces, step trees and totals (hub/telemetry/README.md)
@@ -762,6 +764,14 @@ token, an invalid one or a user's is refused before anything is read or written,
 token: a lost or dead item is replaced by `operator-token reissue` (assembly README). `--as` is a usage error for them
 (who acts is the token's account). Revocation is never refused (it is how a leaked token is stopped); when `token revoke`
 or `user disable` cuts off the very token the command acted with, the command says so on stderr with the way back.
+`health` and `crashes` read the diagnostic tables of hub/health, for administrators only, as `run list`: the current value and
+the range of each resource over the window (`--since` takes `30m`, `6h`, `7d` or a time; default one hour), and the process
+events, with what was running at an abnormal exit and the summary of its crash report.
+
+`serve` gives hub/health a connection of its own and the app its `requests` and `sessions`. `request-entry.ts` opens every request's
+entry in the in-flight log at the one HTTP entry; `mcp.ts` completes it with the caller, the trace and the tool, and reports the
+sessions it issues.
+
 **Read-only built-ins** that read as an account (`logs export`, `run show`) follow the assembly's listings
 (`operatorViewer`): they read as the operator token's account when there is one (`--as` must then name it) and take it
 out of the environment; without a token as `--as <name or id>`, or the only enabled admin. `run list` is also read-only,
