@@ -1153,6 +1153,11 @@ cleanup order stay fixed; valid quoting is read through the existing command gra
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
 
+### Synthetic platform names (1.7.44)
+
+The listing fixture and the locator's example train names use the synthetic platform tokens `Demochip` and `Demoos13`
+instead of two real platform names. Behaviour is unchanged.
+
 ### 1.7.42–1.7.43: the integration line's product-pack changes on main
 
 The private integration line published this pack's counterpart up to its own 1.7.40 while main stood at 1.7.34. 1.7.42

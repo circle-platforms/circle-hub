@@ -8,7 +8,7 @@ const ROOT = ['DEMO', '030：产品测试项目'];
 describe('location from the agile tree', () => {
   it('reads line, train and module under the product project', () => {
     assert.deepEqual(locateFromAncestors([...ROOT, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL']), { line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SSL', notes: [] });
-    assert.deepEqual(locateFromAncestors([...ROOT, '010: 9.2', '101: 9.2-主线-CentOS-2025/06/30', '020: 网络']), { line: '9.2', train: '9.2-主线-CentOS-2025/06/30', module: '网络', notes: [] });
+    assert.deepEqual(locateFromAncestors([...ROOT, '010: 9.2', '101: 9.2-主线-Demoos13-2025/06/30', '020: 网络']), { line: '9.2', train: '9.2-主线-Demoos13-2025/06/30', module: '网络', notes: [] });
   });
 
   it('takes trains with customer and bank suffixes and prefixes with letters', () => {
