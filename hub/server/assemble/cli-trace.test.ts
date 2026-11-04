@@ -116,6 +116,7 @@ test('a clean stop of serve writes what is queued, background rounds included', 
   const rows = await admin.sql<{ origin: string; name: string }>(`SELECT origin, name FROM trace_spans WHERE is_root`);
   assert.ok(rows.some((row) => row.origin === 'console' && row.name === 'serve-http'), 'the request of a moment ago was written on the way out, not by a timer');
   assert.ok(rows.some((row) => row.origin === 'background' && row.name === 'maintain-runs'), 'the first maintenance pass is a trace');
+  assert.ok(rows.some((row) => row.origin === 'background' && row.name === 'index-knowledge'), 'so is the first round of the knowledge search index');
 });
 
 test('trace list, show and top read the rows, in Chinese and as JSON', async () => {

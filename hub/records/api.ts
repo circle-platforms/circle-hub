@@ -2,7 +2,8 @@ export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUs
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
-export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export type { SpaceIndexScope, SpaceIndexState, SpaceSearchDocument, SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export { PRODUCT_QUOTA_PREFIX, pathKey } from './space-index.ts';
 export type { MemberHandover, MemberHandoverItem, MemberDeletionPreview } from './member-deletions.ts';
 export {withReadScope,retireReadScope,scopedRecordStore,memoReadPort,memoReadValue,memoReadCall} from './read-scope.ts';
 export { knowledgeTokens } from './space-index.ts';
@@ -324,6 +325,8 @@ export interface RecordStore {
   addIndex?(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** The digests findFirstMany would answer, in one query that reads no record body. */
+  firstDigests(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, string>>;
   /** Bounded index scan retaining each matching value and the record's append position. */
   findIndexed?<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{ items: IndexedRecord<B>[]; next: IndexedCursor | null }>;
   /** The newest append position and the transactions open as this snapshot saw them. */

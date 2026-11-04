@@ -24,7 +24,7 @@ const SYNC_STEPS = [
 ] as const;
 
 /** One round of a background task. */
-const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
+const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'index-knowledge', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
 
 /** The root step of a CLI command, by the command's name; `run-command` for a name the CLI does not know. */
 const COMMAND_STEPS = [

@@ -282,6 +282,21 @@ export class PgRecordStore implements RecordStore {
     return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row,tx)]));
   }
 
+  async firstDigests(query: { key: string; values: readonly string[]; kind?: import('./api.ts').RecordKind ;}, tx?: Transaction): Promise<Map<string, string>> {
+    if (!INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!values.length) return new Map();
+    const result = await this.#db.query<{value:string;digest:string}>(
+      `SELECT wanted.value, matched.digest FROM unnest($2::text[]) AS wanted(value)
+       CROSS JOIN LATERAL (
+         SELECT r.digest FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
+         WHERE i.key=$1 AND i.value=wanted.value ${query.kind === undefined ? '' : 'AND r.kind=$3'}
+         ORDER BY i.record_seq LIMIT 1
+       ) AS matched`, query.kind === undefined ? [query.key, values] : [query.key, values, query.kind], tx);
+    return new Map(result.rows.map(row => [row.value, row.digest]));
+  }
+
   async appendHorizon(tx?: Transaction): Promise<AppendHorizon> {
     // One statement, so one snapshot: pg_current_snapshot() is the snapshot this statement reads max(seq) under.
     const row = (await this.#db.query<{ position: string; oldest: string; next: string }>(

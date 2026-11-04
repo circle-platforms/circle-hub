@@ -12,7 +12,7 @@ import type { DatabaseConfig } from '../config/index.ts';
 import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { sha256Hex } from './digest.ts';
-import { MigrationError } from './errors.ts';
+import { MigrationError, RecordsError } from './errors.ts';
 import { FileKeyProvider, migrateRecords, openRecords, MIGRATIONS } from './index.ts';
 
 let postgres: TemporaryPostgres;
@@ -104,6 +104,9 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   await kit.spaceIndex!.add(spaceVersion.digest, [{ space: member.id, path: '/', entry: artifact.digest, record: artifact.digest, text: '合成搜索' }]);
   await kit.spaceIndex!.add(spaceVersion.digest,[{space:member.id,path:'/second',entry:artifact.digest,record:artifact.digest}]);
   assert.equal((await sql(runtime,'SELECT count(*)::int AS n FROM knowledge_space_search_totals')).rows[0].n,1);
+  const limit=new RecordsError('合成限额',{code:'SPACE_INDEX_LIMIT',detail:{space_limit_bytes:1024}});
+  await kit.spaceIndex!.refuse(spaceVersion.digest,member.id,limit);
+  assert.equal((await sql(runtime,'SELECT refused_space_bytes::int AS n FROM knowledge_space_search_totals')).rows[0].n,1024);
   await kit.spaceIndex!.complete(spaceVersion.digest, '/');
   assert.equal(await kit.spaceIndex!.ready(spaceVersion.digest, '/'), true);
   assert.equal((await kit.spaceIndex!.search('合成', [{ version: spaceVersion.digest, paths: ['/'] }], 0, 1)).length, 1);

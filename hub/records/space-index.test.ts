@@ -5,7 +5,8 @@ import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
 import { MIGRATIONS, migrate } from './migrations.ts';
-import { PgSpaceSearchIndex,knowledgeTokens } from './space-index.ts';
+import { PgSpaceSearchIndex,knowledgeTokens,pathKey } from './space-index.ts';
+import { installTraceSink,startTrace,type SpanRow } from '../telemetry/usage.ts';
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(() => postgres?.stop());
@@ -66,6 +67,55 @@ test('version references reuse one token document and index limits roll back a r
   assert.equal(Number((await db.query('SELECT count(*) AS n FROM knowledge_space_search_documents')).rows[0].n),1);
   await assert.rejects(index.add(version.digest,[{...row,entry:second.digest,record:second.digest,text:'abcdefghijklmnopqrstuvxyz'.repeat(2)}]),(error:any)=>error.code==='SPACE_INDEX_LIMIT');
   assert.deepEqual(await index.missing([first.digest,second.digest]),new Set([second.digest]));
+});
+
+test('one addition takes the same statements for five rows and for two hundred, and a batch of large documents is split by bytes',async t=>{
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+  const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
+  const index=new PgSpaceSearchIndex(db,{entryBytes:1024*1024,spaceBytes:256*1024*1024});
+  const version=await kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{synthetic:'multi-row'}});
+  const entries=async(n:number,tag:string,text:(i:number)=>string)=>Promise.all(Array.from({length:n},async(_,i)=>{const entry=await kit.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body:{synthetic:tag,i}});return {space:'synthetic-multi-row',path:'/'+tag,entry:entry.digest,record:entry.digest,text:text(i)};}));
+  const statements=async(rows:Awaited<ReturnType<typeof entries>>)=>{
+    const spans:SpanRow[]=[];const uninstall=installTraceSink({push:row=>spans.push(row)});
+    try{await startTrace({name:'index-knowledge',origin:'background'},()=>index.add(version.digest,rows));}finally{uninstall();}
+    return spans.find(span=>span.is_root)!.usage['db.queries'];
+  };
+  const few=await statements(await entries(5,'few',i=>'合成少量'+i)),many=await statements(await entries(200,'many',i=>'合成批量'+i));
+  assert.equal(many,few,'BEGIN, the lock, the missing documents, one insert, the largest document, one insert of references, COMMIT');
+  assert.equal((await db.query<{n:number}>('SELECT count(*)::int AS n FROM knowledge_space_search_documents')).rows[0].n,205);
+  const wide=(i:number)=>Array.from({length:40000},(_,k)=>String.fromCodePoint(0x4e00+(i*7+k)%0x5000)).join('');
+  assert.equal(await statements(await entries(8,'wide',wide)),few!+1,'about 200 KB of tokens each, 1.6 MB in all: a statement holds at most 1 MiB');
+});
+
+test('states answer in order from stored rows, and a refusal holds until its limit rises',async t=>{
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+  const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
+  const put=(kind:'knowledge_space_version'|'knowledge_space_entry',synthetic:string)=>kit.store.put({kind,schema:kind==='knowledge_space_version'?'knowledge-space-version@1':'knowledge-space-entry@1',provenance:'projected',body:{synthetic}});
+  const ready=await put('knowledge_space_version','states-ready'),pending=await put('knowledge_space_version','states-pending'),over=await put('knowledge_space_version','states-over'),entry=await put('knowledge_space_entry','states-entry');
+  const index=new PgSpaceSearchIndex(db,{spaceBytes:100,productBytes:300});
+  const row={space:'team',path:'/notes',entry:entry.digest,record:entry.digest,text:'合成状态'};
+  await index.add(ready.digest,[row]);await index.complete(ready.digest,'/');
+  const scopes=[{version:ready.digest,path:'/',quotaSpace:'team'},{version:pending.digest,path:'/',quotaSpace:'team'},{version:over.digest,path:'/产品/synthetic/1.0',quotaSpace:'product:/产品/synthetic/1.0'}];
+  const strict=new PgSpaceSearchIndex(db,{productBytes:90});
+  const passed=await strict.add(over.digest,[{...row,path:'/产品/synthetic/1.0/x'}],undefined,scopes[2].quotaSpace).then(()=>null,error=>error);
+  assert.equal(passed?.code,'SPACE_INDEX_LIMIT');assert.match(passed.fix,/CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES/);
+  await strict.refuse(over.digest,scopes[2].quotaSpace,passed);
+  assert.deepEqual((await strict.states(scopes)).map(state=>[state.ready,state.refused?.code??null]),[[true,null],[false,null],[false,'SPACE_INDEX_LIMIT']]);
+  assert.deepEqual((await index.states(scopes)).map(state=>state.refused?.code??null),[null,null,null],'a higher limit needs no write');
+  assert.deepEqual(await index.states([]),[]);
+  assert.deepEqual(await index.present(ready.digest,[{path:'/notes',entry:entry.digest},{path:'/other',entry:entry.digest}]),new Set([pathKey({path:'/notes',entry:entry.digest})]));
+});
+
+test('product mounts have their own limit, above what a member can write to a space',async t=>{
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+  const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
+  const index=new PgSpaceSearchIndex(db,{entryBytes:1024,spaceBytes:100,productBytes:1024});
+  const space=await kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{synthetic:'limit-space'}});
+  const product=await kit.store.put({kind:'tree_node',schema:'tree-node@1',provenance:'projected',body:{synthetic:'limit-product'}});
+  const entry=await kit.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body:{synthetic:'limit-entry'}});
+  const row={space:'team',path:'/产品/synthetic/1.0/x',entry:entry.digest,record:entry.digest,text:'合成产品与空间的额度'};
+  await index.add(product.digest,[row],undefined,'product:/产品/synthetic/1.0');
+  await assert.rejects(index.add(space.digest,[row]),(error:any)=>error.code==='SPACE_INDEX_LIMIT'&&/撤回或替换/.test(error.fix));
 });
 
 test('migration 10 consolidates existing version-9 token copies without changing records or search results',async t=>{

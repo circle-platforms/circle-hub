@@ -389,8 +389,13 @@ test('batch first matches equal oldest per-value reads, including duplicates, mi
   const found = await kit.store.findFirstMany({ key: 'first.batch', values: ['x', 'y', 'missing', 'x'], kind: 'action' });
   assert.equal(queries, 1); assert.deepEqual([...found].map(([key, row]) => [key, row.digest]), [['x', first.digest], ['y', first.digest]]);
   assert.equal((await kit.store.findFirstMany({ key: 'first.batch', values: [] })).size, 0);
+  queries = 0;
+  assert.deepEqual([...await kit.store.firstDigests({ key: 'first.batch', values: ['x', 'y', 'missing', 'x'], kind: 'action' })], [['x', first.digest], ['y', first.digest]], 'the digests findFirstMany answers');
+  assert.equal(queries, 1); assert.equal((await kit.store.firstDigests({ key: 'first.batch', values: ['x'], kind: 'run' })).size, 0);
+  assert.equal((await kit.store.firstDigests({ key: 'first.batch', values: [] })).size, 0);
   await sql(kit.database, "SET session_replication_role = 'replica'; UPDATE records SET body='{\"n\":3}' WHERE digest='" + first.digest + "'");
   await assert.rejects(kit.store.findFirstMany({ key: 'first.batch', values: ['x'] }), IntegrityError);
+  assert.equal((await kit.store.firstDigests({ key: 'first.batch', values: ['x'] })).get('x'), first.digest, 'it reads no body, so it verifies none: a caller that reads one later does');
 });
 
 test('the pool never falls back to a password file or PG* variables when the server asks for a password', async () => {

@@ -124,6 +124,7 @@ test('team product mounts preserve legacy hashes and read permissions while shar
   assert.equal(alias.nodes[0].entries[0].entry, old.nodes[0].entries[0].entry);
   assert.equal((await w.knowledge.treeReader().read(produced.root, '/commands/system/reboot', old.nodes[0].entries[0].entry, { user: w.user.id, role: 'user' }))?.text, old.nodes[0].entries[0].statement);
   assert.equal((await w.knowledge.getNodes({ root: team.root, paths: ['/'], depth: 6 }, w.outsider))?.nodes.some(n => n.path.startsWith(pathOf(['产品']))), false);
+  await spaces.indexRound();
   const search = await spaces.search(w.user, 'reboot', 'team');
   assert.ok(search.matches.some(m => m.entry === old.nodes[0].entries[0].entry));
   assert.equal((await spaces.search(w.outsider, 'reboot', 'team')).matches.length, 0);
@@ -164,6 +165,7 @@ test('missing search rows rebuild from immutable records and oversized nodes req
   const db = new Database(createPool(w.kit.database, 1));
   t.after(() => db.end());
   await db.query('DELETE FROM knowledge_space_search WHERE version=$1', [first.root]);
+  await spaces.indexRound();
   assert.equal((await spaces.search(w.user, '大小边界', 'personal')).matches[0]?.entry, first.entry);
   const second = await spaces.write(w.user, note('合成第二条' + 'b'.repeat(1000), '/notes'));
   await assert.rejects(w.knowledge.getNodes({ root: second.root, paths: ['/notes'], depth: 0 }, w.user), e => e instanceof KnowledgeError && e.code === 'SPACE_ENTRY_INVALID');
