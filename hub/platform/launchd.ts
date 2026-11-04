@@ -8,6 +8,7 @@ import { PLATFORM_VARIABLES } from './environment.ts';
 import { PlatformError } from './errors.ts';
 import { exists, writeFileAtomic } from './files.ts';
 import type { Layout } from './layout.ts';
+import { availableMemory, heapLimitMb } from './postgres.ts';
 import { runCommand, tailLines, toolEnvironment, type CommandRunner } from './process.ts';
 import type { DatabaseNames, PlatformSettings } from './settings.ts';
 
@@ -95,10 +96,18 @@ export function serviceEnvironment(layout: Layout, settings: PlatformSettings, i
   };
 }
 
-export function serviceDefinition(layout: Layout, settings: PlatformSettings, options: ServiceIdentity & { node: string }): ServiceDefinition {
+/**
+ * Node's own flags for `serve`: the heap limit from this host's memory, and a report when Node dies of a fatal error. The
+ * report leaves the environment out; process memory holds keys, which is why the service definitions also forbid core dumps.
+ */
+export function serviceNodeFlags(layout: Layout, memoryBytes: number): string[] {
+  return [`--max-old-space-size=${heapLimitMb(memoryBytes)}`, '--report-on-fatalerror', `--report-directory=${layout.reports}`, '--report-exclude-env', '--report-compact'];
+}
+
+export function serviceDefinition(layout: Layout, settings: PlatformSettings, options: ServiceIdentity & { node: string; memoryBytes?: number }): ServiceDefinition {
   return {
     label: settings.label,
-    programArguments: [options.node, join(layout.current, 'bin', 'circle-hub'), 'serve'],
+    programArguments: [options.node, ...serviceNodeFlags(layout, options.memoryBytes ?? availableMemory()), join(layout.current, 'bin', 'circle-hub'), 'serve'],
     workingDirectory: layout.current,
     environment: serviceEnvironment(layout, settings, options),
     standardOutPath: join(layout.logs, 'hub.out.log'),
@@ -145,6 +154,17 @@ export function renderPlist(definition: ServiceDefinition): string {
     '\t<integer>30</integer>',
     '\t<key>Umask</key>',
     '\t<integer>63</integer>',
+    // Process memory holds keys: no core file, whatever the account's defaults.
+    '\t<key>SoftResourceLimits</key>',
+    '\t<dict>',
+    '\t\t<key>Core</key>',
+    '\t\t<integer>0</integer>',
+    '\t</dict>',
+    '\t<key>HardResourceLimits</key>',
+    '\t<dict>',
+    '\t\t<key>Core</key>',
+    '\t\t<integer>0</integer>',
+    '\t</dict>',
     '\t<key>StandardOutPath</key>',
     string(definition.standardOutPath, '\t'),
     '\t<key>StandardErrorPath</key>',

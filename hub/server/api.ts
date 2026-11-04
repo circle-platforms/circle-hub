@@ -116,6 +116,8 @@ export interface AppOptions {
   live?: Partial<import('./console/live.ts').LiveOptions>;
   /** Long tool calls: response head after `headersAfterMs`, then a space every `keepaliveMs`; default 20 s and 30 s. */
   keepalive?: { headersAfterMs: number; keepaliveMs: number };
+  /** Where requests and MCP sessions are reported (hub/health; serve gives one); without it nothing is. */
+  health?: import('../health/api.ts').RequestObservers;
 }
 
 export interface ListenInfo {
@@ -139,6 +141,8 @@ export interface HubApp {
   close(): Promise<void>;
   /** The release this process serves (release.json in the code root), null without one. */
   readonly release: string | null;
+  /** Live console streams open now. */
+  consoleStreams(): number;
 }
 
 /** Builds the server's dependencies from the opened configuration and records, for `serve` (the vault key required). */

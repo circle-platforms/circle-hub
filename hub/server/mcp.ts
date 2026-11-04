@@ -10,6 +10,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { SERVER_INSTRUCTIONS } from '../../contracts/src/tools.ts';
+import type { SessionTracker } from '../health/api.ts';
 import type { CallLogInput, Principal } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
 import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget } from './http.ts';
@@ -19,6 +20,7 @@ import type { ClientDeclaration } from '../../contracts/src/spaces.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
 import { beginObservedCall } from './inflight-calls.ts';
 import { retainReadReply } from './read-replies.ts';
+import { identifyRequest } from './request-entry.ts';
 import { bearerToken } from './token-echo.ts';
 
 export interface McpOptions {
@@ -35,6 +37,8 @@ export interface McpOptions {
    * 300 s for headers and between body chunks) keeps waiting for a call that needs minutes.
    */
   keepalive?: { headersAfterMs: number; keepaliveMs: number };
+  /** Counts open MCP sessions (hub/health); the Hub itself stays stateless. */
+  sessions?: SessionTracker;
 }
 
 const KEEPALIVE = { headersAfterMs: 20_000, keepaliveMs: 30_000 } as const;
@@ -196,6 +200,8 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   }
   const traceId = traceIdFrom(request.headers.traceparent) ?? newTraceId();
   const sessionId = sessionIdOf(request.headers['circle-session-id']);
+  identifyRequest(request, { traceId, userId: principal.id });
+  options.sessions?.seen(mcpSessionOf(request.headers['mcp-session-id']));
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
   const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
     for (const state of states ?? [transportState(reason, started)]) await logCall(options, principal, traceId, sessionId, state);
@@ -205,6 +211,8 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   if (request.method !== 'POST') {
     request.resume();
     const message = '只接受 POST：这个服务器是无状态的 JSON 模式，没有 SSE 流';
+    // The specification lets a client end its session with DELETE, even where the answer is 405: it is done with it.
+    if (request.method === 'DELETE') options.sessions?.closed(mcpSessionOf(request.headers['mcp-session-id']));
     // A GET is the streamable HTTP client's probe for the optional server stream; the specification prescribes 405 for a
     // server without one, so it is the expected answer to every session, not a failed call, and gets no line.
     if (request.method === 'GET') return sendRpcError(response, 405, -32000, message, { allow: 'POST' });
@@ -263,6 +271,7 @@ async function answer(
 ): Promise<void> {
   const { deps } = options;
   const own = isRequest(parsed) ? { key: idKey(parsed.id), state: stateOf(parsed, started) } : null;
+  if (own !== null) identifyRequest(request, { traceId, name: LOGGED_TOOL.test(own.state.tool) ? own.state.tool : own.state.method === 'tools/call' ? 'tools/call' : 'mcp' });
   let finishObserved:(()=>void)|undefined;
   const states: CallState[] = own === null ? [] : [own.state];
   const stateFor = (requestId: string | number): CallState => {
@@ -365,6 +374,7 @@ async function answer(
     // client's declared clientInfo is bound to the writes it makes in that session and to no other client's. A head that
     // already went out early (keepalive) cannot carry one.
     const issued = !early && own?.state.method === 'initialize' && reply.status < 400 && own.state.callResult === 'ok' ? randomUUID() : null;
+    if (issued !== null) options.sessions?.opened(issued, own?.state.client?.name ?? null);
     for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null);
     if (early) {
       // The head (HTTP 200, JSON) went out while the call worked; the body follows the keepalive spaces.

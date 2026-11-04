@@ -5,11 +5,14 @@
 // with the certificate of <data root>/tls when it is configured) until SIGTERM or SIGINT.
 // `serve --migrate-only` applies the migrations as the owner role, grants the runtime role (records decision 16) and exits 0.
 import { userInfo } from 'node:os';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, loadConfig, type HubConfig } from '../config/index.ts';
-import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls } from '../platform/api.ts';
+import { createHealth } from '../health/api.ts';
+import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls, reportsDirectory } from '../platform/api.ts';
+import { Database, createPool } from '../records/db.ts';
 import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
-import { stopAll, sweepOrphans } from '../rules/api.ts';
+import { sandboxStats, stopAll, sweepOrphans } from '../rules/api.ts';
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
 import { createApp } from './app.ts';
 import { createCommandBridge } from './command-bridge.ts';
@@ -157,6 +160,9 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     operatorLog(`调用日志文件补写失败（不影响启动）：${error instanceof Error ? error.message : String(error)}`);
   }
   await sweepOrphans().catch((error: unknown) => operatorLog(`清理遗留的沙箱子进程失败（不影响启动）：${error instanceof Error ? error.message : String(error)}`));
+  // One connection of its own: the sampler neither waits in the business pool nor takes a connection from it.
+  const healthDatabase = new Database(createPool(config.database, 1));
+  const health = createHealth({ db: healthDatabase, logsDir: join(config.dataDir, 'logs'), reportsDir: reportsDirectory(config.dataDir), log: operatorLog, ...(options.now ? { now: options.now } : {}) });
 
   let app: HubApp | undefined;
   let maintenance: import('./api.ts').ServerDeps['maintenance'];
@@ -174,7 +180,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     maintenance=deps.maintenance;
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
-    app = createApp(deps, { log: operatorLog, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
+    app = createApp(deps, { log: operatorLog, health, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
     const info = await app.listen();
     io.stdout(`circle-hub 在 ${info.url} 上监听${app.release === null ? '' : `（发布 ${app.release}）`}`);
     if (info.https) io.stdout(`内置 HTTPS：${info.https.url}`);
@@ -189,6 +195,8 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   } catch (error) {
     await maintenance?.stopMaintenance({ abort: true }).catch(() => {});
     await app?.close().catch(() => {});
+    health.abandon();
+    await healthDatabase.end().catch(() => {});
     await records.close().catch(() => {});
     if (isAssemblyMissing(error)) {
       io.stderr(`错误：${(error as Error).message}`);
@@ -204,6 +212,9 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   const onRejection = (reason: unknown): void => operatorLog(`未处理的异步错误（服务继续运行）：${describeError(reason)}`);
   process.on('unhandledRejection', onRejection);
   try {
+    // After the bind, so a second serve that failed to bind judges nobody; beside the wait for a signal, so a slow database
+    // leaves the guard above and the signal handlers in place. It never rejects, and health.stop() waits for it.
+    void health.start({ release: running.release, dataDir: config.dataDir, pool: () => records.poolStats?.(), sandbox: sandboxStats, consoleStreams: () => running.consoleStreams() });
     const signal = await (options.stopSignal ?? defaultStop)();
     io.stdout(`收到${typeof signal === 'string' ? ` ${signal}` : '停止请求'}，正在停止：等进行中的请求结束`);
     // A maintenance pass in progress stops at its next run; the next start goes on from there.
@@ -211,6 +222,8 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     await running.close();
     // Pack-function children still running after the requests ended are stopped (hub/rules README).
     stopAll();
+    await health.stop();
+    await healthDatabase.end().catch(() => {});
     await records.close();
   } finally {
     process.off('unhandledRejection', onRejection);

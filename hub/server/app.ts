@@ -28,6 +28,7 @@ import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTar
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
+import { beginRequest } from './request-entry.ts';
 
 const REFUSED_HOST = '拒绝：Host 不在此服务允许的主机名单里';
 const REFUSED_ORIGIN = '拒绝：Origin 不在此服务允许的来源名单里';
@@ -108,7 +109,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const secureRequest = (request: IncomingMessage): boolean => encrypted(request) || (proxyAuthority !== null
     && request.headers.host?.toLowerCase() === proxyAuthority
     && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}) };
+  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.health ? { sessions: options.health.sessions } : {}) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
   const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
@@ -178,10 +179,11 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     const target = parseTarget(request.url);
     const label = target&&personalSyncTarget(target.url.pathname)?'/api/sync':target === null ? printable(request.url) : printable(target.url.pathname);
+    const finished = beginRequest(options.health?.requests, request, target?.url.pathname ?? null);
     // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles.
     const task: Promise<void> = route(request, response, target).catch((error: unknown) => fail(request, response, label, error));
     inflight.add(task);
-    void task.finally(() => inflight.delete(task)).catch(() => {});
+    void task.finally(() => { finished(); inflight.delete(task); }).catch(() => {});
   };
 
   /** Waits until no request is in flight (new ones arriving meanwhile included); false when `ms` ran out first. */
@@ -276,5 +278,5 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       await staging.clear();
     })());
 
-  return { handler, listen, close, release };
+  return { handler, listen, close, release, consoleStreams: () => live.streams };
 }

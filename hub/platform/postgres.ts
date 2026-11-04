@@ -167,8 +167,17 @@ function quoteConf(value: string): string {
 const MIB = 1024 * 1024;
 
 /** A share of memory in MB, kept between a floor and a ceiling. */
+function shareMb(bytes: number, divisor: number, floorMb: number, ceilingMb: number): number {
+  return Math.min(ceilingMb, Math.max(floorMb, Math.floor(bytes / divisor / MIB)));
+}
+
 function sized(bytes: number, divisor: number, floorMb: number, ceilingMb: number): string {
-  return `${Math.min(ceilingMb, Math.max(floorMb, Math.floor(bytes / divisor / MIB)))}MB`;
+  return `${shareMb(bytes, divisor, floorMb, ceilingMb)}MB`;
+}
+
+/** The Hub's V8 heap limit (--max-old-space-size): a quarter of memory, at least 2 GB, at most 8 GB. */
+export function heapLimitMb(memoryBytes: number): number {
+  return shareMb(memoryBytes, 4, 2048, 8192);
 }
 
 /**

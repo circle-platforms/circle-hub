@@ -925,6 +925,8 @@ export interface RecordsKit {
   authorizations: Authorizations;
   pointers: Pointers;
   callLog: CallLog;
+  /** The counters of the records pool; absent on a fake. */
+  poolStats?(): import('./db.ts').PoolStats;
   close(): Promise<void>;
 }
 

@@ -51,6 +51,9 @@ export function renderSystemdUnit(definition: ServiceDefinition): string {
     'RestartSec=10',
     'TimeoutStopSec=30',
     'UMask=0077',
+    // Process memory holds keys. Both are needed: on Ubuntu, apport wrote memory into its report under LimitCORE=0 alone.
+    'LimitCORE=0',
+    'CoredumpFilter=0',
     `StandardOutput=append:${pathValue(definition.standardOutPath)}`,
     `StandardError=append:${pathValue(definition.standardErrorPath)}`,
     '',

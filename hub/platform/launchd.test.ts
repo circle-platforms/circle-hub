@@ -17,6 +17,8 @@ const layout = layoutAt('/synthetic-homes/someone/Library/Application Support/ci
 const settings = resolveSettings(newSettingsFile({ environment: 'shared', port: 7420 }), {});
 const identity = { home: '/synthetic-homes/someone', user: 'someone', database: { port: 5432, name: 'circle_hub', role: 'circle_hub' } };
 
+const GIB = 1024 ** 3;
+
 const EXPECTED_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -26,6 +28,11 @@ const EXPECTED_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
+		<string>--max-old-space-size=4096</string>
+		<string>--report-on-fatalerror</string>
+		<string>--report-directory=/synthetic-homes/someone/Library/Application Support/circle-hub/logs/reports</string>
+		<string>--report-exclude-env</string>
+		<string>--report-compact</string>
 		<string>/synthetic-homes/someone/Library/Application Support/circle-hub/current/bin/circle-hub</string>
 		<string>serve</string>
 	</array>
@@ -62,6 +69,16 @@ const EXPECTED_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 	<integer>30</integer>
 	<key>Umask</key>
 	<integer>63</integer>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>Core</key>
+		<integer>0</integer>
+	</dict>
+	<key>HardResourceLimits</key>
+	<dict>
+		<key>Core</key>
+		<integer>0</integer>
+	</dict>
 	<key>StandardOutPath</key>
 	<string>/synthetic-homes/someone/Library/Application Support/circle-hub/logs/hub.out.log</string>
 	<key>StandardErrorPath</key>
@@ -71,7 +88,7 @@ const EXPECTED_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 `;
 
 test('the LaunchAgent plist for circle-hub serve matches the snapshot', () => {
-  assert.equal(renderPlist(serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity })), EXPECTED_PLIST);
+  assert.equal(renderPlist(serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity, memoryBytes: 16 * GIB })), EXPECTED_PLIST);
 });
 
 test('the service environment carries only hub/config names under CIRCLE_HUB_ and no secret', () => {
@@ -83,9 +100,34 @@ test('the service environment carries only hub/config names under CIRCLE_HUB_ an
 
 test('the service connects as the application role and never migrates; the owner is only the account that runs it', () => {
   const definition = serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity, user: 'owner-account' });
-  assert.deepEqual(definition.programArguments.slice(2), ['serve'], 'no --migrate and no --migrate-only');
+  assert.equal(definition.programArguments.at(-1), 'serve');
+  assert.ok(!definition.programArguments.some((argument) => argument.includes('migrate')), 'no --migrate and no --migrate-only');
   assert.equal(definition.environment.CIRCLE_HUB_DATABASE_USER, 'circle_hub');
   assert.equal(definition.environment.USER, 'owner-account');
+});
+
+test('the service runs Node with the crash report flags before the program, and a heap limit sized from this host', () => {
+  const argv = (memoryBytes: number) => serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity, memoryBytes }).programArguments;
+  const current = join(layout.current, 'bin', 'circle-hub');
+  assert.deepEqual(argv(16 * GIB), [
+    '/opt/homebrew/bin/node',
+    '--max-old-space-size=4096',
+    '--report-on-fatalerror',
+    `--report-directory=${join(layout.logs, 'reports')}`,
+    '--report-exclude-env',
+    '--report-compact',
+    current,
+    'serve',
+  ]);
+  for (const [gib, limit] of [[1, 2048], [4, 2048], [8, 2048], [12, 3072], [16, 4096], [32, 8192], [64, 8192], [256, 8192]] as const) {
+    assert.ok(argv(gib * GIB).includes(`--max-old-space-size=${limit}`), `${gib} GiB`);
+  }
+  assert.ok(serviceDefinition(layout, settings, { node: '/n', ...identity }).programArguments.some((argument) => /^--max-old-space-size=[0-9]+$/.test(argument)), 'this host, when no size is given');
+});
+
+test('the plist forbids core files, soft and hard: process memory holds keys', () => {
+  const text = renderPlist(serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity }));
+  for (const key of ['SoftResourceLimits', 'HardResourceLimits']) assert.match(text, new RegExp(`<key>${key}</key>\\n\\t<dict>\\n\\t\\t<key>Core</key>\\n\\t\\t<integer>0</integer>\\n\\t</dict>`));
 });
 
 test('plist text is escaped and control characters are refused', () => {
@@ -156,7 +198,7 @@ test('install writes the plist and bootstraps; start, stop and uninstall use the
   roots.push(directory);
   const fake = fakeLaunchctl();
   const agent = launchAgent({ label: settings.label, directory, uid: 501, runner: fake.runner });
-  const definition = serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity });
+  const definition = serviceDefinition(layout, settings, { node: '/opt/homebrew/bin/node', ...identity, memoryBytes: 16 * GIB });
   assert.deepEqual(await agent.status(), { plist: agent.plist, installed: false, loaded: false, running: false });
   await assert.rejects(agent.start(), /还没安装/);
 

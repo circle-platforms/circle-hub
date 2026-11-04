@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { PlatformError } from './errors.ts';
-import { assertSocketPath, DATA_ROOT_VARIABLE, defaultDataRoot, ensureLayout, layoutAt, resolveLayout, SOCKET_PATH_LIMIT } from './layout.ts';
+import { assertSocketPath, DATA_ROOT_VARIABLE, defaultDataRoot, ensureLayout, layoutAt, reportsDirectory, resolveLayout, SOCKET_PATH_LIMIT } from './layout.ts';
 import { removeDir, tempDir } from './test-support.ts';
 
 const roots: string[] = [];
@@ -27,6 +27,16 @@ test('CIRCLE_HUB_DATA_DIR, the one name hub/config reads too, overrides the root
   assert.throws(() => resolveLayout({ CIRCLE_HUB_DATA_DIR: 'relative/root' }), /绝对路径/);
   // The CLI refuses CIRCLE_HUB_HOME as an unknown name (environment.test.ts); here it is simply not a data root name.
   assert.equal(resolveLayout({ CIRCLE_HUB_HOME: '/srv/elsewhere' }, '/synthetic-homes/x', { platform: 'darwin' }).root, '/synthetic-homes/x/Library/Application Support/circle-hub');
+});
+
+test('crash reports have a private directory under logs, ready before anything can crash', async () => {
+  const root = await tempDir();
+  roots.push(root);
+  const layout = layoutAt(root);
+  assert.equal(layout.reports, join(root, 'logs', 'reports'));
+  assert.equal(reportsDirectory(root), layout.reports);
+  await ensureLayout(layout);
+  assert.equal((await stat(layout.reports)).mode & 0o777, 0o700);
 });
 
 test('Linux defaults use the service account or an absolute XDG data home', () => {

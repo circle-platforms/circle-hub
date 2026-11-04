@@ -86,6 +86,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     authorizations,
     pointers: new PgPointers(db, store, now),
     callLog: new PgCallLog(db, store, config.logDir, now),
+    poolStats: () => db.stats(),
     close: () => (closed ??= db.end()),
   };
 }

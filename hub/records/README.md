@@ -105,6 +105,11 @@ Triggers reject UPDATE, DELETE and TRUNCATE on `records`, `record_index`, `objec
 `call_notes` (SQLSTATE `HU001`). Mutable state is only `users`, `tokens` (hashed), `pointers` and the vault files, as the
 brief says.
 
+Migration 28 holds `resource_samples` and `process_events`, which belong to hub/health: diagnostic data, outside the append-only
+chain, on which the runtime role has SELECT, INSERT and DELETE. `Database.stats()` and `RecordsKit.poolStats()` give that package
+the pool's counters; `createPool` uses a `pg.Client` subclass to count connections that could not be opened, because `pg.Pool` has
+no event for them.
+
 Data directory (all directories 0700): `objects/ab/<sha256>` (files 0400), `vault/<name>.sealed` and `vault/key-check`
 (0600), `logs/calls-YYYY-MM-DD.jsonl` (0600; `CIRCLE_HUB_LOG_DIR` can move it). A backup needs the database, `objects/`,
 `vault/` and the vault key (a private file under `<data root>/keys` on every platform, decision 137, which backups leave out: it is moved only with `circle-hub key export --confirm | circle-hub key import`).

@@ -9,7 +9,7 @@ import { after, before, describe, it } from 'node:test';
 import { SandboxError } from './errors.ts';
 import { isolatedCommand, NODE, osIsolationAvailable } from './isolation.ts';
 import { carries, listProcesses } from './orphans.ts';
-import { callPackFunction, type SandboxLimits } from './sandbox.ts';
+import { callPackFunction, type SandboxLimits, sandboxStats } from './sandbox.ts';
 
 // Real path: on macOS the temporary directory sits behind the /var symbolic link, which the permission model will not follow.
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'hub-rules-sandbox-')));
@@ -433,9 +433,11 @@ describe('boundaries', () => {
   it('an infinite loop is killed at the time limit', async () => {
     const dir = pack({ 'fn.ts': 'export default function () { for (;;) {} }' });
     const started = Date.now();
+    const before = sandboxStats().timeouts;
     const error = await failure(call(dir, null, { timeoutMs: 1000 }));
     assert.equal(error.code, 'SANDBOX_TIMEOUT', detailOf(error));
     assert.ok(Date.now() - started < 5000);
+    assert.equal(sandboxStats().timeouts, before + 1, 'the resource sampling counts it');
   });
 
   it('100 MB of output fails, as a result and as printed text', async () => {
