@@ -48,7 +48,7 @@ export type Build = {
   /** The build this one is based on (FAMY-named builds of the older lines name their base FAMX build). */
   basedOn: string | null;
   files: BuildFiles;
-  /** Text around the core name, written with * for the core: BrandOS-*.click, *.patch.p1. */
+  /** Text around the core name, written with * for the core: BrandOS-*.demopkg, *.patch.p1. */
   variant?: string;
   /** Remaining text of the entry line that is neither the release nor the base. */
   note?: string;

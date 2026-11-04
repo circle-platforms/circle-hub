@@ -157,7 +157,7 @@ bug 列表用 product、status、severity、assignedTo、openedBy、lastEditedDa
 
 构建列表含 id/product/branch/project/name/scmPath/filePath/date/builder/desc，不含 bugs；详情增加 stories、bugs（逗号 ID）、deleted、mailto。用 resolvedBuild 查详情、bugs 反查关联时只确认构建线索，保留发布环节缺失。全字段与验收来源见第二阶段进度。
 
-发布主证据来自独立构建站点的 HTML：首页链接版本线页，也有 kvm/docker/xen/vmware/hyperv 和系统/芯片变体页。版本线页每构建含 Rel_/Beta_ 构建名、构建时间、Released on 日期和四个链接：系统镜像 .array、SNMP MIB、command_tree-构建名.xml、Bugs_Fixed_with_构建名.html。Bugs_Fixed 每行的 show_bug.cgi?id 链接只用来抽取历史编号；用 bugzillaID 连接，不打开链接目标。命令树 XML 同构建/平台保留原件和 SHA。桩的全部编号、名称、日期、页面和 XML 都虚构。
+发布主证据来自独立构建站点的 HTML：首页链接版本线页，也有 kvm/docker/xen/vmware/hyperv 和系统/芯片变体页。版本线页每构建含 Rel_/Beta_ 构建名、构建时间、Released on 日期和四个链接：系统镜像 .demoimg、SNMP MIB、command_tree-构建名.xml、Bugs_Fixed_with_构建名.html。Bugs_Fixed 每行的 show_bug.cgi?id 链接只用来抽取历史编号；用 bugzillaID 连接，不打开链接目标。命令树 XML 同构建/平台保留原件和 SHA。桩的全部编号、名称、日期、页面和 XML 都虚构。
 
 本阶段 circle-server 先在用户 Mac 上、本机监听运行；网络开放、远端部署或连接真实来源均未获本轮授权。
 

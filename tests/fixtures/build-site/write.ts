@@ -16,7 +16,7 @@ function listing(title: string, entries: Entry[]): string {
     const head = `${e.build} (build on  ${e.built} ): ${e.basedOn ? `based on ${e.basedOn} ` : ''}${e.released ? `Released on ${e.released} ` : ''}`;
     const line = e.released ? `<font color=red>${head}</font>` : head;
     const files = [
-      `<A href=/builds/OrbitOS-${e.build}.array>http://192.0.2.10/builds/OrbitOS-${e.build}.array ( 901M\t, SHA256: ${HEX(e.image ?? '0f')}    )</A><BR>`,
+      `<A href=/builds/OrbitOS-${e.build}.demoimg>http://192.0.2.10/builds/OrbitOS-${e.build}.array ( 901M\t, SHA256: ${HEX(e.image ?? '0f')}    )</A><BR>`,
       `<A href=/builds/ORBIT-MIB-${e.build}.txt>http://192.0.2.10/builds/ORBIT-MIB-${e.build}.txt</A><BR>`,
       ...(e.tree ? [`<A href=/builds/command_tree-${e.build}.xml>http://192.0.2.10/builds/command_tree-${e.build}.xml</A><BR>`] : []),
       ...(e.bugs ? [`<A href=http://192.0.2.10/builds/Bugs_Fixed_with_${e.build}.html>http://192.0.2.10/builds/Bugs_Fixed_with_${e.build}.html</A><BR>`] : []),

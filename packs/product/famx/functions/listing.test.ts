@@ -43,8 +43,8 @@ describe('listing page of the FAMX family', () => {
       basedOn: null,
       files: {
         image: {
-          name: 'DemoOS-Rel_FAMX_10_6_1_57.array',
-          href: '/builds/DemoOS-Rel_FAMX_10_6_1_57.array',
+          name: 'DemoOS-Rel_FAMX_10_6_1_57.demoimg',
+          href: '/builds/DemoOS-Rel_FAMX_10_6_1_57.demoimg',
           size: '901M',
           sha256: '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0',
         },
@@ -60,7 +60,7 @@ describe('listing page of the FAMX family', () => {
     const build = byName(famx.builds, 'Rel_FAMX_10_6_1_56');
     assert.equal(build.released, null);
     assert.equal(build.built, '2026-05-10T09:00:00');
-    assert.deepEqual(build.files.image, { name: 'DemoOS-Rel_FAMX_10_6_1_56.array', href: '/builds/DemoOS-Rel_FAMX_10_6_1_56.array', size: '899M', md5: '00112233445566778899aabbccddeeff' });
+    assert.deepEqual(build.files.image, { name: 'DemoOS-Rel_FAMX_10_6_1_56.demoimg', href: '/builds/DemoOS-Rel_FAMX_10_6_1_56.demoimg', size: '899M', md5: '00112233445566778899aabbccddeeff' });
   });
 
   it('keeps the later of two listings of one build and warns', () => {
@@ -106,7 +106,7 @@ describe('listing page of the FAMX family', () => {
   });
 
   it('reads the quoted and the unquoted href exactly as written', () => {
-    assert.equal(byName(famx.builds, 'Rel_FAMX_10_6_1_40').files.image?.href, '/builds/DemoOS-Rel_FAMX_10_6_1_40.array');
+    assert.equal(byName(famx.builds, 'Rel_FAMX_10_6_1_40').files.image?.href, '/builds/DemoOS-Rel_FAMX_10_6_1_40.demoimg');
     assert.equal(byName(famx.builds, 'Rel_FAMX_10_6_1_40').files.bugsFixed?.href, '/builds/Bugs_Fixed_with_Rel_FAMX_10_6_1_40.html');
   });
 });
@@ -120,7 +120,7 @@ describe('listing page of the FAMY family', () => {
         ['Rel_FAMY_10_6_1_40', 'FAMY', 'Rel_FAMX_10_6_1_56', null, true],
         ['Rel_FAMY_10_6_1_33', 'FAMY', 'Rel_FAMX_10_6_1_54', '2026-05-06', true],
         ['Rel_FAMY_10_6_1_30', 'FAMY', 'Rel_FAMX_10_6_1_52', '2026-04-03', true],
-        ['BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click', 'FAMY', 'Rel_FAMX-SY-K_10_6_1_3_1_9', '2026-05-27', true],
+        ['BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg', 'FAMY', 'Rel_FAMX-SY-K_10_6_1_3_1_9', '2026-05-27', true],
         ['Rel_FAMY_10_6_1_12', 'FAMY', null, '2025-10-10', true],
       ],
     );
@@ -128,12 +128,12 @@ describe('listing page of the FAMY family', () => {
   });
 
   it('reads platform tokens and variants from the name', () => {
-    const build = byName(famy.builds, 'BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click');
+    const build = byName(famy.builds, 'BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg');
     assert.equal(build.platform, 'sy-k');
     assert.equal(build.line, '10.6.1');
     assert.equal(build.number, '3.2.7');
-    assert.equal(build.variant, 'BrandOS-*.click');
-    assert.equal(build.files.image?.name, 'BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click');
+    assert.equal(build.variant, 'BrandOS-*.demopkg');
+    assert.equal(build.files.image?.name, 'BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg');
     assert.equal(build.files.image?.size, '1.2G');
   });
 });
@@ -257,7 +257,7 @@ describe('listing context, encodings and odd models', () => {
     for (let n = 6000; n > 0; n--) {
       const name = `Rel_FAMX_10_6_1_${n}`;
       const red = n % 25 === 0;
-      parts.push(`${red ? '<font color=red>' : ''}${name} (build on  2026-01-01 10:00:00 ): ${red ? 'Released on 2026-01-02 </font>' : ''} </br> <BLOCKQUOTE> <A href=/b/DemoOS-${name}.array>x ( 900M , SHA256: ${'a'.repeat(64)} )</A><BR><A href=/b/command_tree-${name}.xml>t</A><BR></BLOCKQUOTE>\n`);
+      parts.push(`${red ? '<font color=red>' : ''}${name} (build on  2026-01-01 10:00:00 ): ${red ? 'Released on 2026-01-02 </font>' : ''} </br> <BLOCKQUOTE> <A href=/b/DemoOS-${name}.demoimg>x ( 900M , SHA256: ${'a'.repeat(64)} )</A><BR><A href=/b/command_tree-${name}.xml>t</A><BR></BLOCKQUOTE>\n`);
     }
     parts.push('</body></html>');
     const model = html(parts.join(''));

@@ -59,7 +59,7 @@ describe('html@1 on the build listing fixture', () => {
     assert.deepEqual(
       model.links.slice(0, 4).map((link) => [link.href, link.text]),
       [
-        ['Rel_SYNTH_3_2_1_105.array', 'image'],
+        ['Rel_SYNTH_3_2_1_105.demoimg', 'image'],
         ['SYNTH-MIB-Rel_SYNTH_3_2_1_105.txt', 'MIB'],
         ['command_tree-Rel_SYNTH_3_2_1_105.xml', 'command tree'],
         ['Bugs_Fixed_with_Rel_SYNTH_3_2_1_105.html', 'fixed list'],
@@ -147,8 +147,8 @@ describe('html@1 behaviour', () => {
   });
 
   it('decodes entities in hrefs and keeps links without href', () => {
-    const model = htmlParser.parse(utf8('<a href="index.php?m=bug&amp;f=view&amp;id=51">bug</a> <a name=top>anchor</a> <A HREF=Rel_X.click>x</A>')).model;
-    assert.deepEqual(model.links.map((link) => link.href), ['index.php?m=bug&f=view&id=51', null, 'Rel_X.click']);
+    const model = htmlParser.parse(utf8('<a href="index.php?m=bug&amp;f=view&amp;id=51">bug</a> <a name=top>anchor</a> <A HREF=Rel_X.demopkg>x</A>')).model;
+    assert.deepEqual(model.links.map((link) => link.href), ['index.php?m=bug&f=view&id=51', null, 'Rel_X.demopkg']);
   });
 
   it('chooses the charset from the media type, a meta element or the bytes', () => {

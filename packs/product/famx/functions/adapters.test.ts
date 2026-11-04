@@ -162,7 +162,7 @@ describe('the sync plan', () => {
     // A Beta name without a tree carries its built time too.
     assert.equal(rest('Beta_FAMX_10_6_1_120').built_at, '2026-02-11T12:00:00Z');
     // A variant of another platform is not a mainline build: still not listed.
-    assert.ok(!byName.has('BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click'), 'another platform is opt-in');
+    assert.ok(!byName.has('BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg'), 'another platform is opt-in');
     // The existing choices keep their sources (nothing about them changed).
     assert.ok(Object.keys(byName.get('Rel_FAMX_10_6_1_57')?.sources ?? {}).includes('tree'));
   });

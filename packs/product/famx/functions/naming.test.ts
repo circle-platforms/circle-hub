@@ -18,16 +18,16 @@ describe('build names', () => {
     assert.deepEqual(parseBuildName('Rel_FAMX_10_6_1_57'), { family: 'FAMX', platform: null, line: '10.6.1', number: '57', variant: null });
     assert.deepEqual(parseBuildName('Rel_FAMY_10_6_1_41'), { family: 'FAMY', platform: null, line: '10.6.1', number: '41', variant: null });
     assert.deepEqual(parseBuildName('Rel_FAMX-SY-K_10_6_1_3_1_9'), { family: 'FAMX', platform: 'sy-k', line: '10.6.1', number: '3.1.9', variant: null });
-    assert.deepEqual(parseBuildName('BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click'), {
+    assert.deepEqual(parseBuildName('BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg'), {
       family: 'FAMY',
       platform: 'sy-k',
       line: '10.6.1',
       number: '3.2.7',
-      variant: 'BrandOS-*.click',
+      variant: 'BrandOS-*.demopkg',
     });
     assert.deepEqual(parseBuildName('Beta_FAMX_10_7_0_101'), { family: 'FAMX', platform: null, line: '10.7.0', number: '101', variant: null });
     assert.deepEqual(parseBuildName('Rel.FAMX-SY-U.10.6.1.3.patch.p1'), { family: 'FAMX', platform: 'sy-u', line: '10.6.1', number: '3', variant: '*.patch.p1' });
-    assert.deepEqual(parseBuildName('trial-Rel_Famy_9_2_1_7.click'), { family: 'FAMY', platform: null, line: '9.2.1', number: '7', variant: 'trial-*.click' });
+    assert.deepEqual(parseBuildName('trial-Rel_Famy_9_2_1_7.demopkg'), { family: 'FAMY', platform: null, line: '9.2.1', number: '7', variant: 'trial-*.demopkg' });
     assert.deepEqual(parseBuildName('Rel_OTHER_3_9_1_2'), { family: 'other', platform: null, line: '3.9.1', number: '2', variant: null });
   });
 

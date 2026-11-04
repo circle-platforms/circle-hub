@@ -116,7 +116,7 @@ describe('the rule: latest released build of the line across both families, main
 
   it('leaves out other platforms, variants and unreleased builds unless a platform is included', () => {
     const names = selectBuild({ candidates, line: '10.6.1' }).alternatives.map((alternative) => alternative.name);
-    for (const left of ['BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click', 'Rel_FAMX_10_6_1_56', 'Rel_FAMX_10_6_1_38', 'Beta_FAMX_10_6_1_120']) assert.ok(!names.includes(left), left);
+    for (const left of ['BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg', 'Rel_FAMX_10_6_1_56', 'Rel_FAMX_10_6_1_38', 'Beta_FAMX_10_6_1_120']) assert.ok(!names.includes(left), left);
     const platform = [build('Rel_FAMX-SY-K_9_2_1_8_1', { platform: 'sy-k', released: '2026-02-02' }), build('Rel_FAMX_9_2_1_7', { released: '2026-01-01' })];
     assert.equal(selectBuild({ candidates: platform, line: '9.2.1' }).build?.name, 'Rel_FAMX_9_2_1_7');
     assert.equal(selectBuild({ candidates: platform, line: '9.2.1', includePlatforms: ['SY-K'] }).build?.name, 'Rel_FAMX-SY-K_9_2_1_8_1');
@@ -187,7 +187,7 @@ describe('a declared build wins', () => {
     assert.equal(result.build?.name, 'Rel_FAMX_10_6_1_40');
     assert.ok(result.notes.some((note) => note.includes('不区分大小写')));
     assert.ok(result.notes.some((note) => note.includes('属于版本线 10.6.1，不是 10.6')));
-    const platform = selectBuild({ candidates, line: '10.6.1', declared: 'BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click' });
+    const platform = selectBuild({ candidates, line: '10.6.1', declared: 'BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg' });
     assert.equal(platform.base, null);
     assert.ok(platform.notes.some((note) => note.includes('sy-k 平台')) && platform.notes.some((note) => note.includes('变体构建')));
   });

@@ -20,12 +20,12 @@ const read=(key:string,model:unknown,root:string|null='d'.repeat(64))=>rows(proj
 test('the asset grammar reads the prefixed fixed-bug and command-tree names as whole names, nothing by substring',()=>{
  const listing=parseListing(html(Buffer.from([
   `<font color=red>${BUILD} (build on  2026-09-20 10:00:00 ): Released on 2026-09-21 </font> </br>`,
-  `<BLOCKQUOTE><A href=/builds/DemoOS-${BUILD}.array>image</A><BR><A href=/builds/command_tree-DemoOS-${BUILD}.xml>tree</A><BR><A href=/builds/Bugs_Fixed_with_DemoOS_${BUILD}.html>bugs</A><BR></BLOCKQUOTE>`,
+  `<BLOCKQUOTE><A href=/builds/DemoOS-${BUILD}.demoimg>image</A><BR><A href=/builds/command_tree-DemoOS-${BUILD}.xml>tree</A><BR><A href=/builds/Bugs_Fixed_with_DemoOS_${BUILD}.html>bugs</A><BR></BLOCKQUOTE>`,
  ].join('\n'))));
  const files=listing.builds[0].files;
  assert.equal(files.commandTree?.name,`command_tree-DemoOS-${BUILD}.xml`);
  assert.equal(files.bugsFixed?.name,`Bugs_Fixed_with_DemoOS_${BUILD}.html`);
- assert.equal(files.image?.name,`DemoOS-${BUILD}.array`);
+ assert.equal(files.image?.name,`DemoOS-${BUILD}.demoimg`);
  assert.ok(!listing.warnings.some(warning=>warning.includes('资产角色未核对')),listing.warnings.join('；'));
  // The bare forms of the older listings are read as before.
  assert.equal(fixedBugsBuild(`/builds/Bugs_Fixed_with_${BUILD}.html`),BUILD);

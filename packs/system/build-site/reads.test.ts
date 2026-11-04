@@ -52,9 +52,9 @@ describe('the read functions', () => {
     }
     assert.equal(routeOfLink('/a/b.XML?x=1'), 'tree-file');
     assert.equal(routeOfLink('Bugs_Fixed_with_X.htm'), 'page-file');
-    assert.equal(routeOfLink('image.array'), null);
+    assert.equal(routeOfLink('image.demoimg'), null);
     assert.deepEqual(filePlan({ external: { key: '/builds/a.xml' } }), { requests: [{ key: 'file', route: 'tree-file', href: '/builds/a.xml' }], done: true });
-    for (const bad of ['', 'http:%2F%2Fevil/x.xml', '%2F%2Fevil%2Fx.xml', '/a%5Cb.xml', '%E0%A4%A', '/image.array']) assert.deepEqual(filePlan({ external: { key: bad } }), { requests: [], done: true }, bad);
+    for (const bad of ['', 'http:%2F%2Fevil/x.xml', '%2F%2Fevil%2Fx.xml', '/a%5Cb.xml', '%E0%A4%A', '/image.demoimg']) assert.deepEqual(filePlan({ external: { key: bad } }), { requests: [], done: true }, bad);
   });
 
   test('never throw on hostile input', () => {
@@ -132,7 +132,7 @@ describe('reads through the connectors', () => {
 
   test('a link outside the base path or of a type no route reads is refused before anything is sent', async () => {
     const before = site.requests.length;
-    for (const key of ['/elsewhere/command_tree.xml', '/builds/image.array', '%2F%2F192.0.2.77%2Fx.xml']) assert.equal((await read(`buildsite:file:${key}`)).ok, false, key);
+    for (const key of ['/elsewhere/command_tree.xml', '/builds/image.demoimg', '%2F%2F192.0.2.77%2Fx.xml']) assert.equal((await read(`buildsite:file:${key}`)).ok, false, key);
     assert.equal(site.requests.length, before, 'no request left the Hub');
   });
 
