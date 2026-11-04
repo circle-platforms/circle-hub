@@ -46,7 +46,8 @@ asked (`AsyncLocalStorage.snapshot()`), or that work runs in the wrong trace. `h
 
 | Entry | Origin | Root name |
 | --- | --- | --- |
-| `POST /mcp` | `mcp` | the tool, `initialize`, `list-tools` or `handle-mcp` |
+| `/mcp`, a request that gets a call-log line | `mcp` | the tool, `initialize`, `list-tools` or `handle-mcp` (a ping, a tool nobody has, a refusal at the transport) |
+| `/mcp`, an exchange that gets none (a GET, a notification, a request refused before it was identified) | `mcp` | `serve-http` |
 | anything under `/console` | `console` | `serve-<first path segment>` when that is a page area, else `serve-console`; `stream-console` for the live updates |
 | `/api/sync/…` | `sync` | `sync-<route>`, `serve-sync` before a route is known |
 | any other path (`/healthz`, OAuth, local tools, run export) | `console` | `serve-http` |
@@ -153,7 +154,8 @@ there (`capped`):
 | `releases` | `trace_spans_mcp_releases` | the retention, the last `windowMs` of each release's run, `MAX_RELEASE_CALLS_READ` a release | one row a release asked for |
 
 `clients` leaves out what no client calls: background rounds, CLI commands, `stream-console` (it lasts as long as a page stays
-open) and `serve-http`. A task's gap is the median of its round starts, so hours with no page open do not stretch the tick of
+open) and `serve-http`. `releases` leaves out `serve-http` too, so on the MCP entry both count the lines of the call log and
+nothing else (decision 147: all MCP calls, not per tool). A task's gap is the median of its round starts, so hours with no page open do not stretch the tick of
 `poll-console`. `TIMED_BACKGROUND_STEPS` names the rounds a timer starts; the others run when asked and have no interval.
 
 ## Decisions and limits

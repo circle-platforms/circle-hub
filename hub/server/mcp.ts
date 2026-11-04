@@ -165,6 +165,8 @@ function headersOf(request: IncomingMessage): Headers {
  * refuses never costs the line: it is written once more without the note, and the operator's log says so.
  */
 async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState, tokenId: string | null = null, mcpSessionId: string | null = null, spanId?: string): Promise<void> {
+  // The line is what makes a request a call: one with no span of its own here was refused before any step could name it.
+  if (spanId === undefined) updateTrace({ name: 'handle-mcp' });
   const tool = LOGGED_TOOL.test(state.tool) ? state.tool : state.method === 'tools/call' ? 'tools/call' : 'mcp';
   const errorCode = state.errorCode !== null && LOGGED_CODE.test(state.errorCode) ? state.errorCode : null;
   const note=state.notes.length===0?null:`管理员理由 ${state.notes.length} 条；详见管理员调用日志详情`;

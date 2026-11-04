@@ -305,6 +305,21 @@ test('by release: the p95 of each over the end of its own run, what changed, and
   assert.ok(!visible(page).includes(CURRENT), 'a release id stays behind 查看');
 });
 
+test('an exchange on /mcp that is no call adds no client, no call and nothing to a p95', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  const client = { client: 'client-one', version: '1.0', platform: 'os-one', release: CURRENT };
+  await roots(w.db, { name: 'get_nodes', n: 20, every: 1000, ms: 2000, ...client });
+  await roots(w.db, { name: 'handle-mcp', n: 1, every: 1000, ms: 2000, ...client });
+  await roots(w.db, { name: 'serve-http', n: 80, every: 1000, ms: 1, ...client });
+  await roots(w.db, { name: 'serve-http', n: 40, every: 1000, ms: 1, release: CURRENT });
+  const page = await shown(w.admin);
+  const clients = section(page, '按客户端');
+  assert.match(clients, /client-one os-one MCP 1\.0 未知 21 2\.0 秒/);
+  assert.doesNotMatch(clients, /未声明名字/, 'every client that called declared a name');
+  assert.match(section(page, '按发布'), /已运行 1 小时 0 分 21 2\.0 秒/);
+});
+
 test('observation itself: the writer of this process and the samples of the day', async (t) => {
   const w = await world(t);
   await everything(w);

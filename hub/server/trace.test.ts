@@ -156,6 +156,56 @@ test('the platform a client declares at initialize reaches the rows of that conn
   ]);
 });
 
+test('a root on /mcp is a call exactly when the call log has its line, whatever its name', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const headers = { authorization: `Bearer ${user.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  const post = (body: unknown, extra: Record<string, string> = {}): Promise<Reply> => send('/mcp', { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) });
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0' });
+  assert.ok(session);
+  const inSession = { 'mcp-session-id': session };
+  // No line: the client's probe for a stream, and a notification.
+  assert.equal((await send('/mcp', { headers: { ...headers, ...inSession } })).status, 405);
+  assert.equal((await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, inSession)).status, 202);
+  // A line each: a ping, a tool no one has, and a request or a notification refused at the transport.
+  assert.equal((await post({ jsonrpc: '2.0', id: 2, method: 'ping' }, inSession)).status, 200);
+  assert.equal((await post({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'no_such_tool', arguments: {} } }, inSession)).status, 200);
+  assert.equal((await post({ jsonrpc: '2.0', id: 4, method: 'ping' }, { 'content-type': 'text/plain' })).status, 415);
+  assert.equal((await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, { accept: 'text/plain' })).status, 406);
+  assert.equal((await send('/mcp', { method: 'DELETE', headers: { ...headers, ...inSession } })).status, 405);
+  await telemetry.flush();
+  const roots = (await db.query(`SELECT name, count(*)::int AS n FROM trace_spans WHERE user_id = $1 AND is_root AND origin = 'mcp' GROUP BY name ORDER BY name`, [user.user.id])).rows;
+  assert.deepEqual(roots, [{ name: 'handle-mcp', n: 5 }, { name: 'initialize', n: 1 }, { name: 'serve-http', n: 2 }]);
+  const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 50 })).items;
+  assert.equal(lines.length, 6, 'the calls the page counts are the lines of the call log');
+});
+
+test('a request on /mcp refused before it could be a call is an exchange, traced like any other', async (t) => {
+  const telemetry = telemetryFor(t);
+  const refused = [
+    ['4bf92f3577b34da6a3ce929d0e0e4737', await send('/mcp', { method: 'POST', headers: { traceparent: `00-4bf92f3577b34da6a3ce929d0e0e4737-${PARENT}-01`, 'content-type': 'application/json' }, body: '{}' }), 401],
+    ['4bf92f3577b34da6a3ce929d0e0e4738', await send('/mcp', { method: 'POST', headers: { traceparent: `00-4bf92f3577b34da6a3ce929d0e0e4738-${PARENT}-01`, host: 'other.example', 'content-type': 'application/json' }, body: '{}' }), 403],
+  ] as const;
+  await telemetry.flush();
+  for (const [trace, reply, status] of refused) {
+    assert.equal(reply.status, status);
+    const root = rootOf(await rowsOf(trace));
+    assert.deepEqual([root.name, root.origin, root.user_id], ['serve-http', 'mcp', null]);
+    await db.query('DELETE FROM trace_spans WHERE trace_id = $1', [trace]);
+  }
+});
+
+test('a refused batch is one root of the MCP entry, whatever its requests asked for', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const reply = await send('/mcp', { method: 'POST', headers: { authorization: `Bearer ${user.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }]) });
+  assert.equal(reply.status, 400);
+  await telemetry.flush();
+  const roots = (await db.query(`SELECT name FROM trace_spans WHERE user_id = $1 AND is_root`, [user.user.id])).rows;
+  assert.deepEqual(roots.map((row) => row.name), ['handle-mcp']);
+  assert.equal((await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 50 })).items.length, 2, 'a line per request of it');
+});
+
 test('a client that declares no platform has none: absent, not guessed, and not taken from another connection', async (t) => {
   const telemetry = telemetryFor(t);
   const user = await member();

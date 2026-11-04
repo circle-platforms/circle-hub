@@ -30,8 +30,11 @@ export interface ReadBounds {
 }
 /** Entries a person connects through; a background round or a CLI command is no client. */
 const CLIENT_ORIGINS: readonly TraceOrigin[] = ['mcp', 'sync', 'console'];
-/** A live stream lasts as long as its page stays open, and serve-http is any other path (a probe of /healthz): neither is a call of a client. */
-const NOT_CLIENT_CALLS = ['stream-console', 'serve-http'];
+/**
+ * A live stream lasts as long as its page stays open, and serve-http is an exchange that is no call: any other path (a probe of
+ * /healthz), or one on /mcp that gets no call-log line (names.ts). Decision 147: every other MCP root counts, whatever it asked.
+ */
+const NOT_CALLS = ['stream-console', 'serve-http'];
 
 export interface TraceStep {
   trace_id: string;
@@ -333,7 +336,7 @@ export class TraceReader {
          FROM totals t CROSS JOIN (SELECT count(*)::bigint AS calls, min(started_at) AS oldest FROM recent) s
         ORDER BY array_position($2::text[], t.origin), sum(t.calls) OVER (PARTITION BY t.origin, t.client_name) DESC, t.client_name NULLS LAST, t.calls DESC, t.client_platform NULLS LAST
         LIMIT $5`,
-      [normalizeTime(query.since, 'since'), CLIENT_ORIGINS, NOT_CLIENT_CALLS, this.#bounds.roots, pageLimit(query.limit)],
+      [normalizeTime(query.since, 'since'), CLIENT_ORIGINS, NOT_CALLS, this.#bounds.roots, pageLimit(query.limit)],
     )).rows;
     const first = rows[0];
     return {
@@ -360,18 +363,18 @@ export class TraceReader {
          FROM unnest($1::text[]) WITH ORDINALITY AS r(release, position)
          LEFT JOIN LATERAL (
            SELECT t.started_at AS newest_at FROM trace_spans t
-            WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2
+            WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2 AND t.name <> ALL($5::text[])
             ORDER BY t.started_at DESC LIMIT 1
          ) n ON true
          LEFT JOIN LATERAL (
            SELECT count(*)::bigint AS calls, percentile_cont(0.95) WITHIN GROUP (ORDER BY c.ms) AS p95_ms
              FROM (SELECT extract(epoch FROM t.ended_at - t.started_at)::double precision * 1000 AS ms FROM trace_spans t
-                    WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2
+                    WHERE t.is_root AND t.origin = 'mcp' AND t.release = r.release AND t.started_at >= $2 AND t.name <> ALL($5::text[])
                       AND t.started_at > n.newest_at - $3::double precision * interval '1 millisecond'
                     ORDER BY t.started_at DESC LIMIT $4) c
          ) w ON true
         ORDER BY r.position`,
-      [query.releases, normalizeTime(query.retained, 'retained'), query.windowMs, this.#bounds.releaseCalls],
+      [query.releases, normalizeTime(query.retained, 'retained'), query.windowMs, this.#bounds.releaseCalls, NOT_CALLS],
     );
     return rows.rows.map((row) => ({
       release: String(row.release),

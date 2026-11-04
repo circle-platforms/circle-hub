@@ -415,6 +415,23 @@ test('client totals: by entry, name and declared platform, the p95 of each, the 
   assert.deepEqual(await reader.clients(admin, { since: at(DAY_MS), limit: 2 }), { rows: [], groups: 0, calls: 0, capped: false, oldest: null });
 });
 
+test('client and release totals are of MCP calls: a ping or an unknown tool is one, an exchange on /mcp that gets no line is not', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  const release = 'aaaaaaaaaaaa';
+  await insert([
+    ran(0, 100, { client_name: 'client-a', release }),
+    ran(0, 200, { name: 'handle-mcp', client_name: 'client-a', release }),
+    // A notification carries the client it came from; a GET and a request without a valid token carry none.
+    ran(1000, 1, { name: 'serve-http', client_name: 'client-a', release }),
+    ran(1000, 1, { name: 'serve-http', release }),
+    ran(1000, 1, { name: 'serve-http', release }),
+  ]);
+  const totals = await reader.clients(admin, { since, limit: 50 });
+  assert.deepEqual(totals.rows.map((row) => [row.client_name, row.calls, row.p95_ms]), [['client-a', 2, 195]], 'no row for what no client called');
+  const [row] = await reader.releases(admin, { releases: [release], retained, windowMs: DAY_MS });
+  assert.deepEqual([row!.calls, row!.p95_ms, row!.newest_at], [2, 195, at(0)], 'the newest call, not the newest exchange');
+});
+
 test('client totals read the newest calls up to their bound, and say from when', async (t) => {
   const { db, admin, insert } = await world(t);
   await insert([0, 1, 2, 3, 4].map((n) => ran(n * 1000, 5, { client_name: 'client-a' })));
