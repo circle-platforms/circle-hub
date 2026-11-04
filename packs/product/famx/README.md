@@ -1001,7 +1001,7 @@ Complete zero selections emit source inventory proofs: specifications cite the b
 
 标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
 
-R6（所有者 2026-10-24）：声明 famx-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。famx-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。famx-assets@1 只按整名认资产角色，出处是本 README 记下的列表页真实命名：`command_tree-<构建名>.xml`（命令树）、`Bugs_Fixed_with_<构建名>.html`（修复缺陷）、`<前缀>-MIB[_<语言>]-<构建名>.txt|mib|my`（MIB）、`<前缀>-<构建名>.array|click|img|iso|qcow2|ova|bin|tgz|tar.gz`（镜像）；`<构建名>` 是产品命名语法里的一个完整构建名（`Rel|Beta` + 统一分隔符 + 名称族 + 可选平台段 + 数字组），不必是本条目自己的名字——变体构建的条目本身就以其镜像文件名命名，链接不含本条目构建名时另按位置归类并警告。不按子串、词或单独的扩展名认角色；语法读不出的文件名保留原链接、记“资产角色未核对”并给出出口（包作者补资产语法或作者声明角色后重读）。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
+R6（所有者 2026-10-24）：声明 famx-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。famx-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。famx-assets@1 只按整名认资产角色，出处是本 README 记下的列表页真实命名：`command_tree-<构建名>.xml`（命令树）、`Bugs_Fixed_with_<构建名>.html`（修复缺陷）、`<前缀>-MIB[_<语言>]-<构建名>.txt|mib|my`（MIB）、`<前缀>-<构建名>.array|click|img|iso|qcow2|ova|bin|tgz|tar.gz`（镜像）（1.7.43 起为 famx-assets@2，命令树与修复缺陷两种写法允许构建名前的产品前缀，见“Fixed-bug pages fed on use”）；`<构建名>` 是产品命名语法里的一个完整构建名（`Rel|Beta` + 统一分隔符 + 名称族 + 可选平台段 + 数字组），不必是本条目自己的名字——变体构建的条目本身就以其镜像文件名命名，链接不含本条目构建名时另按位置归类并警告。不按子串、词或单独的扩展名认角色；语法读不出的文件名保留原链接、记“资产角色未核对”并给出出口（包作者补资产语法或作者声明角色后重读）。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
 
 command_identities 绑定实际输入 XML 命令树的内容根摘要 tree_root 与 src:.../xml@1/... 签名原件；参数保留零基位置、结构化类型来源和解析值。data.commands 仅取这些完整身份的路径；没有输入树摘要、类型或唯一完整签名时不产身份，旧根须补类型后重产。标题、祖先或正文只按完整行作为候选，语法外不提取短语。本次续接未运行验证。
 
@@ -1152,3 +1152,57 @@ The paired command must fully parse back to the same signature. Other parameter 
 cleanup order stay fixed; valid quoting is read through the existing command grammar. Conflicting pair declarations,
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
+
+### 1.7.42–1.7.43: the integration line's product-pack changes on main
+
+The private integration line published this pack's counterpart up to its own 1.7.40 while main stood at 1.7.34. 1.7.42
+regenerated the command grammar; 1.7.43 brings the case-feeding and fixed-bug-page projections below. Product-specific
+cleanup rules of that line's command policy are not part of this synthetic pack: its command tree has no such commands.
+
+### Case feeding directory bindings (1.7.43)
+
+Case feeding requires the original agile root title to equal a declared product name exactly. A missing or different
+root leaves the case version undeclared and names the missing fact and next action. It then reads ancestor metadata with
+the same `famx-directory@1` coded line and train syntax;
+it uses the first three version components for line identity, applies U24 normalization, and retains different candidates
+as a conflict. A single declared line or train can still identify the line; missing sibling layers remain missing. Whole
+manual-store folder names remain accepted by the existing `famx-directory-folder@1` rule. If both rules produce candidates,
+both are disclosed; no title, prose, or run target supplies a binding. A directory exceeding the existing 64-layer or
+1000-character-per-layer limits stays undeclared with a repair action, rather than being bound from truncated input.
+The new pack digest causes a source re-read to project again; earlier records are retained.
+
+Case feeding also records the parser's exact node selector, the shared case key, the original node title and ancestor
+texts, the structurally observed nonblank-expectation flag, and the command-tree source digest used for that projection. These contextual fields do not change content identity;
+if a field cannot fit the declared bounds it is omitted with a missing fact and next action. Duplicate node ids use the
+same disambiguating keys and positional selectors as the existing case producer. Story and defect lists reuse the
+existing `famx-id-fields@1` reader of whole declared fields; prose mentions do not become links. Historical records without these fields
+remain valid; a root-bound re-read supplies the newer context.
+
+### Fixed-bug pages fed on use (1.7.43)
+
+A build's fixed-bug page read through the Hub with the product known (a `buildsite:file` read in a run that names product and
+build, for example `source-read`) is projected only when its whole file name is the fixed-bug form of `famx-assets@2`; the
+build comes from that name alone, never from the page title or text. Each defect identity is read from a tracker link exactly
+as `fixed-bugs.ts` reads it (the PLM bug view or Bugzilla `show_bug.cgi`, one `id`), deduplicated by tracker and number, and
+becomes one `fed-build@1` row: the identity of the build (name, family, line, platform, the same object as its listing
+entry), `fixed_bugs` holding that one identity written as the defect's external object id (`plm:bug:<n>`,
+`bugzilla:bug:<n>`, so the tracker stays with the number), `built_at`, `released_at` and `tree` null because the page does not
+declare them, the line binding from the build name (grammar `famx-assets@2`) and the anchor as its fragment. A fixed-bug list
+declares no release status; the Hub's defect index shows each record with an undeclared status, as the release-notes producer
+does for this page. A page without a readable tracker link, or with links whose numbers an external object id cannot carry,
+gets one more row with an empty `fixed_bugs` and the missing fact and next action, never an empty list that looks complete.
+
+`famx-assets@2` adds the product prefix the newer listings write before the build: `command_tree-<prefix>-<build>.xml` and
+`Bugs_Fixed_with_<prefix>_<build>.html`, `<prefix>` letters and digits, read as whole names (a name that two readings would
+give different builds is not read). Every name `famx-assets@1` read is read the same way. The sync's file roles of these
+listings now find their command tree and fixed-bug list.
+
+Disagreement with the task brief, reported as the rules ask: the brief asks for "one record per defect", which the rows give,
+but in `fed-build@1` (the model's field for a build's fixed-bug list, `docs/hub-r4-tasks/kb-feeding.md` §1.4), not
+`fed-defect@1`, whose `source.system` the model fixes to `plm` and whose identity is the PLM record (§1.2); writing a
+build-site page there would misstate its source and collide with the PLM record's source identity.
+
+### Union-typed optional arguments (1.7.42)
+
+The pack's copy of the shared command grammar is regenerated with the positional binding of union expansions (see
+contracts/src/command-grammar.ts): an omitted optional IPADDR argument no longer lets a given address bind one position later.
