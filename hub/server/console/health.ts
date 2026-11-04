@@ -378,8 +378,11 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
       duration(row.p95_ms),
     ];
   });
-  // A client that holds a session and made no call in the window still has a line.
-  for (const [name, value] of open) if (!named.has(name)) rows.push([evidence(name), unknown('近 24 小时没有调用，没有声明可读'), uiLabelOf('trace_origin', 'mcp'), UNKNOWN, value, '0', '无调用']);
+  // A client that holds a session and has no row still has a line. It made no call in the window only if every MCP call was
+  // read: the reader's rows start with MCP, so the last one shown says whether any were cut.
+  const cut = totals.capped || (totals.groups > totals.rows.length && totals.rows.at(-1)?.origin === 'mcp');
+  const outside = cut ? unknown('这个客户端的调用不在读到的范围里') : null;
+  for (const [name, value] of open) if (!named.has(name)) rows.push([evidence(name), outside ?? unknown('近 24 小时没有调用，没有声明可读'), uiLabelOf('trace_origin', 'mcp'), UNKNOWN, value, outside ?? '0', outside ?? '无调用']);
   const parts: unknown[] = [sessions === null && streams === null ? '连接数未知，调用量和 p95 来自追踪，不受影响' : html`现在 ${shown(sessions, count)} 个 MCP 会话、${shown(streams, count)} 个实时推送流`];
   if (totals.groups > totals.rows.length) parts.push(`显示 ${count(totals.rows.length)} / 共 ${count(totals.groups)}`);
   if (oldest !== null) parts.push(html`近 24 小时的调用超过 ${count(MAX_ROOTS_READ)} 次，只算最新的 ${count(MAX_ROOTS_READ)} 次，从 ${oldest} 起`);

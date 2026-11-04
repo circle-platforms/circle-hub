@@ -537,6 +537,39 @@ test('a crash loop does not make the count of events long', async (t) => {
   assert.match(section(await shown(w.admin), '崩溃和重启'), /显示 20 \/ 共 10,000 以上/);
 });
 
+test('a client past the rows shown or past the read bound is not a client with no calls: its calls are 未知', async (t) => {
+  const quiet = /client-one 未知 MCP 未知 3 未知 未知/;
+  const cut = await world(t);
+  await samples(cut.db, 1);
+  for (let index = 0; index < 31; index += 1) await roots(cut.db, { name: 'get_nodes', n: 2, every: 1000, client: `client-extra-${index}` });
+  await roots(cut.db, { name: 'initialize', n: 1, every: 1000, client: 'client-one', end: NOW.getTime() - HOUR_MS });
+  const page = await shown(cut.admin);
+  assert.match(page, /title="这个客户端的调用不在读到的范围里"/);
+  assert.doesNotMatch(page, /近 24 小时没有调用/);
+  const shownRows = section(page, '按客户端');
+  assert.match(shownRows, /显示 30 \/ 共 32/);
+  assert.match(shownRows, quiet);
+  assert.doesNotMatch(shownRows, /无调用/);
+
+  const bound = await world(t, (page) => ({ traces: new TraceReader(page, { roots: 5 }) }));
+  await samples(bound.db, 1);
+  await roots(bound.db, { name: 'initialize', n: 1, every: 1000, client: 'client-one', end: NOW.getTime() - HOUR_MS });
+  await roots(bound.db, { name: 'get_nodes', n: 6, every: 1000, client: 'client-two' });
+  const bounded = section(await shown(bound.admin), '按客户端');
+  assert.match(bounded, /只算最新的 50,000 次/);
+  assert.match(bounded, quiet);
+  assert.doesNotMatch(bounded, /无调用/);
+});
+
+test('with every call read, a client holding a session and no row made no call, past the rows of other entries too', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1);
+  for (let index = 0; index < 31; index += 1) await roots(w.db, { name: 'sync-state', origin: 'sync', n: 1, every: 1000, client: `client-extra-${index}` });
+  const clients = section(await shown(w.admin), '按客户端');
+  assert.match(clients, /显示 30 \/ 共 31/);
+  assert.match(clients, /client-one 未知 MCP 未知 3 0 无调用/, 'MCP rows come first: only rows of another entry were cut');
+});
+
 test('an aggregate that stops at its bound says so and from when', async (t) => {
   const w = await world(t, (page) => ({ traces: new TraceReader(page, { rounds: 3, roots: 5, releaseCalls: 2 }) }));
   await everything(w);
