@@ -249,6 +249,99 @@ test('a ready version whose references were lost is found by a round, repaired, 
   assert.equal((await restarted.search(w.user, '合成修复条目', 'personal')).matches[0]?.entry, entry.entry);
 });
 
+test('a repair that fails hands nothing back: every search warns, as for a scope being built, until a repair succeeds', async (t) => {
+  const w = await productWorld(t, 5), spaces = w.knowledge.spaces!, index = w.kit.spaceIndex!;
+  const entry = await spaces.write(w.user, { kind: 'observation', statement: '合成修复条目', path: '/notes' });
+  await spaces.ensure(w.user, 'team');
+  await spaces.indexRound();
+  await w.db.query('DELETE FROM knowledge_space_search WHERE version=$1', [entry.root]);
+  const present = index.present.bind(index);
+  index.present = async (...args) => { if (args[0] === entry.root) throw new Error('合成的修复失败'); return present(...args); };
+  t.after(() => { index.present = present; });
+  const restarted = knowledgeOn(w).spaces!;
+  const search = () => restarted.search(w.user, '合成修复条目', 'personal');
+  for (let round = 0; round < 2; round++) {
+    assert.deepEqual(await restarted.indexRound(), { built: 0, refused: 0, failed: 1 });
+    for (let i = 0; i < 2; i++) {
+      const failed = await search();
+      assert.deepEqual(failed.matches, []);
+      assert.equal(failed.warnings?.[0].code, 'SOURCE_UNAVAILABLE');
+      assert.match(failed.warnings?.[0].message ?? '', /正在后台建立；未检索该范围/);
+    }
+  }
+  index.present = present;
+  assert.deepEqual(await restarted.indexRound(), { built: 1, refused: 0, failed: 0 });
+  const repaired = await search();
+  assert.equal(repaired.matches[0]?.entry, entry.entry);
+  assert.equal(repaired.warnings, undefined);
+});
+
+test('a repair whose count still differs is not one: the proof stands until a later count comes out right', async (t) => {
+  const w = await productWorld(t, 5), spaces = w.knowledge.spaces!, index = w.kit.spaceIndex!;
+  const entry = await spaces.write(w.user, { kind: 'observation', statement: '合成修复条目', path: '/notes' });
+  await spaces.ensure(w.user, 'team');
+  await spaces.indexRound();
+  await w.db.query('DELETE FROM knowledge_space_search WHERE version=$1', [entry.root]);
+  const ready = index.ready.bind(index);
+  let counts = 0;
+  index.ready = async (...args) => { if (args[0] === entry.root && ++counts === 2) return false; return ready(...args); };
+  t.after(() => { index.ready = ready; });
+  const restarted = knowledgeOn(w).spaces!;
+  assert.deepEqual(await restarted.indexRound(), { built: 0, refused: 0, failed: 1 });
+  assert.equal(counts, 2, 'the count that found the damage and the one after the repair');
+  assert.match((await restarted.search(w.user, '合成修复条目', 'personal')).warnings?.[0].message ?? '', /正在后台建立/);
+  assert.deepEqual(await restarted.indexRound(), { built: 0, refused: 0, failed: 0 }, 'the rows are all there, and nothing is written again');
+  const found = await restarted.search(w.user, '合成修复条目', 'personal');
+  assert.equal(found.matches[0]?.entry, entry.entry);
+  assert.equal(found.warnings, undefined);
+});
+
+test('a repair that passes a limit names the limit and is tried once, also after a restart, until the limit rises', async (t) => {
+  const w = await productWorld(t, 3), spaces = w.knowledge.spaces!;
+  await spaces.ensure(w.user, 'team');
+  await spaces.indexRound();
+  await w.db.query("DELETE FROM knowledge_space_search WHERE quota_space LIKE 'product:%'");
+  const strictIndex = new PgSpaceSearchIndex(w.db, { entryBytes: 100 }), add = strictIndex.add.bind(strictIndex);
+  let adds = 0;
+  strictIndex.add = async (...args) => { adds += 1; return add(...args); };
+  const strictKnowledge = () => knowledgeOn(w, { ...w.kit, spaceIndex: strictIndex }).spaces!;
+  const strict = strictKnowledge();
+  assert.deepEqual(await strict.indexRound(), { built: 0, refused: 1, failed: 0 });
+  const tried = adds;
+  assert.ok(tried > 0);
+  for (let i = 0; i < 2; i++) {
+    const found = await strict.search(w.user, WANTED.slice(0, 9), 'all');
+    assert.deepEqual(found.matches, []);
+    assert.equal(found.warnings?.length, 1);
+    assert.equal(found.warnings![0].code, 'SPACE_INDEX_LIMIT');
+    assert.match(found.warnings![0].message, /单条知识索引超过 100 字节上限；未检索该范围/);
+  }
+  assert.deepEqual(await strict.indexRound(), { built: 0, refused: 0, failed: 0 }, 'a later round leaves it alone');
+  const restarted = strictKnowledge();
+  assert.deepEqual(await restarted.indexRound(), { built: 0, refused: 0, failed: 0 }, 'and a new process proves the damage without passing the limit again');
+  assert.equal((await restarted.search(w.user, WANTED.slice(0, 9), 'all')).warnings?.[0].code, 'SPACE_INDEX_LIMIT');
+  assert.equal(adds, tried);
+
+  const raised = knowledgeOn(w).spaces!;
+  assert.deepEqual(await raised.indexRound(), { built: 1, refused: 0, failed: 0 });
+  const found = await raised.search(w.user, WANTED.slice(0, 9), 'all');
+  assert.ok(found.matches.length > 0);
+  assert.equal(found.warnings, undefined);
+});
+
+test('a refusal left from another limit does not touch a ready scope that counts right', async (t) => {
+  const w = await productWorld(t, 3), spaces = w.knowledge.spaces!;
+  await spaces.ensure(w.user, 'team');
+  const strict = knowledgeOn(w, { ...w.kit, spaceIndex: new PgSpaceSearchIndex(w.db, { entryBytes: 100 }) }).spaces!;
+  assert.deepEqual(await strict.indexRound(), { built: 0, refused: 1, failed: 0 });
+  assert.deepEqual(await spaces.indexRound(), { built: 1, refused: 0, failed: 0 });
+  const lowered = knowledgeOn(w, { ...w.kit, spaceIndex: new PgSpaceSearchIndex(w.db, { entryBytes: 100 }) }).spaces!;
+  assert.deepEqual(await lowered.indexRound(), { built: 0, refused: 0, failed: 0 }, 'the version is whole');
+  const found = await lowered.search(w.user, WANTED.slice(0, 9), 'all');
+  assert.ok(found.matches.length > 0, 'and a limit lowered since takes nothing from it');
+  assert.equal(found.warnings, undefined);
+});
+
 test('a mount that cannot be read fails alone: the rest of the round is built and it is tried again', async (t) => {
   const w = await productWorld(t, 3), spaces = w.knowledge.spaces!, store = w.kit.store;
   await spaces.write(w.user, { kind: 'observation', statement: '合成独立范围', path: '/notes' });

@@ -76,8 +76,11 @@ stops with it, one round at a time, each a trace named `index-knowledge`.
   built. Rounds then go over every space at their own pace, a minute and twice that each time up to an hour, whatever searches
   ask. The warning stays that the scope is being built.
 - **Damage.** A ready scope's references are counted once per process, in a round. A scope that lost some is repaired, and a
-  search does not rely on it meanwhile. Between the damage and that round a search trusts the ready row: the count it used to
-  make for every scope grew with the documents. The runtime role cannot delete these rows; an operator's hand can.
+  search does not rely on it meanwhile, nor after a repair that failed: what the round proved stands until a count comes out
+  right, and a search warns that the scope is being built, or names the limit the repair passed, which is not tried again. A
+  restart forgets the proof and the first round finds it again. Between the damage and that round a search trusts the ready row:
+  the count it used to make for every scope grew with the documents. The runtime role cannot delete these rows; an operator's
+  hand can.
 - **A purge.** A personal batch is written under the lock a purge takes and checks the version was not cleared, so content read
   before a purge is not written after it.
 

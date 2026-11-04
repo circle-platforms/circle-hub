@@ -36,7 +36,7 @@ export interface SpaceIndexScope {
 /** What a search may rely on, from stored rows alone. Neither ready nor refused: the version is still to be built. */
 export interface SpaceIndexState {
   ready: boolean;
-  /** The limit this version passed, while that limit stands; the build is not tried again. */
+  /** The limit this version passed, while that limit stands; the build is not tried again. A ready version passed it in a repair, and only a round's proof of damage holds it to that. */
   refused: RecordsError|null;
 }
 export interface SpaceSearchIndex {
@@ -102,7 +102,7 @@ export class PgSpaceSearchIndex implements SpaceSearchIndex {
     return found.rows.map((row,at)=>{
       // A limit that rose since ends the refusal without any write: the next round simply builds on.
       const quota=scopes[at].quotaSpace,entry=row.entry_bytes!==null&&Number(row.entry_bytes)>=this.#entryBytes,space=row.space_bytes!==null&&Number(row.space_bytes)>=this.#limit(quota);
-      return {ready:row.ready,refused:row.ready?null:entry?entryLimit(this.#entryBytes):space?this.#passed(quota):null};
+      return {ready:row.ready,refused:entry?entryLimit(this.#entryBytes):space?this.#passed(quota):null};
     });
   }
   async refuse(version:string,quotaSpace:string,error:RecordsError,tx?:Transaction):Promise<void>{

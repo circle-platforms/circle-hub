@@ -102,6 +102,9 @@ test('states answer in order from stored rows, and a refusal holds until its lim
   await strict.refuse(over.digest,scopes[2].quotaSpace,passed);
   assert.deepEqual((await strict.states(scopes)).map(state=>[state.ready,state.refused?.code??null]),[[true,null],[false,null],[false,'SPACE_INDEX_LIMIT']]);
   assert.deepEqual((await index.states(scopes)).map(state=>state.refused?.code??null),[null,null,null],'a higher limit needs no write');
+  const lowered=new PgSpaceSearchIndex(db,{spaceBytes:50}),repair=await lowered.add(ready.digest,[{...row,path:'/more'}]).then(()=>null,error=>error);
+  await lowered.refuse(ready.digest,'team',repair);
+  assert.deepEqual((await lowered.states(scopes.slice(0,1))).map(state=>[state.ready,state.refused?.code??null]),[[true,'SPACE_INDEX_LIMIT']],'a ready version says both: what to do about them is the reader\'s');
   assert.deepEqual(await index.states([]),[]);
   assert.deepEqual(await index.present(ready.digest,[{path:'/notes',entry:entry.digest},{path:'/other',entry:entry.digest}]),new Set([pathKey({path:'/notes',entry:entry.digest})]));
 });

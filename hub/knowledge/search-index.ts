@@ -107,6 +107,7 @@ export class SearchIndexer {
   #turn: Promise<unknown> = Promise.resolve();
   /** Scopes whose references were counted in this process; a damaged one is found once, here and never in a search. */
   #verified = new Set<string>();
+  /** Ready scopes a round proved damaged; the proof holds until a count comes out right, so a repair that failed does not end it. */
   #repairing = new Set<string>();
 
   constructor(source: IndexSource, index: () => SpaceSearchIndex | undefined) {
@@ -142,7 +143,7 @@ export class SearchIndexer {
     if (this.#retryMs === 0) this.#wake?.();
   }
 
-  /** True while a ready scope is being repaired: a search does not rely on it meanwhile. */
+  /** True from the round that proved a ready scope damaged until a repair succeeds: a search does not rely on it meanwhile. */
   repairing(scope: SpaceIndexScope): boolean {
     return this.#repairing.has(keyOf(scope));
   }
@@ -217,7 +218,7 @@ export class SearchIndexer {
       const key = keyOf(scope);
       const state = states[at];
       signal.throwIfAborted();
-      if (state.refused !== null) continue;
+      if (state.refused !== null && !state.ready) continue;
       if (state.ready && this.#verified.has(key)) continue;
       try {
         if (state.ready) {
@@ -226,6 +227,8 @@ export class SearchIndexer {
             continue;
           }
           this.#repairing.add(key);
+          // A repair would only pass that limit again; a search names it.
+          if (state.refused !== null) continue;
         }
         if (!(await buildScope(index, scope, signal))) continue;
         // The count `complete` kept can differ only when a scope's rows did: repaired or not, that is not ready.
@@ -238,14 +241,13 @@ export class SearchIndexer {
           await index.refuse(scope.version, scope.quotaSpace, error);
           outcome.refused += 1;
         } else failed(error, `${scope.path} of ${scope.version}`);
-      } finally {
-        this.#repairing.delete(key);
       }
     }
     return outcome;
   }
 
   #remember(key: string): void {
+    this.#repairing.delete(key);
     if (this.#verified.size >= VERIFIED_SCOPES) this.#verified.clear();
     this.#verified.add(key);
   }
