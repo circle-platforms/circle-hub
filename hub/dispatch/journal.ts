@@ -36,14 +36,17 @@ export class Journal {
       if(!matches&&!b.scope){const bytes=await this.records.objects.get(b.executor_digest);if(!bytes)matches=true;else{const d=JSON.parse(new TextDecoder().decode(bytes));matches=d.target===target||new URL(d.endpoint).origin===origin;}}
       if(matches)candidates.set(b.job,b);
     }
-    const blocked:string[]=[],jobs=[...candidates.keys()];
+    const jobs=[...candidates.keys()],histories=await this.histories(jobs);
+    return jobs.filter(job=>holdsPhysicalTarget(histories.get(job)??[]));
+  }
+  /** The complete histories of some jobs, in bounded batches: asking job by job cost one query each. */
+  async histories(jobs:readonly string[]):Promise<Map<string,Event[]>> {
+    const histories=new Map<string,Event[]>();
     for(let offset=0;offset<jobs.length;offset+=128){
-      const batch=jobs.slice(offset,offset+128),events=await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:batch});
-      const histories=new Map<string,Event[]>();
+      const events=await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:jobs.slice(offset,offset+128)});
       for(const event of events){const job=String(event.body.detail.job),history=histories.get(job)??[];history.push(event);histories.set(job,history);}
-      for(const job of batch)if(holdsPhysicalTarget(histories.get(job)??[]))blocked.push(job);
     }
-    return blocked;
+    return histories;
   }
   async append(binding: JobBinding, phase: string, action: ActionKind, result: ActionResult, detail: Record<string, unknown> = {}, inputs: string[] = [], unique_key?: string, tx?: Transaction, errorCode:ActionBody['error_code']=null) {
     const time = this.now().toISOString();

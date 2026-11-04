@@ -142,9 +142,9 @@ export class PgRecordStore implements RecordStore {
     const values = [...new Set(query.values.filter(isIndexValue))];
     if (!values.length) return [];
     const result = await this.#db.query(
-      `SELECT DISTINCT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
-       FROM record_index i JOIN hub_read_records() r ON r.digest=i.digest
-       WHERE i.key=$1 AND i.value=ANY($2::text[]) ${query.kind === undefined ? '' : 'AND r.kind=$3'} ORDER BY r.seq`,
+      // A record that matches several values comes back once: chosen by digest, since DISTINCT would compare every body.
+      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM hub_read_records() r
+       WHERE r.digest IN (SELECT i.digest FROM record_index i WHERE i.key=$1 AND i.value=ANY($2::text[])) ${query.kind === undefined ? '' : 'AND r.kind=$3'} ORDER BY r.seq`,
       query.kind === undefined ? [query.key,values] : [query.key,values,query.kind],tx);
     return result.rows.map(row => verifiedRecord<B>(row,tx));
   }

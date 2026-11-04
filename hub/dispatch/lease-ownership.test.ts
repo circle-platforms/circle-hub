@@ -87,9 +87,9 @@ test('verified legacy record notes are not mistaken for missing job integrity',a
   const c=await setup();t.after(()=>c.close());const key=c.executor.definition.resources[0]!;
   const binding:JobBinding={job:'synthetic-legacy-pending',initiated_by:c.admin.id,executor:c.executor.id,executor_digest:c.executor.digest,target_key:'synthetic',input:null,user:c.owner.id,resources:[key]};
   await c.service.journal.append(binding,'reservation','validate','completed',{binding});
-  const targets=c.service.journal.targets.bind(c.service.journal);const events=c.service.journal.events.bind(c.service.journal);
+  const targets=c.service.journal.targets.bind(c.service.journal);const histories=c.service.journal.histories.bind(c.service.journal);
   c.service.journal.targets=async keys=>(await targets(keys)).map(row=>({...row,integrity_note:'正文不是规范写法、内容与摘要一致'}));
-  c.service.journal.events=async job=>(await events(job)).map(row=>({...row,integrity_note:'正文不是规范写法、内容与摘要一致'}));
+  c.service.journal.histories=async jobs=>new Map([...await histories(jobs)].map(([job,rows])=>[job,rows.map(row=>({...row,integrity_note:'正文不是规范写法、内容与摘要一致'}))]));
   assert.deepEqual(await c.service.activeLeaseJobs([key]),[{key,job:binding.job}]);
   c.service.journal.targets=async()=>{throw new Error('synthetic integrity unavailable');};
   await assert.rejects(c.service.activeLeaseJobs([key]),/synthetic integrity unavailable/);
