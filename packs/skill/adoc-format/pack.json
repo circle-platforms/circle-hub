@@ -1,0 +1,25 @@
+{
+  "schema": "pack@1",
+  "id": "adoc-format",
+  "version": "1.0.0",
+  "kind": "skill",
+  "title": "AsciiDoc 格式",
+  "description": "按固定修订号遍历 AsciiDoc 书籍目录并列出整组来源，版本线目录写法由产品包声明，不承担工作角色判断",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "2c88a111e7c163000af1eacb91b299934c0e33406677fa261f0f9a18db93805f",
+      "size": 387
+    },
+    {
+      "path": "functions/directory.ts",
+      "sha256": "bb8be45f55b4362b009f49cc62737e2924fd3c9066b2a89b2225b24cf41716d7",
+      "size": 12279
+    },
+    {
+      "path": "skill.json",
+      "sha256": "384f1781cf2fb1dff6fbc4e8f65763e3ebff6b5338e6d339dfe89803bad9907a",
+      "size": 43
+    }
+  ]
+}

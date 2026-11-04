@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {readFile} from 'node:fs/promises';
 import type {ProducerInput} from '../../../../../contracts/src/product.ts';
 import {jsonParser,textParser,markdownParser} from '../../../../../hub/refs/api.ts';
 import {xmlParser} from '../../../../../hub/testing/parsers.ts';
@@ -79,7 +80,7 @@ test('an invalid configured root stays a production refusal instead of becoming 
  assert.doesNotThrow(()=>addAdocSources(original,configured,{},()=>assert.fail('invalid roots send no read request'),notes));
  assert.ok(notes.some(note=>note.includes('FAMX_ADOC_ROOT')&&note.includes('下一步')));
  const value=input();value.params.root=configured.adoc.FAMX.root;
- await assert.rejects(familyManual(value),e=>e instanceof ManualSourceError&&e.code==='famx.adoc.invalid_root');
+ await assert.rejects(familyManual(value),e=>e instanceof ManualSourceError&&e.code==='adoc-format.invalid_root');
 });
 
 test('configured adoc production refuses a missing build with a concrete recovery action',async()=>{
@@ -101,14 +102,24 @@ test('family deployment forwards closed vocabularies without inferring applicabi
  }
 });
 
-test('line directory spelling follows declared decimal components while line preserves its original value',()=>{
- assert.equal(directoryOf('manual/{line}/cli','10.8'),'manual/10.8/cli');
- assert.equal(directoryOf('manual/{line_dir}/cli','10.8'),'manual/10_8_0/cli');
- assert.equal(directoryOf('manual/{line_dir}/app','10.8.2'),'manual/10_8_2/app');
- assert.equal(directoryOf('manual/{line_dir}','0010.008.000'),'manual/10_8_0');
- assert.equal(directoryOf('manual/{line_dir}','10'),'manual/10_0_0');
- assert.equal(directoryOf('manual/{line}','0010.008.000'),'manual/0010.008.000');
- assert.throws(()=>directoryOf('manual/{line_dir}','10.8-extra'),ManualSourceError);
+test('line directory spelling follows declared decimal components while line preserves its original value',async()=>{
+ // The spelling is the layout product.json declares for each family, the same next to the sync root and the producer root.
+ const declaration=JSON.parse(await readFile(new URL('../../product.json',import.meta.url),'utf8'));
+ const layouts=['FAMX','FAMY'].flatMap(family=>[declaration.sync.options.adoc[family].layout,declaration.producers.find((p:{id:string})=>p.id==='manual-'+family.toLowerCase()).params.layout]);
+ for(const other of layouts)assert.deepEqual(other,layouts[0]);
+ const layout=layouts[0];
+ assert.deepEqual(layout,{line_dir:{components:3,separator:'_'}});
+ assert.equal(directoryOf('manual/{line}/cli','10.8',layout),'manual/10.8/cli');
+ assert.equal(directoryOf('manual/{line_dir}/cli','10.8',layout),'manual/10_8_0/cli');
+ assert.equal(directoryOf('manual/{line_dir}/app','10.8.2',layout),'manual/10_8_2/app');
+ assert.equal(directoryOf('manual/{line_dir}','0010.008.000',layout),'manual/10_8_0');
+ assert.equal(directoryOf('manual/{line_dir}','10',layout),'manual/10_0_0');
+ assert.equal(directoryOf('manual/{line_dir}','10.7',layout),'manual/10_7_0');
+ assert.equal(directoryOf('manual/{line}','0010.008.000',layout),'manual/0010.008.000');
+ assert.throws(()=>directoryOf('manual/{line_dir}','10.8-extra',layout),ManualSourceError);
+ // Without the declaration nothing is guessed: {line} still expands, {line_dir} is refused.
+ assert.equal(directoryOf('manual/{line}','10.8'),'manual/10.8');
+ assert.throws(()=>directoryOf('manual/{line_dir}','10.8'),(e:unknown)=>e instanceof ManualSourceError&&e.code==='adoc-format.invalid_layout');
 });
 test('CLI and APP use the same single family flag, webfonts policy and optional overseas flag with byte-identical repeated output',async()=>{
  const value=input();value.params.attributes={FAMX:{famA:true,overseas:true,webfonts:false}};
