@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RecordsKit, Principal } from '../records/api.ts';
-import { readRunJobs } from './read-runs.ts';
+import { dispatchedRuns, readRunJobs } from './read-runs.ts';
 const run='run_00000000000000000000000001',plan='run_00000000000000000000000002';
 const admin:Principal={id:'usr_00000000000000000000000001',name:'合成管理员',role:'admin'};
 test('run dispatch reads traverse all reservation pages, retain exact bindings and never write',async()=>{
@@ -37,4 +37,23 @@ test('a run job names the executor its reservation bound, and none when the rese
   const jobs = await readRunJobs(records, { status: async (_by: Principal, job: string) => ({ job, phase: 'result', outcome: 'effective' as const, frozen: false, events: 1 }) }, admin, run);
   assert.equal(jobs.find((job) => job.job === 'a'.repeat(64))?.executor, executor);
   assert.equal(jobs.find((job) => job.job === 'c'.repeat(64))?.executor, undefined);
+});
+
+test('the runs of some jobs come from those jobs alone, never from a scan of every reservation', async () => {
+  const job = 'a'.repeat(64), other = 'c'.repeat(64), unbound = 'd'.repeat(64);
+  const event = (phase: string, binding?: unknown) => ({ body: { detail: { phase, ...(binding ? { binding } : {}) } } });
+  const journal: Record<string, unknown[]> = {
+    [job]: [event('dispatch_ordinal'), event('reservation', { job, input: { run, plan_run: plan } }), event('reservation', { job, input: { run, plan_run: plan } }), event('result')],
+    [other]: [event('reservation', { job: other, input: { run: 'run_00000000000000000000000003', plan_run: plan } })],
+    [unbound]: [event('reservation', { job: unbound, run })],
+  };
+  const asked: string[] = [];
+  const records = { store: {
+    find: async () => { throw new Error('unexpected scan of the reservations'); },
+    findMany: async (query: { key: string; values: string[] }) => { assert.equal(query.key, 'dispatch.job'); asked.push(...query.values); return query.values.flatMap((value) => journal[value] ?? []); },
+  } } as unknown as Pick<RecordsKit, 'store'>;
+  const runs = await dispatchedRuns(records, [job, unbound]);
+  assert.deepEqual([...runs.entries()].sort(), [[plan, [job]], [run, [job]]].sort(), 'a job binds its verification and plan run, once each; a job with no input binds neither');
+  assert.deepEqual(asked, [job, unbound]);
+  assert.equal((await dispatchedRuns(records, [])).size, 0);
 });

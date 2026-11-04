@@ -10,7 +10,7 @@ export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-note
 import { SchemaId,IsoTime } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
-import type { FindQuery, IndexedCursor, IndexedQuery, IndexedRecord, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
+import type { AppendedEntry, AppendedQuery, AppendHorizon, FindQuery, IndexedCursor, IndexedQuery, IndexedRecord, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
 import { canonicalize } from './canonical.ts';
 import { decodeCursor, encodeCursor, iso, normalizeTime, pageLimit } from './db.ts';
 import type { Database, Row } from './db.ts';
@@ -282,19 +282,27 @@ export class PgRecordStore implements RecordStore {
     return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row,tx)]));
   }
 
-  async lastPositions(query: { keys: readonly string[]; values: readonly string[] }, tx?: Transaction): Promise<Map<string, number>> {
-    const keys = [...new Set(query.keys)];
+  async appendHorizon(tx?: Transaction): Promise<AppendHorizon> {
+    // One statement, so one snapshot: pg_current_snapshot() is the snapshot this statement reads max(seq) under.
+    const row = (await this.#db.query<{ position: string; oldest: string; next: string }>(
+      `SELECT (SELECT coalesce(max(seq), 0) FROM records)::text AS position, pg_snapshot_xmin(s)::text AS oldest, pg_snapshot_xmax(s)::text AS next
+         FROM pg_current_snapshot() AS s`, [], tx)).rows[0];
+    return { position: safePosition(row.position), oldest: safePosition(row.oldest), next: safePosition(row.next) };
+  }
+
+  async appended(query: AppendedQuery, tx?: Transaction): Promise<AppendedEntry[]> {
+    if (!Number.isSafeInteger(query.after) || query.after < 0 || !Number.isSafeInteger(query.through) || query.through < 0) throw new TypeError('invalid append position');
+    const keys = [...new Set(query.keys)], kinds = [...new Set(query.kinds ?? [])];
     if (keys.some((key) => typeof key !== 'string' || !INDEX_KEY.test(key))) throw new TypeError('invalid index key');
-    const values = [...new Set(query.values.filter(isIndexValue))];
-    if (!keys.length || !values.length) return new Map();
-    const result = await this.#db.query(
-      `SELECT value, max(record_seq) AS position FROM record_index WHERE key = ANY($1::text[]) AND value = ANY($2::text[]) GROUP BY value`,
-      [keys, values], tx);
-    return new Map(result.rows.map((row) => {
-      const position = Number(row.position);
-      if (!Number.isSafeInteger(position)) throw new LimitError('索引序号超过安全整数范围');
-      return [String(row.value), position];
-    }));
+    if (kinds.some((kind) => !RecordKindSchema.safeParse(kind).success)) throw new TypeError('unknown record kind');
+    if (query.through <= query.after || (!keys.length && !kinds.length)) return [];
+    // The primary key gives the range and record_index_digest its entries: nothing older than `after` is visited.
+    const result = await this.#db.query<{ seq: string; digest: string; kind: AppendedEntry['kind']; key: string | null; value: string | null }>(
+      `SELECT r.seq, r.digest, r.kind, i.key, i.value
+         FROM records r LEFT JOIN record_index i ON i.digest = r.digest AND i.key = ANY($3::text[])
+        WHERE r.seq > $1 AND r.seq <= $2 AND (i.key IS NOT NULL OR r.kind = ANY($4::text[]))
+        ORDER BY r.seq`, [query.after, query.through, keys, kinds], tx);
+    return result.rows.map((row) => ({ position: safePosition(row.seq), digest: row.digest, kind: row.kind, key: row.key, value: row.value }));
   }
 
   async findIndexed<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{items: IndexedRecord<B>[]; next: IndexedCursor | null}> {
@@ -463,6 +471,12 @@ export class PgRecordStore implements RecordStore {
   withTransaction<T>(fn: (tx: Transaction) => Promise<T>, outer?: Transaction): Promise<T> {
     return this.#db.transaction(fn, outer);
   }
+}
+
+function safePosition(text: string): number {
+  const value = Number(text);
+  if (!Number.isSafeInteger(value)) throw new LimitError('追加序号超过安全整数范围');
+  return value;
 }
 
 function page<B>(rows: Row[], limit: number,tx?:Transaction): Page<StoredRecord<B>> {

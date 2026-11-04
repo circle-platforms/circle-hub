@@ -95,6 +95,10 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   await kit.pointers.move({ name: 'knowledge/a', expected: sha256Hex('a'), next: sha256Hex('b') });
   await kit.callLog.append({ traceId: 'c'.repeat(32), userId: user.id, sessionId: null, tool: 'get_nodes', runId: null, arguments: {}, callResult: 'error', errorCode: 'SOURCE_UNAVAILABLE', durationMs: 1, adminNote: '原因' });
   assert.equal((await kit.callLog.query(admin)).items[0].admin_note, '原因');
+  // Following the log needs no right the runtime role lacks: it reads records and the index, and snapshot functions are public.
+  const horizon = await kit.store.appendHorizon!();
+  assert.ok(horizon.position > 0 && horizon.oldest <= horizon.next);
+  assert.ok((await kit.store.appended!({ after: 0, through: horizon.position, keys: ['artifact.sha256'], kinds: ['authorization'] })).length > 0);
   await kit.vault.put('db.password', 'synthetic');
   const spaceVersion = await kit.store.put({ kind: 'knowledge_space_version', schema: 'knowledge-space-version@1', provenance: 'projected', body: { synthetic: 'runtime-index' } });
   await kit.spaceIndex!.add(spaceVersion.digest, [{ space: member.id, path: '/', entry: artifact.digest, record: artifact.digest, text: '合成搜索' }]);
