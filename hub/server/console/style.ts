@@ -152,4 +152,42 @@ body:has(> [data-sign-in]) { display: flex; min-height: 100vh; padding: var(--sp
 }
 `;
 
-export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n[data-theme-switch][hidden]{display:none}\n`;
+// 运行状况: the resource cards size by their own width, so a narrow window never squeezes a curve; a stretch of a curve with no
+// reading is a band named 未知; a crash opens in place.
+const HEALTH_CSS = `
+[data-cards] { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: var(--space-6); align-items: start; }
+.ch-resource { min-width: 0; }
+.ch-chart.ch-curve .gapband { fill: var(--surface-hover); }
+.ch-chart.ch-curve .mark { stroke: var(--status-fail); stroke-width: 1; shape-rendering: crispEdges; }
+.ch-chart.ch-curve .dot.pin { fill: var(--status-fail); }
+.ch-section > .ch-stats + .ch-stats { margin-top: var(--space-2); }
+[data-area-content] > [data-cards] { margin-top: var(--space-4); }
+[data-area-content] > [data-cards] + .ch-section, [data-area-content] > .ch-section + [data-cards] { margin-top: var(--space-5); }
+.ch-tool { white-space: nowrap; }
+/* Number columns that hold text with a unit: table() only right-aligns real numbers. */
+:is(.ch-table[data-view="background"] :is(th, td):nth-child(n+2):not(:nth-child(4)):not(:nth-child(6)),
+    .ch-table[data-view="clients"] :is(th, td):nth-child(n+5),
+    .ch-table[data-view="releases"] :is(th, td):nth-child(3), .ch-table[data-view="releases"] :is(th, td):nth-child(4),
+    .ch-table[data-view="inflight"] :is(th, td):nth-child(2)) { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ch-finding { font-size: 14px; line-height: 22px; color: var(--text-primary); max-width: 62ch; }
+.ch-event > summary { list-style: none; cursor: pointer; }
+.ch-event > summary::-webkit-details-marker { display: none; }
+.ch-event > summary .ch-row-title::after, .ch-event-link .ch-row-title::after { content: " ▸"; color: var(--text-tertiary); }
+.ch-event[open] > summary .ch-row-title::after { content: " ▾"; }
+.ch-event-link { color: inherit; text-decoration: none; }
+.ch-event-link:hover { text-decoration: none; }
+.ch-list > .ch-row > .ch-dot, .ch-event > summary > .ch-dot { margin-top: 8px; }
+.ch-event-body { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-2) var(--space-3) var(--space-5) 30px; }
+.ch-event-top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--space-6); align-items: start; }
+.ch-events .ch-row-body { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-3); }
+.ch-events .ch-row-body > .ch-time { margin-left: auto; font-size: 12px; color: var(--text-tertiary); }
+@media (max-width: 1180px) { .ch-event-top { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+ .ch-table:is([data-view="background"], [data-view="clients"], [data-view="releases"], [data-view="inflight"]) :is(td, th) { padding-left: 8px; padding-right: 8px; }
+ .ch-table:is([data-view="background"], [data-view="clients"], [data-view="releases"], [data-view="inflight"]) th { white-space: normal; vertical-align: bottom; }
+ .ch-table[data-view="background"] .ch-tool code { display: none; }
+ .ch-event-body { padding-left: var(--space-3); padding-right: 0; }
+}
+`;
+
+export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n${HEALTH_CSS}\n[data-theme-switch][hidden]{display:none}\n`;

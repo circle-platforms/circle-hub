@@ -436,6 +436,8 @@ identifiers remain inside disconnect command dialogs only.
 Decision 130 adds Team before Settings. Administrators manage member details, publish rights, workflow assignments and
 Circle connections there using the existing commands. Members see only their own account. Settings retains system
 secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.
+Administrators also have 运行状况 (`/console/health`, decisions 146 and 147): `serve` gives that page a connection of its own for
+its reads; `console/README.md` says what it may cost.
 
 Decision 130 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
 their future management belongs on separate pages with separate navigation entries.

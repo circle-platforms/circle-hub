@@ -291,6 +291,25 @@ test('serve records its start and stop as the runtime role, and logs requests; t
   for (const limit of ['0', '-1', '501', 'many']) assert.equal((await cli(['crashes', `--limit=${limit}`], admin)).code, 2, limit);
 });
 
+test('serve gives the 运行状况 page its readers, and the runtime role may read everything they read', async () => {
+  const env = await deployment();
+  const kit = await openRecords(loadServerConfig(env), { migrate: false, keyProvider: keyProvider() });
+  await kit.principals.bootstrapAdmin('synthetic-admin', { password: 'synthetic-password-2026', mustChange: false });
+  await kit.close();
+  const cookie = (response: Response, name: string): string => response.headers.getSetCookie().find((value) => value.startsWith(`${name}=`))!.split(';')[0]!;
+  await serveOnce(env, async (url) => {
+    const form = await fetch(`${url}/console/login`);
+    const nonce = /name="csrf" value="([^"]+)"/.exec(await form.text())![1]!;
+    const signedIn = await fetch(`${url}/console/login`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookie(form, 'circle_hub_login') }, body: new URLSearchParams({ username: 'synthetic-admin', password: 'synthetic-password-2026', csrf: nonce }).toString() });
+    assert.equal(signedIn.status, 303);
+    const reply = await fetch(`${url}/console/health`, { headers: { cookie: cookie(signedIn, 'circle_hub_session') } });
+    assert.equal(reply.status, 200);
+    const page = await reply.text();
+    assert.doesNotMatch(page, /这次没有读出/, 'no read of the page was refused');
+    assert.match(page, /队列<\/span><span class="ch-stat-value">\d/, 'the trace writer of this process answers');
+  });
+});
+
 test('a crash reads back through the command: what was running, and what the report said', async () => {
   const env = await deployment();
   const logs = join(String(env.CIRCLE_HUB_DATA_DIR), 'logs');

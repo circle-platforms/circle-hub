@@ -127,6 +127,64 @@ test('initialize and tools/list are named; the client name comes from what initi
   assert.ok(rows.some((row) => row.name === 'list-tools' && row.client_name === 'hub-server-test'));
 });
 
+/** A raw initialize, with the clientInfo a test wants; the SDK's client sends only a name and a version. */
+async function initialize(token: string, clientInfo: unknown): Promise<string | null> {
+  const response = await fetch(server.mcpUrl, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo } }) });
+  assert.equal(response.status, 200);
+  await response.text();
+  return response.headers.get('mcp-session-id');
+}
+
+const listTools = async (token: string, session: string | null): Promise<void> => {
+  const response = await fetch(server.mcpUrl, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(session === null ? {} : { 'mcp-session-id': session }) }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) });
+  assert.equal(response.status, 200);
+  await response.text();
+};
+
+test('the platform a client declares at initialize reaches the rows of that connection, cleaned and bounded, as a declaration', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: ` synthetic\u0000-os\u200b${'x'.repeat(200)} ` });
+  await listTools(user.token, session);
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT name, client_name, client_version, client_platform FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
+  const platform = `synthetic-os${'x'.repeat(88)}`;
+  assert.equal([...platform].length, 100);
+  assert.deepEqual(rows, [
+    { name: 'initialize', client_name: 'synthetic-client', client_version: '1.0', client_platform: platform },
+    { name: 'list-tools', client_name: 'synthetic-client', client_version: '1.0', client_platform: platform },
+  ]);
+});
+
+test('a client that declares no platform has none: absent, not guessed, and not taken from another connection', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  const silent = await initialize(user.token, { name: 'synthetic-client', version: '1.0' });
+  await listTools(user.token, silent);
+  const blank = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: ' \u0000 ' });
+  const wrong = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 42 });
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT client_platform FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
+  assert.deepEqual(rows.map((row) => row.client_platform), ['synthetic-os', null, null, null, null]);
+  assert.ok(blank && wrong);
+});
+
+test('a platform with no name says nothing, and the records that bind a client to its writes do not hold the platform', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  await initialize(user.token, { platform: 'synthetic-os' });
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT client_name, client_platform FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
+  assert.deepEqual(rows[0], { client_name: null, client_platform: null });
+  const tokenId = (await server.records.principals.tokens(user.user.id))[0]!.id;
+  assert.deepEqual(await server.records.callLog.declaredClient!(user.user.id, session, tokenId), { name: 'synthetic-client', version: '1.0' });
+  const declarations = (await db.query(`SELECT body FROM records WHERE schema = 'mcp-client-declaration@1' AND body LIKE $1`, [`%${user.user.id}%`])).rows;
+  assert.equal(declarations.length, 1);
+  assert.deepEqual((JSON.parse(String(declarations[0]!.body)) as { client: unknown }).client, { name: 'synthetic-client', version: '1.0' }, 'the declaration bound to writes is the name and version');
+});
+
 test('the traceparent header joins the client trace: the client span is the parent of the root', async (t) => {
   const telemetry = telemetryFor(t);
   const client = await server.client((await member()).token, { traceparent: TRACEPARENT });
@@ -288,6 +346,16 @@ test('requests outside MCP, the console and sync are traced as well, a refusal i
   assert.equal(root.status_message, 'HTTP 404');
   assert.equal(root.parent_span_id, PARENT);
   await db.query('DELETE FROM trace_spans WHERE trace_id = $1', [TRACE]);
+});
+
+test('a sync request takes the platform its token declared, as it takes the name and version', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  await send('/api/sync/v1/state', { headers: { authorization: `Bearer ${user.token}` } });
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT client_name, client_version, client_platform FROM trace_spans WHERE origin = 'sync' AND is_root AND user_id = $1`, [user.user.id])).rows;
+  assert.deepEqual(rows, [{ client_name: 'synthetic-client', client_version: '1.0', client_platform: 'synthetic-os' }]);
 });
 
 test('a sync request is a trace named by its route, with its account', async (t) => {

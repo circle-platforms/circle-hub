@@ -43,7 +43,7 @@ export function healthLines(summary: HealthSummary): string[] {
   return lines;
 }
 
-const KIND_TEXT: Readonly<Record<ProcessEventKind, string>> = { start: '启动', stop: '正常停止', abnormal_exit: '异常退出' };
+export const KIND_TEXT: Readonly<Record<ProcessEventKind, string>> = { start: '启动', stop: '正常停止', abnormal_exit: '异常退出' };
 
 function duration(value: number): string {
   const seconds = Math.floor(value / 1000);

@@ -152,6 +152,8 @@ export interface Principals {
   get(userId: string): Promise<User | null>;
   findByName(name: string): Promise<User | null>;
   list(): Promise<User[]>;
+  /** These accounts in one read, for a page that names a few of them; an id that is none is left out. */
+  some(ids: readonly string[]): Promise<User[]>;
   history(userId: string): Promise<UserChange[]>;
   /** Admins issue tokens for anyone; a user only for themselves. `client` is the registered client it goes to, if any. */
   issueToken(by: Principal, userId: string, label?: string, client?: string): Promise<IssuedToken>;

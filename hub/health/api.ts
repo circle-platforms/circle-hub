@@ -12,13 +12,14 @@ import { insertSample, pruneExpired, type HealthDatabase } from './store.ts';
 
 export type { RequestEnd, RequestInfo, RequestLog } from './inflight.ts';
 export { INFLIGHT_FILE, INFLIGHT_ROTATED } from './inflight.ts';
-export type { FieldSummary, HealthReader, HealthSummary } from './reader.ts';
+export type { CurvePoint, CurveQuery, FieldSummary, HealthReader, HealthSummary, ReleaseRun } from './reader.ts';
 export { DEFAULT_EVENT_LIMIT, DEFAULT_SINCE_MS, HealthAccessError, MAX_EVENT_LIMIT, healthReader, parseSince } from './reader.ts';
 export type { PoolCounters, SandboxCounters } from './readings.ts';
 export type { SessionCounts, SessionTracker } from './sessions.ts';
-export type { HealthDatabase, NumericField, ProcessEvent, ProcessEventKind, ReportSummary, RequestEntry, ResourceSample } from './store.ts';
+export { MAX_NAMES as MAX_CLIENT_NAMES } from './sessions.ts';
+export type { HealthDatabase, NumericField, ProcessEvent, ProcessEventKind, ReportSummary, RequestEntry, ResourceSample, StoredProcessEvent } from './store.ts';
 export { NUMERIC_FIELDS, PROCESS_EVENT_KINDS, pruneExpired } from './store.ts';
-export { eventLines, healthLines } from './text.ts';
+export { KIND_TEXT, eventLines, healthLines } from './text.ts';
 
 /** Diagnostic rows older than this are deleted (decision 146). */
 export const RETENTION_MS = 14 * 24 * 3600 * 1000;

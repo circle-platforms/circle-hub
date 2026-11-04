@@ -1547,6 +1547,12 @@ CREATE INDEX process_events_at ON public.process_events(at);
 CREATE UNIQUE INDEX process_events_start ON public.process_events(boot) WHERE kind='start';
 CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind<>'start';
 `},
+ // Decision 147: the platform a client declares in MCP initialize, a diagnostic declaration like its name and version (B08
+ // F[14]), on the rows of its traces. The index is for the console's 运行状况 page: the p95 of a release reads that release's
+ // newest MCP calls, whatever the table holds of other releases and entries.
+ {version:32,name:'trace_client_platform',sql:`ALTER TABLE public.trace_spans ADD COLUMN client_platform pg_catalog.text;
+CREATE INDEX trace_spans_mcp_releases ON public.trace_spans (release,started_at DESC) WHERE is_root AND origin='mcp';
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */

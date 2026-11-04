@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
 import { DEFAULT_ADMIN_NAME, LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
-// 设置) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
+// 设置, and 运行状况 for administrators) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
 // decision 122; the older paths (/console/results, /console/admin/...) stay. The
 // session cookie is HttpOnly, SameSite=Strict and scoped to /console. Every POST form (sign-in, sign-out, first-admin
 // setup and the management actions under /console/admin/do/) carries a CSRF token the server issued and must come from
@@ -24,6 +24,7 @@ import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '..
 import { AUTHORIZE_COOKIE, SECURE_AUTHORIZE_COOKIE, issuerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
 import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage } from './authorize.ts';
 import { connectionsPage } from './connections.ts';
+import { healthPage, type HealthPageSources } from './health.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { handleApiWrite } from './api-write.ts';
 import { CONTENT_SECURITY_POLICY, secureConsoleResponse, FAVICON_SVG, code, html, link, logo, page, pre, type Html, type PageChrome } from './html.ts';
@@ -70,6 +71,8 @@ export interface ConsoleOptions {
   live?: LiveEvents;
   /** The process serving the console, for the Hub's state on the settings and overview pages. */
   hub?: HubFacts;
+  /** What the 运行状况 page reads; without it every reading on that page is unknown. */
+  observation?: HealthPageSources;
   /** Open requests of the MCP standard authorization (hub/server/oauth.ts); without it /console/authorize is absent. */
   authorizations?: AuthorizationStore;
   /** One-time login links; without it POST /console/api/login-links and /console/login/<code> are absent. */
@@ -562,6 +565,7 @@ const ROUTES: Record<string, Route> = {
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
+  health: (ctx, rest, options) => (rest.length === 0 && ctx.admin ? healthPage(ctx, options.observation, options.log) : Promise.resolve(neutralPage(ctx))),
   team: (ctx, rest) => rest.length <= 1 ? teamPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx)),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   admin: (ctx, rest, options, session) => {

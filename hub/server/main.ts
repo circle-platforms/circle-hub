@@ -9,12 +9,12 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, loadConfig, type HubConfig } from '../config/index.ts';
 import type { Environment } from '../../contracts/generated/vocabulary.ts';
-import { createHealth } from '../health/api.ts';
+import { createHealth, healthReader } from '../health/api.ts';
 import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls, readSettingsFile, reportsDirectory } from '../platform/api.ts';
 import { Database, createPool } from '../records/db.ts';
 import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
 import { sandboxStats, stopAll, sweepOrphans } from '../rules/api.ts';
-import { startTelemetry, type Telemetry } from '../telemetry/api.ts';
+import { TraceReader, startTelemetry, type Telemetry } from '../telemetry/api.ts';
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
 import { createApp } from './app.ts';
 import { createCommandBridge } from './command-bridge.ts';
@@ -39,6 +39,9 @@ export interface ServeOptions {
   onListening?: (info: ListenInfo) => void;
   now?: () => Date;
 }
+
+/** The longest one statement of the 运行状况 page may run; its part of the page then says 未知. */
+const OBSERVATION_STATEMENT_MS = 5000;
 
 export const SERVE_USAGE = 'serve [--migrate-only] [--migrate]   启动 Hub（默认只监听本机；配置了内置 HTTPS 时另开 HTTPS）；--migrate-only 以拥有表的角色应用迁移后退出；--migrate 用连接角色先迁移（单角色的开发环境）';
 
@@ -176,6 +179,9 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   // waits for the file system's journal (hub/health README, decision 2).
   const healthDatabase = new Database(createPool(config.database, 1));
   const health = createHealth({ db: healthDatabase, requestLogDir: io.env.RUNTIME_DIRECTORY || join(config.dataDir, 'logs'), reportsDir: reportsDirectory(config.dataDir), log: operatorLog, ...(options.now ? { now: options.now } : {}) });
+  // The 运行状况 page reads on a connection of its own, so that it neither waits in the business pool nor takes a connection
+  // from a request; it opens when an administrator looks, and a read that runs long is cut off by the server (design section 10).
+  const observationDatabase = new Database(createPool(config.database, 1, { statementTimeoutMs: OBSERVATION_STATEMENT_MS }));
 
   let app: HubApp | undefined;
   let telemetry: Telemetry | undefined;
@@ -194,7 +200,8 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     maintenance=deps.maintenance;
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
-    app = createApp(deps, { log: operatorLog, health, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
+    const observation = { health: healthReader(observationDatabase), traces: new TraceReader(observationDatabase), writer: () => telemetry?.stats() ?? null };
+    app = createApp(deps, { log: operatorLog, health, observation, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
     // Requests, background rounds and console actions are traced from here on (B08, decision 146).
     telemetry = startTelemetry({ database: config.database, release: app.release, environment: await deploymentEnvironment(config.dataDir), log: operatorLog, retention: true });
     const info = await app.listen();
@@ -213,6 +220,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     await app?.close().catch(() => {});
     health.abandon();
     await healthDatabase.end().catch(() => {});
+    await observationDatabase.end().catch(() => {});
     await telemetry?.close();
     await records.close().catch(() => {});
     if (isAssemblyMissing(error)) {
@@ -241,6 +249,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     stopAll();
     await health.stop();
     await healthDatabase.end().catch(() => {});
+    await observationDatabase.end().catch(() => {});
     await telemetry?.close();
     await records.close();
   } finally {

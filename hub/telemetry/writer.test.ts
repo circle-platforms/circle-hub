@@ -8,7 +8,7 @@ import { TraceWriter, type StoredSpanRow } from './writer.ts';
 const row = (index: number): SpanRow => ({
   trace_id: 'a'.repeat(32), span_id: index.toString(16).padStart(16, '0'), parent_span_id: null, is_root: true, name: 'get_nodes', type: 'span',
   started_at: '2026-11-04T08:00:00.000Z', ended_at: '2026-11-04T08:00:00.001Z', level: 'default', status_message: null, origin: 'mcp',
-  user_id: null, session_id: null, run_id: null, client_name: null, client_version: null, usage: {},
+  user_id: null, session_id: null, run_id: null, client_name: null, client_version: null, client_platform: null, usage: {},
 });
 
 function writer(options: { batchRows?: number; queueRows?: number; insert?: (rows: readonly StoredSpanRow[]) => Promise<void>; log?: (line: string) => void } = {}) {
@@ -16,6 +16,11 @@ function writer(options: { batchRows?: number; queueRows?: number; insert?: (row
   const instance = new TraceWriter({ insert: options.insert ?? (async (rows) => void batches.push(rows)), release: 'abcdef012345', environment: 'test', ...options });
   return { instance, batches };
 }
+
+const counts = (instance: TraceWriter) => {
+  const { queued, written, dropped, failed } = instance.stats();
+  return { queued, written, dropped, failed };
+};
 
 test('a full batch is written at once, with what is the same for the whole process', async () => {
   const { instance, batches } = writer({ batchRows: 3 });
@@ -26,7 +31,7 @@ test('a full batch is written at once, with what is the same for the whole proce
   await instance.flush();
   assert.equal(batches.length, 1);
   assert.deepEqual(batches[0].map((stored) => [stored.span_id.slice(-1), stored.release, stored.environment]), [['1', 'abcdef012345', 'test'], ['2', 'abcdef012345', 'test'], ['3', 'abcdef012345', 'test']]);
-  assert.deepEqual(instance.stats(), { queued: 0, written: 3, dropped: 0, failed: 0 });
+  assert.deepEqual(counts(instance), { queued: 0, written: 3, dropped: 0, failed: 0 });
 });
 
 test('pushing never waits for the insert, and a full queue drops, counts and says so', async () => {
@@ -38,13 +43,13 @@ test('pushing never waits for the insert, and a full queue drops, counts and say
   for (let index = 0; index < 2; index++) instance.push(row(index));
   // The first batch is held inside the insert: everything below only touches the queue, synchronously.
   for (let index = 2; index < 12; index++) instance.push(row(index));
-  assert.deepEqual(instance.stats(), { queued: 4, written: 0, dropped: 6, failed: 0 });
+  assert.deepEqual(counts(instance), { queued: 4, written: 0, dropped: 6, failed: 0 });
   assert.equal(lines.length, 1, 'the operator hears about it, not once per row');
   assert.match(lines[0], /队列已满/);
   release();
   await instance.flush();
   assert.equal(inserted, 6);
-  assert.deepEqual(instance.stats(), { queued: 0, written: 6, dropped: 6, failed: 0 });
+  assert.deepEqual(counts(instance), { queued: 0, written: 6, dropped: 6, failed: 0 });
 });
 
 test('a batch the database refuses is counted, tried no further and reported once, without its rows', async () => {
@@ -60,9 +65,9 @@ test('a batch the database refuses is counted, tried no further and reported onc
   });
   for (let index = 0; index < 4; index++) instance.push(row(index));
   await instance.flush();
-  assert.deepEqual(instance.stats(), { queued: 2, written: 0, dropped: 0, failed: 2 }, 'the round ended; the rest waits for the next one');
+  assert.deepEqual(counts(instance), { queued: 2, written: 0, dropped: 0, failed: 2 }, 'the round ended; the rest waits for the next one');
   await instance.flush();
-  assert.deepEqual(instance.stats(), { queued: 0, written: 2, dropped: 0, failed: 2 });
+  assert.deepEqual(counts(instance), { queued: 0, written: 2, dropped: 0, failed: 2 });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /22P02/);
   assert.ok(!lines[0].includes('a'.repeat(32)), 'the message of a refused statement can quote a row');
@@ -88,5 +93,44 @@ test('close writes what is left, a write under way included, and takes no more r
   release();
   await closed;
   assert.deepEqual(inserted, ['1', '2']);
-  assert.deepEqual(instance.stats(), { queued: 0, written: 2, dropped: 1, failed: 0 });
+  assert.deepEqual(counts(instance), { queued: 0, written: 2, dropped: 1, failed: 0 });
+});
+
+test('how long rows wait and a batch takes: unknown before the first write, then measured, and a refused batch measures nothing', async () => {
+  let now = 0;
+  let refuse = false;
+  const instance = new TraceWriter({
+    release: null, environment: null, batchRows: 100, clock: () => now,
+    insert: async () => {
+      now += 20;
+      if (refuse) throw new Error('refused');
+    },
+  });
+  assert.deepEqual([instance.stats().writeDelayP95Ms, instance.stats().lastBatchMs], [null, null]);
+  for (let index = 0; index < 20; index++) {
+    instance.push(row(index));
+    now += 100;
+  }
+  await instance.flush();
+  const { writeDelayP95Ms, lastBatchMs } = instance.stats();
+  assert.equal(lastBatchMs, 20);
+  // The row pushed at 100 had waited 1,920 by the time its batch was in at 2,020; the first row 2,020.
+  assert.equal(writeDelayP95Ms, 1920);
+  refuse = true;
+  instance.push(row(99));
+  now += 100_000;
+  await instance.flush();
+  assert.deepEqual([instance.stats().writeDelayP95Ms, instance.stats().lastBatchMs], [1920, 20], 'only what was written counts');
+});
+
+test('the waits kept are the latest ones, in a fixed amount of memory', async () => {
+  let now = 0;
+  const instance = new TraceWriter({ release: null, environment: null, batchRows: 500, clock: () => now, insert: async () => {} });
+  for (let index = 0; index < 1500; index++) instance.push(row(index));
+  now = 9_000;
+  await instance.flush();
+  for (let index = 0; index < 1000; index++) instance.push(row(index));
+  now += 3;
+  await instance.flush();
+  assert.equal(instance.stats().writeDelayP95Ms, 3, 'the older, longer waits have gone');
 });

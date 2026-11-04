@@ -13,7 +13,7 @@ const MCP_STEPS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', '
  */
 const CONSOLE_STEPS = [
   'stream-console', 'serve-console', 'serve-overview', 'serve-results', 'serve-runs', 'serve-knowledge', 'serve-packs', 'serve-connections', 'serve-records',
-  'serve-search', 'serve-settings', 'serve-team', 'serve-operations', 'serve-admin', 'serve-api', 'serve-assets', 'serve-login', 'serve-logout',
+  'serve-search', 'serve-settings', 'serve-health', 'serve-team', 'serve-operations', 'serve-admin', 'serve-api', 'serve-assets', 'serve-login', 'serve-logout',
   'serve-setup', 'serve-password', 'serve-authorize',
 ] as const;
 
@@ -24,7 +24,11 @@ const SYNC_STEPS = [
 ] as const;
 
 /** One round of a background task. */
-const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
+export const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
+export type BackgroundStep = (typeof BACKGROUND_STEPS)[number];
+
+/** Rounds a timer starts. The others run when something asks (a document job, a staged pack's expiry, a lease in use), so they have no interval to report. */
+export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'poll-console', 'purge-traces'] as const satisfies readonly BackgroundStep[];
 
 /** The root step of a CLI command, by the command's name; `run-command` for a name the CLI does not know. */
 const COMMAND_STEPS = [
