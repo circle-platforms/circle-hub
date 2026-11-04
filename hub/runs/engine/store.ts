@@ -13,6 +13,7 @@ export const INDEX = {
   runId: 'runs.id',
   runUser: 'runs.user',
   runPack: 'runs.pack',
+  runStarted: 'runs.started',
   runUserPack: 'runs.user_pack',
   runPredecessor: 'runs.predecessor',
   runClientKey: 'runs.client_key',
@@ -196,6 +197,8 @@ export async function putRun(store: RecordStore, body: RunRecord, createdAt: str
   const index: IndexEntry[] = [
     { key: INDEX.runId, value: record.run },
     { key: INDEX.runPack, value: record.pack.slice(0, record.pack.indexOf('@')) },
+    // The listing order (runCandidates): started_at, then the run; both are ASCII without spaces.
+    { key: INDEX.runStarted, value: `${record.started_at} ${record.run}` },
   ];
   if (record.runner !== undefined) {
     index.push({ key: INDEX.runUser, value: record.runner });

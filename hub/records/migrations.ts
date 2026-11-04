@@ -1547,6 +1547,14 @@ CREATE INDEX process_events_at ON public.process_events(at);
 CREATE UNIQUE INDEX process_events_start ON public.process_events(boot) WHERE kind='start';
 CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind<>'start';
 `},
+ // The listing order of runs as an index entry, for the runs already stored; putRun writes it from now on. Listing a page used
+ // to cast every run body to JSON to sort. A run with no valid header gets no entry: the listing keeps its original path for it.
+ {version:29,name:'run_started_index',sql:`INSERT INTO public.record_index(key,value,digest,record_seq)
+ SELECT 'runs.started',(s.b->>'started_at')||' '||(s.b->>'run'),s.digest,s.seq
+ FROM (SELECT r.digest,r.seq,pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'uFFFD')::pg_catalog.json AS b FROM public.hub_read_records() r WHERE r.kind='run') s
+ WHERE s.b->>'started_at' ~ '^[0-9T:.Z-]+$' AND s.b->>'run' ~ '^[0-9a-z_]+$'
+ ON CONFLICT DO NOTHING;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */

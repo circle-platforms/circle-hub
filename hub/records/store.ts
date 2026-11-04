@@ -385,6 +385,20 @@ export class PgRecordStore implements RecordStore {
 
   async runCandidates<B=unknown>(query:{after?:readonly [string,string];pack?:string;limit:number},tx?:Transaction):Promise<StoredRecord<B>[]>{
     const limit=pageLimit(query.limit);if(query.pack!==undefined&&!isIndexValue(query.pack))return [];
+    // The order lives in record_index, so a page reads the rows it returns: casting every run body to JSON to sort cost 7 to
+    // 11 seconds a page on a deployment with 240 MB of runs. A run without the entry (a malformed header, a row from before
+    // migration 29 on a data set it could not index) keeps the original statement, which orders it and reports it.
+    const unordered=await this.#db.query(`SELECT 1 FROM hub_read_records() r WHERE r.kind='run' AND NOT EXISTS(SELECT 1 FROM record_index o WHERE o.digest=r.digest AND o.key='runs.started') LIMIT 1`,[],tx);
+    if(unordered.rows.length===0){
+      const values:unknown[]=['run',limit];
+      let where=`o.key='runs.started' AND r.kind=$1`;
+      // The tuple as stored, not the joined text: an untrusted cursor compares as it always did.
+      if(query.after){values.push(...query.after.map(value=>value.replaceAll('\0','\u0001')));where+=` AND (split_part(o.value,' ',1) COLLATE "C",split_part(o.value,' ',2) COLLATE "C")<($3::text COLLATE "C",$4::text COLLATE "C")`;}
+      if(query.pack!==undefined){values.push(query.pack);where+=` AND EXISTS(SELECT 1 FROM record_index i WHERE i.digest=r.digest AND i.key='runs.pack' AND i.value=$${values.length})`;}
+      const ordered=await this.#db.query(`SELECT ${COLUMNS.split(', ').map(c=>'r.'+c).join(', ')} FROM record_index o JOIN hub_read_records() r ON r.digest=o.digest WHERE ${where}
+        ORDER BY o.value COLLATE "C" DESC LIMIT $2`,values,tx);
+      return ordered.rows.map(row=>verifiedRecord<B>(row,tx));
+    }
     // Only the contract's ASCII headers are ordered. Mask an unrelated escaped NUL in this SQL projection,
     // never in the selected record text: PostgreSQL JSON text extraction otherwise rejects the whole body.
     const values:unknown[]=['run','\\u0000','\\uFFFD',limit];
