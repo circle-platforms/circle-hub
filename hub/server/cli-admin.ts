@@ -33,7 +33,7 @@ import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
 import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
 import { OPERATOR_TOKEN_VARIABLE, deploymentKeyService, fileOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
-import { initialPassword, validPassword } from '../records/api.ts';
+import { DEFAULT_ADMIN_NAME, initialPassword, validPassword } from '../records/api.ts';
 import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
@@ -64,7 +64,7 @@ export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-us
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | reproject <产品> <版本线> | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
-export const INIT_ADMIN_USAGE = 'init-admin <用户名> [--password-stdin]   建第一位管理员，密码从标准输入读取或随机生成；操作令牌存进私有密钥文件，不显示';
+export const INIT_ADMIN_USAGE = `init-admin [<用户名>] [--password-stdin]   建第一位管理员（省略用户名时为 ${DEFAULT_ADMIN_NAME}），密码从标准输入读取或随机生成；操作令牌存进私有密钥文件，不显示`;
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进私有密钥文件（账户 operator-token）；令牌文件丢失时用，已有的不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进私有密钥文件，不显示；已有的不覆盖 | remove --confirm-only-operator-token   仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
 
@@ -92,14 +92,16 @@ const RUNNING_HUB_LOGIN = '正在运行的 Hub 下一次读取会核对密钥版
 
 type Flags = Record<string, { type: 'string' | 'boolean'; multiple?: boolean }>;
 
-function parse<T extends Flags>(args: readonly string[], options: T, positionals: number) {
+/** `positionals` arguments, or from `positionals` to `most` when an argument may be left out. */
+function parse<T extends Flags>(args: readonly string[], options: T, positionals: number, most = positionals) {
   let parsed;
   try {
     parsed = parseArgs({ args: [...args], options, allowPositionals: true, strict: true });
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : String(error));
   }
-  if (parsed.positionals.length !== positionals) throw new UsageError(`需要 ${positionals} 个参数，给了 ${parsed.positionals.length} 个`);
+  const given = parsed.positionals.length;
+  if (given < positionals || given > most) throw new UsageError(`需要 ${most === positionals ? positionals : `${positionals} 至 ${most}`} 个参数，给了 ${given} 个`);
   return parsed;
 }
 
@@ -231,7 +233,7 @@ class Session {
       if(!requireAdmin)throw new CliError('这个命令会改变运行状态，需要有效操作令牌',`通过 ${OPERATOR_TOKEN_VARIABLE} 提供运行者本人或管理员的令牌；不采用只读命令的身份回退`);
       throw new CliError(
         '这个命令会改变 Hub 的状态，要管理员令牌，没有找到',
-        `已有管理员而操作令牌文件丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin <名字> 建立；或者${ONE_COMMAND_TOKEN}`,
+        `已有管理员而操作令牌文件丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin [<名字>]（省略时为 ${DEFAULT_ADMIN_NAME}）建立；或者${ONE_COMMAND_TOKEN}`,
       );
     }
     const principal = await kit.principals.authenticate(`Bearer ${token}`);
@@ -1086,7 +1088,8 @@ async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pi
 }
 
 async function initAdminCommand(session: Session, args: readonly string[]): Promise<number> {
-  const { positionals, values } = parse(args, { 'password-stdin': { type: 'boolean' } }, 1);
+  const { positionals, values } = parse(args, { 'password-stdin': { type: 'boolean' } }, 0, 1);
+  const name = positionals[0] ?? DEFAULT_ADMIN_NAME;
   const supplied = values['password-stdin'] === true ? await (session.options.readSecret ?? readSecretFromStdin)('管理员密码') : '';
   if (supplied !== '' && !validPassword(supplied)) throw new UsageError('密码须为 12 至 256 个字符，不含控制字符');
   const password = supplied || initialPassword();
@@ -1101,7 +1104,7 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
   if (await store.present()) {
     throw new CliError(`${store.where}里已经有操作令牌`, `它属于另一个 Hub 时先${REMOVE_ITEM}，再运行 init-admin`);
   }
-  const { user, token } = await decided(() => kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:supplied === ''}));
+  const { user, token } = await decided(() => kit.principals.bootstrapAdmin(name, {password,mustChange:supplied === ''}));
   await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`);
   session.out(`已建立第一位管理员 ${user.name}（${user.id}）；它的令牌 ${token.id} 已存进${store.where}，没有显示`);
   if (supplied === '') { session.out('初始密码（仅显示一次，首次登录必须修改）：'); session.out(password); }

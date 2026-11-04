@@ -22,7 +22,7 @@ import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, startStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
 import { DEFAULT_KEY_ACCOUNT, DEFAULT_KEY_SERVICE, fileKeyProvider, fileKeyStore, keyDirectory, runPlatformCommand, createContext, postgresFor, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
-import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
+import { DEFAULT_ADMIN_NAME, openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
 import type { AssemblyModule, CliContext, ListenInfo } from '../api.ts';
@@ -288,7 +288,25 @@ describe('init-admin and the operator token', () => {
     assert.match(again.text, /已经有管理员/);
     assert.match(again.text, /token issue/);
     assert.match(again.text, /操作令牌丢了（令牌文件丢失，或它的令牌已撤销）就用 circle-hub operator-token reissue/, 'a way that works without the token');
-    assert.equal((await admin.run(['init-admin'])).code, 2);
+    const unnamed = await admin.run(['init-admin']);
+    assert.equal(unnamed.code, 1, 'without a name it is the same refusal once an admin exists');
+    assert.match(unnamed.text, /已经有管理员/);
+    assert.equal((await admin.run(['init-admin', '甲', '乙'])).code, 2);
+  });
+
+  test(`init-admin without a name creates the first admin as ${DEFAULT_ADMIN_NAME}, which signs in with the password read from stdin`, async () => {
+    const admin = await setup({ initAdmin: false });
+    admin.stdin.push('synthetic-default-admin-password');
+    const created = await admin.run(['init-admin', '--password-stdin']);
+    assert.equal(created.code, 0, created.text);
+    assert.match(created.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}（usr_[0-9a-z]{26}）`));
+    if (admin.tokens?.value) secrets.add(admin.tokens.value);
+    await withKit(admin, async (kit) => {
+      const signed = await kit.principals.verifyPassword(DEFAULT_ADMIN_NAME, 'synthetic-default-admin-password');
+      assert.equal(signed?.user.role, 'admin');
+      assert.equal(signed?.mustChange, false);
+    });
+    assert.match((await admin.run(['help'])).text, new RegExp(`init-admin +\\[<用户名>\\] \\[--password-stdin\\] +建第一位管理员（省略用户名时为 ${DEFAULT_ADMIN_NAME}）`));
   });
 
   test('init-admin refuses when the store already holds a token, and creates nobody', async () => {

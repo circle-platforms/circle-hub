@@ -1435,6 +1435,19 @@ BEGIN
  PERFORM public.hub_finish_independent_objects(o);PERFORM public.hub_clear_personal_payloads(o,e);UPDATE public.personal_spaces SET mode='local' WHERE owner=o AND epoch=e;
 END $fn$;
 `},
+ // Owner's requirement of 2026-11-04: an administrator renames an account (the first administrator's default name is
+ // `admin`). grantRuntime gives the runtime role UPDATE (name) from RUNTIME_GRANTS after every migration; this gives it
+ // to the roles that already hold the other users column UPDATEs, so a database at this version has it whoever re-grants.
+ // The tombstone trigger of migration 23 still refuses any change to a deleted member's row, its name included.
+ {version:25,name:'rename_users',sql:`DO $do$
+DECLARE r pg_catalog.text;
+BEGIN
+ FOR r IN SELECT DISTINCT pg_catalog.pg_get_userbyid(x.grantee) FROM pg_catalog.pg_attribute a CROSS JOIN LATERAL pg_catalog.aclexplode(a.attacl) x
+ WHERE a.attrelid='public.users'::pg_catalog.regclass AND a.attname='role' AND x.privilege_type='UPDATE' AND x.grantee<>0 LOOP
+ EXECUTE pg_catalog.format('GRANT UPDATE (name) ON TABLE public.users TO %I',r);
+ END LOOP;
+END $do$;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -1484,7 +1497,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   call_logs: 'SELECT, INSERT',
   call_notes: 'SELECT, INSERT',
   call_reasons: 'SELECT, INSERT',
-  users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at, password_hash, password_must_change, password_revision)',
+  users: 'SELECT, INSERT, UPDATE (name, role, disabled, updated_at, password_hash, password_must_change, password_revision)',
   tokens: 'SELECT, INSERT, UPDATE (last_used_at, revoked_at, revoked_by)',
   oauth_clients: 'SELECT, INSERT, DELETE',
   invitations: 'SELECT, INSERT, UPDATE (used_at, used_by_client)',

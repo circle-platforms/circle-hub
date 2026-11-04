@@ -72,6 +72,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   assert.equal(await kit.principals.authenticate('Bearer '+session.token), null);
   await kit.principals.setRole(admin, member.id, 'admin');
   await kit.principals.setDisabled(admin, member.id, true);
+  assert.equal((await kit.principals.rename(admin, member.id, '成员改名')).name, '成员改名');
   const issued = await kit.principals.issueToken(admin, user.id, '第二枚');
   assert.equal(await kit.principals.revokeToken(admin, issued.id), true);
   // The standard authorization's stores (migration 7): a client, an invitation taken by it, a token for it, revocation by value.
@@ -125,7 +126,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
     'DROP TABLE call_notes',
     "UPDATE record_index SET value = 'x'",
     'DELETE FROM call_notes',
-    "UPDATE users SET name = 'x'",
+    "UPDATE users SET created_at = now()", // name is updatable since migration 25 (rename)
     'DELETE FROM users',
     'DELETE FROM tokens',
     'DELETE FROM pointers',

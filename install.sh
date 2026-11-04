@@ -7,7 +7,7 @@
 # It downloads the release bundle for this machine (Node 24, the Hub with its dependencies and PostgreSQL), checks it
 # against the SHA-256 list of the GitHub release, and sets the Hub up with its own commands: init (HTTP on loopback, HTTPS
 # on the given address), key init, tls init, deploy --bundle, and init-admin with a password on stdin when no admin exists. The first
-# administrator supplies a username and an optional password. Run again to upgrade: deploy backs up, migrates and
+# administrator's username defaults to admin (an empty answer at the prompt, or --admin-user), and its password is optional. Run again to upgrade: deploy backs up, migrates and
 # rolls back on failure. macOS: the current user and a LaunchAgent. Linux: a dedicated `circle-hub` account with its
 # systemd user service (lingering), bubblewrap and the Hub's AppArmor policy for the pack sandbox; root (sudo) is needed
 # for those steps only. On both, the vault master key and the operator token are private files under the data root's keys
@@ -40,7 +40,7 @@ usage() {
   --port <端口>             本机 HTTP 端口（默认 7420，只监听 127.0.0.1）
   --environment <类别>      环境类别 test、shared 或 production（默认 production）
   --bundle <文件>           用本地的发布包代替下载（同目录下要有 SHA256SUMS）
-  --admin-user <用户名>     没有管理员时使用的用户名；省略时交互询问
+  --admin-user <用户名>     没有管理员时使用的用户名；省略时交互询问，直接回车即为 admin
   --password-stdin          初始化管理员的密码从标准输入读取；空输入则生成初始密码
   --dry-run                只显示要做什么，不改动任何东西
 环境变量：
@@ -204,18 +204,23 @@ run_as_hub() {
 hub() { run_as_hub "${NODE}" "${SETUP_HUB}" "$@"; }
 
 # BEGIN administrator bootstrap
-installer_has_terminal() { (: < /dev/tty) 2>/dev/null; }
+# The first administrator's default username: DEFAULT_ADMIN_NAME of hub/records/api.ts (a test keeps the two equal).
+HUB_INSTALL_DEFAULT_ADMIN_NAME=admin
+# The terminal the prompts use (the tests point it at a scratch file).
+HUB_INSTALL_TTY=/dev/tty
+installer_has_terminal() { (: < "${HUB_INSTALL_TTY}") 2>/dev/null; }
 
 installer_prompt_admin() {
-  while [ -z "${HUB_INSTALL_ADMIN_NAME}" ]; do
-    printf '管理员用户名（必填）：' > /dev/tty
-    IFS= read -r HUB_INSTALL_ADMIN_NAME < /dev/tty || fail "没有读到管理员用户名；可用 circle-hub init-admin <用户名> 或 circle-hub setup-code 完成初始化"
-  done
+  if [ -z "${HUB_INSTALL_ADMIN_NAME}" ]; then
+    printf '管理员用户名（默认 %s，直接回车即用）：' "${HUB_INSTALL_DEFAULT_ADMIN_NAME}" >> "${HUB_INSTALL_TTY}"
+    IFS= read -r HUB_INSTALL_ADMIN_NAME < "${HUB_INSTALL_TTY}" || fail "没有读到管理员用户名；可用 circle-hub init-admin [<用户名>] 或 circle-hub setup-code 完成初始化"
+    HUB_INSTALL_ADMIN_NAME="${HUB_INSTALL_ADMIN_NAME:-${HUB_INSTALL_DEFAULT_ADMIN_NAME}}"
+  fi
   if [ "${HUB_INSTALL_PASSWORD_STDIN}" != 1 ]; then
     while :; do
-      printf '管理员密码（可选；留空将生成初始密码，首次登录必须修改）：' > /dev/tty
-      IFS= read -r -s HUB_INSTALL_ADMIN_PASSWORD < /dev/tty || fail "没有读到管理员密码；可用 circle-hub init-admin <用户名> 或 circle-hub setup-code 完成初始化"
-      printf '\n' > /dev/tty
+      printf '管理员密码（可选；留空将生成初始密码，首次登录必须修改）：' >> "${HUB_INSTALL_TTY}"
+      IFS= read -r -s HUB_INSTALL_ADMIN_PASSWORD < "${HUB_INSTALL_TTY}" || fail "没有读到管理员密码；可用 circle-hub init-admin [<用户名>] 或 circle-hub setup-code 完成初始化"
+      printf '\n' >> "${HUB_INSTALL_TTY}"
       if [ -z "${HUB_INSTALL_ADMIN_PASSWORD}" ] || { [ "${#HUB_INSTALL_ADMIN_PASSWORD}" -ge 12 ] && [ "${#HUB_INSTALL_ADMIN_PASSWORD}" -le 256 ]; }; then break; fi
       say "密码须为 12 至 256 个字符"
     done
@@ -226,30 +231,30 @@ ensure_administrator() {
   HUB_INSTALL_ADMIN_CREATED=0
   HUB_INSTALL_ADMIN_PASSWORD=""
   if [ "${DRY_RUN}" = 1 ]; then
-    say "将检查数据库中是否已有管理员；没有时询问管理员用户名和可选密码；密码通过标准输入交给 init-admin --password-stdin，不进入命令参数"
+    say "将检查数据库中是否已有管理员；没有时询问管理员用户名（默认 ${HUB_INSTALL_DEFAULT_ADMIN_NAME}）和可选密码；密码通过标准输入交给 init-admin --password-stdin，不进入命令参数"
     return
   fi
   local users status
-  users="$(as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" user list --json < /dev/null)" || fail "无法读取管理员账户；核对数据库后重跑，或用 circle-hub init-admin <用户名>、circle-hub setup-code 完成初始化"
+  users="$(as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" user list --json < /dev/null)" || fail "无法读取管理员账户；核对数据库后重跑，或用 circle-hub init-admin [<用户名>]、circle-hub setup-code 完成初始化"
   # Exit 10 means a valid listing without an administrator. An unreadable listing must never trigger initialization.
   # The bundle's Node lives in the service account's data root, so only that account may run it (Linux: mode 0700).
   if printf '%s\n' "${users}" | as_hub "${NODE}" -e 'try { const users = JSON.parse(require("node:fs").readFileSync(0,"utf8")); if (!Array.isArray(users) || users.some(u => !u || typeof u.role !== "string")) process.exit(11); process.exit(users.some(u => u.role === "admin") ? 0 : 10); } catch { process.exit(11); }'; then
     return
   else
     status=$?
-    [ "${status}" = 10 ] || fail "管理员账户列表格式不正确；核对数据库后重跑，或用 circle-hub init-admin <用户名>、circle-hub setup-code 完成初始化"
+    [ "${status}" = 10 ] || fail "管理员账户列表格式不正确；核对数据库后重跑，或用 circle-hub init-admin [<用户名>]、circle-hub setup-code 完成初始化"
   fi
   if installer_has_terminal; then
     installer_prompt_admin
   elif [ -z "${HUB_INSTALL_ADMIN_NAME}" ]; then
-    fail "数据库中还没有管理员，当前没有终端且未给 --admin-user；请用 circle-hub init-admin <用户名> 或 circle-hub setup-code 完成初始化"
+    fail "数据库中还没有管理员，当前没有终端且未给 --admin-user；请用 circle-hub init-admin [<用户名>] 或 circle-hub setup-code 完成初始化"
   fi
   if [ "${HUB_INSTALL_PASSWORD_STDIN}" = 1 ]; then
-    as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" init-admin "${HUB_INSTALL_ADMIN_NAME}" --password-stdin || fail "管理员初始化未完成；可重跑安装，或用 circle-hub init-admin <用户名>、circle-hub setup-code 完成初始化"
+    as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" init-admin "${HUB_INSTALL_ADMIN_NAME}" --password-stdin || fail "管理员初始化未完成；可重跑安装，或用 circle-hub init-admin [<用户名>]、circle-hub setup-code 完成初始化"
   else
     if ! printf '%s\n' "${HUB_INSTALL_ADMIN_PASSWORD}" | as_hub env CIRCLE_HUB_DATA_DIR="${DATA}" "${NODE}" "${SETUP_HUB}" init-admin "${HUB_INSTALL_ADMIN_NAME}" --password-stdin; then
       unset HUB_INSTALL_ADMIN_PASSWORD
-      fail "管理员初始化未完成；可重跑安装，或用 circle-hub init-admin <用户名>、circle-hub setup-code 完成初始化"
+      fail "管理员初始化未完成；可重跑安装，或用 circle-hub init-admin [<用户名>]、circle-hub setup-code 完成初始化"
     fi
   fi
   unset HUB_INSTALL_ADMIN_PASSWORD
