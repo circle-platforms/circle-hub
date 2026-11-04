@@ -26,7 +26,7 @@ import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type P
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
 import { KnowledgeStore, INDEX } from './store.ts';
-import { canonicalize } from '../records/api.ts';
+import { canonicalize, withReadScope } from '../records/api.ts';
 import { KnowledgeEntryBody } from '../../contracts/src/knowledge.ts';
 import { syncProduct, type SyncOptions, type SyncReport } from './sync.ts';
 import { LinkReading } from './links.ts';
@@ -148,7 +148,8 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return root === null ? [] : [{root:root.root,composition:root.composition}];
   };
   const reading = new TreeReading(context);
-  const spaces = new KnowledgeSpaces(context, reading.treeReader(), async () => {
+  // Every start_run freezes the team space and asks for these, so they are read in one scope: pack by pack they cost 4 seconds.
+  const spaces = new KnowledgeSpaces(context, reading.treeReader(), () => withReadScope(async () => {
     const mounts = [];
     for (const pack of await context.packs.products()) {
       const id = pack.product.id;
@@ -160,7 +161,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       if (unversioned) mounts.push({ product: id, line: null, path: pathOf(['产品', id, '不分版本']), root: unversioned.root });
     }
     return mounts.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-  }, (query, by) => reading.getNodes(query, by), async mount => {
+  }), (query, by) => reading.getNodes(query, by), async mount => {
     const composition = await reading.compositionOf(mount.root);
     if (!composition) return null;
     return {
