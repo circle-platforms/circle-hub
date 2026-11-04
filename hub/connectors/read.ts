@@ -301,7 +301,8 @@ export class ReadEngine {
       if (admin === null || admin.disabled) return false;
       await this.#o.artifacts.acceptFindings({ id: admin.id, name: admin.name, role: admin.role }, artifact.body.sha256, `资源 ${runtime.resource.id} 的设置 accept_scan_detectors`, { detectors: found, automatic: true });
       return (await this.#o.artifacts.source({ id: admin.id, name: admin.name, role: admin.role }, artifact.body.sha256, { consumer: 'function', record: artifact.digest }))?.bytes != null;
-    } catch {
+    } catch (error) {
+      this.#event('standing_acceptance_failed', { resource: runtime.resource.id, record: artifact.digest, reason: this.#o.redactor.text(error instanceof Error ? error.message : String(error)).slice(0, 300) });
       return false;
     }
   }
