@@ -34,9 +34,9 @@ The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 
 `CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB) and `CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES` (default 1 GiB,
 1 KiB–16 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64 per referenced document in the current version,
 independently of personal content/history capacity. Entry overflow asks for shorter or split content; current-version overflow
-asks for withdrawal/replacement or an increased configured limit, and for a product only the latter. All use
-`SPACE_INDEX_LIMIT`, and writes to personal and team spaces are admitted transactionally. Search skips an over-limit or
-incomplete scope and reports warnings alongside available matches. Raising a limit permits unfinished projection work to
+asks for withdrawal/replacement or an increased configured limit. For a product, which nobody reading it can change, both ask
+only for the administrator's increased limit. All use `SPACE_INDEX_LIMIT`, and writes to personal and team spaces are admitted
+transactionally. Search skips an over-limit or incomplete scope and reports warnings alongside available matches. Raising a limit permits unfinished projection work to
 resume; failed batches are not marked ready.
 
 The limits protect the database, not memory: nothing loads an index into the process, and a search reads by GIN. The space

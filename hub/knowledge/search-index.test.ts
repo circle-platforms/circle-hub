@@ -195,7 +195,8 @@ test('an entry over the entry limit refuses the version the same way, until that
   const warning = (await strict.search(w.user, WANTED, 'all')).warnings?.[0];
   assert.equal(warning?.code, 'SPACE_INDEX_LIMIT');
   assert.match(warning?.message ?? '', /单条知识索引超过 100 字节上限；未检索该范围/);
-  assert.match(warning?.fix ?? '', /缩短或拆分/);
+  assert.match(warning?.fix ?? '', /由管理员调高 CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES 并重启 Hub/);
+  assert.doesNotMatch(warning?.fix ?? '', /缩短|拆分/, 'nobody reading a product can do that');
   assert.deepEqual(await strict.indexRound(), { built: 0, refused: 0, failed: 0 });
   assert.deepEqual(await spaces.indexRound(), { built: 1, refused: 0, failed: 0 }, 'a higher limit ends the refusal without a write');
 });
