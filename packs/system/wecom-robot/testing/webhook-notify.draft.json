@@ -1,0 +1,57 @@
+{
+  "schema": "executor@1",
+  "enabled": false,
+  "environment": "test",
+  "credential": "${secret:WECOM_WEBHOOK_KEY}",
+  "retry_safety": "duplicate_tolerant",
+  "target": "syn-review-group",
+  "manifest_sha256": null,
+  "endpoint": "https://example.invalid/cgi-bin/webhook/send",
+  "ca": "",
+  "limitations": [
+    "DRAFT：企业微信群机器人 webhook 的鉴权键在 URL 查询参数（?key=…）；当前契约只允许 ${secret:…} 出现在 /credential，且传输把凭据放进查询参数未实现——这是向 connectors 与 contracts owner 提出的两条缺口（包 README Need 2）。",
+    "DRAFT：calls.submit.write 在 ExecutorDefinition 里被锁为 effect_class=job、audience=null、writes_hub_records=true（contracts/src/resources.ts 的 calls 与 superRefine）；通知类送达执行器在契约扩展前无法通过 executor add 登记，本文件的 enabled=false 并且从未注册。",
+    "lease、receipt、status、result、proof 是作业机构的必需形状；通知执行器扩展应把这些做成可选或另立资源种类，本草案用占位指针证明今天的形状对 webhook 是强加的。",
+    "endpoint 与密钥都是部署数据：本文件用 example.invalid 与密钥名占位，真实值由管理员在 circle-hub executor add --secret 与密钥库设置。"
+  ],
+  "allowed_tools": ["send"],
+  "refused_tools": [],
+  "payload_argument": "/text/content",
+  "max_run_ms": 30000,
+  "calls": {
+    "acquire": { "tool": "noop_acquire", "arguments": {}, "timeout_ms": 5000 },
+    "heartbeat": { "tool": "noop_heartbeat", "arguments": {}, "timeout_ms": 5000 },
+    "release": { "tool": "noop_release", "arguments": {}, "timeout_ms": 5000 },
+    "precheck": { "tool": "noop_precheck", "arguments": {}, "timeout_ms": 5000 },
+    "submit": {
+      "tool": "send",
+      "arguments": { "msgtype": "markdown", "text": { "content": { "$value": "payload" } } },
+      "timeout_ms": 15000,
+      "write": {
+        "interaction": "submit_then_read",
+        "effect_class": "notification",
+        "retry_safety": "duplicate_tolerant",
+        "signing": "service_on_behalf",
+        "reversible": false,
+        "target_key": { "group": "syn-review-group" },
+        "audience": "group:syn-review-group",
+        "evidence": { "call": "read_back", "pointer": "/sha256" },
+        "refusal": { "stage": "/errcode", "reached_device": "/errcode" },
+        "writes_hub_records": false
+      }
+    },
+    "status": { "tool": "noop_status", "arguments": {}, "timeout_ms": 5000 },
+    "result": { "tool": "read_back", "arguments": {}, "timeout_ms": 5000 },
+    "query": { "tool": "noop_query", "arguments": {}, "timeout_ms": 5000 }
+  },
+  "lease": { "id": "/lease/id", "token": "/lease/token", "ttl_ms": "/lease/ttl", "acceptance": "/lease/accept", "map": {} },
+  "receipt": { "stage": "/errcode", "reached_device": "/errcode", "acceptance": "/accept", "map": {}, "id": "/id", "sha256": "/sha256", "items": "/items" },
+  "status": { "pointer": "/state", "map": { "sent": { "action_result": "completed" } } },
+  "result": {
+    "id": "/id", "sha256": "/sha256", "submitted_at": "/at", "items": "/items",
+    "item_id": "/id", "item_outcome": "/outcome", "complete": "/complete", "map": { "ok": "pass" }
+  },
+  "proof": { "package": "wecom-robot", "manifest_sha256": "/manifest", "requirement": "delivery", "slot": "sent", "plan_run": "/run", "sha256": "/sha256", "items": "/items", "target": "/target", "build": "/build", "generator": "/generator" },
+  "conditions": [],
+  "read_retry_when": []
+}
