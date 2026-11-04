@@ -1605,6 +1605,15 @@ their existing fields; this count does not cover them. The index-view original a
 Readers must compare the digest before using the count. A legacy or collated view with absent or mismatched metadata does
 not acquire a zero count by inference; the caller handles the missing fact using its other structural coverage fields.
 
+## An absence observation is not fed
+
+The artifact a read leaves for an object its system does not have (`hub.source-absence@1`, D05 R[3]) says what the read saw, not
+what the object is. A run may bind it and a reader may read it. Feeding stops it at one place, `unlessAbsence`, which both
+`observeSource` and `observeSourceBounded` pass before anything else happens: no job, no usage, no projection, no to-do, and a
+receipt with no pending item, so a caller is never told to read again what the system says does not exist. It looks at the
+capture the read would feed, not at the bytes. `sourceLines` answers a question and writes nothing to the feeding log, and
+`prepare` needs a row of the pack's projection, which no pack here makes of an observation.
+
 ## Frozen feeding cuts
 
 For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier. This changes query layout only, not historical records or their frozen horizon.
