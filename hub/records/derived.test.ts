@@ -251,3 +251,22 @@ test('admission snapshots caller-owned bytes before awaiting preparation of sour
   assert.equal(output.body.read_tier,'retain_only');
   assert.deepEqual(Buffer.from((await kit.artifacts.trustedBytes(output.body.sha256))!),original);
 });
+
+test('the same bytes are scanned once, whatever their record: a scan depends only on them and takes seconds on a large answer',async t=>{
+  const kit=await openTestRecords({postgres});
+  const {openRecords} = await import('./index.ts');
+  let scans=0;
+  let counted: Awaited<ReturnType<typeof openRecords>> | undefined;
+  t.after(async()=>{await counted?.close();await kit.close();});
+  counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:()=>{scans++;}});
+  const bytes=Buffer.from(line(fake()));
+  const held=await counted.artifacts.ingest({...readInput(bytes),name:'first'});
+  assert.equal(held.body.read_tier,'retain_only');assert.equal(scans,1);
+  const again=await counted.artifacts.ingest({...readInput(bytes),name:'second'});
+  assert.equal(again.body.sha256,held.body.sha256);
+  assert.equal(scans,1,'equal bytes are not scanned again');
+  assert.equal(again.body.read_tier,'retain_only','and hold as the first did');
+  assert.deepEqual(again.body.scan,held.body.scan);
+  await counted.artifacts.ingest(readInput(Buffer.from('synthetic other text\n')));
+  assert.equal(scans,2,'other bytes are');
+});

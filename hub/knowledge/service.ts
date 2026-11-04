@@ -152,8 +152,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     const mounts = [];
     for (const pack of await context.packs.products()) {
       const id = pack.product.id;
-      const lines = new Set((await builds.known(id)).map(build => build.line));
-      for (const line of [...lines].sort()) {
+      for (const line of [...await builds.lines(id)].sort()) {
         const info = (await rootForRead(id, { line }))?.info;
         if (info) mounts.push({ product: id, line, path: pathOf(['产品', id, line]), root: info.root });
       }
