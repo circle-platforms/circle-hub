@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { caseCommandsGold } from '../gold/case-commands.ts';
 import { compareCommandIndex } from './command-index.ts';
 import { exportBuild, createDeps, main, prepareOutput, ExportError, type Deps, type ViewRead } from './export-build-inputs.ts';
-import { openBed } from '../../../tests/acceptance/support/hub.ts';
+import { bedPacks, openBed } from '../../../tests/acceptance/support/hub.ts';
 import { agileOptions } from '../../../tests/fixtures/agile/index.ts';
 import { productSite, twoNameProduct } from '../../../tests/acceptance/support/env.ts';
 import { startPostgres } from '../../../hub/testing/postgres.ts';
@@ -586,7 +586,7 @@ test('administrator knowledge view and original export operate against the synth
   const match=/_(\d+)_(\d+)_(\d+)_/.exec(site.RELEASED)!;
   const agile=JSON.parse(JSON.stringify(agileOptions()).replaceAll('ORBIT',product.names[0]).replaceAll('COMET',product.names[1]).replaceAll('7.1',match.slice(1).join('.')));
   // 喂入改造拿掉了构建根上的 cases 生产器。case_index 仍打开，用来确认文档读到了、只是不再写成 kind=case 条目。
-  const bed=await openBed({postgres,syncOneName:false,syncTwoName:{options:{case_index:true}},agile});t.after(()=>bed.close());
+  const bed=await openBed({postgres,repositoryPacks:await bedPacks(),syncOneName:false,syncTwoName:{options:{case_index:true}},agile});t.after(()=>bed.close());
   const dir=mkdtempSync(join(tmpdir(),'export-bed-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const kit=bed.hub.records,db=kit.database;
   const runsBefore=await kit.store.list({kind:'run',limit:1});
