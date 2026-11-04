@@ -4,10 +4,12 @@ import {retireReadScope} from './read-scope.ts';
 // The MCP standard authorization (decision 125) adds the clients that registered themselves and the invitation codes an
 // administrator issues: a code is twelve characters shown once, kept as its SHA-256, valid INVITATION_TTL_MS and used once,
 // by the client it authorized; a token issued through the authorization names its client.
+// Model 38 (R01 R[12], decision 136 ⑫): every issuance, use and revocation also appends a token_issuance record in the
+// same transaction as the row change (token-issuance.ts); the rows remain the working state and the earlier history.
 import { randomBytes } from 'node:crypto';
-import { isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
+import { TokenActionSchema, isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange, Transaction } from './api.ts';
+import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, RecordStore, TokenInfo, User, UserChange, Transaction } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
 import type { Database, PgTransaction, Row } from './db.ts';
 import { sha256Hex } from './digest.ts';
@@ -15,6 +17,8 @@ import { AccessError, ConflictError, IntegrityError, LimitError } from './errors
 import { newId } from './ids.ts';
 import { hashPassword, initialPassword, matchesPassword } from './password.ts';
 import { requestPermissions } from './request-permissions.ts';
+import { createRecordStore } from './store.ts';
+import { appendTokenIssuance } from './token-issuance.ts';
 
 const ADMIN: PermissionRole = 'admin';
 const USER: PermissionRole = 'user';
@@ -28,6 +32,13 @@ const TOKEN_ID = /^tok_[0-9a-z]{26}$/;
 const NAME = /^[^\s\p{Cc}](?:[^\p{Cc}]{0,98}[^\s\p{Cc}])?$/u;
 /** last_used_at is refreshed at most once a minute per token. */
 const LAST_USED_STEP_MS = 60_000;
+/** A console session token lives twelve hours. */
+const CONSOLE_SESSION_MS = 12 * 60 * 60 * 1000;
+/** Bound of the private record store used when no shared store is given; a token_issuance body is a few hundred bytes. */
+const TOKEN_RECORD_BYTES = 64 * 1024;
+const ISSUE = TokenActionSchema.enum.issue;
+const USE = TokenActionSchema.enum.use;
+const REVOKE = TokenActionSchema.enum.revoke;
 export const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
 const INVITATION_ID = /^inv_[0-9a-z]{26}$/;
 const CLIENT_ID = /^cli_[0-9a-z]{26}$/;
@@ -109,10 +120,13 @@ function validRole(role: unknown): PermissionRole {
 export class PgPrincipals implements Principals {
   readonly #db: Database;
   readonly #now: () => Date;
+  readonly #store: Pick<RecordStore, 'put'>;
 
-  constructor(db: Database, now: () => Date) {
+  /** `store` is the kit's record store; without one, a store on the same database writes the token_issuance records. */
+  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put'>) {
     this.#db = db;
     this.#now = now;
+    this.#store = store ?? createRecordStore(db, { maxRecordBytes: TOKEN_RECORD_BYTES, now });
   }
 
   async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }> {
@@ -186,7 +200,8 @@ export class PgPrincipals implements Principals {
   async #replacePassword(tx: PgTransaction, by: Principal, userId: string, hash: string, mustChange: boolean): Promise<void> {
     const at=this.#now().toISOString();
     const row=(await this.#db.query('UPDATE users SET password_hash=$2, password_must_change=$3, password_revision=password_revision+1, updated_at=$4 WHERE id=$1 RETURNING *',[userId,hash,mustChange,at],tx)).rows[0];
-    await this.#db.query('UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL',[by.id,at,userId],tx);
+    const revoked=await this.#db.query('UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',[by.id,at,userId],tx);
+    for (const token of revoked.rows.map(row=>String(row.id)).sort()) await appendTokenIssuance(this.#store,{action:REVOKE,token,user:userId,by:by.id,at},tx);
     await this.#db.query('INSERT INTO user_history (user_id,name,role,disabled,changed_by,changed_at,password_changed) VALUES ($1,$2,$3,$4,$5,$6,true)',[userId,row.name,row.role,row.disabled,by.id,at],tx);
   }
 
@@ -301,22 +316,32 @@ export class PgPrincipals implements Principals {
       const row = (await this.#db.query('SELECT user_id FROM tokens WHERE id = $1 FOR UPDATE', [tokenId], tx)).rows[0];
       // Someone else's token looks exactly like an absent one.
       if (row === undefined || (decider.role !== ADMIN && row.user_id !== decider.id)) return false;
+      const at = this.#now().toISOString();
       const result = await this.#db.query(
         'UPDATE tokens SET revoked_at = $2, revoked_by = $3 WHERE id = $1 AND revoked_at IS NULL',
-        [tokenId, this.#now().toISOString(), decider.id],
+        [tokenId, at, decider.id],
         tx,
       );
-      return result.rowCount === 1;
+      if (result.rowCount !== 1) return false;
+      await appendTokenIssuance(this.#store, { action: REVOKE, token: tokenId, user: String(row.user_id), by: decider.id, at }, tx);
+      return true;
     });
   }
 
   async revokeTokenValue(token: string): Promise<boolean> {
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
-    const result = await this.#db.query(
-      'UPDATE tokens SET revoked_at = $2, revoked_by = user_id WHERE sha256 = $1 AND revoked_at IS NULL',
-      [sha256Hex(token), this.#now().toISOString()],
-    );
-    return result.rowCount === 1;
+    return this.#db.transaction(async (tx) => {
+      const at = this.#now().toISOString();
+      const row = (await this.#db.query(
+        'UPDATE tokens SET revoked_at = $2, revoked_by = user_id WHERE sha256 = $1 AND revoked_at IS NULL RETURNING id, user_id',
+        [sha256Hex(token), at],
+        tx,
+      )).rows[0];
+      if (row === undefined) return false;
+      // The holder revoked it by its value (RFC 7009): the account it acts as is the one that acted.
+      await appendTokenIssuance(this.#store, { action: REVOKE, token: String(row.id), user: String(row.user_id), by: String(row.user_id), at }, tx);
+      return true;
+    });
   }
 
   async tokens(userId: string): Promise<TokenInfo[]> {
@@ -343,7 +368,9 @@ export class PgPrincipals implements Principals {
           tx,
         )
       ).rows[0];
-      return { ...invitationOf(row), code };
+      const issued = invitationOf(row);
+      await appendTokenIssuance(this.#store, { action: ISSUE, invitation: issued.id, user: issued.user, by: issued.created_by, at: issued.created_at, expires_at: issued.expires_at }, tx);
+      return { ...issued, code };
     });
   }
 
@@ -374,6 +401,7 @@ export class PgPrincipals implements Principals {
       const user = await this.#locked(tx, String(taken.user_id));
       // A disabled account leaves the invitation unused: the update is rolled back with the transaction.
       if (user.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}`);
+      await appendTokenIssuance(this.#store, { action: USE, invitation: invitationId, user: user.id, client: clientId, at }, tx);
       return user;
     }).catch((error: unknown) => {
       if (error instanceof ConflictError) return null;
@@ -501,12 +529,15 @@ export class PgPrincipals implements Principals {
   async #issue(tx: PgTransaction, userId: string, label: string, by: string | null, client: string | null = null, consoleSession = false): Promise<IssuedToken> {
     const token = randomBytes(32).toString('base64url');
     const id = newId('tok');
-    const at = this.#now().toISOString();
+    const now = this.#now();
+    const at = now.toISOString();
+    const expires = consoleSession ? new Date(now.getTime() + CONSOLE_SESSION_MS).toISOString() : null;
     await this.#db.query(
       'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-      [id, userId, sha256Hex(token), label, at, by, client, consoleSession, consoleSession ? new Date(this.#now().getTime()+12*60*60*1000).toISOString() : null],
+      [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires],
       tx,
     );
+    await appendTokenIssuance(this.#store, { action: ISSUE, token: id, user: userId, by, at, label, client, console_session: consoleSession, expires_at: expires }, tx);
     return { id, user: userId, token, label, created_at: at };
   }
 }

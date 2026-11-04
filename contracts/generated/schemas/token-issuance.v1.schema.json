@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "issue"
+          ]
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^tok_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+          "description": "the account the token acts as"
+        },
+        "by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "the issuing account; null only for the token of the bootstrapped first administrator"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "client": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^cli_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "the registered client the standard authorization issued it to"
+        },
+        "console_session": {
+          "type": "boolean"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "token",
+        "user",
+        "by",
+        "at",
+        "label",
+        "client",
+        "console_session",
+        "expires_at"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "revoke"
+          ]
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^tok_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "by": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+          "description": "the revoking account; the holder itself when revoked by value (RFC 7009)"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "member_deletion": {
+          "description": "operation_id of the member deletion that revoked the token with the account",
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "action",
+        "token",
+        "user",
+        "by",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "issue"
+          ]
+        },
+        "invitation": {
+          "type": "string",
+          "pattern": "^inv_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "by": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "action",
+        "invitation",
+        "user",
+        "by",
+        "at",
+        "expires_at"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "use"
+          ]
+        },
+        "invitation": {
+          "type": "string",
+          "pattern": "^inv_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "client": {
+          "type": "string",
+          "pattern": "^cli_[0-7][0-9a-hjkmnp-tv-z]{25}$",
+          "description": "the registered client whose authorization request used the invitation"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "action",
+        "invitation",
+        "user",
+        "client",
+        "at"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
