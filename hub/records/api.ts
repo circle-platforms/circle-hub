@@ -276,8 +276,9 @@ export interface IndexedQuery {
 /**
  * The append log as one snapshot saw it: its newest position, and which writing transactions were open then. Positions are
  * handed out before commit, so a transaction can still commit below a position already read. `oldest` is the oldest open
- * transaction and `next` the first not started yet: once a later horizon's `oldest` has reached this `next`, every transaction
- * that held a position at or below this `position` has ended. Followers use readAppended, which applies that rule.
+ * transaction and `next` an id below which no transaction can still start. A writer has its id before its position, so once a
+ * later horizon's `oldest` has reached this `next`, every transaction that held a position at or below this `position` has
+ * ended. Followers use readAppended, which applies that rule.
  */
 export interface AppendHorizon { position: number; oldest: number; next: number }
 /** Records appended after `after`, through `through`: their entries under `keys`, and a keyless row for each record of `kinds`. */
@@ -331,8 +332,8 @@ export interface RecordStore {
   firstDigests(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, string>>;
   /** Bounded index scan retaining each matching value and the record's append position. */
   findIndexed?<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{ items: IndexedRecord<B>[]; next: IndexedCursor | null }>;
-  /** The newest append position and the transactions open as this snapshot saw them. */
-  appendHorizon?(tx?: Transaction): Promise<AppendHorizon>;
+  /** The newest append position and the transactions open as this snapshot saw them. Read on its own: it takes a transaction id. */
+  appendHorizon?(): Promise<AppendHorizon>;
   /**
    * What the log holds between two positions, oldest first, in one query that reads no record body: it costs what was appended
    * in that range, however much came before. Rows are a selection hint only; act on a record through a verified read.

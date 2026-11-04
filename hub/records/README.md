@@ -447,11 +447,18 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
 A background reader that wants what changed uses `readAppended` with an `AppendCursor` (`append-cursor.ts`), not a position of
 its own: `seq` is handed out before commit, so a transaction can commit below a position already read, and `seq > cursor` never
 sees it. The cursor keeps a `settled` mark, below which nothing can still appear, and looks again above it, returning each
-record once; `settled` moves to the last horizon's position once every transaction open at that horizon has ended, from
-`pg_snapshot_xmin`/`pg_snapshot_xmax` in `appendHorizon`. An open transaction delays `settled`, never what is returned. A
-writer that has a position and no transaction id yet is in no snapshot; the look one read behind finds it unless it stays open
-past that read as well, which takes a stall inside one statement, and only a later whole read of the history finds that. A new
-cursor waits a short while for the transactions open at its start, so a whole read right after it misses none of them.
+record once. `settled` moves to the last horizon's position once a later horizon's `pg_snapshot_xmin` has reached the last
+horizon's `next`, so it is one read behind even when nothing is open. An open transaction delays `settled`, never what is
+returned. A new cursor waits a short while for the transactions open at its start, so a whole read right after it misses none
+of them; one open longer than that may commit unseen, and only a later whole read of the history finds it.
+
+That rule needs two facts PostgreSQL does not give unasked. `next` must be above every transaction id handed out so far, and
+`pg_snapshot_xmax` is not: it is one past the last id to complete, and a younger transaction can be open above it and in no
+snapshot. So `appendHorizon` reads `pg_current_xact_id()`, the id its own statement takes after its snapshot, at a cost of one
+id and about 40 bytes of WAL per read; it takes no `tx`, because in a transaction that already has an id that function returns
+the older one. And a writer must have its id before its position: `seq` is drawn before the row is written, and the
+`ON CONFLICT` check can then wait for a transaction writing the same digest, holding a position no horizon can see. So `put`,
+the only writer of `records`, asks for the id in the `WHERE` of its insert, which runs before `seq` is drawn.
 
 `appended` reads the range by primary key and its entries by `record_index_digest`, so it costs what was appended in that range
 and reads no body: its rows select work, and acting on a record stays a verified read. The runtime role needs no new right.
