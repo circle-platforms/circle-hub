@@ -292,6 +292,22 @@ test('a client that holds a session and made no call in the window still has a l
   assert.match(clients, /client-one 未知 MCP 未知 3 0 无调用/);
 });
 
+test('a client named after a member of Object.prototype has its own count of connections, never an inherited one', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1);
+  const names = ['constructor', 'toString', 'valueOf', '__proto__'];
+  for (const client of names) await roots(w.db, { name: 'get_nodes', n: 1, every: 1000, client, version: '1.0' });
+  const clients = section(await shown(w.admin), '按客户端');
+  for (const name of names) assert.match(clients, new RegExp(`${name} 未知 MCP 1\\.0 0 1 10 毫秒`), name);
+  assert.doesNotMatch(clients, /native code|\[object Object\]/);
+  await w.db.query(`UPDATE resource_samples SET mcp_sessions_by_client='{"constructor":2,"__proto__":1}'`);
+  const open = section(await shown(w.admin), '按客户端');
+  assert.match(open, /constructor 未知 MCP 1\.0 2 1 10 毫秒/);
+  assert.match(open, /__proto__ 未知 MCP 1\.0 1 1 10 毫秒/);
+  await w.db.query(`UPDATE resource_samples SET mcp_sessions_by_client=$1`, [JSON.stringify(Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`client-${index}`, 1])))]);
+  assert.match(section(await shown(w.admin), '按客户端'), /constructor 未知 MCP 1\.0 未知 1 10 毫秒/, 'past the bound of the sample');
+});
+
 test('by release: the p95 of each over the end of its own run, what changed, and the id out of the way', async (t) => {
   const w = await world(t);
   await everything(w);

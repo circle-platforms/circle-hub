@@ -350,6 +350,8 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
   const byClient = summary?.mcp_sessions_by_client ?? null;
   if (totals === null) return card({ title: '按客户端', hint }, unreadable('客户端的调用'));
   const open = byClient === null ? [] : Object.entries(byClient);
+  // A name is whatever a client declares: `constructor` must not find what every object inherits.
+  const connectionsOf = new Map(open);
   if (totals.rows.length === 0 && open.length === 0) return card({ title: '按客户端' }, emptyBlock({ title: '还没有客户端连接', text: '客户端连接 Hub 后，这里按客户端列出平台、连接数、调用量和 p95。' }));
   const named = new Set(totals.rows.filter((row) => row.origin === 'mcp').map((row) => row.client_name));
   /** Connections are counted by name: a name past the sample's bound is unknown, one the sample does not list has none. */
@@ -358,7 +360,7 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
     if (row.origin === 'console') return streams === null ? UNKNOWN : streams;
     if (byClient === null) return UNKNOWN;
     if (row.client_name === null) return sessions === null ? UNKNOWN : Math.max(0, sessions - Object.values(byClient).reduce((sum, value) => sum + value, 0));
-    return byClient[row.client_name] ?? (open.length >= MAX_CLIENT_NAMES ? UNKNOWN : 0);
+    return connectionsOf.get(row.client_name) ?? (open.length >= MAX_CLIENT_NAMES ? UNKNOWN : 0);
   };
   const seen = new Set<string>();
   const rows: unknown[][] = totals.rows.map((row) => {
