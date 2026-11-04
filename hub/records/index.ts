@@ -64,7 +64,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   store.personalPayloads.beforePurge=(owner,by,tx)=>preserveTeamAttributions(store,objects,owner,by,tx,now);
   const authorizations = new RecordAuthorizations(db, store, now);
   const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
-  const principals = new PgPrincipals(db, now);
+  const principals = new PgPrincipals(db, now, store);
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,()=>objects.materializePersonalObjects(),now);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));

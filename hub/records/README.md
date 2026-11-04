@@ -679,7 +679,7 @@ error. A source reference without the authorized run continues to use the reader
 - `invitations`：管理员签发的邀请码，`invite(by, userId)` 只返回一次明文，表里只存规范化后（大写，去掉空格和连字符，O、I、L 读作 0、1、1）的 SHA-256；`INVITATION_TTL_MS` 为 24 小时。`checkInvitation(code)` 只查不用，给出账号或原因（不存在、已使用、已过期、账号已停用）；`takeInvitation(id, clientId)` 在一个事务里以条件更新取用一次，并记下用它授权的客户端，账号已停用时整笔回滚、邀请码保持未用。
 - `tokens.client_id`：`issueToken(by, userId, label, client)` 签发的令牌属于哪个已登记的客户端，`TokenInfo.client` 读出；不存在的客户端拒签。`revokeTokenValue(token)` 按令牌值吊销（RFC 7009：持有者可吊销），吊销人记为令牌所属账号。
 
-运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销记在这些可变存储里，与此前的令牌一样不写记录；合约里没有对应的记录类型。测试：`standard-authorization.test.ts`。
+运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销当时只记在这些可变存储里，合约里没有对应的记录类型；模型 38 起另写 `token_issuance` 记录，见下文“Token and invitation issuance records”。测试：`standard-authorization.test.ts`。
 
 `RecordStore.countIndexed`（决定 126）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
 
@@ -1143,3 +1143,50 @@ already delivered before retirement stay immutable; retirement prevents their re
 rewriting references a prior caller already holds. Parameter restrictions, ordinary write invalidation and transaction
 bypasses retain their existing behavior. Member-deletion, deactivation, purge and pending-result regressions cover this
 boundary alongside the frozen-cache-hit and engine-proof regressions.
+
+### Token and invitation issuance records (model 38, decision 136 ⑫)
+
+The integrator, as contracts owner, approved the model change on 2026-11-04. Model 38 adds one record kind,
+`token_issuance` (`token-issuance@1`, `contracts/src/tokens.ts`), and one R01 vocabulary axis, `token_action`
+(签发 `issue`, 使用 `use`, 吊销 `revoke`); R01 R[12] states the rule. One kind with an action field follows the
+precedent of `knowledge_space_grant` with `knowledge_grant_action`, and keeps the record name the console interface
+document had asked for (「令牌签发」). The subject is told apart by which id the body carries (`token` or `invitation`),
+so no second axis is needed. The body is a closed union of four shapes:
+
+| Action | Body |
+| --- | --- |
+| token `issue` | `token`, `user`, `by` (null only for the bootstrapped first administrator), `at`, `label`, `client` (`cli_…` or null), `console_session`, `expires_at` (console sessions only) |
+| token `revoke` | `token`, `user`, `by` (the holder itself for a revocation by value, RFC 7009), `at`, optional `member_deletion` (the deletion's `operation_id`) |
+| invitation `issue` | `invitation`, `user`, `by`, `at`, `expires_at` |
+| invitation `use` | `invitation`, `user`, `client`, `at` |
+
+No body holds a token, an invitation code, or the SHA-256 of either. `appendTokenIssuance` (`token-issuance.ts`) writes
+the record with `provenance: observed`, `created_at` equal to the body's `at`, unique key `<id>:<action>` (each action
+happens at most once per token or invitation; a second write is an `IntegrityError`) and index entries
+`token.issuance.user` and `token.issuance.subject`. It is called inside the transaction that changes the row:
+`#issue` (bootstrap, `issueToken`, console sessions), `revokeToken`, `revokeTokenValue` (now one transaction),
+`#replacePassword` (the console sessions a password change or reset revokes, one record each), `invite` and
+`takeInvitation`. A refused change writes nothing, and a failing record write rolls the row change back
+(`token-issuance.test.ts`). `PgPrincipals` takes the kit's record store; constructed without one, it writes through a
+store on the same database, so no caller can skip the records. A search of the TypeScript sources finds no other INSERT
+or UPDATE on `tokens` or `invitations`.
+
+Not recorded, by design: `checkInvitation` only reads; its outcome becomes a `use` record or nothing. The OAuth
+consent, the authorization code and the failed-code counter live in process memory; what they decide reaches the
+store only as an invitation `use` and a token `issue` with its client. A token's every use still only refreshes
+`tokens.last_used_at` (at most once a minute); a record per request would repeat the call log. A deleted member's
+unused invitations are not changed (`#locked` refuses a tombstone, so they can no longer be used), so nothing is recorded.
+
+Member deletion: migrations 19, 21, 22 and 23 revoke a deleted member's live tokens inside
+`hub_begin_member_deletion`, and applied migrations never change. No new migration is needed: `PgMemberDeletions.prepare`
+already holds the member row `FOR UPDATE`; it then locks the member's live tokens `FOR UPDATE` (a new token needs the
+member row, a concurrent revocation the token row, so the set cannot change), calls the function, checks that exactly
+those tokens now carry the deletion's time and actor, and appends one `revoke` record per token with `member_deletion`
+set to the operation id, in the same transaction. That id is the unique key of the later `member_deletion` record, which
+links the two. A repeated `prepare` of the same operation returns before revoking and writes nothing.
+
+History before model 38 is not backfilled: issuance, use and revocation before this change are recorded only in the
+`tokens` and `invitations` rows (`created_by`, `created_at`, `revoked_by`, `revoked_at`, `used_at`, `used_by_client`),
+which remain the record for that period. The console and the CLI still read token and invitation lists from those
+rows, unchanged. Records are read through the existing administrator-only branch of the record reader; members cannot
+read them by `rec:`.
