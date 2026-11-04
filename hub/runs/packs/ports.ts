@@ -205,8 +205,9 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       if (account === null) return [];
       const active = await registry.activeProducts();
       const out: PackSummary[] = [];
-      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).map(p=>p.info.id)])]) {
-        const installed=(await registry.installedSkills()).find(p=>p.info.id===id);
+      const skills=await registry.installedSkills();
+      for (const id of [...new Set([...(await registry.packsFor(account.id)),...skills.map(p=>p.info.id)])]) {
+        const installed=skills.find(p=>p.info.id===id);
         const info = installed?.info ?? await registry.latestVersion(id);
         if (info === null || info.kind !== 'workflow' && info.kind !== 'skill') continue;
         const raw = await registry.declarations(info.digest);

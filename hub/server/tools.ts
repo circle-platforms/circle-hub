@@ -245,8 +245,8 @@ export function readsExternalFor(summaries: readonly PackSummary[]): boolean {
  * `expected_sources`), whatever its inputs accept. The summaries do not say the latter, so each pack is loaded; a pack that
  * cannot be loaded counts as reading outside (the cautious annotation), with the reason in the admin note.
  */
-export async function startRunReadsExternal(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<boolean> {
-  const summaries = await deps.workflows.summaries(principal);
+export async function startRunReadsExternal(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}, listed?: readonly PackSummary[]): Promise<boolean> {
+  const summaries = listed ?? await deps.workflows.summaries(principal);
   if (readsExternalFor(summaries)) return true;
   for (const summary of summaries) {
     let loaded;
@@ -264,8 +264,8 @@ export async function startRunReadsExternal(deps: ServerDeps, principal: Princip
 
 /** D06 R[4], decision 105: submit_result makes the Hub dispatch for this caller when one of the caller's packs declares a
  * hub_template effect row; a pack that cannot be loaded counts as dispatching, so the hints stay conservative. */
-export async function submitDispatchesJobs(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<boolean> {
-  for (const summary of await deps.workflows.summaries(principal)) {
+export async function submitDispatchesJobs(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}, listed?: readonly PackSummary[]): Promise<boolean> {
+  for (const summary of listed ?? await deps.workflows.summaries(principal)) {
     let loaded;
     try {
       loaded = await deps.workflows.forUser(principal, summary.pack);
@@ -281,8 +281,9 @@ export async function submitDispatchesJobs(deps: ServerDeps, principal: Principa
 /** The six tools with the published schemas and the caller's annotations (D06 F[2]: start_run is open-world when it reads outside;
  * D06 R[4]: submit_result carries the widest effect class of the rows it may make the Hub dispatch). */
 export async function listTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<PublishedTool[]> {
-  const external = await startRunReadsExternal(deps, principal, note);
-  const dispatches = await submitDispatchesJobs(deps, principal, note);
+  const summaries = await deps.workflows.summaries(principal);
+  const external = await startRunReadsExternal(deps, principal, note, summaries);
+  const dispatches = await submitDispatchesJobs(deps, principal, note, summaries);
   return TOOLS.map((tool) => {
     const published = PUBLISHED.get(tool.name)!;
     return {
