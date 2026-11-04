@@ -732,6 +732,8 @@ export interface Authorizations {
 
   /** Owner of a pack id: the subject of its first publication, or null when it was never published. */
   ownerOf(packId: string): Promise<string | null>;
+  /** The owner of a pack and every decision they made on its versions, oldest first; null for a pack never published. Reads this pack's rows only. */
+  packPublications(packId: string): Promise<{ owner: string; decisions: AuthorizationRecord[] } | null>;
   /** The owner's active publication of `pack-id@x.y.z` (with its bound digest), or null when unpublished, withdrawn or expired. */
   publication(packVersion: string): Promise<AuthorizationRecord | null>;
   /** True when publication() is non-null and, when `bound` is given, binds exactly that digest (B04 R[1], R[2]). */

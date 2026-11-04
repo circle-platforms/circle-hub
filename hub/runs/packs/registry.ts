@@ -303,17 +303,16 @@ class Registry implements PackRegistry {
   }
 
   /**
-   * Every version of a pack id by the owner's publish decisions, in one query: the first grant of `id@x.y.z` names its
+   * Every version of a pack id by the owner's publish decisions on this pack: the first grant of `id@x.y.z` names its
    * content, the latest decision says whether it still stands (the rule of Authorizations.isPublished: the owner's latest
    * decision, not revoked, not expired, bound to that content). Selecting a version for use asks isPublished again.
    */
   async #publications(packId: string): Promise<Map<string, Publication>> {
     const out = new Map<string, Publication>();
     if (parsePackRef(packId) === null) return out;
-    const authorizations = this.#records.authorizations;
-    const owner = await authorizations.ownerOf(packId);
-    if (owner === null) return out;
-    const decisions = await allPages((cursor) => authorizations.history({ permission: 'publish', subject: owner, newestFirst: false, limit: 500, cursor }));
+    const published = await this.#records.authorizations.packPublications(packId);
+    if (published === null) return out;
+    const { owner, decisions } = published;
     const byVersion = new Map<string, AuthorizationRecord[]>();
     for (const decision of decisions) {
       const ref = parsePackRef(decision.body.object);
