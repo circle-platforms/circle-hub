@@ -43,6 +43,9 @@ export class DeclaredClients {
     try {
       const log = this.#deps.records.callLog;
       const found = (await log.declaredClient?.(user, session, token)) ?? (await log.latestDeclaredClient?.(user, token)) ?? null;
+      // An initialize that finished meanwhile told this process more than the read could: its line is written after it.
+      const told = this.#known.get(key);
+      if (told !== undefined) return told;
       const client = found === null ? null : { name: found.name, version: found.version, platform: null };
       this.#set(key, client);
       return client;
