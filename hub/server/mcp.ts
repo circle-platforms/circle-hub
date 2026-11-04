@@ -124,6 +124,13 @@ function transportState(reason: string, started: number): CallState {
   return { method: 'mcp', tool: 'mcp', args: null, started, runId: null, callResult: 'transport_failure', acceptance: null, errorCode: null, notes: [reason] };
 }
 
+/** The client on the rows of this trace: what the request itself declares, else what its connection did. */
+async function traceClient(options: McpOptions, principal: Principal, tokenId: string | null, session: string | null, own?: CallState): Promise<void> {
+  if (!tracing()) return;
+  const client = own?.client ? { ...own.client, platform: own.clientPlatform ?? null } : (await options.clients?.of(principal.id, tokenId, session)) ?? null;
+  if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version, clientPlatform: client.platform });
+}
+
 /** One line per request of a refused batch (at most LOGGED_BATCH), or one line when it has none. */
 function batchStates(messages: readonly unknown[], started: number): CallState[] {
   const requests = messages.filter(isRequest);
@@ -226,11 +233,17 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   const sessionId = sessionIdOf(request.headers['circle-session-id']);
   updateTrace({ userId: principal.id, sessionId });
   identifyRequest(request, { traceId, userId: principal.id });
-  options.sessions?.seen(mcpSessionOf(request.headers['mcp-session-id']));
+  const session = mcpSessionOf(request.headers['mcp-session-id']);
+  options.sessions?.seen(session);
+  /** The lines of a request no handler ran for: it is a call of the client that declared itself all the same. */
+  const logUnhandled = async (states: readonly CallState[]): Promise<void> => {
+    await traceClient(options, principal, tokenId, session);
+    for (const state of states) await logCall(options, principal, traceId, sessionId, state);
+  };
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
   const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
     setTraceStatus('warning', labelOf('call_result', 'transport_failure'));
-    for (const state of states ?? [transportState(reason, started)]) await logCall(options, principal, traceId, sessionId, state);
+    await logUnhandled(states ?? [transportState(reason, started)]);
     sendRpcError(response, status, code, message, headers);
   };
 
@@ -238,7 +251,7 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     request.resume();
     const message = '只接受 POST：这个服务器是无状态的 JSON 模式，没有 SSE 流';
     // The specification lets a client end its session with DELETE, even where the answer is 405: it is done with it.
-    if (request.method === 'DELETE') options.sessions?.closed(mcpSessionOf(request.headers['mcp-session-id']));
+    if (request.method === 'DELETE') options.sessions?.closed(session);
     // A GET is the streamable HTTP client's probe for the optional server stream; the specification prescribes 405 for a
     // server without one, so it is the expected answer to every session, not a failed call, and gets no line.
     if (request.method === 'GET') return sendRpcError(response, 405, -32000, message, { allow: 'POST' });
@@ -257,7 +270,7 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
         return await refuse(503, -32000, 'Hub 正忙：同时在处理的请求体已到上限，请稍后重试', `request bodies in flight reached the budget of ${options.budget.capacity} bytes`, { 'retry-after': '5', connection: 'close' });
       }
       // The client went away before its body was complete: nobody is left to answer.
-      await logCall(options, principal, traceId, sessionId, transportState('the request body was not received completely (aborted)', started));
+      await logUnhandled([transportState('the request body was not received completely (aborted)', started)]);
       response.destroy();
       return;
     }
@@ -302,10 +315,7 @@ async function answer(
   const own = isRequest(parsed) ? { key: idKey(parsed.id), state: stateOf(parsed, started) } : null;
   if (own !== null) updateTrace({ name: mcpStep(own.state.method, own.state.tool) });
   const session = mcpSessionOf(request.headers['mcp-session-id']);
-  if (tracing()) {
-    const client = own?.state.client ? { ...own.state.client, platform: own.state.clientPlatform ?? null } : (await options.clients?.of(principal.id, tokenId, session)) ?? null;
-    if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version, clientPlatform: client.platform });
-  }
+  await traceClient(options, principal, tokenId, session, own?.state);
   if (own !== null) identifyRequest(request, { traceId, name: LOGGED_TOOL.test(own.state.tool) ? own.state.tool : own.state.method === 'tools/call' ? 'tools/call' : 'mcp' });
   let finishObserved:(()=>void)|undefined;
   const states: CallState[] = own === null ? [] : [own.state];

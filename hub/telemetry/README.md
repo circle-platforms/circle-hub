@@ -68,7 +68,9 @@ inside a request or a stop). One-time work before `serve` listens is not a trace
 Each row carries the user, session, run, client name, version and platform, release and environment. Client name and version
 are what MCP `initialize` declared (decision 137), read through `declaredClient`, else `latestDeclaredClient` for a connection
 without a session, and kept per connection in memory (`hub/server/declared-clients.ts`), so a call costs no extra read once
-its connection is known; a sync request takes what the same token declared. They are declarations and nothing more. The
+its connection is known; a sync request takes what the same token declared. A request refused before any handler ran (a
+DELETE, a 415, a body that never arrived) is read the same way: it is a call of the client that declared itself, and only a
+connection that declared nothing has no name. They are declarations and nothing more. The
 release is the process's `release.json`, the environment the class in the deployment settings; a data root without
 settings has none.
 
