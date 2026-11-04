@@ -2,6 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PackId } from '../../contracts/src/common.ts';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { step } from '../telemetry/usage.ts';
 import type { AuthorizationBody, AuthorizationRecord, Principal, User } from './api.ts';
 import { iso, type Database } from './db.ts';
 import { digestOf } from './digest.ts';
@@ -83,7 +84,8 @@ export async function captureRequestPermissions(db: Database, principal: Princip
 export async function withRequestPermissions<T>(source: {capturePermissionSnapshot?: (principal: Principal) => Promise<RequestPermissions>} | undefined, principal: Principal, run: () => Promise<T>): Promise<T> {
   if (requestPermissions(principal.id) || !source?.capturePermissionSnapshot) return run();
   // Calls inside one outer read scope (one console page, one tool call) share the snapshot taken at its first permission check.
-  const capture = source.capturePermissionSnapshot.bind(source);
+  const read = source.capturePermissionSnapshot.bind(source);
+  const capture = (who: Principal) => step('check-permission', () => read(who), { type: 'guardrail' });
   const shared = readScopeValue(source, principal.id, () => capture(principal), pending => { void pending.then(snapshot => { snapshot.active = false; snapshot.cache.clear(); }, () => {}); });
   if (shared) {
     const snapshot = await shared;

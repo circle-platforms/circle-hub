@@ -1,4 +1,5 @@
 import { createDocumentCache } from '../../refs/api.ts';
+import { background } from '../../telemetry/api.ts';
 import {withQueryReads} from './query-scope.ts';
 import {requestReadable} from './grounds.ts';
 import { withRequestPermissions } from '../../records/api.ts';
@@ -95,13 +96,13 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   let timer:ReturnType<typeof setInterval>|null=null;
   let aborted=false;
   const memory:MaintenanceMemory={runs:new Map(),fullAt:null};
-  const maintain=(options:{incremental?:boolean}={}):Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted,options.incremental===true?memory:undefined)).finally(()=>{ongoing=null;}));
+  const maintain=(options:{incremental?:boolean}={}):Promise<void>=>ongoing??=(background('maintain-runs',()=>withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted,options.incremental===true?memory:undefined))).finally(()=>{ongoing=null;}));
   // Submissions stored before citations were indexed get their index in the background: a pass at the start and at every
   // tick until one reaches its end (backfillCitations). Stopping aborts the pass under way; the next one resumes it.
   let indexing:Promise<void>|null=null;
   let indexed=false;
   let stopIndexing=new AbortController();
-  const indexCitations=():Promise<void>=>indexing??=(backfillCitations(ctx.deps.records.store,{signal:stopIndexing.signal})
+  const indexCitations=():Promise<void>=>indexing??=(background('index-citations',()=>backfillCitations(ctx.deps.records.store,{signal:stopIndexing.signal}))
     .then(outcome=>{indexed=outcome.complete;if(outcome.indexed>0)ctx.log({traceId:null,run:null,what:'citation index',detail:`indexed the citations of ${outcome.indexed} submissions stored before citations were indexed (${outcome.examined} examined)`});})
     .catch((error:unknown)=>{if(!stopIndexing.signal.aborted)ctx.log({traceId:null,run:null,what:'citation index',detail:String(error)});})
     .finally(()=>{indexing=null;}));

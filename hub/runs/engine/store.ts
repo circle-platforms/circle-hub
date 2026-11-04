@@ -5,6 +5,7 @@ import { RunRecord } from '../../../contracts/src/run.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import { IntegrityError, recordDigest, sha256Hex, type ActionBody, type IndexEntry, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
 import { parseReference } from '../../refs/api.ts';
+import { step } from '../../telemetry/api.ts';
 import { ENGINE_COMPONENT } from './deps.ts';
 import { isObject } from './util.ts';
 
@@ -286,7 +287,7 @@ export async function submissionsOf(store: RecordStore, run: string): Promise<St
 
 export async function putResult(store: RecordStore, result: ValidationResult, createdAt: string, tx?: Transaction): Promise<StoredRecord<ValidationResult>> {
   const body = ValidationResult.parse(result);
-  return store.put<ValidationResult>({
+  return step('append-record', () => store.put<ValidationResult>({
     kind: 'validation_result',
     schema: SCHEMAS.result,
     provenance: 'projected',
@@ -296,7 +297,7 @@ export async function putResult(store: RecordStore, result: ValidationResult, cr
       {key:INDEX.resultRun,value:body.run},
       ...(body.system_input?[{key:INDEX.resultSystemInput,value:body.system_input}]:[{ key: INDEX.resultSubmission, value: `${body.run}:${body.submission}` }]),
     ],
-  }, tx);
+  }, tx));
 }
 
 export async function resultFor(store: RecordStore, run: string, submission: string): Promise<StoredRecord<ValidationResult> | null> {

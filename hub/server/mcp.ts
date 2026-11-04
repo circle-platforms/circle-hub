@@ -9,12 +9,15 @@ import { performance } from 'node:perf_hooks';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { SERVER_INSTRUCTIONS } from '../../contracts/src/tools.ts';
 import type { CallLogInput, Principal } from '../records/api.ts';
+import { addUsage, currentTrace, mcpStep, setTraceStatus, step, tracing, updateTrace } from '../telemetry/api.ts';
 import type { ServerDeps } from './api.ts';
+import type { DeclaredClients } from './declared-clients.ts';
 import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget } from './http.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
-import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
+import { newTraceId, sessionIdOf, traceContextFrom, traceIdFrom } from './trace.ts';
 import type { ClientDeclaration } from '../../contracts/src/spaces.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
 import { beginObservedCall } from './inflight-calls.ts';
@@ -27,6 +30,8 @@ export interface McpOptions {
   log: (line: string) => void;
   /** Request body bytes held at once over all requests (the app's budget). */
   budget: BodyBudget;
+  /** What connections declared at initialize, for their traces. */
+  clients?: DeclaredClients;
   /** The resource metadata URL an unauthenticated answer names (RFC 9728 5.1), for the MCP standard authorization. */
   resourceMetadata?: (request: IncomingMessage) => string;
   /**
@@ -80,6 +85,14 @@ function stateOf(message: JsonRpcRequest, started: number): CallState {
     notes: [],
     ...(message.method === 'initialize' ? clientInfoOf(params.clientInfo) : {}),
   };
+}
+
+/** The W3C Trace Context a request carries in `params._meta.traceparent` (the MCP way to join a client's trace). */
+function metaTraceContext(message: unknown): ReturnType<typeof traceContextFrom> {
+  const params = (message as JsonRpcMessage | null)?.params;
+  const meta = isPlainObject(params) ? params._meta : undefined;
+  const value = isPlainObject(meta) ? meta.traceparent : undefined;
+  return typeof value === 'string' ? traceContextFrom(value) : null;
 }
 
 /** A session id this Hub issued (a UUID); anything else binds nothing. */
@@ -140,13 +153,14 @@ function headersOf(request: IncomingMessage): Headers {
  * Writes one call-log line; a failure to write is reported to the operator and never changes the answer. A note records
  * refuses never costs the line: it is written once more without the note, and the operator's log says so.
  */
-async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState, tokenId: string | null = null, mcpSessionId: string | null = null): Promise<void> {
+async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState, tokenId: string | null = null, mcpSessionId: string | null = null, spanId?: string): Promise<void> {
   const tool = LOGGED_TOOL.test(state.tool) ? state.tool : state.method === 'tools/call' ? 'tools/call' : 'mcp';
   const errorCode = state.errorCode !== null && LOGGED_CODE.test(state.errorCode) ? state.errorCode : null;
   const note=state.notes.length===0?null:`管理员理由 ${state.notes.length} 条；详见管理员调用日志详情`;
   const input: CallLogInput = {
     ...(options.deps.now ? { at: options.deps.now() } : {}),
     traceId,
+    ...(spanId === undefined ? {} : { spanId }),
     userId: principal.id,
     sessionId,
     tool,
@@ -161,7 +175,7 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
     ...(state.client ? { client: state.client, tokenId, mcpSessionId } : {}),
   };
   try {
-    await options.deps.records.callLog.append(input);
+    await step('append-record', () => options.deps.records.callLog.append(input));
     return;
   } catch (error) {
     if (!(error instanceof TypeError) || input.adminNote === null) {
@@ -182,8 +196,8 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   const { deps } = options;
   const authorization = request.headers.authorization;
   const credential = typeof authorization === 'string' ? authorization : null;
-  const identity = deps.records.principals.identify ? await deps.records.principals.identify(credential) : null;
-  const principal = identity?.principal ?? (deps.records.principals.identify ? null : await deps.records.principals.authenticate(credential));
+  const identity = deps.records.principals.identify ? await step('authenticate', () => deps.records.principals.identify!(credential), { type: 'guardrail' }) : null;
+  const principal = identity?.principal ?? (deps.records.principals.identify ? null : await step('authenticate', () => deps.records.principals.authenticate(credential), { type: 'guardrail' }));
   const tokenId = identity?.token_id ?? null;
   if (principal === null) {
     request.resume();
@@ -194,10 +208,13 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': challenge.join(', '), connection: 'close' });
     return;
   }
-  const traceId = traceIdFrom(request.headers.traceparent) ?? newTraceId();
+  const headerTrace = traceIdFrom(request.headers.traceparent);
+  const traceId = headerTrace ?? currentTrace()?.traceId ?? newTraceId();
   const sessionId = sessionIdOf(request.headers['circle-session-id']);
+  updateTrace({ userId: principal.id, sessionId });
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
   const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
+    setTraceStatus('warning', labelOf('call_result', 'transport_failure'));
     for (const state of states ?? [transportState(reason, started)]) await logCall(options, principal, traceId, sessionId, state);
     sendRpcError(response, status, code, message, headers);
   };
@@ -243,7 +260,10 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
       return await refuse(400, -32700, 'Parse error: 请求体不是 JSON', 'request body is not JSON');
     }
     if (Array.isArray(parsed)) return await refuse(400, -32600, BATCH_REFUSED, 'JSON-RPC batch refused', {}, batchStates(parsed, started));
-    await answer(request, response, options, principal, traceId, sessionId, parsed, started, tokenId);
+    // A tool call may name the client's trace in `_meta` too; a valid header stays first.
+    const declared = headerTrace === null ? metaTraceContext(parsed) : null;
+    if (declared !== null) updateTrace({ traceId: declared.traceId, parentSpanId: declared.parentSpanId });
+    await answer(request, response, options, principal, declared?.traceId ?? traceId, sessionId, parsed, started, tokenId);
   } finally {
     hold.release();
   }
@@ -263,6 +283,12 @@ async function answer(
 ): Promise<void> {
   const { deps } = options;
   const own = isRequest(parsed) ? { key: idKey(parsed.id), state: stateOf(parsed, started) } : null;
+  if (own !== null) updateTrace({ name: mcpStep(own.state.method, own.state.tool) });
+  const session = mcpSessionOf(request.headers['mcp-session-id']);
+  if (tracing()) {
+    const client = own?.state.client ?? (await options.clients?.of(principal.id, tokenId, session)) ?? null;
+    if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version });
+  }
   let finishObserved:(()=>void)|undefined;
   const states: CallState[] = own === null ? [] : [own.state];
   const stateFor = (requestId: string | number): CallState => {
@@ -300,7 +326,7 @@ async function answer(
   server.setRequestHandler(CallToolRequestSchema, async (message, extra) => {
     const state = stateFor(extra.requestId);
     const declared = deps.records.callLog.declaredClient;
-    const client = declared ? () => declared.call(deps.records.callLog, principal.id, mcpSessionOf(request.headers['mcp-session-id']), tokenId) : undefined;
+    const client = declared ? () => declared.call(deps.records.callLog, principal.id, session, tokenId) : undefined;
     const call: ToolCall = { principal, state, context: { traceId, sessionId, adminNote: noteOn(state), ...(client ? { client } : {}) } };
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
@@ -365,9 +391,15 @@ async function answer(
     // client's declared clientInfo is bound to the writes it makes in that session and to no other client's. A head that
     // already went out early (keepalive) cannot carry one.
     const issued = !early && own?.state.method === 'initialize' && reply.status < 400 && own.state.callResult === 'ok' ? randomUUID() : null;
-    for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null);
+    if (own !== null) {
+      updateTrace({ runId: own.state.runId });
+      if (own.state.callResult !== 'ok') setTraceStatus('error', own.state.errorCode !== null && LOGGED_CODE.test(own.state.errorCode) ? own.state.errorCode : labelOf('call_result', own.state.callResult ?? 'error'));
+      if (own.state.client !== undefined) options.clients?.remember(principal.id, tokenId, issued, own.state.client);
+    }
+    for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null, state === own?.state ? currentTrace()?.rootSpanId : undefined);
     if (early) {
       // The head (HTTP 200, JSON) went out while the call worked; the body follows the keepalive spaces.
+      addUsage('answer.bytes', Buffer.byteLength(text));
       response.end(text);
     } else {
       setCommonHeaders(response);

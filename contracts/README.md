@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 112 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 115 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -584,3 +584,11 @@ carries (`tok_…` or `inv_…`), so no second axis is added. Bodies hold ids, a
 client id, never a token, an invitation code or a hash of either; a revocation that member deletion performed names the
 deletion's `operation_id`. R01 R[12] states the rule and R01 `changes38` the change. History before model 38 is not
 backfilled. No protocol code, MCP tool or migration changes, and the skill protocol mirrors are unchanged.
+
+Decision 146 (owner, 2026-11-04) sets model 39: B08 grows from each MCP call to each request that enters the Hub and each
+round of a background task, with three new fields (steps, usage, client declaration) and rule R[5]: this diagnostic data is
+kept 14 days, stays out of the record chain and is never grounds. Three new B08 axes: `step_type` (span, event, tool,
+retriever, evaluator, guardrail; `generation`, `agent`, `chain` and `embedding` are left out, the Hub calls no model),
+`step_level` (the four Langfuse levels) and `trace_origin` (the five entries). The rows are not records, so no record kind
+is added; no protocol code or MCP tool changes, and `hub/telemetry/names.ts` holds step and usage names, which are not
+vocabulary. B08 `changes39` states the change.

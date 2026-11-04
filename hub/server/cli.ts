@@ -21,7 +21,9 @@ import { OPERATOR_TOKEN_VARIABLE, takeEnvironmentToken, type OperatorTokenStore 
 import { jsonSafe, terminalSafe } from './assemble/terminal.ts';
 import type { OperatorAct } from './cli-admin.ts';
 import { AssemblyMissingError, CliError, UsageError, isAssemblyMissing } from './errors.ts';
-import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
+import { SERVE_USAGE, deploymentEnvironment, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
+import { commandStep, setTraceStatus, startTelemetry, startTrace, step, traceSinkInstalled, tracing, type Telemetry } from '../telemetry/api.ts';
+import { readReleaseId } from './release.ts';
 import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
@@ -586,6 +588,39 @@ function report(io: CliIo, error: unknown, commands: readonly CliCommand[]): num
   return 1;
 }
 
+/** This command's own connection for its trace, when it has a configuration to find the database with. */
+async function commandTelemetry(options: CliOptions): Promise<Telemetry | null> {
+  try {
+    const config = loadServerConfig(options.io.env, { command: true });
+    return startTelemetry({ database: config.database, release: readReleaseId(options.appOptions?.codeRoot), environment: await deploymentEnvironment(config.dataDir) });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Runs a command as a trace (B08): its own, written before main returns, in a CLI process; a step of what the process is
+ * doing where a trace sink is already there (a console action in `serve`). Observation never changes a command: without a
+ * configuration it runs untraced, and a write that fails costs only its row.
+ */
+async function traced(options: CliOptions, command: string, run: () => Promise<number>): Promise<number> {
+  const name = commandStep(command);
+  const observed = async (): Promise<number> => {
+    const code = await run();
+    if (code !== 0) setTraceStatus('error', `退出码 ${code}`);
+    return code;
+  };
+  const inTrace = (): Promise<number> => (tracing() ? step(name, observed) : startTrace({ name, origin: 'cli' }, observed));
+  if (traceSinkInstalled()) return inTrace();
+  const telemetry = await commandTelemetry(options);
+  if (telemetry === null) return run();
+  try {
+    return await inTrace();
+  } finally {
+    await telemetry.close();
+  }
+}
+
 const processIo = (): CliIo => ({
   stdout: (line) => process.stdout.write(`${line}\n`),
   stderr: (line) => process.stderr.write(`${line}\n`),
@@ -619,28 +654,30 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
   }
   if (isPlatformCommand(command)) {
     // allowVariables names what the server CLI reads itself (hub/platform); the token is not passed on at all.
-    return runPlatformCommand(argv, { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE], ...(overrides.io === undefined ? { keyPipe: liveKeyPipe() } : {}) });
+    return traced(options, command, () => runPlatformCommand(argv, { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE], ...(overrides.io === undefined ? { keyPipe: liveKeyPipe() } : {}) }));
   }
   if (command === 'serve') return serve(rest, options);
   const ctx = contextFor(options, assembly);
-  try {
-    const builtIn = Object.hasOwn(BUILT_IN_HANDLERS, command) ? BUILT_IN_HANDLERS[command] : undefined;
-    if (builtIn !== undefined) return await builtIn(rest, ctx, options);
-    if (!local.has(command)) {
-      const module = await assembly();
-      module.registerCommands?.(registerInto(local));
+  return traced(options, command, async () => {
+    try {
+      const builtIn = Object.hasOwn(BUILT_IN_HANDLERS, command) ? BUILT_IN_HANDLERS[command] : undefined;
+      if (builtIn !== undefined) return await builtIn(rest, ctx, options);
+      if (!local.has(command)) {
+        const module = await assembly();
+        module.registerCommands?.(registerInto(local));
+      }
+      const registered = local.get(command);
+      if (registered !== undefined) return await registered.run(rest, ctx);
+      if (RESERVED_COMMANDS.includes(command)) {
+        throw new CliError(`命令 ${command} 由装配模块注册（默认的 hub/server/assemble.ts 注册 ${RESERVED_COMMANDS.join('、')}），这个装配模块没有注册它`);
+      }
+      throw new UsageError(`未知命令：${command}`);
+    } catch (error) {
+      return report(io, error, commands());
+    } finally {
+      await ctx.close().catch(() => {});
     }
-    const registered = local.get(command);
-    if (registered !== undefined) return await registered.run(rest, ctx);
-    if (RESERVED_COMMANDS.includes(command)) {
-      throw new CliError(`命令 ${command} 由装配模块注册（默认的 hub/server/assemble.ts 注册 ${RESERVED_COMMANDS.join('、')}），这个装配模块没有注册它`);
-    }
-    throw new UsageError(`未知命令：${command}`);
-  } catch (error) {
-    return report(io, error, commands());
-  } finally {
-    await ctx.close().catch(() => {});
-  }
+  });
 }
 
 /** A register function that adds to one invocation's command table with the same checks as registerCommand. */

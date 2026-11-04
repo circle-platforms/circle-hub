@@ -18,6 +18,7 @@ import {parseExternal} from '../connectors/api.ts';
 import {canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
+import {background} from '../telemetry/api.ts';
 import {INDEX,SCHEMAS} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
 import {completeOperationDevice} from './operation-device.ts';
@@ -358,12 +359,12 @@ export class FeedingLayer {
  private async jobLifecycleRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:'queued'|'running'|'superseded',receipt?:FeedingReceipt){return this.writeJobRecord(job,state,'unknown',receipt);}
  private async jobResultRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:ActionResult,receipt?:FeedingReceipt){return this.writeJobRecord(job,state,state,receipt);}
  private async writeJobRecord(job:Pick<FeedingJob,'key'|'captureKey'|'pack'|'principal'|'sha'|'scope'>,state:string,result:ActionResult,receipt?:FeedingReceipt){const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:job.scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+job.sha],lease:null,started_at:at,ended_at:at,result,error_code:null,acceptance:null,codes:[],detail:{feeding_job:{key:job.key,capture_key:job.captureKey,pack_digest:job.pack?.digest??null,product:job.pack?.product.id??job.scope.product??null,by:job.principal.id,source:job.sha,scope:job.scope,state,pending:receipt?.pending??this.pendingReceipt(job.sha).pending}}},index:[{key:'knowledge.feeding.job',value:job.scope.run??job.principal.id}]});}
- private pump(){while(this.activeJobs<FEEDING_BOUNDS.concurrency&&this.queue.length){const job=this.queue.shift()!;this.activeJobs++;job.state='running';void (async()=>{
+ private pump(){while(this.activeJobs<FEEDING_BOUNDS.concurrency&&this.queue.length){const job=this.queue.shift()!;this.activeJobs++;job.state='running';void background('project-document',()=>(async()=>{
    await job.announced;
    await this.jobLifecycleRecord(job,'running');
    await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(job.principal,job.sha,job.scope,tx);});
    return this.observeSource(job.principal,job.sha,job.scope,job.pack??undefined);
-  })().catch(error=>this.pendingReceipt(job.sha,error instanceof Error?error.message:'投影没有完成回执','修正或恢复原件后重读该来源；不把未完成投影当已喂入')).then(async receipt=>{try{if(!await this.currentPack(job.pack))await this.jobLifecycleRecord(job,'superseded',receipt);else await this.jobResultRecord(job,receipt.pending.length?'unknown':'completed',receipt);}catch{/* Original sources and the run remain readable; absence of a completion record is still unknown. */}job.resolve(receipt);}).finally(()=>{this.jobs.delete(job.key);this.activeJobs--;this.pump();});}}
+  })().catch(error=>this.pendingReceipt(job.sha,error instanceof Error?error.message:'投影没有完成回执','修正或恢复原件后重读该来源；不把未完成投影当已喂入')).then(async receipt=>{try{if(!await this.currentPack(job.pack))await this.jobLifecycleRecord(job,'superseded',receipt);else await this.jobResultRecord(job,receipt.pending.length?'unknown':'completed',receipt);}catch{/* Original sources and the run remain readable; absence of a completion record is still unknown. */}job.resolve(receipt);})).finally(()=>{this.jobs.delete(job.key);this.activeJobs--;this.pump();});}}
  /** Read hooks wait at most one small slice; queued work has a separate finite worker/call budget. */
  async observeSourceBounded(principal:Principal,sha:string,scope:FeedingScope={}):Promise<FeedingReceipt>{
   if(scope.readManifest&&!Sha256.safeParse(scope.readManifest).success)scope={...scope,readManifest:undefined};

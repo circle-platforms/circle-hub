@@ -1,5 +1,5 @@
-// W3C Trace Context and the client session header (B08 F[1], F[3]). The trace id comes from a valid `traceparent`, else a
-// new random one; the session id is what the client declares in Circle-Session-Id, kept as its digest when it is not short
+// W3C Trace Context and the client session header (B08 F[1], F[3]). The trace id comes from a valid `traceparent` (the
+// header, or `_meta.traceparent` of an MCP request), else a new random one; the session id is what the client declares in Circle-Session-Id, kept as its digest when it is not short
 // printable ASCII (the same rule as the call log, so a run's session and its call-log lines agree).
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -12,8 +12,8 @@ function single(header: string | string[] | undefined): string | undefined {
   return header;
 }
 
-/** The trace id of a valid traceparent header, or null (absent, repeated, malformed, version ff, all-zero ids). */
-export function traceIdFrom(header: string | string[] | undefined): string | null {
+/** The ids of a valid traceparent value, or null (absent, repeated, malformed, version ff, all-zero ids). */
+export function traceContextFrom(header: string | string[] | undefined): { traceId: string; parentSpanId: string } | null {
   const value = single(header);
   if (typeof value !== 'string' || value.length > 512) return null;
   const match = TRACEPARENT.exec(value);
@@ -22,7 +22,12 @@ export function traceIdFrom(header: string | string[] | undefined): string | nul
   if (version === 'ff') return null;
   if (version === '00' && rest !== undefined) return null;
   if (/^0+$/.test(traceId) || /^0+$/.test(parentId)) return null;
-  return traceId;
+  return { traceId, parentSpanId: parentId };
+}
+
+/** The trace id of a valid traceparent header, or null. */
+export function traceIdFrom(header: string | string[] | undefined): string | null {
+  return traceContextFrom(header)?.traceId ?? null;
 }
 
 /** A new W3C trace id: 16 random bytes in lowercase hex, never all zero. */

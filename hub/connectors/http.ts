@@ -21,6 +21,7 @@ import {
   type RouteDeclaration,
 } from '../../contracts/src/resources.ts';
 import { mediaTypeEssence } from '../refs/api.ts';
+import { recordSourceRead } from '../telemetry/api.ts';
 import { ConnectorError, type ErrorLayer } from './errors.ts';
 import { Redactor } from './redact.ts';
 import { compileRoutes, matchRoute, splitPath, type CompiledRoute } from './routes.ts';
@@ -489,6 +490,8 @@ export class HttpSource {
   }
 
   async #send(url: URL, method: string, headers: Record<string, string>, body: string | undefined, maxBytes: number, timeoutMs: number, route: string): Promise<RawAnswer> {
+    const started = performance.now();
+    let size = 0;
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -517,7 +520,6 @@ export class HttpSource {
         });
       }
       const chunks: Uint8Array[] = [];
-      let size = 0;
       if (response.body !== null) {
         const reader = response.body.getReader();
         try {
@@ -548,6 +550,7 @@ export class HttpSource {
       };
     } finally {
       clearTimeout(timer);
+      recordSourceRead(size, performance.now() - started);
     }
   }
 

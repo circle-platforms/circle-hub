@@ -11,6 +11,7 @@ import type { RunsService } from '../ports.ts';
 import { IntegrityError, disclosedExistence, recordExistence } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
 import type { RecordRead, RecordReader, SourceRead, SourceReader } from '../refs/api.ts';
+import { step } from '../telemetry/api.ts';
 
 /**
  * A source read of stored bytes for refs: only what the read tier lets through. A withheld source (retain_only) is read
@@ -24,7 +25,7 @@ export function sourceReaderFor(
   note: (reason: string) => void = () => {},
 ): SourceReader {
   return {
-    async read(sha256, reader): Promise<SourceRead | null> {
+    read:(sha256, reader): Promise<SourceRead | null> => step('read-source',async()=>{
       const run=reader?.run?(await records.store.find({key:'runs.id',value:reader.run,kind:'run',limit:1})).items[0]:null;const parsed=run?RunRecord.safeParse(run.body):null;const pins=parsed?.success?parsed.data.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact;}):[];
       const source = pins.length?await records.artifacts.source(principal,sha256,{consumer,record:pins[0].artifact})??(reader?.run?await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer,record:pins[0].artifact}):null):await records.artifacts.source(principal, sha256, { consumer }) ?? (reader?.run ? await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer}) : null);
       if (source === null) {
@@ -36,7 +37,7 @@ export function sourceReaderFor(
         throw new IntegrityError('有权来源未返回原件字节');
       }
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
-    },
+    },{type:'retriever'}),
     // Whether the Hub holds the source at all, so refs tells absent from forbidden (D05 R[3], decision 112).
     async exists(sha256): Promise<boolean | null> {
       const existence = disclosedExistence(principal.id, await records.artifacts.records(sha256));

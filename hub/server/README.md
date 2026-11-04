@@ -388,6 +388,14 @@ is written once more without it and the operator's log says so. A call-log write
 log and does not change the answer. No argument preview is sent (B08 F[7], see Deviations). `serve` calls
 `CallLog.repairFiles` for the last three days at start.
 
+## Traces (B08, decision 146)
+
+`createApp`'s handler runs every request as a trace of [hub/telemetry](../telemetry/README.md), the last-resort 500 included;
+`serve` starts the telemetry and closes it on a clean stop, and `main` traces CLI commands. The root of an MCP call has the
+trace id and span id of its call log line. `traceparent` comes from the header, else from `params._meta.traceparent` of the
+request. Client name and version on the rows are what `initialize` declared (`declared-clients.ts`). Telemetry never
+changes an answer: a failed write costs only rows.
+
 ## Console
 
 Decision 130, second round item 1: member status uses R01's generated `account_status` (enabled/disabled), including the Team
@@ -737,6 +745,7 @@ circle-hub logs export [--from <time>] [--to <time>] [--user <u>] [--tool <t>] [
 circle-hub run list [--pack <id>] [--user <user>] [--state 受理|未受理|进行中] [--since <ISO time>] [--unknown] [--limit <N>] [--cursor <cursor>] [--json] [--as <admin>]
 circle-hub run show <run> [--json] [--as <account>]                   # the assembly module's assembleCommand
 circle-hub setup-code                                                 # no admin yet: a one-time code for /console/setup, shown once
+circle-hub trace list|show|top …                                      # administrators: traces, step trees and totals (hub/telemetry/README.md)
 circle-hub <platform command>                                         # init, db, key, service, backup, restore, deploy, rollback, rehearse, status, tls
 circle-hub pack|resource|secret|knowledge|init-admin|operator-token … # registered by the assembly module
 circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>

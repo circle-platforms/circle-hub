@@ -7,6 +7,7 @@ import {attachParentRecovery} from './parent-recovery.ts';
 // pack's table, the locked catalog and the subject; outcomes become the terminals of each (item, requirement, layer), the
 // requirement status, the claims and the partitions. A run-level check gets one subject built from all items, an item check
 // one subject per item; outcomes are assigned to items by their item id and an outcome without an item is a run-level fact.
+import { step } from '../../telemetry/api.ts';
 import { CORE_VIOLATION_CODES } from '../../../contracts/generated/protocol.ts';
 import type { FragmentRead, PermissionRole, ProvenanceType, Reason, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
@@ -252,7 +253,11 @@ function ruleOf(workflow: LoadedWorkflow, check: CheckEntry): string {
 export interface ReplayedChecks {outcomes:Record<string,CheckOutcome[]>;retryAttempts:Array<Record<string,unknown>>}
 export function evaluate(ctx:EngineContext,input:EvaluationInput & {replayChecks:ReadonlySet<string>}):Promise<ReplayedChecks>;
 export function evaluate(ctx:EngineContext,input:EvaluationInput):Promise<Evaluation>;
-export async function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
+export function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
+  return step('run-check',()=>runChecks(ctx,input),{type:'evaluator'});
+}
+
+async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
   const { run, workflow } = input;
   const model=input.submission?.model??input.origin?.model;
   if(input.submission!==null && !model)throw new Error('提交缺少已声明的模型身份，不能生成判断');

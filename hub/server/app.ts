@@ -28,6 +28,9 @@ import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTar
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
+import { addUsage, consoleStep, setTraceStatus, startTrace, type TraceOptions } from '../telemetry/api.ts';
+import { DeclaredClients } from './declared-clients.ts';
+import { traceContextFrom } from './trace.ts';
 
 const REFUSED_HOST = '拒绝：Host 不在此服务允许的主机名单里';
 const REFUSED_ORIGIN = '拒绝：Origin 不在此服务允许的来源名单里';
@@ -62,6 +65,23 @@ export function parseTarget(target: string | undefined): RequestTarget | null {
 /** True for a request that arrived over the built-in TLS listener. */
 function encrypted(request: IncomingMessage): boolean {
   return (request.socket as TLSSocket).encrypted === true;
+}
+
+/** Where a request enters (B08): MCP and sync by their paths; everything else is the Hub's web surface, under the console. */
+function requestEntry(pathname: string | undefined): Pick<TraceOptions, 'name' | 'origin'> {
+  if (pathname === '/mcp') return { name: 'handle-mcp', origin: 'mcp' };
+  if (pathname !== undefined && personalSyncTarget(pathname)) return { name: 'serve-sync', origin: 'sync' };
+  if (pathname === '/console' || pathname?.startsWith('/console/')) return { name: consoleStep(pathname), origin: 'console' };
+  return { name: 'serve-http', origin: 'console' };
+}
+
+/** What a finished request adds to its root step: the size of the answer and a status other than success. */
+function noteAnswer(response: ServerResponse): void {
+  const length = Number(response.getHeader('content-length'));
+  if (Number.isFinite(length)) addUsage('answer.bytes', length);
+  const status = response.statusCode;
+  if (status >= 500) setTraceStatus('error', `HTTP ${status}`);
+  else if (status >= 400) setTraceStatus('warning', `HTTP ${status}`);
 }
 
 /** A target for the operator's log: at most 200 characters, controls replaced. */
@@ -108,7 +128,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const secureRequest = (request: IncomingMessage): boolean => encrypted(request) || (proxyAuthority !== null
     && request.headers.host?.toLowerCase() === proxyAuthority
     && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}) };
+  const clients = new DeclaredClients(deps);
+  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, clients, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
   const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
@@ -151,7 +172,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       if (request.method !== 'GET' && request.method !== 'HEAD') return sendText(response, 405, '只接受 GET', { allow: 'GET, HEAD' });
       return sendJson(response, 200, { status: 'ok', release });
     }
-    if(personalSyncTarget(url.pathname))return handlePersonalSync(request,response,url,{deps,budget,admission:syncAdmission,origins,log,issuer:r=>issuerOf(r,secureRequest(r))});
+    if(personalSyncTarget(url.pathname))return handlePersonalSync(request,response,url,{deps,budget,admission:syncAdmission,origins,log,clients,issuer:r=>issuerOf(r,secureRequest(r))});
     if(url.pathname===SYNC_DISCOVERY_PATH)return handleSyncDiscovery(request,response,issuerOf(request,secureRequest(request)));
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
     if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
@@ -162,6 +183,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
 
   /** The last resort of a request: logs and answers 500 (or drops the connection); never throws. */
   const fail = (request: IncomingMessage, response: ServerResponse, label: string, error: unknown): void => {
+    setTraceStatus('error', 'Hub 内部错误');
     try {
       log(`请求处理出错（${printable(request.method)} ${label}）：${describeError(error)}`);
     } catch {
@@ -178,8 +200,11 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     const target = parseTarget(request.url);
     const label = target&&personalSyncTarget(target.url.pathname)?'/api/sync':target === null ? printable(request.url) : printable(target.url.pathname);
-    // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles.
-    const task: Promise<void> = route(request, response, target).catch((error: unknown) => fail(request, response, label, error));
+    // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles. Its trace ends
+    // with it, the last-resort 500 included.
+    const remote = traceContextFrom(request.headers.traceparent);
+    const task: Promise<void> = startTrace({ ...requestEntry(target?.url.pathname), traceId: remote?.traceId, parentSpanId: remote?.parentSpanId }, () =>
+      route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response)));
     inflight.add(task);
     void task.finally(() => inflight.delete(task)).catch(() => {});
   };

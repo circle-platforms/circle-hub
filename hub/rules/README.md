@@ -196,7 +196,8 @@ Layers, outermost first:
    whole process group, between 2 and 8 children at once (the number of cores, bounded) and a waiting line of at most 10,000
    calls (a call beyond it fails at once: `SANDBOX_UNAVAILABLE`, reason `queue_full`). A waiting call holds no copy of its
    input: it is serialized, and the pack scanned, only when the call gets its slot (64 calls with a 4 MB input grew the parent
-   heap by 37 MB, measured). A violation recorded while the result is serialized, or while a thrown value's `code`,
+   heap by 37 MB, measured). The call that frees a slot starts the next one, which keeps the async context of the call that
+   asked (`hub/telemetry`: a call's usage stays in its own trace). A violation recorded while the result is serialized, or while a thrown value's `code`,
    `message`, `name` or `stack` is read (pack getters and `toJSON`), is still reported as the violation.
 7. Lifecycle: the parent tracks its running children; `stopAll()` (exported) ends them and refuses the waiting calls
    (`SANDBOX_UNAVAILABLE`, reason `stopping`); it also runs from an `exit` listener, so an orderly exit or `process.exit` ends

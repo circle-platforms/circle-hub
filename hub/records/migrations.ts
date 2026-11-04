@@ -1453,10 +1453,40 @@ END $do$;
  // the owner's deployment), and personal purges delete index rows by digest. The index makes both a lookup.
  {version:26,name:'record_index_digest',sql:`CREATE INDEX record_index_digest ON public.record_index (digest);
 `},
+ // Diagnostic data (B08 R[5]): not records, no digest, no append-only trigger, deleted after 14 days. One wide table, a row
+ // per step; a root's parent is the client's span, so is_root says what is a root. The partial indexes serve the trace list.
+ {version:27,name:'trace_spans',sql:`CREATE TABLE public.trace_spans(
+  trace_id pg_catalog.text NOT NULL CHECK(trace_id ~ '^[0-9a-f]{32}$'),
+  span_id pg_catalog.text NOT NULL CHECK(span_id ~ '^[0-9a-f]{16}$'),
+  parent_span_id pg_catalog.text CHECK(parent_span_id ~ '^[0-9a-f]{16}$'),
+  is_root pg_catalog.bool NOT NULL,
+  name pg_catalog.text NOT NULL,
+  type pg_catalog.text NOT NULL,
+  started_at pg_catalog.timestamptz NOT NULL,
+  ended_at pg_catalog.timestamptz NOT NULL,
+  level pg_catalog.text NOT NULL,
+  status_message pg_catalog.text CHECK(pg_catalog.char_length(status_message)<=1000),
+  origin pg_catalog.text NOT NULL,
+  user_id pg_catalog.text,
+  session_id pg_catalog.text,
+  run_id pg_catalog.text,
+  client_name pg_catalog.text,
+  client_version pg_catalog.text,
+  release pg_catalog.text,
+  environment pg_catalog.text,
+  usage pg_catalog.jsonb NOT NULL,
+  PRIMARY KEY(trace_id,span_id)
+);
+CREATE INDEX trace_spans_started ON public.trace_spans (started_at);
+CREATE INDEX trace_spans_roots ON public.trace_spans (started_at DESC) WHERE is_root;
+CREATE INDEX trace_spans_root_names ON public.trace_spans (name,started_at DESC) WHERE is_root;
+CREATE INDEX trace_spans_root_users ON public.trace_spans (user_id,started_at DESC) WHERE is_root;
+`},
 ]);
 
-/** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
+/** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  trace_spans:'SELECT, INSERT, DELETE',
   member_deletion_intents:'SELECT',run_upload_declarations:'SELECT',personal_cache_installs:'SELECT, INSERT',
   run_pack_records:'SELECT',held_object_targets:'SELECT',held_objects:'SELECT',original_targets:'SELECT',
   personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at,native_state,memory_projection,conflicts)',

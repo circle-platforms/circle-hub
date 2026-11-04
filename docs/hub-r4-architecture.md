@@ -44,7 +44,7 @@ Circle (MCP client) ──streamable HTTP, Bearer token──▶ hub/server
                                    contracts/ (model, vocabulary, zod shapes)
 ```
 
-Dependency rule (arrows point to what may be imported): `server → runs, knowledge, connectors, records, platform, refs, rules`; `runs → knowledge(api), rules, refs, records`; `knowledge → rules(sandbox), refs, records`; `connectors → rules(sandbox), refs, records`; `rules → refs(types)`; `refs → contracts`; `records → contracts`; everything → `contracts`. No cycles. Cross-package calls go through the package's `api.ts` only, never through its internals.
+Dependency rule (arrows point to what may be imported): `server → runs, knowledge, connectors, records, platform, refs, rules`; `runs → knowledge(api), rules, refs, records`; `knowledge → rules(sandbox), refs, records`; `connectors → rules(sandbox), refs, records`; `rules → refs(types)`; `refs → contracts`; `records → contracts`; everything → `contracts`. No cycles. Cross-package calls go through the package's `api.ts` only, never through its internals. One exception: `hub/telemetry/usage.ts` depends on Node and on types only, and `records`, `refs` and `rules` import it directly; what is above records goes through `hub/telemetry/api.ts`, which depends on records.
 
 ### Data that exists
 
@@ -71,6 +71,7 @@ Each package owns exactly the paths listed. It publishes `api.ts` (types and the
 | runs | `hub/runs/**`, `contracts/src/pack.ts` | W01 W02 W03 W05 W06 W07 W08, V01 V03 V04 V05 V06 V07, T01 T02 T03, A01 A02 A03 | records, refs, rules, knowledge(api) |
 | connectors | `hub/connectors/**`, `contracts/src/resources.ts` | D01 D02 D03 (read part) D07 (resources only) | records, refs, rules |
 | server | `hub/server/**` | D05 D06 B08 R01 R02 R03 (bot out of scope) | all |
+| telemetry | `hub/telemetry/**` | B08 (traces, usage, retention) | contracts, records (`usage.ts` depends on neither) |
 | packs | `packs/**`, `tests/fixtures/**` | T01 T02 | contracts, runs(api) |
 | acceptance | `tests/acceptance/**` | all scenarios in section 9 | all |
 | docs | `docs/**` (except this file), root `*.md`, `.github/**` | n/a | none |

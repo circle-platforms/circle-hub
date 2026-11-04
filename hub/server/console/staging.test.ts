@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { manifestDigest } from '../../runs/api.ts';
+import { installTraceSink, type SpanRow } from '../../telemetry/api.ts';
 import { PackStaging, STAGE_TTL_MS, stagedDigest } from './staging.ts';
 
 const MANIFEST = { id: 'synthetic-pack', version: '1.0.0', kind: 'workflow', files: [] };
@@ -106,4 +107,15 @@ test('a full store ends its oldest stage; a closed one keeps nothing, and a dire
   const late = await unpacked();
   assert.equal(await staging.add('usr_a', late), null, 'a closed store keeps nothing');
   await gone(late.root);
+});
+
+test('the cleanup of an expired stage is a background trace of its own', async (t) => {
+  const rows: SpanRow[] = [];
+  t.after(installTraceSink({ push: (row) => rows.push(row) }));
+  const quick = new PackStaging(Date.now, { ttlMs: 20 });
+  const tree = await unpacked();
+  assert.ok(await quick.add('usr_a', tree));
+  await eventuallyGone(tree.root);
+  for (let round = 0; round < 100 && rows.length === 0; round += 1) await sleep(10);
+  assert.deepEqual(rows.map((row) => [row.name, row.origin, row.is_root]), [['clean-staging', 'background', true]]);
 });

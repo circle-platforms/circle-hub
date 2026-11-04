@@ -15,6 +15,8 @@ import {referencesIn} from '../../contracts/src/variables.ts';
 import {bindLegacySkills,bindLegacyParser} from '../refs/api.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
+import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
+import { updateTrace } from '../telemetry/api.ts';
 import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
@@ -245,6 +247,7 @@ class Session {
           : `给这条命令一个启用中的管理员的有效令牌（${OPERATOR_TOKEN_VARIABLE}）`;
       throw new CliError('令牌无效，或者不属于启用中的管理员；这个命令只有管理员能执行', hint);
     }
+    updateTrace({ userId: principal.id });
     return { admin: principal, token };
   }
 
@@ -272,6 +275,12 @@ class Session {
    * cannot be read (wrong owner or permissions) is said on stderr and the command reads as if there were none.
    */
   async viewer(as: string | undefined, quietTokenRead = false): Promise<Principal> {
+    const principal = await this.#reader(as, quietTokenRead);
+    updateTrace({ userId: principal.id });
+    return principal;
+  }
+
+  async #reader(as: string | undefined, quietTokenRead: boolean): Promise<Principal> {
     let token = this.envToken;
     let source = `${OPERATOR_TOKEN_VARIABLE} 的令牌`;
     let hint: string | null = null;
@@ -1557,6 +1566,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
   { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: leaseCommand },
   { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
+  { name: 'trace', summary: TRACE_USAGE.slice('trace '.length), handler: traceCommand },
   { name: 'doc', summary: DOC_USAGE.slice('doc '.length), handler: docCommand },
   { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
   { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },

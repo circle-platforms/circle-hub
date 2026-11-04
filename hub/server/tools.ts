@@ -35,6 +35,7 @@ import { localToolsOf } from '../runs/packs/ports.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
+import { step } from '../telemetry/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
@@ -654,7 +655,7 @@ const getNodes: Handler = async (deps, call, args) => {
   if(input.space!==undefined&&deps.knowledge.spaces&&(await deps.knowledge.spaces.version(root))?.body.space!==input.space)return {answer:errorAnswer('get_nodes',[unavailable()])};
   for(let attempt=0;;attempt++) {
     try {
-      page=await deps.knowledge.getNodes({root,run:input.run,feeding_offset:feedingOffset,paths:input.paths??['/'],depth:input.depth??1,cursor,...(composition!==undefined?{composition}:{})},call.principal);
+      page=await step('compute-view',()=>deps.knowledge.getNodes({root,run:input.run,feeding_offset:feedingOffset,paths:input.paths??['/'],depth:input.depth??1,cursor,...(composition!==undefined?{composition}:{})},call.principal),{type:'retriever'});
       break;
     } catch(error) {
       if(error instanceof IntegrityError) {

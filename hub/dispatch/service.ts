@@ -12,6 +12,7 @@ import type { WorkflowStore } from '../ports.ts';
 import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type QualifierMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, type DynamicTerminal, type Reason, isDisposition, isEffectOutcome, isDynamicTerminal } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import {Redactor} from '../connectors/api.ts';
+import {background} from '../telemetry/api.ts';
 import {resolveExecutor} from './source.ts';
 import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
@@ -1731,7 +1732,7 @@ export class DispatchService {
       if(stopped)return;
       if(flight){available=false;if(!overrun){overrun=true;notice('心跳未按期完成，租约连续性未获确认');}return;}
       const started={at:this.now().getTime(),mono:performance.now()};
-      flight=(async()=>{
+      flight=background('renew-lease',async()=>{
         try {
           const response=await client.call('heartbeat',{...this.context(binding),lease_id:lease.id,lease_token:lease.token},Math.max(1,Math.min(d.calls.heartbeat.timeout_ms,Math.floor(lease.ttl/3))));
           const ttl=Number(at(response.value,d.lease.ttl_ms))*d.lease.ttl_scale_ms;
@@ -1739,7 +1740,7 @@ export class DispatchService {
           await this.journal.append(binding,'heartbeat','lease','completed',{op:'extend' satisfies LeaseOp,last_confirmed_at:new Date(started.at).toISOString()},[response.source]);
           confirmed={...started,ttl};this.#leaseClocks.set(lease,confirmed);available=true;overrun=false;
         }catch{available=false;notice('目标租约未获确认；后续心跳继续尝试，已发出作业只读恢复');}
-      })().finally(()=>{flight=null;});
+      }).finally(()=>{flight=null;});
     },Math.max(1,Math.floor(lease.ttl/3)));
     return {held,lastConfirmedAt:()=>confirmed?.at ?? null,stop:async()=>{stopped=true;clearInterval(timer);if(flight)await flight;await Promise.allSettled([...notices]);}};
   }

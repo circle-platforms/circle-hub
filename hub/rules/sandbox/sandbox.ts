@@ -11,6 +11,7 @@ import { createServer } from 'node:net';
 import { availableParallelism, tmpdir } from 'node:os';
 import { extname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { addUsage, step } from '../../telemetry/usage.ts';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
@@ -275,15 +276,23 @@ async function executePack(
   if (!os && options.requireOsIsolation !== false) {
     throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: osIsolationFailure() ?? null });
   }
-  return retryFunction(() => {
+  return step('run-function', () => retryFunction(() => {
+    const asked = performance.now();
     const attempt = epoch !== stopEpoch ? Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' })) : slots.run(async () => {
-      const inputText = serializeInput(input, lim.inputBytes);
-      const pack = await preparePack(target);
-      if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
-      return runChild(pack, inputText, lim, os, batch);
+      const started = performance.now();
+      addUsage('sandbox.wait_ms', started - asked);
+      try {
+        const inputText = serializeInput(input, lim.inputBytes);
+        const pack = await preparePack(target);
+        if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
+        return await runChild(pack, inputText, lim, os, batch);
+      } finally {
+        addUsage('sandbox.runs', 1);
+        addUsage('sandbox.ms', performance.now() - started);
+      }
     });
     return UNAVAILABLE_DIAGNOSTICS ? attempt.catch(reportUnavailable) : attempt;
-  }, lim.timeoutMs, options.onAttempt, options);
+  }, lim.timeoutMs, options.onAttempt, options), { type: 'tool' });
 }
 
 /**

@@ -22,6 +22,7 @@ import { dispatchCallTiming } from '../../dispatch/api.ts';
 import { cursorAfter, type Page, type Principal, type RecordKind, type RecordsKit, type StoredRecord } from '../../records/api.ts';
 import { setCommonHeaders } from '../http.ts';
 import { describeError } from '../notes.ts';
+import { background } from '../../telemetry/api.ts';
 import { readableLines, type PageContext } from './pages.ts';
 import type { ConsoleSession, SessionStore } from './session.ts';
 
@@ -331,7 +332,7 @@ export class LiveEvents {
   #schedule(): void {
     if (this.#timer !== null || this.#closed || this.#streams.size === 0) return;
     const timer = setTimeout(() => {
-      void this.#tick()
+      void background('poll-console', () => this.#tick())
         .catch((error: unknown) => this.#problem(error))
         .finally(() => {
           if (this.#timer === timer) this.#timer = null;
