@@ -9,7 +9,7 @@ import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
-import type { RunDetail, RunSummary } from '../../ports.ts';
+import type { RunDetail, RunRequestView, RunSummary } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
@@ -36,6 +36,12 @@ export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]
     }
     return { run, detail, result: detail === null ? null : taskResultOf(detail), pending: detail === null ? 0 : pendingCount(detail) };
   }));
+}
+
+/** The unanswered requests of the listed tasks: a page never needs the requests of any other run. Asked together, its read scope batches them. */
+export async function waitingRequests(ctx: PageContext, tasks: readonly TaskRow[]): Promise<RunRequestView[]> {
+  const lists = await Promise.all(tasks.map((task) => ctx.deps.runs.listRequests?.(ctx.principal, task.run.run) ?? []));
+  return lists.flat().filter((request) => request.answered_by === null);
 }
 
 /** `id@version` to the pack's title, for the packs the reader may list. */

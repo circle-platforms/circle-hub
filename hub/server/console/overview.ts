@@ -7,13 +7,12 @@ import {dot} from './ui.ts';
 import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
-import type { RunRequestView } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { step } from '../../telemetry/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
 import { TASK_FILL, primaryResult, taskChip } from './status.ts';
-import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
+import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
 import { card, clock, count,  kpi, plannedCard, sectionHead, when } from './ui.ts';
@@ -42,12 +41,6 @@ export async function runsSince(ctx: PageContext, since: number, limit: number):
     cursor = listing.next;
   } while (cursor !== null);
   return { runs, more: false };
-}
-
-/** The unanswered requests of the listed tasks: the page never needs the requests of any other run. Asked together, the page's read scope batches them. */
-export async function waitingRequests(ctx: PageContext, tasks: readonly TaskRow[]): Promise<RunRequestView[]> {
-  const lists = await Promise.all(tasks.map((task) => ctx.deps.runs.listRequests?.(ctx.principal, task.run.run) ?? []));
-  return lists.flat().filter((request) => request.answered_by === null);
 }
 
 /** The checks of the results, each layer terminal under its interface term (display rule 5: unknown kept apart). */
