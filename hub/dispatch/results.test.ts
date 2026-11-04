@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Page, StoredRecord } from '../records/api.ts';
+import { installTraceSink, type SpanRow } from '../telemetry/api.ts';
 import { setup } from './testing/context.ts';
 
 async function report(c: Awaited<ReturnType<typeof setup>>, reference: string) {
@@ -145,4 +146,14 @@ test('a session name that is no valid source name still saves the session under 
     const source = await c.kit.artifacts.source(c.owner, row.evidence.sessions[name].slice(4));
     assert.equal(source?.artifact.body.name, `session-${index + 1}.txt`);
   }
+});
+
+test('a heartbeat round is a background trace of its own, apart from the dispatch it keeps alive', async t => {
+  const rows: SpanRow[] = [];
+  t.after(installTraceSink({ push: row => rows.push(row) }));
+  const c = await setup({ mode: 'heartbeat-failure', ttl: 60, delay: { inspect_slot: 160 } }); t.after(() => c.close());
+  await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const rounds = rows.filter(row => row.name === 'renew-lease');
+  assert.ok(rounds.length > 0, 'the lease was renewed at least once');
+  assert.ok(rounds.every(row => row.origin === 'background' && row.is_root));
 });

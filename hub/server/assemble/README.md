@@ -77,6 +77,7 @@ circle-hub knowledge sync --product <name or id> [--line <line>] [--dry-run] [--
 circle-hub knowledge seed --product <product> --line <line> [--build <build>] --basis <one line> [--dry-run]
 circle-hub knowledge reproject <product> <line>      # re-project a line's fed cases onto its current seedling
 circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
+circle-hub trace list [...] | show <trace> | top [--by <usage>] [--since <time>]   # administrators: hub/telemetry/README.md
 ```
 
 - **Operator token.** Every command that changes state (all of the above except the listings, `roots` and `diff`; a

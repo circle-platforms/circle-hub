@@ -1,6 +1,7 @@
 // PostgreSQL access over pg: one pool, explicit transactions and the opaque Transaction handle other packages pass back in.
 import pg from 'pg';
 import type { DatabaseConfig } from '../config/index.ts';
+import { recordQuery, tracing } from '../telemetry/usage.ts';
 import type { Transaction } from './api.ts';
 import { RecordsError } from './errors.ts';
 
@@ -44,6 +45,20 @@ export function createPool(config: DatabaseConfig, max = 10): pg.Pool {
   return pool;
 }
 
+/** `client.query`, with the usage of the current step when there is one (`waitMs`: what getting the connection took). */
+async function measured<R extends Row>(client: pg.PoolClient, text: string, values: readonly unknown[], waitMs = 0): Promise<pg.QueryResult<R>> {
+  if (!tracing()) return client.query<R>(text, values as unknown[]);
+  const started = performance.now();
+  let rows: readonly R[] | undefined;
+  try {
+    const result = await client.query<R>(text, values as unknown[]);
+    rows = result.rows;
+    return result;
+  } finally {
+    recordQuery(text, rows, performance.now() - started, waitMs);
+  }
+}
+
 export class Database {
   readonly pool: pg.Pool;
   #nextTransaction = 1;
@@ -53,8 +68,39 @@ export class Database {
   }
 
   async query<R extends Row = Row>(text: string, values: readonly unknown[] = [], tx?: Transaction): Promise<pg.QueryResult<R>> {
-    if (tx === undefined) return this.pool.query<R>(text, values as unknown[]);
-    return clientOf(tx).query<R>(text, values as unknown[]);
+    if (tx !== undefined) return measured<R>(clientOf(tx), text, values);
+    if (!tracing()) return this.pool.query<R>(text, values as unknown[]);
+    return this.#pooled<R>(text, values);
+  }
+
+  /**
+   * pool.query with the wait for a connection seen apart from the query: the same rule, a connection is dropped when its
+   * query fails or it reports an error while it is out of the pool.
+   */
+  async #pooled<R extends Row>(text: string, values: readonly unknown[]): Promise<pg.QueryResult<R>> {
+    const asked = performance.now();
+    let client: pg.PoolClient;
+    try {
+      client = await this.pool.connect();
+    } catch (error) {
+      recordQuery(text, undefined, 0, performance.now() - asked);
+      throw error;
+    }
+    const waited = performance.now() - asked;
+    let failure: Error | undefined;
+    const lost = (error: Error): void => {
+      failure ??= error;
+    };
+    client.once('error', lost);
+    try {
+      return await measured<R>(client, text, values, waited);
+    } catch (error) {
+      failure ??= error instanceof Error ? error : new Error('query failed');
+      throw error;
+    } finally {
+      client.removeListener('error', lost);
+      client.release(failure);
+    }
   }
 
   /** Runs `fn` inside BEGIN/COMMIT; rolls back on any error. With `outer`, runs inside that transaction instead. */
@@ -63,17 +109,18 @@ export class Database {
       clientOf(outer);
       return fn(outer as PgTransaction);
     }
+    const asked = performance.now();
     const client = await this.pool.connect();
     const tx = new PgTransaction(client, this.#nextTransaction++);
     let broken: Error | undefined;
     try {
-      await client.query('BEGIN');
+      await measured(client, 'BEGIN', [], performance.now() - asked);
       const result = await fn(tx);
-      await client.query('COMMIT');
+      await measured(client, 'COMMIT', []);
       return result;
     } catch (error) {
       try {
-        await client.query('ROLLBACK');
+        await measured(client, 'ROLLBACK', []);
       } catch (rollbackError) {
         broken = rollbackError instanceof Error ? rollbackError : new Error('rollback failed');
       }

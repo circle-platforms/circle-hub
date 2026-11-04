@@ -36,6 +36,9 @@ export const AXES = {
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
   call_result: { label: '调用结果', owner: 'B08', values: [{ code: 'ok', label: '正常' }, { code: 'error', label: '出错' }, { code: 'transport_failure', label: '传输失败' }] },
+  step_type: { label: '步骤类型', owner: 'B08', values: [{ code: 'span', label: '步骤' }, { code: 'event', label: '事件' }, { code: 'tool', label: '沙箱函数' }, { code: 'retriever', label: '读取' }, { code: 'evaluator', label: '重跑检查' }, { code: 'guardrail', label: '边界校验' }] },
+  step_level: { label: '级别', owner: 'B08', values: [{ code: 'debug', label: '调试' }, { code: 'default', label: '默认' }, { code: 'warning', label: '警告' }, { code: 'error', label: '错误' }] },
+  trace_origin: { label: '入口', owner: 'B08', values: [{ code: 'mcp', label: 'MCP' }, { code: 'console', label: '控制台' }, { code: 'sync', label: '同步' }, { code: 'background', label: '后台' }, { code: 'cli', label: '命令行' }] },
   effect_outcome: { label: '效果结局', owner: 'B06', values: [{ code: 'issued', label: '已发出' }, { code: 'effective', label: '已生效' }, { code: 'read_back_consistent', label: '已回读一致' }, { code: 'read_back_mismatch', label: '内容不符' }, { code: 'target_rejected', label: '目标拒绝' }, { code: 'not_dispatched', label: '未发出' }, { code: 'proven_not_executed', label: '已证明未执行' }, { code: 'unknown', label: '未知' }] },
   effect_mark: { label: '效果追加标记', owner: 'B06', values: [{ code: 'disposed', label: '已处置' }, { code: 'compensated', label: '已补偿' }, { code: 'possible_duplicate', label: '可能重复' }] },
   effect_class: { label: '效果类', owner: 'D03', values: [{ code: 'none', label: '无' }, { code: 'read', label: '读' }, { code: 'sync_write', label: '同步写' }, { code: 'job', label: '作业' }, { code: 'notification', label: '通知' }] },
@@ -447,6 +450,36 @@ export const CALL_RESULT_UI = { 'ok': '正常', 'error': '出错', 'transport_fa
 export const CallResultSchema = z.enum(CALL_RESULT);
 export function isCallResult(value: unknown): value is CallResult {
   return (CALL_RESULT as readonly unknown[]).includes(value);
+}
+
+/** 步骤类型 (B08) */
+export const STEP_TYPE = ['span', 'event', 'tool', 'retriever', 'evaluator', 'guardrail'] as const;
+export type StepType = (typeof STEP_TYPE)[number];
+export const STEP_TYPE_LABEL = { 'span': '步骤', 'event': '事件', 'tool': '沙箱函数', 'retriever': '读取', 'evaluator': '重跑检查', 'guardrail': '边界校验' } as const satisfies { readonly [K in StepType]: string };
+export const STEP_TYPE_UI = { 'span': '步骤', 'event': '事件', 'tool': '沙箱函数', 'retriever': '读取', 'evaluator': '重跑检查', 'guardrail': '边界校验' } as const satisfies { readonly [K in StepType]: string };
+export const StepTypeSchema = z.enum(STEP_TYPE);
+export function isStepType(value: unknown): value is StepType {
+  return (STEP_TYPE as readonly unknown[]).includes(value);
+}
+
+/** 级别 (B08) */
+export const STEP_LEVEL = ['debug', 'default', 'warning', 'error'] as const;
+export type StepLevel = (typeof STEP_LEVEL)[number];
+export const STEP_LEVEL_LABEL = { 'debug': '调试', 'default': '默认', 'warning': '警告', 'error': '错误' } as const satisfies { readonly [K in StepLevel]: string };
+export const STEP_LEVEL_UI = { 'debug': '调试', 'default': '默认', 'warning': '警告', 'error': '错误' } as const satisfies { readonly [K in StepLevel]: string };
+export const StepLevelSchema = z.enum(STEP_LEVEL);
+export function isStepLevel(value: unknown): value is StepLevel {
+  return (STEP_LEVEL as readonly unknown[]).includes(value);
+}
+
+/** 入口 (B08) */
+export const TRACE_ORIGIN = ['mcp', 'console', 'sync', 'background', 'cli'] as const;
+export type TraceOrigin = (typeof TRACE_ORIGIN)[number];
+export const TRACE_ORIGIN_LABEL = { 'mcp': 'MCP', 'console': '控制台', 'sync': '同步', 'background': '后台', 'cli': '命令行' } as const satisfies { readonly [K in TraceOrigin]: string };
+export const TRACE_ORIGIN_UI = { 'mcp': 'MCP', 'console': '控制台', 'sync': '同步', 'background': '后台', 'cli': '命令行' } as const satisfies { readonly [K in TraceOrigin]: string };
+export const TraceOriginSchema = z.enum(TRACE_ORIGIN);
+export function isTraceOrigin(value: unknown): value is TraceOrigin {
+  return (TRACE_ORIGIN as readonly unknown[]).includes(value);
 }
 
 /** 效果结局 (B06) */
@@ -1273,6 +1306,9 @@ export interface AxisValues {
   action_result: ActionResult;
   acceptance: Acceptance;
   call_result: CallResult;
+  step_type: StepType;
+  step_level: StepLevel;
+  trace_origin: TraceOrigin;
   effect_outcome: EffectOutcome;
   effect_mark: EffectMark;
   effect_class: EffectClass;
@@ -1388,6 +1424,9 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   action_result: ACTION_RESULT_LABEL,
   acceptance: ACCEPTANCE_LABEL,
   call_result: CALL_RESULT_LABEL,
+  step_type: STEP_TYPE_LABEL,
+  step_level: STEP_LEVEL_LABEL,
+  trace_origin: TRACE_ORIGIN_LABEL,
   effect_outcome: EFFECT_OUTCOME_LABEL,
   effect_mark: EFFECT_MARK_LABEL,
   effect_class: EFFECT_CLASS_LABEL,
@@ -1503,6 +1542,9 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   action_result: ACTION_RESULT_UI,
   acceptance: ACCEPTANCE_UI,
   call_result: CALL_RESULT_UI,
+  step_type: STEP_TYPE_UI,
+  step_level: STEP_LEVEL_UI,
+  trace_origin: TRACE_ORIGIN_UI,
   effect_outcome: EFFECT_OUTCOME_UI,
   effect_mark: EFFECT_MARK_UI,
   effect_class: EFFECT_CLASS_UI,

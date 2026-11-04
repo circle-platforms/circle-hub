@@ -7,9 +7,11 @@
 import { userInfo } from 'node:os';
 import { parseArgs } from 'node:util';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, loadConfig, type HubConfig } from '../config/index.ts';
-import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls } from '../platform/api.ts';
+import type { Environment } from '../../contracts/generated/vocabulary.ts';
+import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls, readSettingsFile } from '../platform/api.ts';
 import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
 import { stopAll, sweepOrphans } from '../rules/api.ts';
+import { startTelemetry, type Telemetry } from '../telemetry/api.ts';
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
 import { createApp } from './app.ts';
 import { createCommandBridge } from './command-bridge.ts';
@@ -64,6 +66,15 @@ export function platformManaged(config: HubConfig): boolean {
     return config.database.host === layoutAt(config.dataDir).run;
   } catch {
     return false;
+  }
+}
+
+/** The environment class of the deployment on this data root, from its settings; null for a root without settings. */
+export async function deploymentEnvironment(dataDir: string): Promise<Environment | null> {
+  try {
+    return (await readSettingsFile(layoutAt(dataDir)))?.environment ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -159,6 +170,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   await sweepOrphans().catch((error: unknown) => operatorLog(`清理遗留的沙箱子进程失败（不影响启动）：${error instanceof Error ? error.message : String(error)}`));
 
   let app: HubApp | undefined;
+  let telemetry: Telemetry | undefined;
   let maintenance: import('./api.ts').ServerDeps['maintenance'];
   try {
     // The built-in HTTPS certificate is read before anything starts: a missing, loose or expired one stops serve here.
@@ -175,6 +187,8 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
     app = createApp(deps, { log: operatorLog, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
+    // Requests, background rounds and console actions are traced from here on (B08, decision 146).
+    telemetry = startTelemetry({ database: config.database, release: app.release, environment: await deploymentEnvironment(config.dataDir), log: operatorLog, retention: true });
     const info = await app.listen();
     io.stdout(`circle-hub 在 ${info.url} 上监听${app.release === null ? '' : `（发布 ${app.release}）`}`);
     if (info.https) io.stdout(`内置 HTTPS：${info.https.url}`);
@@ -189,6 +203,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   } catch (error) {
     await maintenance?.stopMaintenance({ abort: true }).catch(() => {});
     await app?.close().catch(() => {});
+    await telemetry?.close();
     await records.close().catch(() => {});
     if (isAssemblyMissing(error)) {
       io.stderr(`错误：${(error as Error).message}`);
@@ -211,6 +226,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     await running.close();
     // Pack-function children still running after the requests ended are stopped (hub/rules README).
     stopAll();
+    await telemetry?.close();
     await records.close();
   } finally {
     process.off('unhandledRejection', onRejection);

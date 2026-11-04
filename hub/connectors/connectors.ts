@@ -10,6 +10,7 @@ import { callPackFunction, osIsolationAvailable, type SandboxLimits } from '../r
 import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort, ResourceCatalogPort, ResourceListing } from '../ports.ts';
 import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
+import { step } from '../telemetry/api.ts';
 import type { ReadDeclaration } from '../../contracts/src/resources.ts';
 import { ConnectorError, asConnectorError } from './errors.ts';
 import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
@@ -373,7 +374,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
           return { ok: false, id: subject.id, reason: `${reason}；下一步：${command}`, ...(exit.caller ? { inputError: { code: exit.caller.protocol, message: exit.caller.message, fix: exit.caller.fix } } : {}) };
         }
         const [{ runtime, read }] = candidates;
-        const outcome = await engine.top(runtime, read, subject, context);
+        const outcome = await step('read-source', () => engine.top(runtime, read, subject, context), { type: 'retriever' });
         if (!outcome.ok) return exposeRead(subject.id, outcome, runtime.resource);
         return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}) };
       } catch (error) {

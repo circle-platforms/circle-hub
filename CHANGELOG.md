@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Record what every request and background round does (decision 146, step 1 of the observability design): each MCP call, console request, sync request, background round and CLI command is a trace of named steps with resource usage, written by a bounded background writer to the new `trace_spans` table (migration 27, kept 14 days, outside the record chain, no inputs or outputs), read with `circle-hub trace list|show|top`; tool calls also accept `_meta.traceparent`, and model B08 gains the fields, the retention rule and the axes `step_type`, `step_level` and `trace_origin`.
+
 - Record token and invitation issuance, use and revocation as append-only `token_issuance` records in the same transaction as the token or invitation row change, including the tokens revoked by member deletion (model 38, R01 R[12], decision 136 ⑫). Records hold ids, accounts, actors, times, labels and client ids, never a token, an invitation code or a hash; history before this change stays in the `tokens` and `invitations` rows.
 
 - Stop the console overview from exhausting the heap: a long argument enters a read memo key as its SHA-256, so concurrent readability checks no longer each hold a whole run and result as key text; the overview reads requests only for the runs it lists, and run listings that show no request fields ask for none (`requests: false`).

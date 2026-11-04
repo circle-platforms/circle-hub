@@ -8,6 +8,7 @@ import type {PgPersonalPayloads} from './personal-payloads.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { link, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { recordSourceRead, tracing } from '../telemetry/usage.ts';
 import type { ObjectInfo, ObjectStore, Transaction } from './api.ts';
 import { iso } from './db.ts';
 import type { Database } from './db.ts';
@@ -69,6 +70,15 @@ export class FileObjectStore implements ObjectStore {
   }
 
   async get(sha256: string,tx?:Transaction): Promise<Uint8Array | null> {
+    if(!tracing())return this.#get(sha256,tx);
+    const started=performance.now();
+    const bytes=await this.#get(sha256,tx);
+    // Here and not in #readBytes: one read may serve several callers, and each trace counts what it asked for.
+    recordSourceRead(bytes?.byteLength??0,performance.now()-started);
+    return bytes;
+  }
+
+  async #get(sha256: string,tx?:Transaction): Promise<Uint8Array | null> {
     if (!isSha256(sha256)) return null;
     if(tx)return (await this.#readBytes([sha256],tx)).get(sha256)??null;
     return new Promise((resolve,reject)=>{

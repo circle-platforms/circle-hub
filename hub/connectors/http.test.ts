@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { SystemProfile, type RouteDeclaration } from '../../contracts/src/resources.ts';
+import { installTraceSink, startTrace, type SpanRow } from '../telemetry/api.ts';
 import { ConnectorError } from './errors.ts';
 import { HttpSource, decodeText, expiryOf, type ConnectorLogEvent, type HttpExchange } from './http.ts';
 import { Redactor } from './redact.ts';
@@ -410,4 +411,30 @@ test('media_types_by_extension resolves octet-stream and missing types, server h
   const missingUnmapped = await http.request({ method: 'GET', path: '/files/archive.bin' });
   assert.equal(missingUnmapped.serverMediaType, 'text/plain');
   assert.equal(missingUnmapped.mediaType, 'text/plain'); // DEFAULT_MEDIA_TYPES[response='text']
+});
+
+test('every exchange adds to the source usage of the step it runs in, a failed one included', async (t) => {
+  const rows: SpanRow[] = [];
+  t.after(installTraceSink({ push: (row) => rows.push(row) }));
+  const body = JSON.stringify({ code: 1000, data: ['合成'] });
+  let fail = false;
+  const http = new HttpSource({
+    resource: 'res_01jacd5z8q3w7v9h2k4m6n8p0t',
+    origins: { 'plm-api': 'https://192.0.2.10', 'plm-oauth': 'https://192.0.2.10' },
+    allowPlaintext: [],
+    routes: profile.routes,
+    envelope: profile.envelope,
+    fetch: async () => {
+      if (fail) throw new Error('synthetic transport failure');
+      return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+  });
+  await startTrace({ name: 'get_nodes', origin: 'mcp' }, async () => {
+    await http.request({ method: 'GET', path: '/plmquery/build/', query: { product: '28' }, credential: { name: 'Authorization', value: SECRET } });
+    fail = true;
+    await http.request({ method: 'GET', path: '/plmquery/build/', query: { product: '28' }, credential: { name: 'Authorization', value: SECRET } }).catch(() => {});
+  });
+  assert.equal(rows[0].usage['source.reads'], 2);
+  assert.equal(rows[0].usage['source.bytes'], Buffer.byteLength(body));
+  assert.ok(typeof rows[0].usage['source.ms'] === 'number');
 });

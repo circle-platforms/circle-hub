@@ -9,6 +9,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isPackKind, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, manifestDigest } from '../../runs/api.ts';
+import { background } from '../../telemetry/api.ts';
 
 export const STAGE_TTL_MS = 30 * 60 * 1000;
 /** Stages kept at once over all administrators; a new one beyond it ends the oldest. */
@@ -76,7 +77,7 @@ export class PackStaging {
     while (this.#entries.size >= this.#max) await this.remove(this.#entries.keys().next().value!);
     const created = this.#now();
     const stage: StagedPack = { ...(space?{space}:{}),id: randomBytes(18).toString('base64url'), by, ...read, created, expires: created + this.#ttlMs };
-    const timer = setTimeout(() => void this.remove(stage.id), this.#ttlMs);
+    const timer = setTimeout(() => void background('clean-staging', () => this.remove(stage.id)), this.#ttlMs);
     timer.unref();
     this.#entries.set(stage.id, { stage, root: unpacked.root, dir: unpacked.dir, timer });
     return stage;

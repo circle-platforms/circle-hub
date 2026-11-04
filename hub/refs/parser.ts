@@ -1,6 +1,7 @@
 // Parser interface, typed parse errors and the parser registry (B03 F[0]: a parser@version declares the selector grammar).
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type {SkillDependency,SkillLock} from '../../contracts/src/skills.ts';
+import {step} from '../telemetry/usage.ts';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -109,7 +110,7 @@ export interface ParserRegistry {
 
 /** Async package implementations never run in the Hub process. */
 export function parseDocument(parser:Parser,bytes:Uint8Array,options:ParseOptions={}):Promise<ParsedDocument>{
-  return parser.parseAsync?parser.parseAsync(bytes,options):Promise.resolve(parser.parse(bytes,options));
+  return step('parse-document',()=>parser.parseAsync?parser.parseAsync(bytes,options):Promise.resolve(parser.parse(bytes,options)));
 }
 export function parserCacheKey(parser:Parser):string{return parserKey(parser)+'@'+(parser.skill_digest??'platform');}
 export async function recognizeAsync(registry:ParserRegistry,bytes:Uint8Array,mediaType:string,options:ParseOptions={},onRejected?:(error:ParseError)=>void):Promise<{parser:Parser;document:ParsedDocument}|null>{
@@ -318,7 +319,7 @@ export function recognize(
   let last: ParseError | null = null;
   for (const parser of registry.forMediaType(mediaType)) {
     try {
-      return { parser, document: parser.parse(bytes, { ...options, mediaType }) };
+      return { parser, document: step('parse-document', () => parser.parse(bytes, { ...options, mediaType })) };
     } catch (error) {
       if (!(error instanceof ParseError)) throw error;
       last = error;

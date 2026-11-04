@@ -5,6 +5,7 @@ import {effectiveSubmission,submissionOrigin,type EffectiveSubmission} from './i
 import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
 import { abandonDecision } from './management.ts';
 import { isReason } from '../../../contracts/generated/vocabulary.ts';
+import { step } from '../../telemetry/api.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
@@ -210,14 +211,14 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const sessionNow = sessionOf(call);
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.
-  const parsed = received.canonical ? Submission.safeParse(args) : null;
+  const parsed = received.canonical ? step('validate-submission', () => Submission.safeParse(args), { type: 'guardrail' }) : null;
   const effective = parsed?.success ? effectiveSubmission(parsed.data,run,sessionNow) : null;
   const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : effective?.model ?? null;
   const existing = await submissionByDigest(store, run.run, received.digest);
   const kept: Kept =
     existing !== null
       ? { record: existing, why: isVerbatimObject(existing) ? (received.canonical ? 'too_large' : 'canonical') : null }
-      : await storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt);
+      : await step('append-record', () => storeReceived(ctx, call.traceId, run.run, args, received, parsed?.success === true, startedAt));
   const record = kept.record;
 
   const management=await abandonDecision(ctx,run.run);

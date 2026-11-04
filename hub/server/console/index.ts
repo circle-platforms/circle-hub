@@ -16,6 +16,7 @@ import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { RecordsError, IntegrityError, sha256Hex, withRequestPermissions, type Principal } from '../../records/api.ts';
 import { KnowledgeError } from '../../knowledge/api.ts';
+import { step, updateTrace } from '../../telemetry/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '../http.ts';
@@ -814,7 +815,8 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>退出只接受 POST</p>`), { allow: 'POST' });
   }
-  const signedIn = session === null ? null : await options.deps.records.principals.authenticate('Bearer '+session.token);
+  const signedIn = session === null ? null : await step('authenticate', () => options.deps.records.principals.authenticate('Bearer '+session.token), { type: 'guardrail' });
+  if (signedIn !== null) updateTrace({ userId: signedIn.id });
   const passwordState = signedIn === null ? null : await options.deps.records.principals.passwordState?.(signedIn.id);
   if (segments[0] === 'password') return passwordPage(request,response,url,options,session,signedIn,secure,segments.slice(1));
   if (passwordState?.mustChange) {

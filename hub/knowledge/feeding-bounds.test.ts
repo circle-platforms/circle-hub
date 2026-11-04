@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {performance} from 'node:perf_hooks';
 import {startPostgres} from './test-support.ts';
 import {FeedingLayer,FEEDING_BOUNDS} from './feeding.ts';
+import {installTraceSink,startTrace,type SpanRow} from '../telemetry/api.ts';
 import {createRunsService} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
@@ -24,6 +25,13 @@ test('slow document projection returns a pending receipt in a bounded slice and 
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg,true);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});
  const started=performance.now();const receipts=await Promise.all(Array.from({length:40},()=>layer.observeSourceBounded(w.user,w.document.body.sha256,w.scope)));assert.ok(performance.now()-started<1500,'40 duplicate readers do not wait for the deliberately slow projection');assert.ok(receipts.every(row=>row.pending.some(p=>p.missing.includes('进行中'))));assert.ok(w.calls()<=1,'duplicates share the same queued/running document');await layer.drain();assert.equal(w.calls(),3);assert.equal((await layer.entries(w.user,'famx')).length,40);
  assert.deepEqual(FEEDING_BOUNDS,{waitMs:250,concurrency:2,queued:32,callMs:5000,rows:1000});
+});
+test('a queued projection is a background trace of its own: what it reads is not usage of the request that queued it',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});
+ const rows:SpanRow[]=[];t.after(installTraceSink({push:row=>rows.push(row)}));
+ await startTrace({name:'get_nodes',origin:'mcp'},()=>layer.observeSourceBounded(w.user,w.document.body.sha256,w.scope));await layer.drain();
+ const job=rows.find(row=>row.name==='project-document'),call=rows.find(row=>row.name==='get_nodes');
+ assert.ok(job&&call);assert.notEqual(job.trace_id,call.trace_id);assert.equal(job.origin,'background');assert.equal(job.is_root,true);assert.ok((job.usage['sandbox.runs']??0)>0,'the projection ran in the job');
 });
 test('actual case-location start_run with granularity=case returns 40 items without waiting for a slow FAMX feeding projection',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg,3000);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});

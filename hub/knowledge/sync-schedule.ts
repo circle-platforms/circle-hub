@@ -1,4 +1,5 @@
 // In-process scheduling only. Deployment decides which product and interval to configure.
+import {background} from '../telemetry/api.ts';
 export function scheduleSync<T>(run:(signal:AbortSignal)=>Promise<T>,options:{intervalMs:number;onError:(error:unknown)=>Promise<void>;onReport?:(report:T)=>void}):{runNow:()=>Promise<T|undefined>;stop:()=>Promise<void>}{
  if(!Number.isSafeInteger(options.intervalMs)||options.intervalMs<1)throw new TypeError('同步间隔必须是正整数毫秒');
  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|null=null,pending:Promise<T|undefined>|null=null,stopped=false;
@@ -7,7 +8,7 @@ export function scheduleSync<T>(run:(signal:AbortSignal)=>Promise<T>,options:{in
   if(stopped)return Promise.resolve(undefined);
   if(pending)return pending;
   if(timer){clearTimeout(timer);timer=null;}
-  pending=Promise.resolve().then(()=>run(controller.signal)).then(report=>{options.onReport?.(report);return report;},async error=>{await options.onError(error);return undefined;}).finally(()=>{pending=null;arm();});
+  pending=Promise.resolve().then(()=>background('sync-knowledge',()=>run(controller.signal))).then(report=>{options.onReport?.(report);return report;},async error=>{await options.onError(error);return undefined;}).finally(()=>{pending=null;arm();});
   return pending;
  };
  arm();

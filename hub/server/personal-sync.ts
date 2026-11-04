@@ -7,7 +7,9 @@ import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protoc
 import {ActionKindSchema,SyncModeSchema} from '../../contracts/generated/vocabulary.ts';
 import {RecordsError,parseStrictJson,sha256Hex,type Principal} from '../records/api.ts';
 import {KnowledgeError} from '../knowledge/api.ts';
+import {step,syncStep,updateTrace,tracing} from '../telemetry/api.ts';
 import type {ServerDeps} from './api.ts';
+import type {DeclaredClients} from './declared-clients.ts';
 import {readBody,mediaTypeOf,setCommonHeaders,originAllowed,type BodyBudget} from './http.ts';
 // The frozen v1 table plus the capability routes advertised in the discovery document (share-single-item).
 const routes={...PERSONAL_SYNC_HTTP_ROUTES,...PERSONAL_SYNC_CAPABILITY_ROUTES};
@@ -32,6 +34,8 @@ export class SyncAdmission{
  }
 }
 export interface SyncHttpOptions{deps:ServerDeps;budget:BodyBudget;admission:SyncAdmission;origins:ReadonlySet<string>;log:(line:string)=>void;
+ /** What connections declared at initialize, for the traces of the same token's sync requests. */
+ clients?:DeclaredClients;
  /** The origin this request reached the Hub on (the OAuth issuer); names the console page that confirms a purge. */
  issuer:(request:IncomingMessage)=>string}
 /** The console page where the owner confirms a purge a client asked for. */
@@ -59,12 +63,15 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
  try{
   if(!originAllowed(request,options.origins)){request.resume();await send(403,{code:'SOURCE_UNAVAILABLE'});return;}
   const authenticate=deps.records.principals.authenticateAccessToken;
-  identity=authenticate?await authenticate.call(deps.records.principals,request.headers.authorization):null;
+  identity=authenticate?await step('authenticate',()=>authenticate.call(deps.records.principals,request.headers.authorization),{type:'guardrail'}):null;
   if(!identity){request.resume();await send(401,{code:'SOURCE_UNAVAILABLE'},{'www-authenticate':'Bearer'});return;}principal=identity.principal;
+  updateTrace({userId:principal.id});
+  if(tracing()){const client=await options.clients?.of(principal.id,identity.token_id,null)??null;if(client!==null)updateTrace({clientName:client.name,clientVersion:client.version});}
   // Count every authenticated attempt before any append, including unknown routes and wrong methods.
   const write=!!selected&&request.method===routes[selected.route].method&&request.method==='POST'&&selected.route!=='download'&&selected.route!=='missing'&&selected.route!=='modeCheck';
   const entered=options.admission.enter(principal.id,write,now().getTime(),deps.config.limits.syncRequestsPerMinute);if(!entered){request.resume();await error(429,'SYNC_RATE_LIMITED',{'retry-after':'60'});return;}release=entered;
   if(!selected){request.resume();await error(404,'SOURCE_UNAVAILABLE');return;}
+  updateTrace({name:syncStep(selected.route)});
   const {route,id}=selected,definition=routes[route],sync=deps.knowledge.personalSync,api=deps.records.personalSync;
   if(request.method!==definition.method){request.resume();await error(405,'SYNC_OBJECT_INVALID',{allow:definition.method});return;}
   await audit('started',null,null);begun=true;

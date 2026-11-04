@@ -1,4 +1,5 @@
 // A bounded number of tasks at once, with a bounded first-come waiting line. A full line fails fast instead of growing.
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface SlotPool {
   /** Runs `task` once a slot is free; rejects at once with the pool's `full()` error when the waiting line is full. */
@@ -30,12 +31,14 @@ export function createSlotPool(limits: { running: number; waiting: number; full:
         return go();
       }
       if (line.length >= limits.waiting) return Promise.reject(limits.full());
+      // The call that frees the slot starts this task: it keeps the context (request scope, trace) of the call that asked.
+      const resume = AsyncLocalStorage.snapshot();
       return new Promise<T>((resolve, reject) => {
         line.push({
           // The slot passes straight to this call, so a newcomer cannot overtake the line.
           start: () => {
             active += 1;
-            go().then(resolve, reject);
+            resume(() => go().then(resolve, reject));
           },
           fail: reject,
         });

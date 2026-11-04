@@ -43,6 +43,7 @@ import { onlyMatcher, rootIndependentField, rootIndependentValues } from './fed-
 type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null; identity: string | null };
 import { sha256Hex, canonicalBytes, canonicalByteLength, createCanonicalEncoder, canonicalize, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { pathSegments, srcFragment, treeReference } from '../refs/api.ts';
+import { step } from '../telemetry/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { LinkReading,RelationReadError,LinkRefusal } from './links.ts';
 import { CompositionView } from './composition.ts';
@@ -1478,7 +1479,7 @@ export class KnowledgeViews {
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     const startedAt = this.#context.now().toISOString();
     try {
-      return await withReadCache(()=>this.#read(id, context, startedAt));
+      return await step('compute-view',()=>withReadCache(()=>this.#read(id, context, startedAt)),{type:'retriever'});
     } catch (error) {
       if(error instanceof RelationReadError)return {ok:false,id:splitRevision(id).body,reason:error.message+'；下一步：'+error.nextAction};
       if (error instanceof LinkRefusal) return {ok:false,id:splitRevision(id).body,reason:error.message};
