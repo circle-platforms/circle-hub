@@ -50,6 +50,9 @@ test('a bug read names its opened build when the build record is readable and st
     assert.equal(held.opened_build?.name, null);
     assert.match(held.opened_build?.note ?? '', /^构建 603 的记录没读到：应答对你不可用（原因只记在管理员记录里）$/);
     assert.doesNotMatch(JSON.stringify(held), /凭据|只保留|Zq8-Hunter2|[0-9a-f]{64}/, 'neither the cause nor the held answer reaches the reader');
+    const unwritable = await content('5050');
+    assert.equal(unwritable.opened_build?.name, null, 'kept parts that cannot be written stay held');
+    assert.match(unwritable.opened_build?.note ?? '', /^构建 604 的记录没读到：应答对你不可用（原因只记在管理员记录里）$/);
     // The coverage names the response it leaves out, in the same neutral words (decision 113).
     assert.deepEqual([of('4545').complete, of('4545').examined, of('4545').total], [true, 2, 2]);
     assert.doesNotMatch(of('4545').note ?? '', /没有读进的应答/);

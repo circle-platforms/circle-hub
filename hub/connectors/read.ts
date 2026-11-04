@@ -130,6 +130,8 @@ interface ResponseState {
   artifact: SourceArtifact | null;
   /** No function may have the stored answer under the reader's effective read tier (B02 R[4]). */
   held?: boolean;
+  /** The answer as it came, when `artifact` is what was generated from it because it is held. */
+  received?: SourceArtifact;
 }
 
 /**
@@ -419,7 +421,15 @@ export class ReadEngine {
       if (route.keep === undefined || !stored.held || stored.echoed) return null;
       const whole = this.#view(route.id, path, query, reply, null).json;
       if (whole === undefined) return null;
-      const json = partsAt(whole, route.keep), bytes = canonicalBytes(json);
+      const json = partsAt(whole, route.keep);
+      let bytes: Uint8Array;
+      try {
+        bytes = canonicalBytes(json);
+      } catch {
+        return null;
+      }
+      // Canonical text can spell out what the answer only held escaped, so a value the Hub sent is looked for again (B02 R[6]).
+      if (this.#o.redactor.echoedIn(bytes, 'application/json')) return null;
       let artifact: SourceArtifact;
       try {
         artifact = await this.#o.artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: 'hub.kept-parts@1', inputs: [`src:${reply.sha256}`], read_back: null } }, derivedSources: [reply.sha256], author: { user: null }, provenanceType: 'projected', visibility, name: `${read.name}/${key}/kept`, capturedAt: new Date(reply.endedAt).toISOString() });
@@ -427,7 +437,8 @@ export class ReadEngine {
         throw new ConnectorError('STORE_FAILED', `保存路由 ${route.id} 的留用部分失败`, { cause: error, detail: { route: route.id } });
       }
       if (artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact)) return null;
-      return { artifact, view: this.#view(route.id, path, query, { ...reply, bytes, sha256: artifact.body.sha256, json }, null) };
+      const { location: _held, ...exchange } = reply;
+      return { artifact, view: this.#view(route.id, path, query, { ...exchange, bytes, sha256: artifact.body.sha256, json }, null) };
     };
 
     const routePages=new Map<string,number>();
@@ -563,7 +574,7 @@ export class ReadEngine {
           const kept = await keptParts(route, path, query, reply, got.stored, planned.key);
           let view: ReadResponse = kept?.view ?? withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
           if (view.ok && kept === null && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
-          responses.set(planned.key, { view, url: reply.url, artifact: kept?.artifact ?? got.stored.artifact, held: kept === null && got.stored.held });
+          responses.set(planned.key, { view, url: reply.url, artifact: kept?.artifact ?? got.stored.artifact, held: kept === null && got.stored.held, ...(kept === null ? {} : { received: got.stored.artifact }) });
           entries.push(entry(view.ok, view.ok ? null : (view.error?.code ?? 'SOURCE_MALFORMED')));
         } catch (error) {
           const failed = asConnectorError(error, 'SOURCE_UNREACHABLE', 'transport');
@@ -731,7 +742,9 @@ export class ReadEngine {
         if(first.failure)throw first.failure;
         throw new ConnectorError(code, `原件请求 ${original} 没有成功：${first.view.error?.message ?? '无应答'}`, { layer: 'transport' });
       }
-      artifacts = [{ name: 'original', artifact: first.artifact }];
+      // What was generated from a held answer is never its original (B02 R[6]).
+      artifacts = [{ name: 'original', artifact: first.received ?? first.artifact }];
+      if (first.received !== undefined && read.project === undefined && first.artifact !== null) artifacts.push({ name: 'content', artifact: first.artifact });
       content = first.view.json !== undefined ? first.view.json : (first.view.text ?? null);
       complete = [...responses.keys()].every(key=>covered(key)) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
@@ -824,7 +837,7 @@ export class ReadEngine {
       try {
         if(!keys.length || keys.some(key=>typeof key!=='string' || !responses.has(key)))throw new ConnectorError('PROJECTION_FAILED','缺席观察没有指向本次读取的应答',{layer:'plugin'});
         const states=keys.map(key=>responses.get(key as string)!);
-        if(states.some(state=>!state.artifact || state.held===true || (!state.view.ok && !(state.view.error?.code==='SOURCE_ABSENT' && (state.view.status===404 || state.view.status===410)))))throw new ConnectorError('PROJECTION_FAILED','缺席根据未读到或不可读；恢复该来源后重读，不能把读不到算成没有',{layer:'plugin'});
+        if(states.some(state=>!state.artifact || state.held===true || state.received!==undefined || (!state.view.ok && !(state.view.error?.code==='SOURCE_ABSENT' && (state.view.status===404 || state.view.status===410)))))throw new ConnectorError('PROJECTION_FAILED','缺席根据未读到或不可读；恢复该来源后重读，不能把读不到算成没有',{layer:'plugin'});
         absent=SourceAbsent.parse({code:'SOURCE_ABSENT',system:subject.system,object:subject.id,observed_at:this.#o.now().toISOString(),responses:keys});
         content={...absent,message:`系统 ${subject.system} 里没有 ${subject.id}（读于 ${absent.observed_at}）`};
         const inputs=[...new Set(states.map(state=>`src:${state.artifact!.body.sha256}`))];
