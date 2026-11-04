@@ -297,6 +297,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
   const manualProducer = manualBinding === undefined ? undefined : product.product.producers.find((producer) => producer.id === manualBinding.producer);
   const directory = manualProducer === undefined ? null : declaredDirectory(manualProducer);
   let directoryRoot: unknown;
+  let directoryLayout: unknown;
   let directoryMains: { cli: unknown; app: unknown } | undefined;
   if (directory === 'several' && manualBinding) report.missing.push(gap('cli-manual', `生产器 ${manualBinding.producer} 有多份列表来源`, PACK_ONE));
   else if (directory && manualProducer) {
@@ -305,6 +306,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     else {
       const params = resolvedProduct.product.product.producers.find((producer) => producer.id === manualProducer.id)?.params;
       directoryRoot = params?.root;
+      directoryLayout = params?.layout;
       directoryMains = { cli: params?.main, app: params?.app_main };
     }
   }
@@ -366,7 +368,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
   const svnBlocked = report.missing.some((item) => item.detail === '没有启用的 svn 系统包资源');
   if (directory && directory !== 'several' && manualProducer && typeof directoryRoot === 'string' && !svnBlocked) {
     const bound = await bindDirectorySources({
-      producer: manualProducer, line: build.line, root: directoryRoot, ...(directoryMains ? { mains: directoryMains } : {}),
+      producer: manualProducer, line: build.line, root: directoryRoot, layout: directoryLayout, ...(directoryMains ? { mains: directoryMains } : {}),
       loader: knowledgeSourceLoader(context, by, 'knowledge seed'), maxBytes: context.limits.maxBuildBytes, next: againCommand(shown, args.line),
     });
     if (!bound.ok) report.missing.push(gap('cli-manual', publicText(bound.detail), bound.next));

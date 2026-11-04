@@ -24,12 +24,24 @@
         "FAMX": {
           "root": "${var:FAMX_ADOC_ROOT}",
           "main": "${var:FAMX_ADOC_MAIN}",
-          "app_main": "${var:FAMX_ADOC_APP_MAIN}"
+          "app_main": "${var:FAMX_ADOC_APP_MAIN}",
+          "layout": {
+            "line_dir": {
+              "components": 3,
+              "separator": "_"
+            }
+          }
         },
         "FAMY": {
           "root": "${var:FAMY_ADOC_ROOT}",
           "main": "${var:FAMY_ADOC_MAIN}",
-          "app_main": "${var:FAMY_ADOC_APP_MAIN}"
+          "app_main": "${var:FAMY_ADOC_APP_MAIN}",
+          "layout": {
+            "line_dir": {
+              "components": 3,
+              "separator": "_"
+            }
+          }
         }
       },
       "spec_index": false
@@ -168,6 +180,12 @@
         "licenses": "${var:FAMX_LICENSES}",
         "deployment_forms": "${var:FAMX_DEPLOYMENT_FORMS}",
         "app_main": "${var:FAMY_ADOC_APP_MAIN}",
+        "layout": {
+          "line_dir": {
+            "components": 3,
+            "separator": "_"
+          }
+        },
         "signature_structure": {
           "schema": "famx-adoc-signature-structure@1",
           "block": "paragraph",
@@ -227,6 +245,12 @@
         "licenses": "${var:FAMX_LICENSES}",
         "deployment_forms": "${var:FAMX_DEPLOYMENT_FORMS}",
         "app_main": "${var:FAMX_ADOC_APP_MAIN}",
+        "layout": {
+          "line_dir": {
+            "components": 3,
+            "separator": "_"
+          }
+        },
         "signature_structure": {
           "schema": "famx-adoc-signature-structure@1",
           "block": "paragraph",
@@ -333,7 +357,7 @@
     },
     {
       "name": "FAMX_ADOC_ROOT",
-      "description": "SVN directory template with original {line} or naming-derived {line_dir}; explicit null selects Markdown",
+      "description": "SVN directory template with the original {line} or {line_dir} spelled by the family's declared layout; explicit null selects Markdown",
       "schema": {
         "type": [
           "string",
@@ -367,7 +391,7 @@
     },
     {
       "name": "FAMY_ADOC_ROOT",
-      "description": "SVN directory template with original {line} or naming-derived {line_dir}; explicit null selects Markdown",
+      "description": "SVN directory template with the original {line} or {line_dir} spelled by the family's declared layout; explicit null selects Markdown",
       "schema": {
         "type": [
           "string",

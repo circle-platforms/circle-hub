@@ -156,7 +156,9 @@ const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), ext
 | `sources.ts`, `verify.ts`, `tree.ts`, `digest.ts`, `store.ts` | reads and refusals, fragment and path checks, the in-memory tree, normalisation, digests and text cutting, record I/O with schema checks |
 | `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` (`sync` and `seed`) |
 | `seed.ts` | `knowledge seed`: the three sources the product pack declares, `produceSeedling`, the Chinese report |
+| `directory-sources.ts` | the seed's adoc directory binding: the walk of the adoc-format skill (`packs/skill/adoc-format/api.ts`, the only pack the core imports for it), with the `{line_dir}` spelling taken from the manual producer's declared `layout` parameter (decision 136 item 9) |
 | `test-support.ts` | synthetic product pack with real pack functions (a list producer over synthetic mind maps among them), fake `PacksPort` and `ExternalReaderPort`, synthetic build site, a deterministic scale corpus |
+| `testing/feeding-bounds-fixture.ts` | test-only: loads the repository's synthetic product pack (`packs/product/famx`) and the mindmap-format skill as fixture data for the feeding bounds tests; no runtime module of this package imports a product pack |
 
 ## Records
 

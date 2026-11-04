@@ -1,0 +1,190 @@
+{
+ "flat book directory under {line}": {
+  "root": "90874af6f89236b00d0ec1326e7a9aaadc694ea9c21dfdeb79bb3fc661956b6f",
+  "entries": [
+   "e7a2344115e1d268bb136b807200b7fd11914af20ab93bcc95d2bc041978e95c",
+   "cbec11b3b0b4af1af19ba43477738f7c6eafbd4fc39aa32f2ae868c8437a04bf",
+   "79d726bea255958263b11c6d57ed67ccdccbbb10d568bc689f6639d756f3ee2e",
+   "7898b3810bef605ee590585afbdaef5666748caeba55dbddf9771318f0b6aa27",
+   "01b280ad6fc56370111a2e52e6a234521362d8fdd5b347d40705cf712ee2e7ae",
+   "7b8dcbb1f94506112e0ecb5580f078e06c1f5705e02622cde5c3df7bc8cba8d8",
+   "56675c0d85b63a44345b31b4c1ed8dd2246dee59aacef691c1a678a4ccb63dc8"
+  ],
+  "sources": [
+   {
+    "external": "site:tree:demo",
+    "sha256": "5b6c62c9d5b0f152b552e374be0391777a87f80b577806d22cd8c83c36592c18",
+    "parser": "xml@1"
+   },
+   {
+    "external": "site:tree:demo",
+    "sha256": "5b6c62c9d5b0f152b552e374be0391777a87f80b577806d22cd8c83c36592c18",
+    "parser": "xml@1"
+   },
+   {
+    "external": "svn:directory:synthetic%2F10.8.1",
+    "sha256": "b55e5dfc2c68435e946db246e31829c0eac4069a8783f3a643cd552447d047f3",
+    "parser": "json@1"
+   },
+   {
+    "external": "site:tree:demo",
+    "sha256": "5b6c62c9d5b0f152b552e374be0391777a87f80b577806d22cd8c83c36592c18",
+    "parser": "xml@1"
+   },
+   {
+    "external": "svn:directory:synthetic%2F10.8.1",
+    "sha256": "b55e5dfc2c68435e946db246e31829c0eac4069a8783f3a643cd552447d047f3",
+    "parser": "json@1"
+   },
+   {
+    "external": "svn:directory-at:17/synthetic%2F10.8.1%2Fchapters",
+    "sha256": "9b87cdabb253a096f3ae2b0237d0be2e20a9a235ef036b15f6cf0105fa17758b",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/synthetic%2F10.8.1%2Fbook.adoc",
+    "sha256": "7356ba087570b74be24e5ae9dd996cb69128ac62df63f69b0778808f56924913",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/synthetic%2F10.8.1%2Fapp.adoc",
+    "sha256": "1da13a2d4492a7d578c2f02bbba1057eee15e9d74c4ce142de3f152a99619289",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/synthetic%2F10.8.1%2Fchapters%2Fbody.adoc",
+    "sha256": "a7ca94fc56b642b597f03ee1ff78daeb7a33e41de7869f0723ddf86c140db060",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:directory-at:17/synthetic%2F10.8.1%2Fchapters",
+    "sha256": "9b87cdabb253a096f3ae2b0237d0be2e20a9a235ef036b15f6cf0105fa17758b",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/synthetic%2F10.8.1%2Fbook.adoc",
+    "sha256": "7356ba087570b74be24e5ae9dd996cb69128ac62df63f69b0778808f56924913",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/synthetic%2F10.8.1%2Fapp.adoc",
+    "sha256": "1da13a2d4492a7d578c2f02bbba1057eee15e9d74c4ce142de3f152a99619289",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/synthetic%2F10.8.1%2Fchapters%2Fbody.adoc",
+    "sha256": "a7ca94fc56b642b597f03ee1ff78daeb7a33e41de7869f0723ddf86c140db060",
+    "parser": "text@1"
+   }
+  ]
+ },
+ "two book directories under the three-component {line_dir}": {
+  "root": "d7865d144da7e69cb05a45daba6e1bfccd30d078dd2498849de57c67fc556940",
+  "entries": [
+   "e7a2344115e1d268bb136b807200b7fd11914af20ab93bcc95d2bc041978e95c",
+   "dd3c86f119ed207a3778db766bd18e6ac584e74626389c2ad47135b934e3631e",
+   "a90b8fef161492bc694df1663cc772789c1bbd334dfced0bb85ea0fcb75f54b3",
+   "1fff2ca65922b86bd52e25bb5054e57caf352a23bc0319f7815e533d56516033",
+   "2ce9580c3d5853a93512d6978216f11c5aefaa36c184e4d59b026be2eaeed6a7",
+   "1644fdd0f1c7250f2005cabcc3c954553d1eb370076d4c6ab3e09877b6a3c5cf",
+   "9e8d51bc00d329fbb01e003bf2776d98adff526e6fab4a2cd298f4a71fc35f4d"
+  ],
+  "sources": [
+   {
+    "external": "site:tree:demo",
+    "sha256": "5b6c62c9d5b0f152b552e374be0391777a87f80b577806d22cd8c83c36592c18",
+    "parser": "xml@1"
+   },
+   {
+    "external": "site:tree:demo",
+    "sha256": "5b6c62c9d5b0f152b552e374be0391777a87f80b577806d22cd8c83c36592c18",
+    "parser": "xml@1"
+   },
+   {
+    "external": "svn:directory:manual%2F10_7_0",
+    "sha256": "48d1b7220935ebcecbe6251d113454038ced3f549d5eff28605ea2eea603665c",
+    "parser": "json@1"
+   },
+   {
+    "external": "site:tree:demo",
+    "sha256": "5b6c62c9d5b0f152b552e374be0391777a87f80b577806d22cd8c83c36592c18",
+    "parser": "xml@1"
+   },
+   {
+    "external": "svn:directory:manual%2F10_7_0",
+    "sha256": "48d1b7220935ebcecbe6251d113454038ced3f549d5eff28605ea2eea603665c",
+    "parser": "json@1"
+   },
+   {
+    "external": "svn:directory-at:17/manual%2F10_7_0%2Fcli",
+    "sha256": "430a74a9266ff65bf798fff15d8bf2d973875ced1f147bc0c06b32f1e9217dd8",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:directory-at:17/manual%2F10_7_0%2Fcli%2Fchapters",
+    "sha256": "7a3f09627892983f41cfc1d93de6bcc52fbdb8b0f75668ecedd2af43931b752a",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fcli%2Fbook.adoc",
+    "sha256": "bc8d81588178d6eb47cdded900dd2acac04604ca8e97ce2fd65a4cb577261137",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fcli%2Fchapters%2Fone.adoc",
+    "sha256": "1f165a502cfe1c7afd853af05fcfd073f160c322fcb2d638c8e9f631e92de160",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fcli%2Fchapters%2Ftwo.adoc",
+    "sha256": "4c3a524a1e8b7baf765a5cf4d7b37ff4752ac3531f38aa7e301d1551b7303bef",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:directory-at:17/manual%2F10_7_0%2Fapp",
+    "sha256": "9c5b252bf6747d4090787b1a02af2293f72a0eb1a3c877d02eaf6ce6c2f77421",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fapp%2Fapp.adoc",
+    "sha256": "22b48e46931a2dbb6e16a77da2082d64ab0bc0f0040dd9edfc2158fde68322e0",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:directory-at:17/manual%2F10_7_0%2Fcli",
+    "sha256": "430a74a9266ff65bf798fff15d8bf2d973875ced1f147bc0c06b32f1e9217dd8",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:directory-at:17/manual%2F10_7_0%2Fcli%2Fchapters",
+    "sha256": "7a3f09627892983f41cfc1d93de6bcc52fbdb8b0f75668ecedd2af43931b752a",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fcli%2Fbook.adoc",
+    "sha256": "bc8d81588178d6eb47cdded900dd2acac04604ca8e97ce2fd65a4cb577261137",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fcli%2Fchapters%2Fone.adoc",
+    "sha256": "1f165a502cfe1c7afd853af05fcfd073f160c322fcb2d638c8e9f631e92de160",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fcli%2Fchapters%2Ftwo.adoc",
+    "sha256": "4c3a524a1e8b7baf765a5cf4d7b37ff4752ac3531f38aa7e301d1551b7303bef",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:directory-at:17/manual%2F10_7_0%2Fapp",
+    "sha256": "9c5b252bf6747d4090787b1a02af2293f72a0eb1a3c877d02eaf6ce6c2f77421",
+    "parser": "text@1"
+   },
+   {
+    "external": "svn:file:17/manual%2F10_7_0%2Fapp%2Fapp.adoc",
+    "sha256": "22b48e46931a2dbb6e16a77da2082d64ab0bc0f0040dd9edfc2158fde68322e0",
+    "parser": "text@1"
+   }
+  ]
+ }
+}

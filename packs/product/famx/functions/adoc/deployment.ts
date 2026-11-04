@@ -1,4 +1,4 @@
-// Product-owned SVN traversal and one independently memoized manual production per name family.
+// Product-owned binding of the adoc-format directory walk and one independently memoized manual production per name family.
 import type {ProducerInput,ProducerOutput,BuildInfo} from '../../../../../contracts/src/product.ts';
 import {PRODUCT_LINE} from '../naming.ts';
 import {manual} from '../producers.ts';
@@ -21,7 +21,7 @@ export function addAdocSources(build:BuildInfo,options:Record<string,unknown>,re
  for(const family of PRODUCT_LINE.names){
   const config=isRecord(settings[family])?settings[family]:{};
   try{
-   const root=directoryOf(config.root??null,build.line);if(root===null)continue;
+   const root=directoryOf(config.root??null,build.line,config.layout);if(root===null)continue;
    build.sources[adocRole(family,'meta')]=rootId(root);build.sources[adocRole(family,'files')]=[];
    const walk=booksOf(root,mainsOf(config.main,config.app_main),id=>{
     const page=read[id];if(page===undefined)return undefined;
@@ -42,7 +42,7 @@ export async function familyManual(input:ProducerInput):Promise<ProducerOutput>{
  if(typeof family!=='string'||!(PRODUCT_LINE.names as readonly string[]).includes(family))return stop('family_not_a_name','生产器需要 product.json names 中的一个名称族');
  if(!input.build)throw new TypeError('名称族手册构建生产缺少 build；下一步：按构建生产器声明绑定具体构建后重新生产');
  if(input.params.root===null)return manual(input);
- const root=directoryOf(input.params.root,input.build.line)!;
+ const root=directoryOf(input.params.root,input.build.line,input.params.layout)!;
  const meta=input.slots.meta;
  if(!meta||meta.parser!=='json@1')return stop('directory_unreadable',`名称族 ${family} 缺少固定修订号的目录清单`,`请管理员核对 SVN 资源和 ${family}_ADOC_ROOT 后重跑同步，旧根不动`);
  const given=input.lists?.files??[];

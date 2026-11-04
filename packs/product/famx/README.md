@@ -1090,10 +1090,14 @@ does not infer a brand from attribute names or borrow another family map. An exp
 not proof that deployment matches the source script. `overseas` is optional, and the generation policy always uses `webfonts!` (JSON `webfonts: false`). No other family's
 brand is added. Actual attribute names and file names are deployment facts supplied by the integrator, not guessed.
 
-Directory substitution is explicit: `{line}` always preserves the supplied version line literally. `{line_dir}` accepts
-one to three decimal components (at most nine digits each, including the pack naming grammar's canonical one-component line), applies the pack naming grammar `lineKey` to
-leading zeroes and trailing zero components, then pads to three components and joins them with underscores: `10.8` and `0010.008.000` become `10_8_0`, and `10.8.2` becomes `10_8_2`. No prefix search, version guessing or implicit rewrite is
-performed. Invalid or nonnumeric lines have a concrete correction exit.
+Directory substitution is explicit: `{line}` always preserves the supplied version line literally. `{line_dir}` is spelled
+by the `layout` this pack declares next to each family's root, both in `sync.options.adoc.<family>` and in the
+`manual-<family>` producer's params: `{"line_dir": {"components": 3, "separator": "_"}}`. The adoc-format skill accepts
+one to three decimal components (at most nine digits each), drops leading zeroes, pads with zero components to the declared
+three and joins them with the declared underscore: `10.8` and `0010.008.000` become `10_8_0`, `10.7` becomes `10_7_0` and
+`10.8.2` becomes `10_8_2`, as the naming grammar's `lineKey` plus padding gave before 1.7.47. No prefix search, version
+guessing or implicit rewrite is performed, and a `{line_dir}` root without the declaration is refused
+(`adoc-format.invalid_layout`). Invalid or nonnumeric lines have a concrete correction exit.
 
 Validation and expectation migration: the initial adoc suite had 95 tests, 24 failing. Old listing/monospace/table
 signature assertions are retained as chapter/citation and non-definition checks under the current structure rule;
@@ -1152,6 +1156,22 @@ The paired command must fully parse back to the same signature. Other parameter 
 cleanup order stay fixed; valid quoting is read through the existing command grammar. Conflicting pair declarations,
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
+
+### The directory walk moved to the adoc-format skill (1.7.47)
+
+Owner decision 136 item 9 (option two): the fixed-revision SVN directory walk that sync's source plan, the manual
+producer and the Hub's knowledge seed share is now the generic `packs/skill/adoc-format/functions/directory.ts`. The Hub
+core reaches it through `packs/skill/adoc-format/api.ts` and no longer imports this pack. A sandboxed function reads only
+its own pack, so this pack carries the generated copy `functions/generated/adoc-directory.ts` (written by
+`npm run gen:contracts`, checked by `npm run verify:contracts`); `functions/adoc/tree.ts` keeps only this pack's own
+refusal codes (`famx.adoc.*`) over it. What stays product-specific is declared, not coded: the `{line_dir}` spelling is
+the `layout` value above, and the walk no longer imports this pack's naming grammar.
+
+Refusals the walk itself raises (`invalid_root`, `invalid_line`, `directory_identity`, `directory_member`,
+`group_budget`, the walk's `missing_main`) now carry the skill's code namespace, `adoc-format.<code>`, with the same
+message and next action; this pack's own checks keep `famx.adoc.<code>`. The manual files' parser stays `text@1`, so run
+references are unchanged. Walk results and produced trees are byte-identical: the skill's
+`functions/migration.test.ts` and `functions/production.test.ts` compare them with outputs frozen before the move.
 
 ### Synthetic image extensions (1.7.45–1.7.46)
 

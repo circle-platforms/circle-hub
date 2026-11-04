@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "famx",
-  "version": "1.7.46",
+  "version": "1.7.47",
   "kind": "product",
   "title": "FAMX / FAMY（产品包）",
   "description": "FAMX 与 FAMY 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/adoc/deployment.ts",
-      "sha256": "7975f3d093cd3628656eb1a5cb6f4cf3d7afe8305ce893f8e5e5003b43c7b0a9",
-      "size": 8637
+      "sha256": "718a2c368bbfa96e8be771f417d123e8437a8ec4e848e88ebdece63eb790b34f",
+      "size": 8699
     },
     {
       "path": "functions/adoc/engine.ts",
@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/adoc/tree.ts",
-      "sha256": "e21e12225cfee0cf504eb42c7b697fa884c29cdc04528c190c65fdfb258d5a35",
-      "size": 9104
+      "sha256": "2a218f3409ba2aaba3d80e9758f4c5a50a97671819c7a47dbe3631e2c97d162a",
+      "size": 1196
     },
     {
       "path": "functions/adoc/types.ts",
@@ -150,6 +150,11 @@
       "path": "functions/fixed-bugs.ts",
       "sha256": "1da2c71b6da21527ee4ff30210b22aaaf7342b03e2cc741f03dffab7b077b8f4",
       "size": 3261
+    },
+    {
+      "path": "functions/generated/adoc-directory.ts",
+      "sha256": "339de193b2fc9be1fa778b16e61e98a1d263740e7404021425e2214b9cc1a47a",
+      "size": 12383
     },
     {
       "path": "functions/generated/command-grammar.ts",
@@ -238,8 +243,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "130f1800c40e5e1fe9719856fe1202a52bbb500cac643e3295cf2a73ffa0666c",
-      "size": 13497
+      "sha256": "9835cb3476d0c34617ec5663b8f3fb9ec95dc3371f1e7f8638a4d10187c016fa",
+      "size": 14079
     },
     {
       "path": "tables/bed-surface.json",
