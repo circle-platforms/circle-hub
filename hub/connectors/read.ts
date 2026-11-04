@@ -780,7 +780,7 @@ export class ReadEngine {
           artifacts.push({ name: derived.name, artifact });
           // A derived artifact no function may have under the effective tier (the scanner flagged what the projection made)
           // gives no content.
-          const kept = artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
+          const kept = (artifact.body.read_tier === RETAIN_ONLY && !await this.#acceptedByResource(runtime, artifact)) || await this.#held(principal, artifact);
           if (kept) heldRecords.add(artifact.digest);
           if (kept && warnings.length < 50) warnings.push(`派生件 ${derived.name} 按“${labelOf('read_tier', RETAIN_ONLY)}”保存（凭据），嵌套读取拿不到它的内容`);
           const value = kept ? null : derived.json !== undefined ? derived.json : valueOf(bytesOf, derived.media_type);

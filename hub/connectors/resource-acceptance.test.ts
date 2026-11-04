@@ -25,6 +25,13 @@ test('hits of a detector the resource names no longer hold an answer, each with 
     assert.ok(content);
     const bytes = await hub.records.artifacts.trustedBytes(content.artifact.body.sha256);
     assert.match(new TextDecoder().decode(bytes!), /登录后页面空白/);
+    // HTML entities hide the hit in the answer: the projected text has one the answer does not, so no source covers it.
+    const projected = await hub.hub.connectors.reader.read('plm:bug:4949', context);
+    assert.ok(projected.ok, JSON.stringify(projected));
+    const text = projected.artifacts.find((artifact) => artifact.name === 'content')!;
+    const source = await hub.records.artifacts.source(hub.admin.principal, text.artifact.body.sha256, { consumer: 'function', record: text.artifact.digest });
+    assert.ok(source?.bytes, 'a hit only the projection has is accepted under the same decision');
+    assert.match(new TextDecoder().decode(source.bytes), /导入配置失败/);
   } finally {
     await hub.close();
   }
