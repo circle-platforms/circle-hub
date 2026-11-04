@@ -2,16 +2,15 @@
 // safe cursor, because positions are handed out before commit: a transaction holding a position can commit after a newer one
 // was read, and `seq > cursor` would never see it. So a cursor has two marks. Below `settled` nothing can still appear; above
 // it every read looks again, and `seen` keeps a record from being returned twice. `settled` moves to the position of the last
-// horizon once every transaction open at that horizon has ended (AppendHorizon). `settled` is one read behind even when no
-// transaction looks open: a writer that has its position and not yet its transaction id is in no snapshot, and this look finds
-// it once it has committed. An open transaction delays `settled`, never what is returned.
+// horizon once every transaction open at that horizon has ended (AppendHorizon). Only a later horizon can show that, so `settled`
+// is one read behind even when nothing is open. An open transaction delays `settled`, never what is returned.
 import { setTimeout as delay } from 'node:timers/promises';
 import type { AppendedEntry, AppendedQuery, RecordStore } from './api.ts';
 
 export interface AppendCursor {
   /** Every record at or below this position is visible, and was read or came before this cursor. */
   settled: number;
-  /** The last horizon read: its position and the first transaction not started then. */
+  /** The last horizon read: its position and its `next`. */
   held: { position: number; next: number };
   /** The positions above `settled` already returned. */
   seen: Set<number>;

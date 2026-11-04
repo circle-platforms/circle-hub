@@ -75,9 +75,11 @@ export class PgRecordStore implements RecordStore {
       const personalOwner=input.personalOwner??personalRecordOwner(kind.data,input.body)??(registered?capturedOwner:null);
       const accountOwned=input.accountOwned||isPersonalPackRecord(kind.data)||!!(registered&&!(input.body as {personal_scope?:unknown})?.personal_scope&&input.personalOwner===undefined);
       const storedBody=personalOwner?await this.personalPayloads.bind(await (accountOwned?this.personalPayloads.account(personalOwner,t):this.personalPayloads.scope(personalOwner,t)),digest,meta,body,t):body;
+      // The WHERE gives this transaction its id before the row takes its `seq`, so no writer holds a position no horizon can see
+      // (AppendHorizon), not even while the conflict check waits here for another transaction writing the same digest.
       const inserted = await this.#db.query<{ seq: string; id: string }>(
         `INSERT INTO records (id, digest, kind, schema, provenance, created_at, body, size)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (digest) DO NOTHING RETURNING seq, id`,
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 WHERE pg_current_xact_id() IS NOT NULL ON CONFLICT (digest) DO NOTHING RETURNING seq, id`,
         [newId('rcd'), digest, meta.kind, meta.schema, meta.provenance, createdAt, storedBody, size],
         t,
       );
@@ -297,11 +299,13 @@ export class PgRecordStore implements RecordStore {
     return new Map(result.rows.map(row => [row.value, row.digest]));
   }
 
-  async appendHorizon(tx?: Transaction): Promise<AppendHorizon> {
-    // One statement, so one snapshot: pg_current_snapshot() is the snapshot this statement reads max(seq) under.
+  async appendHorizon(): Promise<AppendHorizon> {
+    // One statement, so one snapshot: pg_current_snapshot() is the snapshot this statement reads max(seq) under. `next` is the id
+    // this statement takes after that snapshot, so every id handed out before it is below. pg_snapshot_xmax would not do: it is
+    // one past the last id to complete, and an open transaction can be above it. No `tx`: an id taken earlier is no such bound.
     const row = (await this.#db.query<{ position: string; oldest: string; next: string }>(
-      `SELECT (SELECT coalesce(max(seq), 0) FROM records)::text AS position, pg_snapshot_xmin(s)::text AS oldest, pg_snapshot_xmax(s)::text AS next
-         FROM pg_current_snapshot() AS s`, [], tx)).rows[0];
+      `SELECT (SELECT coalesce(max(seq), 0) FROM records)::text AS position, pg_snapshot_xmin(s)::text AS oldest, pg_current_xact_id()::text AS next
+         FROM pg_current_snapshot() AS s`)).rows[0];
     return { position: safePosition(row.position), oldest: safePosition(row.oldest), next: safePosition(row.next) };
   }
 

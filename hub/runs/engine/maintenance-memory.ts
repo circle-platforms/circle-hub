@@ -35,7 +35,7 @@ export interface MaintenanceMemory {
   requests: RequestWork;
   /** Submission deadlines still ahead, by run: passing one is work no record shows. */
   deadlines: Map<string, number>;
-  /** Request deadlines still ahead, by request, with where the request is found. */
+  /** Request deadlines no round has taken in yet, by request, with where the request is found. */
   due: Map<string, { at: number; run?: string; pack?: string }>;
   /** Unanswered source dispositions, by request, with their run: a new source or authorization may let them proceed. */
   sources: Map<string, string>;
@@ -137,7 +137,8 @@ export function noteVisit(memory: MaintenanceMemory, run: RunRecord, at: number)
 export function noteRequests(memory: MaintenanceMemory, requests: readonly RequestView[], now: number): void {
   for (const request of requests) {
     const open = request.answered_by === null, due = Date.parse(request.due);
-    if (open && due > now) memory.due.set(request.record, { at: due, run: request.run, pack: request.pack_digest }); else memory.due.delete(request.record);
+    // A deadline that has passed is left to noteDeadlines: this list may be one the escalation sweep does not read.
+    if (!open) memory.due.delete(request.record); else if (due > now) memory.due.set(request.record, { at: due, run: request.run, pack: request.pack_digest });
     if (open && request.run && request.kind === 'disposition' && request.sources?.length) memory.sources.set(request.record, request.run); else memory.sources.delete(request.record);
     if (!open && request.kind === 'repair' && request.pack_digest) memory.repaired.add(request.pack_digest);
   }

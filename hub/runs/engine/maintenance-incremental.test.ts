@@ -164,6 +164,39 @@ test('a pack repair answered between rounds reaches the runs of the old version,
   assert.equal((await told(run)).length, 1, 'and nobody hears twice');
 });
 
+test('a request falling due during a round is escalated once, by that round or the next, whichever of its lists held the request', async (t) => {
+  const w = await world(t);
+  const { h } = w;
+  const digest = h.review.pack.digest;
+  const run = await storeQuietRun(h), swept = await storeQuietRun(h);
+  const due = w.at(5 * MINUTE);
+  const repair = await w.requests.write(requestOf(run, h.admin.id, FAR_AHEAD, '合成包缺陷', { kind: 'repair', pack_digest: digest }));
+  const bound = await w.requests.write(requestOf(run, h.alice.id, due, '合成绑定运行和包', { pack_digest: digest }));
+  const { run: _run, ...fields } = requestOf(run, h.alice.id, due, '合成只绑定包');
+  const packOnly = await w.requests.write({ ...fields, pack_digest: digest });
+  const inScope = await w.requests.write(requestOf(swept, h.alice.id, due, '合成运行有新记录'));
+  await w.requests.answer(repair.digest, run.digest);
+  await w.settle();
+  // A new run on the repaired version: the repair sweep lists all of that version's requests. The visits outlast the deadline.
+  await storeQuietRun(h);
+  const at = w.at(0);
+  await putAction(h.kit.store, { action: 'validate', run: swept.body.run, inputs: [], startedAt: at, endedAt: at, acceptance: null, codes: [], detail: { synthetic: true } });
+  const { rootOfBuild } = h.knowledge;
+  h.knowledge.rootOfBuild = async () => { w.advance(6 * MINUTE); return null; };
+  t.after(() => { h.knowledge.rootOfBuild = rootOfBuild; });
+  await w.round();
+  h.knowledge.rootOfBuild = rootOfBuild;
+  const first = await w.requests.all();
+  assert.equal(escalationsOf(first, inScope.digest).length, 1, 'the sweeps of that round looked at this run');
+  assert.equal(escalationsOf(first, bound.digest).length + escalationsOf(first, packOnly.digest).length, 0, 'and not at the other run or at the pack');
+  await w.round();
+  const next = await w.requests.all();
+  assert.equal(escalationsOf(next, bound.digest).length, 1, 'bound to a run');
+  assert.equal(escalationsOf(next, packOnly.digest).length, 1, 'bound to a pack alone');
+  assert.equal(escalationsOf(next, inScope.digest).length, 1, 'and not again');
+  assert.deepEqual([bound, packOnly, inScope].filter((request) => w.memory.due.has(request.digest)), [], 'handled, so no later round is sent to them');
+});
+
 /** A run with a source disposition on bytes the Hub read and kept as retain-only, because they hold a credential. */
 async function retained(w: Awaited<ReturnType<typeof world>>) {
   const { h } = w;
