@@ -378,6 +378,18 @@ test('the release running now always has its line, however many releases came be
   assert.match(section(await shown(w.admin), '按发布'), /部署 当前 已运行 9 天/, 'a start the database refused leaves the release its line');
 });
 
+test('a deploy after a process that outlived the retention compares with it, and that row says how long it ran', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'stop', boot: 'boot-long', release: PREVIOUS, uptime: 20 * DAY_MS });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 900, end: NOW.getTime() - 2 * HOUR_MS, release: PREVIOUS });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 2400, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 1 小时 0 分 12 2\.4 秒 慢了 1\.5 秒/);
+  assert.match(releases, /部署 运行到 [^；]+；只算保留期内 12 900 毫秒 未知/);
+  assert.doesNotMatch(releases, /运行 0 毫秒/, 'its ending says how long it ran');
+});
+
 test('a release with no release before it in the events does not blame the retention alone', async (t) => {
   const w = await world(t);
   await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });

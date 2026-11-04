@@ -77,11 +77,12 @@ export interface CurveQuery {
 
 /**
  * A release as the process events know it, by its latest run: a deploy of an older commit brings an earlier release back under
- * its own id, and that starts a run of its own, as any other release's start does. A restart goes on with the run it is in.
+ * its own id, and that starts a run of its own, as any other release's start does. A restart goes on with the run it is in. A
+ * process counts by whatever is left of it: retention takes the start of one that outlived it, and a start can be refused.
  */
 export interface ReleaseRun {
   release: string;
-  /** The first start of that run the retention still holds; with no start at all, the earliest event of the release. */
+  /** When the first process of that run the events still hold began: its start, or what its ending says; failing both, that ending. */
   first_start: string;
   /** Its latest event of any kind. */
   last_event: string;
@@ -193,13 +194,14 @@ export function healthReader(db: HealthDatabase): HealthReader {
     async releases(by, { limit, events, current = null }) {
       requireAdmin(by);
       const { rows } = await db.query(
-        `WITH e AS (SELECT seq,release,at,kind FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2),
-              runs AS (SELECT DISTINCT ON (release) release,at,previous
-                         FROM (SELECT seq,release,at,lag(release) OVER (ORDER BY seq) AS previous FROM e WHERE kind='start') s
-                        WHERE previous IS DISTINCT FROM release ORDER BY release,seq DESC)
-         SELECT e.release,coalesce(r.at,min(e.at)) AS first_start,max(e.at) AS last_event,r.previous,count(*) OVER () AS total
-           FROM e LEFT JOIN runs r ON r.release=e.release GROUP BY e.release,r.at,r.previous
-          ORDER BY e.release IS NOT DISTINCT FROM $3 DESC,first_start DESC LIMIT $1`,
+        `WITH e AS (SELECT boot,release,at,kind,uptime_ms,last_seen_at FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2),
+              p AS (SELECT release,coalesce(min(at) FILTER (WHERE kind='start'),min(coalesce(last_seen_at,at)-uptime_ms*interval '1 millisecond'),min(at)) AS began,max(at) AS last_event FROM e GROUP BY boot,release),
+              runs AS (SELECT DISTINCT ON (release) release,began,previous
+                         FROM (SELECT release,began,lag(release) OVER (ORDER BY began) AS previous FROM p) s
+                        WHERE previous IS DISTINCT FROM release ORDER BY release,began DESC)
+         SELECT p.release,r.began AS first_start,max(p.last_event) AS last_event,r.previous,count(*) OVER () AS total
+           FROM p JOIN runs r ON r.release=p.release GROUP BY p.release,r.began,r.previous
+          ORDER BY p.release IS NOT DISTINCT FROM $3 DESC,first_start DESC LIMIT $1`,
         [limit, events, current],
       );
       return { rows: rows.map((row) => ({ release: String(row.release), first_start: time(row.first_start)!, last_event: time(row.last_event)!, previous: row.previous === null ? null : String(row.previous) })), total: rows.length === 0 ? 0 : Number(rows[0]!.total) };
