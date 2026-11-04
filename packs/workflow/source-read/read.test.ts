@@ -82,26 +82,6 @@ export class FakeExternal implements ExternalReaderPort {
     if (this.unreachable.has(id)) {
       return { ok: false, id, reason: 'connection to origin http://192.0.2.10:80 refused' };
     }
-    if (this.absent.has(id)) {
-      const parts = id.split(':');
-      return {
-        ok: true,
-        id,
-        revision: null,
-        artifacts: [],
-        manifest: 'synthetic',
-        absent: {
-          code: 'SOURCE_ABSENT',
-          system: parts[0],
-          object: id,
-          observed_at: new Date(0).toISOString(),
-        },
-      };
-    }
-    const object = this.objects.get(id);
-    if (object === undefined) {
-      return { ok: false, id, reason: `synthetic system answered not found for ${id}` };
-    }
     const visibility = { readers: [context.principal.id], admins: true, packs: [], shareable: false };
     const ingest = (bytes: Uint8Array, mediaType: string, name: string) =>
       this.#artifacts.ingest({
@@ -113,6 +93,15 @@ export class FakeExternal implements ExternalReaderPort {
         visibility,
         name,
       });
+    if (this.absent.has(id)) {
+      const absent = { code: 'SOURCE_ABSENT' as const, system: id.split(':')[0], object: id, observed_at: new Date(0).toISOString() };
+      const observation = await ingest(new TextEncoder().encode(JSON.stringify(absent)), 'application/json', 'content');
+      return { ok: true, id, revision: null, artifacts: [{ name: 'content', artifact: observation }], manifest: 'synthetic', absent };
+    }
+    const object = this.objects.get(id);
+    if (object === undefined) {
+      return { ok: false, id, reason: `synthetic system answered not found for ${id}` };
+    }
     const artifacts = [{ name: 'original', artifact: await ingest(object.bytes, object.mediaType, id) }];
     if (object.meta !== undefined) {
       artifacts.push({
@@ -414,15 +403,15 @@ describe('source-read workflow runs', { skip }, () => {
     assert.ok(slots.includes('defect') && slots.includes('manual_file') && slots.includes('svn_file'));
   });
 
-  it('refuses start_run when external ID is absent (SOURCE_ABSENT)', async () => {
+  it('binds the observation when the system has no such object, and names what else it reads there', async () => {
     const detail = await w.service.startRunDetailed(
       w.alice,
       { pack: 'source-read', inputs: { defect: { external: 'plm:bug:9999' } } },
       call(),
     );
-    assert.equal(detail.answer.call_result, 'error');
-    assert.equal(detail.answer.run, undefined);
-    assert.ok(detail.answer.errors.some((e) => e.code === 'SOURCE_ABSENT'));
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    assert.match(detail.answer.run!.sources.find((s) => s.slot === 'defect')!.label!, /里没有 plm:bug:9999（读于/);
+    assert.match(detail.gaps!.find((g) => g.code === 'SOURCE_ABSENT')!.message, /plm:story/);
   });
 
   it('refuses start_run when document is not found in external system (SOURCE_UNAVAILABLE)', async () => {

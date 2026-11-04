@@ -836,19 +836,6 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   return {
     content: [{ type: 'text', text }],
     structuredContent: value,
-    isError: value.call_result === 'error' && !(await absentOptionalInputs(deps, call, name, args, value.errors)),
+    isError: value.call_result === 'error',
   };
-}
-
-/**
- * Whether a refused start_run was refused only because an external system answered "no such object" for an optional input.
- * The system did what was asked and that answer is the result, so the tool did not fail; the structured answer and the call
- * log still say SOURCE_ABSENT. A required input stays an error: the run cannot go without it.
- */
-export async function absentOptionalInputs(deps: ServerDeps, call: Pick<ToolCall, 'principal'>, name: string, args: Record<string, unknown> | undefined, errors: readonly ProtocolError[]): Promise<boolean> {
-  if (name !== 'start_run' || errors.length === 0 || typeof args?.pack !== 'string') return false;
-  const slots = errors.map((error) => (error.code === 'SOURCE_ABSENT' ? /^\/inputs\/([^/]+)/.exec(error.path ?? '')?.[1] : undefined));
-  if (slots.includes(undefined)) return false;
-  const pack = await deps.workflows.forUser(call.principal, args.pack, typeof args.pack_space === 'string' ? args.pack_space : undefined);
-  return pack !== null && slots.every((slot) => pack.workflow.inputs.find((input) => input.slot === slot)?.required === false);
 }

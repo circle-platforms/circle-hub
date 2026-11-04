@@ -25,7 +25,7 @@ import { SandboxError, callPackFunction } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError } from './errors.ts';
 import {isPersonalSpace,personalExternalAllowed,personalCapabilityError} from '../packs/personal-capabilities.ts';
-import { withRevision, type BoundSource } from './inputs.ts';
+import { absenceLabel, withRevision, type BoundSource } from './inputs.ts';
 import { identityOf, sourceReader } from './readers.ts';
 import { isObject } from './util.ts';
 
@@ -265,7 +265,7 @@ export async function bindExpected(
       await ctx.deps.knowledge.feeding?.observeSourceBounded(user,chosen.artifact.body.sha256,{composition,product:context.product,root:context.root,run:runId,line:context.line,sourceRecord:chosen.artifact.digest,metaSource:meta?.artifact.body.sha256,metaRecord:meta?.artifact.digest,readManifest:read.manifest,requested:wanted.external});
       const reference = `src:${chosen.artifact.body.sha256}`;
       if (out.sources.some((s) => s.reference === reference&&s.artifact===chosen.artifact.digest)) continue;
-      out.sources.push({ reference,artifact:chosen.artifact.digest,...(Sha256.safeParse(read.manifest).success?{read_manifest:read.manifest}:{}),...(meta?{meta_artifact:meta.artifact.digest}:{}),role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? `系统 ${read.absent.system} 里没有 ${read.absent.object}（读于 ${read.absent.observed_at}）` : title ?? wanted.reason });
+      out.sources.push({ reference,artifact:chosen.artifact.digest,...(Sha256.safeParse(read.manifest).success?{read_manifest:read.manifest}:{}),...(meta?{meta_artifact:meta.artifact.digest}:{}),role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? absenceLabel(read.absent) : title ?? wanted.reason });
     } catch (error) {
       miss(describe(error));
     }

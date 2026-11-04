@@ -753,6 +753,7 @@ async function startFresh(
   }
   if (stored.digest !== runDigest) throw new Error(`run record digest ${stored.digest} differs from the one computed before storing it (${runDigest})`);
   const fn = workflow.workflow.projection;
+  const absences=bound.flatMap(({absence})=>absence?[absence]:[]);
   await putAction(store, {
     action: 'parse',
     run: runId,
@@ -768,7 +769,7 @@ async function startFresh(
       warnings: projection.warnings.slice(0, 100),
       expected: expected.sources.map((s) => ({ external: s.external ?? null, reference: s.reference, role: s.role })),
       unavailable: expected.unavailable,
-      expected_warnings: expected.warnings.slice(0, MAX_WARNINGS),
+      expected_warnings: [...absences, ...expected.warnings].slice(0, MAX_WARNINGS),
       handover,
     },
   });
@@ -781,7 +782,7 @@ async function startFresh(
     runRecord: stored.digest,
     unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),
     // A run without items says so in the answer and carries the projection's notes; with items the projection warnings stay in the parse action.
-    gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...expected.warnings]),
+    gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...absences, ...expected.warnings]),
   };
   } catch (error) {
     // The granted leases of a start that did not store its run are released at once (compensation): an acquire that

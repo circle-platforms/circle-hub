@@ -127,15 +127,16 @@ describe('T2 平台事实端到端验收', () => {
       }
     });
 
-    it('counter-example 1: non-existent ID fails start_run with SOURCE_ABSENT / SOURCE_UNAVAILABLE', async () => {
+    it('counter-example 1: a non-existent ID binds the observation that the system has no such object (D05 R[3])', async () => {
       const res = await client.call('start_run', {
         pack: 'source-read',
         inputs: {
           defect: { external: 'plm:bug:99999999' },
         },
       });
-      assert.equal(res.out.call_result, 'error');
-      assert.ok(res.out.errors.some((e) => e.code === 'SOURCE_ABSENT' || e.code === 'SOURCE_UNAVAILABLE'));
+      assert.equal(res.out.call_result, 'ok', JSON.stringify(res.out.errors));
+      assert.match(res.out.run?.sources.find((s) => s.slot === 'defect')?.label ?? '', /里没有 plm:bug:99999999（读于/);
+      assert.match(res.text, /SOURCE_ABSENT/);
     });
 
     it('counter-example 2: undeclared route / external type is rejected with SUBMISSION_SCHEMA_VIOLATION', async () => {
