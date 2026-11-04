@@ -472,7 +472,7 @@ const startRun: Handler = async (deps, call, args) => {
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
   if (answer.call_result === 'ok') {
     try {
-      const accepted = await acceptedBy(deps, call.principal, answer);
+      const accepted = await step('list-packs', () => acceptedBy(deps, call.principal, answer));
       if (accepted.length > 0) answer = { ...answer, accepted_by: accepted };
     } catch (error) {
       call.context.adminNote(`start_run: the packs accepting the read sources were not listed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
@@ -482,7 +482,7 @@ const startRun: Handler = async (deps, call, args) => {
     const summary = answer.run as { pack?: unknown; pack_digest?: unknown } | undefined;
     if (typeof summary?.pack === 'string' && isSha256(summary.pack_digest)) {
       try {
-        const loaded = await deps.workflows.forUser(call.principal, summary.pack);
+        const loaded = await step('load-workflow', () => deps.workflows.forUser(call.principal, summary.pack as string));
         if (loaded !== null && loaded.pack.digest === summary.pack_digest) {
           const tools = localToolsOf({ id: loaded.pack.id, version: loaded.pack.version, digest: loaded.pack.digest, manifest: loaded.manifest });
           if (tools !== null) answer = { ...answer, local_tools: tools };

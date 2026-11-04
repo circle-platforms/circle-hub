@@ -101,6 +101,11 @@ Step names and types: `authenticate` and `check-permission`, `validate-submissio
 `slow-query` (event). Only meaningful steps: `append-record` wraps the call log line, the stored submission and the
 validation result, not every record, and a database query is never a step.
 
+The phases of the two costliest requests are spans too, so a slow one says where it went: `load-workflow`, `freeze-skills`,
+`resolve-target`, `bind-inputs`, `read-context`, `project-items`, `bind-expected`, `evaluate-run` and `list-packs` in
+`start_run`, and `list-runs`, `load-tasks`, `list-requests`, `read-call-log`, `read-systems`, `read-lines` and `read-storage`
+in `serve-overview`.
+
 ## Storage and writer
 
 Migration 27, table `trace_spans`, one row per step; primary key `(trace_id, span_id)`. Indexes: `trace_spans_started`

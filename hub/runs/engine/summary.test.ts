@@ -25,6 +25,10 @@ test('summary heads equal full detail for owners, administrators and partial rea
   });
  };
  await compare();assert.equal(taskResultOf((await h.service.getRunSummary!(h.admin,body.run))!),'delivered_pending');
+ const findBatch=h.kit.store.findBatch!.bind(h.kit.store);let resultReads=0;
+ h.kit.store.findBatch=((queries:Parameters<typeof findBatch>[0],tx?:Parameters<typeof findBatch>[1])=>{resultReads+=queries.filter(query=>query.key==='runs.result.run').length;return findBatch(queries,tx);}) as typeof findBatch;
+ await h.service.getRunSummary!(h.admin,body.run);h.kit.store.findBatch=findBatch;
+ assert.equal(resultReads,1,'one read of the results serves the production and the head: a console page asks this for every task');
  const secret=await h.kit.artifacts.ingest({bytes:Buffer.from('合成私人结论依据'),mediaType:'text/plain',origin:{upload:{session:null}},author:{user:h.alice.id},provenanceType:'declared',visibility:{readers:[h.alice.id],admins:false,packs:[],shareable:false}});
  const hidden=structuredClone(result);hidden.submission='a'.repeat(64);hidden.partitions.delivered[0].location='src:'+secret.body.sha256;
  await putResult(h.kit.store,hidden,new Date(body.started_at).toISOString());await compare();

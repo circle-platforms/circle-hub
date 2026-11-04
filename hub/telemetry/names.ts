@@ -41,6 +41,8 @@ const COMMAND_STEPS = [
 /** What a request or a round does inside: the steps worth a row of their own. */
 const INNER_STEPS = [
   'authenticate', 'check-permission', 'read-source', 'parse-document', 'run-function', 'run-check', 'validate-submission', 'append-record', 'compute-view', 'slow-query',
+  'load-workflow', 'freeze-skills', 'resolve-target', 'bind-inputs', 'read-context', 'project-items', 'bind-expected', 'evaluate-run', 'list-packs',
+  'list-runs', 'load-tasks', 'list-requests', 'read-call-log', 'read-systems', 'read-lines', 'read-storage',
 ] as const;
 
 /** Every step name, in one list. `serve-http` is the root of a request outside MCP, the console and sync. */
