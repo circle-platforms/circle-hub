@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { after, before, test, type TestContext } from 'node:test';
 import pg from 'pg';
 import { createHealth, INFLIGHT_FILE, type RequestEnd, type RequestInfo, type RequestLog } from '../health/api.ts';
+import { emptyValues, insertSample } from '../health/store.ts';
+import { Database, createPool } from '../records/db.ts';
 import { FileKeyProvider, openRecords } from '../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import type { AssemblyModule, CliIo } from './api.ts';
@@ -103,6 +105,24 @@ test('a tool name that is no name does not reach the log as one', async (t) => {
   const logged = await lines();
   assert.equal(logged.filter((line) => line.t === 'note').at(-1)?.name, 'tools/call');
   assert.ok(!JSON.stringify(logged).includes(ARGUMENT));
+});
+
+test('a lone surrogate in what a client declares stops no resource sample and costs its initialize no call-log line', async (t) => {
+  const { server, url, health } = await observed(t);
+  const clientInfo = { name: 'synthetic\ud83d', version: '1.\ud83d', platform: 'os\ud83d' };
+  const response = await mcp(url, server.admin.token, { ...INITIALIZE, params: { ...INITIALIZE.params, clientInfo } });
+  assert.equal(response.status, 200);
+  await response.text();
+  assert.ok(response.headers.get('mcp-session-id'), 'the session is issued as for any other name');
+  const { total, byClient } = health.sessions.counts();
+  assert.deepEqual([total, byClient], [1, { 'synthetic\ufffd': 1 }]);
+  const db = new Database(createPool(server.records.database, 1));
+  t.after(() => db.end());
+  await insertSample(db, { ...emptyValues(), sampled_at: '2026-11-04T08:00:00.000Z', boot: 'boot-surrogate', interval_ms: null, failed_reads: [], dropped_samples: 0, mcp_sessions: total, mcp_sessions_by_client: byClient });
+  const stored = (await db.query('SELECT mcp_sessions_by_client FROM resource_samples WHERE boot = $1', ['boot-surrogate'])).rows;
+  assert.deepEqual(stored.map((row) => row.mcp_sessions_by_client), [byClient], 'the jsonb column takes the sample');
+  const lines = (await server.records.callLog.query(server.admin.principal, { userId: server.admin.user.id, limit: 50 })).items;
+  assert.equal(lines.filter((line) => line.tool === 'initialize').length, 1, 'one line per call (B08)');
 });
 
 test('a request refused before its body is read keeps its entry, without a caller it never proved', async (t) => {

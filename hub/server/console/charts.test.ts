@@ -52,6 +52,16 @@ test('a curve groups its read-outs, draws its marks and a known value off the li
  assert.match(figure,/ch-tableview/);assert.match(text(figure.slice(figure.indexOf('<table'))),/甲1乙9/);assert.match(figure,/ch-tip/);
 });
 
+test('a read-out covers its points by what the curve keeps: the largest, or with least the smallest',()=>{
+ const base:Curve={title:'合成曲线',labels:['甲','乙','丙','丁'],series:[{label:'合成值',values:[9,1,null,4]}],max:10,ticks:[0,10],tick:String,value:value=>value+' 个',xLabels:[[0,'甲'],[3,'丁']],hoverEvery:2};
+ const most=curve(base).text;
+ assert.match(most,/<b>9 个<\/b>/);assert.match(most,/aria-label="甲；9 个 合成值"/);assert.doesNotMatch(most,/<b>1 个<\/b>/);
+ const least=curve({...base,least:true}).text;
+ assert.match(least,/<b>1 个<\/b>/,'the dip the curve keeps');assert.match(least,/aria-label="甲；1 个 合成值"/);assert.doesNotMatch(least,/<b>9 个<\/b>/);
+ assert.match(least,/<b>4 个<\/b>/,'a point nobody read is left out, not read as the least');
+ assert.match(curve({...base,least:true,series:[{label:'合成值',values:[null,null,4,4]}]}).text,/<b>未知<\/b>/);
+});
+
 test('compact times retain the original instant and full tooltip across calendar and year boundaries',()=>{
  const now=new Date(2026,0,1,13,4,5),today=new Date(2026,0,1,10,24,0).toISOString(),yesterday=new Date(2025,11,31,22).toISOString();
  assert.equal(relativeTime(today,now),'今天 10:24');assert.equal(relativeTime(yesterday,now),'昨天');

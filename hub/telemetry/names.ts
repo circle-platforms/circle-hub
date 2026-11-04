@@ -45,7 +45,10 @@ const INNER_STEPS = [
   'list-runs', 'load-tasks', 'list-requests', 'read-call-log', 'read-systems', 'read-lines', 'read-storage',
 ] as const;
 
-/** Every step name, in one list. `serve-http` is the root of a request outside MCP, the console and sync. */
+/**
+ * Every step name, in one list. `serve-http` is the root of an exchange that is no call: a request outside MCP, the console and
+ * sync, or one on /mcp that gets no call-log line (a GET, a notification, a request refused before it was identified).
+ */
 export const STEP_NAMES = [...MCP_STEPS, ...CONSOLE_STEPS, ...SYNC_STEPS, ...BACKGROUND_STEPS, ...COMMAND_STEPS, ...INNER_STEPS, 'serve-http'] as const;
 export type StepName = (typeof STEP_NAMES)[number];
 

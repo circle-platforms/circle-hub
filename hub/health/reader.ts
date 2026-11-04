@@ -75,10 +75,16 @@ export interface CurveQuery {
   boot?: string;
 }
 
-/** A release as the process events know it: the first start the retention still holds and the latest event of any kind. */
+/**
+ * One run of a release as the process events know it, which is what a deploy starts: a deploy of an older commit brings an
+ * earlier release back under its own id, and that is a run of its own. A restart goes on with the run it is in. A process counts
+ * by whatever is left of it: retention takes the start of one that outlived it, and a start can be refused.
+ */
 export interface ReleaseRun {
   release: string;
+  /** When the first process of the run the events still hold began: its start, or what its ending says; failing both, that ending. */
   first_start: string;
+  /** Its latest event of any kind. */
   last_event: string;
 }
 
@@ -90,7 +96,7 @@ export interface HealthReader {
   eventCount(by: Principal, input: { limit: number }): Promise<number>;
   /** Exactly `points` points, oldest first. */
   curve(by: Principal, input: CurveQuery): Promise<CurvePoint[]>;
-  /** Newest first, from the latest `events` events; `total` is how many releases those name. */
+  /** The newest run first, from the latest `events` events; `total` is how many runs those hold. */
   releases(by: Principal, input: { limit: number; events: number }): Promise<{ rows: ReleaseRun[]; total: number }>;
 }
 
@@ -186,9 +192,11 @@ export function healthReader(db: HealthDatabase): HealthReader {
     async releases(by, { limit, events }) {
       requireAdmin(by);
       const { rows } = await db.query(
-        `SELECT release,coalesce(min(at) FILTER (WHERE kind='start'),min(at)) AS first_start,max(at) AS last_event,count(*) OVER () AS total
-           FROM (SELECT release,at,kind FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2) e
-          GROUP BY release ORDER BY first_start DESC LIMIT $1`,
+        `WITH e AS (SELECT boot,release,at,kind,uptime_ms,last_seen_at FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2),
+              p AS (SELECT release,coalesce(min(at) FILTER (WHERE kind='start'),min(coalesce(last_seen_at,at)-uptime_ms*interval '1 millisecond'),min(at)) AS began,max(at) AS last_event FROM e GROUP BY boot,release),
+              g AS (SELECT *,row_number() OVER (ORDER BY began)-row_number() OVER (PARTITION BY release ORDER BY began) AS run FROM p)
+         SELECT release,min(began) AS first_start,max(last_event) AS last_event,count(*) OVER () AS total
+           FROM g GROUP BY release,run ORDER BY first_start DESC LIMIT $1`,
         [limit, events],
       );
       return { rows: rows.map((row) => ({ release: String(row.release), first_start: time(row.first_start)!, last_event: time(row.last_event)! })), total: rows.length === 0 ? 0 : Number(rows[0]!.total) };

@@ -96,7 +96,7 @@ const REPORT = { file: 'report.20261104.040230.4242.0.001.json', readable: true,
 async function events(db: Database, w: Pick<World, 'server' | 'memberUser'>, older: number): Promise<void> {
   await db.query(
     `INSERT INTO process_events(at,kind,boot,pid,release,node_version,heap_limit_bytes) SELECT $1::timestamptz-i*interval '1 minute','start','boot-older-'||i,4242,$2,'v24.0.0',2147483648 FROM generate_series(1,$3::int) AS g(i)`,
-    [iso(NOW.getTime() - 5 * DAY_MS), OLDEST, older],
+    [iso(NOW.getTime() - 6 * DAY_MS), OLDEST, older],
   );
   await event(db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'start', boot: 'boot-previous', release: PREVIOUS });
   await event(db, { at: NOW.getTime() - DAY_MS, kind: 'stop', boot: 'boot-previous', release: PREVIOUS, uptime: DAY_MS });
@@ -242,6 +242,19 @@ test('the curve of a crash marks it, and a table goes with each curve', async (t
   assert.doesNotMatch(page, /NaN|Infinity|undefined/);
 });
 
+test('the read-out of the free disk shows the dip its curve keeps, as its table does', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1);
+  await w.db.query(`UPDATE resource_samples SET data_free_bytes=1073741824 WHERE sampled_at>$1 AND sampled_at<=$2`, [iso(NOW.getTime() - 5 * HOUR_MS - 300_000), iso(NOW.getTime() - 5 * HOUR_MS)]);
+  const page = await shown(w.admin);
+  const start = page.indexOf('近 24 小时 · 可用空间（GB）');
+  const figure = page.slice(start, page.indexOf('</figure>', start));
+  assert.equal(figure.match(/<b>1\.0 GB<\/b>/g)?.length, 1, 'one half hour holds the dip');
+  assert.ok((figure.match(/aria-label="[^"]*1\.0 GB 可用空间"/g) ?? []).length === 1, 'and so does what a keyboard reads');
+  assert.match(figure, /<b>411\.6 GB<\/b>/, 'the other half hours are as they were');
+  assert.match(page, /<td[^>]*>1\.0 GB<\/td>/, 'the table of the hours agrees');
+});
+
 test('the background table names what costs most, from the roots of its rounds', async (t) => {
   const w = await world(t);
   await everything(w);
@@ -292,17 +305,135 @@ test('a client that holds a session and made no call in the window still has a l
   assert.match(clients, /client-one 未知 MCP 未知 3 0 无调用/);
 });
 
+test('a client named after a member of Object.prototype has its own count of connections, never an inherited one', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1);
+  const names = ['constructor', 'toString', 'valueOf', '__proto__'];
+  for (const client of names) await roots(w.db, { name: 'get_nodes', n: 1, every: 1000, client, version: '1.0' });
+  const clients = section(await shown(w.admin), '按客户端');
+  for (const name of names) assert.match(clients, new RegExp(`${name} 未知 MCP 1\\.0 0 1 10 毫秒`), name);
+  assert.doesNotMatch(clients, /native code|\[object Object\]/);
+  await w.db.query(`UPDATE resource_samples SET mcp_sessions_by_client='{"constructor":2,"__proto__":1}'`);
+  const open = section(await shown(w.admin), '按客户端');
+  assert.match(open, /constructor 未知 MCP 1\.0 2 1 10 毫秒/);
+  assert.match(open, /__proto__ 未知 MCP 1\.0 1 1 10 毫秒/);
+  await w.db.query(`UPDATE resource_samples SET mcp_sessions_by_client=$1`, [JSON.stringify(Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`client-${index}`, 1])))]);
+  assert.match(section(await shown(w.admin), '按客户端'), /constructor 未知 MCP 1\.0 未知 1 10 毫秒/, 'past the bound of the sample');
+});
+
 test('by release: the p95 of each over the end of its own run, what changed, and the id out of the way', async (t) => {
   const w = await world(t);
   await everything(w);
   const page = await shown(w.admin);
   const releases = section(page, '按发布');
-  assert.match(releases, /MCP 调用 · 每个发布运行的最后 24 小时，只算 14 天保留期内/);
+  assert.match(releases, /MCP 调用 · 每次部署运行的最后 24 小时，只算 14 天保留期内/);
   assert.match(releases, /发布 运行时段 调用 p95 比上一个发布 发布号/);
   assert.match(releases, /部署 当前 已运行 23 小时 59 分 42 2\.4 秒 慢了 1\.5 秒/);
   assert.match(releases, /运行 24 小时 0 分 12 900 毫秒 没有变化/);
   assert.match(releases, /12 900 毫秒 未知/, 'the release before the oldest is past the retention');
   assert.ok(!visible(page).includes(CURRENT), 'a release id stays behind 查看');
+});
+
+test('an exchange on /mcp that is no call adds no client, no call and nothing to a p95', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  const client = { client: 'client-one', version: '1.0', platform: 'os-one', release: CURRENT };
+  await roots(w.db, { name: 'get_nodes', n: 20, every: 1000, ms: 2000, ...client });
+  await roots(w.db, { name: 'handle-mcp', n: 1, every: 1000, ms: 2000, ...client });
+  await roots(w.db, { name: 'serve-http', n: 80, every: 1000, ms: 1, ...client });
+  await roots(w.db, { name: 'serve-http', n: 40, every: 1000, ms: 1, release: CURRENT });
+  const page = await shown(w.admin);
+  const clients = section(page, '按客户端');
+  assert.match(clients, /client-one os-one MCP 1\.0 未知 21 2\.0 秒/);
+  assert.doesNotMatch(clients, /未声明名字/, 'every client that called declared a name');
+  assert.match(section(page, '按发布'), /已运行 1 小时 0 分 21 2\.0 秒/);
+});
+
+test('going back to an earlier release: a line of its own that comes first, and every line compares with the run below it', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - 3 * DAY_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
+  await event(w.db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'stop', boot: 'boot-first', release: CURRENT, uptime: DAY_MS });
+  await event(w.db, { at: NOW.getTime() - 2 * DAY_MS, kind: 'start', boot: 'boot-between', release: PREVIOUS });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'stop', boot: 'boot-between', release: PREVIOUS, uptime: 2 * DAY_MS - HOUR_MS });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 2400, end: NOW.getTime() - 2 * DAY_MS - HOUR_MS, release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 900, end: NOW.getTime() - 2 * HOUR_MS, release: PREVIOUS });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 400, end: NOW.getTime() - 1000, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 1 小时 0 分 12 400 毫秒 快了 500 毫秒/);
+  assert.match(releases, /部署 运行 47 小时 0 分 12 900 毫秒 快了 1\.5 秒/, 'the run it replaced, though that release came back');
+  assert.match(releases, /部署 运行 24 小时 0 分 12 2\.4 秒 未知/);
+  assert.ok(releases.indexOf('当前') < releases.indexOf('47 小时 0 分'), 'the release running now comes first');
+  assert.equal(releases.split('当前').length, 2, 'only the run that is going on is the current one');
+});
+
+test('a release that came back after a short run of another keeps its two runs apart: each counts its own calls, and the one between compares with what it replaced', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - 3 * HOUR_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
+  await event(w.db, { at: NOW.getTime() - 2 * HOUR_MS, kind: 'stop', boot: 'boot-first', release: CURRENT, uptime: HOUR_MS });
+  await event(w.db, { at: NOW.getTime() - 2 * HOUR_MS, kind: 'start', boot: 'boot-between', release: PREVIOUS });
+  await event(w.db, { at: NOW.getTime() - 10 * MINUTE_MS, kind: 'stop', boot: 'boot-between', release: PREVIOUS, uptime: 110 * MINUTE_MS });
+  await event(w.db, { at: NOW.getTime() - 10 * MINUTE_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 2400, end: NOW.getTime() - 2 * HOUR_MS - MINUTE_MS, release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 900, end: NOW.getTime() - HOUR_MS, release: PREVIOUS });
+  await roots(w.db, { name: 'get_nodes', n: 5, every: MINUTE_MS, ms: 400, end: NOW.getTime() - 1000, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 10 分 0 秒 5 400 毫秒 快了 500 毫秒/, 'only the calls of this run, though the earlier ones are within 24 hours');
+  assert.match(releases, /部署 运行 1 小时 50 分 12 900 毫秒 快了 1\.5 秒/, 'against what it replaced, not what came after it');
+  assert.match(releases, /部署 运行 1 小时 0 分 12 2\.4 秒 未知/);
+});
+
+test('the release running now always has its line, however many releases came between', async (t) => {
+  const w = await world(t);
+  const others = ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000', '111111111111', '222222222222'];
+  await event(w.db, { at: NOW.getTime() - 9 * DAY_MS, kind: 'start', boot: 'boot-first', release: CURRENT });
+  for (const [index, release] of others.entries()) await event(w.db, { at: NOW.getTime() - (8 - index) * DAY_MS, kind: 'start', boot: `boot-${release}`, release });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, release: CURRENT });
+  const returned = section(await shown(w.admin), '按发布');
+  assert.match(returned, /部署 当前 已运行 1 小时 0 分 3 10 毫秒/);
+  assert.match(returned, /显示 5 \/ 共 8/);
+});
+
+test('a process whose start the database refused is a run of its own, and every run below keeps what it replaced', async (t) => {
+  const w = await world(t);
+  const [fourth, fifth] = ['dddddddddddd', 'eeeeeeeeeeee'];
+  const ran: [string, number, number][] = [[fourth, 5, 2400], [CURRENT, 4, 900], [PREVIOUS, 3, 400], [fifth, 2, 200]];
+  for (const [release, days, ms] of ran) {
+    await event(w.db, { at: NOW.getTime() - days * DAY_MS, kind: 'start', boot: `boot-${days}`, release });
+    await event(w.db, { at: NOW.getTime() - (days - 1) * DAY_MS, kind: 'stop', boot: `boot-${days}`, release, uptime: DAY_MS });
+    await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms, end: NOW.getTime() - (days - 1) * DAY_MS - HOUR_MS, release });
+  }
+  // The process serving the page started at NOW, and its release ran before: only its start is missing.
+  await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, ms: 100, end: NOW.getTime() + 3000, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 0 毫秒 3 100 毫秒 快了 100 毫秒/, 'its own calls, not those of its earlier run, and against what ran last');
+  assert.match(releases, /12 200 毫秒 快了 200 毫秒/);
+  assert.match(releases, /12 400 毫秒 快了 500 毫秒/, 'what it replaced is the earlier run of the release that is running now');
+  assert.match(releases, /12 900 毫秒 快了 1\.5 秒/);
+  assert.match(releases, /12 2\.4 秒 未知/);
+  assert.equal(releases.split('当前').length, 2, 'that earlier run has ended');
+});
+
+test('a deploy after a process that outlived the retention compares with it, and that row says how long it ran', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'stop', boot: 'boot-long', release: PREVIOUS, uptime: 20 * DAY_MS });
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 900, end: NOW.getTime() - 2 * HOUR_MS, release: PREVIOUS });
+  await roots(w.db, { name: 'get_nodes', n: 12, every: MINUTE_MS, ms: 2400, release: CURRENT });
+  const releases = section(await shown(w.admin), '按发布');
+  assert.match(releases, /部署 当前 已运行 1 小时 0 分 12 2\.4 秒 慢了 1\.5 秒/);
+  assert.match(releases, /部署 运行到 [^；]+；只算保留期内 12 900 毫秒 未知/);
+  assert.doesNotMatch(releases, /运行 0 毫秒/, 'its ending says how long it ran');
+});
+
+test('a release with no release before it in the events does not blame the retention alone', async (t) => {
+  const w = await world(t);
+  await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
+  await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, release: CURRENT });
+  const page = await shown(w.admin);
+  assert.match(page, /title="进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了"/);
+  assert.deepEqual(wordingProblems(page), []);
 });
 
 test('observation itself: the writer of this process and the samples of the day', async (t) => {
@@ -369,6 +500,43 @@ test('a crash with nothing running says that, and one known only from its report
   assert.equal(w.page.statements.filter(({ text }) => text.includes('boot=$5')).length, 0);
 });
 
+test('a request older than the curves is told as that: no heap of the curves is its start, and no line is promised', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1, 'boot-crashed', CRASH - 1000, 30, 10);
+  const crash = async (seconds: number): Promise<void> => {
+    await w.db.query('DELETE FROM process_events');
+    await event(w.db, { at: CRASH + 24_000, kind: 'abnormal_exit', boot: 'boot-crashed', uptime: 20 * HOUR_MS, last: CRASH, reports: [REPORT], requests: [{ trace: null, origin: 'mcp', name: 'get_nodes', user: w.memberUser.user.id, started_at: iso(CRASH - seconds * 1000) }] });
+  };
+  await crash(720);
+  const page = await shown(w.admin);
+  const crashes = section(page, '崩溃和重启');
+  assert.match(crashes, /运行最久的是 get_nodes ?（合成成员），崩溃时已运行 12 分 0 秒。它在崩溃前 5 分钟之前开始，开始时堆 ?未知 ?，最后一个样本 962\.3 MB。/);
+  assert.match(crashes, /崩溃前 5 分钟 get_nodes ?开始于 .*，早于这 5 分钟，图上没有它的竖线。/);
+  assert.doesNotMatch(crashes, /它开始时堆 962|竖线是/);
+  assert.doesNotMatch(page, /请求开始/);
+  assert.deepEqual(wordingProblems(page), []);
+  await crash(302);
+  const rounded = await shown(w.admin);
+  assert.match(section(rounded, '崩溃和重启'), /图上没有它的竖线/, 'a start just before the window is not rounded onto its edge');
+  assert.doesNotMatch(rounded, /请求开始/);
+  await crash(300);
+  const edge = await shown(w.admin);
+  assert.match(section(edge, '崩溃和重启'), /它开始时堆 962\.3 MB，最后一个样本 962\.3 MB。.*竖线是 get_nodes ?开始的时间/);
+  assert.match(edge, /请求开始/, 'the first moment of the window is on the curves');
+});
+
+test('with its samples unreadable a request older than the window still says when it started', async (t) => {
+  const w = await world(t, (page) => {
+    const health = healthReader(page);
+    return { health: { ...health, curve: async (by, query) => { if (query.boot !== undefined) throw new Error('synthetic refused read'); return health.curve(by, query); } } };
+  });
+  await samples(w.db, 1);
+  await event(w.db, { at: CRASH + 24_000, kind: 'abnormal_exit', boot: 'boot-crashed', uptime: 20 * HOUR_MS, last: CRASH, reports: [], requests: [{ trace: null, origin: 'mcp', name: 'get_nodes', user: null, started_at: iso(CRASH - 720_000) }] });
+  const crashes = section(await shown(w.admin), '崩溃和重启');
+  assert.match(crashes, /它在崩溃前 5 分钟之前开始，开始时堆 ?未知 ?。/);
+  assert.match(crashes, /这次没有读出崩溃之前的样本/);
+});
+
 test('an unusual reason is shown as it stands, as what the report said', async (t) => {
   const w = await world(t);
   await event(w.db, { at: CRASH, kind: 'abnormal_exit', boot: 'boot-crashed', reports: [{ ...REPORT, event: 'Something <new> happened' }], requests: [] });
@@ -400,6 +568,27 @@ test('a read that fails leaves its part 未知 and the rest of the page as it is
   assert.ok(!page.includes('synthetic refused read'), 'the reason is for the log');
 });
 
+test('a failed read of the curves leaves the count of failed samples 未知, and only the read that holds it decides', async (t) => {
+  /** Fails the read of the day's curves or of the summary; everything else reads as usual. */
+  const failing = (what: 'curve' | 'summary') => (page: RecordingDatabase): Partial<HealthPageSources> => {
+    const health = healthReader(page);
+    return { health: { ...health, [what]: async () => { throw new Error('synthetic refused read'); } } };
+  };
+  const curve = await world(t, failing('curve'));
+  await everything(curve);
+  const observed = section(await shown(curve.admin), '观测自身');
+  assert.match(observed, /读取失败的样本 未知 个/);
+  assert.match(observed, /没有写入的样本 0 个/, 'that number comes from the summary, which was read');
+  assert.ok(curve.logs.some((line) => line.includes('运行状况页读取失败（曲线）')));
+
+  const summary = await world(t, failing('summary'));
+  await everything(summary);
+  await summary.db.query(`UPDATE resource_samples SET failed_reads=ARRAY['pool'] WHERE sampled_at>$1`, [iso(NOW.getTime() - HOUR_MS)]);
+  const known = section(await shown(summary.admin), '观测自身');
+  assert.match(known, /读取失败的样本 12 个/);
+  assert.match(known, /没有写入的样本 未知 个/);
+});
+
 test('a Hub that was given no readers says 未知 everywhere, never 0', async (t) => {
   const server = await createTestServer({ postgres, now: () => NOW });
   t.after(() => server.close());
@@ -419,7 +608,7 @@ test('what does not fit is counted: 显示 N / 共 M', async (t) => {
   const requests = Array.from({ length: 200 }, (_, index) => ({ trace: null, origin: 'mcp', name: 'get_nodes', user: null, started_at: iso(CRASH - 1000 - index) }));
   await event(w.db, { at: CRASH + 30_000, kind: 'abnormal_exit', boot: null, reports: [], requests, omitted: 57 });
   for (let index = 0; index < 34; index += 1) await roots(w.db, { name: 'get_nodes', n: 1, every: 1000, client: `client-extra-${index}` });
-  for (const [index, release] of ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000'].entries()) await event(w.db, { at: NOW.getTime() - (index + 1) * 1000, kind: 'start', boot: `boot-release-${index}`, release });
+  for (const [index, release] of ['dddddddddddd', 'eeeeeeeeeeee', 'ffffffffffff', '000000000000'].entries()) await event(w.db, { at: NOW.getTime() - (index + 7) * DAY_MS, kind: 'start', boot: `boot-release-${index}`, release });
   const page = await shown(w.admin);
   assert.match(section(page, '崩溃和重启'), /显示 20 \/ 共 257 · 先开始的在前/);
   assert.match(section(page, '崩溃和重启'), /当时在处理 257 个请求/);
@@ -431,6 +620,40 @@ test('a crash loop does not make the count of events long', async (t) => {
   const w = await world(t);
   await w.db.query(`INSERT INTO process_events(at,kind,boot,pid) SELECT $1::timestamptz-i*interval '1 second','start','boot-loop-'||i,4242 FROM generate_series(1,10002) AS g(i)`, [iso(NOW.getTime())]);
   assert.match(section(await shown(w.admin), '崩溃和重启'), /显示 20 \/ 共 10,000 以上/);
+});
+
+test('a client past the rows shown or past the read bound is not a client with no calls: its calls are 未知', async (t) => {
+  const quiet = /client-one 未知 MCP 未知 3 未知 未知/;
+  const cut = await world(t);
+  await samples(cut.db, 1);
+  for (let index = 0; index < 31; index += 1) await roots(cut.db, { name: 'get_nodes', n: 2, every: 1000, client: `client-extra-${index}` });
+  await roots(cut.db, { name: 'initialize', n: 1, every: 1000, client: 'client-one', end: NOW.getTime() - HOUR_MS });
+  const page = await shown(cut.admin);
+  assert.match(page, /title="这个客户端的调用不在读到的范围里"/);
+  assert.doesNotMatch(page, /近 24 小时没有调用/);
+  assert.deepEqual(wordingProblems(page), []);
+  const shownRows = section(page, '按客户端');
+  assert.match(shownRows, /显示 30 \/ 共 32/);
+  assert.match(shownRows, quiet);
+  assert.doesNotMatch(shownRows, /无调用/);
+
+  const bound = await world(t, (page) => ({ traces: new TraceReader(page, { roots: 5 }) }));
+  await samples(bound.db, 1);
+  await roots(bound.db, { name: 'initialize', n: 1, every: 1000, client: 'client-one', end: NOW.getTime() - HOUR_MS });
+  await roots(bound.db, { name: 'get_nodes', n: 6, every: 1000, client: 'client-two' });
+  const bounded = section(await shown(bound.admin), '按客户端');
+  assert.match(bounded, /只算最新的 50,000 次/);
+  assert.match(bounded, quiet);
+  assert.doesNotMatch(bounded, /无调用/);
+});
+
+test('with every call read, a client holding a session and no row made no call, past the rows of other entries too', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1);
+  for (let index = 0; index < 31; index += 1) await roots(w.db, { name: 'sync-state', origin: 'sync', n: 1, every: 1000, client: `client-extra-${index}` });
+  const clients = section(await shown(w.admin), '按客户端');
+  assert.match(clients, /显示 30 \/ 共 31/);
+  assert.match(clients, /client-one 未知 MCP 未知 3 0 无调用/, 'MCP rows come first: only rows of another entry were cut');
 });
 
 test('an aggregate that stops at its bound says so and from when', async (t) => {

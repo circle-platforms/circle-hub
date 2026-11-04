@@ -46,7 +46,8 @@ asked (`AsyncLocalStorage.snapshot()`), or that work runs in the wrong trace. `h
 
 | Entry | Origin | Root name |
 | --- | --- | --- |
-| `POST /mcp` | `mcp` | the tool, `initialize`, `list-tools` or `handle-mcp` |
+| `/mcp`, a request that gets a call-log line | `mcp` | the tool, `initialize`, `list-tools` or `handle-mcp` (a ping, a tool nobody has, a refusal at the transport) |
+| `/mcp`, an exchange that gets none (a GET, a notification, a request refused before it was identified) | `mcp` | `serve-http` |
 | anything under `/console` | `console` | `serve-<first path segment>` when that is a page area, else `serve-console`; `stream-console` for the live updates |
 | `/api/sync/…` | `sync` | `sync-<route>`, `serve-sync` before a route is known |
 | any other path (`/healthz`, OAuth, local tools, run export) | `console` | `serve-http` |
@@ -67,7 +68,9 @@ inside a request or a stop). One-time work before `serve` listens is not a trace
 Each row carries the user, session, run, client name, version and platform, release and environment. Client name and version
 are what MCP `initialize` declared (decision 137), read through `declaredClient`, else `latestDeclaredClient` for a connection
 without a session, and kept per connection in memory (`hub/server/declared-clients.ts`), so a call costs no extra read once
-its connection is known; a sync request takes what the same token declared. They are declarations and nothing more. The
+its connection is known; a sync request takes what the same token declared. A request refused before any handler ran (a
+DELETE, a 415, a body that never arrived) is read the same way: it is a call of the client that declared itself, and only a
+connection that declared nothing has no name. They are declarations and nothing more. The
 release is the process's `release.json`, the environment the class in the deployment settings; a data root without
 settings has none.
 
@@ -150,10 +153,11 @@ there (`capped`):
 | --- | --- | --- | --- |
 | `background` | `trace_spans_root_names`, a range per task | a window, `MAX_ROUNDS_READ` a task, the closed list of tasks | at most one row a task |
 | `clients` | `trace_spans_roots` | a window, `MAX_ROOTS_READ` | at most `limit` rows, and how many groups there were |
-| `releases` | `trace_spans_mcp_releases` | the retention, the last `windowMs` of each release's run, `MAX_RELEASE_CALLS_READ` a release | one row a release asked for |
+| `releases` | `trace_spans_mcp_releases` | the retention, the times of each run and its last `windowMs`, `MAX_RELEASE_CALLS_READ` a run | one row a run asked for |
 
 `clients` leaves out what no client calls: background rounds, CLI commands, `stream-console` (it lasts as long as a page stays
-open) and `serve-http`. A task's gap is the median of its round starts, so hours with no page open do not stretch the tick of
+open) and `serve-http`. `releases` leaves out `serve-http` too, so on the MCP entry both count the lines of the call log and
+nothing else (decision 147: all MCP calls, not per tool). A task's gap is the median of its round starts, so hours with no page open do not stretch the tick of
 `poll-console`. `TIMED_BACKGROUND_STEPS` names the rounds a timer starts; the others run when asked and have no interval.
 
 ## Decisions and limits

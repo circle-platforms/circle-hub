@@ -18,6 +18,7 @@ import { fullTime, size } from './format.ts';
 import { code, emptyBlock, href, html, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
+import type { HubFacts } from './settings.ts';
 import { card, chip, clock, count, dot, duration, kpi, when } from './ui.ts';
 
 /** What the page reads; `serve` gives one. A Hub without it says 未知 everywhere, not 0. */
@@ -95,7 +96,7 @@ interface Line {
 
 type CurveHead = Pick<Curve, 'title' | 'note' | 'max' | 'ticks' | 'tick' | 'value' | 'marks'>;
 
-/** A 24-hour curve from the points of the reader; its table shows the hours, each the largest of its points (`least`: the smallest). */
+/** A 24-hour curve from the points of the reader; its read-outs show the half hours and its table the hours, each the largest of its points (`least`: the smallest). */
 function dayCurve(points: readonly CurvePoint[], now: Date, lines: readonly Line[], head: CurveHead, least = false): Html {
   const stamps = points.map((point) => Date.parse(point.at));
   const fold = (values: readonly (number | null)[]): number | null => {
@@ -110,6 +111,7 @@ function dayCurve(points: readonly CurvePoint[], now: Date, lines: readonly Line
     series: lines.map((line) => ({ label: line.label, ...(line.className ? { className: line.className } : {}), values: points.map((point) => point[line.field]) })),
     xLabels: axis,
     hoverEvery: POINTS_PER_READOUT,
+    least,
     table: {
       head: ['时间', ...lines.map((line) => `${line.label}（${least ? '最小' : '最大'}）`)],
       rows: hours.map((slice) => [pointLabel(Date.parse(slice[0]!.at), now), ...lines.map((line) => {
@@ -272,7 +274,7 @@ function crashCurves(event: StoredProcessEvent, points: readonly CurvePoint[], r
   const labels = Array.from({ length: CRASH_POINTS + 1 }, (_, index) => clock(start + index * step));
   const xLabels = [[0, labels[0]!], [CRASH_POINTS / 2, labels[CRASH_POINTS / 2]!], [CRASH_POINTS, labels[CRASH_POINTS]!]] as const;
   const index = requestAt === null ? null : Math.round((requestAt - start) / step);
-  const marks = index === null || index < 0 || index > CRASH_POINTS ? [] : [{ index, label: '请求开始', side: index < CRASH_POINTS / 3 ? ('right' as const) : ('left' as const), low: true }];
+  const marks = index === null ? [] : [{ index, label: '请求开始', side: index < CRASH_POINTS / 3 ? ('right' as const) : ('left' as const), low: true }];
   const line = (field: Line['field']): (number | null)[] => [...points.map((point) => point[field]), null];
   const rows = (values: readonly (number | null)[], text: (value: number) => string) => labels.map((label, at) => [label, values[at] === null || values[at] === undefined ? '未知' : text(values[at]!)]);
   const heap = line('heap_used_bytes'), delay = line('event_loop_delay_max_ms'), gc = line('gc_pause_ms');
@@ -295,26 +297,33 @@ function crashBody({ event, points, names }: CrashDetail): Html {
   const requests = event.requests;
   const first = requests?.[0];
   const firstAt = first === undefined ? null : Date.parse(first.started_at);
+  const crashAt = Date.parse(crashTime(event));
+  // The samples read are the window before the crash: a start earlier than that has neither a heap in them nor a place on the curves.
+  const early = firstAt !== null && firstAt < crashAt - CRASH_WINDOW_MS;
+  const markedAt = firstAt !== null && !early && firstAt <= crashAt ? firstAt : null;
   const sampled = points?.filter((point) => point.samples > 0) ?? [];
   const lastSample = sampled.at(-1);
   const heapAt = (at: number): number | null => points?.find((point) => Date.parse(point.at) + CRASH_WINDOW_MS / CRASH_POINTS > at)?.heap_used_bytes ?? null;
   const lastHeap = sampled.findLast((point) => point.heap_used_bytes !== null)?.heap_used_bytes ?? null;
-  const startHeap = firstAt === null ? null : heapAt(firstAt);
+  const startHeap = markedAt === null ? null : heapAt(markedAt);
+  const heaps = early
+    ? html`它在崩溃前 5 分钟之前开始，开始时堆 ${UNKNOWN}${lastHeap === null ? '' : `，最后一个样本 ${size(lastHeap)}`}。`
+    : startHeap === null || lastHeap === null ? '' : `它开始时堆 ${size(startHeap)}，最后一个样本 ${size(lastHeap)}。`;
   const who = first?.user === null || first?.user === undefined ? UNKNOWN : names?.get(first.user) ?? UNKNOWN;
   const finding = first === undefined
     ? requests === null
       ? html`<p class="ch-finding">当时在处理什么：${UNKNOWN}。在途请求日志里没有这个进程，这不等于当时没有请求；主机重启会清掉这个日志。</p>`
       : html`<p class="ch-finding">当时没有在处理的请求。</p>`
-    : html`<p class="ch-finding">运行最久的是 ${code(first.name)}（${who}），崩溃时已运行 ${duration(Math.max(0, Date.parse(crashTime(event)) - firstAt!))}。${startHeap === null || lastHeap === null ? '' : `它开始时堆 ${size(startHeap)}，最后一个样本 ${size(lastHeap)}。`}</p>`;
+    : html`<p class="ch-finding">运行最久的是 ${code(first.name)}（${who}），崩溃时已运行 ${duration(Math.max(0, crashAt - firstAt!))}。${heaps}</p>`;
   const total = (requests?.length ?? 0) + event.requests_omitted;
   const running = requests === null || total === 0 ? '' : html`<div class="ch-section"><h3 class="ch-figure-title">当时在处理 ${count(total)} 个请求</h3><p class="ch-meta">显示 ${count(Math.min(requests.length, REQUESTS_SHOWN))} / 共 ${count(total)} · 先开始的在前</p>${requestTable(event, names)}</div>`;
   const report = html`<div class="ch-section"><h3 class="ch-figure-title">崩溃报告</h3>${event.reports === null ? html`<p class="ch-meta">崩溃报告文件夹读不出来，有没有报告：${UNKNOWN}</p>` : event.reports.length === 0 ? html`<p class="ch-meta">没有崩溃报告</p>` : ''}${crashFacts(event, lastSample)}</div>`;
-  const legend = first === undefined ? '' : html`竖线是 ${code(first.name)} 开始的时间（${stamp(firstAt!)}）。`;
+  const legend = first === undefined ? '' : markedAt !== null ? html`竖线是 ${code(first.name)} 开始的时间（${stamp(firstAt!)}）。` : early ? html`${code(first.name)} 开始于 ${stamp(firstAt!)}，早于这 5 分钟，图上没有它的竖线。` : '';
   const before = points === null
     ? unreadable('崩溃之前的样本')
     : event.boot === null || sampled.length === 0
       ? html`<p class="ch-meta">这个进程崩溃之前 5 分钟没有样本。</p>`
-      : html`<p class="ch-meta">${legend}曲线断开的一段没有样本${reportOf(event)?.heap?.used_bytes === null || reportOf(event)?.heap?.used_bytes === undefined ? '' : '；红点是崩溃报告里的值'}。</p>${crashCurves(event, points, firstAt)}`;
+      : html`<p class="ch-meta">${legend}曲线断开的一段没有样本${reportOf(event)?.heap?.used_bytes === null || reportOf(event)?.heap?.used_bytes === undefined ? '' : '；红点是崩溃报告里的值'}。</p>${crashCurves(event, points, markedAt)}`;
   return html`<div class="ch-event-body">${finding}<div class="ch-event-top">${running}${report}</div><div class="ch-section"><h3 class="ch-figure-title">崩溃前 5 分钟</h3>${before}</div></div>`;
 }
 
@@ -343,6 +352,8 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
   const byClient = summary?.mcp_sessions_by_client ?? null;
   if (totals === null) return card({ title: '按客户端', hint }, unreadable('客户端的调用'));
   const open = byClient === null ? [] : Object.entries(byClient);
+  // A name is whatever a client declares: `constructor` must not find what every object inherits.
+  const connectionsOf = new Map(open);
   if (totals.rows.length === 0 && open.length === 0) return card({ title: '按客户端' }, emptyBlock({ title: '还没有客户端连接', text: '客户端连接 Hub 后，这里按客户端列出平台、连接数、调用量和 p95。' }));
   const named = new Set(totals.rows.filter((row) => row.origin === 'mcp').map((row) => row.client_name));
   /** Connections are counted by name: a name past the sample's bound is unknown, one the sample does not list has none. */
@@ -351,7 +362,7 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
     if (row.origin === 'console') return streams === null ? UNKNOWN : streams;
     if (byClient === null) return UNKNOWN;
     if (row.client_name === null) return sessions === null ? UNKNOWN : Math.max(0, sessions - Object.values(byClient).reduce((sum, value) => sum + value, 0));
-    return byClient[row.client_name] ?? (open.length >= MAX_CLIENT_NAMES ? UNKNOWN : 0);
+    return connectionsOf.get(row.client_name) ?? (open.length >= MAX_CLIENT_NAMES ? UNKNOWN : 0);
   };
   const seen = new Set<string>();
   const rows: unknown[][] = totals.rows.map((row) => {
@@ -369,36 +380,48 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
       duration(row.p95_ms),
     ];
   });
-  // A client that holds a session and made no call in the window still has a line.
-  for (const [name, value] of open) if (!named.has(name)) rows.push([evidence(name), unknown('近 24 小时没有调用，没有声明可读'), uiLabelOf('trace_origin', 'mcp'), UNKNOWN, value, '0', '无调用']);
+  // A client that holds a session and has no row still has a line. It made no call in the window only if every MCP call was
+  // read: the reader's rows start with MCP, so the last one shown says whether any were cut.
+  const cut = totals.capped || (totals.groups > totals.rows.length && totals.rows.at(-1)?.origin === 'mcp');
+  const outside = cut ? unknown('这个客户端的调用不在读到的范围里') : null;
+  for (const [name, value] of open) if (!named.has(name)) rows.push([evidence(name), outside ?? unknown('近 24 小时没有调用，没有声明可读'), uiLabelOf('trace_origin', 'mcp'), UNKNOWN, value, outside ?? '0', outside ?? '无调用']);
   const parts: unknown[] = [sessions === null && streams === null ? '连接数未知，调用量和 p95 来自追踪，不受影响' : html`现在 ${shown(sessions, count)} 个 MCP 会话、${shown(streams, count)} 个实时推送流`];
   if (totals.groups > totals.rows.length) parts.push(`显示 ${count(totals.rows.length)} / 共 ${count(totals.groups)}`);
   if (oldest !== null) parts.push(html`近 24 小时的调用超过 ${count(MAX_ROOTS_READ)} 次，只算最新的 ${count(MAX_ROOTS_READ)} 次，从 ${oldest} 起`);
   return card({ title: '按客户端', meta: html`${parts.map((part, index) => html`${index === 0 ? '' : ' · '}${part}`)}`, hint }, table(['客户端', '平台', '入口', '版本', '现在的连接', '近 24 小时调用', '近 24 小时 p95'], rows, '没有客户端', 'clients'));
 }
 
-function releaseTable(runs: { rows: readonly ReleaseRun[]; total: number } | null, totals: readonly ReleaseTotal[] | null, current: string | null, now: Date): Html {
-  const hint = `部署时间是这个发布第一次启动的时间。全部 MCP 调用都算，超过 ${count(MAX_RELEASE_CALLS_READ)} 次时只算最新的 ${count(MAX_RELEASE_CALLS_READ)} 次。每个发布算它运行的最后 24 小时，比较的是上一个发布的 p95。`;
+interface Runs {
+  rows: readonly ReleaseRun[];
+  total: number;
+}
+
+/** A process whose start the database refused has no line in the events, and it is a run all the same: the one going on now. */
+function withRunNow(runs: Runs, hub: HubFacts | undefined, now: Date): Runs {
+  if (hub === undefined || hub.release === null || runs.rows.length === 0 || runs.rows[0]!.release === hub.release) return runs;
+  return { rows: [{ release: hub.release, first_start: hub.startedAt.toISOString(), last_event: now.toISOString() }, ...runs.rows], total: runs.total + 1 };
+}
+
+function releaseTable(runs: Runs | null, totals: readonly ReleaseTotal[] | null, current: string | null, now: Date): Html {
+  const hint = `一次部署一行：回到早先的发布也是部署，重启不是。部署时间是这次部署后第一次启动的时间。全部 MCP 调用都算，一行超过 ${count(MAX_RELEASE_CALLS_READ)} 次时只算最新的 ${count(MAX_RELEASE_CALLS_READ)} 次。每行算这次部署运行的最后 24 小时，和它下面一行比较。`;
   if (runs === null || totals === null) return card({ title: '按发布', hint }, unreadable('发布'));
   if (runs.rows.length === 0) return card({ title: '按发布' }, emptyBlock({ title: '还没有发布的调用记录', text: '有了调用之后，这里列出每个发布的 p95，部署前后是快了还是慢了一眼可比。' }));
-  const totalOf = new Map(totals.map((total) => [total.release, total]));
   const retained = now.getTime() - RETENTION_MS;
-  // One more was read than is shown: the last line shown still has a release to compare with.
+  // One more was read than is shown: the last line shown still has a run to compare with. The totals are in the order of the runs.
   const listed = runs.rows.slice(0, RELEASES_SHOWN);
   const rows = listed.map((run, index) => {
-    const total = totalOf.get(run.release);
-    const previous = runs.rows[index + 1];
-    const before = previous === undefined ? undefined : totalOf.get(previous.release);
+    const total = totals[index];
+    const before = totals[index + 1]?.p95_ms ?? null;
     const p95 = total?.p95_ms ?? null;
     const change = p95 === null
       ? '—'
-      : previous === undefined
-        ? unknown('上一个发布已过 14 天保留期')
-        : before?.p95_ms === null || before?.p95_ms === undefined
+      : runs.rows[index + 1] === undefined
+        ? unknown('进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了')
+        : before === null
           ? unknown('上一个发布没有 MCP 调用')
-          : Math.round(Math.abs(p95 - before.p95_ms)) === 0 ? '没有变化' : `${p95 > before.p95_ms ? '慢了' : '快了'} ${duration(Math.abs(p95 - before.p95_ms))}`;
+          : Math.round(Math.abs(p95 - before)) === 0 ? '没有变化' : `${p95 > before ? '慢了' : '快了'} ${duration(Math.abs(p95 - before))}`;
     const first = Date.parse(run.first_start), last = Date.parse(run.last_event);
-    const running = run.release === current;
+    const running = index === 0 && run.release === current;
     const span = running ? html`已运行 ${duration(now.getTime() - first)}` : first <= retained ? html`运行到 ${when(run.last_event, now)}；只算保留期内` : html`运行 ${duration(last - first)}`;
     const deployed = new Date(first);
     return [
@@ -410,15 +433,15 @@ function releaseTable(runs: { rows: readonly ReleaseRun[]; total: number } | nul
       technicalCode(run.release),
     ];
   });
-  const meta = `MCP 调用 · 每个发布运行的最后 24 小时，只算 14 天保留期内${runs.total > listed.length ? ` · 显示 ${count(listed.length)} / 共 ${count(runs.total)}` : ''}`;
+  const meta = `MCP 调用 · 每次部署运行的最后 24 小时，只算 14 天保留期内${runs.total > listed.length ? ` · 显示 ${count(listed.length)} / 共 ${count(runs.total)}` : ''}`;
   return card({ title: '按发布', meta, hint }, table(['发布', '运行时段', '调用', 'p95', '比上一个发布', '发布号'], rows, '没有发布', 'releases'));
 }
 
-function observation(writer: WriterStats | null, summary: HealthSummary | null, points: readonly CurvePoint[]): Html {
-  const failed = points.reduce((sum, point) => sum + point.failed, 0);
+function observation(writer: WriterStats | null, summary: HealthSummary | null, points: readonly CurvePoint[] | null): Html {
+  const failed = points?.reduce((sum, point) => sum + point.failed, 0);
   const counted = (value: number | undefined): unknown => (value === undefined ? UNKNOWN : count(value));
   const first = html`<section class="ch-stats">${kpi('写入延迟 p95', shown(writer?.writeDelayP95Ms, duration), { note: writer !== null && writer.writeDelayP95Ms === null ? '还没有写入过' : `每 ${FLUSH_MS / 1000} 秒或攒够 ${BATCH_ROWS} 行写一次`, hint: '一行从进队列到写进数据库等了多久，最新 1,000 行的 p95。' })}${kpi('队列', counted(writer?.queued), { unit: '行', note: `上限 ${count(QUEUE_ROWS)} 行` })}${kpi('丢弃', counted(writer?.dropped), { unit: '行', note: '队列满时丢弃' })}${kpi('写入失败', counted(writer?.failed), { unit: '行' })}</section>`;
-  const second = html`<section class="ch-stats">${kpi('已写入', counted(writer?.written), { unit: '行' })}${kpi('每批写入耗时', shown(writer?.lastBatchMs, duration), { note: '最近一批' })}${kpi('没有写入的样本', summary === null ? UNKNOWN : count(summary.dropped_samples), { unit: '个', note: '近 24 小时' })}${kpi('读取失败的样本', summary === null ? UNKNOWN : count(failed), { unit: '个', note: '近 24 小时' })}</section>`;
+  const second = html`<section class="ch-stats">${kpi('已写入', counted(writer?.written), { unit: '行' })}${kpi('每批写入耗时', shown(writer?.lastBatchMs, duration), { note: '最近一批' })}${kpi('没有写入的样本', summary === null ? UNKNOWN : count(summary.dropped_samples), { unit: '个', note: '近 24 小时' })}${kpi('读取失败的样本', shown(failed, count), { unit: '个', note: '近 24 小时' })}</section>`;
   return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '观测不能成为负担：请求路径不等待写入，队列满时丢弃并计数。进程崩溃时队列里还没写的行随进程丢失，不计数。' }, html`${first}${second}`);
 }
 
@@ -461,8 +484,9 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
   }
   const tasks = await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained }));
   const clients = await read('客户端', (s) => s.traces.clients(by, { since: from.toISOString(), limit: CLIENTS_SHOWN }));
-  const runs = await read('发布', (s) => s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }));
-  const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { releases: runs.rows.map((run) => run.release), retained, windowMs: DAY_MS }));
+  const runs = await read('发布', async (s) => withRunNow(await s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }), ctx.hub, now));
+  // A run ends where the line above it begins.
+  const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { runs: runs.rows.map((run, index) => ({ release: run.release, from: run.first_start, until: runs.rows[index - 1]?.first_start ?? null })), retained, windowMs: DAY_MS }));
 
   const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));
   const fresh = summary !== null && curvePoints !== null && summary.samples === 0;
@@ -475,6 +499,6 @@ ${eventList(events, eventTotal, opened, now)}
 ${SLOW_QUERIES}
 ${clientTable(clients, summary, capped)}
 ${releaseTable(runs, releases, ctx.hub?.release ?? null, now)}
-${observation(sources?.writer() ?? null, summary, points)}`;
+${observation(sources?.writer() ?? null, summary, curvePoints)}`;
   return { status: 200, body: page(ctx.chrome('运行状况', { active: 'health', hint: HINT, sub }), body) };
 }

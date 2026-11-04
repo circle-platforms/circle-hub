@@ -131,7 +131,12 @@ it for that alone. `summary` over the last 24 hours gives the values now and the
 intervals aggregated in SQL off `resource_samples_sampled_at` (or `resource_samples_boot` for one process), exactly the points
 asked for, each the most its interval held, free disk the least, and null where nothing was read; a window of 24 hours is at
 most 8,640 samples per process whatever the table holds. `events` and `eventCount` are bounded by their limits, `releases` by
-its latest events.
+its latest events. A row of `releases` is one run of a release, which is what a deploy starts: a deploy of an older commit
+reuses the release, so its id can run twice with another between, and only the order of the processes tells the runs apart. A
+restart goes on with its run. A process is read from what is left of it, in the order they began: retention takes the start of
+a process that ran 14 days and keeps its ending until that ages out too, and an ending says when its process began
+(`uptime_ms`), so the release after it still has what ran before. An ending can also come after the next start, which is why
+that order is not `seq`. The starts of two runs are what tell their calls apart: `hub/telemetry` reads each run by them.
 
 ## How to test
 

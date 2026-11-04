@@ -345,6 +345,8 @@ const since = at(0);
 const retained = at(-RETENTION_DAYS * DAY_MS);
 /** A root step that ran `ms` from `start` milliseconds into the window. */
 const ran = (start: number, ms: number, fields: Partial<StoredSpanRow>): Partial<StoredSpanRow> => ({ started_at: at(start), ended_at: at(start + ms), ...fields });
+/** The one run of a release, as far back as anything is kept. */
+const whole = (release: string): { release: string; from: string; until: null } => ({ release, from: retained, until: null });
 
 test('what a client declared about its platform is on the row and comes back with it', async (t) => {
   const { reader, admin, insert } = await world(t);
@@ -415,6 +417,23 @@ test('client totals: by entry, name and declared platform, the p95 of each, the 
   assert.deepEqual(await reader.clients(admin, { since: at(DAY_MS), limit: 2 }), { rows: [], groups: 0, calls: 0, capped: false, oldest: null });
 });
 
+test('client and release totals are of MCP calls: a ping or an unknown tool is one, an exchange on /mcp that gets no line is not', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  const release = 'aaaaaaaaaaaa';
+  await insert([
+    ran(0, 100, { client_name: 'client-a', release }),
+    ran(0, 200, { name: 'handle-mcp', client_name: 'client-a', release }),
+    // A notification carries the client it came from; a GET and a request without a valid token carry none.
+    ran(1000, 1, { name: 'serve-http', client_name: 'client-a', release }),
+    ran(1000, 1, { name: 'serve-http', release }),
+    ran(1000, 1, { name: 'serve-http', release }),
+  ]);
+  const totals = await reader.clients(admin, { since, limit: 50 });
+  assert.deepEqual(totals.rows.map((row) => [row.client_name, row.calls, row.p95_ms]), [['client-a', 2, 195]], 'no row for what no client called');
+  const [row] = await reader.releases(admin, { runs: [whole(release)], retained, windowMs: DAY_MS });
+  assert.deepEqual([row!.calls, row!.p95_ms, row!.newest_at], [2, 195, at(0)], 'the newest call, not the newest exchange');
+});
+
 test('client totals read the newest calls up to their bound, and say from when', async (t) => {
   const { db, admin, insert } = await world(t);
   await insert([0, 1, 2, 3, 4].map((n) => ran(n * 1000, 5, { client_name: 'client-a' })));
@@ -422,7 +441,7 @@ test('client totals read the newest calls up to their bound, and say from when',
   assert.deepEqual([totals.calls, totals.capped, totals.oldest], [3, true, at(2000)]);
 });
 
-test('release totals: MCP calls only, each release over the last stretch of its own run, in the order asked', async (t) => {
+test('release totals: MCP calls only, each run over its last stretch, in the order asked', async (t) => {
   const { reader, admin, insert } = await world(t);
   await insert([
     ran(0, 100, { release: 'aaaaaaaaaaaa' }),
@@ -434,17 +453,27 @@ test('release totals: MCP calls only, each release over the last stretch of its 
     ran(-DAY_MS * 3, 200, { release: 'bbbbbbbbbbbb' }),
     ran(-DAY_MS * 30, 200, { release: 'dddddddddddd' }),
   ]);
-  const rows = await reader.releases(admin, { releases: ['bbbbbbbbbbbb', 'aaaaaaaaaaaa', 'cccccccccccc', 'dddddddddddd'], retained, windowMs: DAY_MS });
+  const rows = await reader.releases(admin, { runs: ['bbbbbbbbbbbb', 'aaaaaaaaaaaa', 'cccccccccccc', 'dddddddddddd'].map(whole), retained, windowMs: DAY_MS });
   assert.deepEqual(rows.map((row) => [row.release, row.calls, row.p95_ms]), [['bbbbbbbbbbbb', 1, 200], ['aaaaaaaaaaaa', 2, 290], ['cccccccccccc', 0, null], ['dddddddddddd', 0, null]]);
   assert.equal(rows[1]!.newest_at, at(0));
   assert.equal(rows[2]!.newest_at, null, 'no calls, not zero seconds');
-  assert.deepEqual(await reader.releases(admin, { releases: [], retained, windowMs: DAY_MS }), []);
+  assert.deepEqual(await reader.releases(admin, { runs: [], retained, windowMs: DAY_MS }), []);
+});
+
+test('release totals: two runs of one release are told apart by their times, and each stretch is back from its own newest call', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  const release = 'aaaaaaaaaaaa';
+  await insert([ran(-2000, 900, { release }), ran(-1000, 800, { release }), ran(0, 100, { release })]);
+  const rows = await reader.releases(admin, { runs: [{ release, from: at(0), until: null }, { release, from: at(-2000), until: at(0) }, { release, from: at(-2000), until: at(-1000) }], retained, windowMs: DAY_MS });
+  assert.deepEqual(rows.map((row) => [row.release, row.calls, row.newest_at]), [[release, 1, at(0)], [release, 2, at(-1000)], [release, 1, at(-2000)]], 'a run has the call that starts with it, and not the one that starts the next');
+  const [stretch] = await reader.releases(admin, { runs: [{ release, from: at(-2000), until: at(0) }], retained, windowMs: 1500 });
+  assert.deepEqual([stretch!.calls, stretch!.newest_at], [2, at(-1000)]);
 });
 
 test('release totals stop at their bound and say so', async (t) => {
   const { db, admin, insert } = await world(t);
   await insert([0, 1, 2, 3].map((n) => ran(n * 1000, 100 + n, { release: 'aaaaaaaaaaaa' })));
-  const [row] = await new TraceReader(db, { releaseCalls: 2 }).releases(admin, { releases: ['aaaaaaaaaaaa'], retained, windowMs: DAY_MS });
+  const [row] = await new TraceReader(db, { releaseCalls: 2 }).releases(admin, { runs: [whole('aaaaaaaaaaaa')], retained, windowMs: DAY_MS });
   assert.deepEqual([row!.calls, row!.capped], [2, true]);
 });
 
@@ -455,7 +484,7 @@ test('the totals of the 运行状况 page are for administrators: a member gets 
     ran(0, 5, { name: 'maintain-runs', origin: 'background' }),
     ran(0, 5, { user_id: user.id, client_name: 'client-a', release: 'aaaaaaaaaaaa' }),
   ]);
-  const query = { releases: ['aaaaaaaaaaaa'], retained, windowMs: DAY_MS };
+  const query = { runs: [whole('aaaaaaaaaaaa')], retained, windowMs: DAY_MS };
   assert.equal((await reader.background(admin, { since, retained })).length, 1);
   assert.equal((await reader.releases(admin, query))[0]!.calls, 1);
   assert.deepEqual(await reader.background(user, { since, retained }), []);
