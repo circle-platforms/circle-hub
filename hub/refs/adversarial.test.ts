@@ -60,7 +60,7 @@ describe('10 MB inputs parse within the ceiling and in linear time', () => {
   });
 
   it('html@1', () => {
-    const entry = '<font color=red>Rel_X_1 (build on  2026-01-01 ): Released on 2026-01-02</font> </br><BLOCKQUOTE><A href=a.array>image</A> ( 42M )<BR></BLOCKQUOTE><hr>\n';
+    const entry = '<font color=red>Rel_X_1 (build on  2026-01-01 ): Released on 2026-01-02</font> </br><BLOCKQUOTE><A href=a.demoimg>image</A> ( 42M )<BR></BLOCKQUOTE><hr>\n';
     const outcome = scaled(htmlParser, (bytes) => utf8(`<html><body>${fill(entry, bytes)}</body></html>`));
     assert.equal(outcome.error, null);
   });

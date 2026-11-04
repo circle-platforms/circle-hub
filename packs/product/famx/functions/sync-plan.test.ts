@@ -170,7 +170,7 @@ describe('syncBuilds', () => {
     ]);
     assert.deepEqual(
       result.skipped.map((skip) => skip.name),
-      ['BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.click', 'Rel_FAMX_10_6_1_40', 'Rel_FAMY_10_6_1_12', 'Rel_FAMY_10_6_1_30'],
+      ['BrandOS-Rel_FAMY-SY-K_10_6_1_3_2_7.demopkg', 'Rel_FAMX_10_6_1_40', 'Rel_FAMY_10_6_1_12', 'Rel_FAMY_10_6_1_30'],
     );
     assert.equal(result.skipped[1].reason, '知识库里已有该构建的根');
     assert.equal(result.unreleased, 6);

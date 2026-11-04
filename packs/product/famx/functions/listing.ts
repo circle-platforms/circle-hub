@@ -175,7 +175,7 @@ const ASSET_FORMS: ReadonlyArray<[FileKind, RegExp[]]> = [
   ['commandTree', [new RegExp(`^command_tree-(${ASSET_BUILD})\\.xml$`), new RegExp(`^command_tree-${ASSET_PREFIX}-(${ASSET_BUILD})\\.xml$`)]],
   ['bugsFixed', [new RegExp(`^Bugs_Fixed_with_(${ASSET_BUILD})\\.html?$`), new RegExp(`^Bugs_Fixed_with_${ASSET_PREFIX}_(${ASSET_BUILD})\\.html?$`)]],
   ['mib', [new RegExp(`^${ASSET_PREFIX}-MIB(?:_[A-Za-z0-9]+)?-(${ASSET_BUILD})\\.(?:txt|mib|my)$`)]],
-  ['image', [new RegExp(`^${ASSET_PREFIX}-(${ASSET_BUILD})\\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\\.gz)$`)]],
+  ['image', [new RegExp(`^${ASSET_PREFIX}-(${ASSET_BUILD})\\.(?:demoimg|demopkg|img|iso|qcow2|ova|bin|tgz|tar\\.gz)$`)]],
 ];
 
 /** The builds a whole file name names under one form, without and with the prefix (two only when the name is ambiguous). */

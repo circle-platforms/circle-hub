@@ -49,7 +49,7 @@ const page = (title: string, body: string): string =>
   `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">\n<HTML><HEAD><TITLE>${title}</TITLE></HEAD>\n<BODY BGCOLOR="#ffffffff">\n${body}\n</BODY>\n</HTML>\n`;
 
 const files = (build: string): string =>
-  `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.array>http://192.0.2.10/builds/DemoOS-${build}.array ( 901M\t, SHA256: ${'0f1e2d3c'.repeat(8)}    )</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR><A href=/builds/Bugs_Fixed_with_${build}.html>http://192.0.2.10/builds/Bugs_Fixed_with_${build}.html</A><BR></BLOCKQUOTE>`;
+  `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.demoimg>http://192.0.2.10/builds/DemoOS-${build}.array ( 901M\t, SHA256: ${'0f1e2d3c'.repeat(8)}    )</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR><A href=/builds/Bugs_Fixed_with_${build}.html>http://192.0.2.10/builds/Bugs_Fixed_with_${build}.html</A><BR></BLOCKQUOTE>`;
 
 /** Path -> file of the site. */
 export function famxSite(): Record<string, { body: Uint8Array; type: string }> {
@@ -64,7 +64,7 @@ export function famxSite(): Record<string, { body: Uint8Array; type: string }> {
       `<font color=red>${RELEASED} (build on  2026-05-12 10:20:30 ): Released on 2026-05-14 </font> </br> ${files(RELEASED)}`,
     ].join('\n'),
   );
-  const famy = page('Synthetic FAMY listing', `<font color=red>${ALIAS} (build on  2026-05-12 11:00:00 ): based on ${RELEASED} Released on 2026-05-15 </font> </br> <BLOCKQUOTE> <A href=/builds/DemoOS-${ALIAS}.array>http://192.0.2.10/builds/DemoOS-${ALIAS}.array</A><BR></BLOCKQUOTE>`);
+  const famy = page('Synthetic FAMY listing', `<font color=red>${ALIAS} (build on  2026-05-12 11:00:00 ): based on ${RELEASED} Released on 2026-05-15 </font> </br> <BLOCKQUOTE> <A href=/builds/DemoOS-${ALIAS}.demoimg>http://192.0.2.10/builds/DemoOS-${ALIAS}.demoimg</A><BR></BLOCKQUOTE>`);
   const fixed = page(`Bugs fixed with ${RELEASED}`, '<TABLE><TR><TD>31057</TD><TD>HTTP probe reported a member healthy on status 500 (synthetic)</TD></TR></TABLE>');
   return {
     [`${SITE_BASE}/index.html`]: { body: latin1(index), type: HTML },

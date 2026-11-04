@@ -38,7 +38,7 @@ export function buildSiteFiles(): Record<string, StaticFile> {
   page('/demo_2_1.html', '<html><body><a href=rel_demo_2_1.html>rel_demo_2_1</a><br><a href=rel_alt_2_1.html>rel_alt_2_1</a><br><a href=rel_demo_2_1_special.html>special</a></body></html>');
   const entry = (build: string, released: string | null, basedOn: string | null) =>
     `${build} (build on  2026-01-12 10:00:00 ): ${basedOn ? `based on ${basedOn} ` : ''}${released ? `<font color=red>Released on ${released}</font>` : ''}<br>` +
-    `<a href=builds/${build}/image.click>image</a> (12.3M, SHA256: ${HEX})<br>` +
+    `<a href=builds/${build}/image.demopkg>image</a> (12.3M, SHA256: ${HEX})<br>` +
     `<a href=builds/${build}/command_tree-${build}.xml>command_tree-${build}.xml</a><br>` +
     `<a href=builds/${build}/Bugs_Fixed_with_${build}.html>Bugs_Fixed_with_${build}.html</a><br>`;
   page('/rel_demo_2_1.html', `<html><body><p>Café build list</p>${entry(BUILDS[1], null, null)}${entry(BUILDS[0], '2026-01-15', null)}</body></html>`);

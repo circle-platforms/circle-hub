@@ -36,13 +36,13 @@ const HTML = 'text/html; charset=ISO-8859-1';
 /** The build site: two released FAMX builds with their own command trees and an FAMY alias of the later one. */
 function site(): Record<string, StaticFile> {
   const page = (title: string, body: string): string => `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">\n<HTML><HEAD><TITLE>${title}</TITLE></HEAD>\n<BODY>\n${body}\n</BODY>\n</HTML>\n`;
-  const files = (build: string): string => `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.array>http://192.0.2.10/builds/DemoOS-${build}.array</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR></BLOCKQUOTE>`;
+  const files = (build: string): string => `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.demoimg>http://192.0.2.10/builds/DemoOS-${build}.demoimg</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR></BLOCKQUOTE>`;
   const entry = (build: string, built: string, released: string): string => `<font color=red>${build} (build on  ${built} ): Released on ${released} </font> </br> ${files(build)}`;
   return {
     '/builds/index.html': { body: latin1(page('Synthetic builds', '<A HREF=rel_famx_10_6_1.html>rel_famx_10_6_1</A><BR><A HREF=rel_famx_10_6_4.html>rel_famx_10_6_4</A><BR><A HREF=rel_famy_10_6_1.html>rel_famy_10_6_1</A><BR>')), type: HTML },
     '/builds/rel_famx_10_6_1.html': { body: latin1(page('FAMX 10.6.1', entry(EARLY, '2026-03-02 10:00:00', '2026-03-05'))), type: HTML },
     '/builds/rel_famx_10_6_4.html': { body: latin1(page('FAMX 10.6.4', entry(LATE, '2026-09-01 10:00:00', '2026-09-03'))), type: HTML },
-    '/builds/rel_famy_10_6_1.html': { body: latin1(page('FAMY 10.6.1', `<font color=red>${ALIAS} (build on  2026-09-01 11:00:00 ): based on ${LATE} Released on 2026-09-04 </font> </br> <BLOCKQUOTE> <A href=/builds/DemoOS-${ALIAS}.array>http://192.0.2.10/builds/DemoOS-${ALIAS}.array</A><BR></BLOCKQUOTE>`)), type: HTML },
+    '/builds/rel_famy_10_6_1.html': { body: latin1(page('FAMY 10.6.1', `<font color=red>${ALIAS} (build on  2026-09-01 11:00:00 ): based on ${LATE} Released on 2026-09-04 </font> </br> <BLOCKQUOTE> <A href=/builds/DemoOS-${ALIAS}.demoimg>http://192.0.2.10/builds/DemoOS-${ALIAS}.demoimg</A><BR></BLOCKQUOTE>`)), type: HTML },
     [`/builds/command_tree-${EARLY}.xml`]: { body: latin1(commandTreeXml(CATALOG_A)), type: 'application/xml' },
     [`/builds/command_tree-${LATE}.xml`]: { body: latin1(commandTreeXml(CATALOG_B)), type: 'application/xml' },
   };

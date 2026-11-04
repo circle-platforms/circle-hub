@@ -93,7 +93,7 @@
 
 原计划的来源凭据使用用户本人的工作台 SSO token，运行时注册为“某人的个人凭据 → 某连接器引用”。注册接口应保存引用和所有者，值不进仓库、日志、审计或 API 返回；该接口尚未实现。未来改服务 token，不在当前实现里默认借用共享身份。server 先运行于用户 Mac，本机监听；网络开放与部署仍需另行授权。
 
-发布记录与命令树 XML 在同一构建站点。首页链接各版本线与平台/系统/芯片变体页；平台示例为 kvm、docker、xen、vmware、hyperv。版本线页每条构建含 Rel_/Beta_ 名称、构建时间、Released on 日期，以及系统镜像 .array、SNMP MIB、command_tree-构建名.xml、Bugs_Fixed_with_构建名.html 四个文件链接。
+发布记录与命令树 XML 在同一构建站点。首页链接各版本线与平台/系统/芯片变体页；平台示例为 kvm、docker、xen、vmware、hyperv。版本线页每条构建含 Rel_/Beta_ 名称、构建时间、Released on 日期，以及系统镜像 .demoimg、SNMP MIB、command_tree-构建名.xml、Bugs_Fixed_with_构建名.html 四个文件链接。
 
 Bugs_Fixed 页每行的 show_bug.cgi?id 链接承载历史 Bugzilla 编号。将禅道详情 bugzillaID 与这些编号连接，再取构建名和发布日期；只提取链接编号，不访问 Bugzilla 本体。resolvedBuild 改为补充线索。第 2 幕须覆盖连接键缺失、多构建命中选择最早正式发布并列出全部、仅 Beta 命中不算正式发布；保留发布页/清单/XML 的原件 SHA 与出处。
 
@@ -330,7 +330,7 @@ Claude 报告以 a04f84c 连接器和其控制的 7420 栈新资产做过只读�
 
 先写五条同形合成验收，实际 **0/5**：汇总遍历得到 0 个构建而应为 8；混合 font/纯文本只读 2 条而应为 4；两条不同路径的 group 都被读成 group；修复清单没有编号体系；产品选项还不能注册。这些仅用临时 HTTP 夹具与 PostgreSQL，构建名、编号、日期、内容全是虚构，没有访问企业源。
 
-通用 catalog 支持首页/汇总/列表遍历、同源路径、循环去重和深度/页数上限。FAMX 的列表前缀与变体映射归 packs/famx/product-line.json，连接器只使用配置；未知变体保留源后缀。只读版本工具留首页、汇总、列表证据，不下 XML 或修复页。构建按标题文本紧随 BLOCKQUOTE 解析，font 不作门槛；支持 .array/.click 与变体前缀、大小/SHA。buildId 包含名称和平台，同名变体各自保留；旧构建名有歧义则明确拒绝，可按 buildId 或 platform 选择。XML/修复清单仍只对选定构建按需取，CAS/个人缓存与并发/间隔限制沿用。
+通用 catalog 支持首页/汇总/列表遍历、同源路径、循环去重和深度/页数上限。FAMX 的列表前缀与变体映射归 packs/famx/product-line.json，连接器只使用配置；未知变体保留源后缀。只读版本工具留首页、汇总、列表证据，不下 XML 或修复页。构建按标题文本紧随 BLOCKQUOTE 解析，font 不作门槛；支持 .demoimg/.demopkg 与变体前缀、大小/SHA。buildId 包含名称和平台，同名变体各自保留；旧构建名有歧义则明确拒绝，可按 buildId 或 platform 选择。XML/修复清单仍只对选定构建按需取，CAS/个人缓存与并发/间隔限制沿用。
 
 命令由所有祖先 menu 加 item 拼接，scope/menuPath 原样保留。heads/param/check 和异步产品抽取共用同一解析；parserVersion 为 menu-path/2，专业匹配规则仍最长八词。参数、缺失与违规继续确定性核对，不用手册填补缺失。旧合成 XML 的完整命令名去掉冗余包裹 menu，既有命令预期保持；新增多级真实形状夹具独立证明路径，未改 FAMX 技能脚本。
 

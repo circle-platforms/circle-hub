@@ -227,13 +227,13 @@ versions 默认 page=1、limit=20，limit 为 1–100；page 为正整数（最�
 
 nextPage=null 表示已到匹配结果末尾，hasMore 明确标识分页，不能把当前页视为全量。revision 是当前元数据及筛选条件摘要；跨页值变更时应重新读取，以免混用源修订。coverage 仍保留 complete 和有限 missing/conflicts/superseded 摘要（每种最多 20 项），counts 给出全部数量，detailsTruncated 说明诊断是否省略；不回传嵌套整份历史。完整 HTML 原件、全部定位和异步知识投影照常保留，即使列表只返回一页。
 
-版本列表支持首页 → 汇总页 → 列表页。产品线清单的 `connectorOptions.build-site.buildSite` 声明 listingPathPattern（可带 versionLine/variant 命名捕获）与 variantPlatforms，通用连接器按该配置筛选汇总页链接和映射平台。遍历有 maxDepth（默认 3、最多 5）及 maxPages（默认 128、最多 256），循环页去重；旧的直接列表仍支持。列表按标题文本加紧随 BLOCKQUOTE 取构建，font 仅是展示标记；支持带变体前缀的 .click 镜像、命令 XML 和修复页，绝对/相对链接都须同源。
+版本列表支持首页 → 汇总页 → 列表页。产品线清单的 `connectorOptions.build-site.buildSite` 声明 listingPathPattern（可带 versionLine/variant 命名捕获）与 variantPlatforms，通用连接器按该配置筛选汇总页链接和映射平台。遍历有 maxDepth（默认 3、最多 5）及 maxPages（默认 128、最多 256），循环页去重；旧的直接列表仍支持。列表按标题文本加紧随 BLOCKQUOTE 取构建，font 仅是展示标记；支持带变体前缀的 .demopkg 镜像、命令 XML 和修复页，绝对/相对链接都须同源。
 
 `buildId` 是名称与 platform 的稳定身份。所有命令工具的 build、修复工具的 builds 都可用版本列表给出的 buildId；旧构建名仅在结果唯一时使用。同名多平台时返回 INVALID_PAYLOAD，details.reason=ambiguous_build；也可传 platform（null 为普通平台）明确选择。command_heads/param/check 同样新增可选 platform/scope/versionLine。XML 命令头由全部祖先 menu 名加 item 名组成，scope 单独保留；parserVersion=menu-path/2，所有命令工具和产品投影共用该解析。
 
 版本列表记住 buildId/名称到列表页、版本线和平台的定位，保存在 worker 私有缓存，绑定调用身份/资产修订/凭据及产品策略；worker 重启后继续使用。后续命令调用只重读相关列表页，再按段落修订复用或重新取选定 XML；fixed_releases 只重读相关列表页与选定清单。未建立定位的冷调用先发现一次。定位只减少访问范围，当前段落和权限仍重查，不直接采用旧元数据。
 
-同名同平台的重建段落按有效 build on 选唯一最新条，旧条进入 superseded；时间相同/缺失而内容冲突时 current=false、conflict 明确，查询该构建返回 INVALID_PAYLOAD（build_revision_conflict）。列表的 coverage.superseded/conflicts/missing 记录局部替代、冲突和不可读页面，coverage.complete=false 不影响其他构建/版本线返回。平台映射忽略大小写，未知后缀保留规范化源标签；带连字符的构建名与 nodebug-*.click 镜像照样列出。commandTreeAvailable=false 明确表示页面没有命令树，不把它静默丢掉或断言命令 missing。
+同名同平台的重建段落按有效 build on 选唯一最新条，旧条进入 superseded；时间相同/缺失而内容冲突时 current=false、conflict 明确，查询该构建返回 INVALID_PAYLOAD（build_revision_conflict）。列表的 coverage.superseded/conflicts/missing 记录局部替代、冲突和不可读页面，coverage.complete=false 不影响其他构建/版本线返回。平台映射忽略大小写，未知后缀保留规范化源标签；带连字符的构建名与 nodebug-*.demopkg 镜像照样列出。commandTreeAvailable=false 明确表示页面没有命令树，不把它静默丢掉或断言命令 missing。
 
 修复链接识别 show_bug.cgi?id=... 为 bugzilla、index.php?m=bug&f=view&id=... 为 zentao，**只读清单、不跟随缺陷链接**。两种同号不能互相匹配：zentao 用缺陷 id，bugzilla 用镜像 bugzillaID/legacyIssueId。普通响应带 issue={system,id}，all/earliestFormal 保留平台；coverage.buildRefs/readRefs 带完整身份，缺失变体也带 buildId/platform。SDK fixed.result/fixedIds 继续只表示 bugzilla 编号，新增 issues/fixedIssues 表示带体系编号；知识中 fixed-identifiers 保留旧含义，fixed-issues 保存两类。新版 source-projection/3 重读时替换该源旧脚本投影的正式成员，历史声明和 SHA 原件保留。
 

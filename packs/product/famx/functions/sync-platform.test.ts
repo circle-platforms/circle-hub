@@ -77,7 +77,7 @@ describe('an opted-in platform page lists its newest build per line, family and 
 
 describe('the newest unreleased build without a command-tree link is listed by name only, as the page states', () => {
   const output = runSync({
-    rel_famx_zx_u_10_8: [unreleased('Beta_FAMX-ZX-U_10_8_0_903', '2026-10-20 09:00:00', ['/builds/DemoOS-Beta_FAMX-ZX-U_10_8_0_903.array']).trim()].join('\n'),
+    rel_famx_zx_u_10_8: [unreleased('Beta_FAMX-ZX-U_10_8_0_903', '2026-10-20 09:00:00', ['/builds/DemoOS-Beta_FAMX-ZX-U_10_8_0_903.demoimg']).trim()].join('\n'),
   }, { include: ['rel_famx_zx_u_10_8'] });
   const build = output.builds.find((b) => b.name === 'Beta_FAMX-ZX-U_10_8_0_903');
 
