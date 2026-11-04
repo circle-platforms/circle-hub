@@ -504,6 +504,27 @@ test('a read that fails leaves its part 未知 and the rest of the page as it is
   assert.ok(!page.includes('synthetic refused read'), 'the reason is for the log');
 });
 
+test('a failed read of the curves leaves the count of failed samples 未知, and only the read that holds it decides', async (t) => {
+  /** Fails the read of the day's curves or of the summary; everything else reads as usual. */
+  const failing = (what: 'curve' | 'summary') => (page: RecordingDatabase): Partial<HealthPageSources> => {
+    const health = healthReader(page);
+    return { health: { ...health, [what]: async () => { throw new Error('synthetic refused read'); } } };
+  };
+  const curve = await world(t, failing('curve'));
+  await everything(curve);
+  const observed = section(await shown(curve.admin), '观测自身');
+  assert.match(observed, /读取失败的样本 未知 个/);
+  assert.match(observed, /没有写入的样本 0 个/, 'that number comes from the summary, which was read');
+  assert.ok(curve.logs.some((line) => line.includes('运行状况页读取失败（曲线）')));
+
+  const summary = await world(t, failing('summary'));
+  await everything(summary);
+  await summary.db.query(`UPDATE resource_samples SET failed_reads=ARRAY['pool'] WHERE sampled_at>$1`, [iso(NOW.getTime() - HOUR_MS)]);
+  const known = section(await shown(summary.admin), '观测自身');
+  assert.match(known, /读取失败的样本 12 个/);
+  assert.match(known, /没有写入的样本 未知 个/);
+});
+
 test('a Hub that was given no readers says 未知 everywhere, never 0', async (t) => {
   const server = await createTestServer({ postgres, now: () => NOW });
   t.after(() => server.close());

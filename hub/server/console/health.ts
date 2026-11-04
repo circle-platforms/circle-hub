@@ -425,11 +425,11 @@ function releaseTable(runs: { rows: readonly ReleaseRun[]; total: number } | nul
   return card({ title: '按发布', meta, hint }, table(['发布', '运行时段', '调用', 'p95', '比上一个发布', '发布号'], rows, '没有发布', 'releases'));
 }
 
-function observation(writer: WriterStats | null, summary: HealthSummary | null, points: readonly CurvePoint[]): Html {
-  const failed = points.reduce((sum, point) => sum + point.failed, 0);
+function observation(writer: WriterStats | null, summary: HealthSummary | null, points: readonly CurvePoint[] | null): Html {
+  const failed = points?.reduce((sum, point) => sum + point.failed, 0);
   const counted = (value: number | undefined): unknown => (value === undefined ? UNKNOWN : count(value));
   const first = html`<section class="ch-stats">${kpi('写入延迟 p95', shown(writer?.writeDelayP95Ms, duration), { note: writer !== null && writer.writeDelayP95Ms === null ? '还没有写入过' : `每 ${FLUSH_MS / 1000} 秒或攒够 ${BATCH_ROWS} 行写一次`, hint: '一行从进队列到写进数据库等了多久，最新 1,000 行的 p95。' })}${kpi('队列', counted(writer?.queued), { unit: '行', note: `上限 ${count(QUEUE_ROWS)} 行` })}${kpi('丢弃', counted(writer?.dropped), { unit: '行', note: '队列满时丢弃' })}${kpi('写入失败', counted(writer?.failed), { unit: '行' })}</section>`;
-  const second = html`<section class="ch-stats">${kpi('已写入', counted(writer?.written), { unit: '行' })}${kpi('每批写入耗时', shown(writer?.lastBatchMs, duration), { note: '最近一批' })}${kpi('没有写入的样本', summary === null ? UNKNOWN : count(summary.dropped_samples), { unit: '个', note: '近 24 小时' })}${kpi('读取失败的样本', summary === null ? UNKNOWN : count(failed), { unit: '个', note: '近 24 小时' })}</section>`;
+  const second = html`<section class="ch-stats">${kpi('已写入', counted(writer?.written), { unit: '行' })}${kpi('每批写入耗时', shown(writer?.lastBatchMs, duration), { note: '最近一批' })}${kpi('没有写入的样本', summary === null ? UNKNOWN : count(summary.dropped_samples), { unit: '个', note: '近 24 小时' })}${kpi('读取失败的样本', shown(failed, count), { unit: '个', note: '近 24 小时' })}</section>`;
   return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '观测不能成为负担：请求路径不等待写入，队列满时丢弃并计数。进程崩溃时队列里还没写的行随进程丢失，不计数。' }, html`${first}${second}`);
 }
 
@@ -486,6 +486,6 @@ ${eventList(events, eventTotal, opened, now)}
 ${SLOW_QUERIES}
 ${clientTable(clients, summary, capped)}
 ${releaseTable(runs, releases, ctx.hub?.release ?? null, now)}
-${observation(sources?.writer() ?? null, summary, points)}`;
+${observation(sources?.writer() ?? null, summary, curvePoints)}`;
   return { status: 200, body: page(ctx.chrome('运行状况', { active: 'health', hint: HINT, sub }), body) };
 }
