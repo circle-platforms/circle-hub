@@ -4,6 +4,10 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Let a read route keep only the parts of a JSON answer it needs (`keep` in `system.json`): the PLM build record carries the full text of every bug of that build, 2.8 MB, and a credential-like word in one of them held the whole answer, so a bug read never got the name of the build it was found in. `plm` 1.3.10 keeps the name.
+- Stop marking `start_run` as a failed tool when an external system answers that an optional input has no such object: that answer is the result, and the structured answer and the call log still say `SOURCE_ABSENT`.
+- Tell a model that an item of an external system is read through a workflow, in the server instructions and under a knowledge search, which covers knowledge entries only.
+
 - List runs from an index entry (migration 29): a page of runs used to cast every run body to JSON to sort, 7 to 11 seconds a page on a deployment with 240 MB of runs, three pages for the console overview. `putRun` writes the entry, the migration adds it to stored runs, and a run without one keeps the original statement.
 - Read a pack listing and a pack lookup in one read scope, so an owner's publish decisions are read once and not once per pack, list the installed skills once per listing, and list the caller's packs once for `tools/list`: on a deployment with 323 pack versions `tools/list` read 196,000 rows and took 19 to 27 seconds, longer than the 8 seconds a client waits before it reports that the first message was not saved.
 

@@ -6,7 +6,7 @@ import { after, test } from 'node:test';
 import { SystemProfile, type RouteDeclaration } from '../../contracts/src/resources.ts';
 import { installTraceSink, startTrace, type SpanRow } from '../telemetry/api.ts';
 import { ConnectorError } from './errors.ts';
-import { HttpSource, decodeText, expiryOf, type ConnectorLogEvent, type HttpExchange } from './http.ts';
+import { HttpSource, decodeText, expiryOf, keptParts, type ConnectorLogEvent, type HttpExchange } from './http.ts';
 import { Redactor } from './redact.ts';
 import { json, startStub, text, type StubHandler, type StubServer } from './testing/stub.ts';
 import { plmSystem } from './testing/packs.ts';
@@ -437,4 +437,14 @@ test('every exchange adds to the source usage of the step it runs in, a failed o
   assert.equal(rows[0].usage['source.reads'], 2);
   assert.equal(rows[0].usage['source.bytes'], Buffer.byteLength(body));
   assert.ok(typeof rows[0].usage['source.ms'] === 'number');
+});
+
+test('a route that keeps parts of an answer holds only those parts, at their places; an answer that is not JSON stays whole', () => {
+  const answer = { code: 1000, msg: 'ok', data: { id: 7, name: 'b', bug_detail: { resolved: ['x'.repeat(100)] } }, extra: true };
+  const kept = (value: unknown, pointers: string[]): unknown => JSON.parse(Buffer.from(keptParts(Buffer.from(JSON.stringify(value)), pointers)).toString('utf8'));
+  assert.deepEqual(kept(answer, ['/code', '/msg', '/data/id', '/data/name']), { code: 1000, msg: 'ok', data: { id: 7, name: 'b' } });
+  assert.deepEqual(kept(answer, ['/code', '/data/absent']), { code: 1000 }, 'a part the answer does not have is not invented');
+  assert.deepEqual(kept({ 'a/b': { 'c~d': 1 } }, ['/a~1b/c~0d']), { 'a/b': { 'c~d': 1 } });
+  const page = Buffer.from('<html>bad gateway</html>');
+  assert.equal(keptParts(page, ['/code']), page);
 });

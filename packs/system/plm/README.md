@@ -93,6 +93,10 @@ A regression feeds this actual projection into story-traceability instead of man
 
 原件保存服务端完整的原始应答（带信封时原件保存整个信封，裸数组时保存数组），构建数组是其中的 `data`。`chooseProduct` 读取产品列表时同样支持信封（`json.data`）与裸数组。
 
+## 1.3.10：读构建记录只留名字
+
+真实的构建记录带这个构建全部缺陷的正文（`bug_detail`，一个构建 356 条，2.8 MB）。缺陷读法只要构建的名字，却把整份记录存下来；正文里的“账号/密码”字样让扫描扣下整份应答，发现构建的名字一直读不到。路由 `build-detail` 现在声明 `keep`，只留信封和 `data.id`、`data.name`。
+
 ## 1.3.9：集成线 1.3.6–1.3.8 的读法带到 main
 
 私有集成线在 main 停在 1.3.6 时发布到了 1.3.8（两边的 1.3.6 字节不同）；1.3.9 高于两边发布过的版本，带来下面三节。

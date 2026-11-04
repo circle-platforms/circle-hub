@@ -123,7 +123,13 @@
       "max_bytes": 16777216,
       "timeout_ms": 60000,
       "read": true,
-      "description": "按编号读一条构建记录（缺陷读法用它带出发现构建的名字）"
+      "keep": [
+        "/code",
+        "/msg",
+        "/data/id",
+        "/data/name"
+      ],
+      "description": "按编号读一条构建记录（缺陷读法用它带出发现构建的名字；真实记录带这个构建全部缺陷的正文，只留名字）"
     },
     {
       "id": "bug-detail",

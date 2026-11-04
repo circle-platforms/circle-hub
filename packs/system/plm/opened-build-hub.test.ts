@@ -1,5 +1,5 @@
 // The opened build through the real PLM pack and read engine (decision 112): a readable build record gives the bug its
-// build name; a build record held for suspected credentials gives no name, and the reader is told only that the record is
+// build name, and the route keeps only that, so what else the record says neither holds it nor is stored; a kept part held for suspected credentials gives no name, and the reader is told only that the record is
 // not available (D05 R[3]: suspected credentials held is a credential class), never why; the coverage of the read names the
 // response it left out (decision 113). Synthetic stub data only.
 import assert from 'node:assert/strict';
@@ -24,20 +24,22 @@ test('a bug read names its opened build when the build record is readable and st
       assert.ok(bytes);
       return JSON.parse(new TextDecoder().decode(bytes));
     };
+    const of = (id: string) => coverage.get(id) as { complete: boolean; examined: number; total: number; note?: string };
     const readable = await content('4545');
     assert.deepEqual(readable.opened_build, { id: '601', name: 'Rel_DEMO_2_3_0_1' });
-    const held = await content('4646');
-    assert.equal(held.opened_build?.id, '602');
+    assert.deepEqual((await content('4646')).opened_build, { id: '602', name: 'Rel_DEMO_2_3_0_2' }, 'a credential-like text in a part the route does not keep holds nothing');
+    assert.equal(of('4646').complete, true);
+    const held = await content('4747');
+    assert.equal(held.opened_build?.id, '603');
     assert.equal(held.opened_build?.name, null);
-    assert.match(held.opened_build?.note ?? '', /^构建 602 的记录没读到：应答对你不可用（原因只记在管理员记录里）$/);
+    assert.match(held.opened_build?.note ?? '', /^构建 603 的记录没读到：应答对你不可用（原因只记在管理员记录里）$/);
     assert.doesNotMatch(JSON.stringify(held), /凭据|只保留|Zq8-Hunter2|[0-9a-f]{64}/, 'neither the cause nor the held answer reaches the reader');
     // The coverage names the response it leaves out, in the same neutral words (decision 113).
-    const of = (id: string) => coverage.get(id) as { complete: boolean; examined: number; total: number; note?: string };
     assert.deepEqual([of('4545').complete, of('4545').examined, of('4545').total], [true, 2, 2]);
     assert.doesNotMatch(of('4545').note ?? '', /没有读进的应答/);
-    assert.deepEqual([of('4646').complete, of('4646').examined, of('4646').total], [false, 1, 2]);
-    assert.match(of('4646').note ?? '', /^没有读进的应答 1 个：opened（路由 build-detail）：应答对你不可用（原因只记在管理员记录里）(；|$)/);
-    assert.doesNotMatch(of('4646').note ?? '', /凭据|只保留|Zq8-Hunter2/);
+    assert.deepEqual([of('4747').complete, of('4747').examined, of('4747').total], [false, 1, 2]);
+    assert.match(of('4747').note ?? '', /^没有读进的应答 1 个：opened（路由 build-detail）：应答对你不可用（原因只记在管理员记录里）(；|$)/);
+    assert.doesNotMatch(of('4747').note ?? '', /凭据|只保留|Zq8-Hunter2/);
   } finally {
     await hub.close();
   }

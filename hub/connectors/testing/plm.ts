@@ -34,12 +34,14 @@ export const PLM_BUGS: Record<string, Record<string, unknown>> = {
   // Bugs that name the build they were opened on: one build record is readable, one carries text a credential scan flags.
   '4545': { id: 4545, title: '组件重载后参数丢失', status: 'active', openedBuild: '601', openedDate: '2026-02-01 09:00:00', steps: '<p>重载组件</p>' },
   '4646': { id: '4646', title: '组件导出时文件名乱码', status: 'active', openedBuild: '602', openedDate: '2026-02-02 09:00:00', steps: '<p>导出文件</p>' },
+  '4747': { id: '4747', title: '组件启动时报错', status: 'active', openedBuild: '603', openedDate: '2026-02-03 09:00:00', steps: '<p>启动组件</p>' },
 };
 
-/** Single build records by id (GET /plmquery/build/<id>/), in the envelope; 602 carries a synthetic credential-like note. */
+/** Single build records by id (GET /plmquery/build/<id>/), in the envelope; 602 and 603 carry a synthetic credential-like note, outside and inside what the route keeps. */
 export const PLM_BUILD_RECORDS: Record<string, Record<string, unknown>> = {
   '601': { id: 601, name: 'Rel_DEMO_2_3_0_1', date: '2026-01-30 10:00:00' },
   '602': { id: '602', name: 'Rel_DEMO_2_3_0_2', date: '2026-01-31 10:00:00', desc: '部署说明：' + ['pass', 'word=Zq8-', 'Hunter2-Secret-77'].join('') },
+  '603': { id: '603', name: 'Rel_DEMO_2_3_0_3 ' + ['pass', 'word=Zq8-', 'Hunter2-Secret-77'].join(''), date: '2026-02-01 10:00:00' },
 };
 
 export const PLM_STORIES: Record<string, Record<string, unknown>> = {
