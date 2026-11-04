@@ -293,9 +293,10 @@ export class ReadEngine {
    */
   async #acceptedByResource(runtime: ResourceRuntime, artifact: SourceArtifact): Promise<boolean> {
     const named = runtime.resource.settings.accept_scan_detectors;
-    const found = [...new Set(artifact.body.scan.findings.map((hit) => hit.detector))];
-    if (!Array.isArray(named) || found.length === 0 || !found.every((detector) => named.includes(detector))) return false;
+    if (!Array.isArray(named)) return false;
     try {
+      const found = [...new Set(artifact.body.scan.findings.map((hit) => hit.detector))];
+      if (found.length === 0 || !found.every((detector) => named.includes(detector))) return false;
       const decision = await this.#o.store.get<{ decided_by: string }>(runtime.decision);
       const admin = decision === null ? null : await this.#o.principals.get(decision.body.decided_by);
       if (admin === null || admin.disabled) return false;
