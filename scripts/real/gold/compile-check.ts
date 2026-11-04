@@ -199,22 +199,22 @@ function bedProblem(v: unknown): string | null {
   if (!obj(v) || v.schema !== 'test-bed-manifest@1' || !Array.isArray(v.beds)) return '清单不是 test-bed-manifest@1';
   const beds = new Set<string>();
   for (const b of v.beds) {
-    if (!obj(b) || !str(b.name) || beds.has(b.name) || !Array.isArray(b.devices) || !Array.isArray(b.services) || !Array.isArray(b.reserved)) return '台架格式错误或重名';
+    if (!obj(b) || !str(b.name) || beds.has(b.name) || !Array.isArray(b.devices) || !Array.isArray(b.services) || !Array.isArray(b.reserved)) return '自动化测试环境格式错误或重名';
     beds.add(b.name);
     const devices = new Set<string>();
     const ips = new Set<string>();
     for (const d of b.devices) {
-      if (!obj(d) || !str(d.name) || devices.has(d.name) || !['load-balancer','router','client','server','console'].includes(String(d.type)) || !(d.product === null || str(d.product))) return '台架设备格式错误';
+      if (!obj(d) || !str(d.name) || devices.has(d.name) || !['load-balancer','router','client','server','console'].includes(String(d.type)) || !(d.product === null || str(d.product))) return '自动化测试环境设备格式错误';
       devices.add(d.name);
       for (const [key, family] of [['ipv4',4],['ipv6',6]] as const) {
-        if (!Array.isArray(d[key])) return '台架接口列表缺失';
+        if (!Array.isArray(d[key])) return '自动化测试环境接口列表缺失';
         for (const cidr of d[key]) {
-          if (!str(cidr) || !parseSubnet(cidr) || isIP(cleanIp(cidr)) !== family || ips.has(ipKey(cleanIp(cidr)))) return '台架接口格式错误或重复';
+          if (!str(cidr) || !parseSubnet(cidr) || isIP(cleanIp(cidr)) !== family || ips.has(ipKey(cleanIp(cidr)))) return '自动化测试环境接口格式错误或重复';
           ips.add(ipKey(cleanIp(cidr)));
         }
       }
     }
-    for (const s of b.services) if (!obj(s) || !str(s.host) || !devices.has(s.host) || !str(s.ip) || !isIP(s.ip) || !ips.has(ipKey(s.ip))) return '台架服务地址无设备接口来源';
+    for (const s of b.services) if (!obj(s) || !str(s.host) || !devices.has(s.host) || !str(s.ip) || !isIP(s.ip) || !ips.has(ipKey(s.ip))) return '自动化测试环境服务地址无设备接口来源';
   }
   return null;
 }
@@ -275,7 +275,7 @@ export function checkBedAddress(bed: RawBedManifest['beds'][number], raw: string
   if (!key) return fail(`无效字面地址 ${raw}`);
   const interfaces = bed.devices.flatMap(d => [...d.ipv4,...d.ipv6].map(cidr => ({device: d, ip: cleanIp(cidr), subnet: parseSubnet(cidr)!})));
   const match = interfaces.find(i => ipKey(i.ip) === key);
-  if (!match && !allocated.some(a => ipKey(a) === key)) return fail(`台架之外的地址一律拒绝：${raw}`,'case-compile.address_outside_bed');
+  if (!match && !allocated.some(a => ipKey(a) === key)) return fail(`自动化测试环境之外的地址一律拒绝：${raw}`,'case-compile.address_outside_bed');
   if (role === 'listen' && match?.device.type !== 'load-balancer') return fail('监听地址必须是被测设备的接口地址');
   if (role === 'backend' && match?.device.type !== 'server') return fail('后端地址必须是服务器设备的接口地址','case-compile.backend_not_server');
   if ((role === 'listen' || role === 'virtual') && match?.device.type === 'load-balancer') {
@@ -585,13 +585,13 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
       const start = Date.parse(run.run.started_at);
       const allocated = (leases ?? []).filter(l => l.mine && Date.parse(l.until) > start && l.key.startsWith(`bed/${d.bucket}/ip/`)).map(l => l.key.slice(`bed/${d.bucket}/ip/`.length));
       const address = (v: string, role: string): Answer => {
-        if (!bed) return unknown('台架不存在');
+        if (!bed) return unknown('自动化测试环境不存在');
         const answer = checkBedAddress(bed,v,role,allocated);
         // Route on the closed reason code, never on the message prose; the missing fact gets its own field.
         return answer.verdict === 'fail' && answer.code === 'case-compile.address_outside_bed' && (!leases || !Number.isFinite(start))
           ? unknown('缺少冻结的租约视图或运行时间，无法判断分配地址') : answer;
       };
-      if (!bed) add('address',0,`${base}/bucket`,fail('台架不存在'));
+      if (!bed) add('address',0,`${base}/bucket`,fail('自动化测试环境不存在'));
       for (const [i,s] of d.steps.entries()) {
         const ptr = `${base}/steps/${i}`;
         for (const answer of contractChecks(contract,s.object,s.method,s.params)) add('contract',i+1,ptr,answer);
@@ -678,7 +678,7 @@ export function compileCheck(inputs: {run: RunShowExport; submission: Submission
 export function main(argv: string[] = process.argv.slice(2)): number {
   const value = (k: string) => { const i = argv.indexOf(`--${k}`); return i < 0 ? undefined : argv[i+1]; };
   if (!['run','submission','contract','bed'].every(k => value(k))) {
-    process.stderr.write('用法：compile-check.ts --run <运行.json> --submission <提交.json> --contract <合约.json> --bed <台架.json> [--commands <命令树.xml> --product <产品声明.json>] [--sources <来源.json>]\n'); return 2;
+    process.stderr.write('用法：compile-check.ts --run <运行.json> --submission <提交.json> --contract <合约.json> --bed <自动化测试环境.json> [--commands <命令树.xml> --product <产品声明.json>] [--sources <来源.json>]\n'); return 2;
   }
   try {
     const json = (k: string): unknown => JSON.parse(readFileSync(value(k)!,'utf8'));
