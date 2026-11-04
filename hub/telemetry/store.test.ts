@@ -407,8 +407,8 @@ test('client totals: by entry, name and declared platform, the p95 of each, the 
     ['mcp', 'client-a', 'os-two', '1.0', 1],
     ['mcp', 'client-b', null, '3.0', 1],
     ['mcp', null, null, null, 1],
-    ['sync', 'client-a', 'os-one', '1.0', 1],
     ['console', null, null, null, 1],
+    ['sync', 'client-a', 'os-one', '1.0', 1],
   ]);
   assert.equal(totals.rows[0]!.p95_ms, 95.05);
   assert.deepEqual([totals.groups, totals.calls, totals.capped, totals.oldest], [6, 105, false, at(0)]);

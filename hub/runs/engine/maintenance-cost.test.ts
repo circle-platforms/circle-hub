@@ -10,7 +10,8 @@ import { FAR_AHEAD, requestOf, storeQuietRun } from './testing/maintenance.ts';
 import { putAction } from './store.ts';
 
 let pg: TemporaryPostgres;
-before(async () => { pg = await startPostgres(); });
+// Its own cluster: an idle round costs its least once the cursor has settled, and any other test file's open transaction delays that.
+before(async () => { pg = await startPostgres({ private: true }); });
 after(async () => { await pg?.stop(); });
 
 interface Cost { queries: number; rows: number; bytes: number }

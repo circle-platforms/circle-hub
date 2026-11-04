@@ -10,7 +10,8 @@ import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
 import { openAppendCursor, readAppended, type AppendCursor, type RecordStore, type Transaction } from './api.ts';
 
 let postgres: TemporaryPostgres;
-before(async () => { postgres = await startPostgres(); });
+// Its own cluster: snapshots span a cluster, so a transaction of any other test file delays `settled` for as long as it is open.
+before(async () => { postgres = await startPostgres({ private: true }); });
 after(async () => { await postgres?.stop(); });
 
 type Followed = RecordStore & Required<Pick<RecordStore, 'appendHorizon' | 'appended'>>;

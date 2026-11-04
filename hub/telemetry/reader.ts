@@ -2,7 +2,7 @@
 // their own calls, steps and usage included. The stored account decides, not the Principal a session kept; a trace a reader
 // may not see and a trace that does not exist look the same. A client may reuse a trace id, so the rule holds per row: a
 // member reading a shared id sees their own rows of it and no others.
-import type { Environment, StepLevel, StepType, TraceOrigin } from '../../contracts/generated/vocabulary.ts';
+import { TRACE_ORIGIN, type Environment, type StepLevel, type StepType, type TraceOrigin } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
 import { iso, normalizeTime, pageLimit, type Database, type Row } from '../records/db.ts';
 import { BACKGROUND_STEPS, type BackgroundStep, type UsageName } from './names.ts';
@@ -29,7 +29,7 @@ export interface ReadBounds {
   releaseCalls: number;
 }
 /** Entries a person connects through; a background round or a CLI command is no client. */
-const CLIENT_ORIGINS: readonly TraceOrigin[] = ['mcp', 'sync', 'console'];
+const CLIENT_ORIGINS: readonly TraceOrigin[] = TRACE_ORIGIN.filter((origin) => origin !== 'background' && origin !== 'cli');
 /**
  * A live stream lasts as long as its page stays open, and serve-http is an exchange that is no call: any other path (a probe of
  * /healthz), or one on /mcp that gets no call-log line (names.ts). Decision 147: every other MCP root counts, whatever it asked.
