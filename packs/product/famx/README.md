@@ -1153,9 +1153,9 @@ cleanup order stay fixed; valid quoting is read through the existing command gra
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
 
-### Synthetic image extensions (1.7.45)
+### Synthetic image extensions (1.7.45–1.7.46)
 
-The image asset grammar, its fixtures and the variant examples use the synthetic extensions `.demoimg` and `.demopkg`
+The image asset grammar, its fixtures (1.7.46 completes the listing-line names) and the variant examples use the synthetic extensions `.demoimg` and `.demopkg`
 instead of two real vendor extensions. Behaviour is unchanged.
 
 ### Synthetic platform names (1.7.44)

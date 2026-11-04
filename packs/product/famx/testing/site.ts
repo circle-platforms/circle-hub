@@ -49,7 +49,7 @@ const page = (title: string, body: string): string =>
   `<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">\n<HTML><HEAD><TITLE>${title}</TITLE></HEAD>\n<BODY BGCOLOR="#ffffffff">\n${body}\n</BODY>\n</HTML>\n`;
 
 const files = (build: string): string =>
-  `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.demoimg>http://192.0.2.10/builds/DemoOS-${build}.array ( 901M\t, SHA256: ${'0f1e2d3c'.repeat(8)}    )</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR><A href=/builds/Bugs_Fixed_with_${build}.html>http://192.0.2.10/builds/Bugs_Fixed_with_${build}.html</A><BR></BLOCKQUOTE>`;
+  `<BLOCKQUOTE> <A href=/builds/DemoOS-${build}.demoimg>http://192.0.2.10/builds/DemoOS-${build}.demoimg ( 901M\t, SHA256: ${'0f1e2d3c'.repeat(8)}    )</A><BR><A href=/builds/command_tree-${build}.xml>http://192.0.2.10/builds/command_tree-${build}.xml</A><BR><A href=/builds/Bugs_Fixed_with_${build}.html>http://192.0.2.10/builds/Bugs_Fixed_with_${build}.html</A><BR></BLOCKQUOTE>`;
 
 /** Path -> file of the site. */
 export function famxSite(): Record<string, { body: Uint8Array; type: string }> {

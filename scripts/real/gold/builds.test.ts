@@ -26,25 +26,25 @@ const SYNTHETIC_LISTING_HTML = `<!DOCTYPE html>
 <strong>Packages</strong><br /><br />
 <font color=red>Rel_FAMX_10_6_1_57 (build on  2026-05-12 10:20:30 ): Released on 2026-05-14 </font> </br>
 <BLOCKQUOTE>
-  <A href=/builds/DemoOS-Rel_FAMX_10_6_1_57.demoimg>DemoOS-Rel_FAMX_10_6_1_57.array ( 901M, SHA256: 0f1e... )</A><BR>
+  <A href=/builds/DemoOS-Rel_FAMX_10_6_1_57.demoimg>DemoOS-Rel_FAMX_10_6_1_57.demoimg ( 901M, SHA256: 0f1e... )</A><BR>
   <A href=/builds/command_tree-Rel_FAMX_10_6_1_57.xml>command_tree-Rel_FAMX_10_6_1_57.xml</A><BR>
 </BLOCKQUOTE>
 
 Rel_FAMX_10_6_1_56 (build on  2026-05-10 09:00:00 ):  </br>
 <BLOCKQUOTE>
-  <A href=/builds/DemoOS-Rel_FAMX_10_6_1_56.demoimg>DemoOS-Rel_FAMX_10_6_1_56.array ( 899M, MD5: 0011... )</A><BR>
+  <A href=/builds/DemoOS-Rel_FAMX_10_6_1_56.demoimg>DemoOS-Rel_FAMX_10_6_1_56.demoimg ( 899M, MD5: 0011... )</A><BR>
   <A href=/builds/command_tree-Rel_FAMX_10_6_1_56.xml>command_tree-Rel_FAMX_10_6_1_56.xml</A><BR>
 </BLOCKQUOTE>
 
 <font color=red>Rel_FAMY_10_6_1_41 (build on  2026-05-20 11:00:00 ): based on Rel_FAMX_10_6_1_57 Released on 2026-05-22 </font> </br>
 <BLOCKQUOTE>
-  <A href=/builds/DemoOS-Rel_FAMY_10_6_1_41.demoimg>DemoOS-Rel_FAMY_10_6_1_41.array ( 902M, SHA256: 5555... )</A><BR>
+  <A href=/builds/DemoOS-Rel_FAMY_10_6_1_41.demoimg>DemoOS-Rel_FAMY_10_6_1_41.demoimg ( 902M, SHA256: 5555... )</A><BR>
   <A href=/builds/DEMO-MIB-Rel_FAMY_10_6_1_41.txt>DEMO-MIB-Rel_FAMY_10_6_1_41.txt</A><BR>
 </BLOCKQUOTE>
 
 <font color=red>Rel_FAMX_10_7_4_101 (build on  2026-01-01 08:00:00 ): Released on 2026-01-02 </font> </br>
 <BLOCKQUOTE>
-  <A href=/builds/DemoOS-Rel_FAMX_10_7_4_101.demoimg>DemoOS-Rel_FAMX_10_7_4_101.array ( 850M, SHA256: aaaa... )</A><BR>
+  <A href=/builds/DemoOS-Rel_FAMX_10_7_4_101.demoimg>DemoOS-Rel_FAMX_10_7_4_101.demoimg ( 850M, SHA256: aaaa... )</A><BR>
   <A href=/builds/command_tree-Rel_FAMX_10_7_4_101.xml>command_tree-Rel_FAMX_10_7_4_101.xml</A><BR>
 </BLOCKQUOTE>
 </body>
