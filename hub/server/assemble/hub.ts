@@ -190,7 +190,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
-    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),runs:()=>dispatch?dispatchedRuns(records):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready)=>dispatch?acceptedDispatch(records,dispatch,run,ready):Promise.resolve([]),inFlight:(run)=>dispatch?runInFlight(records,dispatch,run):Promise.resolve(null)},
+    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready)=>dispatch?acceptedDispatch(records,dispatch,run,ready):Promise.resolve([]),inFlight:(run)=>dispatch?runInFlight(records,dispatch,run):Promise.resolve(null)},
     records,
     personalPacks:registry.personal,
     workflows,

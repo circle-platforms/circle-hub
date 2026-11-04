@@ -35,15 +35,39 @@ export async function answerRequest(ctx:RequestContext,request:string,source:str
   const at=ctx.now().toISOString();
   await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:record.body.run??null,item:record.body.item??null,inputs:[`rec:${request}`,`rec:${source}`],component:'requests@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request,answer:source}},index:[{key:'runs.request.answer',value:request}]},ctx.transaction);
 }
+const REQUEST_PAGE=500;
+const SCOPE_BATCH=128;
 export async function requestRecords(ctx:RequestContext,run?:string):Promise<RequestView[]>{
   const out:RequestView[]=[];let cursor:string|null=null;
   do{
-    const page:Page<StoredRecord<RequestBody>>=run===undefined?await ctx.deps.records.store.list<RequestBody>({kind:'request',limit:500,cursor},ctx.transaction):await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.run',value:run,limit:500,cursor},ctx.transaction);
+    const page:Page<StoredRecord<RequestBody>>=run===undefined?await ctx.deps.records.store.list<RequestBody>({kind:'request',limit:REQUEST_PAGE,cursor},ctx.transaction):await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.run',value:run,limit:REQUEST_PAGE,cursor},ctx.transaction);
     const requests=page.items.filter(record=>record.schema==='request@1');
     const answers=await newestAnswers(ctx,requests.map(record=>record.digest));
     for(const record of requests)out.push({...record.body,record:record.digest,answered_by:answers.get(record.digest)??null});
     cursor=page.next;
   }while(cursor!==null);
+  return out;
+}
+/** A narrowed read of the requests: those bound to these runs or packs, and these requests themselves. */
+export interface RequestScope {runs?:readonly string[];packs?:readonly string[];records?:readonly string[]}
+/**
+ * The requests of a scope, each once, in no order: what a reader that knows what changed asks for instead of every request. A
+ * request's escalations carry its run and pack, so the requests of a run or pack hold the whole of any escalation chain.
+ */
+export async function requestRecordsIn(ctx:RequestContext,scope:RequestScope):Promise<RequestView[]>{
+  const store=ctx.deps.records.store,found=new Map<string,StoredRecord<RequestBody>>();
+  const indexed=async(key:string,values:readonly string[])=>{
+    for(let at=0;at<values.length;at+=SCOPE_BATCH)for(const record of await store.findMany<RequestBody>({kind:'request',key,values:values.slice(at,at+SCOPE_BATCH)},ctx.transaction))found.set(record.digest,record);
+  };
+  await indexed('runs.request.run',scope.runs??[]);
+  await indexed('runs.request.pack',scope.packs??[]);
+  const named=scope.records??[];
+  for(let at=0;at<named.length;at+=SCOPE_BATCH)for(const record of (await store.getMany<RequestBody>(named.slice(at,at+SCOPE_BATCH),ctx.transaction)).values())if(record.kind==='request')found.set(record.digest,record);
+  const requests=[...found.values()].filter(record=>record.schema==='request@1'),out:RequestView[]=[];
+  for(let at=0;at<requests.length;at+=REQUEST_PAGE){
+    const page=requests.slice(at,at+REQUEST_PAGE),answers=await newestAnswers(ctx,page.map(record=>record.digest));
+    for(const record of page)out.push({...record.body,record:record.digest,answered_by:answers.get(record.digest)??null});
+  }
   return out;
 }
 /**
@@ -77,9 +101,10 @@ export async function requestsOf(ctx:RequestContext,user:Principal,run?:string):
 export function createRequestService(records:Pick<RecordsKit,'store'>,now:()=>Date=()=>new Date(),options:{canReadRun?:(by:Principal,run:string)=>Promise<boolean>;transaction?:Transaction}={}){
   const ctx:RequestContext={deps:{records},now,canReadRun:options.canReadRun,transaction:options.transaction};
   return {
-    // inspect/all are trusted internal reads, never untrusted client entry points.
+    // inspect/all/within are trusted internal reads, never untrusted client entry points.
     inspect:async(id:string):Promise<RequestView|null>=>{if(!Sha256.safeParse(id).success)return null;const record=await records.store.get(id);if(record?.kind!=='request'||record.schema!=='request@1')return null;const parsed=Request.safeParse(record.body);if(!parsed.success)return null;const answer=await records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:id,limit:1,newestFirst:true});return{...parsed.data,record:id,answered_by:answer.items[0]?.body.detail.answer??null};},
     all:(run?:string)=>requestRecords(ctx,run),
+    within:(scope:RequestScope)=>requestRecordsIn(ctx,scope),
     write:(input:RequestBody)=>putRequest(ctx,input),
     list:(by:Principal,run?:string)=>requestsOf(ctx,by,run),
     answer:(request:string,source:string)=>answerRequest(ctx,request,source),

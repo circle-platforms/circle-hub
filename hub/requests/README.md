@@ -1,8 +1,8 @@
 # Human requests
 
 B07 storage is shared by trusted Hub components through `api.ts`. `createRequestService(records, now, {canReadRun})`
-provides validated append-only writes, scoped listing and record-backed answers. `inspect` and `all` are trusted internal
-reads, never client entry points. Without a run-visibility callback, nonadministrators cannot list run-bound requests;
+provides validated append-only writes, scoped listing and record-backed answers. `inspect`, `all` and `within` (the requests
+of some runs, packs or records, for a reader that knows what changed) are trusted internal reads, never client entry points. Without a run-visibility callback, nonadministrators cannot list run-bound requests;
 pack-only requests are visible only to their named audience. This service grants no permission or effect authority.
 
 Every request names a concrete missing fact, existing next action, named account and absolute due date. It binds a run,

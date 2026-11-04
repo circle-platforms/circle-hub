@@ -416,6 +416,20 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
       and checks the final complete byte sequence. **Follow-up:** admitting an answer as separately checked parts is
       not implemented; this would need an explicit format/policy decision rather than bypassing the scanner cap.
 
+## Following the append log (decision 146)
+
+A background reader that wants what changed uses `readAppended` with an `AppendCursor` (`append-cursor.ts`), not a position of
+its own: `seq` is handed out before commit, so a transaction can commit below a position already read, and `seq > cursor` never
+sees it. The cursor keeps a `settled` mark, below which nothing can still appear, and looks again above it, returning each
+record once; `settled` moves to the last horizon's position once every transaction open at that horizon has ended, from
+`pg_snapshot_xmin`/`pg_snapshot_xmax` in `appendHorizon`. An open transaction delays `settled`, never what is returned. A
+writer that has a position and no transaction id yet is in no snapshot; the look one read behind finds it unless it stays open
+past that read as well, which takes a stall inside one statement, and only a later whole read of the history finds that. A new
+cursor waits a short while for the transactions open at its start, so a whole read right after it misses none of them.
+
+`appended` reads the range by primary key and its entries by `record_index_digest`, so it costs what was appended in that range
+and reads no body: its rows select work, and acting on a record stays a verified read. The runtime role needs no new right.
+
 ## Limits
 
 - The scanner is heuristic: it misses credentials written as free prose ("the default password of the bed is ..."), BOM-less

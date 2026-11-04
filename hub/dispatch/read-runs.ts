@@ -21,21 +21,17 @@ export interface RunJob {
 }
 const remoteResponse=(phase:unknown)=>typeof phase==='string'&&phase.endsWith('.response');
 /**
- * The jobs of each run a dispatch job is bound to (as its verification run or its plan run), from one scan of the
- * reservations. Job events are indexed by job, not by run: run maintenance reads these jobs' positions to see whether
- * anything happened to the run.
+ * The runs these jobs are bound to (as verification run or plan run), each with its jobs among them, from those jobs' journals
+ * alone. Job events are indexed by job, not by run: run maintenance asks this about the jobs something just happened to.
  */
-export async function dispatchedRuns(records:Pick<RecordsKit,'store'>):Promise<Map<string,string[]>>{
-  const runs=new Map<string,string[]>();let cursor:string|null=null;
-  do{
-    const page:Page<StoredRecord<ActionBody>>=await records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:500,cursor});
-    for(const record of page.items){
-      const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
-      if(typeof binding?.job!=='string')continue;
-      for(const run of [binding.input?.run,binding.input?.plan_run])if(typeof run==='string'){const jobs=runs.get(run)??[];if(!jobs.includes(binding.job))jobs.push(binding.job);runs.set(run,jobs);}
-    }
-    cursor=page.next;
-  }while(cursor!==null);
+export async function dispatchedRuns(records:Pick<RecordsKit,'store'>,jobs:readonly string[]):Promise<Map<string,string[]>>{
+  const runs=new Map<string,string[]>();
+  for(let at=0;at<jobs.length;at+=128)for(const record of await records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:jobs.slice(at,at+128)})){
+    if(record.body.detail.phase!=='reservation')continue;
+    const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
+    if(typeof binding?.job!=='string')continue;
+    for(const run of [binding.input?.run,binding.input?.plan_run])if(typeof run==='string'){const bound=runs.get(run)??[];if(!bound.includes(binding.job))bound.push(binding.job);runs.set(run,bound);}
+  }
   return runs;
 }
 /**
