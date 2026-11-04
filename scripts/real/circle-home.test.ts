@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
 
@@ -522,4 +523,32 @@ test('model calls cannot create links or rename directories through direct tools
     for(const command of ['ln -s outside slot','mv slot slot-before','cp -R outside slot',"node -e 'process.exit(0)'"])assert.equal(f.decide(f.input('execute',{command})).decision,'deny',command);
     assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b`})).decision,'allow','installed scripts remain subject to the separate manifest static check');
   }finally{f.close();}
+});
+
+test('the case-compile skill commands, filled in as Circle hands them to hooks, pass the skills home guard', () => {
+  // Cross-check for case-compile 3.9.6: every local command its published SKILL.md writes, with the client tree installed as
+  // the skill skills/case-compile/ of a skills home, is allowed by that home's generated guard.
+  const dir = scratch();
+  try {
+    const home = join(dir, 'home'), hubUrl = 'https://hub.example.invalid/mcp';
+    const written = writeHome({ home, profile: 'skills', hubUrl }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+    const pack = fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)), skill = join(home, 'skills', 'case-compile');
+    const manifest = JSON.parse(readFileSync(join(pack, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> };
+    for (const { path } of manifest.files.filter((file) => file.path === 'SKILL.md' || file.path.startsWith('tools/'))) { mkdirSync(dirname(join(skill, path)), { recursive: true }); writeFileSync(join(skill, path), readFileSync(join(pack, path))); }
+    const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
+    const decide = (command: string) => { const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }), encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
+    const text = readFileSync(join(pack, 'SKILL.md'), 'utf8');
+    const commands = [...[...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => m[1]), ...[...text.matchAll(/`(node <技能目录>[^`]*)`/g)].map((m) => m[1])];
+    assert.ok(commands.length >= 3 && commands.some((command) => command.includes("<<'EOF'\n%HUB_TOKEN%\nEOF")), 'normalize, fetch and generate, the token by a quoted here-document');
+    const values: Record<string, string> = { 技能目录: skill, 计划运行号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 目录: 'case-compile-run', 导出文件: 'export.json', 规整文件: 'normalized.json' };
+    for (const raw of commands) {
+      // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
+      const command = raw.replaceAll('%HUB_URL%', hubUrl).replace(/<([^<>'\s]+)>/g, (whole, name: string) => { assert.ok(Object.hasOwn(values, name), `placeholder ${whole} has no synthetic value`); return values[name]; });
+      assert.ok(existsSync(/^node (\S+)/.exec(command)?.[1] ?? ''), `installed script: ${command}`);
+      const decision = decide(command); assert.equal(decision.decision, 'allow', `${command}\n${decision.reason}`);
+    }
+    // The 3.9.5 spelling, a here-string after a relative script, is what this home refused.
+    assert.equal(decide(`node tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
+    assert.equal(decide(`node ${skill}/tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

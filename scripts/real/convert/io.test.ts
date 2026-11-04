@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, statSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -53,7 +53,10 @@ test('topology and profile CLIs print only counted digests and staged publicatio
     const contract = runtimeDocument(); output(dir, 'contract.json', JSON.stringify(contract)); output(dir, 'environment.json', JSON.stringify({ ready: true, device_count: 2 }));
     const args = ['scripts/real/convert/runtime-profile.ts', join(dir, 'environment.json'), join(dir, 'inventory/test-bed-manifest.json'), join(dir, 'contract.json'), '--out', join(dir, 'profile')];
     const draft = spawnSync(process.execPath, args, { encoding: 'utf8' }); assert.equal(draft.status, 0, draft.stderr);
-    assert.match(draft.stdout, /^\{"count":\d+,"sha256":"[a-f0-9]{64}"\}\n$/); assert.ok(!draft.stdout.includes('doc put'));
+    // The review list (decision 119) prints a fixed label, a count and profile pointers per kind before the digest line; the
+    // objects and methods it names stay in the private file.
+    assert.match(draft.stdout, /^(?:复核 (?:合约已声明类型、配置列为永不传入的参数|同一运行器方法在不同对象上开放不同|开放了但合约没有类型权限的方法（用到即停在类型权限核对）)：\d+ 处(?: \/allowed\/\d+(?:\/unsupplied\/\d+)?)+\n)*\{"count":\d+,"sha256":"[a-f0-9]{64}"\}\n$/u); assert.ok(!draft.stdout.includes('doc put')); assert.ok(!draft.stdout.includes('widget-'));
+    const review = join(dir, 'profile/profile-review.json'); assert.equal(statSync(review).mode & 0o777, 0o600); assert.equal(JSON.parse(readFileSync(review, 'utf8')).length, 4);
     const check = spawnSync(process.execPath, ['scripts/real/convert/runtime-profile.ts', join(dir, 'profile/runtime-profile.draft.json'), args[2]!, args[3]!, '--check', '--out', join(dir, 'verified')], { encoding: 'utf8' });
     assert.equal(check.status, 1); assert.equal(check.stdout, ''); assert.ok(!check.stderr.includes('widget-seat'));
   } finally { rmSync(dir, { recursive: true, force: true }); }

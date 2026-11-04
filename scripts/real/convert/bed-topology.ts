@@ -11,7 +11,7 @@ const SERVICE_PROTOCOLS: Readonly<Record<string, 'tcp' | 'udp'>> = { http: 'tcp'
 export function topologyReport(raw: unknown, bedName?: string) {
   requireFact(record(raw) && record(raw.topology), '缺少 topology；重新只读取得完整拓扑回答');
   const topology = raw.topology;
-  requireFact(record(topology._bed) && typeof topology._bed.conf === 'string', '缺少 topology._bed.conf；重新取得带台架身份的回答');
+  requireFact(record(topology._bed) && typeof topology._bed.conf === 'string', '缺少 topology._bed.conf；重新取得带自动化测试环境身份的回答');
   requireFact(Array.isArray(topology.devices) && topology.devices.length, '缺少 topology.devices；重新取得设备接口事实');
   requireFact(Array.isArray(raw.services), '缺少 services；重新只读取得带服务列表的拓扑回答');
   requireFact(record(raw.observation) && record(raw.observation.unregistered_neighbours), '缺少 observation.unregistered_neighbours；重新取得邻居观察');
@@ -42,7 +42,7 @@ export function topologyReport(raw: unknown, bedName?: string) {
   });
   const manifest = { schema: 'test-bed-manifest@1', beds: [{ name: bedName ?? topology._bed.conf.toLowerCase(), devices, services, reserved: [...reserved] }] };
   const bed = parseManifest(manifest); const compile = parseCompileManifest(manifest);
-  if (!bed.ok || !compile.ok) throw new FactError([bed.ok ? '' : parserDiagnostics('test-bed', bed.problems, '集成者核对该字段；台架名不合格式时用 --bed-name 显式指定映射，不改源事实，重新转换'), compile.ok ? '' : parserDiagnostics('case-compile', compile.problems, '集成者核对同一清单字段；必要时用 --bed-name 明确台架映射后重跑')].filter(Boolean).join('\n'), [...(!bed.ok ? [{ component: 'test-bed', problems: bed.problems }] : []), ...(!compile.ok ? [{ component: 'case-compile', problems: compile.problems }] : [])]);
+  if (!bed.ok || !compile.ok) throw new FactError([bed.ok ? '' : parserDiagnostics('test-bed', bed.problems, '集成者核对该字段；自动化测试环境名不合格式时用 --bed-name 显式指定映射，不改源事实，重新转换'), compile.ok ? '' : parserDiagnostics('case-compile', compile.problems, '集成者核对同一清单字段；必要时用 --bed-name 明确自动化测试环境映射后重跑')].filter(Boolean).join('\n'), [...(!bed.ok ? [{ component: 'test-bed', problems: bed.problems }] : []), ...(!compile.ok ? [{ component: 'case-compile', problems: compile.problems }] : [])]);
   return { manifest, protocols, ignored_neighbours: [...ignored], name_mapping: { source: topology._bed.conf, manifest: manifest.beds[0].name, explicit: bedName !== undefined } };
 }
 export function convertTopology(raw: unknown, bedName?: string) { return topologyReport(raw, bedName).manifest; }

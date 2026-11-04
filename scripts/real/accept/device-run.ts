@@ -102,7 +102,7 @@ export async function runCases(ids: string[], priorBookings: string[], p: CasePo
   const bookings = new Set(priorBookings);
   for (const id of ids) {
     const prepared = await p.prepare(id);
-    requireFact(!bookings.has(prepared.booking), '每个用例必须自己占台架，不能复用上一例谱系；请 Circle 释放后重新占用并完成计划与核验');
+    requireFact(!bookings.has(prepared.booking), '每个用例必须自己占自动化测试环境，不能复用上一例谱系；请 Circle 释放后重新占用并完成计划与核验');
     requireFact(await p.confirm(id, prepared.sha256) === '确认派发', '没有输入“确认派发”，本例未派发；请核对后重跑');
     const state = await p.dispatch(prepared);
     requireFact(!state.frozen && state.outcome !== 'unknown', `派发未知或冻结；请管理员先对账 circle-hub job dispose ${state.job} --reconcile <远端作业编号>，不能重发、释放或继续下一例`);
@@ -209,7 +209,7 @@ export async function main(argv: string[]): Promise<number> {
       say(stage, { cases: state.completed.length, qualifications: batchQualifications(results) });
     };
     const release = async (booking: string) => {
-      say('等待 Circle 释放本例台架', { note: '作业已有终态；请 Circle 经 test-bed 释放本例占用，再输入释放运行号' });
+      say('等待 Circle 释放本例自动化测试环境', { note: '作业已有终态；请 Circle 经 test-bed 释放本例占用，再输入释放运行号' });
       const released = await show((await rl.question('输入 Circle 的释放运行号：')).trim()); const run = released.run as Record<string, unknown>;
       const groups = Array.isArray(run.groups) ? run.groups.filter(object) : [];
       requireFact(text(run.pack).startsWith('test-bed@') && groups.some(g => g.action === 'release' && g.booking === booking), '该运行不是释放本例占用；请 Circle 按本例谱系释放后给出正确运行号');
@@ -236,17 +236,17 @@ export async function main(argv: string[]): Promise<number> {
     const remaining = state.completed.length ? ids.slice(state.completed.length) : ids.slice(0, 1);
     await runCases(remaining, state.completed.map(c => c.booking), {
       async prepare(id) {
-        say('等待 Circle 完成本例', { case_index: state.completed.length + 1, note: 'Circle 经 test-bed 独立占台架，按 SKILL 完成填槽、生成、上传和核验；本脚本不调 MCP、不生成内容' });
+        say('等待 Circle 完成本例', { case_index: state.completed.length + 1, note: 'Circle 经 test-bed 独立占自动化测试环境，按 SKILL 完成填槽、生成、上传和核验；本脚本不调 MCP、不生成内容' });
         const run = checkedRunId((await rl.question('输入这个用例的核验运行号：')).trim());
         const verified = verification(await show(run), id, checked.definition.manifest_sha256!);
         const plan = (await show(verified.predecessor)).run as Record<string, unknown>;
-        requireFact(text(plan.pack).startsWith('case-compile@') && runId.safeParse(plan.predecessor).success, '计划没有占台架前驱；请 Circle 独立占台架后重开计划及核验');
+        requireFact(text(plan.pack).startsWith('case-compile@') && runId.safeParse(plan.predecessor).success, '计划没有占自动化测试环境前驱；请 Circle 独立占自动化测试环境后重开计划及核验');
         const booked = (await show(text(plan.predecessor))).run as Record<string, unknown>;
         const groups = Array.isArray(booked.groups) ? booked.groups.filter(object) : [];
-        requireFact(text(booked.pack).startsWith('test-bed@') && groups.some(g => g.action === 'acquire' && g.bed === checked.definition.target), '计划前驱不是本台架占用；请 Circle 重新占台架并在本例谱系完成计划及核验');
+        requireFact(text(booked.pack).startsWith('test-bed@') && groups.some(g => g.action === 'acquire' && g.bed === checked.definition.target), '计划前驱不是本自动化测试环境占用；请 Circle 重新占自动化测试环境并在本例谱系完成计划及核验');
         return { run: verified.run, sha256: verified.sha256, booking: text(booked.run) };
       },
-      async confirm(_id, digest) { const current = await stageZero(); requireFact(current.digest === checked.digest && current.resolved_digest===checked.resolved_digest, '执行器已更新；请重跑第零步并重新核对本例，当前不派发'); say('派发前确认', { case_index: state.completed.length + 1, sha256: digest }); return rl.question('请核对本例工作簿、执行器与台架，输入“确认派发”：'); },
+      async confirm(_id, digest) { const current = await stageZero(); requireFact(current.digest === checked.digest && current.resolved_digest===checked.resolved_digest, '执行器已更新；请重跑第零步并重新核对本例，当前不派发'); say('派发前确认', { case_index: state.completed.length + 1, sha256: digest }); return rl.question('请核对本例工作簿、执行器与自动化测试环境，输入“确认派发”：'); },
       async dispatch(prepared) {
         state.pending = { autoid: ids[state.completed.length], ...prepared }; save();
         const reply = await cli(['job', 'dispatch', '--run', prepared.run, '--executor', args['--executor']], stdout => { const job = /作业摘要 ([a-f0-9]{64})/.exec(stdout)?.[1]; if (job && state.pending && state.pending.job !== job) { state.pending.job = job; save(); } });
