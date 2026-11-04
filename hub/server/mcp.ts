@@ -107,11 +107,12 @@ function mcpSessionOf(header: string | string[] | undefined): string | null {
 /**
  * MCP initialize clientInfo (name, version, platform) as the client reported it; bounded, kept only as a declaration. The
  * platform stays apart from `client`: that is what the records bind to a client's writes, and the platform is diagnostic data
- * only (B08 F[14]). Like the version, it says nothing without a name.
+ * only (B08 F[14]). Like the version, it says nothing without a name. Well formed: JSON lets a client send a lone surrogate,
+ * which a resource sample's jsonb and a record's canonical JSON both refuse.
  */
 function clientInfoOf(value: unknown): { client?: ClientDeclaration; clientPlatform?: string } {
   if (!isPlainObject(value)) return {};
-  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
+  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
   const name = clean(value.name);
   if (name === null) return {};
   const platform = clean(value.platform);

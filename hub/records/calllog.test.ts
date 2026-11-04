@@ -290,6 +290,16 @@ test('inputs are validated; odd session headers are kept only as a digest; any a
   assert.equal(argumentDigest({ lone: String.fromCharCode(0xd800) }).size > 0, true);
 });
 
+test('a client declaration is kept well formed: a lone surrogate costs the call neither its line nor its declaration', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { alice } = await people(kit);
+  const session = '00000000-0000-4000-8000-000000000001';
+  const line = await kit.callLog.append({ traceId: trace(32), userId: alice.id, sessionId: null, tool: 'initialize', runId: null, arguments: {}, callResult: 'ok', durationMs: 0, client: { name: 'synthetic\ud83d client', version: '1.\ud83d' }, tokenId: 'tok_synthetic', mcpSessionId: session });
+  assert.equal(line.tool, 'initialize');
+  assert.deepEqual(await kit.callLog.declaredClient!(alice.id, session, 'tok_synthetic'), { name: 'synthetic\ufffd client', version: '1.\ufffd' });
+});
+
 test('full administrator reasons are separate immutable rows outside records and JSONL',async t=>{
  const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin,alice}=await people(kit);
  const reasons=['第一条合成原因'+ '甲'.repeat(2500)+'FIRST-TAIL','第二条合成原因'+ '乙'.repeat(2500)+'SECOND-TAIL'];

@@ -72,9 +72,9 @@ const CLIENT_TOKEN_KEY = 'mcp.client.token';
 const MCP_SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sessionKey = (user: string, token: string | null | undefined, session: string | null | undefined): string | null =>
   typeof token === 'string' && token.length > 0 && token.length <= 200 && typeof session === 'string' && MCP_SESSION.test(session) ? `${user}/${token}/${session}` : null;
-/** A client's own name and version, bounded; control and format characters removed (shown in the console as written). */
+/** A client's own name and version, bounded and well formed; control and format characters removed (shown in the console as written). */
 function clientOf(value: { name: string; version: string | null }): { name: string; version: string | null } {
-  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
+  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
   const name = clean(value?.name);
   if (name === null) throw new TypeError('a client declaration has a name');
   return { name, version: clean(value.version) };
