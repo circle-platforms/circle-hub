@@ -1,0 +1,71 @@
+{
+  "id": "install_image_extension",
+  "source": "author",
+  "check": "install",
+  "note": "合成反例：镜像扩展名不是装构建档案里升级用例认的",
+  "subject": {
+    "item": {
+      "id": "syn-upgrade-0",
+      "label": "lb0 的升级用例 syn-upgrade-0",
+      "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0/devices/0",
+      "fields": {
+        "bed": "bed-a",
+        "device": "lb0",
+        "position": 0,
+        "case": "syn-upgrade-0"
+      }
+    },
+    "claimed": "Rel_FAMX_9_2_1_8",
+    "group": {
+      "bed": "bed-a",
+      "devices": [
+        "lb0",
+        "lb1",
+        "client1"
+      ],
+      "targets": [
+        "lb0",
+        "lb1"
+      ],
+      "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bed_pointer": "p/beds/0",
+      "profile_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "upgrade_cases": [
+        "syn-upgrade-0",
+        "syn-upgrade-1"
+      ],
+      "image_extensions": [
+        "img"
+      ],
+      "request_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "request": {
+        "schema": "bed-install@1",
+        "build": "Rel_FAMX_9_2_1_8",
+        "image": "FAMXOS-Rel_FAMX_9_2_1_8.iso"
+      }
+    },
+    "predecessor": "run_synthetic_booking",
+    "build": "Rel_FAMX_9_2_1_6",
+    "leases": [
+      {
+        "key": "bed/bed-a/lb0",
+        "run": "run_synthetic_booking"
+      },
+      {
+        "key": "bed/bed-a/lb1",
+        "run": "run_synthetic_booking"
+      },
+      {
+        "key": "bed/bed-a/client1",
+        "run": "run_synthetic_booking"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "bed-install.request_invalid",
+      "item": "syn-upgrade-0"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "schema": "pack@1",
+  "id": "bed-install",
+  "version": "1.0.4",
+  "kind": "workflow",
+  "title": "自动化测试环境装构建",
+  "description": "复现缺陷要在发现它的构建上跑：自动化测试环境装的不是这个构建时，先用本包照测试框架的升级用例给整台预订的环境装上（设备会重启），不用问用户。装构建请求写要装的构建和它在构建站上的镜像文件名（source-read 从入口页 buildsite:listing:index 读起，经版本线导航页到列有它的列表页，取它的镜像链接文件名）；Hub 核对镜像名按升级用例的读法正是这个构建、前驱运行持有整台环境、运行锁定设备现在装的构建，受理后由 Hub 派发，每台负载均衡设备一个升级用例（用例号和认的镜像扩展名来自管理员发布的装构建档案 doc:doc:bed-install-profile），已是目标构建的设备跳过",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "269e610568a0082ceb4c9cbc4ee879881dcdbadea6deb0d737ea237f89115e3e",
+      "size": 4141
+    },
+    {
+      "path": "checks.json",
+      "sha256": "68d1e979619b50f8801e3576f5f6bc5e7cc262cab87560103316fbf66d436478",
+      "size": 1144
+    },
+    {
+      "path": "examples/bed-install-profile.json",
+      "sha256": "0dca110776d836c5d1a2c6d385f48f2f74306e36ff66b31d92e351342f79d232",
+      "size": 143
+    },
+    {
+      "path": "examples/install-request.json",
+      "sha256": "cf889127317778dfdaeba55d4ceffd3d373ba1006f1223c183094a42bf89e4c4",
+      "size": 105
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "ffa0d1ab59e8b7720a99761e78f312d679f1b9d54369d7eec246f68354427941",
+      "size": 424
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "db64a2616b4de5604c730795c890c76491ffd49262d8049658b1a8415463125d",
+      "size": 6650
+    },
+    {
+      "path": "functions/dispatch-policy.ts",
+      "sha256": "65c199ee50a219b694b176ac5c52ea42843f5f0665d314feb3dd1ddc35bcdad6",
+      "size": 1686
+    },
+    {
+      "path": "functions/install.ts",
+      "sha256": "b346fc7dc6a97667fd42898b9749532d11c14023eaf09ad4355ea83f1d307aa4",
+      "size": 7583
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "5689689d940f90922a4b7c6395663cf06a47f07c3a3419001cd454bb04e3aaf7",
+      "size": 7845
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "3fa28f4febe52b54b4ae5adea19ea620cf9be6fd558c01eb426848db816a94e0",
+      "size": 4105
+    },
+    {
+      "path": "policies/install.json",
+      "sha256": "bc8ee3982363c91e9e76a525f096b7edbfed52d64c4a847d160da2c570bf3b5d",
+      "size": 802
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "3268f13838567ad69a1f0149db4b2e79b6e8982badcb06b8ed5122cff5102595",
+      "size": 2076
+    },
+    {
+      "path": "samples/negative/dispatch-policy-image-mismatch.json",
+      "sha256": "b7ba7f1041a7606ae6bfb57f2b88c167d8c4bdcfb0634e1ff3c8279faef7796a",
+      "size": 1849
+    },
+    {
+      "path": "samples/negative/install-booking-missing.json",
+      "sha256": "dcf476cad20051211571239d319c6023db95636f7cac402d4e02fe9e3038bd1a",
+      "size": 1748
+    },
+    {
+      "path": "samples/negative/install-build-unlocked.json",
+      "sha256": "cabf065739f0f4ee882ae79b756f9a999988d558c41a6303e28dc6385ccc7845",
+      "size": 1788
+    },
+    {
+      "path": "samples/negative/install-claim-mismatch.json",
+      "sha256": "e55704066cc57b84b552e9fb1b6a12c0ef7fc0d842a437a6adf79003869a2f38",
+      "size": 1831
+    },
+    {
+      "path": "samples/negative/install-image-extension.json",
+      "sha256": "52770f647d47d760833aaefacc1a891d864c1f63002e1709e43a138424d30278",
+      "size": 1837
+    },
+    {
+      "path": "samples/negative/install-image-mismatch.json",
+      "sha256": "399403a83683b90eec15e6633bfc8a03dcdc56de7eb9b4a8d70345e3ce63196a",
+      "size": 1833
+    },
+    {
+      "path": "samples/negative/install-request-shape.json",
+      "sha256": "6e993332c0e2edad6bd6ac5fa9b5110285047f89915b23e019ae1d2c12b51436",
+      "size": 1853
+    },
+    {
+      "path": "samples/positive/dispatch-policy-support.json",
+      "sha256": "79b364d525e0794d7d7d4ada3c0d5135c8c78a3059f90519e74d828ad3152808",
+      "size": 1828
+    },
+    {
+      "path": "samples/positive/install-support.json",
+      "sha256": "818955480c2fedc40835cca8e4dc310a9a4d7aef605ce186fd7de3d50f985ecd",
+      "size": 1812
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "cde7241f5d7dee7a7662fbc633b3ef2ad0c87e03899fd9e03c72b73c5305b365",
+      "size": 338
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "bb8f0ea281fdb70b1f0f42f9943a682898578ba03e2ae131c00b5e68775e9e9e",
+      "size": 2480
+    }
+  ]
+}
