@@ -772,21 +772,38 @@ describe('source', () => {
 describe('lease', () => {
   const holder = { user: 'usr_0123456789abcdefghjkmnpqrs', run: 'run_0123456789abcdefghjkmnpqrs' };
 
-  /** A lease service over the deployment's database (the runtime role may lease). */
-  const leaseServiceOf = (admin: Admin): LeaseService =>
-    new LeaseService(
-      new Database(
-        createPool(
-          {
-            host: admin.deployment.env.CIRCLE_HUB_DATABASE_SOCKET_DIR as string,
-            port: Number(admin.deployment.env.CIRCLE_HUB_DATABASE_PORT),
-            database: admin.deployment.env.CIRCLE_HUB_DATABASE_NAME as string,
-            user: admin.deployment.env.CIRCLE_HUB_DATABASE_USER as string,
-          },
-          2,
-        ),
+  /** A pool on the deployment's database as the runtime role. */
+  const databaseOf = (admin: Admin, max: number): Database =>
+    new Database(
+      createPool(
+        {
+          host: admin.deployment.env.CIRCLE_HUB_DATABASE_SOCKET_DIR as string,
+          port: Number(admin.deployment.env.CIRCLE_HUB_DATABASE_PORT),
+          database: admin.deployment.env.CIRCLE_HUB_DATABASE_NAME as string,
+          user: admin.deployment.env.CIRCLE_HUB_DATABASE_USER as string,
+        },
+        max,
       ),
     );
+  /** A lease service over the deployment's database (the runtime role may lease). */
+  const leaseServiceOf = (admin: Admin): LeaseService => new LeaseService(databaseOf(admin, 2));
+
+  test('a lease command ends the pools it opened, so the process exits once it has printed', async () => {
+    const admin = await setup();
+    const probe = databaseOf(admin, 1);
+    try {
+      const others = async (): Promise<number> => Number((await probe.query<{ n: string }>(
+        'SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()')).rows[0].n);
+      const before = await others();
+      await expectOk(admin, ['lease', 'list']);
+      // A closed connection leaves pg_stat_activity within moments; a pool left open keeps it for its 30-second idle timeout.
+      let after = await others();
+      for (let waited = 0; after > before && waited < 3000; waited += 100) { await new Promise((done) => setTimeout(done, 100)); after = await others(); }
+      assert.equal(after, before, 'no connection of the command is left idle after it returns');
+    } finally {
+      await probe.end();
+    }
+  });
 
   test('list shows the unexpired rows of a prefix with their holders and ends, and nothing without one', async () => {
     const admin = await setup();

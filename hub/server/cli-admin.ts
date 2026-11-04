@@ -140,6 +140,7 @@ class Session {
   #hub: Promise<AssembledHub> | null = null;
   #tokens: Promise<OperatorTokenStore> | null = null;
   #leases: Promise<LeaseService> | null = null;
+  #leaseDatabase: Database | null = null;
 
   constructor(ctx: CliContext, options: AdminCommandOptions) {
     this.ctx = ctx;
@@ -164,10 +165,26 @@ class Session {
     return this.ctx.records();
   }
 
-  /** The lease service over this deployment's database (one pool per invocation, closed with it). */
+  /** The lease service over this deployment's database (one pool per invocation, closed with it by close()). */
   leases(): Promise<LeaseService> {
-    this.#leases ??= (async () => new LeaseService(new Database(createPool(this.config().database, 2)),{records:(await this.records()).store}))();
+    this.#leases ??= (async () => {
+      const records = await this.records();
+      this.#leaseDatabase = new Database(createPool(this.config().database, 2));
+      return new LeaseService(this.#leaseDatabase, { records: records.store });
+    })();
     return this.#leases;
+  }
+
+  /**
+   * Ends the pools this invocation opened besides the records kit's (the CLI context closes that one): the lease pool and
+   * the assembled hub's dispatch pool. An idle pool keeps the process alive for its idle timeout, so a command that
+   * leaves one open returns its output and then waits 30 seconds before it exits.
+   */
+  async close(): Promise<void> {
+    const hub = this.#hub === null ? null : await this.#hub.catch(() => null);
+    await hub?.dispatch?.close().catch(() => {});
+    await this.#leases?.catch(() => null);
+    await this.#leaseDatabase?.end().catch(() => {});
   }
 
   /** The operator token file of this deployment: its key service is resolved as the vault master key's. */
@@ -1584,10 +1601,13 @@ export function adminCommands(options: AdminCommandOptions = {}): CliCommand[] {
     name,
     summary,
     run: async (args, ctx) => {
+      const session = new Session(ctx, options);
       try {
-        return await handler(new Session(ctx, options), args);
+        return await handler(session, args);
       } catch (error) {
         throw terminalSafeError(error);
+      } finally {
+        await session.close();
       }
     },
   }));
