@@ -3,7 +3,7 @@ import {retirePersonalCaches} from './personal-caches.ts';
 import {isAbsolute} from 'node:path';
 // Administrator coordination shares the native payload purger; progress contains digests and counts only.
 import {MemberDeletionBody,MemberDeletionCounts,type MemberDeletionBody as Receipt} from '../../contracts/src/spaces.ts';
-import {PermissionRoleSchema,type MemberHandoverStatus} from '../../contracts/generated/vocabulary.ts';
+import {PermissionRoleSchema,TokenActionSchema,type MemberHandoverStatus} from '../../contracts/generated/vocabulary.ts';
 import type {PersonalPackVersionBody} from '../../contracts/src/sharing.ts';
 import {canonicalize} from './canonical.ts';
 import {parseStrictJson} from './strict-json.ts';
@@ -12,7 +12,8 @@ import {sha256Hex} from './digest.ts';
 import {iso} from './db.ts';
 import type {Database} from './db.ts';
 import type {Principal,RecordStore,Transaction} from './api.ts';
-import {AccessError,ConflictError,RecordsError} from './errors.ts';
+import {AccessError,ConflictError,IntegrityError,RecordsError} from './errors.ts';
+import {appendTokenIssuance} from './token-issuance.ts';
 import {lockAdministratorSet} from './principals.ts';
 import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
@@ -91,7 +92,16 @@ export class PgMemberDeletions {
    // Owner ruling 4 (issue 141): hand the private workflows and skills to the deleting administrator in the same
    // transaction that begins the deletion; the member's own versions are purged afterwards as before.
    if(this.#handover&&current.handover?.to)await this.#handover.transfer(by,input.member,tx);
+   // The SQL function revokes the member's live tokens (applied migrations 19-23 never change). Locking them after the
+   // member row fixes that set: a new token needs the member row, a concurrent revocation needs the token row. Each one
+   // then gets its token_issuance revocation, naming this operation, in the same transaction (model 38, R01 R[12]).
+   const live=(await this.db.query('SELECT id FROM tokens WHERE user_id=$1 AND revoked_at IS NULL ORDER BY id FOR UPDATE',[input.member],tx)).rows.map(row=>String(row.id));
    try{await this.db.query('SELECT hub_begin_member_deletion($1,$2,$3,$4,$5,$6,$7,$8)',[by.id,input.member,input.epoch,input.operation_id,input.purge_manifest,JSON.stringify(input.counts),receipt.at,user.updated_at],tx);}catch(cause){throw new ConflictError('删除检查未通过；成员、清除范围或存储准备已变化',{cause});}
+   if(live.length){
+    const revoked=new Set((await this.db.query('SELECT id FROM tokens WHERE id=ANY($1::text[]) AND revoked_at=$2 AND revoked_by=$3',[live,receipt.at,by.id],tx)).rows.map(row=>String(row.id)));
+    if(revoked.size!==live.length)throw new IntegrityError('删除成员时没有吊销该成员的全部令牌',{detail:{member:input.member}});
+    for(const token of live)await appendTokenIssuance(this.store,{action:TokenActionSchema.enum.revoke,token,user:input.member,by:by.id,at:receipt.at,member_deletion:input.operation_id},tx);
+   }
    return receipt;
   }).finally(retireReadScope);
  }

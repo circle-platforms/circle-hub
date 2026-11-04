@@ -9,7 +9,7 @@ Two files are the only sources:
 
 | Source | Holds | Owner |
 | --- | --- | --- |
-| `contracts/model.json` | the cause model: 73 elements, 110 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
+| `contracts/model.json` | the cause model: 73 elements, 112 vocabulary axes, protocol codes, reference forms, record kinds, pack file names, display order, `version` | the model author; changes go through the integrator |
 | `contracts/codes.json` | core violation codes `core.<interpreter>.<name>` with Chinese `when` and `fix` | contracts |
 
 `tools/gen-contracts.ts` turns them, together with the zod shapes in `contracts/src`, into `contracts/generated`:
@@ -574,3 +574,13 @@ Model 37 is ahead of the code until consolidation step 4: the read engine, conso
 local-tool download outlet still give the model-36 neutral answer; `contracts/src/submission.ts` still requires `model`
 on every submission, which W07 F[0] makes optional within the starting session; and feeding does not yet write the new
 `fed-case@1` fields or re-project. Where they disagree, the model wins and step 4 ports the code.
+
+Decision 136 ⑫ (owner, 2026-11-02; model change approved by the integrator as contracts owner, 2026-11-04) sets model 38:
+token and invitation issuance, use and revocation become append-only records. One record kind, `token_issuance`
+(`token-issuance@1` in `contracts/src/tokens.ts`), carries an `action` from the new R01 axis `token_action` (签发,
+使用, 吊销), following `knowledge_space_grant` with `knowledge_grant_action` rather than one kind per action. The body is
+a closed union of token issue, token revoke, invitation issue and invitation use; the subject is the id the body
+carries (`tok_…` or `inv_…`), so no second axis is added. Bodies hold ids, accounts, actors, times, the label and the
+client id, never a token, an invitation code or a hash of either; a revocation that member deletion performed names the
+deletion's `operation_id`. R01 R[12] states the rule and R01 `changes38` the change. History before model 38 is not
+backfilled. No protocol code, MCP tool or migration changes, and the skill protocol mirrors are unchanged.

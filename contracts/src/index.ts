@@ -13,6 +13,7 @@ import * as resourceSchemas from './resources.ts';
 import * as tableSchemas from './tables.ts';
 import * as viewSchemas from './views.ts';
 import * as variableSchemas from './variables.ts';
+import * as tokenSchemas from './tokens.ts';
 import { Claim } from './claim.ts';
 import { SchemaId } from './common.ts';
 import { RecordEnvelope } from './records.ts';
@@ -76,6 +77,7 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'tables.ts': tableSchemas.schemas,
   'views.ts': viewSchemas.schemas,
   'variables.ts': variableSchemas.schemas,
+  'tokens.ts': tokenSchemas.schemas,
 });
 
 export * from './memory.ts';

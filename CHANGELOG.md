@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Record token and invitation issuance, use and revocation as append-only `token_issuance` records in the same transaction as the token or invitation row change, including the tokens revoked by member deletion (model 38, R01 R[12], decision 136 ⑫). Records hold ids, accounts, actors, times, labels and client ids, never a token, an invitation code or a hash; history before this change stays in the `tokens` and `invitations` rows.
+
 - Merge the integration line's model changes into model 37 (consolidation step 3): read failures answer `SOURCE_ABSENT` or the new `SOURCE_NOT_PERMITTED` for team, product and business-system content and stay neutral only for another member's personal space and credential or login failures (D05 R[3], decision 136 ③); errors and fixes are claims (D05 R[8]); choice lists list every option first (A05 R[1]); requests keep their starting permissions (B03, B04) and a session may reuse its declared model identity (W07 F[0]); 台架 and 运行环境 read 自动化测试环境; `fed-case@1` gains ten optional fields. The code follows in step 4. html-format and mindmap-format 1.0.18, workbook-format and xml-format 1.0.19 and knowledge-contribution 1.3.19 carry only the regenerated contract files.
 
 - Unify the decision registry in `docs/hub-r4-progress.md`: public main's former decisions 74–88 are now 121–135 and 89–94 are now 138–143 (table at the top of the page), with sanitized summaries of the integration line's decisions 71–120 and the owner's decisions 136 and 137; citations across the repository follow, and model 36 changes only cited numbers.
