@@ -3,8 +3,8 @@ import {deletionCheck,deleteMember,DELETION_EFFECT,handoverLines} from './member
 // calls it). Platform commands go to hub/platform's runPlatformCommand; serve is main.ts; user, token, logs and run need only
 // records (run show the assembly module's command-time assembly; run list the same records, administrator only); pack,
 // resource, secret, knowledge, init-admin, operator-token and anything else the assembly module registers through
-// registerCommand. The built-in commands that change state (user create once an admin exists, user disable|enable, token
-// issue|revoke) act as the admin of the operator token (CIRCLE_HUB_TOKEN, else the deployment's operator token file), like the
+// registerCommand. The built-in commands that change state (user create once an admin exists, user disable|enable|rename,
+// token issue|revoke) act as the admin of the operator token (CIRCLE_HUB_TOKEN, else the deployment's operator token file), like the
 // assembly's; the read-only ones that read as an account (logs export, run show) read as the token's account, like the
 // assembly's listings. run list is read-only and refuses every account that is not an administrator. Output is Chinese, made safe for a
 // terminal (stored text may come from users' documents), and never shows a secret: a token is printed once, when it is
@@ -25,7 +25,7 @@ import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOption
 import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
-import { initialPassword } from '../records/api.ts';
+import { DEFAULT_ADMIN_NAME, initialPassword } from '../records/api.ts';
 import { issueSetupCode } from './setup-code.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
@@ -79,9 +79,10 @@ function usage(extra: readonly CliCommand[]): string {
     '用法：circle-hub <命令>',
     '',
     `  ${SERVE_USAGE}`,
-    `  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先建第一位管理员，并只显示一次它的令牌`,
+    `  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先用 --role admin 建第一位管理员（省略名字时为 ${DEFAULT_ADMIN_NAME}），并只显示一次它的令牌`,
     '  user list [--json]                           列出用户（JSON 不含密码摘要或令牌）',
     '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）',
+    '  user rename <用户> <新名字>                    给账号改名；记录按成员编号引用账号，改名后登录和 --as 用新名字',
     '  user delete <成员编号> [--dry-run] [--json]    先检查清除范围；按显示的确认命令永久删除，失败后重试同一操作',
     '  user password-reset <用户>                   重置初始密码，只显示一次；首次登录须修改，控制台会话立即失效',
     '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它',
@@ -98,7 +99,7 @@ function usage(extra: readonly CliCommand[]): string {
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
     '',
     `平台命令 ${PLATFORM_COMMANDS.join('、')} 由 hub/platform 执行（例如 circle-hub status），用法见 hub/platform/README.md。`,
-    `改变状态的命令（建用户、停用、恢复、签发和撤销令牌，以及装配模块的这类命令）以操作令牌的管理员身份执行：${OPERATOR_TOKEN_VARIABLE}（只给一条命令：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>），没有时用数据根私有密钥文件里的操作令牌（init-admin、operator-token set 或 operator-token reissue 存进去）。`,
+    `改变状态的命令（建用户、停用、恢复、改名、签发和撤销令牌，以及装配模块的这类命令）以操作令牌的管理员身份执行：${OPERATOR_TOKEN_VARIABLE}（只给一条命令：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>），没有时用数据根私有密钥文件里的操作令牌（init-admin、operator-token set 或 operator-token reissue 存进去）。`,
     '只读命令（logs export、run show 和装配模块的列表）有操作令牌时以令牌的账号读，--as 只能写这个账号；没有令牌时 --as 指明以哪位管理员的身份读，只有一位启用中的管理员时可以省略。',
     'run list 也是只读，但只允许管理员；普通用户的令牌会被拒绝。它按已有的运行和验证结果列出，不新写存储，不输出提交正文、引文或凭据。--limit 默认 50，最大 500，按开始时间新到旧；还有更多时给出下一页游标，不悄悄截断。未知和各要求项终态取最新一条已受理结果，没有已受理结果时未知为 0、终态为无。验证状态取最新一条验证结果：没有结果是进行中。',
   ];
@@ -140,14 +141,16 @@ async function sayIfLost(io: CliIo, act: OperatorAct): Promise<void> {
 /** A line of stored text (names, labels, ids from users' documents) for the terminal: control characters as escapes. */
 const out = (io: CliIo, line: string): void => io.stdout(terminalSafe(line));
 
-function parse<T extends Record<string, { type: 'string' | 'boolean' }>>(args: readonly string[], options: T, positionals: number) {
+/** `positionals` arguments, or from `positionals` to `most` when an argument may be left out. */
+function parse<T extends Record<string, { type: 'string' | 'boolean' }>>(args: readonly string[], options: T, positionals: number, most = positionals) {
   let parsed;
   try {
     parsed = parseArgs({ args: [...args], options, allowPositionals: true, strict: true });
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : String(error));
   }
-  if (parsed.positionals.length !== positionals) throw new UsageError(`需要 ${positionals} 个参数，给了 ${parsed.positionals.length} 个`);
+  const given = parsed.positionals.length;
+  if (given < positionals || given > most) throw new UsageError(`需要 ${most === positionals ? positionals : `${positionals} 至 ${most}`} 个参数，给了 ${given} 个`);
   return parsed;
 }
 
@@ -188,7 +191,7 @@ function contextFor(options: CliOptions, assembly: () => Promise<AssemblyModule>
         return { id: user.id, name: user.name, role: user.role };
       }
       const admins = (await kit.principals.list()).filter((user) => user.role === 'admin' && !user.disabled);
-      if (admins.length === 0) throw new CliError('还没有管理员', '先建第一位管理员：circle-hub user create <名字> --role admin');
+      if (admins.length === 0) throw new CliError('还没有管理员', `先建第一位管理员：circle-hub init-admin [<名字>] 或 circle-hub user create [<名字>] --role admin；省略名字时为 ${DEFAULT_ADMIN_NAME}`);
       if (admins.length > 1) throw new CliError('有多位管理员，要用 --as <名字> 指明以谁的身份操作');
       return { id: admins[0].id, name: admins[0].name, role: admins[0].role };
     },
@@ -215,16 +218,16 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
   const [sub, ...rest] = args;
   const io = ctx.io;
   if (sub === 'create') {
-    const { values, positionals } = parse(rest, { role: { type: 'string' }, as: { type: 'string' } }, 1);
+    const { values, positionals } = parse(rest, { role: { type: 'string' }, as: { type: 'string' } }, 0, 1);
     noAs(values.as);
     const role = values.role ?? 'user';
     if (!isPermissionRole(role)) throw new UsageError(`角色只能是 ${PERMISSION_ROLE.map((code) => `${code}（${roleText(code)}）`).join('、')}`);
     const kit = await ctx.records();
     const admins = (await kit.principals.list()).filter((user) => user.role === 'admin');
     if (admins.length === 0) {
-      if (role !== 'admin') throw new CliError('还没有管理员', '先建第一位管理员：circle-hub init-admin <名字>（令牌存进私有密钥文件），或 circle-hub user create <名字> --role admin（令牌显示一次）');
+      if (role !== 'admin') throw new CliError('还没有管理员', `先建第一位管理员：circle-hub init-admin [<名字>]（令牌存进私有密钥文件），或 circle-hub user create [<名字>] --role admin（令牌显示一次）；省略名字时为 ${DEFAULT_ADMIN_NAME}`);
       const password = initialPassword();
-      const { user, token } = await kit.principals.bootstrapAdmin(positionals[0], {password,mustChange:true});
+      const { user, token } = await kit.principals.bootstrapAdmin(positionals[0] ?? DEFAULT_ADMIN_NAME, {password,mustChange:true});
       io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
       io.stdout(password);
       out(io, `已建立第一位管理员 ${user.name}（${user.id}）`);
@@ -232,6 +235,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
       io.stdout(token.token);
       return 0;
     }
+    if (positionals[0] === undefined) throw new UsageError('已经有管理员：建用户要给出名字');
     const by = await operatorOf(ctx, options);
     const password = initialPassword();
     const user = await kit.principals.createUser(by, positionals[0], role, {password,mustChange:true});
@@ -283,6 +287,16 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     if (changed.disabled) await sayIfLost(io, act);
     return 0;
   }
+  if (sub === 'rename') {
+    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 2);
+    noAs(values.as);
+    const by = await operatorOf(ctx, options);
+    const kit = await ctx.records();
+    const user = await requireUser(kit, positionals[0]);
+    const renamed = await kit.principals.rename(by, user.id, positionals[1]);
+    out(io, `已把 ${user.name}（${user.id}）改名为 ${renamed.name}；登录控制台和 --as 从现在起用新名字，旧名字不再可用；记录按成员编号引用，不受影响`);
+    return 0;
+  }
   if (sub === 'invite') {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     noAs(values.as);
@@ -295,7 +309,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     io.stdout('成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码');
     return 0;
   }
-  throw new UsageError('user 的子命令是 create、list、disable、enable、delete、password-reset 或 invite');
+  throw new UsageError('user 的子命令是 create、list、disable、enable、rename、delete、password-reset 或 invite');
 }
 
 async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {

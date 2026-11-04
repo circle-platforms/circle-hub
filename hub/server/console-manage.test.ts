@@ -20,6 +20,7 @@ import { ACTIONS } from './console/manage.ts';
 import { NEUTRAL } from './console/pages.ts';
 import { withoutNonces } from './console/testing-security.ts';
 import { issueSetupCode } from './setup-code.ts';
+import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
 
 interface User { id: string; name: string; role: 'user' | 'admin'; disabled: boolean; created_at: string }
 
@@ -170,6 +171,9 @@ test('the first administrator is created with the setup code; the token shown on
   assert.match(login.body, /还没有管理员/);
   const page = await send('GET', '/console/setup');
   assert.equal(page.status, 200);
+  // The username is pre-filled with the default and stays editable (and required).
+  assert.match(page.body, new RegExp(`<input id="admin-name" name="name" autocomplete="off" size="24" required value="${DEFAULT_ADMIN_NAME}">`));
+  assert.match(page.body, new RegExp(`管理员用户名默认为 ${DEFAULT_ADMIN_NAME}，可以修改`));
   const nonce = cookieValue(page, 'circle_hub_setup');
   const noCode = await send('POST', '/console/setup', { cookie: `circle_hub_setup=${nonce}`, body: form({ csrf: nonce, code: 'ABCDE', name: 'root' }) });
   assert.equal(noCode.status, 403);

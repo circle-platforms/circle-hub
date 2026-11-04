@@ -399,7 +399,9 @@ values, permission consequences and missing-evidence facts remain visible. Backg
 result: an outstanding result is unknown, rather than success or failure.
 
 Decision 130 makes username/password the ordinary sign-in for administrators and members. Only administrators create
-accounts; `user create` generates an initial password shown once and requires a first-login change. Team manages
+accounts; `user create` generates an initial password shown once and requires a first-login change. Only administrators
+rename accounts (`circle-hub user rename <user> <new name>`, command line only: the team page's member entries are fixed
+commands without a text field); the old name stops signing in at once, tokens and records keep the account's id. Team manages
 resets; members change their own password there. Passwords travel through forms or stdin, never command arguments or logs.
 Five failed attempts per account and 50 per peer in 15 minutes are bounded in process memory, including unknown accounts;
 a restart clears these counters. Successful logins clear that account and peer. Two expensive derivations run at most.
@@ -712,7 +714,8 @@ Knowledge sync runs as a background job of this process (`JobStore`, the last 50
 with the process, their records stay). A token issued here is shown once on the result page.
 
 The first administrator: `circle-hub setup-code` (refused once an administrator exists) prints a one-time code and
-keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code, a username and an optional password
+keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code, a username (pre-filled with `admin`, `DEFAULT_ADMIN_NAME` of
+`hub/records/api.ts`, and editable) and an optional password
 while no administrator exists (its own nonce cookie, own origin), creates the administrator with `bootstrapAdmin`,
 removes the code and shows the administrator's access token once; that token only connects a Circle. No session is
 opened: the administrator signs in with the username and password like every account. A generated initial password is
@@ -726,8 +729,9 @@ after `hub/config/guard.ts`). A retired `CIRCLE_SERVER_*` variable refuses every
 
 ```
 circle-hub serve [--migrate-only] [--migrate]
-circle-hub user create <name> [--role <permission_role>]              # no admin yet: bootstraps the first admin, its token shown once
+circle-hub user create <name> [--role <permission_role>]              # no admin yet: bootstraps the first admin (--role admin; no name: admin), its token shown once
 circle-hub user list | user disable <user> | user enable <user>
+circle-hub user rename <user> <new name>                              # administrator: renames an account, records keep its id
 circle-hub token issue <user> [--label <l>] [--raw] | token revoke <tok_…> | token list [<user>]
 circle-hub logs export [--from <time>] [--to <time>] [--user <u>] [--tool <t>] [--run <r>] [--out <file>] [--as <account>]
 circle-hub run list [--pack <id>] [--user <user>] [--state 受理|未受理|进行中] [--since <ISO time>] [--unknown] [--limit <N>] [--cursor <cursor>] [--json] [--as <admin>]
@@ -741,7 +745,7 @@ circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object
 `knowledge retract` is an administrator command (the operator token, same as `knowledge sync`). It appends one `retraction@1` per target kind through `FeedingLayer.retract`. A retraction does not delete or rewrite the original record; the read side then shows the grounds as withdrawn. A target that already has a retraction record is not appended again. `--entry` takes a feeding record or any knowledge contribution record, including one grounded directly in tree entries. `--run` also lists, as entries of the same command, the contribution records the run's accepted results stored (`contributions.stored`), and prints how many it added; a run an older record retracted alone gets one entries record when the command is run again.
 
 Records commands open the records as the runtime role without migrating. **State-changing built-ins** (`user create`
-once an admin exists, `user disable|enable`, `token issue|revoke`) act as the enabled admin of the **operator token**,
+once an admin exists, `user disable|enable|rename`, `token issue|revoke`) act as the enabled admin of the **operator token**,
 exactly as the assembly's commands do (`operatorAdmin(ctx)` and `operatorAct(ctx)` of `cli-admin.ts`, loaded only when a
 command needs them): `CIRCLE_HUB_TOKEN` for one command (`CIRCLE_HUB_TOKEN="$T" circle-hub …`), else the deployment's
 operator token file (account `operator-token` under `<data root>/keys`, written by `init-admin`, `operator-token set` or `operator-token reissue`). No
