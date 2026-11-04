@@ -36,7 +36,7 @@ it, and the login exchange: role, POST path, JSON body template with `{credentia
 its envelope), the system `envelope` (`code` pointer, `ok` and `expired` codes, `message` pointer), `routes` and `reads`.
 
 A **route** is `{id, role, method GET|POST|PROPFIND, path template, params?, query?, body?, headers?, response
-json|text|xml|html|bytes, media_types_by_extension?, max_bytes, keep?, timeout_ms?, envelope?, parse?, read: true}`. `keep` lists the JSON pointers of the only parts of an answer the Hub stores, scans and hands on, for a read that wants a few fields of a large record; the rest was never asked for, and an answer that is not JSON stays whole. Every route is a read (`read: true` is a
+json|text|xml|html|bytes, media_types_by_extension?, max_bytes, keep?, timeout_ms?, envelope?, parse?, read: true}`. `keep` lists the JSON pointers of the members a read may still use when the whole answer is held for scan findings: the answer stays stored as it came and held, and the Hub generates those parts from it (`hub.kept-parts@1`) and scans them on their own, so a hit in them keeps them held too. An answer that nothing holds goes to the function whole. Every route is a read (`read: true` is a
 literal); a write route is simply never listed. Path templates: literal RFC 3986 segments, `{name}` (one segment), a last
 `{name*}` (one or more), an optional trailing `/`. Routes are allow-listed one by one, never by prefix (brief section 8,
 D01 R[10]):
@@ -175,8 +175,6 @@ enabling grants the last definition again. Only admins decide (the account is re
   resource. This is what the CLI's `secret set` needs to check a credential and name its rule before asking for a value.
 - `listResources` gives admins origins and plaintext declarations and other accounts the rows without them; the catalog port
   gives admins the same listing and everyone else an empty list.
-
-A resource setting `accept_scan_detectors` names the scan detectors that find no secret of that system, such as lab accounts in the text of its records (decision 148). An answer, or what a read derives from it, with hits of those detectors alone is accepted in the name of the administrator who put the resource in force, each with its own acceptance record; a hit of any other detector still holds it, and an acceptance withdrawn by hand stays withdrawn.
 
 ## Visibility (B02 R[3], D01 R[4], R02)
 

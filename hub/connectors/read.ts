@@ -40,10 +40,11 @@ import {
   type ReadResponse,
   type ReadSubject,
   type ResourceRecord,
+  type RouteDeclaration,
   type SystemProfile,
 } from '../../contracts/src/resources.ts';
 import { CONNECTOR_ERRORS, ConnectorError, FATAL_READ_ERRORS, asConnectorError, isConnectorErrorCode, type ConnectorErrorCode } from './errors.ts';
-import { decodeText, type ConnectorLog, type HttpExchange, type HttpSource } from './http.ts';
+import { decodeText, type ConnectorLog, type HttpExchange, type HttpReply, type HttpSource } from './http.ts';
 import type { LoginManager, StaticCredential, StaticHeader } from './login.ts';
 import type { Redactor } from './redact.ts';
 import { MAX_PATH, buildPath, type CompiledRoute } from './routes.ts';
@@ -240,6 +241,27 @@ function valueOf(bytes: Uint8Array, mediaType: string): unknown {
   return text;
 }
 
+/**
+ * The members at some JSON Pointers, at the same places. Only members of objects: a position in an array names no fixed part.
+ * Members are defined, not assigned, so a pointer through __proto__ stays a member of the result.
+ */
+export function partsAt(value: unknown, pointers: readonly string[]): Record<string, unknown> {
+  const parts: Record<string, unknown> = {};
+  const member = (at: Record<string, unknown>, key: string, item: unknown): void => void Object.defineProperty(at, key, { value: item, enumerable: true, writable: true, configurable: true });
+  for (const pointer of pointers) {
+    const tokens = pointer.slice(1).split('/').map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
+    const found = tokens.reduce<unknown>((at, token) => (typeof at === 'object' && at !== null && !Array.isArray(at) && Object.hasOwn(at, token) ? (at as Record<string, unknown>)[token] : undefined), value);
+    if (found === undefined) continue;
+    let at = parts;
+    for (const token of tokens.slice(0, -1)) {
+      if (!Object.hasOwn(at, token)) member(at, token, {});
+      at = at[token] as Record<string, unknown>;
+    }
+    member(at, tokens.at(-1)!, found);
+  }
+  return parts;
+}
+
 export class ReadEngine {
   // Only the internal reason channel consumed by administrator notes carries pack diagnostics.
   // Never add them to read manifests, artifacts or the public tool answer.
@@ -285,29 +307,6 @@ export class ReadEngine {
    * of the same bytes counts (a newer scanner's hit in another record, an acceptance revoked since), not only the record
    * a read wrote or found; a record the reader may not read is held too.
    */
-  /**
-   * The setting `accept_scan_detectors` of a resource names the detectors whose hits are no secret of that system: lab accounts
-   * in the text of its records. It is the decision of the administrator who put the resource in force, so an answer with hits of
-   * those detectors alone is accepted in that administrator's name, each with its own acceptance record; a hit of any other
-   * detector still holds the answer, and an acceptance withdrawn by hand stays withdrawn.
-   */
-  async #acceptedByResource(runtime: ResourceRuntime, artifact: SourceArtifact): Promise<boolean> {
-    const named = runtime.resource.settings.accept_scan_detectors;
-    if (!Array.isArray(named)) return false;
-    try {
-      const found = [...new Set(artifact.body.scan.findings.map((hit) => hit.detector))];
-      if (found.length === 0 || !found.every((detector) => named.includes(detector))) return false;
-      const decision = await this.#o.store.get<{ decided_by: string }>(runtime.decision);
-      const admin = decision === null ? null : await this.#o.principals.get(decision.body.decided_by);
-      if (admin === null || admin.disabled) return false;
-      await this.#o.artifacts.acceptFindings({ id: admin.id, name: admin.name, role: admin.role }, artifact.body.sha256, `资源 ${runtime.resource.id} 的设置 accept_scan_detectors`, { detectors: found, automatic: true });
-      return (await this.#o.artifacts.source({ id: admin.id, name: admin.name, role: admin.role }, artifact.body.sha256, { consumer: 'function', record: artifact.digest }))?.bytes != null;
-    } catch (error) {
-      this.#event('standing_acceptance_failed', { resource: runtime.resource.id, record: artifact.digest, reason: this.#o.redactor.text(error instanceof Error ? error.message : String(error)).slice(0, 300) });
-      return false;
-    }
-  }
-
   async #held(principal: Principal | null, artifact: SourceArtifact): Promise<boolean> {
     if (principal === null) return true;
     const source = await this.#o.artifacts.source(principal, artifact.body.sha256, { consumer: 'function', record: artifact.digest });
@@ -384,8 +383,7 @@ export class ReadEngine {
           ...(echoed ? { readTier: RETAIN_ONLY } : {}),
         });
         if(echoed){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,route:exchange.route.id,status:exchange.status,record:artifact.digest});}
-        const retained = artifact.body.read_tier === RETAIN_ONLY && (echoed || !await this.#acceptedByResource(runtime, artifact));
-        const held = echoed || retained || await this.#held(principal, artifact);
+        const held = echoed || artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
         if (held) heldRecords.add(artifact.digest);
         return { artifact, echoed, held };
       } catch (error) {
@@ -411,6 +409,25 @@ export class ReadEngine {
         etag: stored.echoed?null:exchange.etag,
         error: { code, message: `${said}应答${stored.echoed?'':`（sha256 ${exchange.sha256}）`}${why}，按“${labelOf('read_tier', RETAIN_ONLY)}”保存，函数拿不到原文` },
       };
+    };
+
+    /**
+     * What a read may still use of an answer held for scan findings: the parts its route declares (`keep`). The answer stays
+     * stored as it came and held; these are generated from it and scanned on their own, so a hit in them keeps them held too.
+     */
+    const keptParts = async (route: RouteDeclaration, path: string, query: Record<string, string>, reply: HttpReply, stored: Stored, key: string): Promise<{ view: ReadResponse; artifact: SourceArtifact } | null> => {
+      if (route.keep === undefined || !stored.held || stored.echoed) return null;
+      const whole = this.#view(route.id, path, query, reply, null).json;
+      if (whole === undefined) return null;
+      const json = partsAt(whole, route.keep), bytes = canonicalBytes(json);
+      let artifact: SourceArtifact;
+      try {
+        artifact = await this.#o.artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: 'hub.kept-parts@1', inputs: [`src:${reply.sha256}`], read_back: null } }, derivedSources: [reply.sha256], author: { user: null }, provenanceType: 'projected', visibility, name: `${read.name}/${key}/kept`, capturedAt: new Date(reply.endedAt).toISOString() });
+      } catch (error) {
+        throw new ConnectorError('STORE_FAILED', `保存路由 ${route.id} 的留用部分失败`, { cause: error, detail: { route: route.id } });
+      }
+      if (artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact)) return null;
+      return { artifact, view: this.#view(route.id, path, query, { ...reply, bytes, sha256: artifact.body.sha256, json }, null) };
     };
 
     const routePages=new Map<string,number>();
@@ -543,9 +560,10 @@ export class ReadEngine {
           );
           const got = received as { exchange: HttpExchange; stored: Stored } | null;
           if (got === null) throw new ConnectorError('STORE_FAILED', `路由 ${route.id} 的应答没有保存`);
-          let view: ReadResponse = withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
-          if (view.ok && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
-          responses.set(planned.key, { view, url: reply.url, artifact: got.stored.artifact, held: got.stored.held });
+          const kept = await keptParts(route, path, query, reply, got.stored, planned.key);
+          let view: ReadResponse = kept?.view ?? withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
+          if (view.ok && kept === null && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
+          responses.set(planned.key, { view, url: reply.url, artifact: kept?.artifact ?? got.stored.artifact, held: kept === null && got.stored.held });
           entries.push(entry(view.ok, view.ok ? null : (view.error?.code ?? 'SOURCE_MALFORMED')));
         } catch (error) {
           const failed = asConnectorError(error, 'SOURCE_UNREACHABLE', 'transport');
@@ -781,7 +799,7 @@ export class ReadEngine {
           artifacts.push({ name: derived.name, artifact });
           // A derived artifact no function may have under the effective tier (the scanner flagged what the projection made)
           // gives no content.
-          const kept = (artifact.body.read_tier === RETAIN_ONLY && !await this.#acceptedByResource(runtime, artifact)) || await this.#held(principal, artifact);
+          const kept = artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
           if (kept) heldRecords.add(artifact.digest);
           if (kept && warnings.length < 50) warnings.push(`派生件 ${derived.name} 按“${labelOf('read_tier', RETAIN_ONLY)}”保存（凭据），嵌套读取拿不到它的内容`);
           const value = kept ? null : derived.json !== undefined ? derived.json : valueOf(bytesOf, derived.media_type);

@@ -34,8 +34,6 @@ export const PLM_BUGS: Record<string, Record<string, unknown>> = {
   // Bugs that name the build they were opened on: one build record is readable, one carries text a credential scan flags.
   '4545': { id: 4545, title: '组件重载后参数丢失', status: 'active', openedBuild: '601', openedDate: '2026-02-01 09:00:00', steps: '<p>重载组件</p>' },
   '4646': { id: '4646', title: '组件导出时文件名乱码', status: 'active', openedBuild: '602', openedDate: '2026-02-02 09:00:00', steps: '<p>导出文件</p>' },
-  '4848': { id: '4848', title: '登录后页面空白', status: 'active', openedBuild: '601', openedDate: '2026-02-04 09:00:00', steps: '<p>实验室账号 ' + ['pass', 'word=Lab-', 'Account-Default-42'].join('') + ' 登录后页面空白</p>' },
-  '4949': { id: '4949', title: '导入配置失败', status: 'active', openedBuild: '601', openedDate: '2026-02-05 09:00:00', steps: '<p>实验室账号 ' + ['pass', '&#119;ord=Lab-', 'Account-Default-43'].join('') + ' 导入配置失败</p>' },
   '4747': { id: '4747', title: '组件启动时报错', status: 'active', openedBuild: '603', openedDate: '2026-02-03 09:00:00', steps: '<p>启动组件</p>' },
 };
 

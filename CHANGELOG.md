@@ -4,8 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
-- Let a read route keep only the parts of a JSON answer it needs (`keep` in `system.json`): the PLM build record carries the full text of every bug of that build, 2.8 MB, and a credential-like word in one of them held the whole answer, so a bug read never got the name of the build it was found in. `plm` 1.3.10 keeps the name.
-- Let a resource name the scan detectors that find no secret of its system (`accept_scan_detectors`): hits of those alone are accepted in the name of the administrator who put the resource in force, each on record, so a defect whose steps mention a lab account is readable. Other detectors still hold the answer.
+- Let a route name the parts of a JSON answer a read may still use when the whole answer is held for scan findings (`keep` in `system.json`): the PLM build record carries the full text of every bug of that build, 2.8 MB, and a credential-like word in one of them held the whole answer, so a bug read lost the name of its build. The answer stays stored as it came and held; the Hub generates the declared parts from it and scans them on their own, so a hit in them keeps them held too.
 - Name what else a workflow reads in the same system when an object is absent: the same number can be another kind of object.
 - Bind the observation "system S has no X, read at T" into a run that only reads when an optional input has no such object, as the model allows, so a pure read ends `ok`; the answer names what else that workflow reads there. A required input, or a workflow with requirements, is still refused with `SOURCE_ABSENT`.
 - Tell a model that an item of an external system is read through a workflow, in the server instructions and under a knowledge search, which covers knowledge entries only.

@@ -442,7 +442,7 @@
             "description": "a longer response is an error; it is never truncated"
           },
           "keep": {
-            "description": "the only parts of a JSON answer the Hub stores, scans and hands on, for a read that needs a few fields of a large answer; an answer that is not JSON stays whole",
+            "description": "the members of a JSON answer a read may still use when the whole answer is held for scan findings: the answer stays stored as it came, and the Hub generates these parts from it and scans them on their own",
             "minItems": 1,
             "maxItems": 32,
             "type": "array",

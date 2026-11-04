@@ -147,30 +147,6 @@ const ETAG = /^[\x21-\x7e]{1,300}$/;
 const TOKEN = /^[\x21-\x7e]{1,4096}$/;
 
 /** RFC 6901: the value at a JSON Pointer, or undefined. */
-/**
- * The parts of a JSON answer a route keeps, at the same places: what the Hub stores, scans and hands on. The rest was never
- * asked for: a read that wants one name of a large record must not hold that record's other content. An answer that is not
- * JSON stays whole, so a failure page is still what it was.
- */
-export function keptParts(bytes: Uint8Array, pointers: readonly string[]): Uint8Array {
-  let answer: unknown;
-  try {
-    answer = JSON.parse(Buffer.from(bytes).toString('utf8'));
-  } catch {
-    return bytes;
-  }
-  const kept: Record<string, unknown> = {};
-  for (const pointer of pointers) {
-    const value = atPointer(answer, pointer);
-    if (value === undefined) continue;
-    const path = pointer.slice(1).split('/').map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
-    let at = kept;
-    for (const key of path.slice(0, -1)) at = (at[key] ??= {}) as Record<string, unknown>;
-    at[path.at(-1)!] = value;
-  }
-  return Buffer.from(JSON.stringify(kept));
-}
-
 export function atPointer(value: unknown, pointer: string): unknown {
   if (pointer === '') return value;
   if (!pointer.startsWith('/')) return undefined;
@@ -393,7 +369,6 @@ export class HttpSource {
       release();
     }
     const endedAt = this.#now();
-    const bytes = route.keep === undefined ? raw.bytes : keptParts(raw.bytes, route.keep);
     const exchange: HttpExchange = {
       route,
       method: request.method,
@@ -407,8 +382,8 @@ export class HttpSource {
       mediaType: effectiveMediaType(raw.mediaType, route, url),
       etag: raw.etag,
       ...(raw.retryAfterMs===undefined?{}:Number.isNaN(raw.retryAfterMs)?{retryAfterInvalid:true}:{retryAfterMs:raw.retryAfterMs}),
-      bytes,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes: raw.bytes,
+      sha256: createHash('sha256').update(raw.bytes).digest('hex'),
       startedAt,
       endedAt,
       credentialSent: credential !== null,
