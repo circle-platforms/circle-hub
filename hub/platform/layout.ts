@@ -14,6 +14,8 @@ export interface Layout {
   objects: string;
   vault: string;
   logs: string;
+  /** Node's crash reports (--report-directory), inside logs: not data. */
+  reports: string;
   backups: string;
   /** One deployed copy per commit, each with its own node_modules. */
   releases: string;
@@ -33,7 +35,7 @@ export interface Layout {
 export const DATA_ROOT_VARIABLE = PLATFORM_VARIABLES.dataDir;
 
 /** Directories created by ensureLayout, all private to the owner. The db directory is created empty and filled by initdb. */
-const PRIVATE_DIRECTORIES = ['db', 'run', 'objects', 'vault', 'logs', 'backups', 'releases', 'config'] as const;
+const PRIVATE_DIRECTORIES = ['db', 'run', 'objects', 'vault', 'logs', 'reports', 'backups', 'releases', 'config'] as const;
 
 // pg_ctl runs its command line through /bin/sh with double-quoted paths, and the socket directory list is comma separated.
 const UNSAFE_PATH = /["$`\\,'\n\r\0]/;
@@ -61,6 +63,11 @@ export function defaultDataRoot(home: string = process.platform === 'linux' ? us
   return join(home, 'Library', 'Application Support', 'circle-hub');
 }
 
+/** Where Node writes crash reports for the deployment at `root`. */
+export function reportsDirectory(root: string): string {
+  return join(root, 'logs', 'reports');
+}
+
 export function layoutAt(root: string): Layout {
   if (!isAbsolute(root)) throw new PlatformError(`数据根必须是绝对路径：${root}`);
   if (UNSAFE_PATH.test(root)) {
@@ -74,6 +81,7 @@ export function layoutAt(root: string): Layout {
     objects: join(base, 'objects'),
     vault: join(base, 'vault'),
     logs: join(base, 'logs'),
+    reports: reportsDirectory(base),
     backups: join(base, 'backups'),
     releases: join(base, 'releases'),
     current: join(base, 'current'),

@@ -51,6 +51,14 @@ export function renderSystemdUnit(definition: ServiceDefinition): string {
     'RestartSec=10',
     'TimeoutStopSec=30',
     'UMask=0077',
+    // Process memory holds keys. Both are needed: on Ubuntu, apport wrote memory into its report under LimitCORE=0 alone.
+    'LimitCORE=0',
+    'CoredumpFilter=0',
+    // Memory, for the in-flight request log (hub/health): it must outlive the process, not the machine, and a restart must
+    // not remove it, or the next start could not say what a crash was running.
+    `RuntimeDirectory=${definition.label}`,
+    'RuntimeDirectoryMode=0700',
+    'RuntimeDirectoryPreserve=yes',
     `StandardOutput=append:${pathValue(definition.standardOutPath)}`,
     `StandardError=append:${pathValue(definition.standardErrorPath)}`,
     '',

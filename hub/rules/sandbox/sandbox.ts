@@ -16,7 +16,7 @@ import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './error
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
 import { createResidentVerdict, createResidentWatch, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
-import { createSlotPool } from './slots.ts';
+import { createSlotPool, type SlotStats } from './slots.ts';
 import { retryFunction, type FunctionAttempt } from './retry.ts';
 
 export interface PackFunctionTarget {
@@ -112,6 +112,14 @@ const slots = createSlotPool({
   waiting: MAX_WAITING,
   full: () => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'queue_full', limit: 'queue', waiting: MAX_WAITING }),
 });
+/** Attempts that ended SANDBOX_TIMEOUT in this process, by the wall clock or the CPU limit. */
+let timeouts = 0;
+
+/** What the sandbox is doing now, for the Hub's own resource sampling (hub/health). Read-only; holds no input or output. */
+export function sandboxStats(): SlotStats & { timeouts: number } {
+  return { ...slots.stats(), timeouts };
+}
+
 const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes, unavailable: () => null, timeoutMs: 1_000 });
 /** How long no round may measure a child's whole tree before the call ends as unobservable (resident.ts createResidentVerdict). */
 const UNOBSERVED_GRACE_MS = 1_000;
@@ -291,8 +299,14 @@ async function executePack(
         addUsage('sandbox.ms', performance.now() - started);
       }
     });
-    return UNAVAILABLE_DIAGNOSTICS ? attempt.catch(reportUnavailable) : attempt;
+    const counted = attempt.catch(countTimeout);
+    return UNAVAILABLE_DIAGNOSTICS ? counted.catch(reportUnavailable) : counted;
   }, lim.timeoutMs, options.onAttempt, options), { type: 'tool' });
+}
+
+function countTimeout(error: unknown): never {
+  if (error instanceof SandboxError && error.code === 'SANDBOX_TIMEOUT') timeouts += 1;
+  throw error;
 }
 
 /**

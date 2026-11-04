@@ -1482,11 +1482,77 @@ CREATE INDEX trace_spans_roots ON public.trace_spans (started_at DESC) WHERE is_
 CREATE INDEX trace_spans_root_names ON public.trace_spans (name,started_at DESC) WHERE is_root;
 CREATE INDEX trace_spans_root_users ON public.trace_spans (user_id,started_at DESC) WHERE is_root;
 `},
+ // Decision 146, step 2 (resources and crashes): diagnostic data of the running process, owned by hub/health. It is not part
+ // of the append-only record chain and is no ground for anything (B08): the runtime role deletes what is 14 days old, and
+ // holds no UPDATE. Null means the reading was unavailable, never zero. No business text: a request is its route or tool
+ // name, a crash report its reason, heap and resource numbers.
+ {version:28,name:'runtime_health',sql:`CREATE TABLE public.resource_samples(
+ seq pg_catalog.int8 GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ sampled_at pg_catalog.timestamptz NOT NULL,
+ boot pg_catalog.text NOT NULL,
+ interval_ms pg_catalog.int4,
+ process_cpu_ratio pg_catalog.float8,
+ event_loop_utilization pg_catalog.float8,
+ event_loop_delay_p50_ms pg_catalog.float8,
+ event_loop_delay_p99_ms pg_catalog.float8,
+ event_loop_delay_max_ms pg_catalog.float8,
+ heap_used_bytes pg_catalog.int8,
+ heap_limit_bytes pg_catalog.int8,
+ rss_bytes pg_catalog.int8,
+ external_bytes pg_catalog.int8,
+ array_buffers_bytes pg_catalog.int8,
+ gc_pause_ms pg_catalog.float8,
+ sandbox_running pg_catalog.int4,
+ sandbox_limit pg_catalog.int4,
+ sandbox_waiting pg_catalog.int4,
+ sandbox_timeouts pg_catalog.int8,
+ sandbox_queue_full pg_catalog.int8,
+ pool_limit pg_catalog.int4,
+ pool_total pg_catalog.int4,
+ pool_idle pg_catalog.int4,
+ pool_waiting pg_catalog.int4,
+ pool_connection_failures pg_catalog.int8,
+ pg_active_connections pg_catalog.int4,
+ pg_cache_hit_ratio pg_catalog.float8,
+ pg_waiting_locks pg_catalog.int4,
+ pg_deadlocks pg_catalog.int8,
+ data_free_bytes pg_catalog.int8,
+ io_wait_ratio pg_catalog.float8,
+ mcp_sessions pg_catalog.int4,
+ mcp_sessions_by_client pg_catalog.jsonb,
+ console_streams pg_catalog.int4,
+ requests_in_flight pg_catalog.int4,
+ failed_reads pg_catalog.text[] NOT NULL DEFAULT '{}',
+ dropped_samples pg_catalog.int4 NOT NULL DEFAULT 0
+);
+CREATE INDEX resource_samples_sampled_at ON public.resource_samples(sampled_at);
+CREATE INDEX resource_samples_boot ON public.resource_samples(boot,sampled_at);
+CREATE TABLE public.process_events(
+ seq pg_catalog.int8 GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ at pg_catalog.timestamptz NOT NULL,
+ kind pg_catalog.text NOT NULL CHECK(kind ~ '^[a-z][a-z_]{0,39}$'),
+ boot pg_catalog.text,
+ pid pg_catalog.int4,
+ release pg_catalog.text,
+ node_version pg_catalog.text,
+ heap_limit_bytes pg_catalog.int8,
+ uptime_ms pg_catalog.int8,
+ last_seen_at pg_catalog.timestamptz,
+ requests pg_catalog.jsonb,
+ requests_omitted pg_catalog.int4 NOT NULL DEFAULT 0,
+ reports pg_catalog.jsonb
+);
+CREATE INDEX process_events_at ON public.process_events(at);
+-- One start and one ending per process, whoever detects it: two starts cannot both report the same crash.
+CREATE UNIQUE INDEX process_events_start ON public.process_events(boot) WHERE kind='start';
+CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind<>'start';
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   trace_spans:'SELECT, INSERT, DELETE',
+  resource_samples:'SELECT, INSERT, DELETE',process_events:'SELECT, INSERT, DELETE',
   member_deletion_intents:'SELECT',run_upload_declarations:'SELECT',personal_cache_installs:'SELECT, INSERT',
   run_pack_records:'SELECT',held_object_targets:'SELECT',held_objects:'SELECT',original_targets:'SELECT',
   personal_sync_heads:'SELECT, INSERT, UPDATE (snapshot,last_synced_at,native_state,memory_projection,conflicts)',

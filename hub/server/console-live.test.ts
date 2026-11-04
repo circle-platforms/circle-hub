@@ -163,7 +163,9 @@ describe('the event stream', () => {
     assert.equal(wrong.status, 400);
     assert.deepEqual(Object.keys(JSON.parse(wrong.body)).sort(), ['code', 'fix', 'message']);
     assert.equal(JSON.parse(wrong.body).code, null);
+    assert.equal(server.app.consoleStreams(), 0);
     const stream = await openStream('/console/api/stream', session);
+    assert.equal(server.app.consoleStreams(), 1, 'the resource sampling counts it');
     assert.equal(stream.status, 200);
     assert.match(String(stream.headers['content-type']), /^text\/event-stream; charset=utf-8$/);
     assert.equal(stream.headers['cache-control'], 'no-store');

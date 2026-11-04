@@ -116,8 +116,8 @@ name). Every directory is 0700.
 | `run/` | the unix socket (0700) and `platform.lock` |
 | `objects/`, `vault/` | written by the records package (objects 0400, vault entries 0600) |
 | `packs/` | read-only pack trees the server's pack registry extracts from the objects (`<pack digest>/`, `.quarantine/`, `.tmp-*`; directories 0500, files 0400): derived data, never backed up, left as it is by restores and set-asides (`layout.packs`, decisions 5, 6) |
-| `logs/` | `deploy.log` (JSON lines), `postgres/postgresql-<weekday>.log`, `postgres-start.log`, `hub.out.log`, `hub.err.log` |
-| `backups/<time>[-label]/` | `database.dump`, `objects/`, `vault/`, `config/`, `manifest.json` (`circle-hub-backup@3`) |
+| `logs/` | `deploy.log` (JSON lines), `postgres/postgresql-<weekday>.log`, `postgres-start.log`, `hub.out.log`, `hub.err.log`, `inflight.jsonl` and `inflight.1.jsonl` (hub/health; in the unit's runtime directory under systemd), `reports/` (Node's crash reports, a bounded number) |
+| `backups/<time>[-label]/` | `database.dump` (the diagnostic tables `DIAGNOSTIC_TABLES` without their rows), `objects/`, `vault/`, `config/`, `manifest.json` (`circle-hub-backup@3`) |
 | `releases/<id>/` | one deployed copy per commit with its own `node_modules` and `release.json`; `releases/deployments.jsonl` |
 | `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
 | `current` | relative symlink to `releases/<id>` |
@@ -129,7 +129,7 @@ name). Every directory is 0700.
 ## Commands
 
 `circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status|export --confirm|import`,
-`service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
+`db top [--by total_ms|rows|calls] [--limit N] [--json]`, `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
 1 failure, 2 usage, 3 "not running / not present" for status commands. All output is Chinese; the environment classes
 and their labels come from `ENVIRONMENT` and `labelOf('environment', …)`. A `CIRCLE_HUB_*` name that neither hub/config
@@ -155,7 +155,9 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    `track_io_timing`, and statements over one second logged without their bound parameters (they may hold record bodies).
    When the binaries ship `pg_stat_statements` it is preloaded and `start` creates the extension in the `postgres`
    maintenance database only, so the Hub database, its backups and the application role's grants are unchanged; a missing
-   library is never preloaded, since that would stop the start. The settings apply when PostgreSQL starts. `start` refuses a data directory whose
+   library is never preloaded, since that would stop the start. `db top` reads it there through the superuser connector
+   (`statements.ts`), for the Hub database only and with constants already replaced by placeholders; it says so when the
+   extension is missing or was not preloaded (exit 3). The settings apply when PostgreSQL starts. `start` refuses a data directory whose
    major version differs from the binaries and prints the export and import steps (backup with the old release, restore
    into a new empty data root with the new one). The Hub database and its role are created only by `init` and `restore`
    (`ensureDatabaseRunning(control, { create: true })`); every other caller, `serve` included, refuses a missing database,
@@ -284,8 +286,16 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    `set-aside/`, so the root is empty again for a retry.
 7. **launchd**: `~/Library/LaunchAgents/io.github.circle-platforms.circle-hub.plist`, domain `gui/<uid>` (the login
    session of the deployment's account), RunAtLoad, KeepAlive, ThrottleInterval 10, ExitTimeOut 30, Umask 077,
-   logs in `logs/`. `ProgramArguments` = node, `current/bin/circle-hub`, `serve`; the node path is the settings' `node`, or
-   Homebrew's stable symlink when it is this Node, or this Node; it must be Node 24+. The environment holds only names
+   logs in `logs/`. `ProgramArguments` = node, its flags (`serviceNodeFlags`), `current/bin/circle-hub`, `serve`; the node
+   path is the settings' `node`, or Homebrew's stable symlink when it is this Node, or this Node; it must be Node 24+. The flags
+   are the heap limit `--max-old-space-size`, a quarter of `availableMemory()` when the definition is written, at least 2 GB, at
+   most 8 GB (`heapLimitMb`, sized as `tuningLines` sizes PostgreSQL), and `--report-on-fatalerror --report-directory=<logs/reports>
+   --report-exclude-env --report-compact`: a crash leaves a report without the environment, which hub/health reads at the next
+   start. Process memory holds keys, so no memory dump may leave the process: the plist sets the `Core` limit to 0, soft and hard,
+   and the systemd unit sets both `LimitCORE=0` and `CoredumpFilter=0` (tested on Ubuntu with apport: `LimitCORE=0` alone still
+   wrote process memory into the report, 2.99 MB; both left 23 KB of metadata). The unit also gets a runtime directory that
+   survives a restart (`RuntimeDirectory=`, `RuntimeDirectoryPreserve=yes`), memory for the in-flight log: a write there is on the
+   request path (hub/health README, decision 2). The environment holds only names
    hub/config reads, all explicit and taken from the deployment settings: `CIRCLE_HUB_DATA_DIR`, `_PORT`,
    `_DATABASE_SOCKET_DIR`, `_DATABASE_PORT`, `_DATABASE_NAME`, `_DATABASE_USER`, plus `PATH`, `HOME`, `USER` (the
    retired `_KEYCHAIN_SERVICE` and `_KEYCHAIN_ACCOUNT` are no longer written; a plist installed by an earlier version

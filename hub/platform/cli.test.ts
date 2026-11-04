@@ -170,8 +170,16 @@ describe('platform CLI', () => {
     assert.equal(running.code, 0);
     assert.match(running.out, /数据库：运行中（PID \d+）/);
     assert.match(running.out, /没有 TCP 监听/);
+    const top = await run('db', 'top', '--by', 'calls', '--limit', '3', '--json');
+    assert.ok(top.code === 0 || (top.code === 3 && /pg_stat_statements/.test(top.out)), top.err);
+    assert.equal((await run('db', 'top', '--by', 'bytes')).code, 2);
+    assert.equal((await run('db', 'top', '--limit', 'many')).code, 2);
+    assert.equal((await run('db', 'top', 'extra')).code, 2);
     assert.match((await run('db', 'stop')).out, /数据库已停止/);
     assert.equal((await run('db', 'status')).code, 3);
+    const stopped = await run('db', 'top');
+    assert.equal(stopped.code, 1);
+    assert.match(stopped.err, /数据库没在运行/);
     assert.match((await run('db', 'start')).out, /数据库已启动/);
     assert.match((await run('db', 'start')).out, /本来就在运行/);
   });

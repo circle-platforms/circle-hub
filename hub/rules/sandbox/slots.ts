@@ -8,10 +8,21 @@ export interface SlotPool {
   rejectWaiting(error: () => unknown): number;
   readonly active: number;
   readonly queued: number;
+  /** What the pool is doing now, and how many calls it has refused since it was created. Read-only. */
+  stats(): SlotStats;
+}
+
+export interface SlotStats {
+  running: number;
+  limit: number;
+  waiting: number;
+  /** Calls refused because the waiting line was full. */
+  queueFull: number;
 }
 
 export function createSlotPool(limits: { running: number; waiting: number; full: () => unknown }): SlotPool {
   let active = 0;
+  let queueFull = 0;
   const line: { start: () => void; fail: (error: unknown) => void }[] = [];
   const release = (): void => {
     active -= 1;
@@ -30,7 +41,10 @@ export function createSlotPool(limits: { running: number; waiting: number; full:
         active += 1;
         return go();
       }
-      if (line.length >= limits.waiting) return Promise.reject(limits.full());
+      if (line.length >= limits.waiting) {
+        queueFull += 1;
+        return Promise.reject(limits.full());
+      }
       // The call that frees the slot starts this task: it keeps the context (request scope, trace) of the call that asked.
       const resume = AsyncLocalStorage.snapshot();
       return new Promise<T>((resolve, reject) => {
@@ -54,6 +68,9 @@ export function createSlotPool(limits: { running: number; waiting: number; full:
     },
     get queued() {
       return line.length;
+    },
+    stats(): SlotStats {
+      return { running: active, limit: limits.running, waiting: line.length, queueFull };
     },
   };
 }

@@ -8,6 +8,7 @@ import {ActionKindSchema,SyncModeSchema} from '../../contracts/generated/vocabul
 import {RecordsError,parseStrictJson,sha256Hex,type Principal} from '../records/api.ts';
 import {KnowledgeError} from '../knowledge/api.ts';
 import {step,syncStep,updateTrace,tracing} from '../telemetry/api.ts';
+import {identifyRequest} from './request-entry.ts';
 import type {ServerDeps} from './api.ts';
 import type {DeclaredClients} from './declared-clients.ts';
 import {readBody,mediaTypeOf,setCommonHeaders,originAllowed,type BodyBudget} from './http.ts';
@@ -66,6 +67,7 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
   identity=authenticate?await step('authenticate',()=>authenticate.call(deps.records.principals,request.headers.authorization),{type:'guardrail'}):null;
   if(!identity){request.resume();await send(401,{code:'SOURCE_UNAVAILABLE'},{'www-authenticate':'Bearer'});return;}principal=identity.principal;
   updateTrace({userId:principal.id});
+  identifyRequest(request,{userId:principal.id});
   if(tracing()){const client=await options.clients?.of(principal.id,identity.token_id,null)??null;if(client!==null)updateTrace({clientName:client.name,clientVersion:client.version});}
   // Count every authenticated attempt before any append, including unknown routes and wrong methods.
   const write=!!selected&&request.method===routes[selected.route].method&&request.method==='POST'&&selected.route!=='download'&&selected.route!=='missing'&&selected.route!=='modeCheck';

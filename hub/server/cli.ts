@@ -14,7 +14,9 @@ import { isAbsolute, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, type HubConfig } from '../config/index.ts';
+import { DEFAULT_EVENT_LIMIT, DEFAULT_SINCE_MS, MAX_EVENT_LIMIT, eventLines, healthLines, healthReader, parseSince, type HealthReader } from '../health/api.ts';
 import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, liveKeyPipe, runPlatformCommand } from '../platform/api.ts';
+import { Database, createPool } from '../records/db.ts';
 import { RecordsError, openRecords, type CallLogLine, type Principal, type RecordsKit, type User } from '../records/index.ts';
 import type { AssemblyModule, CliCommand, CliContext, CliIo, RegisterCommand, ServerDeps } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE, takeEnvironmentToken, type OperatorTokenStore } from './assemble/operator-token.ts';
@@ -59,7 +61,7 @@ const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
   'operator-token': '管理操作令牌',
 };
 export const RESERVED_COMMANDS: readonly string[] = Object.keys(RESERVED_COMMAND_DESCRIPTIONS);
-const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools', 'setup-code']);
+const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools', 'setup-code', 'health', 'crashes']);
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
 const registry = new Map<string, CliCommand>();
@@ -97,6 +99,8 @@ function usage(extra: readonly CliCommand[]): string {
     '  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改',
     '  run list [--pack <包>] [--user <用户>] [--state 受理|未受理|进行中] [--since <ISO时间>] [--unknown] [--limit <N>] [--cursor <游标>] [--json] [--as <管理员>]  列出运行（仅管理员；默认 50 条，新到旧，超出给下一页游标）',
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
+    '  health [--since <时长或时间>] [--json] [--as <管理员>]   资源的当前值和窗口内的最小、最大值（仅管理员；--since 写 30m、6h、7d 或 ISO 时间，默认 1 小时）',
+    `  crashes [--limit <N>] [--json] [--as <管理员>]   进程的启动、停止和异常退出，异常退出带当时在处理的请求和崩溃报告摘要（仅管理员；默认 ${DEFAULT_EVENT_LIMIT} 条，新到旧）`,
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
     '',
@@ -529,6 +533,52 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   return 0;
 }
 
+/** Who a health command reads as; administrators only, as `run list`. */
+async function healthViewer(ctx: CliContext, options: CliOptions, as: string | undefined): Promise<Principal> {
+  const by = await (await tokenRules(options)).viewer(ctx, as);
+  if (by.role !== 'admin') throw new CliError('只有管理员可以读运行状况', '用管理员的操作令牌执行这一条命令');
+  return by;
+}
+
+/** The diagnostic tables are read over a connection of the command's own, as the Hub writes them. */
+async function withHealthReader<T>(ctx: CliContext, use: (reader: HealthReader) => Promise<T>): Promise<T> {
+  const db = new Database(createPool(ctx.config().database, 1));
+  try {
+    return await use(healthReader(db));
+  } finally {
+    await db.end().catch(() => {});
+  }
+}
+
+async function healthCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+  const { values } = parse(args, { since: { type: 'string' }, json: { type: 'boolean' }, as: { type: 'string' } }, 0);
+  const now = (options.now ?? (() => new Date()))();
+  const since = values.since === undefined ? new Date(now.getTime() - DEFAULT_SINCE_MS) : parseSince(values.since, now);
+  if (since === null) throw new UsageError('--since 要写 30m、6h、7d 这样的时长，或 ISO 时间');
+  const by = await healthViewer(ctx, options, values.as);
+  const summary = await withHealthReader(ctx, (reader) => reader.summary(by, { since }));
+  if (values.json === true) {
+    ctx.io.stdout(jsonSafe(JSON.stringify(summary, null, 2)));
+    return 0;
+  }
+  for (const line of healthLines(summary)) out(ctx.io, line);
+  return 0;
+}
+
+async function crashesCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+  const { values } = parse(args, { limit: { type: 'string' }, json: { type: 'boolean' }, as: { type: 'string' } }, 0);
+  if (values.limit !== undefined && (!/^[1-9][0-9]*$/.test(values.limit) || Number(values.limit) > MAX_EVENT_LIMIT)) throw new UsageError(`--limit 要 1 到 ${MAX_EVENT_LIMIT} 的整数`);
+  const limit = values.limit === undefined ? DEFAULT_EVENT_LIMIT : Number(values.limit);
+  const by = await healthViewer(ctx, options, values.as);
+  const events = await withHealthReader(ctx, (reader) => reader.events(by, { limit }));
+  if (values.json === true) {
+    ctx.io.stdout(jsonSafe(JSON.stringify(events, null, 2)));
+    return 0;
+  }
+  for (const line of eventLines(events)) out(ctx.io, line);
+  return 0;
+}
+
 /** A one-time code for /console/setup; refused once an administrator exists (they add users in the console). */
 async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promise<number> {
   parse(args, {}, 0);
@@ -550,6 +600,8 @@ const BUILT_IN_HANDLERS: Record<string, (args: readonly string[], ctx: CliContex
   logs: logsCommand,
   run: runCommand,
   'setup-code': setupCodeCommand,
+  health: healthCommand,
+  crashes: crashesCommand,
 };
 
 /**

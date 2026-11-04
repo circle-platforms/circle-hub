@@ -17,6 +17,39 @@ export class PgTransaction implements Transaction {
   }
 }
 
+/** Connections any pool of this process failed to open, and live connections that failed while idle. */
+let connectionFailures = 0;
+
+/** What a pool holds now, and the failures of this process; read by the Hub's resource sampling (hub/health). */
+export interface PoolStats {
+  /** The most connections it may hold. */
+  limit: number;
+  total: number;
+  idle: number;
+  waiting: number;
+  connectionFailures: number;
+}
+
+type ConnectCallback = ((error: Error) => void) | ((error: null, client: pg.Client) => void);
+
+/** pg.Pool has no event for a connection it could not open; it reports that only to the caller who was waiting. */
+class CountedClient extends pg.Client {
+  override connect(): Promise<pg.Client>;
+  override connect(callback: ConnectCallback): void;
+  override connect(callback?: ConnectCallback): Promise<pg.Client> | void {
+    if (callback === undefined) {
+      return super.connect().catch((error: unknown) => {
+        connectionFailures += 1;
+        throw error;
+      });
+    }
+    super.connect((error: Error | null) => {
+      if (error) connectionFailures += 1;
+      (callback as (error: Error | null) => void)(error);
+    });
+  }
+}
+
 /**
  * Every connection parameter is explicit so pg never falls back to PG* environment variables, and the password is a
  * function so pg never reads a password file: a server that asks for a password without one configured fails clearly.
@@ -24,6 +57,7 @@ export class PgTransaction implements Transaction {
 export function createPool(config: DatabaseConfig, max = 10): pg.Pool {
   const password = config.password;
   const pool = new pg.Pool({
+    Client: CountedClient as unknown as pg.PoolConfig['Client'],
     host: config.host,
     port: config.port,
     database: config.database,
@@ -41,7 +75,9 @@ export function createPool(config: DatabaseConfig, max = 10): pg.Pool {
     connectionTimeoutMillis: 10_000,
   });
   // An idle client that fails is dropped by the pool; the next query reports the failure to its caller.
-  pool.on('error', () => {});
+  pool.on('error', () => {
+    connectionFailures += 1;
+  });
   return pool;
 }
 
@@ -133,6 +169,10 @@ export class Database {
 
   async end(): Promise<void> {
     await this.pool.end();
+  }
+
+  stats(): PoolStats {
+    return { limit: this.pool.options.max, total: this.pool.totalCount, idle: this.pool.idleCount, waiting: this.pool.waitingCount, connectionFailures };
   }
 }
 

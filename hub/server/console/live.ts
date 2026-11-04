@@ -246,6 +246,11 @@ export class LiveEvents {
     this.#options = { ...DEFAULT_LIVE_OPTIONS, ...options };
   }
 
+  /** Open streams, for the Hub's own resource sampling. */
+  get streams(): number {
+    return this.#streams.size;
+  }
+
   /** Why a new stream of `session` is refused, or null. */
   refusal(session: string): { status: number; message: string; fix: string } | null {
     if (this.#closed) return { status: 503, message: 'Hub 正在停止，实时更新暂不可用', fix: '服务恢复后刷新页面' };

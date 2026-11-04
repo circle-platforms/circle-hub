@@ -13,7 +13,7 @@ import { createPostgres, ensureDatabaseRunning, type PostgresControl } from './p
 import { treeEntries, writeSyntheticPacks } from './rehearse.ts';
 import { assertRestorable, restoreBackup, setAside } from './restore.ts';
 import { inspectRole, roleFixHint, rolePrivileges, type RoleReport } from './roles.ts';
-import { withSession, summarizeTables } from './sql.ts';
+import { DIAGNOSTIC_TABLES, withSession, summarizeTables } from './sql.ts';
 import { libpqAvailable, LIBPQ_MISSING, ownerTables, removeDir, socketPort, tempDir } from './test-support.ts';
 
 const libpq = await libpqAvailable();
@@ -119,6 +119,35 @@ describe('backups of a live data root', { skip: libpq ? false : LIBPQ_MISSING },
     await restored.stop();
     await control.start();
     assert.equal(Number((await count(control))[0].n), 50, 'the original database remains independent');
+  });
+
+  test('a backup holds the diagnostic tables and none of their rows, and what a restore compares agrees', async () => {
+    const { layout, control } = await liveRoot();
+    await ownerTables(control, [
+      'CREATE TABLE trace_spans (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, body text NOT NULL)',
+      'CREATE TABLE resource_samples (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, body text NOT NULL)',
+      'CREATE TABLE process_events (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, body text NOT NULL)',
+    ], ['trace_spans', 'resource_samples', 'process_events']);
+    await withSession(control.applicationConnector, control.target.database, async (s) => {
+      for (const table of DIAGNOSTIC_TABLES) await s.query(`INSERT INTO ${table} (body) VALUES ('synthetic diagnostic row')`);
+    });
+    const backup = await createBackup({ layout, postgres: control, label: 'diagnostic-rows', libpqBin: libpq! });
+    assert.deepEqual((await manifestOf(backup.dir)).database.tables.map(({ table }) => table), ['synthetic_records']);
+    await control.stop();
+    const target = layoutAt(join(await tempDir(), 'restored'));
+    roots.push(join(target.root, '..'));
+    await ensureLayout(target);
+    const restored = createPostgres({ layout: target, port: socketPort() });
+    clusters.push(restored);
+    const receipt = await restoreBackup({ layout: target, backupDir: backup.dir, postgres: restored, libpqBin: libpq! });
+    assert.equal(receipt.rows, 50);
+    await withSession(restored.applicationConnector, restored.target.database, async (s) => {
+      for (const table of DIAGNOSTIC_TABLES) {
+        assert.equal(Number((await s.query(`SELECT count(*)::int AS n FROM ${table}`))[0]!.n), 0, `${table} exists and is empty`);
+        await s.query(`INSERT INTO ${table} (body) VALUES ('after the restore')`);
+      }
+    });
+    await restored.stop();
   });
 
   test('temporaries of the records stores and Finder metadata are never part of a backup', async () => {
