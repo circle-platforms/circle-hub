@@ -50,6 +50,7 @@ test('a console path names its area, never its ids', () => {
   assert.equal(consoleStep('/console'), 'serve-console');
   assert.equal(consoleStep('/console/runs/run_123'), 'serve-runs');
   assert.equal(consoleStep('/console/api/runs'), 'serve-api');
+  assert.equal(consoleStep('/console/health'), 'serve-health');
   assert.equal(consoleStep('/console/api/stream'), 'stream-console', 'a stream lasts hours: it must not rank with the requests');
   assert.equal(consoleStep('/console/run_123'), 'serve-console');
   assert.equal(consoleStep('/console/favicon.svg'), 'serve-console');

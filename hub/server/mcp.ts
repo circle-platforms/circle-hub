@@ -104,12 +104,18 @@ function mcpSessionOf(header: string | string[] | undefined): string | null {
   return typeof header === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(header) ? header : null;
 }
 
-/** MCP initialize clientInfo (name, version) as the client reported it; bounded, kept only as a declaration. */
-function clientInfoOf(value: unknown): { client?: ClientDeclaration } {
+/**
+ * MCP initialize clientInfo (name, version, platform) as the client reported it; bounded, kept only as a declaration. The
+ * platform stays apart from `client`: that is what the records bind to a client's writes, and the platform is diagnostic data
+ * only (B08 F[14]). Like the version, it says nothing without a name.
+ */
+function clientInfoOf(value: unknown): { client?: ClientDeclaration; clientPlatform?: string } {
   if (!isPlainObject(value)) return {};
   const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
   const name = clean(value.name);
-  return name === null ? {} : { client: { name, version: clean(value.version) } };
+  if (name === null) return {};
+  const platform = clean(value.platform);
+  return { client: { name, version: clean(value.version) }, ...(platform === null ? {} : { clientPlatform: platform }) };
 }
 
 /** A line for a refusal no request of the body can carry: tool `mcp`, no arguments. */
@@ -294,8 +300,8 @@ async function answer(
   if (own !== null) updateTrace({ name: mcpStep(own.state.method, own.state.tool) });
   const session = mcpSessionOf(request.headers['mcp-session-id']);
   if (tracing()) {
-    const client = own?.state.client ?? (await options.clients?.of(principal.id, tokenId, session)) ?? null;
-    if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version });
+    const client = own?.state.client ? { ...own.state.client, platform: own.state.clientPlatform ?? null } : (await options.clients?.of(principal.id, tokenId, session)) ?? null;
+    if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version, clientPlatform: client.platform });
   }
   if (own !== null) identifyRequest(request, { traceId, name: LOGGED_TOOL.test(own.state.tool) ? own.state.tool : own.state.method === 'tools/call' ? 'tools/call' : 'mcp' });
   let finishObserved:(()=>void)|undefined;
@@ -404,7 +410,7 @@ async function answer(
     if (own !== null) {
       updateTrace({ runId: own.state.runId });
       if (own.state.callResult !== 'ok') setTraceStatus('error', own.state.errorCode !== null && LOGGED_CODE.test(own.state.errorCode) ? own.state.errorCode : labelOf('call_result', own.state.callResult ?? 'error'));
-      if (own.state.client !== undefined) options.clients?.remember(principal.id, tokenId, issued, own.state.client);
+      if (own.state.client !== undefined) options.clients?.remember(principal.id, tokenId, issued, { ...own.state.client, platform: own.state.clientPlatform ?? null });
     }
     for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null, state === own?.state ? currentTrace()?.rootSpanId : undefined);
     if (early) {

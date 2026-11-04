@@ -135,6 +135,13 @@ chain, on which the runtime role has SELECT, INSERT and DELETE. `Database.stats(
 the pool's counters; `createPool` uses a `pg.Client` subclass to count connections that could not be opened, because `pg.Pool` has
 no event for them.
 
+Migration 31 adds `trace_spans.client_platform`, the platform a client declares at MCP `initialize` (decision 147, B08 F[14]),
+and the partial index `trace_spans_mcp_releases` for the p95 by release on the console's 运行状况 page. The platform is not in
+`ClientDeclaration`: the declaration a client's writes are bound to stays its name and version.
+
+`createPool` takes `statementTimeoutMs` for a pool whose statements the server must cut off (the reads of that page);
+`principals.some(ids)` reads the accounts a page names, however many the team holds.
+
 Data directory (all directories 0700): `objects/ab/<sha256>` (files 0400), `vault/<name>.sealed` and `vault/key-check`
 (0600), `logs/calls-YYYY-MM-DD.jsonl` (0600; `CIRCLE_HUB_LOG_DIR` can move it). A backup needs the database, `objects/`,
 `vault/` and the vault key (a private file under `<data root>/keys` on every platform, decision 137, which backups leave out: it is moved only with `circle-hub key export --confirm | circle-hub key import`).

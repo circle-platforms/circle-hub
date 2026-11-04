@@ -141,8 +141,8 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  return {text:body.text.replaceAll(THEME_RUNTIME_TAG,tag(THEME_RUNTIME_TAG)).replaceAll(LIVE_TAG,tag(LIVE_TAG)),policy:policy.replace('script-src ',`script-src 'nonce-${nonce}' `)};
 }
 
-/** The eight places; only the current place may expand its authorized navigation. */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings';
+/** The nine places (decision 147); only the current place may expand its authorized navigation. */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings' | 'health';
 
 export interface PageChrome {
   title: string;
@@ -218,7 +218,11 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['records', '记录', '/console/records', 'rec'],
   ['team', '团队', '/console/team', 'users'],
   ['settings', '设置', '/console/settings', 'gear'],
+  ['health', '运行状况', '/console/health', 'flow'],
 ];
+
+/** A place only an administrator's navigation lists; its page answers a member as any other administrators' page does. */
+const ADMIN_PLACES: ReadonlySet<NavKey> = new Set<NavKey>(['health']);
 
 function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
@@ -244,7 +248,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const top = html`${layout.detail?'':notice}${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
   const area = areaClass(chrome.active);
-  const nav = NAV.map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
+  const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
   const inspector = layout.inspector;
   return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
 <nav class="ch-nav" aria-label="主导航">

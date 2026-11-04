@@ -69,6 +69,8 @@ export interface CallState {
   notes: string[];
   /** initialize only: the clientInfo the client reported (a declaration). */
   client?: ClientDeclaration;
+  /** initialize only: the platform in that clientInfo; diagnostic data, for the traces and never in `client`. */
+  clientPlatform?: string;
 }
 
 export interface ToolCall {
