@@ -453,6 +453,11 @@
               "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
             }
           },
+          "mask_held": {
+            "description": "a JSON answer held for scan findings is read without the values the scanner matched: the answer stays stored as it came and held, and the Hub generates the masked copy and scans it on its own",
+            "type": "boolean",
+            "const": true
+          },
           "pagination": {
             "description": "The planner may request further pages within this finite bound; no hidden fetch or truncated completion",
             "type": "object",

@@ -20,7 +20,7 @@ import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import { parseDocument, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
 import type { Artifacts, Principal, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
-import { SOURCE_ABSENCE_GENERATOR, canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
+import { SOURCE_ABSENCE_GENERATOR, canonicalBytes, maskedJson, sha256Hex, scanForCredentials } from '../records/api.ts';
 import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../contracts/src/common.ts';
@@ -130,6 +130,8 @@ interface ResponseState {
   artifact: SourceArtifact | null;
   /** No function may have the stored answer under the reader's effective read tier (B02 R[4]). */
   held?: boolean;
+  /** The answer as it came, when `artifact` is what was generated from it because it is held. */
+  received?: SourceArtifact;
 }
 
 /**
@@ -326,6 +328,8 @@ export class ReadEngine {
     const principal = await this.#o.principals.get(reader);
     /** Records of this read no function may have under the effective tier: answers and derived artifacts. */
     const heldRecords = new Set<string>();
+    const masked = new Set<string>();
+    let masking = false;
     const visibility: Visibility = { readers: [reader], admins: true, packs: [], shareable: false };
     const responses = new Map<string, ResponseState>();
     const echoedArtifacts=new Set<string>();
@@ -412,22 +416,25 @@ export class ReadEngine {
     };
 
     /**
-     * What a read may still use of an answer held for scan findings: the parts its route declares (`keep`). The answer stays
-     * stored as it came and held; these are generated from it and scanned on their own, so a hit in them keeps them held too.
+     * What a read may still use of an answer held for scan findings: the parts its route keeps, or, when the route says so, the
+     * answer without what the scanner matched. The answer stays stored as it came and held; this is generated from it and scanned
+     * on its own, so a hit left in it keeps it held too. Nothing held for echoing a value the Hub sent is ever read this way.
      */
-    const keptParts = async (route: RouteDeclaration, path: string, query: Record<string, string>, reply: HttpReply, stored: Stored, key: string): Promise<{ view: ReadResponse; artifact: SourceArtifact } | null> => {
-      if (route.keep === undefined || !stored.held || stored.echoed) return null;
+    const heldRead = async (route: RouteDeclaration, path: string, query: Record<string, string>, reply: HttpReply, stored: Stored, key: string): Promise<{ view: ReadResponse; artifact: SourceArtifact } | null> => {
+      if ((route.keep === undefined && route.mask_held !== true) || !stored.held || stored.echoed) return null;
       const whole = this.#view(route.id, path, query, reply, null).json;
       if (whole === undefined) return null;
-      const json = partsAt(whole, route.keep), bytes = canonicalBytes(json);
+      const bytes = route.keep === undefined ? maskedJson(canonicalBytes(whole)) : canonicalBytes(partsAt(whole, route.keep));
+      if (bytes === null) return null;
       let artifact: SourceArtifact;
       try {
-        artifact = await this.#o.artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: 'hub.kept-parts@1', inputs: [`src:${reply.sha256}`], read_back: null } }, derivedSources: [reply.sha256], author: { user: null }, provenanceType: 'projected', visibility, name: `${read.name}/${key}/kept`, capturedAt: new Date(reply.endedAt).toISOString() });
+        artifact = await this.#o.artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: route.keep === undefined ? 'hub.masked-answer@1' : 'hub.kept-parts@1', inputs: [`src:${reply.sha256}`], read_back: null } }, derivedSources: [reply.sha256], author: { user: null }, provenanceType: 'projected', visibility, name: `${read.name}/${key}/held`, capturedAt: new Date(reply.endedAt).toISOString() });
       } catch (error) {
-        throw new ConnectorError('STORE_FAILED', `保存路由 ${route.id} 的留用部分失败`, { cause: error, detail: { route: route.id } });
+        throw new ConnectorError('STORE_FAILED', `保存路由 ${route.id} 的可读部分失败`, { cause: error, detail: { route: route.id } });
       }
       if (artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact)) return null;
-      return { artifact, view: this.#view(route.id, path, query, { ...reply, bytes, sha256: artifact.body.sha256, json }, null) };
+      if (route.keep === undefined) masked.add(key);
+      return { artifact, view: this.#view(route.id, path, query, { ...reply, bytes, sha256: artifact.body.sha256, json: JSON.parse(Buffer.from(bytes).toString('utf8')) }, null) };
     };
 
     const routePages=new Map<string,number>();
@@ -444,6 +451,7 @@ export class ReadEngine {
       if(compiled===undefined && planned.against && responses.get(planned.against)?.view.error?.code==='SOURCE_REDIRECT_REFUSED')throw new ConnectorError('SOURCE_REDIRECT_REFUSED','已观察的 Location 没有对应的已声明读取路由；由资源管理员核对路由',{layer:'transport'});
       if (compiled === undefined) throw new ConnectorError('ROUTE_REFUSED', `系统包没有路由 ${planned.route}；请求在发出前被拒绝`, { layer: 'transport', detail: { route: planned.route } });
       const route = compiled.declaration;
+      masking ||= route.mask_held === true;
       let path: string;
       let query: Record<string, string> = {};
       if (planned.href !== undefined) {
@@ -560,10 +568,10 @@ export class ReadEngine {
           );
           const got = received as { exchange: HttpExchange; stored: Stored } | null;
           if (got === null) throw new ConnectorError('STORE_FAILED', `路由 ${route.id} 的应答没有保存`);
-          const kept = await keptParts(route, path, query, reply, got.stored, planned.key);
-          let view: ReadResponse = kept?.view ?? withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
-          if (view.ok && kept === null && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
-          responses.set(planned.key, { view, url: reply.url, artifact: kept?.artifact ?? got.stored.artifact, held: kept === null && got.stored.held });
+          const readable = await heldRead(route, path, query, reply, got.stored, planned.key);
+          let view: ReadResponse = readable?.view ?? withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
+          if (view.ok && readable === null && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
+          responses.set(planned.key, { view, url: reply.url, artifact: readable?.artifact ?? got.stored.artifact, held: readable === null && got.stored.held, ...(readable === null ? {} : { received: got.stored.artifact }) });
           entries.push(entry(view.ok, view.ok ? null : (view.error?.code ?? 'SOURCE_MALFORMED')));
         } catch (error) {
           const failed = asConnectorError(error, 'SOURCE_UNREACHABLE', 'transport');
@@ -731,7 +739,8 @@ export class ReadEngine {
         if(first.failure)throw first.failure;
         throw new ConnectorError(code, `原件请求 ${original} 没有成功：${first.view.error?.message ?? '无应答'}`, { layer: 'transport' });
       }
-      artifacts = [{ name: 'original', artifact: first.artifact }];
+      // What was generated from a held answer is never its original (B02 R[6]).
+      artifacts = [{ name: 'original', artifact: first.received ?? first.artifact }];
       content = first.view.json !== undefined ? first.view.json : (first.view.text ?? null);
       complete = [...responses.keys()].every(key=>covered(key)) && [...nested.values()].every(state=>state.view.ok && state.view.coverage?.complete!==false);
       if (read.project !== undefined) {
@@ -778,6 +787,11 @@ export class ReadEngine {
           let bytesOf: Uint8Array;
           try {
             bytesOf = derived.text !== undefined ? Buffer.from(derived.text, 'utf8') : canonicalBytes(derived.json);
+            // A projection can bring a hit into view that markup split, so what a route that masks gives is masked as well.
+            if (masking && derived.json !== undefined) {
+              const clean = maskedJson(bytesOf);
+              if (clean !== null && !Buffer.from(clean).equals(Buffer.from(bytesOf))) { bytesOf = clean; masked.add(derived.name); }
+            }
             const echoed = this.#o.redactor.echoedIn(bytesOf, derived.media_type);
             artifact = await this.#o.artifacts.ingest({
               bytes: bytesOf,
@@ -802,7 +816,7 @@ export class ReadEngine {
           const kept = artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
           if (kept) heldRecords.add(artifact.digest);
           if (kept && warnings.length < 50) warnings.push(`派生件 ${derived.name} 按“${labelOf('read_tier', RETAIN_ONLY)}”保存（凭据），嵌套读取拿不到它的内容`);
-          const value = kept ? null : derived.json !== undefined ? derived.json : valueOf(bytesOf, derived.media_type);
+          const value = kept ? null : derived.json !== undefined ? JSON.parse(Buffer.from(bytesOf).toString('utf8')) : valueOf(bytesOf, derived.media_type);
           if (derived.name === 'content') content = value;
           if (derived.name === 'meta') meta = value;
         }
@@ -851,6 +865,11 @@ export class ReadEngine {
     // (held and hidden classes neutral): coverage names what is missing (A05 R[1], decision 113).
     const unread=order.filter(key=>!covered(key) && !absent?.responses?.includes(key));
     if(unread.length){const said=`没有读进的应答 ${unread.length} 个：${unread.slice(0,10).map(key=>{const state=responses.get(key);const route=entries.find(entry=>entry.key===key)?.route;return `${key}${route?`（路由 ${route}）`:''}：${state===undefined?'没有发出':forFunction(state).error?.message??'没有读进'}`;}).join('；')}`;note=note?`${said}；${note}`:said;}
+    // The reader learns that something is left out, not why (D05 R[3]); the administrator has the held answer.
+    if (masked.size > 0) {
+      complete = false;
+      note = [note, '部分内容已隐去（原因只记在管理员记录里）'].filter(Boolean).join('；');
+    }
     const ok = failure === null;
     const manifest: ReadManifest = {
       action: 'read',

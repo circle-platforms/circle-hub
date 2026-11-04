@@ -382,6 +382,7 @@ export const RouteDeclaration = z
       .describe('media type by lowercase filename extension when the server returns application/octet-stream or omits Content-Type'),
     max_bytes: z.number().int().min(1).max(MAX_ROUTE_BYTES).describe('a longer response is an error; it is never truncated'),
     keep: z.array(JsonPointer).min(1).max(32).optional().describe('the members of a JSON answer a read may still use when the whole answer is held for scan findings: the answer stays stored as it came, and the Hub generates these parts from it and scans them on their own'),
+    mask_held: z.literal(true).optional().describe('a JSON answer held for scan findings is read without the values the scanner matched: the answer stays stored as it came and held, and the Hub generates the masked copy and scans it on its own'),
     pagination:z.strictObject({max_pages:z.number().int().min(1).max(MAX_READ_REQUESTS)}).optional().describe('The planner may request further pages within this finite bound; no hidden fetch or truncated completion'),
     redirects:z.strictObject({same_origin:z.literal(true),max_hops:z.number().int().min(1).max(MAX_READ_REQUESTS)}).optional().describe('Each same-origin hop is another planned, recorded read request; never a transport auto-follow'),
     timeout_ms: z.number().int().min(100).max(300_000).optional(),

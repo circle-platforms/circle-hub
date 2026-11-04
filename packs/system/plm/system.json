@@ -169,6 +169,7 @@
       "max_bytes": 16777216,
       "timeout_ms": 60000,
       "read": true,
+      "mask_held": true,
       "description": "缺陷详情（读接口，用 POST）"
     },
     {
@@ -266,6 +267,7 @@
       "max_bytes": 16777216,
       "timeout_ms": 60000,
       "read": true,
+      "mask_held": true,
       "description": "需求详情（读接口，用 POST）"
     }
   ],
