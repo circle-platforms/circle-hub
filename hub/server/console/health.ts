@@ -95,7 +95,7 @@ interface Line {
 
 type CurveHead = Pick<Curve, 'title' | 'note' | 'max' | 'ticks' | 'tick' | 'value' | 'marks'>;
 
-/** A 24-hour curve from the points of the reader; its table shows the hours, each the largest of its points (`least`: the smallest). */
+/** A 24-hour curve from the points of the reader; its read-outs show the half hours and its table the hours, each the largest of its points (`least`: the smallest). */
 function dayCurve(points: readonly CurvePoint[], now: Date, lines: readonly Line[], head: CurveHead, least = false): Html {
   const stamps = points.map((point) => Date.parse(point.at));
   const fold = (values: readonly (number | null)[]): number | null => {
@@ -110,6 +110,7 @@ function dayCurve(points: readonly CurvePoint[], now: Date, lines: readonly Line
     series: lines.map((line) => ({ label: line.label, ...(line.className ? { className: line.className } : {}), values: points.map((point) => point[line.field]) })),
     xLabels: axis,
     hoverEvery: POINTS_PER_READOUT,
+    least,
     table: {
       head: ['时间', ...lines.map((line) => `${line.label}（${least ? '最小' : '最大'}）`)],
       rows: hours.map((slice) => [pointLabel(Date.parse(slice[0]!.at), now), ...lines.map((line) => {

@@ -67,8 +67,9 @@ export interface Curve {
  marks?:readonly {index:number;label:string;side?:'left'|'right';low?:boolean}[];
  /** A known value off the sampled line, such as the heap in a crash report. */
  points?:readonly {index:number;value:number;label:string}[];
- /** Points one read-out covers, so that a long curve stays a small page; it shows the largest of them. */
+ /** Points one read-out covers, so that a long curve stays a small page; it shows the largest of them, with `least` the smallest. */
  hoverEvery?:number;
+ least?:boolean;
  table?:{head:readonly string[];rows:readonly (readonly unknown[])[]};
 }
 const CW=360,CH=148,CL=44,CR=12,CT=16,CB=22;
@@ -106,8 +107,8 @@ export function curve(input:Curve):Html{
  const hits:Html[]=[],tips:Html[]=[];
  for(let start=0,slot=0;start<n;start+=every,slot++){
   const stop=Math.min(n,start+every),mid=Math.min(n-1,start+Math.floor(every/2));
-  const peak=(values:readonly (number|null)[])=>{const inside=values.slice(start,stop).filter((value):value is number=>value!==null);return inside.length===0?null:Math.max(...inside);};
-  const row=input.series.map(line=>({label:line.label,className:line.className??'',value:peak(line.values)}));
+  const fold=(values:readonly (number|null)[])=>{const inside=values.slice(start,stop).filter((value):value is number=>value!==null);return inside.length===0?null:input.least?Math.min(...inside):Math.max(...inside);};
+  const row=input.series.map(line=>({label:line.label,className:line.className??'',value:fold(line.values)}));
   const read=(value:number|null)=>value===null?'未知':input.value(value);
   const left=Math.max(CL,start===0?CL:(X(start-1)+X(start))/2),right=stop>=n?CW-CR:(X(stop-1)+X(stop))/2;
   hits.push(html`<g data-chart-index="${slot}" tabindex="${slot===0?0:-1}" role="img" aria-label="${input.labels[start]+'；'+row.map(item=>read(item.value)+' '+item.label).join('；')}"><line class="crosshair" x1="${f(X(mid))}" x2="${f(X(mid))}" y1="${CT}" y2="${CT+ph}"></line><rect class="hit" x="${f(left)}" y="${CT}" width="${f(Math.max(1,right-left))}" height="${ph}"></rect></g>`);

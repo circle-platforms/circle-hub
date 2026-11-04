@@ -242,6 +242,19 @@ test('the curve of a crash marks it, and a table goes with each curve', async (t
   assert.doesNotMatch(page, /NaN|Infinity|undefined/);
 });
 
+test('the read-out of the free disk shows the dip its curve keeps, as its table does', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1);
+  await w.db.query(`UPDATE resource_samples SET data_free_bytes=1073741824 WHERE sampled_at>$1 AND sampled_at<=$2`, [iso(NOW.getTime() - 5 * HOUR_MS - 300_000), iso(NOW.getTime() - 5 * HOUR_MS)]);
+  const page = await shown(w.admin);
+  const start = page.indexOf('近 24 小时 · 可用空间（GB）');
+  const figure = page.slice(start, page.indexOf('</figure>', start));
+  assert.equal(figure.match(/<b>1\.0 GB<\/b>/g)?.length, 1, 'one half hour holds the dip');
+  assert.ok((figure.match(/aria-label="[^"]*1\.0 GB 可用空间"/g) ?? []).length === 1, 'and so does what a keyboard reads');
+  assert.match(figure, /<b>411\.6 GB<\/b>/, 'the other half hours are as they were');
+  assert.match(page, /<td[^>]*>1\.0 GB<\/td>/, 'the table of the hours agrees');
+});
+
 test('the background table names what costs most, from the roots of its rounds', async (t) => {
   const w = await world(t);
   await everything(w);
