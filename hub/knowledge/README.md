@@ -76,8 +76,11 @@ stops with it, one round at a time, each a trace named `index-knowledge`.
   built. Rounds then go over every space at their own pace, a minute and twice that each time up to an hour, whatever searches
   ask. The warning stays that the scope is being built.
 - **Damage.** A ready scope's references are counted once per process, in a round. A scope that lost some is repaired, and a
-  search does not rely on it meanwhile. Between the damage and that round a search trusts the ready row: the count it used to
-  make for every scope grew with the documents. The runtime role cannot delete these rows; an operator's hand can.
+  search does not rely on it meanwhile, nor after a repair that failed: what the round proved stands until a count comes out
+  right, and a search warns that the scope is being built, or names the limit the repair passed, which is not tried again. A
+  restart forgets the proof and the first round finds it again. Between the damage and that round a search trusts the ready row:
+  the count it used to make for every scope grew with the documents. The runtime role cannot delete these rows; an operator's
+  hand can.
 - **A purge.** A personal batch is written under the lock a purge takes and checks the version was not cleared, so content read
   before a purge is not written after it.
 
@@ -1604,6 +1607,15 @@ page's original view bytes. Zero is an explicit observation. Other incomplete so
 their existing fields; this count does not cover them. The index-view original and its existing byte identity do not change.
 Readers must compare the digest before using the count. A legacy or collated view with absent or mismatched metadata does
 not acquire a zero count by inference; the caller handles the missing fact using its other structural coverage fields.
+
+## An absence observation is not fed
+
+The artifact a read leaves for an object its system does not have (`hub.source-absence@1`, D05 R[3]) says what the read saw, not
+what the object is. A run may bind it and a reader may read it. Feeding stops it at one place, `unlessAbsence`, which both
+`observeSource` and `observeSourceBounded` pass before anything else happens: no job, no usage, no projection, no to-do, and a
+receipt with no pending item, so a caller is never told to read again what the system says does not exist. It looks at the
+capture the read would feed, not at the bytes. `sourceLines` answers a question and writes nothing to the feeding log, and
+`prepare` needs a row of the pack's projection, which no pack here makes of an observation.
 
 ## Frozen feeding cuts
 

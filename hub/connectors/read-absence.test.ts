@@ -7,6 +7,7 @@ import {startPostgres,type TemporaryPostgres} from '../testing/postgres.ts';
 import {openConnectorKit} from './testing/kit.ts';
 import {writePack} from './testing/packs.ts';
 import {ReadManifest} from '../../contracts/src/resources.ts';
+import {SOURCE_ABSENCE_GENERATOR} from '../records/api.ts';
 let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 async function world(t:{after:(fn:()=>Promise<void>)=>void},status=404,project?:unknown,body='{"data":[]}',envelope=false){
@@ -22,6 +23,7 @@ for(const status of [404,410])test(`HTTP ${status} binds an absence observation 
  const original=result.artifacts.find(a=>a.name==='original')!,content=result.artifacts.find(a=>a.name==='content')!;
  assert.equal(Buffer.from((await w.kit.records.artifacts.source(w.kit.user,original.artifact.body.sha256))!.bytes!).toString(),'{"data":[]}');
  const observation=JSON.parse(Buffer.from((await w.kit.records.artifacts.source(w.kit.user,content.artifact.body.sha256))!.bytes!).toString());assert.equal(observation.code,'SOURCE_ABSENT');assert.deepEqual(observation.responses,['response']);
+ assert.ok('generated'in content.artifact.body.origin&&content.artifact.body.origin.generated.generator===SOURCE_ABSENCE_GENERATOR,'the name the feeding layer stops at');
  const manifest=ReadManifest.parse((await w.kit.records.store.get(result.manifest))!.body);assert.equal(manifest.requests[0].status,status);assert.equal(manifest.requests.length,1);assert.equal(w.calls(),1);assert.equal(manifest.coverage.complete,true);
  const external=await w.external();assert.ok(external.ok && external.absent?.code==='SOURCE_ABSENT');
 });

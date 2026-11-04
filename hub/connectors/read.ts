@@ -20,7 +20,7 @@ import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import { parseDocument, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
 import type { Artifacts, Principal, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
-import { canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
+import { SOURCE_ABSENCE_GENERATOR, canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
 import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../contracts/src/common.ts';
@@ -828,7 +828,7 @@ export class ReadEngine {
         absent=SourceAbsent.parse({code:'SOURCE_ABSENT',system:subject.system,object:subject.id,observed_at:this.#o.now().toISOString(),responses:keys});
         content={...absent,message:`系统 ${subject.system} 里没有 ${subject.id}（读于 ${absent.observed_at}）`};
         const inputs=[...new Set(states.map(state=>`src:${state.artifact!.body.sha256}`))];
-        const observation=await this.#o.artifacts.ingest({bytes:canonicalBytes(content),mediaType:'application/json',origin:{generated:{generator:'hub.source-absence@1',inputs,read_back:null}},derivedSources:inputs.map(ref=>ref.slice(4)),author:{user:null},provenanceType:'projected',visibility,name:'content',capturedAt:absent.observed_at});
+        const observation=await this.#o.artifacts.ingest({bytes:canonicalBytes(content),mediaType:'application/json',origin:{generated:{generator:SOURCE_ABSENCE_GENERATOR,inputs,read_back:null}},derivedSources:inputs.map(ref=>ref.slice(4)),author:{user:null},provenanceType:'projected',visibility,name:'content',capturedAt:absent.observed_at});
         if(observation.body.read_tier===RETAIN_ONLY || await this.#held(principal, observation))throw new ConnectorError('SOURCE_CREDENTIAL','缺席观察被凭据扫描保留；请管理员处理后重读');
         artifacts=[{name:'original',artifact:states[0].artifact!},{name:'content',artifact:observation}];
         meta=null;complete=true;failure=null;revision=null;

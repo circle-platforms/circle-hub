@@ -11,8 +11,9 @@ export const PRODUCT_QUOTA_PREFIX='product:';
 const STATEMENT_ROWS=500,STATEMENT_BYTES=1024*1024;
 const entryLimit=(bytes:number)=>new RecordsError(`单条知识索引超过 ${bytes} 字节上限`,{code:'SPACE_INDEX_LIMIT',fix:'缩短或拆分当前条目；需要提高上限时联系管理员调整单条索引限额',detail:{entry_limit_bytes:bytes}});
 const spaceLimit=(bytes:number)=>new RecordsError(`当前版本知识索引超过 ${bytes} 字节上限`,{code:'SPACE_INDEX_LIMIT',fix:'撤回或替换当前条目以释放当前索引额度；需要提高上限时联系管理员调整空间索引限额，历史引用仍保留',detail:{space_limit_bytes:bytes}});
-// Nobody reading a product can withdraw its entries: the remedy is the administrator's, and the build then goes on by itself (D05 R[8]).
+// Nobody reading a product can withdraw or change its entries: the remedy is the administrator's, and the build then goes on by itself (D05 R[8]).
 const productLimit=(bytes:number)=>new RecordsError(`当前版本知识索引超过 ${bytes} 字节上限`,{code:'SPACE_INDEX_LIMIT',fix:'由管理员调高 CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES 并重启 Hub，后台随后从停下的地方接着建；产品内容不能在这里撤回',detail:{space_limit_bytes:bytes}});
+const productEntryLimit=(bytes:number)=>new RecordsError(`单条知识索引超过 ${bytes} 字节上限`,{code:'SPACE_INDEX_LIMIT',fix:'由管理员调高 CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES 并重启 Hub，后台随后从停下的地方接着建；产品内容不能在这里修改',detail:{entry_limit_bytes:bytes}});
 /** Advisory lock namespace serializing index writes per space; distinct from every other records lock namespace. */
 const SPACE_INDEX_LOCK_SPACE = 730_163;
 export interface SpaceSearchRow {
@@ -36,7 +37,7 @@ export interface SpaceIndexScope {
 /** What a search may rely on, from stored rows alone. Neither ready nor refused: the version is still to be built. */
 export interface SpaceIndexState {
   ready: boolean;
-  /** The limit this version passed, while that limit stands; the build is not tried again. */
+  /** The limit this version passed, while that limit stands; the build is not tried again. A ready version passed it in a repair, and only a round's proof of damage holds it to that. */
   refused: RecordsError|null;
 }
 export interface SpaceSearchIndex {
@@ -81,6 +82,7 @@ export class PgSpaceSearchIndex implements SpaceSearchIndex {
   constructor(db: Database,limits:{entryBytes?:number;spaceBytes?:number;productBytes?:number}={}) { this.#db = db;this.#entryBytes=limits.entryBytes??MAX_ENTRY_INDEX_BYTES;this.#spaceBytes=limits.spaceBytes??MAX_SPACE_INDEX_BYTES;this.#productBytes=limits.productBytes??MAX_PRODUCT_INDEX_BYTES;if(![this.#entryBytes,this.#spaceBytes,this.#productBytes].every(value=>Number.isSafeInteger(value)&&value>0))throw new TypeError('index limits must be positive bytes'); }
   #limit(quotaSpace:string):number{return quotaSpace.startsWith(PRODUCT_QUOTA_PREFIX)?this.#productBytes:this.#spaceBytes;}
   #passed(quotaSpace:string):RecordsError{const bytes=this.#limit(quotaSpace);return quotaSpace.startsWith(PRODUCT_QUOTA_PREFIX)?productLimit(bytes):spaceLimit(bytes);}
+  #entryPassed(quotaSpace:string):RecordsError{return quotaSpace.startsWith(PRODUCT_QUOTA_PREFIX)?productEntryLimit(this.#entryBytes):entryLimit(this.#entryBytes);}
   async missing(records:readonly string[],tx?:Transaction):Promise<ReadonlySet<string>>{
     if(!records.length)return new Set();
     // The ones absent, not the ones there: a new version of a large product shares nearly all its documents.
@@ -102,7 +104,7 @@ export class PgSpaceSearchIndex implements SpaceSearchIndex {
     return found.rows.map((row,at)=>{
       // A limit that rose since ends the refusal without any write: the next round simply builds on.
       const quota=scopes[at].quotaSpace,entry=row.entry_bytes!==null&&Number(row.entry_bytes)>=this.#entryBytes,space=row.space_bytes!==null&&Number(row.space_bytes)>=this.#limit(quota);
-      return {ready:row.ready,refused:row.ready?null:entry?entryLimit(this.#entryBytes):space?this.#passed(quota):null};
+      return {ready:row.ready,refused:entry?this.#entryPassed(quota):space?this.#passed(quota):null};
     });
   }
   async refuse(version:string,quotaSpace:string,error:RecordsError,tx?:Transaction):Promise<void>{

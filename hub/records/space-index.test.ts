@@ -102,8 +102,29 @@ test('states answer in order from stored rows, and a refusal holds until its lim
   await strict.refuse(over.digest,scopes[2].quotaSpace,passed);
   assert.deepEqual((await strict.states(scopes)).map(state=>[state.ready,state.refused?.code??null]),[[true,null],[false,null],[false,'SPACE_INDEX_LIMIT']]);
   assert.deepEqual((await index.states(scopes)).map(state=>state.refused?.code??null),[null,null,null],'a higher limit needs no write');
+  const lowered=new PgSpaceSearchIndex(db,{spaceBytes:50}),repair=await lowered.add(ready.digest,[{...row,path:'/more'}]).then(()=>null,error=>error);
+  await lowered.refuse(ready.digest,'team',repair);
+  assert.deepEqual((await lowered.states(scopes.slice(0,1))).map(state=>[state.ready,state.refused?.code??null]),[[true,'SPACE_INDEX_LIMIT']],'a ready version says both: what to do about them is the reader\'s');
   assert.deepEqual(await index.states([]),[]);
   assert.deepEqual(await index.present(ready.digest,[{path:'/notes',entry:entry.digest},{path:'/other',entry:entry.digest}]),new Set([pathKey({path:'/notes',entry:entry.digest})]));
+});
+
+test('an entry over the limit is its writer\'s to shorten, and in a product the administrator\'s limit to raise',async t=>{
+  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
+  const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
+  const put=(kind:'knowledge_space_version'|'knowledge_space_entry',synthetic:string)=>kit.store.put({kind,schema:kind==='knowledge_space_version'?'knowledge-space-version@1':'knowledge-space-entry@1',provenance:'projected',body:{synthetic}});
+  const member=await put('knowledge_space_version','entry-member'),product=await put('knowledge_space_version','entry-product'),entry=await put('knowledge_space_entry','entry-large');
+  const index=new PgSpaceSearchIndex(db,{entryBytes:100}),text=Array.from({length:40},(_,k)=>String.fromCodePoint(0x4e00+k)).join('');
+  const passed=await index.add(member.digest,[{space:'member',path:'/large',entry:entry.digest,record:entry.digest,text}]).then(()=>null,error=>error);
+  assert.equal(passed?.code,'SPACE_INDEX_LIMIT');
+  const scopes=[{version:member.digest,path:'/',quotaSpace:'member'},{version:product.digest,path:'/产品/synthetic/1.0',quotaSpace:'product:/产品/synthetic/1.0'}];
+  for(const scope of scopes)await index.refuse(scope.version,scope.quotaSpace,passed);
+  const [own,mounted]=await index.states(scopes);
+  assert.match(own.refused?.fix??'',/缩短或拆分当前条目/);
+  assert.match(mounted.refused?.fix??'',/由管理员调高 CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES 并重启 Hub/);
+  assert.doesNotMatch(mounted.refused?.fix??'',/缩短|拆分/);
+  assert.equal(mounted.refused?.code,'SPACE_INDEX_LIMIT');assert.equal(mounted.refused?.message,own.refused?.message);
+  assert.deepEqual(mounted.refused?.detail,own.refused?.detail);
 });
 
 test('product mounts have their own limit, above what a member can write to a space',async t=>{
