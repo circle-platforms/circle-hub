@@ -382,7 +382,9 @@ test('a release with no release before it in the events does not blame the reten
   const w = await world(t);
   await event(w.db, { at: NOW.getTime() - HOUR_MS, kind: 'start', boot: 'boot-now', release: CURRENT });
   await roots(w.db, { name: 'get_nodes', n: 3, every: 1000, release: CURRENT });
-  assert.match(await shown(w.admin), /title="进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了"/);
+  const page = await shown(w.admin);
+  assert.match(page, /title="进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了"/);
+  assert.deepEqual(wordingProblems(page), []);
 });
 
 test('observation itself: the writer of this process and the samples of the day', async (t) => {
@@ -580,6 +582,7 @@ test('a client past the rows shown or past the read bound is not a client with n
   const page = await shown(cut.admin);
   assert.match(page, /title="这个客户端的调用不在读到的范围里"/);
   assert.doesNotMatch(page, /近 24 小时没有调用/);
+  assert.deepEqual(wordingProblems(page), []);
   const shownRows = section(page, '按客户端');
   assert.match(shownRows, /显示 30 \/ 共 32/);
   assert.match(shownRows, quiet);
