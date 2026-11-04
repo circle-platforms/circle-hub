@@ -64,7 +64,7 @@ export async function searchHub(ctx: PageContext, raw: string): Promise<SearchRe
   let cursor: string | null = null;
   let scanned = 0;
   scan: do {
-    const listing = await ctx.deps.runs.listRuns(ctx.principal, { limit: RUN_PAGE, cursor });
+    const listing = await ctx.deps.runs.listRuns(ctx.principal, { limit: RUN_PAGE, cursor, requests: false });
     for (const run of listing.items) {
       scanned += 1;
       const runner = run.runner === undefined ? null : await ctx.userName(run.runner);

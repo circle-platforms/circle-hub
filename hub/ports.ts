@@ -225,7 +225,8 @@ export interface RunsService {
    * accepted result and that result's submission as stored. Only the runner and administrators; null when absent or forbidden. */
   exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
-  listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
+  /** `requests: false` leaves out requests, overdue_requests and open_runs, which read every request the user may see. */
+  listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;
   /**
    * list_task_packs (decision 113): what the run context of these listed packs would hold now — the lease view of each declared
    * prefix and the newest device observations; null when none of them declares the leases or observations context.

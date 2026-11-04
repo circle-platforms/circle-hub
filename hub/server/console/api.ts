@@ -116,7 +116,7 @@ async function overview(ctx: PageContext): Promise<ApiResult> {
 async function tasks(ctx: PageContext): Promise<ApiResult> {
   const wanted = param(ctx, 'result');
   if (wanted !== undefined && !isTaskResult(wanted)) return bad('result 不是任务结果的取值', `改用 ${TASK_RESULT.join('、')} 之一`);
-  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack: param(ctx, 'pack'), limit: 30, cursor: param(ctx, 'cursor') ?? null });
+  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack: param(ctx, 'pack'), limit: 30, cursor: param(ctx, 'cursor') ?? null, requests: false });
   const [rows, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
   const items = [];
   for (const row of rows) {

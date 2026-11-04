@@ -17,7 +17,7 @@ const param = (ctx: PageContext, key: string): string | undefined => ctx.url.sea
 export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
   const build = param(ctx, 'build');
-  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: 50, cursor: param(ctx, 'cursor') ?? null });
+  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: 50, cursor: param(ctx, 'cursor') ?? null, requests: false });
   const runs = listing.items.filter((run) => production(run) && (build === undefined || run.build === build));
   const partial=listing.next !== null || param(ctx,'cursor') !== undefined;
   const empty=partial ? `这一页的 ${listing.items.length} 个运行里没有符合筛选的生产运行` : '没有符合筛选的生产运行';

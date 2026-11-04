@@ -83,6 +83,21 @@ test('a run page retains off-page pending requests, answer state and pack filter
  calls=0;await h.service.listRuns(h.alice,{limit:4});assert.equal(calls,small,'additional off-page runs do not add per-run queries to the same readable page');
 });
 
+test('a listing that opts out of the request fields reads no request, however many exist',async t=>{
+ const h=await openHarness(postgres);t.after(h.close);
+ const body=RunRecord.parse({...runRecord,run:newId('run'),runner:h.alice.id,pack:`${h.review.pack.id}@${h.review.pack.version}`,pack_digest:h.review.pack.digest,requirements:[],sources:[],items:[],target_basis:[],client_key:'synthetic-no-request-fields'});
+ const run=await putRun(h.kit.store,body,new Date(body.started_at).toISOString()),requests=createRequestService(h.kit);
+ for(let n=0;n<3;n++)await requests.write({run:body.run,source:run.digest,kind:'repair',audience:h.alice.id,due:'2026-10-21T00:00:00.000Z',missing:'合成缺口'+n,next_action:'原样重交',code:'not_covered'});
+ const original=Database.prototype.query;let scans=0;
+ Database.prototype.query=(async function(this:Database,...args:Parameters<typeof original>){if(args[1]?.[0]==='request')scans++;return original.apply(this,args);}) as typeof original;t.after(()=>{Database.prototype.query=original;});
+ const full=await h.service.listRuns(h.alice,{limit:4});
+ assert.equal(full.requests?.length,3);assert.ok(scans>0,'the full listing reads the requests');
+ scans=0;const plain=await h.service.listRuns(h.alice,{limit:4,requests:false});
+ assert.equal(scans,0,'the opted-out listing reads none');
+ assert.deepEqual(plain,{items:full.items,next:full.next});
+ assert.equal((await h.service.listRequests!(h.alice,body.run)).length,3,'the listed run still names its own requests');
+});
+
 test('one request reuses the protected global request list across run pages, without lending it to another reader',async t=>{
  const h=await openHarness(postgres);t.after(h.close);
  const body=RunRecord.parse({...runRecord,run:newId('run'),runner:h.alice.id,pack:`${h.review.pack.id}@${h.review.pack.version}`,pack_digest:h.review.pack.digest,requirements:[],sources:[],items:[],target_basis:[],client_key:'synthetic-request-reuse'});

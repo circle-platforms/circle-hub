@@ -1,8 +1,15 @@
 // Immutable results and single-pass JSON argument snapshots for one asynchronous read scope.
+import {createHash} from 'node:crypto';
 import {types} from 'node:util';
 const readonlyCollections=new WeakSet<object>();
 const readonlyError=Object.freeze(()=>{throw new TypeError('A cached read value is immutable; copy it before editing');});
 interface Argument {snapshot:unknown;encoded:string;references:object[]}
+/**
+ * An argument encoded at this length or longer enters a memo key as its SHA-256. A key can name a whole run and result, and
+ * every concurrent caller holds its own key while it waits: thousands of callers of a megabyte key filled the heap.
+ */
+const LONG_KEY=1024;
+const keyText=(encoded:string):string=>encoded.length<LONG_KEY?encoded:'["sha256","'+createHash('sha256').update(encoded).digest('hex')+'"]';
 export class ReadValues{
  #frozen=new WeakMap<object,unknown>();
  #arguments=new WeakMap<object,Argument>();
@@ -68,7 +75,7 @@ export class ReadValues{
    if(types.isProxy(args)||Object.getPrototypeOf(args)!==Array.prototype)throw new TypeError('not a JSON array');
    const root=Object.getOwnPropertyDescriptors(args);if(Reflect.ownKeys(root).length!==args.length+1)throw new TypeError('not a JSON array');
    const snapshots:unknown[]=[],encoded:string[]=[];seen.add(args);
-   for(let i=0;i<args.length;i++){const d=root[String(i)];if(!d||!d.enumerable||!('value'in d))throw new TypeError('not a JSON element');const arg=d.value;const item=visit(arg);snapshots.push(item.snapshot);encoded.push(item.encoded);if(arg!==null&&typeof arg==='object'&&this.#frozen.get(arg)===arg)this.#arguments.set(arg,item);}
+   for(let i=0;i<args.length;i++){const d=root[String(i)];if(!d||!d.enumerable||!('value'in d))throw new TypeError('not a JSON element');const arg=d.value;const item=visit(arg),text=keyText(item.encoded);snapshots.push(item.snapshot);encoded.push(text);if(arg!==null&&typeof arg==='object'&&this.#frozen.get(arg)===arg)this.#arguments.set(arg,{...item,encoded:text});}
    return {id:'["array",['+encoded.join(',')+']]',args:snapshots as unknown as K};
   }catch{return null;}
  }

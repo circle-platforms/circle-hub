@@ -111,7 +111,7 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
-export async function listRuns(ctx: EngineContext, user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<RunListing> {
+export async function listRuns(ctx: EngineContext, user: Principal, query: { pack?: string; limit?: number; cursor?: string | null; requests?: boolean } = {}): Promise<RunListing> {
   const limit = query.limit ?? 100;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) return { items: [], next: null };
   const pack = query.pack ?? null;
@@ -166,6 +166,8 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const items = await Promise.all(following.slice(0,limit).map(record=>withRulingSummary(ctx,record,packages)));
   const last = items.at(-1);
   const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
+  // These fields read every request the reader may see, whichever page is listed; a caller that shows none of them opts out.
+  if(query.requests===false)return {items,next};
   let requests=(await requestsOf(ctx,user)).filter(r=>r.answered_by===null);
   if(query.pack){const matches=await Promise.all(requests.map(async request=>{const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);return pack?.split('@')[0]===query.pack;}));requests=requests.filter((_,i)=>matches[i]);}
   const overdue_requests=requests.filter(request=>Date.parse(request.due)<=ctx.now().getTime());

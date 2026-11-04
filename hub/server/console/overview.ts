@@ -7,6 +7,7 @@ import {dot} from './ui.ts';
 import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
+import type { RunRequestView } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
@@ -31,7 +32,7 @@ export async function runsSince(ctx: PageContext, since: number, limit: number):
   const runs: RunRecordView[] = [];
   let cursor: string | null = null;
   do {
-    const listing = await ctx.deps.runs.listRuns(ctx.principal, { limit: 50, cursor });
+    const listing = await ctx.deps.runs.listRuns(ctx.principal, { limit: 50, cursor, requests: false });
     for (const run of listing.items) {
       if (Date.parse(run.started_at) < since) return { runs, more: false };
       if (runs.length === limit) return { runs, more: true };
@@ -40,6 +41,15 @@ export async function runsSince(ctx: PageContext, since: number, limit: number):
     cursor = listing.next;
   } while (cursor !== null);
   return { runs, more: false };
+}
+
+/** The unanswered requests of the listed tasks, one run at a time: the page never needs the requests of any other run. */
+export async function waitingRequests(ctx: PageContext, tasks: readonly TaskRow[]): Promise<RunRequestView[]> {
+  const waiting: RunRequestView[] = [];
+  for (const task of tasks) {
+    for (const request of await ctx.deps.runs.listRequests?.(ctx.principal, task.run.run) ?? []) if (request.answered_by === null) waiting.push(request);
+  }
+  return waiting;
 }
 
 /** The checks of the results, each layer terminal under its interface term (display rule 5: unknown kept apart). */
@@ -114,7 +124,7 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
   const passed = settled.filter((task) => task.result === 'passed').length;
   const pending = tasks.reduce((n, task) => n + task.pending, 0);
-  const requests = (await ctx.deps.runs.listRequests?.(ctx.principal) ?? []).filter((r) => r.answered_by === null&&tasks.some(task=>task.run.run===r.run));
+  const requests = await waitingRequests(ctx, tasks);
   const scope = more ? `最近 ${days} 天内最近的 ${RECENT_LIMIT} 个任务` : `最近 ${days} 天`;
   const kpis = html`<section class="ch-section" data-columns="4">
 ${kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个`, state: 'info' })}
