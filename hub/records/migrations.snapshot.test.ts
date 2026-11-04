@@ -49,7 +49,7 @@ const APPLIED = [
 test('the applied migration source file keeps its reviewed bytes', () => {
   // An append requires reviewing this file digest; the per-migration SQL snapshots below stay fixed.
   const bytes = readFileSync(new URL('./migrations.ts', import.meta.url));
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), 'ba884c1d84cdd5ac6900af782d8a5744bba8c56db95b97d68a63cf42803e33d6');
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), 'a0eb51c153084f061e03bc5ecda44ae32b8c4dbf1b870d98852be9ea6e0afbe9');
 });
 
 test('every applied SQL migration retains its identity and exact bytes', () => {

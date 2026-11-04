@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Index `record_index` by digest (migration 26): counting a record's index entries before adding more scanned every entry (193 ms over 3.1 million on the owner's deployment), and personal purges delete index rows by digest.
+
 ## 0.3.0 - 2026-11-04
 
 The first release of the redesigned Hub (milestone 1 and the work after it) and the first with the one-click install bundles for macOS and Linux on arm64 and x64. Public main is the single code line: the integration line was ported in four sanitized batches and sealed, and the owner's production deployment now runs main (decisions 136, 144 and 145 in `docs/hub-r4-progress.md`; the state, what is proven and what cannot be, in `docs/hub-status-2026-11.md`).
