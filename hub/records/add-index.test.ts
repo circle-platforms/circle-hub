@@ -5,6 +5,7 @@ import { after, before, test } from 'node:test';
 import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
+import { Database, createPool } from './db.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -35,4 +36,19 @@ test('entries are added to a stored record without changing it, once each and at
   assert.equal(await store.addIndex!(record.digest, Array.from({ length: 198 }, (_, i) => ({ key: 'test.many', value: String(i) }))), 198);
   await assert.rejects(store.addIndex!(record.digest, [{ key: 'test.many', value: 'one more' }]), TypeError, 'a record holds at most 200 entries');
   assert.equal((await store.find({ key: 'test.many', value: '197', kind: 'submission' })).items.length, 1);
+});
+
+test('looking up a record\'s index entries by digest uses an index, not a scan of every entry (migration 26)', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const db = new Database(createPool(kit.database, 1));
+  t.after(() => db.end());
+  const index = (await db.query<{ indexdef: string }>("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'record_index_digest'")).rows[0];
+  assert.match(index?.indexdef ?? '', /ON public\.record_index USING btree \(digest\)/);
+  // The planner picks a scan for a tiny table; with scans priced out, the digest lookup must still find an index to use.
+  const plan = await db.transaction(async (tx) => {
+    await db.query('SET LOCAL enable_seqscan = off', [], tx);
+    return (await db.query<{ 'QUERY PLAN': unknown }>('EXPLAIN (FORMAT JSON) SELECT count(*) AS n FROM record_index WHERE digest = $1', ['0'.repeat(64)], tx)).rows[0]['QUERY PLAN'];
+  });
+  assert.match(JSON.stringify(plan), /record_index_digest/);
 });

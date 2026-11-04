@@ -1448,6 +1448,11 @@ BEGIN
  END LOOP;
 END $do$;
 `},
+ // Decision 146 (performance round, 2026-11-04): record_index is keyed (key, value, digest), so every lookup by digest
+ // alone scanned the whole table: addIndex counts a record's entries before adding more (193 ms over 3.1 million rows on
+ // the owner's deployment), and personal purges delete index rows by digest. The index makes both a lookup.
+ {version:26,name:'record_index_digest',sql:`CREATE INDEX record_index_digest ON public.record_index (digest);
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
