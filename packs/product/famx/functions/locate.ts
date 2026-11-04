@@ -1,6 +1,6 @@
 // Version line, release train and module of a mind-map document from the labels of its ancestors in the agile tree
 // (root first). Convention under the product project: `NNN：<line>` (060：10.6.1) → `NNN：<line>-<suffix>` (004：10.6.1-R2-
-// 2026/7, 101：10.6.1-主线-CentOS-2026/06/30) → module (SLB, SSL, WebUI, 系统 ...) → document. Prefix codes are three
+// 2026/7, 101：10.6.1-主线-Demoos13-2026/06/30) → module (SLB, SSL, WebUI, 系统 ...) → document. Prefix codes are three
 // letters or digits (with a digit), optionally in groups (000-001-002), before an ASCII or full-width colon.
 import type { LocateResult } from './types.ts';
 import { idsFromTitle } from './ids.ts';
