@@ -1,0 +1,5 @@
+{
+  "schema": "bed-install-profile@1",
+  "upgrade_cases": ["syn-upgrade-0", "syn-upgrade-1", "syn-upgrade-2"],
+  "image_extensions": ["img"]
+}

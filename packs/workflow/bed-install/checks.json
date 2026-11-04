@@ -1,0 +1,27 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "install",
+      "title": "装构建请求核验",
+      "function": { "module": "functions/install.ts" },
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "照测试框架的升级用例：镜像名按升级用例的读法正是要装的构建，扩展名是装构建档案里升级用例认的；前驱运行持有整台自动化测试环境；运行锁定设备现在装的构建，派发前在设备上核对",
+      "table": "policies/install.json"
+    },
+    {
+      "id": "dispatch_policy",
+      "title": "派发参数绑定装构建请求",
+      "function": { "module": "functions/dispatch-policy.ts" },
+      "applies": "item",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "W03 F[0]、P11 R[3]：同一脚本与政策表在受理与写意图前重核，派发参数完全来自核验过的装构建请求",
+      "table": "policies/install.json"
+    }
+  ]
+}

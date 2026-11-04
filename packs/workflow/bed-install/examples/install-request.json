@@ -1,0 +1,5 @@
+{
+  "schema": "bed-install@1",
+  "build": "Rel_FAMX_9_2_1_8",
+  "image": "FAMXOS-Rel_FAMX_9_2_1_8.img"
+}
