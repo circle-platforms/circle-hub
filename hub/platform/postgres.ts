@@ -12,7 +12,7 @@
 // where PUBLIC may connect and create temporary tables, it cannot leave objects there either. There is no password to
 // store, leak or rotate; TCP, every other role mapping and every other local user are refused.
 import { access, appendFile, chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { userInfo } from 'node:os';
+import { totalmem, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PlatformError } from './errors.ts';
@@ -51,6 +51,18 @@ export interface PostgresOptions {
   /** Connector for the admin role (tests may replace it). */
   connector?: SqlConnector;
   startTimeoutSeconds?: number;
+  /**
+   * The resource settings written into the managed configuration. Default: sized from this host's memory (the cgroup
+   * limit when there is one), statement statistics when the binaries ship the module; null writes none (tests).
+   */
+  tuning?: ManagedTuning | null;
+}
+
+/** What the managed configuration sizes from: the memory PostgreSQL may use, and whether to collect statement statistics. */
+export interface ManagedTuning {
+  memoryBytes: number;
+  /** Preload pg_stat_statements: only when its library is next to the binaries, since a missing preload stops the start. */
+  statementStatistics: boolean;
 }
 
 export interface PostgresStatus {
@@ -152,7 +164,46 @@ function quoteConf(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-export function managedConf(layout: Layout, port: number): string {
+const MIB = 1024 * 1024;
+
+/** A share of memory in MB, kept between a floor and a ceiling. */
+function sized(bytes: number, divisor: number, floorMb: number, ceilingMb: number): string {
+  return `${Math.min(ceilingMb, Math.max(floorMb, Math.floor(bytes / divisor / MIB)))}MB`;
+}
+
+/**
+ * Resource settings for a single-host deployment that shares the machine: an eighth of memory for the buffer cache (at most
+ * 4 GB; the operating system's page cache holds the rest), half as the planner's cache estimate, sorts and hashes in memory
+ * up to 64 MB each, index builds and restores with up to 1 GB. A statement over one second is logged without its bound
+ * parameters, which may hold record bodies.
+ */
+export function tuningLines(tuning: ManagedTuning): string[] {
+  const memory = tuning.memoryBytes;
+  return [
+    `shared_buffers = '${sized(memory, 8, 128, 4096)}'`,
+    `effective_cache_size = '${sized(memory, 2, 512, 65536)}'`,
+    `work_mem = '${sized(memory, 512, 4, 64)}'`,
+    `maintenance_work_mem = '${sized(memory, 32, 64, 1024)}'`,
+    'track_io_timing = on',
+    'log_min_duration_statement = 1000',
+    'log_parameter_max_length = 0',
+    ...(tuning.statementStatistics ? ["shared_preload_libraries = 'pg_stat_statements'", 'pg_stat_statements.max = 5000', "pg_stat_statements.track = 'top'"] : []),
+  ];
+}
+
+/** This host's memory, or the cgroup limit when it is lower. */
+export function availableMemory(): number {
+  const limit = process.constrainedMemory();
+  const total = totalmem();
+  return limit > 0 && limit < total ? limit : total;
+}
+
+/** The pg_stat_statements library of the binaries' installation (lib/postgresql next to bin). */
+export function statementStatisticsLibrary(binaries: PostgresBinaries): string {
+  return join(dirname(binaries.postgres), '..', 'lib', 'postgresql', `pg_stat_statements${process.platform === 'darwin' ? '.dylib' : '.so'}`);
+}
+
+export function managedConf(layout: Layout, port: number, tuning?: ManagedTuning): string {
   return [
     '# Managed by circle-hub and rewritten at every start; do not edit.',
     "listen_addresses = ''",
@@ -167,6 +218,7 @@ export function managedConf(layout: Layout, port: number): string {
     'log_rotation_size = 0',
     "timezone = 'UTC'",
     "log_timezone = 'UTC'",
+    ...(tuning === undefined ? [] : tuningLines(tuning)),
     '',
   ].join('\n');
 }
@@ -233,10 +285,17 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
     return major;
   };
 
-  const writeManagedFiles = async (): Promise<void> => {
-    await writeFile(join(layout.db, MANAGED_CONF), managedConf(layout, port), { mode: 0o600 });
+  const tuning = async (): Promise<ManagedTuning | undefined> => {
+    if (options.tuning !== undefined) return options.tuning ?? undefined;
+    return { memoryBytes: availableMemory(), statementStatistics: await present(statementStatisticsLibrary(await binaries())) };
+  };
+
+  const writeManagedFiles = async (): Promise<ManagedTuning | undefined> => {
+    const settings = await tuning();
+    await writeFile(join(layout.db, MANAGED_CONF), managedConf(layout, port, settings), { mode: 0o600 });
     await writeFile(join(layout.db, 'pg_hba.conf'), managedHba(admin, role, database), { mode: 0o600 });
     await writeFile(join(layout.db, 'pg_ident.conf'), managedIdent(admin, role), { mode: 0o600 });
+    return settings;
   };
 
   const prepareDirectories = async (): Promise<void> => {
@@ -297,7 +356,7 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
       if (current.running) return false;
       await prepareDirectories();
       await chmod(layout.db, 0o700);
-      await writeManagedFiles();
+      const settings = await writeManagedFiles();
       const startLog = join(layout.logs, 'postgres-start.log');
       const result = await runner(
         (await binaries()).pg_ctl,
@@ -307,6 +366,11 @@ export function createPostgres(options: PostgresOptions): PostgresControl {
       if (result.code !== 0) {
         const log = await readFile(startLog, 'utf8').catch(() => '');
         throw new PlatformError(`PostgreSQL 没有启动（pg_ctl 退出码 ${result.code}）：${tailLines(log || result.stderr || result.stdout)}`);
+      }
+      // The statistics view lives in the maintenance database, owned by the superuser role: the Hub database, its schema,
+      // its backups and the application role's grants stay as they are.
+      if (settings?.statementStatistics) {
+        await withSession(connector, 'postgres', (session) => session.query('CREATE EXTENSION IF NOT EXISTS pg_stat_statements'));
       }
       return true;
     },

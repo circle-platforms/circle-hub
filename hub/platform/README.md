@@ -148,7 +148,13 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    runs (deploys switch binaries with the release). `initdb` only when `PG_VERSION` is missing, and never into a non-empty
    directory. A managed `circle-hub.conf` (included from `postgresql.conf`) and `pg_hba.conf`/`pg_ident.conf` are
    rewritten at every start: `listen_addresses = ''` (no TCP at all), one socket in `run/` with
-   `unix_socket_permissions = 0700`, logging collector with weekday rotation, UTC. `start` refuses a data directory whose
+   `unix_socket_permissions = 0700`, logging collector with weekday rotation, UTC, and resource settings sized from the
+   host's memory (the cgroup limit when lower; `tuningLines`): an eighth for `shared_buffers` (128 MB to 4 GB, the page
+   cache holds the rest), half as `effective_cache_size`, `work_mem` 4–64 MB, `maintenance_work_mem` 64 MB–1 GB,
+   `track_io_timing`, and statements over one second logged without their bound parameters (they may hold record bodies).
+   When the binaries ship `pg_stat_statements` it is preloaded and `start` creates the extension in the `postgres`
+   maintenance database only, so the Hub database, its backups and the application role's grants are unchanged; a missing
+   library is never preloaded, since that would stop the start. The settings apply when PostgreSQL starts. `start` refuses a data directory whose
    major version differs from the binaries and prints the export and import steps (backup with the old release, restore
    into a new empty data root with the new one). The Hub database and its role are created only by `init` and `restore`
    (`ensureDatabaseRunning(control, { create: true })`); every other caller, `serve` included, refuses a missing database,

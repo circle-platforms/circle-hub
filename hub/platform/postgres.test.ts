@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
-import { createPostgres, majorOf, managedConf, managedHba, managedIdent } from './postgres.ts';
+import { createPostgres, majorOf, managedConf, managedHba, managedIdent, statementStatisticsLibrary, tuningLines } from './postgres.ts';
 import { exit, ok, recordingRunner, removeDir, tempDir, type Call } from './test-support.ts';
 import type { CommandResult } from './process.ts';
 
@@ -188,4 +188,30 @@ test('role and database names that could break the configuration files are refus
   assert.throws(() => createPostgres({ layout, admin: 'bad"name' }), /角色名/);
   assert.throws(() => createPostgres({ layout, role: 'two words' }), /角色名/);
   for (const database of ['bad"db', 'two words', 'new\nline', '']) assert.throws(() => createPostgres({ layout, database }), /数据库名/, JSON.stringify(database));
+});
+
+test('resource settings are sized from memory between floors and ceilings, and statement statistics only when asked', () => {
+  const GiB = 1024 ** 3;
+  const server = tuningLines({ memoryBytes: 123 * GiB, statementStatistics: true });
+  assert.deepEqual(server, [
+    "shared_buffers = '4096MB'",
+    "effective_cache_size = '62976MB'",
+    "work_mem = '64MB'",
+    "maintenance_work_mem = '1024MB'",
+    'track_io_timing = on',
+    'log_min_duration_statement = 1000',
+    'log_parameter_max_length = 0',
+    "shared_preload_libraries = 'pg_stat_statements'",
+    'pg_stat_statements.max = 5000',
+    "pg_stat_statements.track = 'top'",
+  ]);
+  const runner = tuningLines({ memoryBytes: 16 * GiB, statementStatistics: false });
+  assert.deepEqual(runner.slice(0, 4), ["shared_buffers = '2048MB'", "effective_cache_size = '8192MB'", "work_mem = '32MB'", "maintenance_work_mem = '512MB'"]);
+  assert.ok(!runner.some((line) => line.includes('pg_stat_statements')), 'no preload of a library that may be missing');
+  assert.deepEqual(tuningLines({ memoryBytes: GiB, statementStatistics: false }).slice(0, 4), ["shared_buffers = '128MB'", "effective_cache_size = '512MB'", "work_mem = '4MB'", "maintenance_work_mem = '64MB'"]);
+  const layout = layoutAt('/srv/hub root');
+  const conf = managedConf(layout, 5432, { memoryBytes: 16 * GiB, statementStatistics: false });
+  assert.ok(conf.startsWith(managedConf(layout, 5432).trimEnd()), 'the resource settings follow the fixed lines');
+  assert.match(conf, /^shared_buffers = '2048MB'$/m);
+  assert.equal(statementStatisticsLibrary({ initdb: '/r/bin/initdb', pg_ctl: '/r/bin/pg_ctl', postgres: '/r/bin/postgres' }), `/r/lib/postgresql/pg_stat_statements${process.platform === 'darwin' ? '.dylib' : '.so'}`);
 });
