@@ -87,11 +87,12 @@ succeeds (or the commit is already current) is the compatibility `runtime/node` 
 that link unchanged and retains both bundles, so recovery still has its Node executable. The installer writes a
 `circle-hub` wrapper with the fixed candidate Node path and
 prints the console address and authority certificate to trust. After deploy applies the bundle’s migrations, the installer
-queries `user list --json` even when settings already exist. With no administrator it requires a username and asks
-for an optional password through the terminal. `init-admin --password-stdin` receives it through stdin; an empty input
+queries `user list --json` even when settings already exist. With no administrator it asks through the terminal for a
+username, whose default `admin` (`DEFAULT_ADMIN_NAME` of `hub/records/api.ts`; a test keeps the script's copy equal) an
+empty answer takes, and for an optional password; `--admin-user` skips the username prompt. `init-admin --password-stdin` receives it through stdin; an empty input
 generates an initial password, shown once, with a mandatory first change. Neither password nor token is put in argv;
 existing administrator accounts are never reinitialized. If `init-admin` fails, rerunning checks the database again.
-Without a terminal or `--admin-user`, the error names `circle-hub init-admin <username>` and `circle-hub setup-code`; an
+Without a terminal or `--admin-user`, the error names `circle-hub init-admin [<username>]` and `circle-hub setup-code`; an
 unreadable account list refuses initialization. The shell tests execute this actual control flow using a synthetic CLI
 and scratch files; they do not perform an install or touch services. Unattended installation supplies `--admin-user` and `--password-stdin`;
 a blank stdin generates an initial password. Every deploy backs up first, so the

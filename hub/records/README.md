@@ -211,7 +211,13 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
    the subject `WHOLE_HUB`.
 8. **Role changes** have no permission kind in B04, so they are recorded as append-only snapshots in `user_history`
    (user, name, role, disabled, changed_by, changed_at), one per change. The last enabled admin cannot be demoted or disabled;
-   admin-set changes are serialized by an advisory lock.
+   admin-set changes are serialized by an advisory lock. `rename` (owner's requirement of 2026-11-04) lets an admin
+   rename any account, a disabled one included, with the name rules of `createUser`, and appends the snapshot with the
+   new name. It refuses a deleted member (whose row migration 23's trigger also freezes), an unchanged name and a name a
+   live account holds; like `createUser` it may take a deleted member's name (`users_live_name`, migration 19). Records name accounts by id; a
+   rename changes only what is shown and the name login and `--as` take. Migration 25 and `RUNTIME_GRANTS` give the
+   runtime role `UPDATE (name)` on `users`. The first administrator's default name, `DEFAULT_ADMIN_NAME` (`admin`), is
+   exported from `api.ts` for the installer, `init-admin`, `user create` and the console's setup page.
 9. **Tokens** are 32 random bytes in base64url (43 characters), shown once; only the SHA-256 is stored. `authenticate`
    accepts `Bearer <token>` (scheme case-insensitive) and refreshes `last_used_at` at most once a minute. A user may issue and
    revoke their own tokens; revoking someone else's token looks exactly like revoking an absent one (`false`).
@@ -272,7 +278,7 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     before the query, so callers never see a raw driver error for their input.
 16. **Two database roles** (append-only must hold against the running Hub itself): the owner role applies migrations
     (`migrateRecords`) and grants the runtime role exactly `RUNTIME_GRANTS`: SELECT and INSERT on the history tables, the
-    column UPDATEs the mutable tables need (users: role, disabled, updated_at and password fields; tokens: last_used_at, revoked_at, revoked_by;
+    column UPDATEs the mutable tables need (users: name, role, disabled, updated_at and password fields; tokens: last_used_at, revoked_at, revoked_by;
     pointers: target, version, moved_at, action_digest), SELECT on `schema_migrations`; no DELETE, TRUNCATE or DDL, and
     not the owner, so it cannot `DISABLE TRIGGER` either (all refused with 42501). `grantRuntime` refuses a runtime role
     that owns the tables. The runtime role opens the kit with `migrate: false`, which only verifies that exactly this

@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/in
 
 带安装包的发行版从 0.3.0 起，目前还没有发布；在那之前，这条命令会停在下载这一步并说明原因。
 
-要让内网其他电脑访问，加上这台机器的内网地址：`… | bash -s -- --https-host 192.0.2.20`（可再加 `--hostname hub.example.lan`）。脚本下载这台机器对应的发布包（自带 Node 24、Hub 和 PostgreSQL），按 GitHub 发行版的 SHA256SUMS 核对后安装：建数据目录和数据库，HTTP 只监听本机，HTTPS 用 Hub 自己的证书颁发机构，部署并启动服务。还没有管理员时，脚本询问第一位管理员的用户名和可选的密码（留空则生成初始密码，首次登录必须修改）；之后的成员、工作流、业务系统和设置都在网页控制台里管理。macOS 用当前账户（LaunchAgent；密钥和 Linux 一样是数据根下的私有文件），需要 Homebrew 来装备份用的 PostgreSQL 客户端（没有 Homebrew 时，把 `CIRCLE_HUB_LIBPQ_BIN` 设成装有 PostgreSQL 18 的 `pg_dump` 和 `pg_restore` 的目录）；Linux 用专门的 `circle-hub` 账户和 systemd 用户服务，安装时要 sudo（建账户、装 bubblewrap 与 AppArmor 策略、PostgreSQL 18 客户端）。再运行一次就是升级：部署前自动备份，失败自动回滚。
+要让内网其他电脑访问，加上这台机器的内网地址：`… | bash -s -- --https-host 192.0.2.20`（可再加 `--hostname hub.example.lan`）。脚本下载这台机器对应的发布包（自带 Node 24、Hub 和 PostgreSQL），按 GitHub 发行版的 SHA256SUMS 核对后安装：建数据目录和数据库，HTTP 只监听本机，HTTPS 用 Hub 自己的证书颁发机构，部署并启动服务。还没有管理员时，脚本询问第一位管理员的用户名（直接回车即为默认的 `admin`）和可选的密码（留空则生成初始密码，首次登录必须修改）；之后的成员、工作流、业务系统和设置都在网页控制台里管理。macOS 用当前账户（LaunchAgent；密钥和 Linux 一样是数据根下的私有文件），需要 Homebrew 来装备份用的 PostgreSQL 客户端（没有 Homebrew 时，把 `CIRCLE_HUB_LIBPQ_BIN` 设成装有 PostgreSQL 18 的 `pg_dump` 和 `pg_restore` 的目录）；Linux 用专门的 `circle-hub` 账户和 systemd 用户服务，安装时要 sudo（建账户、装 bubblewrap 与 AppArmor 策略、PostgreSQL 18 客户端）。再运行一次就是升级：部署前自动备份，失败自动回滚。
 
 ## 状态
 

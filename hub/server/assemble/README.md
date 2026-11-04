@@ -59,7 +59,7 @@ the vault), without the probe and without start-up notices, its log lines on the
 ## Administrator commands
 
 ```
-circle-hub init-admin <name>                         # first admin; its token goes into the token file, never printed
+circle-hub init-admin [<name>]                       # first admin (no name: admin); its token goes into the token file, never printed
 circle-hub operator-token set                        # a lost item: an enabled admin's token from stdin into the item
 circle-hub operator-token reissue [--as <admin>]     # a lost or dead item and no admin token in hand: a new one, never printed
 circle-hub pack publish <dir> [--stage] | grant-publish <user> | revoke-publish <user> | assign <user> <pack> | unassign <user> <pack>
@@ -88,7 +88,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   `circle-hub`), so the file always sits beside the vault key of the same deployment. `CIRCLE_HUB_TOKEN` gives a token for one invocation only: `read -rs T` then `CIRCLE_HUB_TOKEN="$T" circle-hub
   pack …` (the token stays out of the shell history). It must not be exported: `serve` refuses to start while it is set,
   and a token left in a shell reaches everything that shell starts. The server core's built-in state-changing commands
-  (`user create|disable|enable`, `token issue|revoke`) follow the same rule through `operatorAdmin` and `operatorAct`;
+  (`user create|disable|enable|rename`, `token issue|revoke`) follow the same rule through `operatorAdmin` and `operatorAct`;
   platform commands accept the name and get an environment without it. The commands remove it from the environment object
   when they read it, so it never reaches a child process. No token, an unknown or revoked one, or one of a non-admin is
   refused (exit 1) before anything is read or written, and the fix named works without that token (`operator-token

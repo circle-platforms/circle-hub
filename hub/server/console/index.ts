@@ -2,7 +2,7 @@ import {tooltip,technical} from './presentation.ts';
 import {sendConsoleAsset} from './assets.ts';
 import {createHash} from 'node:crypto';
 import {personalPublishPage,performPersonalPackAction} from './personal-packs.ts';
-import { LimitError, validPassword } from '../../records/api.ts';
+import { DEFAULT_ADMIN_NAME, LimitError, validPassword } from '../../records/api.ts';
 // /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
 // 设置) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
 // decision 122; the older paths (/console/results, /console/admin/...) stay. The
@@ -459,12 +459,12 @@ async function setupPage(options: ConsoleOptions, response: ServerResponse, stat
   }
   const nonce = options.sessions.issueNonce(secure);
   const body = page(
-    { ...anonymous('创建首位管理员'), wide: true, hint: '使用初始化码创建首位管理员；管理员用户名必填，密码可留空。' },
+    { ...anonymous('创建首位管理员'), wide: true, hint: `使用初始化码创建首位管理员；管理员用户名默认为 ${DEFAULT_ADMIN_NAME}，可以修改，密码可留空。` },
     html`${stepper(SETUP_STEPS, 0)}${message === null ? '' : html`<p class="error">${message}</p>`}
 <p class="ch-meta">初始化码 24 小时内有效，仅可使用一次</p>${technical(code('circle-hub setup-code'),'查看重新生成命令')}
 <form method="post" action="/console/setup">
 <div class="ch-field"><label class="ch-field-label" for="setup-code">初始化码</label><div class="ch-input"><input id="setup-code" name="code" autocomplete="off" size="40" required value="${prefill}"></div></div>
-<div class="ch-field"><label class="ch-field-label" for="admin-name">管理员用户名</label><div class="ch-input"><input id="admin-name" name="name" autocomplete="off" size="24" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="admin-name">管理员用户名</label><div class="ch-input"><input id="admin-name" name="name" autocomplete="off" size="24" required value="${DEFAULT_ADMIN_NAME}"></div></div>
 <div class="ch-field"><label class="ch-field-label" for="admin-password" title="可留空；留空则生成初始密码，仅显示一次，首次登录必须修改">管理员密码（可选）</label><div class="ch-input"><input id="admin-password" type="password" name="password" autocomplete="new-password" maxlength="256"></div></div>
 <input type="hidden" name="csrf" value="${nonce}">
 <button type="submit" class="ch-btn ch-btn--primary">创建管理员</button>

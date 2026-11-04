@@ -214,6 +214,30 @@ export class PgPrincipals implements Principals {
     }).finally(retireReadScope);
   }
 
+  async rename(by: Principal, userId: string, name: string): Promise<User> {
+    const clean = validName(name);
+    return this.#db.transaction(async (tx) => {
+      await this.#decider(tx, by, true);
+      // Refuses an unknown account and a deleted member (whose row the tombstone trigger also keeps as it is).
+      const current = await this.#locked(tx, userId);
+      if (current.name === clean) throw new ConflictError('新名字与现在的名字相同');
+      // Unique among live accounts only (users_live_name, migration 19): a deleted member's name is free, as for createUser.
+      const taken = await this.#db.query('SELECT 1 FROM users WHERE name = $1 AND deleted_at IS NULL', [clean], tx);
+      if ((taken.rowCount ?? 0) > 0) throw new ConflictError('用户名已经存在');
+      const at = this.#now().toISOString();
+      let row: Row | undefined;
+      try {
+        row = (await this.#db.query('UPDATE users SET name = $2, updated_at = $3 WHERE id = $1 RETURNING *', [current.id, clean, at], tx)).rows[0];
+      } catch (error) {
+        // A concurrent rename or creation that took the name first.
+        if ((error as { code?: unknown }).code === '23505') throw new ConflictError('用户名已经存在');
+        throw error;
+      }
+      await this.#snapshot(tx, current.id, clean, current.role, current.disabled, by.id, at);
+      return userOf(row!);
+    }).finally(retireReadScope);
+  }
+
   async lockActive(by: Principal, tx: Transaction, owners: readonly string[] = []): Promise<Principal> {
     const ids = [...new Set([by?.id, ...owners])].sort();
     if (ids.some(id => typeof id !== 'string' || !USER_ID.test(id))) throw new AccessError('对象不存在或无权读取');

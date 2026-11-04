@@ -10,6 +10,7 @@ import { access, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } fr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BUNDLED_NODE, hydratePostgresLinks, nodeTarball, npmTarget, shasumOf } from '../../tools/build-bundle.ts';
+import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
 
 const SCRIPT = fileURLToPath(new URL('../../install.sh', import.meta.url));
 
@@ -43,7 +44,7 @@ if(args.join(' ')==='user list --json'){
   console.log('管理员已创建');
 }else process.exit(2);
 `);
-  return {dir,calls,run:(options:{name?:string;stdin?:boolean;input?:string;interactive?:boolean;env?:NodeJS.ProcessEnv;after?:string}={})=>{
+  return {dir,calls,run:(options:{name?:string;stdin?:boolean;input?:string;interactive?:boolean;tty?:string;env?:NodeJS.ProcessEnv;after?:string}={})=>{
     const script=`set -euo pipefail\n${functions}
 say() { printf '%s\\n' "$*"; }
 fail() { printf '错误：%s\\n' "$*" >&2; exit 1; }
@@ -51,8 +52,8 @@ as_hub() { SYNTHETIC_AS_SERVICE=1 "$@"; }
 hub() { as_hub "$NODE" "$SETUP_HUB" "$@"; }
 run_as_hub() { as_hub "$@"; }
 commit_in() { printf 'synthetic-current'; }
-installer_has_terminal() { return ${options.interactive?0:1}; }
-${options.interactive?'installer_prompt_admin() { HUB_INSTALL_ADMIN_NAME="synthetic-prompt-admin"; HUB_INSTALL_ADMIN_PASSWORD="synthetic-prompt-password"; }':''}
+${options.tty!==undefined?`HUB_INSTALL_TTY='${options.tty}'`:`installer_has_terminal() { return ${options.interactive?0:1}; }`}
+${options.interactive&&options.tty===undefined?'installer_prompt_admin() { HUB_INSTALL_ADMIN_NAME="synthetic-prompt-admin"; HUB_INSTALL_ADMIN_PASSWORD="synthetic-prompt-password"; }':''}
 ${main}
 ${options.after??''}`;
     const result=spawnSync('bash',['-c',script],{encoding:'utf8',timeout:10_000,input:options.input??'',env:{
@@ -86,6 +87,23 @@ test('administrator bootstrap without a terminal names both recovery commands an
   assert.deepEqual(JSON.parse((await readFile(f.calls,'utf8')).trim()),{args:['init-admin','synthetic-admin','--password-stdin'],input:'\n'});
 });
 
+test('the installer prompt offers the default administrator name, an empty answer takes it and --admin-user skips the prompt',async t=>{
+  const source=await readFile(SCRIPT,'utf8');
+  assert.match(source,new RegExp(`\\nHUB_INSTALL_DEFAULT_ADMIN_NAME=${DEFAULT_ADMIN_NAME}\\n`),'install.sh keeps the default of hub/records/api.ts');
+  const cases:{answer:string|null;name:string}[]=[{answer:'',name:DEFAULT_ADMIN_NAME},{answer:'synthetic-typed-admin',name:'synthetic-typed-admin'},{answer:null,name:'synthetic-flag-admin'}];
+  for(const {answer,name} of cases){
+    const f=await administratorFixture(t),tty=join(f.dir,'synthetic-tty');
+    // A scratch file stands in for the terminal: the prompts are appended to it, each read takes its first line.
+    await writeFile(tty,answer===null?'':`${answer}\n`);
+    const run=f.run({tty,stdin:true,input:'synthetic-installer-password\n',...(answer===null?{name}:{})});
+    assert.equal(run.code,0,run.err);
+    assert.deepEqual(JSON.parse((await readFile(f.calls,'utf8')).trim()),{args:['init-admin',name,'--password-stdin'],input:'synthetic-installer-password\n'});
+    const shown=await readFile(tty,'utf8');
+    if(answer===null)assert.equal(shown,'','an explicit --admin-user asks nothing');
+    else assert.ok(shown.endsWith(`管理员用户名（默认 ${DEFAULT_ADMIN_NAME}，直接回车即用）：`),shown);
+  }
+});
+
 test('administrator bootstrap refuses unreadable account listings instead of assuming there is no administrator',async t=>{
   const f=await administratorFixture(t);
   for(const env of [{SYNTHETIC_QUERY_ERROR:'1'},{SYNTHETIC_BAD_LIST:'1'}]){
@@ -111,7 +129,7 @@ test('install.sh is valid bash', () => {
 test('fresh installation plans username and password initialization without putting a password in argv', () => {
   const {code,out,err}=install(['--dry-run','--version','0.3.0','--admin-user','synthetic-admin','--password-stdin'],'Darwin');
   assert.equal(code,0,err);
-  assert.match(out,/管理员用户名和可选密码/);
+  assert.match(out,new RegExp(`管理员用户名（默认 ${DEFAULT_ADMIN_NAME}）和可选密码`));
   assert.match(out,/标准输入.*init-admin --password-stdin/);
   assert.doesNotMatch(out,/设置码（24 小时内有效）/);
 });

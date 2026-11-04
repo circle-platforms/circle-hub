@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
 import { labelOf, uiLabelOf } from '../../contracts/generated/vocabulary.ts';
-import { FileKeyProvider, MIGRATIONS, openRecords } from '../records/index.ts';
+import { DEFAULT_ADMIN_NAME, FileKeyProvider, MIGRATIONS, openRecords } from '../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import type { AssemblyModule, CliCommand, CliIo } from './api.ts';
 import { memoryOperatorTokens, type OperatorTokenStore } from './assemble/operator-token.ts';
@@ -310,6 +310,61 @@ describe('users, tokens and logs', () => {
     }
   });
 
+  test('user create without a name bootstraps the first admin as the default name; once an admin exists a name is required', async () => {
+    const env = await migrated();
+    const early = await run(['user', 'create'], env);
+    assert.equal(early.code, 1);
+    assert.match(early.text, new RegExp(`还没有管理员[\\s\\S]*省略名字时为 ${DEFAULT_ADMIN_NAME}`));
+    const root = await run(['user', 'create', '--role', 'admin'], env);
+    assert.equal(root.code, 0, root.text);
+    assert.match(root.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}（usr_[0-9a-z]{26}）`));
+    const operator = tokensIn(memoryOperatorTokens(root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!, '测试令牌存储'));
+    const unnamed = await run(['user', 'create'], env, operator);
+    assert.equal(unnamed.code, 2, unnamed.text);
+    assert.match(unnamed.text, /已经有管理员：建用户要给出名字/);
+    assert.equal((await run(['user', 'create', '甲', '乙'], env, operator)).code, 2);
+    assert.match((await run(['user', 'list'], env)).text, new RegExp(`\\t${DEFAULT_ADMIN_NAME}\\t管理员`));
+  });
+
+  test('user rename renames an account as the operator token\'s admin (the first admin to the default name included) and refuses what it cannot rename', async () => {
+    const env = await migrated();
+    const root = await run(['user', 'create', '合成管理员', '--role', 'admin'], env);
+    const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
+    assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
+    const self = await run(['user', 'rename', '合成管理员', DEFAULT_ADMIN_NAME], env, operator);
+    assert.equal(self.code, 0, self.text);
+    assert.match(self.text, new RegExp(`已把 合成管理员（usr_[0-9a-z]{26}）改名为 ${DEFAULT_ADMIN_NAME}；登录控制台和 --as 从现在起用新名字，旧名字不再可用`));
+    // The operator token belongs to the id: it still acts, now under the new name.
+    const renamed = await run(['user', 'rename', '甲', '合成甲'], env, operator);
+    assert.equal(renamed.code, 0, renamed.text);
+    const refused: [string[], number, RegExp][] = [
+      [['user', 'rename', '合成甲', '合成甲'], 1, /新名字与现在的名字相同/],
+      [['user', 'rename', '合成甲', DEFAULT_ADMIN_NAME], 1, /用户名已经存在/],
+      [['user', 'rename', '甲', '合成乙'], 1, /没有用户 甲/],
+      [['user', 'rename', '合成甲', ' 合成空格'], 1, /user names are 1 to 100 characters/],
+      [['user', 'rename', '合成甲'], 2, /需要 2 个参数，给了 1 个/],
+      [['user', 'rename', '合成甲', '合成乙', '--as', DEFAULT_ADMIN_NAME], 2, /改变状态的命令不用 --as/],
+    ];
+    for (const [argv, code, message] of refused) {
+      const result = await run(argv, env, operator);
+      assert.equal(result.code, code, `${argv.join(' ')}: ${result.text}`);
+      assert.match(result.text, message, argv.join(' '));
+    }
+    const kit = await openRecords(loadServerConfig(env), { migrate: false });
+    try {
+      const admin = (await kit.principals.authenticate(`Bearer ${rootToken}`))!;
+      assert.equal(admin.name, DEFAULT_ADMIN_NAME);
+      assert.equal(await kit.principals.findByName('合成管理员'), null);
+      assert.deepEqual((await kit.principals.list()).map((user) => user.name).sort(), [DEFAULT_ADMIN_NAME, '合成甲'].sort());
+      const history = await kit.principals.history(admin.id);
+      assert.deepEqual(history.map((change) => [change.name, change.changed_by]), [['合成管理员', null], [DEFAULT_ADMIN_NAME, admin.id]]);
+    } finally {
+      await kit.close();
+    }
+    assert.match((await run(['help'], env)).text, /user rename <用户> <新名字>/);
+  });
+
   test('state-changing built-ins need an admin\'s operator token: none, a user\'s or an invalid one is refused before anything changes; CIRCLE_HUB_TOKEN works for one command', async () => {
     const env = await migrated();
     const root = await run(['user', 'create', '根管理员', '--role', 'admin'], env);
@@ -317,7 +372,7 @@ describe('users, tokens and logs', () => {
     const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
     assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
     const userToken = (await run(['token', 'issue', '甲', '--raw'], env, operator)).out[0];
-    const changing = [['user', 'create', '乙'], ['user', 'disable', '甲'], ['user', 'enable', '甲'], ['token', 'issue', '甲'], ['token', 'revoke', 'tok_00000000000000000000000001']];
+    const changing = [['user', 'create', '乙'], ['user', 'disable', '甲'], ['user', 'enable', '甲'], ['user', 'rename', '甲', '合成改名'], ['token', 'issue', '甲'], ['token', 'revoke', 'tok_00000000000000000000000001']];
     for (const argv of changing) {
       const without = await run(argv, env);
       assert.equal(without.code, 1, `${argv.join(' ')}: ${without.text}`);

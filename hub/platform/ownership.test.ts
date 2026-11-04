@@ -58,7 +58,7 @@ const COLUMN: Record<string, string> = {
   call_logs: 'tool',
   call_notes: 'note',
   call_reasons: 'note',
-  users: 'name',
+  users: 'created_at', // name is updatable since migration 25 (rename)
   tokens: 'label',
   oauth_clients: 'name',
   invitations: 'user_id',

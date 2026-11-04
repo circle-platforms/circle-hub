@@ -125,6 +125,9 @@ export interface IssuedInvitation extends InvitationInfo {
 /** What an invitation code names: its invitation and account, or why it cannot be used. */
 export type InvitationCheck = { ok: true; invitation: string; user: User; expires_at: string } | { ok: false; reason: 'absent' | 'used' | 'expired' | 'disabled' };
 
+/** The first administrator's username when the installer, init-admin, user create or the setup page is given none. */
+export const DEFAULT_ADMIN_NAME = 'admin';
+
 export interface Principals {
   /** Creates the first admin and its token. Refused (ConflictError) once any admin exists. */
   bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }>;
@@ -138,6 +141,12 @@ export interface Principals {
   changePassword(by: Principal, current: string, next: string): Promise<boolean>;
   setRole(by: Principal, userId: string, role: PermissionRole): Promise<User>;
   setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User>;
+  /**
+   * Admins rename an account, a disabled one included: same name rules as createUser. Refused (ConflictError) for a deleted
+   * member, an unchanged name and a name a live account holds (a deleted member's name is free, as for createUser).
+   * Records name accounts by id, so only what is shown and what login and `--as` accept change.
+   */
+  rename(by: Principal, userId: string, name: string): Promise<User>;
   /** Recheck the actor and personal owners, holding shared user-row locks until this transaction ends. */
   lockActive(by: Principal, tx: Transaction, owners?: readonly string[]): Promise<Principal>;
   get(userId: string): Promise<User | null>;
