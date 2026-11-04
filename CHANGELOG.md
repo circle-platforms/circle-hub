@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Stop the console overview from exhausting the heap: a long argument enters a read memo key as its SHA-256, so concurrent readability checks no longer each hold a whole run and result as key text; the overview reads requests only for the runs it lists, and run listings that show no request fields ask for none (`requests: false`).
+
 - Index `record_index` by digest (migration 26): counting a record's index entries before adding more scanned every entry (193 ms over 3.1 million on the owner's deployment), and personal purges delete index rows by digest.
 
 ## 0.3.0 - 2026-11-04

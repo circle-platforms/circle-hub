@@ -663,7 +663,9 @@ requirement. At zero remaining rounds, missing artifact work becomes `repair_exh
 B07 requests are append-only records keyed by the exact run, item, requirement, source and missing fact. Repeating the
 same problem never extends its original due date. Result errors name the request and the existing tool to answer it;
 full replacement submissions remain allowed after exhaustion. Answers reference actual stored records and never
-rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. Unknown-routing
+rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. The request fields
+of `listRuns` read every request the reader may see, whichever page is listed, so a caller that shows none of them passes
+`requests: false`. Unknown-routing
 rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
 hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
 

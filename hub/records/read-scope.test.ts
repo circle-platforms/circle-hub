@@ -3,6 +3,7 @@ import {before,after,test} from 'node:test';
 import {startPostgres} from '../testing/postgres.ts';
 import {openTestRecords} from '../testing/records.ts';
 import {withReadScope,scopedRecordStore,memoReadPort,memoReadValue,IntegrityError,type RecordStore} from './api.ts';
+import {ReadValues} from './read-value.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 test('batched indexed pages preserve each independent order, limit and continuation including missing keys',async t=>{
@@ -246,6 +247,16 @@ test('readonly cached collections cannot expose mutable slots through methods, p
   Map.prototype.set.call(rawMap,'borrowed',{n:99});Set.prototype.add.call(rawSet,{n:99});
   assert.equal(b.map.has('borrowed'),false);assert.equal(b.set.size,1);assert.throws(()=>{b.map.get('one')!.n=4;},TypeError);
  });
+});
+test('a long read argument enters the memo key as its digest, one key the same size however long the value',()=>{
+ const values=new ReadValues(),body=(text:string)=>({run:'run_synthetic',items:Array.from({length:2000},(_,n)=>({n,text}))});
+ const frozen=values.freeze(body('synthetic-long-value')),key=values.prepare(['result-readable',frozen])!;
+ assert.ok(key.id.length<200,'a key holds no copy of the value: every waiting caller keeps its own key');
+ assert.equal(key.args[1],frozen,'the load still receives the value itself');
+ assert.equal(values.prepare(['result-readable',frozen])!.id,key.id,'the same value keeps its key after its encoding is warm');
+ assert.equal(values.prepare(['result-readable',body('synthetic-long-value')])!.id,key.id,'an equal value that is not frozen has the same key');
+ assert.notEqual(values.prepare(['result-readable',body('synthetic-long-valuf')])!.id,key.id,'a different value has a different key');
+ assert.ok(values.prepare(['short',{n:1}])!.id.includes('"n"'),'a short argument keeps its text');
 });
 test('frozen argument encoding still rejects cycles and sharing and keeps the same snapshot for key and execution',async()=>{
  const owner={},shared={n:1};let calls=0;
