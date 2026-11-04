@@ -1453,6 +1453,10 @@ END $do$;
  // the owner's deployment), and personal purges delete index rows by digest. The index makes both a lookup.
  {version:26,name:'record_index_digest',sql:`CREATE INDEX record_index_digest ON public.record_index (digest);
 `},
+ // Placeholder for the telemetry branch's migration 27 (decision 146, step 1): the list must stay contiguous. It is dropped
+ // when this branch is rebased on that migration; it was never applied anywhere.
+ {version:27,name:'telemetry_placeholder',sql:`SELECT 1;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
