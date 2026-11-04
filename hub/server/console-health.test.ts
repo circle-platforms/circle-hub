@@ -369,6 +369,43 @@ test('a crash with nothing running says that, and one known only from its report
   assert.equal(w.page.statements.filter(({ text }) => text.includes('boot=$5')).length, 0);
 });
 
+test('a request older than the curves is told as that: no heap of the curves is its start, and no line is promised', async (t) => {
+  const w = await world(t);
+  await samples(w.db, 1, 'boot-crashed', CRASH - 1000, 30, 10);
+  const crash = async (seconds: number): Promise<void> => {
+    await w.db.query('DELETE FROM process_events');
+    await event(w.db, { at: CRASH + 24_000, kind: 'abnormal_exit', boot: 'boot-crashed', uptime: 20 * HOUR_MS, last: CRASH, reports: [REPORT], requests: [{ trace: null, origin: 'mcp', name: 'get_nodes', user: w.memberUser.user.id, started_at: iso(CRASH - seconds * 1000) }] });
+  };
+  await crash(720);
+  const page = await shown(w.admin);
+  const crashes = section(page, '崩溃和重启');
+  assert.match(crashes, /运行最久的是 get_nodes ?（合成成员），崩溃时已运行 12 分 0 秒。它在崩溃前 5 分钟之前开始，开始时堆 ?未知 ?，最后一个样本 962\.3 MB。/);
+  assert.match(crashes, /崩溃前 5 分钟 get_nodes ?开始于 .*，早于这 5 分钟，图上没有它的竖线。/);
+  assert.doesNotMatch(crashes, /它开始时堆 962|竖线是/);
+  assert.doesNotMatch(page, /请求开始/);
+  assert.deepEqual(wordingProblems(page), []);
+  await crash(302);
+  const rounded = await shown(w.admin);
+  assert.match(section(rounded, '崩溃和重启'), /图上没有它的竖线/, 'a start just before the window is not rounded onto its edge');
+  assert.doesNotMatch(rounded, /请求开始/);
+  await crash(300);
+  const edge = await shown(w.admin);
+  assert.match(section(edge, '崩溃和重启'), /它开始时堆 962\.3 MB，最后一个样本 962\.3 MB。.*竖线是 get_nodes ?开始的时间/);
+  assert.match(edge, /请求开始/, 'the first moment of the window is on the curves');
+});
+
+test('with its samples unreadable a request older than the window still says when it started', async (t) => {
+  const w = await world(t, (page) => {
+    const health = healthReader(page);
+    return { health: { ...health, curve: async (by, query) => { if (query.boot !== undefined) throw new Error('synthetic refused read'); return health.curve(by, query); } } };
+  });
+  await samples(w.db, 1);
+  await event(w.db, { at: CRASH + 24_000, kind: 'abnormal_exit', boot: 'boot-crashed', uptime: 20 * HOUR_MS, last: CRASH, reports: [], requests: [{ trace: null, origin: 'mcp', name: 'get_nodes', user: null, started_at: iso(CRASH - 720_000) }] });
+  const crashes = section(await shown(w.admin), '崩溃和重启');
+  assert.match(crashes, /它在崩溃前 5 分钟之前开始，开始时堆 ?未知 ?。/);
+  assert.match(crashes, /这次没有读出崩溃之前的样本/);
+});
+
 test('an unusual reason is shown as it stands, as what the report said', async (t) => {
   const w = await world(t);
   await event(w.db, { at: CRASH, kind: 'abnormal_exit', boot: 'boot-crashed', reports: [{ ...REPORT, event: 'Something <new> happened' }], requests: [] });

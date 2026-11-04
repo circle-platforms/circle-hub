@@ -272,7 +272,7 @@ function crashCurves(event: StoredProcessEvent, points: readonly CurvePoint[], r
   const labels = Array.from({ length: CRASH_POINTS + 1 }, (_, index) => clock(start + index * step));
   const xLabels = [[0, labels[0]!], [CRASH_POINTS / 2, labels[CRASH_POINTS / 2]!], [CRASH_POINTS, labels[CRASH_POINTS]!]] as const;
   const index = requestAt === null ? null : Math.round((requestAt - start) / step);
-  const marks = index === null || index < 0 || index > CRASH_POINTS ? [] : [{ index, label: '请求开始', side: index < CRASH_POINTS / 3 ? ('right' as const) : ('left' as const), low: true }];
+  const marks = index === null ? [] : [{ index, label: '请求开始', side: index < CRASH_POINTS / 3 ? ('right' as const) : ('left' as const), low: true }];
   const line = (field: Line['field']): (number | null)[] => [...points.map((point) => point[field]), null];
   const rows = (values: readonly (number | null)[], text: (value: number) => string) => labels.map((label, at) => [label, values[at] === null || values[at] === undefined ? '未知' : text(values[at]!)]);
   const heap = line('heap_used_bytes'), delay = line('event_loop_delay_max_ms'), gc = line('gc_pause_ms');
@@ -295,26 +295,33 @@ function crashBody({ event, points, names }: CrashDetail): Html {
   const requests = event.requests;
   const first = requests?.[0];
   const firstAt = first === undefined ? null : Date.parse(first.started_at);
+  const crashAt = Date.parse(crashTime(event));
+  // The samples read are the window before the crash: a start earlier than that has neither a heap in them nor a place on the curves.
+  const early = firstAt !== null && firstAt < crashAt - CRASH_WINDOW_MS;
+  const markedAt = firstAt !== null && !early && firstAt <= crashAt ? firstAt : null;
   const sampled = points?.filter((point) => point.samples > 0) ?? [];
   const lastSample = sampled.at(-1);
   const heapAt = (at: number): number | null => points?.find((point) => Date.parse(point.at) + CRASH_WINDOW_MS / CRASH_POINTS > at)?.heap_used_bytes ?? null;
   const lastHeap = sampled.findLast((point) => point.heap_used_bytes !== null)?.heap_used_bytes ?? null;
-  const startHeap = firstAt === null ? null : heapAt(firstAt);
+  const startHeap = markedAt === null ? null : heapAt(markedAt);
+  const heaps = early
+    ? html`它在崩溃前 5 分钟之前开始，开始时堆 ${UNKNOWN}${lastHeap === null ? '' : `，最后一个样本 ${size(lastHeap)}`}。`
+    : startHeap === null || lastHeap === null ? '' : `它开始时堆 ${size(startHeap)}，最后一个样本 ${size(lastHeap)}。`;
   const who = first?.user === null || first?.user === undefined ? UNKNOWN : names?.get(first.user) ?? UNKNOWN;
   const finding = first === undefined
     ? requests === null
       ? html`<p class="ch-finding">当时在处理什么：${UNKNOWN}。在途请求日志里没有这个进程，这不等于当时没有请求；主机重启会清掉这个日志。</p>`
       : html`<p class="ch-finding">当时没有在处理的请求。</p>`
-    : html`<p class="ch-finding">运行最久的是 ${code(first.name)}（${who}），崩溃时已运行 ${duration(Math.max(0, Date.parse(crashTime(event)) - firstAt!))}。${startHeap === null || lastHeap === null ? '' : `它开始时堆 ${size(startHeap)}，最后一个样本 ${size(lastHeap)}。`}</p>`;
+    : html`<p class="ch-finding">运行最久的是 ${code(first.name)}（${who}），崩溃时已运行 ${duration(Math.max(0, crashAt - firstAt!))}。${heaps}</p>`;
   const total = (requests?.length ?? 0) + event.requests_omitted;
   const running = requests === null || total === 0 ? '' : html`<div class="ch-section"><h3 class="ch-figure-title">当时在处理 ${count(total)} 个请求</h3><p class="ch-meta">显示 ${count(Math.min(requests.length, REQUESTS_SHOWN))} / 共 ${count(total)} · 先开始的在前</p>${requestTable(event, names)}</div>`;
   const report = html`<div class="ch-section"><h3 class="ch-figure-title">崩溃报告</h3>${event.reports === null ? html`<p class="ch-meta">崩溃报告文件夹读不出来，有没有报告：${UNKNOWN}</p>` : event.reports.length === 0 ? html`<p class="ch-meta">没有崩溃报告</p>` : ''}${crashFacts(event, lastSample)}</div>`;
-  const legend = first === undefined ? '' : html`竖线是 ${code(first.name)} 开始的时间（${stamp(firstAt!)}）。`;
+  const legend = first === undefined ? '' : markedAt !== null ? html`竖线是 ${code(first.name)} 开始的时间（${stamp(firstAt!)}）。` : early ? html`${code(first.name)} 开始于 ${stamp(firstAt!)}，早于这 5 分钟，图上没有它的竖线。` : '';
   const before = points === null
     ? unreadable('崩溃之前的样本')
     : event.boot === null || sampled.length === 0
       ? html`<p class="ch-meta">这个进程崩溃之前 5 分钟没有样本。</p>`
-      : html`<p class="ch-meta">${legend}曲线断开的一段没有样本${reportOf(event)?.heap?.used_bytes === null || reportOf(event)?.heap?.used_bytes === undefined ? '' : '；红点是崩溃报告里的值'}。</p>${crashCurves(event, points, firstAt)}`;
+      : html`<p class="ch-meta">${legend}曲线断开的一段没有样本${reportOf(event)?.heap?.used_bytes === null || reportOf(event)?.heap?.used_bytes === undefined ? '' : '；红点是崩溃报告里的值'}。</p>${crashCurves(event, points, markedAt)}`;
   return html`<div class="ch-event-body">${finding}<div class="ch-event-top">${running}${report}</div><div class="ch-section"><h3 class="ch-figure-title">崩溃前 5 分钟</h3>${before}</div></div>`;
 }
 
