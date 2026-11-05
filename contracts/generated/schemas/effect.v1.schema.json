@@ -267,6 +267,7 @@
                 "SOURCE_READ_LIMIT",
                 "SOURCE_REDIRECT_REFUSED",
                 "SOURCE_ABSENT",
+                "SOURCE_PENDING_REVIEW",
                 "EFFECT_NOT_ALLOWED",
                 "EFFECT_PARAMETER_OUT_OF_RANGE",
                 "EFFECT_RELEASE_UNMET",

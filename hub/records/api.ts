@@ -46,7 +46,7 @@ export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding
 export { personalPackKey, personalPackGrants, mayUsePersonalPack } from './personal-packs.ts';
 export { withRequestPermissions, requestRead } from './request-permissions.ts';
 export type { RequestPermissions } from './request-permissions.ts';
-export { WHOLE_HUB, RECORD_SCHEMAS, SOURCE_ABSENCE_GENERATOR, artifactShareKey, scanAcceptanceKey } from './constants.ts';
+export { WHOLE_HUB, RECORD_SCHEMAS, SOURCE_ABSENCE_GENERATOR, SOURCE_PENDING_REVIEW_GENERATOR, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 /** The list() and find() cursor that continues after an append position (RecordStore.watermark or position). */
 export { encodeCursor as cursorAfter } from './db.ts';
 export { openAppendCursor, readAppended, type AppendCursor } from './append-cursor.ts';

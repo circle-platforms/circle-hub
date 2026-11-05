@@ -7,7 +7,7 @@ import { ReadManifest } from '../../contracts/src/resources.ts';
 import { FEEDING_BOUNDS } from '../knowledge/feeding.ts';
 import { startPostgres } from '../knowledge/test-support.ts';
 import { installedMindmapFixture, world } from '../knowledge/testing/feeding-bounds-fixture.ts';
-import { SOURCE_ABSENCE_GENERATOR, canonicalBytes, newId, type ArtifactOrigin, type IngestInput } from '../records/api.ts';
+import { SOURCE_ABSENCE_GENERATOR, SOURCE_PENDING_REVIEW_GENERATOR, canonicalBytes, newId, type ArtifactOrigin, type IngestInput } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import { createRunsService } from '../runs/api.ts';
 import { FakeWorkflowStore } from '../runs/engine/testing/workflows.ts';
@@ -99,4 +99,16 @@ test('a full queue has no say: the receipt carries no pending item and no refuse
   release();
   assert.deepEqual(receipt, NOT_FED);
   await untouched(run);
+});
+
+test('an object held for review feeds nothing either: its observation is no document', async (t) => {
+  const pg = await startPostgres(); t.after(() => pg.stop());
+  const w = await world(pg);
+  const layer = w.knowledge.feeding!;
+  t.after(async () => { await layer.drain(); await w.close(); });
+  const at = new Date().toISOString();
+  const observation = await w.kit.artifacts.ingest({ bytes: canonicalBytes({ code: 'SOURCE_PENDING_REVIEW', system: 'plm', object: ABSENT, observed_at: at }), mediaType: 'application/json', origin: { generated: { generator: SOURCE_PENDING_REVIEW_GENERATOR, inputs: [], read_back: null } }, name: 'content', author: { user: null }, provenanceType: 'projected', visibility: { readers: [w.user.id], admins: true, packs: [], shareable: false }, capturedAt: at });
+  const scope = { ...w.scope, sourceRecord: observation.digest };
+  for (const receipt of [await layer.observeSource(w.user, observation.body.sha256, scope), await layer.observeSourceBounded(w.user, observation.body.sha256, scope)])
+    assert.deepEqual(receipt, { objects: [], offset: null, pending: [] });
 });

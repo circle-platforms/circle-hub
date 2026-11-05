@@ -28,6 +28,20 @@ test('the synthetic system profiles are valid system@1', () => {
   }
 });
 
+test('a read names as its object route only a declared JSON route', () => {
+  const profile = () => clone(plmSystem()) as { routes: { id: string; response: string }[]; reads: Record<string, unknown>[] };
+  const declared = profile();
+  declared.reads[0].object_route = declared.routes.find((route) => route.response === 'json')!.id;
+  assert.deepEqual(problems(SystemProfile.safeParse(declared)), []);
+  const unknown = profile();
+  unknown.reads[0].object_route = 'no-such-route';
+  assert.match(problems(SystemProfile.safeParse(unknown)).join(' '), /is not a declared JSON route/);
+  const page = profile();
+  page.routes[0].response = 'html';
+  page.reads[0].object_route = page.routes[0].id;
+  assert.match(problems(SystemProfile.safeParse(page)).join(' '), /is not a declared JSON route/, 'a page may be a login or error page instead of the object');
+});
+
 test('every route is a read: a route without read: true is refused', () => {
   const p = clone(plmSystem()) as { routes: Record<string, unknown>[] };
   delete p.routes[0].read;

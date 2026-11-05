@@ -8,7 +8,7 @@ import { secretNameOf } from '../../contracts/src/variables.ts';
 import { CredentialStop } from './credential-stop.ts';
 import { callPackFunction, osIsolationAvailable, type SandboxLimits } from '../rules/api.ts';
 import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
-import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort, ResourceCatalogPort, ResourceListing } from '../ports.ts';
+import { PENDING_REVIEW_FIX, pendingReviewLabel, type ExternalRead, type ExternalReadContext, type ExternalReaderPort, type PacksPort, type ResourceCatalogPort, type ResourceListing } from '../ports.ts';
 import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import { step } from '../telemetry/api.ts';
 import type { ReadDeclaration } from '../../contracts/src/resources.ts';
@@ -17,7 +17,7 @@ import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
 import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
-import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
+import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadEngineOptions, type ReadOutcome, type ResourceRuntime } from './read.ts';
 import { TrialLoginStops, trialSystem, forgetTrialLogin, type SystemTrialInput, type SystemTrialReport, type SystemTrialForget } from './trial.ts';
 import { Redactor } from './redact.ts';
 import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
@@ -29,6 +29,8 @@ function exposeRead(id: string, outcome: Extract<ReadOutcome, { ok: false }>, re
   const exit = readExit(outcome.code);
   const command = adminCommand(exit.admin, resource?.id ?? '', resource === null ? [] : secretNamesOf(resource.credentials));
   const reason = outcome.reason.includes('下一步：') ? `${outcome.code}：${outcome.reason}` : `${outcome.code}：${outcome.reason}；下一步：${command}`;
+  // The one held answer a reader of the system is told about (D05 R[3]); the reason stays the administrator's.
+  if (outcome.pending) return { ok: false, id, manifest: outcome.manifest, reason, inputError: { code: 'SOURCE_PENDING_REVIEW', message: pendingReviewLabel(outcome.pending), fix: PENDING_REVIEW_FIX } };
   const retry = outcome.disclosable !== false && outcome.retry ? { retry: outcome.retry } : {};
   if (outcome.disclosable === false || exit.caller === null) return { ok: false, id, manifest: outcome.manifest, reason, ...retry };
   const redirect = outcome.redirect ? { redirect: outcome.redirect } : {};
@@ -43,6 +45,8 @@ export interface ConnectorsOptions {
   packs: PacksPort;
   /** Injectable for tests; default the global fetch. */
   fetch?: FetchLike;
+  /** Asks a named administrator for the review a reader was just told is awaited (B02 R[4]); set by the assembly. */
+  pendingReview?: ReadEngineOptions['pendingReview'];
   readRetrySleep?:(ms:number)=>Promise<void>;
   now?: () => Date;
   /** Admin log sink. Every string it receives has been redacted. */
@@ -317,6 +321,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     readRetrySleep:options.readRetrySleep,
     nestedCacheMs: options.nestedCacheMs,
     nestedCacheBytes: options.nestedCacheBytes,
+    pendingReview: options.pendingReview,
   });
 
   function event(name: string, detail: Record<string, unknown>): void {
@@ -376,7 +381,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         const [{ runtime, read }] = candidates;
         const outcome = await step('read-source', () => engine.top(runtime, read, subject, context), { type: 'retriever' });
         if (!outcome.ok) return exposeRead(subject.id, outcome, runtime.resource);
-        return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}) };
+        return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}),...(outcome.pending?{pending:outcome.pending}:{}) };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
         event('read_failed',{reason:failure.message});

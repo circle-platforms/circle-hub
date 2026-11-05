@@ -25,12 +25,13 @@ const asPrincipal = (user: { id: string; name: string; role: 'user' | 'admin' })
 
 async function world(t: { after(fn: () => unknown): void }) {
   let clock = Date.parse('2026-11-04T08:00:00.000Z');
-  const kit = await openTestRecords({ postgres, now: () => new Date(clock) });
+  const now = () => new Date(clock);
+  const kit = await openTestRecords({ postgres, now });
   t.after(() => kit.close());
   const db = new Database(createPool(kit.database));
   t.after(() => db.end());
   const tick = () => { clock += 1000; };
-  return { kit, db, tick };
+  return { kit, db, tick, now };
 }
 
 async function records(kit: TestRecordsKit): Promise<TokenIssuanceBody[]> {
@@ -147,7 +148,7 @@ test('each issuance, use and revocation path writes exactly one record with its 
 });
 
 test('a refused or failed change writes no record, and a failing record write undoes the row change', async (t) => {
-  const { kit, db } = await world(t);
+  const { kit, db, now } = await world(t);
   const admin = asPrincipal((await kit.principals.bootstrapAdmin('合成管理员')).user);
   const member = await kit.principals.createUser(admin, '合成成员');
   const other = await kit.principals.createUser(admin, '合成他人');
@@ -182,7 +183,8 @@ test('a refused or failed change writes no record, and a failing record write un
   const invitations = (await db.query('SELECT * FROM invitations ORDER BY id')).rows;
   const users = (await db.query('SELECT * FROM users ORDER BY id')).rows;
   const count = (await records(kit)).length;
-  const failing = new PgPrincipals(db, () => new Date(), { put: async () => { throw new Error('synthetic record failure'); } });
+  // On the test's clock: the invitation above expires a day after it, and an expired one never reaches the record write.
+  const failing = new PgPrincipals(db, now, { put: async () => { throw new Error('synthetic record failure'); } });
   await assert.rejects(failing.issueToken(admin, member.id, '失败'), /synthetic record failure/);
   await assert.rejects(failing.revokeToken(admin, live.id), /synthetic record failure/);
   await assert.rejects(failing.revokeTokenValue(live.token), /synthetic record failure/);
