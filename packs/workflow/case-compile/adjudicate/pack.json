@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "3e9e1753b14522c6d6b6d9387e38a3f9555af0c37d70d3aa3b5b867896044de5",
-      "size": 2771
+      "sha256": "3653a8283e766edf0503f2fbf94b682168bcafafe7f13484fa7ace6a0ee86a22",
+      "size": 3487
     },
     {
       "path": "requirements.json",

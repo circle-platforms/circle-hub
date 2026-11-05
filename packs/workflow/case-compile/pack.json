@@ -141,8 +141,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "b42d6b441d8458586940f54bcec259d321e71f0748be8681650427910489cbb1",
-      "size": 26115
+      "sha256": "566ed512b153ec6ea4a70138a90173b28aee4c44fe0aaa4a63bc3c6ed296d9cc",
+      "size": 26131
     },
     {
       "path": "functions/command-obligations.ts",
@@ -256,13 +256,13 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "4b3a5a14122275b45bcb9900f87bd4c568dfe5bc7cbf6c6f3fabf82e55987a59",
-      "size": 12234
+      "sha256": "050ef679a2975fc5ba855444b2bc902c005fbcef11149f7e2d77ef6d09ff5104",
+      "size": 12282
     },
     {
       "path": "functions/text.ts",
-      "sha256": "652c19e30234a189984aa37d5a717f615c6c4a5487068844d64e34f5ee8656ee",
-      "size": 2768
+      "sha256": "fb48594d9c6e890c26f5b6294174d300fa814f59403b094b3de153b9e4d499de",
+      "size": 3484
     },
     {
       "path": "functions/typed-authority.ts",
@@ -276,8 +276,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "cd4e776193a3e9dd4865dc5715fa1673c196772bc97a80c513856565e2567dfe",
-      "size": 23367
+      "sha256": "3cdfab8792c2380c7a834fbca263d9a4a6f2c2e2a1c01bd084533b933b31b1ed",
+      "size": 23588
     },
     {
       "path": "functions/xlsx-model.ts",

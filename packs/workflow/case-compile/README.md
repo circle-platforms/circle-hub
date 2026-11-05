@@ -315,6 +315,11 @@ reads the same projection. Nothing here reads a word:
   addresses; they must parse and are checked against the environment like any declared address. A contract without the field
   behaves as before, and an older pack ignores it.
 
+- Catalog data crosses a check subject as sealed text (`sealed`, `opened` in `functions/text.ts`). The evaluator reads every
+  reference-like string in a subject against one budget per submission (256 references, 16 MiB), and catalog entries carry two
+  or more each, so a submission of about fifteen cases stopped with `未校验（中断）` and read some 250 MB for nothing. Nothing
+  quotes those references. The content is unchanged, so recipe digests stay.
+
 The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.4 because they copy the projection.
 
 ### 3.9.18: the integration line's 3.8.9–3.9.17 on main

@@ -7,6 +7,18 @@ export function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * A check subject can hold data full of references that nothing quotes, such as catalog entries. The evaluator reads every
+ * reference-like string it finds in a subject, against one budget for all items of a submission, so a whole mind map ran out of
+ * it and verification stopped. Such data crosses the subject as text; its content does not change, so a recipe digest stays.
+ */
+export function sealed(value: unknown): unknown {
+  return value === undefined || value === null ? value : { sealed: JSON.stringify(value) };
+}
+export function opened(value: unknown): unknown {
+  return isRecord(value) && typeof value.sealed === 'string' && Object.keys(value).length === 1 ? JSON.parse(value.sealed) : value;
+}
+
 export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, Math.max(1, max - 1))}…`;
 }

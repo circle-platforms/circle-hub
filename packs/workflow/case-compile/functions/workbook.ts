@@ -15,7 +15,7 @@ import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
 import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
-import { isRecord, markers, type Outcome } from './text.ts';
+import { isRecord, markers, type Outcome, opened } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }
 export type WorkbookRead = { ok: true; executions: ReadExecution[]; autoids: string[] } | { ok: false; problems: WorkbookProblem[] };
@@ -137,7 +137,8 @@ function generationFields(value: unknown): GenerationFields | null {
   return { autoid: value.autoid, title: value.title, ...(Array.isArray(value.path) ? { path: value.path as string[] } : {}), priority: value.priority, steps: value.steps as Array<{ text: string }> };
 }
 export default function check(input: unknown): Outcome[] {
-  const s = isRecord(input) && isRecord(input.subject) ? input.subject : {};
+  const given = isRecord(input) && isRecord(input.subject) ? input.subject : {};
+  const s: Record<string, unknown> = { ...given, plan_set: opened(given.plan_set), fields: isRecord(given.fields) ? { ...given.fields, command_catalog: opened(given.fields.command_catalog) } : given.fields };
   const item = typeof s.item === 'string' ? s.item : undefined;
   const unknown = (reason: NonNullable<Outcome['reason']>, statement: string): Outcome[] => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason, statement, grounds: [], tier: 'blocking', ...(item ? { item } : {}) }];
   if (!s.workbook) {
