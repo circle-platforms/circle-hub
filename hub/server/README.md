@@ -312,7 +312,7 @@ characters, else `sha256:<hex>` (the call log's rule, so runs and call-log lines
 
 Semantics owned by the server:
 
-- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind` and, when supplied, an exact `pack_id`. The optional zero-based `offset` continues that same filtered list. When descriptions exceed the text budget, the answer supplies the next offset and retains the filters; an unknown or unassigned ID produces the same empty list. The list is live, so an assignment or publication change between pages can change positions.
+- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind` and, when supplied, an exact `pack_id`. The optional zero-based `offset` continues that same filtered list. When descriptions exceed the text budget, the answer supplies the next offset and retains the filters; an unknown or unassigned ID produces the same empty list. The list is live, so an assignment or publication change between pages can change positions. When the whole details of the listed packs do not fit one answer, every pack is shown briefly instead of some in full: its description, how its inputs are written, its parameter names and the example; the note names what was left out and how to read one pack in full by its exact `pack_id` (A05 R[1]). An exact `pack_id` query always answers in full.
 - `upload_file`: `file_path` is base64, decoded strictly (canonical padding; a second spelling of the same bytes is
   refused); the cap is `min(limits.maxUploadBytes, MAX_UPLOAD_BYTES)`, checked before decoding; the media type is the
   argument's (validated like records), else by the file name's extension, else sniffed (JSON, HTML, XML, UTF-8 text,

@@ -394,21 +394,32 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
 }
 
 /** A pack as one entry: its line, products, inputs, parameters, the example call and its requirements. */
-function packEntry(p: PackSummary): Entry {
+/** What a brief entry leaves out, named once in the note however many packs are brief (display rule 7). */
+const BRIEF_OMISSION: Omission = { what: '工作流的输入说明、参数说明和要求项', more: '读一个工作流的全部详情：list_task_packs {"pack_id":"<编号>"}，编号不带 @版本' };
+
+/**
+ * One pack of the list. `brief` is for a list whose whole details do not fit one answer: what the pack is, how its inputs are
+ * written, the names of its parameters and the example, so a reader can choose and often call without paging (A05 R[1]).
+ */
+function packEntry(p: PackSummary, brief = false): Entry {
   const clip = new Clip(null, '在控制台工作流页 /console/packs 查看');
   const lines: string[] = [`- ${clip.field(p.pack, CLIP.name, '工作流编号的超出部分')} ${clip.field(p.title, CLIP.name, '工作流标题的超出部分')}（${uiLabelOf('pack_kind', p.kind)}）：${clip.field(p.description, CLIP.message, '工作流说明的超出部分')}`];
   if (p.products.length > 0) lines.push(`  产品：${p.products.map((name) => clip.field(name, CLIP.name, '产品名的超出部分')).join('、')}`);
-  for (const input of p.inputs) {
-    const shapes = [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
+  const shapesOf = (input: PackSummary['inputs'][number]): string => [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
+  if (brief) {
+    if (p.inputs.length > 0) lines.push(`  输入：${p.inputs.map((input) => `${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${required(input.required)}${input.many ? '，可多个' : ''}）${clip.field(shapesOf(input).replaceAll(EXAMPLE_SOURCE, `${EXAMPLE_SOURCE.slice(0, 8)}…`), CLIP.line, '输入写法的超出部分')}`).join('；')}`);
+    if (p.parameters.length > 0) lines.push(`  参数：${p.parameters.map((parameter) => `${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）`).join('、')}`);
+  } else for (const input of p.inputs) {
     lines.push(
-      `  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${labelOf('source_role', input.role)}，${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, CLIP.message, '输入说明的超出部分')}；接受 ${clip.field(input.accepts.join('、'), CLIP.line, '接受类型的超出部分')}；写法 ${clip.field(shapes, CLIP.line, '输入写法的超出部分')}`,
+      `  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${labelOf('source_role', input.role)}，${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, CLIP.message, '输入说明的超出部分')}；接受 ${clip.field(input.accepts.join('、'), CLIP.line, '接受类型的超出部分')}；写法 ${clip.field(shapesOf(input), CLIP.line, '输入写法的超出部分')}`,
     );
   }
-  for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
+  if (!brief) for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
   if(p.space)lines.push(`  ${labelOf('knowledge_space_kind','personal')}：${p.space}`);
   if (p.local_tools !== undefined) lines.push(`  本地工具 ${p.local_tools.count} 个；安装：${clip.field(p.local_tools.install, CLIP.line, '安装命令的超出部分')}；清单见 structuredContent`);
   lines.push(p.kind==='skill'&&p.requirements.length===0?`  读取做法 get_nodes：${JSON.stringify({pack:p.pack,...(p.space?{pack_space:p.space}:{}),file:'SKILL.md'})}`:`  示例 start_run：${startRunExample(p)}`);
-  for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
+  if (brief) clip.omitted.push(BRIEF_OMISSION);
+  else for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
 }
 
@@ -452,16 +463,20 @@ function listText(v: ListOut, context: TextContext): string {
   } else if (context.packList?.contextUnread === true) {
     blocks.push({ priority: 0, head: ['运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'] });
   }
-  const packs: Block = { priority: 1, head: ['详情（每个工作流的产品、输入、参数、示例和要求项）：'], entries: v.packs.map(packEntry), unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
+  const details = (head: string, entries: Entry[]): Block => ({ priority: 1, head: [head], entries, unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
     const list = context.packList;
     if (!list) return '工作流：在控制台工作流页 /console/packs 查看';
     if (from === 0 && list.packId === v.packs[0]?.id) return '单个工作流详情超出回答预算；在控制台工作流页 /console/packs 查看';
     if (from === 0) return `单个工作流详情超出回答预算；按精确 ID 查询 list_task_packs ${JSON.stringify({ pack_id: v.packs[0]?.id })}，或在控制台工作流页 /console/packs 查看`;
     const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
     return `工作流：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台工作流页 /console/packs 查看`;
-  } };
-  blocks.push(packs);
-  return fit(blocks, { tail: [traceLine(v.trace)] }).text;
+  } });
+  const tail = [traceLine(v.trace)];
+  const whole = fit([...blocks, details('详情（每个工作流的产品、输入、参数、示例和要求项）：', v.packs.map((p) => packEntry(p)))], { tail });
+  if (whole.shown.at(-1) === v.packs.length || context.packList?.packId !== undefined) return whole.text;
+  // Every pack briefly rather than some in full: paging to find the one pack wanted costs a reader a whole round. An exact
+  // query stays as it is, since the note of a brief entry would only send the reader back to that same query.
+  return fit([...blocks, details('详情（每个工作流的说明、输入写法、参数名和示例）：', v.packs.map((p) => packEntry(p, true)))], { tail }).text;
 }
 
 // ---------------------------------------------------------------- upload_file

@@ -2,7 +2,7 @@
   {
     "name": "list_task_packs",
     "title": "List task packs",
-    "description": "List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.",
+    "description": "List the task packs you may use, with inputs, parameters and requirements. When the details do not all fit, every pack is shown briefly: read one in full with its exact pack_id, which has no @version. offset continues a truncated list.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",

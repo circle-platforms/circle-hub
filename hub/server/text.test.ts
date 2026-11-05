@@ -1157,6 +1157,41 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.ok(unread.includes('运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'), 'a context that could not be read is said, not left out');
   });
 
+  test('a list whose details do not fit shows every pack briefly and says how to read one in full (A05 R[1])', () => {
+    const long = (i: number) => ({ ...packOf(i), inputs: packOf(i).inputs.map((input) => ({ ...input, description: `输入说明（合成）${'长'.repeat(900)}` })) });
+    const packs = Array.from({ length: 30 }, (_, i) => long(i));
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, index: packs.map((p) => ({ pack: p.pack, title: p.title, kind: p.kind })), trace: TRACE });
+    const text = toolText('list_task_packs', answer, { packList: { offset: 0 } });
+    withinBudget(text, 'brief task packs');
+    const lines = linesOf(text);
+    for (const pack of packs) {
+      assert.ok(lines.includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), `${pack.pack} is shown though the whole details do not fit`);
+      assert.ok(text.includes(`示例 start_run：${startRunExample(pack)}`), 'its example call stays');
+    }
+    const first = packs[0]!.inputs[0]!;
+    const written = lines.find((line) => line.startsWith('  输入：'));
+    assert.ok(written?.startsWith(`  输入：${first.slot}（${first.required ? '必填' : '可选'}${first.many ? '，可多个' : ''}）`), written);
+    assert.ok(written?.includes('{"reference":"src:0000…"}') && !written.includes('0'.repeat(64)), 'an input is written the short way');
+    assert.ok(lines.some((line) => line.startsWith('  参数：depth（必填）、strict（可选）')), lines.join('\n'));
+    assert.equal(lines.some((line) => line.startsWith('  要求项 ') || line.startsWith('  输入 ')), false, 'no full line of details');
+    const note = noteOf(text)!;
+    assert.match(note, /^部分：/);
+    assert.match(note, /工作流的输入说明、参数说明和要求项（30 处）/);
+    assert.ok(note.includes('list_task_packs {"pack_id":"<编号>"}，编号不带 @版本'), note);
+  });
+
+  test('one pack too long for an answer is shown briefly rather than left out, unless it was asked for by its exact ID', () => {
+    const pack = packOf(1);
+    const oversized = { ...pack, inputs: Array.from({ length: 100 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}`, description: '长'.repeat(400) })) };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE });
+    const listed = toolText('list_task_packs', answer, { packList: { offset: 0 } });
+    withinBudget(listed, 'one brief task pack');
+    assert.ok(linesOf(listed).includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), listed);
+    const exact = toolText('list_task_packs', answer, { packList: { offset: 0, packId: pack.id } });
+    assert.equal(linesOf(exact).includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), false, 'an exact query is not sent back to itself');
+    assert.match(noteOf(exact)!, /单个工作流详情超出回答预算/);
+  });
+
   test('an oversized single pack does not suggest the same exact query in a loop', () => {
     const pack = packOf(1);
     const oversized = { ...pack, inputs: Array.from({ length: 300 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}` })) };

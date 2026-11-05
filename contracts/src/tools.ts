@@ -356,7 +356,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_task_packs',
     label: '查询工作流',
     title: 'List task packs',
-    description: 'List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.',
+    description: 'List the task packs you may use, with inputs, parameters and requirements. When the details do not all fit, every pack is shown briefly: read one in full with its exact pack_id, which has no @version. offset continues a truncated list.',
     input: ListTaskPacksInput,
     output: ListTaskPacksOutput,
     effect: 'none',
