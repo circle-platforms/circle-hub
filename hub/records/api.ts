@@ -2,7 +2,8 @@ export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUs
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
-export type { SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export type { SpaceIndexScope, SpaceIndexState, SpaceSearchDocument, SpaceSearchIndex, SpaceSearchRow } from './space-index.ts';
+export { PRODUCT_QUOTA_PREFIX, pathKey } from './space-index.ts';
 export type { MemberHandover, MemberHandoverItem, MemberDeletionPreview } from './member-deletions.ts';
 export {withReadScope,retireReadScope,scopedRecordStore,memoReadPort,memoReadValue,memoReadCall} from './read-scope.ts';
 export { knowledgeTokens } from './space-index.ts';
@@ -45,9 +46,10 @@ export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding
 export { personalPackKey, personalPackGrants, mayUsePersonalPack } from './personal-packs.ts';
 export { withRequestPermissions, requestRead } from './request-permissions.ts';
 export type { RequestPermissions } from './request-permissions.ts';
-export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
+export { WHOLE_HUB, RECORD_SCHEMAS, SOURCE_ABSENCE_GENERATOR, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 /** The list() and find() cursor that continues after an append position (RecordStore.watermark or position). */
 export { encodeCursor as cursorAfter } from './db.ts';
+export { openAppendCursor, readAppended, type AppendCursor } from './append-cursor.ts';
 
 // ---------------------------------------------------------------- identity
 
@@ -152,6 +154,8 @@ export interface Principals {
   get(userId: string): Promise<User | null>;
   findByName(name: string): Promise<User | null>;
   list(): Promise<User[]>;
+  /** These accounts in one read, for a page that names a few of them; an id that is none is left out. */
+  some(ids: readonly string[]): Promise<User[]>;
   history(userId: string): Promise<UserChange[]>;
   /** Admins issue tokens for anyone; a user only for themselves. `client` is the registered client it goes to, if any. */
   issueToken(by: Principal, userId: string, label?: string, client?: string): Promise<IssuedToken>;
@@ -269,6 +273,19 @@ export interface IndexedQuery {
   cursor?: IndexedCursor | null;
 }
 
+/**
+ * The append log as one snapshot saw it: its newest position, and which writing transactions were open then. Positions are
+ * handed out before commit, so a transaction can still commit below a position already read. `oldest` is the oldest open
+ * transaction and `next` an id below which no transaction can still start. A writer has its id before its position, so once a
+ * later horizon's `oldest` has reached this `next`, every transaction that held a position at or below this `position` has
+ * ended. Followers use readAppended, which applies that rule.
+ */
+export interface AppendHorizon { position: number; oldest: number; next: number }
+/** Records appended after `after`, through `through`: their entries under `keys`, and a keyless row for each record of `kinds`. */
+export interface AppendedQuery { after: number; through: number; keys: readonly string[]; kinds?: readonly RecordKind[] }
+/** One index entry of an appended record; `key` and `value` are null for a record of an asked kind with none of the asked keys. */
+export interface AppendedEntry { position: number; digest: string; kind: RecordKind; key: string | null; value: string | null }
+
 export interface RecordStore {
   /** Knowledge candidate timestamps, optionally restricted to matching space headers and the reader’s sync-private visibility; callers authorize snapshot rows and verify selected bodies before display. */
   entryCandidates?(query:{digests:readonly string[];spaces?:readonly string[];reader?:string;offset:number;limit:number},tx?:Transaction):Promise<{items:{index:number;at:string}[];total:number}>;
@@ -311,10 +328,17 @@ export interface RecordStore {
   addIndex?(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** The digests findFirstMany would answer, in one query that reads no record body. */
+  firstDigests(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, string>>;
   /** Bounded index scan retaining each matching value and the record's append position. */
   findIndexed?<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{ items: IndexedRecord<B>[]; next: IndexedCursor | null }>;
-  /** The newest append position among the index entries of each value under any of the keys, in one query (absent: none). */
-  lastPositions?(query: { keys: readonly string[]; values: readonly string[] }, tx?: Transaction): Promise<Map<string, number>>;
+  /** The newest append position and the transactions open as this snapshot saw them. Read on its own: it takes a transaction id. */
+  appendHorizon?(): Promise<AppendHorizon>;
+  /**
+   * What the log holds between two positions, oldest first, in one query that reads no record body: it costs what was appended
+   * in that range, however much came before. Rows are a selection hint only; act on a record through a verified read.
+   */
+  appended?(query: AppendedQuery, tx?: Transaction): Promise<AppendedEntry[]>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
   list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;

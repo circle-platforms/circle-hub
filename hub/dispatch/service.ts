@@ -219,10 +219,10 @@ export class DispatchService {
   async activeLeaseJobs(keys: readonly string[]): Promise<Array<{key:string;job:string}>> {
     if (!keys.length) return [];
     const keysSet=new Set(keys);const events=await this.journal.targets(keys);
-    const jobs=[...new Set(events.map(e=>String(e.body.detail.job)))].sort();
+    const jobs=[...new Set(events.map(e=>String(e.body.detail.job)))].sort(),histories=await this.journal.histories(jobs);
     const rows:Array<{key:string;job:string}>=[];
     for(const job of jobs){
-      const history=await this.journal.events(job);
+      const history=histories.get(job)??[];
       const reservation=history.find(e=>e.body.detail.phase==='reservation');
       const binding=reservation?.body.detail.binding as JobBinding|undefined;
       if(!binding)throw new Error('作业缺少资源登记，请管理员恢复作业登记后核验');

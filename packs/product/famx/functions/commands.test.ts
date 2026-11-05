@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import commands, { extractCommands } from './commands.ts';
 import { assertTotal, hostileInputs, internalWarnings, randomText, seeded } from '../testing/test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const HEADS = ['show demo status', 'show demo pool', 'demo pool add', 'demo pool mode', 'demo route static', 'enable', 'ping', 'no demo pool', 'show'];
 // R4: these old prose/quote/abbreviation inputs now have a deliberately empty command set.
@@ -93,12 +94,22 @@ describe('phrases on bad input', () => {
     }
   });
 
-  it('scans long hostile text in linear time', () => {
-    for (const text of ['show '.repeat(100_000), '(show '.repeat(100_000), '"show '.repeat(100_000), `${'show x '.repeat(100_000)}`, 'a'.repeat(1_000_000)]) {
-      const start = performance.now();
-      const result = extractCommands({ text, definitions });
-      assert.ok(performance.now() - start < 3000, `${text.slice(0, 10)} took too long`);
+  it('scans long hostile text in linear time', { timeout: 120_000 }, (t) => {
+    // Each hostile shape at a length in characters: the full-size text is read once for the result, then the shape is
+    // timed on its own at two lengths, so a quadratic scan of one shape is not hidden behind the others. The large
+    // length is the 1,000,000-character input limit; one scan of it is a few milliseconds, so every timed run scans its
+    // text 20 times, which lifts it above timer noise and leaves the ratio unchanged.
+    const shapes: Array<[string, string]> = [['words', 'show '], ['parentheses', '(show '], ['quotes', '"show '], ['arguments', 'show x '], ['letters', 'a']];
+    for (const [name, unit] of shapes) {
+      const make = (chars: number) => unit.repeat(Math.floor(chars / unit.length));
+      const result = extractCommands({ text: make(name === 'letters' ? 1_000_000 : unit.length * 100_000), definitions });
       assert.ok(Array.isArray(result.phrases));
+      // The timed large text is read in full, not refused at the input limit.
+      assert.deepEqual(extractCommands({ text: make(1_000_000), definitions }).warnings, [], name);
+      const scan = (text: string) => {
+        for (let k = 0; k < 20; k++) extractCommands({ text, definitions });
+      };
+      t.diagnostic(describeGrowth(name, assertLinearGrowth(name, make, scan, { small: 125_000 })));
     }
   });
 });

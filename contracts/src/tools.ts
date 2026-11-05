@@ -41,6 +41,7 @@ export const SERVER_INSTRUCTIONS = `This server verifies results; it does not ge
 3. start_run - freeze the work: requirements, items to judge, locked version and the pack procedure.
 4. get_nodes / resolve_reference - read the expected sources and check exact values before you rely on them.
 5. submit_result - hand in your results item by item. If the receipt is not accepted, read the errors, fix exactly those points and submit again.
+External items: to read one item of an external system by its id (a defect, a requirement, a build), find the workflow whose input accepts that identity in list_task_packs and start_run it. get_nodes search covers knowledge entries only, so no match there says nothing about the external system; when the system has no such item, search the knowledge too, since an entry may still mention it.
 Personal packs: list_task_packs includes space for personal workflows and generic skills. Use pack_space on start_run and get_nodes with pack, pack_space and file (default SKILL.md) to read their declared files. Pure generic skills have no acceptance and are read through get_nodes, not started as runs. Owners publish and grant personal packs through the console.
 Memory: get_nodes with memory lists or reads preferences, and upload_file with memory writes them optimistically using expected_version and client_key. memory_share previews with check_only=true and confirms on a second call. Memory has separate grants and is never an input or ground. Session mode reads only team and caller-owned enabled current documents.
 Sharing: upload_file with share_entry submits a verified personal entry; team_path optionally selects the team directory (default: the personal path); a receipt records that target with a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
@@ -163,7 +164,7 @@ export const StartRunInput = z.strictObject({
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
   model_identity: ModelIdentitySchema.optional().describe('Explicit model and family declaration; submissions from this same observed session can reuse it'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
-  parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs lists every pack parameter with its name, description and schema'),
+  parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs with pack_id gives each parameter with its name, description and schema'),
   submission_due:IsoTime.optional().describe('Requested absolute submission deadline; the service binds its actual finite policy before writing the run'),
   predecessor: RunId.optional().describe('Earlier run this one continues'),
   client_key: z
@@ -172,7 +173,7 @@ export const StartRunInput = z.strictObject({
     .max(200)
     .refine((key) => !key.includes('\u0000'), 'no NUL character in a client key')
     .optional()
-    .describe('Client chosen key; repeating it within its time window returns the same run'),
+    .describe('Leave this out. It is only for sending a call again whose answer was lost: the same arguments with the same key return the same run within its time window. A key stays bound to its arguments for that whole window, in every session of this account, so a key made from what is read collides with a later read or returns an old run'),
 });
 /** The result the Hub computed itself at start_run, for a run whose requirements are all facts: stored, readable by reference. */
 export const ProductionResult = z.strictObject({
@@ -355,7 +356,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'list_task_packs',
     label: '查询工作流',
     title: 'List task packs',
-    description: 'List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.',
+    description: 'List the task packs you may use, with inputs, parameters and requirements. When the details do not all fit, every pack is shown briefly: read one in full with its exact pack_id, which has no @version. offset continues a truncated list.',
     input: ListTaskPacksInput,
     output: ListTaskPacksOutput,
     effect: 'none',

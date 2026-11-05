@@ -1,11 +1,14 @@
-// The client name and version on the rows of a connection's traces: what MCP initialize declared (decision 137), a
-// declaration and nothing more. The records hold it; a process keeps what it has read here, so a call costs no extra read
-// once its connection is known. Bounded: the oldest connection goes first.
+// The client name, version and platform on the rows of a connection's traces: what MCP initialize declared (decisions 137 and
+// 147), a declaration and nothing more. The records hold the name and version, which they bind to the client's writes; a
+// process keeps what it has read here, so a call costs no extra read once its connection is known. The platform is diagnostic
+// data and no record holds it, so a connection that outlives a restart has none until its next initialize. Bounded: the
+// oldest connection goes first.
 import type { ServerDeps } from './api.ts';
 
 export interface DeclaredClient {
   name: string;
   version: string | null;
+  platform: string | null;
 }
 
 const MAX_CONNECTIONS = 1000;
@@ -40,7 +43,10 @@ export class DeclaredClients {
     try {
       const log = this.#deps.records.callLog;
       const found = (await log.declaredClient?.(user, session, token)) ?? (await log.latestDeclaredClient?.(user, token)) ?? null;
-      const client = found === null ? null : { name: found.name, version: found.version };
+      // An initialize that finished meanwhile told this process more than the read could: its line is written after it.
+      const told = this.#known.get(key);
+      if (told !== undefined) return told;
+      const client = found === null ? null : { name: found.name, version: found.version, platform: null };
       this.#set(key, client);
       return client;
     } catch {

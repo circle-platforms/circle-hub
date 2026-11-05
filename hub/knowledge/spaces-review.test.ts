@@ -110,7 +110,7 @@ test('withdrawing and replacing current entries release the index quota while ol
 });
 
 test('an over-limit product index leaves personal and team matches available with explicit partial-scope warnings',async t=>{
-  const w=await makeWorld(postgres,{records:{limits:{maxEntryIndexBytes:1024,maxSpaceIndexBytes:400}}});t.after(w.close);const spaces=w.knowledge.spaces!;
+  const w=await makeWorld(postgres,{records:{limits:{maxEntryIndexBytes:1024,maxSpaceIndexBytes:400,maxProductIndexBytes:400}}});t.after(w.close);const spaces=w.knowledge.spaces!;
   await spaces.write(w.user,{kind:'observation',statement:'合成搜索个人观察',path:'/notes'});
   const source=await w.kit.artifacts.ingest({bytes:Buffer.from('合成团队原文'),mediaType:'text/plain',origin:{read:{object:'synthetic:document:index'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false},readTier:'model_readable'});
   await spaces.write(w.admin,{kind:'observation',statement:'合成搜索团队观察',path:'/notes',grounds:[{reference:'src:'+source.body.sha256,quotation:'合成团队原文'}]},null,'team');
@@ -118,6 +118,7 @@ test('an over-limit product index leaves personal and team matches available wit
   const produced=await w.knowledge.produceTree({product:w.product,build:{name:'Rel_ACME_1_2_15',family:'ACME',line:'1.2',base:'Rel_ACME_1_2_15',platform:null,built_at:'2026-01-02T10:00:00.000Z',released_at:'2026-01-05T00:00:00.000Z',sources:{tree:object},root:null}});
   assert.equal(produced.ok,true,produced.reason??'');assert.ok(produced.root);
   await w.knowledge.moveRoot(w.product.product.id,'1.2',null,produced.root,produced.action,{by:w.admin});
+  await spaces.ensure(w.user,'team');await spaces.indexRound();
   for(const scope of ['all','team'] as const){
     const found=await spaces.search(w.user,'合成搜索',scope);
     assert.ok(found.matches.some(hit=>hit.statement==='合成搜索团队观察'));
@@ -126,9 +127,8 @@ test('an over-limit product index leaves personal and team matches available wit
     assert.match(found.warnings[0].path??'',/^\/产品\//);assert.match(found.warnings[0].message,/未检索/);
   }
   const found=await spaces.search(w.user,'合成搜索','personal');assert.equal(found.matches.length,1);assert.equal(found.warnings,undefined);
-  const index=w.kit.spaceIndex!,ready=index.ready.bind(index),add=index.add.bind(index),complete=index.complete.bind(index);
-  index.ready=async(version,path,tx)=>version===(await spaces.current(w.user.id))?.root?false:ready(version,path,tx);
-  index.add=async()=>{};index.complete=async()=>{};
+  const index=w.kit.spaceIndex!,states=index.states.bind(index);
+  index.states=async scopes=>scopes.map(()=>({ready:false,refused:null}));
   try{const unavailable=await spaces.search(w.user,'合成搜索','personal');assert.deepEqual(unavailable.matches,[]);assert.equal(unavailable.warnings?.[0].code,'SOURCE_UNAVAILABLE');assert.match(unavailable.warnings[0].message,/未检索/);}
-  finally{index.ready=ready;index.add=add;index.complete=complete;}
+  finally{index.states=states;}
 });

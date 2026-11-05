@@ -6,6 +6,7 @@ import type { IndexView, ViewEntry } from '../../../contracts/src/views.ts';
 import { checkDuplicate } from './functions/checks.ts';
 import { projectDefects } from './functions/projection.ts';
 import { SYNTHETIC_BOUND_MANUAL, SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG, makeGoodDraft } from './testing/fixtures.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../hub/testing/growth.ts';
 
 const DUMMY_CONTEXT: RunContext = {
   product: 'famx',
@@ -29,71 +30,75 @@ function makeBoundDefect(bug = SYNTHETIC_BUG_74001): BoundInput {
   };
 }
 
-describe('compact case index and deduplication at real scale', () => {
-  it('projects 100,000 indexed cases within 4 MiB output and 256 MB memory', () => {
-    // Generate 100,000 synthetic indexed cases across 2,000 distinct command sets
-    const entries: Record<string, ViewEntry> = {};
-    const keys: Record<string, string[]> = {};
-    const TOTAL_CASES = 100_000;
-    const NUM_COMMAND_KEYS = 2_000;
+/** An index view of `total` synthetic cases across 2,000 distinct command sets, bound as the indexed_cases slot. */
+function largeIndex(total: number): BoundInput {
+  const entries: Record<string, ViewEntry> = {};
+  const keys: Record<string, string[]> = {};
+  const NUM_COMMAND_KEYS = 2_000;
 
-    for (let k = 0; k < NUM_COMMAND_KEYS; k++) {
-      keys[`cmd_${k}`] = [];
-    }
+  for (let k = 0; k < NUM_COMMAND_KEYS; k++) {
+    keys[`cmd_${k}`] = [];
+  }
 
-    for (let i = 0; i < TOTAL_CASES; i++) {
-      const digest = i.toString(16).padStart(64, '0');
-      const cmdKey = `service port ${i % NUM_COMMAND_KEYS}`;
-      entries[digest] = {
-        entry: digest,
-        kind: 'case',
-        statement: `doc_${i % 100}:node_${i} | 验证端口配置 ${i}`,
-        reference: `tree:1111111111111111111111111111111111111111111111111111111111111111/commands/service/port@${digest}`,
-        data: {
-          document: `doc_${i % 100}.km.json`,
-          node: `node_${i}`,
-          title: `验证端口配置详情说明项编号 ${i} 涵盖基础业务流与高可用校验`,
-          negative: false,
-          commands: [cmdKey],
-        },
-      };
-      if (keys[cmdKey]) keys[cmdKey].push(digest);
-      else keys[cmdKey] = [digest];
-    }
-
-    const largeIndexView: IndexView = {
-      schema: 'index-view@1',
-      product: 'famx',
-      build: { build: 'Rel_FAMX_10_6_1_57', root: '1111111111111111111111111111111111111111111111111111111111111111' },
+  for (let i = 0; i < total; i++) {
+    const digest = i.toString(16).padStart(64, '0');
+    const cmdKey = `service port ${i % NUM_COMMAND_KEYS}`;
+    entries[digest] = {
+      entry: digest,
       kind: 'case',
-      key: 'commands',
-      keys,
-      entries,
-      total_keys: Object.keys(keys).length,
-      total_entries: TOTAL_CASES,
-      truncated: false,
-      skipped: 0,
-      notes: [],
+      statement: `doc_${i % 100}:node_${i} | 验证端口配置 ${i}`,
+      reference: `tree:1111111111111111111111111111111111111111111111111111111111111111/commands/service/port@${digest}`,
+      data: {
+        document: `doc_${i % 100}.km.json`,
+        node: `node_${i}`,
+        title: `验证端口配置详情说明项编号 ${i} 涵盖基础业务流与高可用校验`,
+        negative: false,
+        commands: [cmdKey],
+      },
     };
+    if (keys[cmdKey]) keys[cmdKey].push(digest);
+    else keys[cmdKey] = [digest];
+  }
 
-    const boundIndex: BoundInput = {
-      slot: 'indexed_cases',
-      external: 'knowledge:index:famx:Rel_FAMX_10_6_1_57?kind=case&key=commands&fields=document,node,title',
-      sha256: 'sha_large_index',
-      media_type: 'application/json',
-      parser: 'json@1',
-      model: largeIndexView,
-      meta: null,
-    };
+  const largeIndexView: IndexView = {
+    schema: 'index-view@1',
+    product: 'famx',
+    build: { build: 'Rel_FAMX_10_6_1_57', root: '1111111111111111111111111111111111111111111111111111111111111111' },
+    kind: 'case',
+    key: 'commands',
+    keys,
+    entries,
+    total_keys: Object.keys(keys).length,
+    total_entries: total,
+    truncated: false,
+    skipped: 0,
+    notes: [],
+  };
+
+  return {
+    slot: 'indexed_cases',
+    external: 'knowledge:index:famx:Rel_FAMX_10_6_1_57?kind=case&key=commands&fields=document,node,title',
+    sha256: 'sha_large_index',
+    media_type: 'application/json',
+    parser: 'json@1',
+    model: largeIndexView,
+    meta: null,
+  };
+}
+
+const projectIndex = (boundIndex: BoundInput) => projectDefects({
+  inputs: [SYNTHETIC_BOUND_MANUAL, makeBoundDefect(), boundIndex],
+  parameters: {},
+  context: DUMMY_CONTEXT,
+});
+
+describe('compact case index and deduplication at real scale', () => {
+  it('projects 100,000 indexed cases within 4 MiB output and 256 MB memory', { timeout: 120_000 }, (t) => {
+    const TOTAL_CASES = 100_000;
+    const boundIndex = largeIndex(TOTAL_CASES);
 
     const initialMem = process.memoryUsage().heapUsed;
-    const start = Date.now();
-    const result = projectDefects({
-      inputs: [SYNTHETIC_BOUND_MANUAL, makeBoundDefect(), boundIndex],
-      parameters: {},
-      context: DUMMY_CONTEXT,
-    });
-    const elapsed = Date.now() - start;
+    const result = projectIndex(boundIndex);
     const currentMem = process.memoryUsage().heapUsed;
 
     assert.ok(!('error' in result), 'projection of 100,000 cases must succeed');
@@ -116,7 +121,16 @@ describe('compact case index and deduplication at real scale', () => {
     // Assert memory heap growth during projection is reasonable (< 256 MB)
     const heapDiffMb = (currentMem - initialMem) / (1024 * 1024);
     assert.ok(heapDiffMb < 256, `heap growth ${heapDiffMb.toFixed(2)} MB must be < 256 MB`);
-    assert.ok(elapsed < 10000, `projection execution ${elapsed} ms must be within reasonable time`);
+    // Per-case work grows linearly. It is timed below the output budget (8,000 cases still fit whole): above it the cost
+    // is set by trimming the compact index to the budget, not by the number of cases, so a ratio across it says nothing
+    // about per-case work. One projection of 8,000 cases is near timer noise, so each timed run projects four times,
+    // which leaves the ratio unchanged.
+    const fits = projectIndex(largeIndex(8000));
+    assert.ok(!('error' in fits) && (fits.groups?.[0] as { indexed_cases: { complete: boolean } } | undefined)?.indexed_cases.complete === true, 'the timed sizes stay below the output budget');
+    const projectFour = (boundIndex: BoundInput) => {
+      for (let k = 0; k < 4; k++) projectIndex(boundIndex);
+    };
+    t.diagnostic(describeGrowth('indexed cases', assertLinearGrowth('indexed cases', largeIndex, projectFour, { small: 1000 })));
   });
 
   it('reports unknown with dropped count when no duplicate found in truncated index, but still refutes if duplicate found', () => {

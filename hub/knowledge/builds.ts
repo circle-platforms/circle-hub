@@ -107,6 +107,11 @@ export class Builds {
     return out;
   }
 
+  /** The version lines of a product's known builds: each record says its own, so no root is read for them. */
+  async lines(product: string): Promise<Set<string>> {
+    return new Set([...(await this.latestRecords(product)).values()].map((record) => record.body.build.line));
+  }
+
   /** Every known build with its final base and that base's production, newest first. */
   async #resolvedAll(product: string): Promise<Resolved[]> {
     const records = await this.latestRecords(product);

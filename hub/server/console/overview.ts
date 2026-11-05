@@ -7,12 +7,12 @@ import {dot} from './ui.ts';
 import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
-import type { RunRequestView } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
+import { step } from '../../telemetry/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
 import { TASK_FILL, primaryResult, taskChip } from './status.ts';
-import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
+import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
 import { card, clock, count,  kpi, plannedCard, sectionHead, when } from './ui.ts';
@@ -32,7 +32,7 @@ export async function runsSince(ctx: PageContext, since: number, limit: number):
   const runs: RunRecordView[] = [];
   let cursor: string | null = null;
   do {
-    const listing = await ctx.deps.runs.listRuns(ctx.principal, { limit: 50, cursor, requests: false });
+    const listing = await ctx.deps.runs.listRuns(ctx.principal, { limit: Math.min(limit + 1, 500), cursor, requests: false });
     for (const run of listing.items) {
       if (Date.parse(run.started_at) < since) return { runs, more: false };
       if (runs.length === limit) return { runs, more: true };
@@ -41,15 +41,6 @@ export async function runsSince(ctx: PageContext, since: number, limit: number):
     cursor = listing.next;
   } while (cursor !== null);
   return { runs, more: false };
-}
-
-/** The unanswered requests of the listed tasks, one run at a time: the page never needs the requests of any other run. */
-export async function waitingRequests(ctx: PageContext, tasks: readonly TaskRow[]): Promise<RunRequestView[]> {
-  const waiting: RunRequestView[] = [];
-  for (const task of tasks) {
-    for (const request of await ctx.deps.runs.listRequests?.(ctx.principal, task.run.run) ?? []) if (request.answered_by === null) waiting.push(request);
-  }
-  return waiting;
 }
 
 /** The checks of the results, each layer terminal under its interface term (display rule 5: unknown kept apart). */
@@ -94,7 +85,7 @@ export function blockers(tasks: readonly TaskRow[]): { label: string; value: num
 async function periodTasks(ctx: PageContext, today: readonly TaskRow[], titles: ReadonlyMap<string, string>, now: number,since:number): Promise<Html> {
   let calls: readonly CallLogLine[] = [];
   try {
-    calls = (await ctx.deps.records.callLog.query(ctx.principal, { from: new Date(since).toISOString(),to:new Date(now).toISOString(), limit: 500 })).items;
+    calls = (await step('read-call-log', () => ctx.deps.records.callLog.query(ctx.principal, { from: new Date(since).toISOString(),to:new Date(now).toISOString(), limit: 500 }))).items;
   } catch {
     calls = [];
   }
@@ -118,13 +109,13 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   const raw = Number(ctx.url.searchParams.get('days') ?? '7');
   const days = (PERIODS as readonly number[]).includes(raw) ? raw : 7;
   const since = startOfDay(now - (days - 1) * DAY);
-  const [{ runs, more }, titles] = await Promise.all([runsSince(ctx, since, RECENT_LIMIT), packTitles(ctx)]);
-  const tasks = await loadTasks(ctx, runs);
+  const [{ runs, more }, titles] = await Promise.all([step('list-runs', () => runsSince(ctx, since, RECENT_LIMIT)), packTitles(ctx)]);
+  const tasks = await step('load-tasks', () => loadTasks(ctx, runs));
   const today=tasks;
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
   const passed = settled.filter((task) => task.result === 'passed').length;
   const pending = tasks.reduce((n, task) => n + task.pending, 0);
-  const requests = await waitingRequests(ctx, tasks);
+  const requests = await step('list-requests', () => waitingRequests(ctx, tasks));
   const scope = more ? `最近 ${days} 天内最近的 ${RECENT_LIMIT} 个任务` : `最近 ${days} 天`;
   const kpis = html`<section class="ch-section" data-columns="4">
 ${kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个`, state: 'info' })}
@@ -148,19 +139,21 @@ ${kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length),
   const checks=checkCounts(tasks),checkTotal=checks.reduce((sum,item)=>sum+item.value,0);
   const checkCard=card({title:'检查项结果',hint:scope+'全部结果中的检查项；等待判定中不计入通过，未知与检查未完成单独统计，不计入未通过。'},html`${kpi('检查项',checkTotal)}${parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布')}`);
   const stuck=blockers(tasks),stuckCard=card({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},stuck.length?comparisons('主要阻塞原因',stuck):html`<p class="ch-empty-text">没有被退回或未完成的条目。</p>`);
-  const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
-  const reads = await systemReads(ctx, resources.slice(0, 6).map((r) => r.id),now-since);
-  const systems = card({ title: '业务系统读取', meta:'当前配置 · '+scope+'读取', hint: '只读访问；'+scope+'的读取次数与耗时' }, html`${!ctx.admin ? html`<p class="ch-meta">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="ch-list">${resources.slice(0, 6).map((r) => html`<a class="ch-row" href="/console/connections#systems">${dot(r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle')}<span class="ch-row-body"><b>${r.name}</b><span class="ch-meta">${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span></span><span class="ch-meta">${reads === null ? '暂不可用' : readsText(reads.get(r.id),scope)}</span></a>`)}</div>`}
+  const { resources, reads } = await step('read-systems', async () => {
+    const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
+    return { resources, reads: await systemReads(ctx, resources.slice(0, 6).map((r) => r.id),now-since) };
+  });
+  const systems = card({ title: '业务系统读取', meta:'当前配置 · '+scope+'读取', hint: '只读访问；'+scope+'的读取次数与耗时' }, html`${!ctx.admin ? html`<p class="ch-meta">业务系统的配置仅管理员可见。</p>` : resources.length === 0 ? html`<p class="empty">尚无业务系统。</p>` : html`<div class="ch-list">${resources.slice(0, 6).map((r) => html`<a class="ch-row" href="/console/connections#systems">${dot(r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle')}<span class="ch-row-body"><b>${r.name}</b><span class="ch-meta">${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span><span class="ch-meta">${reads === null ? '暂不可用' : readsText(reads.get(r.id),scope)}</span></span></a>`)}</div>`}
 <div class="ch-actions"><span class="ch-tag">只读访问，不修改业务数据</span>${link('/console/connections', '查看全部')}</div>`);
-  const lines = await readableLines(ctx);
-  let current = 0;
-  for (const line of lines) {
-    for (const build of await ctx.deps.knowledge.builds(line.id)) if (build.root !== null) { current += 1; break; }
-  }
+  const { lines, current } = await step('read-lines', async () => {
+    const lines = await readableLines(ctx);
+    const rooted = await Promise.all(lines.map(async (line) => (await ctx.deps.knowledge.builds(line.id)).some((build) => build.root !== null)));
+    return { lines, current: rooted.filter(Boolean).length };
+  });
   const knowledge = card({ title: '知识库', meta:'当前快照', hint: '按产品线统计，成员可读分配给自己的工作流所绑定的产品线。' }, html`<div class="ch-stats">${kpi('产品线',lines.length)}${kpi('已有知识的产品线',current)}</div>
 <div class="ch-actions"><span></span>${link('/console/knowledge', '打开知识库')}</div>`);
   const facts = ctx.hub;
-  const storage = await storageFacts(ctx);
+  const storage = await step('read-storage', () => storageFacts(ctx));
   const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : html`最近 ${when(storage.backups.latest_at)}`;
   const health = html`<div class="ch-list">
 <a class="ch-row" href="/console/settings#hub">${dot('ok')}<span><b>服务</b><span class="ch-meta">运行中${facts?.release ? ` · ${facts.release}` : ''}</span></span></a>

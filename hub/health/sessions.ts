@@ -5,7 +5,7 @@
 export const SESSION_IDLE_MS = 15 * 60 * 1000;
 const MAX_SESSIONS = 10_000;
 /** Names in one sample; a client's name is whatever it declares, so the row stays bounded whatever is declared. */
-const MAX_NAMES = 20;
+export const MAX_NAMES = 20;
 
 export interface SessionCounts {
   total: number;

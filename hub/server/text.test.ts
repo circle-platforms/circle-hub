@@ -1130,7 +1130,7 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE });
     const text = toolText('list_task_packs', answer, { packList: { offset: 7, kind: 'workflow' } });
     withinBudget(text, 'task-pack continuation');
-    const match = noteOf(text)?.match(/list_task_packs (\{[^}]+\})/);
+    const match = noteOf(text)?.match(/继续 list_task_packs (\{[^}]+\})/);
     assert.ok(match, 'the omitted packs have a tool-based continuation');
     const next = JSON.parse(match[1]!) as { kind: string; offset: number };
     assert.equal(next.kind, 'workflow');
@@ -1155,6 +1155,62 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.ok(lines.includes('- toy-pack-2@1.0.2 合成工作流 2（工作流）：评审合成的思维导图（合成）'), 'the details of the page');
     const unread = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1)], index: index.slice(1, 2), trace: TRACE }), { packList: { offset: 0, contextUnread: true } }));
     assert.ok(unread.includes('运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'), 'a context that could not be read is said, not left out');
+  });
+
+  test('a list whose details do not fit shows every pack briefly and says how to read one in full (A05 R[1])', () => {
+    const long = (i: number) => ({ ...packOf(i), inputs: packOf(i).inputs.map((input) => ({ ...input, description: `输入说明（合成）${'长'.repeat(900)}` })) });
+    const packs = Array.from({ length: 30 }, (_, i) => long(i));
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, index: packs.map((p) => ({ pack: p.pack, title: p.title, kind: p.kind })), trace: TRACE });
+    const text = toolText('list_task_packs', answer, { packList: { offset: 0 } });
+    withinBudget(text, 'brief task packs');
+    const lines = linesOf(text);
+    for (const pack of packs) {
+      assert.ok(lines.includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), `${pack.pack} is shown though the whole details do not fit`);
+      assert.ok(text.includes(`示例 start_run：${startRunExample(pack)}`), 'its example call stays');
+    }
+    const first = packs[0]!.inputs[0]!;
+    const written = lines.find((line) => line.startsWith(`  输入 ${first.slot}（`));
+    assert.ok(written?.startsWith(`  输入 ${first.slot}（${first.required ? '必填' : '可选'}${first.many ? '，可多个' : ''}）：输入说明（合成）长`), written);
+    assert.ok(written?.includes('写法 {"reference":"src:0000…"}') && !written.includes('0'.repeat(64)), 'an input is written the short way');
+    assert.ok(lines.some((line) => line.startsWith('  参数：depth（必填）、strict（可选）')), lines.join('\n'));
+    assert.equal(lines.some((line) => line.startsWith('  要求项 ') || line.startsWith('  参数 ')), false, 'no full line of details');
+    const head = lines.find((line) => line.startsWith('详情（'))!;
+    assert.match(head, /^详情（部分：全部详情放不下这段回答/, 'the shortening is marked and its reason is true');
+    assert.ok(head.includes('list_task_packs {"pack_id":"<编号>"}，编号不带 @版本'), head);
+    const note = noteOf(text)!;
+    assert.match(note, /输入说明的超出部分（\d+ 处）/, 'a clipped description is named as what it is');
+    assert.ok(note.includes('list_task_packs {"pack_id":"<编号>"}，编号不带 @版本'), note);
+  });
+
+  test('one pack too long for an answer is shown briefly rather than left out, unless it was asked for by its exact ID', () => {
+    const pack = packOf(1);
+    const oversized = { ...pack, inputs: Array.from({ length: 100 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}`, description: '长'.repeat(400) })) };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE });
+    const listed = toolText('list_task_packs', answer, { packList: { offset: 0 } });
+    withinBudget(listed, 'one brief task pack');
+    assert.ok(linesOf(listed).includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), listed);
+    const exact = toolText('list_task_packs', answer, { packList: { offset: 0, packId: pack.id } });
+    assert.equal(linesOf(exact).includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), false, 'an exact query is not sent back to itself');
+    assert.match(noteOf(exact)!, /单个工作流详情超出回答预算/);
+  });
+
+  test('a brief list of short descriptions marks itself though no field was clipped, and an empty list keeps the plain head', () => {
+    const short = (i: number) => ({ ...packOf(i), requirements: Array.from({ length: 40 }, (_, n) => ({ ...REQUIREMENTS[0]!, key: `req_${n}` })) });
+    const packs = Array.from({ length: 12 }, (_, i) => short(i));
+    const text = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, trace: TRACE }), { packList: { offset: 0 } });
+    assert.ok(linesOf(text).some((line) => line.startsWith('详情（部分：')), text.slice(0, 600));
+    assert.equal(noteOf(text), null, 'nothing to say beyond the head: no field went over a cap and no pack was dropped');
+    const empty = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [], trace: TRACE }), { packList: { offset: 0 } }));
+    assert.equal(empty.some((line) => line.startsWith('详情（部分：')), false, empty.join('\n'));
+  });
+
+  test('on a later page the note numbers the packs it left out by their place in the whole list', () => {
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE });
+    const note = noteOf(toolText('list_task_packs', answer, { packList: { offset: 7 } }))!;
+    const left = /第 (\d+) 到第 (\d+) 个/.exec(note);
+    assert.ok(left, note);
+    assert.equal(Number(left[2]), 307, 'the last one left out is the last of the list');
+    assert.ok(Number(left[1]) > 8);
   });
 
   test('an oversized single pack does not suggest the same exact query in a loop', () => {

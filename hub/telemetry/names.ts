@@ -13,7 +13,7 @@ const MCP_STEPS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', '
  */
 const CONSOLE_STEPS = [
   'stream-console', 'serve-console', 'serve-overview', 'serve-results', 'serve-runs', 'serve-knowledge', 'serve-packs', 'serve-connections', 'serve-records',
-  'serve-search', 'serve-settings', 'serve-team', 'serve-operations', 'serve-admin', 'serve-api', 'serve-assets', 'serve-login', 'serve-logout',
+  'serve-search', 'serve-settings', 'serve-health', 'serve-team', 'serve-operations', 'serve-admin', 'serve-api', 'serve-assets', 'serve-login', 'serve-logout',
   'serve-setup', 'serve-password', 'serve-authorize',
 ] as const;
 
@@ -24,7 +24,11 @@ const SYNC_STEPS = [
 ] as const;
 
 /** One round of a background task. */
-const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
+export const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'index-knowledge', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
+export type BackgroundStep = (typeof BACKGROUND_STEPS)[number];
+
+/** Rounds a timer starts. The others run when something asks (a document job, a staged pack's expiry, a lease in use), so they have no interval to report. */
+export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'index-knowledge', 'poll-console', 'purge-traces'] as const satisfies readonly BackgroundStep[];
 
 /** The root step of a CLI command, by the command's name; `run-command` for a name the CLI does not know. */
 const COMMAND_STEPS = [
@@ -37,9 +41,14 @@ const COMMAND_STEPS = [
 /** What a request or a round does inside: the steps worth a row of their own. */
 const INNER_STEPS = [
   'authenticate', 'check-permission', 'read-source', 'parse-document', 'run-function', 'run-check', 'validate-submission', 'append-record', 'compute-view', 'slow-query',
+  'load-workflow', 'freeze-skills', 'resolve-target', 'bind-inputs', 'read-context', 'project-items', 'bind-expected', 'evaluate-run', 'list-packs',
+  'list-runs', 'load-tasks', 'list-requests', 'read-call-log', 'read-systems', 'read-lines', 'read-storage',
 ] as const;
 
-/** Every step name, in one list. `serve-http` is the root of a request outside MCP, the console and sync. */
+/**
+ * Every step name, in one list. `serve-http` is the root of an exchange that is no call: a request outside MCP, the console and
+ * sync, or one on /mcp that gets no call-log line (a GET, a notification, a request refused before it was identified).
+ */
 export const STEP_NAMES = [...MCP_STEPS, ...CONSOLE_STEPS, ...SYNC_STEPS, ...BACKGROUND_STEPS, ...COMMAND_STEPS, ...INNER_STEPS, 'serve-http'] as const;
 export type StepName = (typeof STEP_NAMES)[number];
 

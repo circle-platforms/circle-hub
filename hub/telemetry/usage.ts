@@ -36,6 +36,7 @@ export interface SpanRow {
   run_id: string | null;
   client_name: string | null;
   client_version: string | null;
+  client_platform: string | null;
   usage: Usage;
 }
 
@@ -54,6 +55,7 @@ interface Trace {
   runId: string | null;
   clientName: string | null;
   clientVersion: string | null;
+  clientPlatform: string | null;
   root: Step | null;
   /** Finished steps waiting for the root; null once the root has ended. */
   held: Step[] | null;
@@ -163,6 +165,7 @@ function rowOf(trace: Trace, finished: Step): SpanRow {
     run_id: trace.runId,
     client_name: trace.clientName,
     client_version: trace.clientVersion,
+    client_platform: trace.clientPlatform,
     usage,
   };
 }
@@ -247,7 +250,7 @@ export function startTrace<T>(options: TraceOptions, work: () => T): T {
   if (sink === null) return work();
   const trace: Trace = {
     id: options.traceId ?? randomHex(16), remoteParent: options.parentSpanId ?? null, origin: options.origin, sink,
-    userId: null, sessionId: null, runId: null, clientName: null, clientVersion: null, root: null, held: [], dropped: 0,
+    userId: null, sessionId: null, runId: null, clientName: null, clientVersion: null, clientPlatform: null, root: null, held: [], dropped: 0,
   };
   trace.root = begin(trace, null, options.name, 'span');
   return enter(trace.root, work);
@@ -287,6 +290,7 @@ export interface TraceFields {
   runId?: string | null;
   clientName?: string | null;
   clientVersion?: string | null;
+  clientPlatform?: string | null;
 }
 
 /** Sets what only became known on the way; it reaches every row of the trace. A no-op outside a trace. */
@@ -302,6 +306,7 @@ export function updateTrace(fields: TraceFields): void {
   if (fields.runId !== undefined) trace.runId = fields.runId;
   if (fields.clientName !== undefined) trace.clientName = fields.clientName === null ? null : safeText(fields.clientName);
   if (fields.clientVersion !== undefined) trace.clientVersion = fields.clientVersion === null ? null : safeText(fields.clientVersion);
+  if (fields.clientPlatform !== undefined) trace.clientPlatform = fields.clientPlatform === null ? null : safeText(fields.clientPlatform);
 }
 
 /** Marks the root step: `message` is an error code or a fixed sentence. The first mark stays. */

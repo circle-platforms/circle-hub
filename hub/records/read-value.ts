@@ -3,19 +3,33 @@ import {createHash} from 'node:crypto';
 import {types} from 'node:util';
 const readonlyCollections=new WeakSet<object>();
 const readonlyError=Object.freeze(()=>{throw new TypeError('A cached read value is immutable; copy it before editing');});
-interface Argument {snapshot:unknown;encoded:string;references:object[]}
+interface Argument {snapshot:unknown;encoded:string}
 /**
  * An argument encoded at this length or longer enters a memo key as its SHA-256. A key can name a whole run and result, and
  * every concurrent caller holds its own key while it waits: thousands of callers of a megabyte key filled the heap.
  */
 const LONG_KEY=1024;
 const keyText=(encoded:string):string=>encoded.length<LONG_KEY?encoded:'["sha256","'+createHash('sha256').update(encoded).digest('hex')+'"]';
+/** Deeply freezes what JSON.parse made: plain objects, arrays and data, so nothing ReadValues checks for can be there. */
+function freezeParsed(value:unknown):void{
+ if(value===null||typeof value!=='object')return;
+ if(Array.isArray(value))for(const item of value)freezeParsed(item);
+ else for(const key of Object.keys(value))freezeParsed((value as Record<string,unknown>)[key]);
+ Object.freeze(value);
+}
 export class ReadValues{
  #frozen=new WeakMap<object,unknown>();
- #arguments=new WeakMap<object,Argument>();
- clear(){this.#frozen=new WeakMap();this.#arguments=new WeakMap();}
+ #names=new WeakMap<object,number>();
+ #named=0;
+ clear(){this.#frozen=new WeakMap();this.#names=new WeakMap();}
  freeze<T>(value:T):T{
   const added:object[]=[];try{return this.#freeze(value,added);}catch(error){for(const item of added)this.#frozen.delete(item);throw error;}
+ }
+ /** A verified record: plain metadata around a parsed body. Every read passes here, so it skips the checks of an unknown value. */
+ freezeRecord<T extends {body:unknown}>(record:T):T{
+  freezeParsed(record);this.#frozen.set(record,record);
+  if(record.body!==null&&typeof record.body==='object')this.#frozen.set(record.body,record.body);
+  return record;
  }
  #freeze<T>(value:T,added:object[]):T{
   // A prior freeze may have installed our fixed, frozen collection guard on the producer's shell.
@@ -49,33 +63,35 @@ export class ReadValues{
   for(const key of Reflect.ownKeys(value)){const d=Object.getOwnPropertyDescriptor(value,key)!;if(!('value'in d))throw new TypeError('Cached reads require data properties');const item=this.#freeze(d.value,added);if(item!==d.value)Object.defineProperty(value,key,{...d,value:item});}
   Object.freeze(value);return value;
  }
+ #name(value:object):number{let name=this.#names.get(value);if(name===undefined){name=++this.#named;this.#names.set(value,name);}return name;}
  /** The encoding and executed arguments are derived from the same descriptor values, without invoking getters. */
  prepare<K extends readonly unknown[]>(args:K):{id:string;args:K}|null{
   const seen=new Set<object>();
   const visit=(value:unknown):Argument=>{
-   if(value===undefined)return {snapshot:value,encoded:'["undefined"]',references:[]};
-   if(value===null)return {snapshot:value,encoded:'["null"]',references:[]};
-   if(typeof value==='string'||typeof value==='boolean')return {snapshot:value,encoded:JSON.stringify([typeof value,value]),references:[]};
-   if(typeof value==='number'&&Number.isFinite(value))return {snapshot:value,encoded:JSON.stringify(['number',Object.is(value,-0)?'-0':value]),references:[]};
+   if(value===undefined)return {snapshot:value,encoded:'["undefined"]'};
+   if(value===null)return {snapshot:value,encoded:'["null"]'};
+   if(typeof value==='string'||typeof value==='boolean')return {snapshot:value,encoded:JSON.stringify([typeof value,value])};
+   if(typeof value==='number'&&Number.isFinite(value))return {snapshot:value,encoded:JSON.stringify(['number',Object.is(value,-0)?'-0':value])};
    if(typeof value!=='object'||types.isProxy(value))throw new TypeError('not plain JSON');
-   const cached=this.#arguments.get(value);
-   if(cached){for(const reference of cached.references){if(seen.has(reference))throw new TypeError('not a JSON tree');seen.add(reference);}return cached;}
+   // A value this scope froze cannot change and one read gives it one identity, so the identity is its key. Spelling out a
+   // whole run and result to name them cost a third of a console page; an equal copy at worst reads once more.
+   if(this.#frozen.get(value)===value){if(seen.has(value))throw new TypeError('not a JSON tree');seen.add(value);return {snapshot:value,encoded:`["frozen",${this.#name(value)}]`};}
    const prototype=Object.getPrototypeOf(value),array=Array.isArray(value);
    if(array?prototype!==Array.prototype:prototype!==Object.prototype&&prototype!==null)throw new TypeError('not plain JSON');
    if(seen.has(value))throw new TypeError('not a JSON tree');seen.add(value);
-   const descriptors=Object.getOwnPropertyDescriptors(value),keys=Reflect.ownKeys(descriptors),references=[value];
+   const descriptors=Object.getOwnPropertyDescriptors(value),keys=Reflect.ownKeys(descriptors);
    const snapshot:any=array?[]:Object.create(prototype),encoded:string[]=[];
-   const field=(key:string)=>{const d=descriptors[key];if(!d||!d.enumerable||!('value'in d))throw new TypeError('not a JSON field');const item=visit(d.value);for(const reference of item.references)references.push(reference);Object.defineProperty(snapshot,key,{value:item.snapshot,enumerable:true,writable:true,configurable:true});return item.encoded;};
+   const field=(key:string)=>{const d=descriptors[key];if(!d||!d.enumerable||!('value'in d))throw new TypeError('not a JSON field');const item=visit(d.value);Object.defineProperty(snapshot,key,{value:item.snapshot,enumerable:true,writable:true,configurable:true});return item.encoded;};
    if(array){if(keys.length!==(value as unknown[]).length+1)throw new TypeError('not a JSON array');for(let i=0;i<(value as unknown[]).length;i++)encoded.push(field(String(i)));}
    else for(const key of keys){if(typeof key!=='string')throw new TypeError('not a JSON key');encoded.push('['+JSON.stringify(key)+','+field(key)+']');}
-   return {snapshot:this.#frozen.get(value)===value?value:snapshot,encoded:'["'+(array?'array':prototype===null?'null-object':'object')+'",['+encoded.join(',')+']]',references};
+   return {snapshot,encoded:'["'+(array?'array':prototype===null?'null-object':'object')+'",['+encoded.join(',')+']]'};
   };
   try{
-   // The rest/key array is private to this call; cache encoding only for deeply frozen argument roots.
+   // The rest/key array is private to this call.
    if(types.isProxy(args)||Object.getPrototypeOf(args)!==Array.prototype)throw new TypeError('not a JSON array');
    const root=Object.getOwnPropertyDescriptors(args);if(Reflect.ownKeys(root).length!==args.length+1)throw new TypeError('not a JSON array');
    const snapshots:unknown[]=[],encoded:string[]=[];seen.add(args);
-   for(let i=0;i<args.length;i++){const d=root[String(i)];if(!d||!d.enumerable||!('value'in d))throw new TypeError('not a JSON element');const arg=d.value;const item=visit(arg),text=keyText(item.encoded);snapshots.push(item.snapshot);encoded.push(text);if(arg!==null&&typeof arg==='object'&&this.#frozen.get(arg)===arg)this.#arguments.set(arg,{...item,encoded:text});}
+   for(let i=0;i<args.length;i++){const d=root[String(i)];if(!d||!d.enumerable||!('value'in d))throw new TypeError('not a JSON element');const arg=d.value;const item=visit(arg);snapshots.push(item.snapshot);encoded.push(keyText(item.encoded));}
    return {id:'["array",['+encoded.join(',')+']]',args:snapshots as unknown as K};
   }catch{return null;}
  }

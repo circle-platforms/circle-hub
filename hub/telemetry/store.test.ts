@@ -33,7 +33,7 @@ let spans = 0;
 const span = (fields: Partial<StoredSpanRow>): StoredSpanRow => ({
   trace_id: randomBytes(16).toString('hex'), span_id: (++spans).toString(16).padStart(16, 'a'), parent_span_id: null, is_root: true, name: 'get_nodes', type: 'span',
   started_at: '2026-11-04T08:00:00.000Z', ended_at: '2026-11-04T08:00:00.010Z', level: 'default', status_message: null, origin: 'mcp',
-  user_id: null, session_id: null, run_id: null, client_name: null, client_version: null, usage: {}, release: null, environment: null, ...fields,
+  user_id: null, session_id: null, run_id: null, client_name: null, client_version: null, client_platform: null, usage: {}, release: null, environment: null, ...fields,
 });
 
 async function world(t: TestContext): Promise<World> {
@@ -314,7 +314,7 @@ test('the runtime role writes, reads and deletes its rows, and may do nothing el
     await runtime.query('SELECT 1');
   });
   await telemetry.flush();
-  assert.deepEqual(telemetry.stats(), { queued: 0, written: 1, dropped: 0, failed: 0 });
+  assert.deepEqual({ ...telemetry.stats(), writeDelayP95Ms: null, lastBatchMs: null }, { queued: 0, written: 1, dropped: 0, failed: 0, writeDelayP95Ms: null, lastBatchMs: null });
 
   const traces = await new TraceReader(runtime).list(w.admin);
   assert.deepEqual(traces.map((trace) => [trace.name, trace.release, trace.environment, trace.usage['db.queries']]), [['get_nodes', 'abcdef012345', 'test', 1]]);
@@ -335,5 +335,160 @@ test('close writes what is left and a connection that cannot be reached costs on
   const lost = startTelemetry({ database: { ...w.kit.database, database: 'no_such_database' } });
   assert.equal(await startTrace({ name: 'get_nodes', origin: 'mcp' }, async () => 'answer'), 'answer');
   await lost.close();
-  assert.deepEqual(lost.stats(), { queued: 0, written: 0, dropped: 0, failed: 1 });
+  assert.deepEqual(lost.stats(), { queued: 0, written: 0, dropped: 0, failed: 1, writeDelayP95Ms: null, lastBatchMs: null });
+});
+
+const WINDOW = Date.parse('2026-11-04T00:00:00.000Z');
+const at = (ms: number): string => new Date(WINDOW + ms).toISOString();
+const MINUTE_MS = 60_000;
+const since = at(0);
+const retained = at(-RETENTION_DAYS * DAY_MS);
+/** A root step that ran `ms` from `start` milliseconds into the window. */
+const ran = (start: number, ms: number, fields: Partial<StoredSpanRow>): Partial<StoredSpanRow> => ({ started_at: at(start), ended_at: at(start + ms), ...fields });
+/** The one run of a release, as far back as anything is kept. */
+const whole = (release: string): { release: string; from: string; until: null } => ({ release, from: retained, until: null });
+
+test('what a client declared about its platform is on the row and comes back with it', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  await insert([{ client_name: 'synthetic-client', client_version: '1.0', client_platform: 'synthetic-os', started_at: at(0), ended_at: at(5) }]);
+  assert.deepEqual((await reader.list(admin)).map((row) => row.client_platform), ['synthetic-os']);
+});
+
+test('background totals: one line a task, the largest reader first, rounds only, its latest round even before the window', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  await insert([
+    ...[0, 1, 2].map((n) => ran(n * MINUTE_MS, 2000, { name: 'maintain-runs', origin: 'background', usage: { 'db.rows': 100, 'db.bytes': 1000 } })),
+    ran(MINUTE_MS, 5, { name: 'poll-console', origin: 'background', usage: { 'db.rows': 7 } }),
+    ran(-DAY_MS, 240, { name: 'purge-traces', origin: 'background' }),
+    // A step of a round and a request of a client: neither is a round.
+    ran(0, 10, { name: 'maintain-runs', origin: 'background', is_root: false, usage: { 'db.rows': 9_999 } }),
+    ran(0, 10, { name: 'get_nodes', origin: 'mcp', usage: { 'db.rows': 9_999 } }),
+  ]);
+  const rows = await reader.background(admin, { since, retained });
+  assert.deepEqual(rows.map((row) => [row.name, row.rounds, row.db_rows, row.db_bytes, row.gap_ms]), [['maintain-runs', 3, 300, 3000, MINUTE_MS], ['poll-console', 1, 7, 0, null], ['purge-traces', 0, 0, 0, null]]);
+  assert.deepEqual([rows[0]!.last_at, rows[0]!.last_ms], [at(2 * MINUTE_MS), 2000]);
+  assert.equal(rows[2]!.last_at, at(-DAY_MS), 'a task that did not run in the window still has a latest round');
+  assert.ok(rows.every((row) => !row.capped));
+});
+
+test('the gap of a task is the median: hours with no page open do not stretch a two-second tick', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  await insert([0, 2000, 4000, 6000, 3_600_000, 3_602_000, 3_604_000].map((start) => ran(start, 5, { name: 'poll-console', origin: 'background' })));
+  assert.equal((await reader.background(admin, { since, retained }))[0]!.gap_ms, 2000);
+});
+
+test('background totals stop at their bound and say so', async (t) => {
+  const { db, admin, insert } = await world(t);
+  await insert([0, 1, 2, 3, 4].map((n) => ran(n * 1000, 5, { name: 'maintain-runs', origin: 'background', usage: { 'db.rows': 10 } })));
+  const [row] = await new TraceReader(db, { rounds: 3 }).background(admin, { since, retained });
+  assert.deepEqual([row!.rounds, row!.db_rows, row!.capped, row!.last_at], [3, 30, true, at(4000)], 'the newest three');
+});
+
+test('client totals: by entry, name and declared platform, the p95 of each, the latest version; streams and other entries are not calls of a client', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  const durations = Array.from({ length: 100 }, (_, index) => index + 1);
+  await insert([
+    ...durations.map((ms, index) => ran(index, ms, { client_name: 'client-a', client_version: index === 99 ? '2.0' : '1.0', client_platform: 'os-one' })),
+    ran(0, 7, { client_name: 'client-a', client_version: '1.0', client_platform: 'os-two' }),
+    ran(0, 9, { client_name: 'client-b', client_version: '3.0' }),
+    ran(0, 11, {}),
+    ran(0, 13, { name: 'sync-state', origin: 'sync', client_name: 'client-a', client_version: '1.0', client_platform: 'os-one' }),
+    ran(0, 15, { name: 'serve-overview', origin: 'console' }),
+    ran(0, 86_400_000, { name: 'stream-console', origin: 'console' }),
+    ran(0, 1, { name: 'serve-http', origin: 'console' }),
+    ran(0, 1, { name: 'maintain-runs', origin: 'background' }),
+    ran(0, 1, { name: 'run-trace', origin: 'cli' }),
+    ran(-1, 99_999, { client_name: 'client-a', client_platform: 'os-one' }),
+    ran(0, 1, { client_name: 'client-a', client_platform: 'os-one', is_root: false }),
+  ]);
+  const totals = await reader.clients(admin, { since, limit: 50 });
+  assert.deepEqual(totals.rows.map((row) => [row.origin, row.client_name, row.client_platform, row.client_version, row.calls]), [
+    ['mcp', 'client-a', 'os-one', '2.0', 100],
+    ['mcp', 'client-a', 'os-two', '1.0', 1],
+    ['mcp', 'client-b', null, '3.0', 1],
+    ['mcp', null, null, null, 1],
+    ['console', null, null, null, 1],
+    ['sync', 'client-a', 'os-one', '1.0', 1],
+  ]);
+  assert.equal(totals.rows[0]!.p95_ms, 95.05);
+  assert.deepEqual([totals.groups, totals.calls, totals.capped, totals.oldest], [6, 105, false, at(0)]);
+  const first = await reader.clients(admin, { since, limit: 2 });
+  assert.deepEqual([first.rows.length, first.groups], [2, 6], 'the page can say 显示 2 / 共 6');
+  assert.deepEqual(await reader.clients(admin, { since: at(DAY_MS), limit: 2 }), { rows: [], groups: 0, calls: 0, capped: false, oldest: null });
+});
+
+test('client and release totals are of MCP calls: a ping or an unknown tool is one, an exchange on /mcp that gets no line is not', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  const release = 'aaaaaaaaaaaa';
+  await insert([
+    ran(0, 100, { client_name: 'client-a', release }),
+    ran(0, 200, { name: 'handle-mcp', client_name: 'client-a', release }),
+    // A notification carries the client it came from; a GET and a request without a valid token carry none.
+    ran(1000, 1, { name: 'serve-http', client_name: 'client-a', release }),
+    ran(1000, 1, { name: 'serve-http', release }),
+    ran(1000, 1, { name: 'serve-http', release }),
+  ]);
+  const totals = await reader.clients(admin, { since, limit: 50 });
+  assert.deepEqual(totals.rows.map((row) => [row.client_name, row.calls, row.p95_ms]), [['client-a', 2, 195]], 'no row for what no client called');
+  const [row] = await reader.releases(admin, { runs: [whole(release)], retained, windowMs: DAY_MS });
+  assert.deepEqual([row!.calls, row!.p95_ms, row!.newest_at], [2, 195, at(0)], 'the newest call, not the newest exchange');
+});
+
+test('client totals read the newest calls up to their bound, and say from when', async (t) => {
+  const { db, admin, insert } = await world(t);
+  await insert([0, 1, 2, 3, 4].map((n) => ran(n * 1000, 5, { client_name: 'client-a' })));
+  const totals = await new TraceReader(db, { roots: 3 }).clients(admin, { since, limit: 50 });
+  assert.deepEqual([totals.calls, totals.capped, totals.oldest], [3, true, at(2000)]);
+});
+
+test('release totals: MCP calls only, each run over its last stretch, in the order asked', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  await insert([
+    ran(0, 100, { release: 'aaaaaaaaaaaa' }),
+    ran(-3_600_000, 300, { release: 'aaaaaaaaaaaa' }),
+    // Older than the stretch: the p95 compares like with like.
+    ran(-25 * 3_600_000, 90_000, { release: 'aaaaaaaaaaaa' }),
+    ran(0, 90_000, { release: 'aaaaaaaaaaaa', name: 'sync-state', origin: 'sync' }),
+    ran(0, 90_000, { release: 'aaaaaaaaaaaa', is_root: false }),
+    ran(-DAY_MS * 3, 200, { release: 'bbbbbbbbbbbb' }),
+    ran(-DAY_MS * 30, 200, { release: 'dddddddddddd' }),
+  ]);
+  const rows = await reader.releases(admin, { runs: ['bbbbbbbbbbbb', 'aaaaaaaaaaaa', 'cccccccccccc', 'dddddddddddd'].map(whole), retained, windowMs: DAY_MS });
+  assert.deepEqual(rows.map((row) => [row.release, row.calls, row.p95_ms]), [['bbbbbbbbbbbb', 1, 200], ['aaaaaaaaaaaa', 2, 290], ['cccccccccccc', 0, null], ['dddddddddddd', 0, null]]);
+  assert.equal(rows[1]!.newest_at, at(0));
+  assert.equal(rows[2]!.newest_at, null, 'no calls, not zero seconds');
+  assert.deepEqual(await reader.releases(admin, { runs: [], retained, windowMs: DAY_MS }), []);
+});
+
+test('release totals: two runs of one release are told apart by their times, and each stretch is back from its own newest call', async (t) => {
+  const { reader, admin, insert } = await world(t);
+  const release = 'aaaaaaaaaaaa';
+  await insert([ran(-2000, 900, { release }), ran(-1000, 800, { release }), ran(0, 100, { release })]);
+  const rows = await reader.releases(admin, { runs: [{ release, from: at(0), until: null }, { release, from: at(-2000), until: at(0) }, { release, from: at(-2000), until: at(-1000) }], retained, windowMs: DAY_MS });
+  assert.deepEqual(rows.map((row) => [row.release, row.calls, row.newest_at]), [[release, 1, at(0)], [release, 2, at(-1000)], [release, 1, at(-2000)]], 'a run has the call that starts with it, and not the one that starts the next');
+  const [stretch] = await reader.releases(admin, { runs: [{ release, from: at(-2000), until: at(0) }], retained, windowMs: 1500 });
+  assert.deepEqual([stretch!.calls, stretch!.newest_at], [2, at(-1000)]);
+});
+
+test('release totals stop at their bound and say so', async (t) => {
+  const { db, admin, insert } = await world(t);
+  await insert([0, 1, 2, 3].map((n) => ran(n * 1000, 100 + n, { release: 'aaaaaaaaaaaa' })));
+  const [row] = await new TraceReader(db, { releaseCalls: 2 }).releases(admin, { runs: [whole('aaaaaaaaaaaa')], retained, windowMs: DAY_MS });
+  assert.deepEqual([row!.calls, row!.capped], [2, true]);
+});
+
+test('the totals of the 运行状况 page are for administrators: a member gets nothing, and neither does an account that lost the role', async (t) => {
+  const { reader, admin, member, insert } = await world(t);
+  const user = await member('synthetic-trace-member');
+  await insert([
+    ran(0, 5, { name: 'maintain-runs', origin: 'background' }),
+    ran(0, 5, { user_id: user.id, client_name: 'client-a', release: 'aaaaaaaaaaaa' }),
+  ]);
+  const query = { runs: [whole('aaaaaaaaaaaa')], retained, windowMs: DAY_MS };
+  assert.equal((await reader.background(admin, { since, retained })).length, 1);
+  assert.equal((await reader.releases(admin, query))[0]!.calls, 1);
+  assert.deepEqual(await reader.background(user, { since, retained }), []);
+  assert.deepEqual(await reader.clients(user, { since, limit: 50 }), { rows: [], groups: 0, calls: 0, capped: false, oldest: null });
+  assert.deepEqual(await reader.releases(user, query), []);
+  assert.deepEqual(await reader.background({ ...user, role: 'admin' }, { since, retained }), [], 'the stored account decides, not what a session kept');
 });

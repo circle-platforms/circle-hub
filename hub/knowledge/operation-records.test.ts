@@ -1,6 +1,7 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
-import {after, before, test} from 'node:test';
+import {after, before, test, type TestContext} from 'node:test';
+import pgModule from 'pg';
 import {fileURLToPath} from 'node:url';
 import {KnowledgeContributionView} from '../../contracts/src/contributions.ts';
 import {Claim} from '../../contracts/src/claim.ts';
@@ -17,6 +18,20 @@ import {createKnowledge, formatKnowledgeRetract, knowledgeRetract} from './api.t
 import {operationIdentity} from './feeding.ts';
 import {canonicalize, sha256Hex} from '../records/api.ts';
 import {osIsolationAvailable} from '../rules/api.ts';
+
+/**
+ * Counts checkouts from a pool of one connection that find that connection taken: each one queues behind the holder, and
+ * while a transaction holds it the queue never moves until the pool's timeout. The count, not the elapsed time, is the cause.
+ */
+function onePoolWaits(t: TestContext) {
+  const counts = {checkouts:0, waits:0};
+  const connect = pgModule.Pool.prototype.connect;
+  t.mock.method(pgModule.Pool.prototype, 'connect', function (this: pgModule.Pool, ...args: unknown[]) {
+    if (this.options.max === 1) { counts.checkouts++; if (this.totalCount >= 1 && this.idleCount === 0) counts.waits++; }
+    return Reflect.apply(connect, this, args);
+  });
+  return counts;
+}
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const call = {traceId:'4bf92f3577b34da6a3ce929d0e0e4736', sessionId:'operation-session'};
@@ -308,8 +323,9 @@ test('a contribution with an operation record is stored on a pool of one connect
   const workflows = new FakeWorkflowStore();
   await workflows.add(fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
   const service = createRunsService({records:narrow, packs:ctx.w.packs, knowledge, external:ctx.w.external, workflows, parsers:createDefaultRegistry()});
-  const started = Date.now();
+  const pool = onePoolWaits(t);
   const answer = await service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
   assert.equal(answer.result?.contributions?.stored.length, 1, JSON.stringify(answer.errors));
-  assert.ok(Date.now() - started < 30_000, 'no wait for a second connection');
+  assert.ok(pool.checkouts > 0, 'the submission ran on the one-connection pool');
+  assert.equal(pool.waits, 0, 'no wait for a second connection');
 });

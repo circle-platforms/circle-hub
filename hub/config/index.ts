@@ -32,8 +32,10 @@ export interface Limits {
   maxRequestBytes: number;
   /** Largest token document for one knowledge entry, in logical bytes. */
   maxEntryIndexBytes:number;
-  /** Largest sum of token documents referenced by one current space/product version. */
+  /** Largest sum of token documents referenced by one current personal or team version: what members can write. */
   maxSpaceIndexBytes:number;
+  /** Largest sum of token documents referenced by one product mount's current version: only a sync writes there. */
+  maxProductIndexBytes:number;
 }
 
 export interface HubConfig {
@@ -64,6 +66,7 @@ export const DEFAULT_LIMITS: Readonly<Limits> = Object.freeze({
   maxRequestBytes: requestBytesFor(32 * MIB),
   maxEntryIndexBytes:MIB,
   maxSpaceIndexBytes:64*MIB,
+  maxProductIndexBytes:1024*MIB,
   maxMemoryDocumentBytes:24000,
   maxMemorySpaceBytes:48000,
   maxMemorySpaceDocuments:20,
@@ -220,6 +223,7 @@ export function loadConfig(
   const maxMemorySpaceBytes=integer('CIRCLE_HUB_MAX_MEMORY_SPACE_BYTES',DEFAULT_LIMITS.maxMemorySpaceBytes,1,64*MIB)??DEFAULT_LIMITS.maxMemorySpaceBytes;
   const maxMemorySpaceDocuments=integer('CIRCLE_HUB_MAX_MEMORY_SPACE_DOCUMENTS',DEFAULT_LIMITS.maxMemorySpaceDocuments,1,10000)??DEFAULT_LIMITS.maxMemorySpaceDocuments;
   const maxSpaceIndexBytes=integer('CIRCLE_HUB_MAX_SPACE_INDEX_BYTES',DEFAULT_LIMITS.maxSpaceIndexBytes,1024,4096*MIB)??DEFAULT_LIMITS.maxSpaceIndexBytes;
+  const maxProductIndexBytes=integer('CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES',DEFAULT_LIMITS.maxProductIndexBytes,1024,16384*MIB)??DEFAULT_LIMITS.maxProductIndexBytes;
   const minimumRequest = Math.ceil(maxUploadBytes / 3) * 4;
   const maxRequestBytes =
     integer('CIRCLE_HUB_MAX_REQUEST_BYTES', requestBytesFor(maxUploadBytes), 1024, REQUEST_MAX) ?? requestBytesFor(maxUploadBytes);
@@ -240,6 +244,6 @@ export function loadConfig(
     port,
     ...(https ? { https } : {}),
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
-    limits: { syncRequestsPerMinute,maxSyncBatchBytes,maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes,maxMemorySpaceDocuments },
+    limits: { syncRequestsPerMinute,maxSyncBatchBytes,maxUploadBytes, maxRecordBytes, maxRequestBytes,maxEntryIndexBytes,maxSpaceIndexBytes,maxProductIndexBytes,maxMemoryDocumentBytes,maxMemorySpaceBytes,maxMemorySpaceDocuments },
   };
 }

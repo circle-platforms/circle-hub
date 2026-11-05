@@ -394,21 +394,34 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
 }
 
 /** A pack as one entry: its line, products, inputs, parameters, the example call and its requirements. */
-function packEntry(p: PackSummary): Entry {
+/** How to read one pack whole, from a list that shows it briefly. An ID has no version: PackId refuses one. */
+const READ_ONE = '读一个工作流的全部详情：list_task_packs {"pack_id":"<编号>"}，编号不带 @版本';
+/** How much of an input's description a brief entry keeps: enough for what the written form's placeholder stands for. */
+const BRIEF_DESCRIPTION = 60;
+
+/**
+ * One pack of the list. `brief` is for a list whose whole details do not fit one answer: what the pack is, the start of what
+ * each input takes and how it is written, the names of its parameters and the example, so a reader can choose and often call
+ * without paging (A05 R[1]).
+ */
+function packEntry(p: PackSummary, brief = false): Entry {
   const clip = new Clip(null, '在控制台工作流页 /console/packs 查看');
   const lines: string[] = [`- ${clip.field(p.pack, CLIP.name, '工作流编号的超出部分')} ${clip.field(p.title, CLIP.name, '工作流标题的超出部分')}（${uiLabelOf('pack_kind', p.kind)}）：${clip.field(p.description, CLIP.message, '工作流说明的超出部分')}`];
   if (p.products.length > 0) lines.push(`  产品：${p.products.map((name) => clip.field(name, CLIP.name, '产品名的超出部分')).join('、')}`);
-  for (const input of p.inputs) {
-    const shapes = [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
+  const shapesOf = (input: PackSummary['inputs'][number]): string => [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
+  if (brief) {
+    for (const input of p.inputs) lines.push(`  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, BRIEF_DESCRIPTION, '输入说明的超出部分', READ_ONE)}；写法 ${clip.field(shapesOf(input).replaceAll(EXAMPLE_SOURCE, `${EXAMPLE_SOURCE.slice(0, 8)}…`), CLIP.line, '输入写法的超出部分')}`);
+    if (p.parameters.length > 0) lines.push(`  参数：${p.parameters.map((parameter) => `${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）`).join('、')}`);
+  } else for (const input of p.inputs) {
     lines.push(
-      `  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${labelOf('source_role', input.role)}，${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, CLIP.message, '输入说明的超出部分')}；接受 ${clip.field(input.accepts.join('、'), CLIP.line, '接受类型的超出部分')}；写法 ${clip.field(shapes, CLIP.line, '输入写法的超出部分')}`,
+      `  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${labelOf('source_role', input.role)}，${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, CLIP.message, '输入说明的超出部分')}；接受 ${clip.field(input.accepts.join('、'), CLIP.line, '接受类型的超出部分')}；写法 ${clip.field(shapesOf(input), CLIP.line, '输入写法的超出部分')}`,
     );
   }
-  for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
+  if (!brief) for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
   if(p.space)lines.push(`  ${labelOf('knowledge_space_kind','personal')}：${p.space}`);
   if (p.local_tools !== undefined) lines.push(`  本地工具 ${p.local_tools.count} 个；安装：${clip.field(p.local_tools.install, CLIP.line, '安装命令的超出部分')}；清单见 structuredContent`);
   lines.push(p.kind==='skill'&&p.requirements.length===0?`  读取做法 get_nodes：${JSON.stringify({pack:p.pack,...(p.space?{pack_space:p.space}:{}),file:'SKILL.md'})}`:`  示例 start_run：${startRunExample(p)}`);
-  for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
+  if (!brief) for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
 }
 
@@ -452,16 +465,20 @@ function listText(v: ListOut, context: TextContext): string {
   } else if (context.packList?.contextUnread === true) {
     blocks.push({ priority: 0, head: ['运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'] });
   }
-  const packs: Block = { priority: 1, head: ['详情（每个工作流的产品、输入、参数、示例和要求项）：'], entries: v.packs.map(packEntry), unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
+  const details = (head: string, entries: Entry[]): Block => ({ priority: 1, head: [head], entries, first: offset + 1, unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
     const list = context.packList;
     if (!list) return '工作流：在控制台工作流页 /console/packs 查看';
     if (from === 0 && list.packId === v.packs[0]?.id) return '单个工作流详情超出回答预算；在控制台工作流页 /console/packs 查看';
     if (from === 0) return `单个工作流详情超出回答预算；按精确 ID 查询 list_task_packs ${JSON.stringify({ pack_id: v.packs[0]?.id })}，或在控制台工作流页 /console/packs 查看`;
     const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
     return `工作流：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台工作流页 /console/packs 查看`;
-  } };
-  blocks.push(packs);
-  return fit(blocks, { tail: [traceLine(v.trace)] }).text;
+  } });
+  const tail = [traceLine(v.trace)];
+  const whole = fit([...blocks, details('详情（每个工作流的产品、输入、参数、示例和要求项）：', v.packs.map((p) => packEntry(p)))], { tail });
+  if (v.packs.length === 0 || whole.shown.at(-1) === v.packs.length || context.packList?.packId !== undefined) return whole.text;
+  // Every pack briefly rather than some in full: paging to find the one pack wanted costs a reader a whole round. An exact
+  // query stays as it is, since the note of a brief entry would only send the reader back to that same query.
+  return fit([...blocks, details(`详情（${labelOf('qualifier_mark', 'partial')}：全部详情放不下这段回答，这里每个工作流只给说明、输入说明的开头和写法、参数名和示例，不给输入的接受类型、参数的说明和模式、要求项；${READ_ONE}）：`, v.packs.map((p) => packEntry(p, true)))], { tail }).text;
 }
 
 // ---------------------------------------------------------------- upload_file
@@ -1044,7 +1061,7 @@ function startText(v: StartOut, context: TextContext): string {
       head: ['接受这类对象的任务包输入（你能用的任务包里，接受类型与来源的外部对象类型逐字相同的输入；怎么用见 list_task_packs 的详情）：'],
       entries: v.accepted_by.map((a) => `- ${a.type}：${a.inputs.map((i) => `${i.pack} 输入 ${i.slot}（${labelOf('source_role', i.role)}）`).join('；')}`),
       unit: '对象类型', measure: '个',
-      more: () => '其余接受这类对象的输入：list_task_packs 详情里每个输入的“接受”',
+      more: () => `其余接受这类对象的输入看每个输入的“接受”；${READ_ONE}`,
     });
   }
   const items = itemLines(r.items, record, r.run);
@@ -1192,7 +1209,7 @@ function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
   if(v.memory_document){const doc=v.memory_document;return `记忆 · ${oneLine(doc.title)}；${uiLabelOf('memory_status',doc.state)}\n文档 ${doc.document}\n版本 ${doc.version}\n所属空间 ${doc.space}；不作为运行输入或依据\n正文偏移 ${doc.offset}${doc.next?'；部分，继续读取时保留 memory 参数并传入 memory.cursor '+doc.next:'；本段结束'}\n\n${doc.markdown}\n${traceLine(v.trace)}`;}
   if(v.memory_page){const result=v.memory_page;return `记忆 ${result.items.length} 篇 · ${uiLabelOf('knowledge_search_scope',result.scope)}${result.conflict_count?' · '+uiLabelOf('sync_status','conflicted')+' '+result.conflict_count+'\n'+(result.conflicts??[]).map(c=>c.item_id+' · '+c.heads.length).join('\n'):''}\n${result.items.map(doc=>oneLine(doc.title)+' · '+uiLabelOf('memory_status',doc.state)+' · '+doc.bytes+' 字节\n文档 '+doc.document+'\n版本 '+doc.version+'\n所属空间 '+doc.space+'；会话加载资格 '+(doc.auto_load_allowed?'具备':'不具备')).join('\n\n')}${result.next?'\n部分；继续列出时保留 memory 参数并传入 memory.cursor '+result.next:''}\n${traceLine(v.trace)}`;}
-  if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索${v.warnings?.length?'；部分范围未检索':''}）`,...(v.warnings??[]).map(warning=>`${warning.code}：${oneLine(warning.message)}；${oneLine(warning.fix??'')}`)],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
+  if(v.matches!==undefined)return fit([{priority:0,head:[`可读知识匹配 ${v.matches.length} 项（仅作线索${v.warnings?.length?'；部分范围未检索':''}）`,'这里只查知识条目；外部系统里的记录按编号读取：在 list_task_packs 里找输入接受它的工作流，再 start_run。',...(v.warnings??[]).map(warning=>`${warning.code}：${oneLine(warning.message)}；${oneLine(warning.fix??'')}`)],entries:v.matches.map(hit=>`${hit.space==='team'?uiLabelOf('knowledge_space_kind','team'):uiLabelOf('knowledge_space_kind','personal')} · ${uiLabelOf('knowledge_entry_status',hit.status)} · ${oneLine(hit.statement)}\n${hit.reference}`),unit:'匹配',measure:'条',more:()=>'/console/search'},...(v.next?[{priority:0,head:[`继续检索时保留 search、scope 并传入 cursor ${v.next}`]}]:[])],{tail:[traceLine(v.trace)]}).text;
   if(v.call_status){
     const status=v.call_status;
     const head=[`调用查询 ${status.tool}：当前进程在途 ${status.active_total} 个，最近日志匹配 ${status.completed.length} 条`,...(status.truncated?['调用或日志范围未列全']:[]),...(status.missing?[`缺失事实：${status.missing}`]:[]),`下一步：${status.next_action}`];

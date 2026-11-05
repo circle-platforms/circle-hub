@@ -253,21 +253,27 @@ test('a long read argument enters the memo key as its digest, one key the same s
  const frozen=values.freeze(body('synthetic-long-value')),key=values.prepare(['result-readable',frozen])!;
  assert.ok(key.id.length<200,'a key holds no copy of the value: every waiting caller keeps its own key');
  assert.equal(key.args[1],frozen,'the load still receives the value itself');
- assert.equal(values.prepare(['result-readable',frozen])!.id,key.id,'the same value keeps its key after its encoding is warm');
- assert.equal(values.prepare(['result-readable',body('synthetic-long-value')])!.id,key.id,'an equal value that is not frozen has the same key');
- assert.notEqual(values.prepare(['result-readable',body('synthetic-long-valuf')])!.id,key.id,'a different value has a different key');
+ assert.equal(values.prepare(['result-readable',frozen])!.id,key.id,'a frozen value keeps its key');
+ const plain=values.prepare(['result-readable',body('synthetic-long-value')])!;
+ assert.ok(plain.id.length<200,'a long value that is not frozen enters the key as its digest');
+ assert.equal(values.prepare(['result-readable',body('synthetic-long-value')])!.id,plain.id,'an equal value that is not frozen has the same key');
+ assert.notEqual(values.prepare(['result-readable',body('synthetic-long-valuf')])!.id,plain.id,'a different value has a different key');
  assert.ok(values.prepare(['short',{n:1}])!.id.includes('"n"'),'a short argument keeps its text');
 });
-test('frozen argument encoding still rejects cycles and sharing and keeps the same snapshot for key and execution',async()=>{
- const owner={},shared={n:1};let calls=0;
+test('a frozen argument is named by its identity: it costs no walk, an equal copy reads again and a repeated root stays refused',async()=>{
+ const owner={};let calls=0,seen:unknown;
  await withReadScope(async()=>{
-  const result=await memoReadValue(owner,['graph'],async()=>({left:shared,right:shared}));
-  const port=memoReadPort({read:async(..._args:unknown[])=>++calls},['read']);
-  assert.notEqual(await port.read(result),await port.read(result),'shared graphs remain unsupported even when frozen');
+  const port=memoReadPort({read:async(...args:unknown[])=>{seen=args[0];return ++calls;}},['read']);
   const json=await memoReadValue(owner,['json'],async()=>({a:[1,undefined,-0]}));
-  assert.equal(await port.read(json),await port.read({a:[1,undefined,-0]}));
-  assert.notEqual(await port.read(json,json),await port.read(json,json),'repeated roots remain unsupported after encoding is warm');
+  assert.equal(await port.read(json),await port.read(json),'one frozen value is one memo entry');
+  assert.equal(seen,json,'the load receives the value itself, not a copy');
+  assert.notEqual(await port.read(json),await port.read({a:[1,undefined,-0]}),'an equal copy is another key: at worst one more read');
+  assert.equal(await port.read({a:[1,undefined,-0]}),await port.read({a:[1,undefined,-0]}),'equal plain values still share a key');
+  assert.notEqual(await port.read(json,json),await port.read(json,json),'a repeated root stays unsupported');
+  const nested=await memoReadValue(owner,['other'],async()=>({b:1}));
+  assert.equal(await port.read({wrapped:nested}),await port.read({wrapped:nested}),'a frozen value nested in a plain argument keeps its name');
  });
+ assert.ok(calls>0);
 });
 
 

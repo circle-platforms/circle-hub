@@ -8,12 +8,13 @@ import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } f
 import { SpaceId, SpaceEntryInput, SpaceEntryContent, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanForCredentials, RecordsError, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput } from '../records/api.ts';
+import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanForCredentials, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
 import {archiveSources,readOriginal,type ArchiveQuery,type OriginalQuery} from './source-archive.ts';
 import type { SpaceSearchRow } from '../records/api.ts';
+import { INDEX_BATCH_ROWS, SearchIndexer, type IndexRoundOutcome, type IndexRow, type IndexScope, type IndexedRow } from './search-index.ts';
 import { normaliseStatement } from './digest.ts';
 import { levelOfHeight, KnowledgeEntryBody } from '../../contracts/src/knowledge.ts';
 import { KnowledgeError } from './errors.ts';
@@ -50,6 +51,8 @@ const pathCheck = (path: string) => {
     return fail('SPACE_ENTRY_INVALID', '目录路径格式不正确');
   }
 };
+/** Entry bodies of one read of the index build. */
+const ENTRY_READ_ROWS = 64;
 const refOf = (root: string, path: string, entry?: string) => `tree:${root}${path}${entry ? '@' + entry : ''}`;
 const emptyCoverage = { complete: true, examined: 0, total: 0 };
 export interface SpaceVersion {
@@ -70,12 +73,17 @@ export interface SpaceEntryView {
   grounds_withdrawn: string[];
   grounds_withdrawn_hidden_count:number;
 }
-type LegacySpaceIndex = (mount: SpaceVersionBody['products'][number]) => Promise<{
+/** What the search index reads of a product mount: its version, and on the background round its rows. */
+export interface ProductIndexSource {
   version: string;
-  rows: Array<Omit<SpaceSearchRow, 'version'> & {
-    text: string;
-  }>;
-} | null>;
+  /** Every row of the mount's version, path relative to the mount; `content` when the row carries its entry's content. */
+  rows(): AsyncIterable<{ path: string; entry: string; content?: { statement: string; data: unknown } }>;
+  /** The entry record of each entry digest, read without its body. */
+  records(entries: readonly string[]): Promise<ReadonlyMap<string, string>>;
+  /** The content of entries whose row does not carry it. */
+  contents(entries: readonly string[]): Promise<ReadonlyMap<string, { statement: string; data: unknown }>>;
+}
+type ProductIndex = (mount: SpaceVersionBody['products'][number]) => Promise<ProductIndexSource | null>;
 export interface SharingCheck {check:ShareCheck;state:StaticTerminal;code:ProtocolCode|null;message:string;fix:string}
 const SHARING_CHECKS=ShareCheckSchema.extract(['grounds','quotations','sources','duplicates','credentials']).options;
 export class KnowledgeSpaces {
@@ -88,15 +96,16 @@ export class KnowledgeSpaces {
   #legacy: TreeReader;
   #mounts: () => Promise<SpaceVersionBody['products']>;
   #legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null>;
-  #legacyIndex: LegacySpaceIndex;
+  #legacyIndex: ProductIndex;
+  #indexer: SearchIndexer;
   #legacyPaths: (root: string) => Promise<Array<{
     path: string;
     entry: string;
   }>>;
-  constructor(ctx: KnowledgeContext, legacy: TreeReader, mounts: () => Promise<SpaceVersionBody['products']> = async () => [], legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null> = async () => null, legacyIndex: LegacySpaceIndex = async () => null, legacyPaths: (root: string) => Promise<Array<{
+  constructor(ctx: KnowledgeContext, legacy: TreeReader, mounts: () => Promise<SpaceVersionBody['products']> = async () => [], legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null> = async () => null, legacyIndex: ProductIndex = async () => null, legacyPaths: (root: string) => Promise<Array<{
     path: string;
     entry: string;
-  }>> = async () => []) { this.#rawCtx = ctx; this.#legacy = legacy; this.#mounts = mounts; this.#legacyNodes = legacyNodes; this.#legacyIndex = legacyIndex; this.#legacyPaths = legacyPaths; }
+  }>> = async () => []) { this.#rawCtx = ctx; this.#legacy = legacy; this.#mounts = mounts; this.#legacyNodes = legacyNodes; this.#legacyIndex = legacyIndex; this.#legacyPaths = legacyPaths; this.#indexer = new SearchIndexer({ scopes: (spaces, failed) => this.#indexScopes(spaces, failed), marker: () => this.#rootsMarker() }, () => this.#rawCtx.records.spaceIndex); }
   #write<T>(space:string,work:()=>Promise<T>):Promise<T>{
     let queue=this.#writes.get(space);if(!queue){queue=new WriteQueue();this.#writes.set(space,queue);}
     return queue.run(work);
@@ -148,7 +157,7 @@ export class KnowledgeSpaces {
     const free=previous===null&&entries.length===0&&directories.length===1&&sources.length===0&&products.length===0&&bytes===0;
     if(!free){for(let n=0;n<8;n++){const next=safeBytes(BigInt(base)+BigInt(bytes)+BigInt(chargedBytes(body)));if(next===body.used_bytes)break;body.used_bytes=next;}}return body;
   }
-  async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? [],sync=false): Promise<SpaceVersion> {
+  async #save(space: string, previous: SpaceVersion | null, entries: SpaceRow[], directories: string[], by: Principal|null, reason: string, bytes: number, tx: Transaction, sources = previous?.body.sources ?? [], products = previous?.body.products ?? [],sync=false,deferIndex=false): Promise<SpaceVersion> {
     const epoch=space==='team'?undefined:await personalEpoch(this.#ctx,space,tx);
     const facts=await this.capacityFacts(space,tx);
     if(space==='team'){
@@ -162,7 +171,7 @@ export class KnowledgeSpaces {
     if(!sync)requireCapacity(facts,body.used_bytes-facts.knowledge,space==='team'?{admin:by?.role==='admin'}:undefined);
     body.tree=await this.#tree(body.directories,entries,products,tx,space==='team'?undefined:space);
     const record=await this.#ctx.records.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body,index:[{key:VERSION_KEY,value:space}]},tx);
-    const version={root:record.digest,body};await this.#index(version,tx);
+    const version={root:record.digest,body};if(!deferIndex)await this.#index(version,tx);
     if(!sync&&space!=='team'&&this.#ctx.records.personalSync&&body.personal_epoch)await this.#ctx.records.personalSync.assertCapacity(by!,body.personal_epoch,tx);return version;
   }
   async ensure(by: Principal, space: string = by.id): Promise<SpaceVersion> {
@@ -172,17 +181,22 @@ export class KnowledgeSpaces {
       fail('SOURCE_UNAVAILABLE');
     const current=await this.current(space);const products=space==='team'?await this.#mounts():[];
     if(current&&(space!=='team'||canonicalize(products)===canonicalize(current.body.products)))return current;
-    return this.#ctx.records.store.withTransaction(async (tx) => {
+    // A read can get here, a search among them: the version is written, its index is the background round's.
+    const version=await this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       by=await lockActive(this.#ctx,by,tx);
-      const previous = await this.current(space, tx);
-      if (space === 'team') {
-        if (previous && canonicalize(products) === canonicalize(previous.body.products))
-          return previous;
-        return this.#save(space, previous, previous?.body.entries ?? [], previous?.body.directories.filter(p => !withinSpacePath(p, PRODUCTS_PATH)) ?? ['/'], null, previous ? '登记当前产品目录' : '建立团队知识空间', 0, tx, previous?.body.sources ?? [], products);
-      }
-      return previous ?? this.#save(space, null, [], ['/'], by, '建立个人知识空间', 0, tx);
+      if (space === 'team')
+        return this.#registerProducts(products,tx);
+      return await this.current(space, tx) ?? this.#save(space, null, [], ['/'], by, '建立个人知识空间', 0, tx, undefined, undefined, false, true);
     });
+    if(space==='team')this.#indexer.request();
+    return version;
+  }
+  /** The caller holds the team space's lock. */
+  async #registerProducts(products:SpaceVersionBody['products'],tx:Transaction):Promise<SpaceVersion>{
+    const previous=await this.current('team',tx);
+    if(previous&&canonicalize(products)===canonicalize(previous.body.products))return previous;
+    return this.#save('team',previous,previous?.body.entries??[],previous?.body.directories.filter(p=>!withinSpacePath(p,PRODUCTS_PATH))??['/'],null,previous?'登记当前产品目录':'建立团队知识空间',0,tx,previous?.body.sources??[],products,false,true);
   }
   async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local?null:(await this.ensure(by)).root }; }
   async capacity(space: string, tx?: Transaction): Promise<number> {
@@ -507,8 +521,10 @@ export class KnowledgeSpaces {
       await this.#save(space, previous, rows, previous.body.directories, by, space === 'team' ? '撤回团队条目' : '撤回个人条目', 0, tx);
     }));
   }
-  async #entry(row: SpaceRow, tx?: Transaction): Promise<SpaceEntryBody | null> {
-    const record = await this.#ctx.records.store.get(row.record, tx);
+  async #entry(row: Pick<SpaceRow,'entry'|'record'>, tx?: Transaction): Promise<SpaceEntryBody | null> {
+    return this.#entryOf(row,await this.#ctx.records.store.get(row.record, tx));
+  }
+  #entryOf(row:Pick<SpaceRow,'entry'>,record:StoredRecord|null|undefined):SpaceEntryBody|null{
     if (record?.kind !== 'knowledge_space_entry')
       return null;
     const body = SpaceEntryBody.parse(record.body);
@@ -1024,56 +1040,145 @@ export class KnowledgeSpaces {
     const left = await map(a), right = await map(b);
     return { from, to, added: [...right.keys()].filter(p => !left.has(p)), removed: [...left.keys()].filter(p => !right.has(p)), modified: [...right.keys()].filter(p => left.has(p) && left.get(p) !== right.get(p)) };
   }
+  /** The indexed text of these entries by record, read in small groups: an entry's content can be megabytes. An entry that cannot be read is absent. */
+  async #entryTexts(rows:readonly Pick<SpaceRow,'entry'|'record'>[],tx?:Transaction):Promise<Map<string,string>>{
+    const texts=new Map<string,string>();
+    for(let at=0;at<rows.length;at+=ENTRY_READ_ROWS){
+      const group=rows.slice(at,at+ENTRY_READ_ROWS),records=await this.#ctx.records.store.getMany(group.map(row=>row.record),tx);
+      for(const row of group){
+        // A record the batched read left out is asked for alone, where a damaged one still fails and fails the version.
+        const body=records.has(row.record)?this.#entryOf(row,records.get(row.record)):await this.#entry(row,tx);
+        if(body)texts.set(row.record,canonicalize([body.content.statement,body.content.data,body.grounds.map(g=>g.quotation)]));
+      }
+    }
+    return texts;
+  }
+  /** Inside a write's transaction: the write and the admission of its index stand or fall together. Anything else is the background round's. */
   async #index(version: SpaceVersion, tx?: Transaction) {
     const index=this.#ctx.records.spaceIndex;if(!index||await index.ready(version.root,'/',tx))return;
     const entries=version.body.entries.filter(active),missing=await index.missing(entries.map(row=>row.record),tx);
-    const rows=[];
+    const rows=[],texts=await this.#entryTexts(entries.filter(row=>missing.has(row.record)),tx);
     for(const row of entries){const metadata={space:version.body.space,path:row.path,entry:row.entry,record:row.record};
       if(!missing.has(row.record)){rows.push(metadata);continue;}
-      const body=await this.#entry(row,tx);if(body)rows.push({...metadata,text:canonicalize([body.content.statement,body.content.data,body.grounds.map(g=>g.quotation)])});
+      const text=texts.get(row.record);if(text!==undefined)rows.push({...metadata,text});
     }
     try{await index.add(version.root,rows,tx);await index.complete(version.root,'/',tx);}
     catch(error){if(error instanceof RecordsError&&error.code==='SPACE_INDEX_LIMIT')throw new KnowledgeError(error.message,{code:error.code,fix:error.fix??undefined,detail:error.detail});throw error;}
   }
+  #spaceScope(version:SpaceVersion):IndexScope{
+    const space=version.body.space,entries=version.body.entries.filter(active),spaceIndex=()=>this.#ctx.records.spaceIndex!;
+    return {version:version.root,path:'/',quotaSpace:space,
+      async *batches(){for(let at=0;at<entries.length;at+=INDEX_BATCH_ROWS)yield entries.slice(at,at+INDEX_BATCH_ROWS).map(row=>({space,path:row.path,entry:row.entry,record:row.record}));},
+      read:async(rows:readonly IndexRow[])=>{
+        const selected=rows.map(({path,entry,record})=>({space,path,entry,record:record!}));
+        const missing=await spaceIndex().missing(selected.map(row=>row.record)),texts=await this.#entryTexts(selected.filter(row=>missing.has(row.record)));
+        return selected.flatMap(row=>{const text=texts.get(row.record);return !missing.has(row.record)?[row]:text===undefined?[]:[{...row,text}];});
+      },
+      write:rows=>this.#ctx.records.store.withTransaction(async tx=>{
+        // The lock a purge takes: content read before it is not written after it.
+        await this.#ctx.records.store.lock('knowledge-space:'+space,tx);
+        if(space!=='team'&&await this.#ctx.records.personalPayloads?.cleared(version.root,tx))return false;
+        await spaceIndex().add(version.root,rows,tx);
+        return true;
+      })};
+  }
+  #productScope(mount:SpaceVersionBody['products'][number],source:ProductIndexSource):IndexScope{
+    const quotaSpace=PRODUCT_QUOTA_PREFIX+mount.path,spaceIndex=()=>this.#ctx.records.spaceIndex!;
+    return {version:source.version,path:mount.path,quotaSpace,
+      async *batches(){
+        let batch:IndexRow[]=[];
+        for await(const {path,entry,content} of source.rows()){
+          batch.push({space:'team',path:mount.path+(path==='/'?'':path),entry,...(content?{text:()=>canonicalize([content.statement,content.data])}:{})});
+          if(batch.length===INDEX_BATCH_ROWS){yield batch;batch=[];}
+        }
+        if(batch.length)yield batch;
+      },
+      read:async(rows:readonly IndexRow[])=>{
+        const records=await source.records(rows.map(row=>row.entry));
+        const located=rows.map(row=>{const record=records.get(row.entry);if(!record)throw new KnowledgeError('产品知识来源的条目记录暂不可读');return {...row,record};});
+        const missing=await spaceIndex().missing(located.map(row=>row.record)),absent=located.filter(row=>missing.has(row.record)&&!row.text);
+        const contents=absent.length?await source.contents(absent.map(row=>row.entry)):new Map<string,{statement:string;data:unknown}>();
+        return located.map(({text,...row}):IndexedRow=>{
+          if(!missing.has(row.record))return row;
+          const content=contents.get(row.entry);
+          if(!text&&!content)throw new KnowledgeError('产品知识来源的条目记录暂不可读');
+          return {...row,text:text?text():canonicalize([content!.statement,content!.data])};
+        });
+      },
+      write:async rows=>{await spaceIndex().add(source.version,rows,undefined,quotaSpace);return true;}};
+  }
+  /** What a background round looks at, the current product mounts registered first, as a search would do. What cannot be read goes to `failed`, and the rest is still built. */
+  async #indexScopes(spaces:readonly string[]|null,failed:(error:unknown)=>void):Promise<IndexScope[]>{
+    const current=await this.current('team');
+    let team=current;
+    try{
+      const products=await this.#mounts();
+      if(current?canonicalize(products)!==canonicalize(current.body.products):products.length>0)
+        team=await this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:team',tx);return this.#registerProducts(products,tx);});
+    }catch(error){failed(error);}
+    const scopes:IndexScope[]=[],versions=team?[team]:[];
+    for(const mount of team?.body.products??[])try{const source=await this.#legacyIndex(mount);if(source)scopes.push(this.#productScope(mount,source));}catch(error){failed(error);}
+    const members=spaces??((await this.#ctx.records.principals.list?.())??[]).filter(user=>!user.deleted_at).map(user=>user.id);
+    for(const member of members)try{const version=await this.current(member);if(version)versions.push(version);}catch(error){failed(error);}
+    return [...versions.filter(version=>version.body.entries.some(active)).map(version=>this.#spaceScope(version)),...scopes];
+  }
+  /** What the current product mounts are derived from: a move of a root or a seedling changes it. */
+  async #rootsMarker():Promise<string>{
+    const {pointers}=this.#ctx.records,rows=[...await pointers.list('knowledge/'),...await pointers.list('seedling/')];
+    return sha256Hex(canonicalize(rows.map(row=>[row.name,row.target,row.version])));
+  }
+  /** Starts the background build of the search index: the server does, once it is listening. */
+  startIndexing(log?:(detail:string)=>void):void{this.#indexer.start(log);}
+  stopIndexing():Promise<void>{return this.#indexer.stop();}
+  /** One background round over every space, now: for a test or a measurement. No request waits for this. */
+  indexRound():Promise<IndexRoundOutcome>{return this.#indexer.round();}
   async search(by: Principal, text: string, scope: KnowledgeSearchScope = 'all', cursor: string | null = null, limit = 30) {
     if (!text.trim() || text.length > 200 || !Number.isInteger(limit) || limit < 1 || limit > 100)
       fail('SPACE_ENTRY_INVALID');
     const warnings:ProtocolError[]=[];
-    const unavailable=(space:string|null,error:unknown,path='/')=>{
+    const unavailable=(space:string|null,error:unknown,path='/',building=false)=>{
       const limited=(error instanceof RecordsError||error instanceof KnowledgeError)&&error.code==='SPACE_INDEX_LIMIT';
       const code=limited?'SPACE_INDEX_LIMIT':'SOURCE_UNAVAILABLE';
       const label=space===null?'当前可读':space==='team'?labelOf('knowledge_space_kind','team'):labelOf('knowledge_space_kind','personal')+(space===by.id?'':' '+space);
-      warnings.push({code,path,message:`${label}知识索引：${limited?error.message:'当前索引未完成或暂不可用'}；未检索该范围`,fix:limited&&error.fix?error.fix:'稍后从第一页重试；仍不可用时请管理员核对索引'});
+      // Path too in the text: it is the part a reader of the text alone must be told was not searched.
+      warnings.push({code,path,message:`${label}知识索引${path==='/'?'':`（${path}）`}：${limited?error.message:building?'正在后台建立':'当前索引未完成或暂不可用'}；未检索该范围`,fix:limited&&error.fix?error.fix:building?'Hub 正在后台建立这部分索引，你不用操作；稍后从第一页重新搜索即覆盖该范围；一直未完成时由管理员用 circle-hub trace list --name index-knowledge 查看':'稍后从第一页重试；仍不可用时请管理员核对索引'});
     };
     const visible=await this.visible(by,scope,(space,error)=>unavailable(space,error));
+    const index=this.#ctx.records.spaceIndex;
+    // A search reads what is ready: what a scope needs to be searched is decided by one statement over stored state, whatever the size of the versions.
     const spaces:VisibleSpace[]=[];
-    for(const space of visible)try{
-      if(!this.#ctx.records.spaceIndex)throw new KnowledgeError('知识搜索索引暂不可用');
-      await this.#index(space.version);
-      if(!await this.#ctx.records.spaceIndex.ready(space.version.root,'/'))throw new KnowledgeError('知识搜索索引尚未完成');
-      spaces.push(space);
-    }catch(error){unavailable(space.space,error);}
     const products: Array<{
       version: string;
       path: string;
       team: string;
     }> = [];
+    const candidates:Array<{scope:SpaceIndexScope;space:string;accept:()=>void}>=[];
+    for(const space of visible){
+      if(!index)unavailable(space.space,new KnowledgeError('知识搜索索引暂不可用'));
+      else if(!space.version.body.entries.some(active))spaces.push(space);
+      else candidates.push({scope:{version:space.version.root,path:'/',quotaSpace:space.space},space:space.space,accept:()=>spaces.push(space)});
+    }
     for (const space of visible.filter(s => s.space === 'team')) {
       const readable = await this.#ctx.packs.readableProducts(by);
       for (const mount of space.version.body.products.filter(m => readable.has(m.product))) {
         try{
-        const indexed = await this.#legacyIndex(mount);
-        if (!indexed)
+        const source = await this.#legacyIndex(mount);
+        if (!source||!index)
           throw new KnowledgeError('产品知识索引暂不可用');
-        if (!await this.#ctx.records.spaceIndex?.ready(indexed.version, mount.path)) {
-          await this.#ctx.records.spaceIndex?.add(indexed.version, indexed.rows,undefined,'product:'+mount.path);
-          await this.#ctx.records.spaceIndex?.complete(indexed.version, mount.path);
-        }
-        if(!await this.#ctx.records.spaceIndex?.ready(indexed.version,mount.path))throw new KnowledgeError('产品知识索引尚未完成');
-        products.push({ version: indexed.version, path: mount.path, team: space.version.root });
+        candidates.push({scope:{version:source.version,path:mount.path,quotaSpace:PRODUCT_QUOTA_PREFIX+mount.path},space:'team',accept:()=>products.push({ version: source.version, path: mount.path, team: space.version.root })});
         }catch(error){unavailable('team',error,mount.path);}
       }
     }
+    let states:SpaceIndexState[]=[];
+    try{states=await index?.states(candidates.map(candidate=>candidate.scope))??[];}
+    catch(error){for(const candidate of candidates.splice(0))unavailable(candidate.space,error,candidate.scope.path);}
+    candidates.forEach(({scope:wanted,space,accept},at)=>{
+      const state=states[at];
+      if(state.ready&&!this.#indexer.repairing(wanted))return accept();
+      if(state.refused)return unavailable(space,state.refused,wanted.path);
+      unavailable(space,null,wanted.path,true);
+      this.#indexer.request(space==='team'?undefined:space);
+    });
     const binding = sha256Hex(canonicalize([by.id, text, scope, spaces.map(s => [s.version.root, s.paths]), products, limit]));
     const offset = this.#cursor(cursor, binding);
     let rows:SpaceSearchRow[]=[];

@@ -7,6 +7,7 @@ export {PersonalKnowledgeSync} from './personal-sync/service.ts';
 import type { ExternalReaderPort } from '../ports.ts';
 export { KnowledgeSpaces, DEFAULT_PERSONAL_CAPACITY, PRODUCTS_PATH, withinSpacePath } from './spaces.ts';
 export type { SpaceVersion, VisibleSpace, SpaceEntryView, SharingCheck } from './spaces.ts';
+export type { IndexRoundOutcome } from './search-index.ts';
 export type {CapacityUsage,CapacityHistory} from './capacity.ts';
 export type {ArchiveQuery,ArchiveRow,OriginalQuery} from './source-archive.ts';
 import type { Principal } from '../records/api.ts';

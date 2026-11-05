@@ -26,5 +26,6 @@ test('a cold 49000-entry index preserves reviewed bytes, complete truncated coun
   assert.deepEqual(result.totals, { entry_counts: { placed: 49_000, total: 49_000, unplaced: 0 } });
   assert.ok(result.queries <= 140, `${result.queries} SQL executions; predecessor used 217`);
   assert.deepEqual(heldBoundViolations(result.held, VIEW_PERF_PARTS), [], JSON.stringify(result.held));
-  assert.ok(result.wallMs < 30_000, `${result.wallMs} ms; loose contention allowance, controlled measurements establish the speed ratio`);
+  // No wall-clock bound: the view runs in a child process, whose CPU time this process cannot measure, so its cost is held
+  // by counts (the SQL executions above) and its exact output bytes, not by the machine's speed.
 });

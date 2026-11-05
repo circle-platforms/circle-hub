@@ -295,7 +295,7 @@ Every tool call:
    - `get_nodes`: a page of a source, a record value or a validation result read by reference, with `下一页：get_nodes
      {"reference":…,"cursor":…}` while more follows; node children and entry data; the structure summary of a
      function-only source.
-   - `list_task_packs`: every pack with its inputs, parameters, requirements and an example `start_run` call that
+   - `list_task_packs`: every pack with its inputs, parameters, requirements (in brief when the whole details do not fit, see below) and an example `start_run` call that
      parses with StartRunInput; `upload_file` and `resolve_reference` in the same style.
 
    The **text context** the server passes (`TextContext` of `text.ts`): `paging: true` for every tool (the server takes
@@ -312,7 +312,7 @@ characters, else `sha256:<hex>` (the call log's rule, so runs and call-log lines
 
 Semantics owned by the server:
 
-- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind` and, when supplied, an exact `pack_id`. The optional zero-based `offset` continues that same filtered list. When descriptions exceed the text budget, the answer supplies the next offset and retains the filters; an unknown or unassigned ID produces the same empty list. The list is live, so an assignment or publication change between pages can change positions.
+- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind` and, when supplied, an exact `pack_id`. The optional zero-based `offset` continues that same filtered list. When even the brief form exceeds the text budget, the answer supplies the next offset and retains the filters; an unknown or unassigned ID produces the same empty list. The list is live, so an assignment or publication change between pages can change positions. When the whole details of the listed packs do not fit one answer, every pack is shown briefly instead of some in full: its description, the start of each input's description and how it is written, its parameter names and the example; the head of the details is marked 部分 and names what is left out and how to read one pack by its exact `pack_id` (A05 R[1]). An exact `pack_id` query keeps the full form: a single pack too long for an answer is then left out with a note pointing at the console.
 - `upload_file`: `file_path` is base64, decoded strictly (canonical padding; a second spelling of the same bytes is
   refused); the cap is `min(limits.maxUploadBytes, MAX_UPLOAD_BYTES)`, checked before decoding; the media type is the
   argument's (validated like records), else by the file name's extension, else sniffed (JSON, HTML, XML, UTF-8 text,
@@ -436,6 +436,8 @@ identifiers remain inside disconnect command dialogs only.
 Decision 130 adds Team before Settings. Administrators manage member details, publish rights, workflow assignments and
 Circle connections there using the existing commands. Members see only their own account. Settings retains system
 secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.
+Administrators also have 运行状况 (`/console/health`, decisions 146 and 147): `serve` gives that page a connection of its own for
+its reads; `console/README.md` says what it may cost.
 
 Decision 130 keeps schedules and bots outside the pack page. Neither gains a placeholder, route or navigation entry here;
 their future management belongs on separate pages with separate navigation entries.

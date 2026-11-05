@@ -24,7 +24,8 @@ import {
   withoutRange,
   type Reference,
 } from './api.ts';
-import { seeded, timed } from './test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../testing/growth.ts';
+import { seeded } from './test-support.ts';
 
 const A = 'a'.repeat(64);
 const B = '0123456789abcdef'.repeat(4);
@@ -205,34 +206,41 @@ describe('normalization and comparison', () => {
     assert.deepEqual(sourceOf(`tree:${B}/a@${C}`), { scheme: 'tree', digest: B });
   });
 
-  it('normalizes hostile loose spellings in linear time', () => {
-    // Each case once took polynomial time in a backtracking regular expression; all stay under the length limit.
-    const zeros = '0'.repeat(4_000);
-    const hostile = [
-      `src:${A}/xml@1/x/a:${zeros}-${zeros}x`,
-      `src:${A}/xml@1/x/a:${zeros}1-${zeros}2`,
-      `src:${A}/text@1/l/1${' '.repeat(8_000)}x`,
-      `${' '.repeat(4_000)}src:${A}/text@1/l/1${' '.repeat(4_000)}`,
-      `src:${A}/x@${zeros}`,
-      `src:${A}/x@${zeros}1/a`,
-      `tree:${B}/${'@'.repeat(8_000)}`,
-      `src:${A}/xml@1/${':'.repeat(4_000)}${'0-'.repeat(2_000)}`,
+  it('normalizes hostile loose spellings in linear time', { timeout: 60_000 }, (t) => {
+    // Each case once took polynomial time in a backtracking regular expression; all stay under the length limit. Each
+    // shape takes a size n and is n = 4000 at full size, with the passes per timed run that lift its cost at full size
+    // above the noise floor (some are refused or normalized in microseconds).
+    const hostile: Array<[(n: number) => string, number]> = [
+      [(n) => `src:${A}/xml@1/x/a:${'0'.repeat(n)}-${'0'.repeat(n)}x`, 12],
+      [(n) => `src:${A}/xml@1/x/a:${'0'.repeat(n)}1-${'0'.repeat(n)}2`, 300],
+      [(n) => `src:${A}/text@1/l/1${' '.repeat(2 * n)}x`, 8],
+      [(n) => `${' '.repeat(n)}src:${A}/text@1/l/1${' '.repeat(n)}`, 600],
+      [(n) => `src:${A}/x@${'0'.repeat(n)}`, 2_000],
+      [(n) => `src:${A}/x@${'0'.repeat(n)}1/a`, 600],
+      [(n) => `tree:${B}/${'@'.repeat(2 * n)}`, 8],
+      [(n) => `src:${A}/xml@1/${':'.repeat(n)}${'0-'.repeat(n / 2)}`, 12],
     ];
-    for (const text of hostile) {
-      const outcome = timed(() => {
-        for (const run of [() => normalizeReference(text), () => sourceOf(text)]) {
-          try {
-            run();
-          } catch (error) {
-            if (!(error instanceof ReferenceSyntaxError)) throw error;
-          }
+    const handle = (text: string): void => {
+      for (const run of [() => normalizeReference(text), () => sourceOf(text)]) {
+        try {
+          run();
+        } catch (error) {
+          if (!(error instanceof ReferenceSyntaxError)) throw error;
         }
-        sameTarget(text, text);
-        sameSource(text, `src:${A}`);
-      });
-      assert.equal(outcome.error, null, String(outcome.error));
-      assert.ok(outcome.ms < 250, `${text.slice(0, 40)}... took ${outcome.ms.toFixed(0)} ms`);
+      }
+      sameTarget(text, text);
+      sameSource(text, `src:${A}`);
+    };
+    // A growth ratio does not depend on how fast or busy the runner is.
+    for (const [index, [shape, passes]] of hostile.entries()) {
+      const label = `hostile spelling ${index}`;
+      assert.doesNotThrow(() => handle(shape(4_000)), label);
+      const repeated = (text: string): void => {
+        for (let i = 0; i < passes; i++) handle(text);
+      };
+      t.diagnostic(describeGrowth(label, assertLinearGrowth(label, shape, repeated, { small: 500 })));
     }
+    const zeros = '0'.repeat(4_000);
     assert.equal(normalizeReference(`src:${A}/xml@1/x/a:${zeros}1-${zeros}2`), `src:${A}/xml@1/x/a:1-2`);
     assert.equal(normalizeReference(`src:${A}/x@${zeros}1/a`), `src:${A}/x@1/a`);
     assert.equal(normalizeReference(`${' '.repeat(4_000)}src:${A}/text@1/l/1${'　'.repeat(4_000)}`), `src:${A}/text@1/l/1`);

@@ -31,6 +31,8 @@ export interface BoundSource {
   /** The Hub record the source was bound by, and the run that record belongs to (a handover when it is the predecessor). */
   record: { digest: string; run: string | null } | null;
   sourceRecord?:string;metaSource?:string;metaRecord?:string;readManifest?:string;requested?:string;
+  /** The input is bound to the observation that its system has no such object: said in the answer as an evidence gap. */
+  absence?:{code:'SOURCE_ABSENT';message:string};
 }
 
 interface Read {
@@ -42,6 +44,7 @@ interface Read {
   meta: Record<string, unknown> | null;
   record: { digest: string; run: string | null } | null;
   sourceRecord?:string;metaSource?:string;metaRecord?:string;readManifest?:string;requested?:string;
+  absence?:BoundSource['absence'];
 }
 
 const mediaAccepted = (slot: WorkflowInput, mediaType: string): boolean => slot.accepts.filter((a) => a.includes('/')).some((a) => a.toLowerCase() === essence(mediaType));
@@ -49,6 +52,9 @@ const externalType = (id: string): string => id.split(':').slice(0, 2).join(':')
 
 /** A trailing revision of an external object id: a root or a root pair (the knowledge views), the shape views.ts splitRevision cuts. */
 const TRAILING_REVISION = /@([0-9a-f]{64}(?:\.\.[0-9a-f]{64})?)$/;
+
+/** The observation of an absent object, as D05 R[3] words it. */
+export const absenceLabel=(absent:{system:string;object:string;observed_at:string}):string=>`系统 ${absent.system} 里没有 ${absent.object}（读于 ${absent.observed_at}）`;
 
 /** The external identity with the revision the Hub read, when it can carry one (SourceBinding.external). */
 export function withRevision(id: string, revision: string | null): string {
@@ -271,10 +277,19 @@ export async function bindInputs(
       gone(path, read.reason);
       return null;
     }
+    let absence:Read['absence'];
     if(read.absent) {
       const observation=read.absent;
-      errors.push(protocolError('SOURCE_ABSENT',`输入 ${observation.object} 不在 ${observation.system} 里（读于 ${observation.observed_at}）`,{path}));
-      return null;
+      // The same number can name another kind of object of that system: what else this workflow reads there is the next step.
+      const others=workflow.workflow.inputs.filter(input=>input.slot!==slot.slot).flatMap(input=>input.accepts).filter(type=>type.startsWith(observation.system+':'));
+      const next=others.length?`核对编号或名称；同一个编号可能是这个系统的另一类对象，这个工作流还能读：${others.join('、')}`:null;
+      // D05 R[3]: the absence is a determined observation and can be bound. A run that only reads keeps it for an input it can
+      // do without; an input the run needs, or a run with requirements to judge, cannot go on without the object.
+      if(slot.required||workflow.requirements.length>0) {
+        errors.push(protocolError('SOURCE_ABSENT',`输入 ${observation.object} 不在 ${observation.system} 里（读于 ${observation.observed_at}）`,{path,...(next?{fix:next}:{})}));
+        return null;
+      }
+      absence={code:'SOURCE_ABSENT',message:absenceLabel(observation)+(next?`；${next}`:'')};
     }
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
     if (chosen === undefined) {
@@ -304,7 +319,7 @@ export async function bindInputs(
       }
     }
     const external = withRevision(read.id, read.revision);
-    const title = meta !== null && typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
+    const title = read.absent ? absenceLabel(read.absent) : meta !== null && typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
     return {
       bytes: source.bytes,
       mediaType: source.mediaType,
@@ -314,6 +329,7 @@ export async function bindInputs(
       meta,
       sourceRecord:chosen.artifact.digest,metaSource:metaArtifact?.artifact.body.sha256,metaRecord:metaArtifact?.artifact.digest,readManifest:read.manifest,requested:id,
       record: null,
+      ...(absence?{absence}:{}),
     };
   };
 
@@ -359,6 +375,7 @@ export async function bindInputs(
         },
         sha256: read.sha256,
         record: read.record,
+        ...(read.absence?{absence:read.absence}:{}),
       });
     }
   }

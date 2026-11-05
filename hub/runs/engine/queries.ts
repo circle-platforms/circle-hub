@@ -54,9 +54,9 @@ async function ruleWithdrawal(ctx:EngineContext,user:Principal,run:RunRecord):Pr
 }
 
 /** The same management/technical head and visibility rule for summaries and full detail. Never fall back past a hidden head. */
-async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord<RunRecord>){
+async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord<RunRecord>,results?:readonly StoredRecord<ValidationResult>[]){
   const store=ctx.deps.records.store,run=stored.body.run;
-  const technicalLatest=await latestAccepted(store,run),management=await abandonDecision(ctx,run);
+  const technicalLatest=results?results.findLast(result=>result.body.acceptance==='accepted')??null:await latestAccepted(store,run),management=await abandonDecision(ctx,run);
   const managementResult=management?(await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null:null;
   const selected=management?managementResult:technicalLatest;
   const latest=selected!==null&&!await resultReadableBy(ctx,stored.body,selected.body,user)?null:selected;
@@ -66,7 +66,7 @@ async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord
 /** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
 export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
   const stored=await visibleRun(ctx,user,run);if(!stored)return null;
-  const [candidates,head]=await Promise.all([resultsOf(ctx.deps.records.store,run),selectedHead(ctx,user,stored)]);
+  const candidates=await resultsOf(ctx.deps.records.store,run),head=await selectedHead(ctx,user,stored,candidates);
   let production:RunSummary['production']=null;
   // Full detail takes the last readable production result, preserving its ordering even for legacy records.
   for(const candidate of candidates.toReversed())if(candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){

@@ -99,6 +99,11 @@ export interface ProcessEvent {
   reports: ReportSummary[] | null;
 }
 
+/** An event as read back; `seq` is how a reader names it, newest highest. */
+export interface StoredProcessEvent extends ProcessEvent {
+  seq: number;
+}
+
 const json = (value: unknown): string | null => (value === null ? null : JSON.stringify(value));
 
 /** False when this process's ending was already recorded (by another start, or a late stop marker). */

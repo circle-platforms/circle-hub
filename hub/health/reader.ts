@@ -1,7 +1,8 @@
-// What administrators read: the resource samples of a window and the process events. No console page yet (decision 146,
-// step 3); `circle-hub health` and `circle-hub crashes` use this reader, and a page will too.
+// What administrators read: the resource samples of a window and the process events. `circle-hub health`, `circle-hub crashes`
+// and the console's 运行状况 page (decision 146, step 3) use this reader. Every read is bounded by a time window or a row limit
+// and aggregates in SQL: what comes back does not grow with the age of the deployment.
 import type { Principal } from '../records/api.ts';
-import { NUMERIC_FIELDS, type HealthDatabase, type NumericField, type ProcessEvent, type ProcessEventKind, type ReportSummary, type RequestEntry } from './store.ts';
+import { NUMERIC_FIELDS, type HealthDatabase, type NumericField, type ProcessEventKind, type ReportSummary, type RequestEntry, type StoredProcessEvent } from './store.ts';
 
 /** Rows `current` may look back: a reading that runs once a minute is in them, a value older than that is not current. */
 const CURRENT_ROWS = 12;
@@ -36,10 +37,67 @@ export interface HealthSummary {
   dropped_samples: number;
 }
 
+/**
+ * The most an interval held, one point of a curve, so that a spike is not averaged away. Free disk is the least, for the same
+ * reason. Null is a reading nobody has for the interval, which is not 0.
+ */
+export interface CurvePoint {
+  /** Start of the interval. */
+  at: string;
+  /** Its newest sample; null without one. */
+  last_at: string | null;
+  /** Samples in the interval; 0 when there are none. */
+  samples: number;
+  /** Those with a reading that failed. */
+  failed: number;
+  /** Earlier samples these report as not written. */
+  dropped: number;
+  event_loop_delay_max_ms: number | null;
+  heap_used_bytes: number | null;
+  gc_pause_ms: number | null;
+  sandbox_running: number | null;
+  sandbox_waiting: number | null;
+  /** Connections out of the pool: open less idle. */
+  pool_in_use: number | null;
+  pool_waiting: number | null;
+  pg_active_connections: number | null;
+  pg_waiting_locks: number | null;
+  data_free_bytes: number | null;
+  requests_in_flight: number | null;
+}
+
+export interface CurveQuery {
+  from: Date;
+  to: Date;
+  /** Points of the curve, whatever the table holds. */
+  points: number;
+  /** Only this process's samples. */
+  boot?: string;
+}
+
+/**
+ * One run of a release as the process events know it, which is what a deploy starts: a deploy of an older commit brings an
+ * earlier release back under its own id, and that is a run of its own. A restart goes on with the run it is in. A process counts
+ * by whatever is left of it: retention takes the start of one that outlived it, and a start can be refused.
+ */
+export interface ReleaseRun {
+  release: string;
+  /** When the first process of the run the events still hold began: its start, or what its ending says; failing both, that ending. */
+  first_start: string;
+  /** Its latest event of any kind. */
+  last_event: string;
+}
+
 export interface HealthReader {
   summary(by: Principal, input: { since: Date }): Promise<HealthSummary>;
   /** Newest first. */
-  events(by: Principal, input: { limit: number }): Promise<ProcessEvent[]>;
+  events(by: Principal, input: { limit: number }): Promise<StoredProcessEvent[]>;
+  /** How many events there are, counted up to `limit`: a crash loop must not make the count itself long. */
+  eventCount(by: Principal, input: { limit: number }): Promise<number>;
+  /** Exactly `points` points, oldest first. */
+  curve(by: Principal, input: CurveQuery): Promise<CurvePoint[]>;
+  /** The newest run first, from the latest `events` events; `total` is how many runs those hold. */
+  releases(by: Principal, input: { limit: number; events: number }): Promise<{ rows: ReleaseRun[]; total: number }>;
 }
 
 const number = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value));
@@ -50,6 +108,10 @@ function requireAdmin(by: Principal): void {
 }
 
 const RANGE = NUMERIC_FIELDS.map((field) => `min(${field}) AS min_${field},max(${field}) AS max_${field}`).join(',');
+
+const CURVE_COLUMNS = ['event_loop_delay_max_ms', 'heap_used_bytes', 'gc_pause_ms', 'sandbox_running', 'sandbox_waiting', 'pool_in_use', 'pool_waiting', 'pg_active_connections', 'pg_waiting_locks', 'data_free_bytes', 'requests_in_flight'] as const;
+const CURVE_SQL = `max(event_loop_delay_max_ms) AS event_loop_delay_max_ms,max(heap_used_bytes) AS heap_used_bytes,max(gc_pause_ms) AS gc_pause_ms,max(sandbox_running) AS sandbox_running,max(sandbox_waiting) AS sandbox_waiting,max(pool_total-pool_idle) AS pool_in_use,max(pool_waiting) AS pool_waiting,max(pg_active_connections) AS pg_active_connections,max(pg_waiting_locks) AS pg_waiting_locks,min(data_free_bytes) AS data_free_bytes,max(requests_in_flight) AS requests_in_flight`;
+const emptyPoint = (at: string): CurvePoint => ({ at, last_at: null, samples: 0, failed: 0, dropped: 0, ...Object.fromEntries(CURVE_COLUMNS.map((column) => [column, null])) }) as CurvePoint;
 
 export function healthReader(db: HealthDatabase): HealthReader {
   return {
@@ -77,8 +139,9 @@ export function healthReader(db: HealthDatabase): HealthReader {
 
     async events(by, { limit }) {
       requireAdmin(by);
-      const { rows } = await db.query('SELECT at,kind,boot,pid,release,node_version,heap_limit_bytes,uptime_ms,last_seen_at,requests,requests_omitted,reports FROM public.process_events ORDER BY seq DESC LIMIT $1', [limit]);
+      const { rows } = await db.query('SELECT seq,at,kind,boot,pid,release,node_version,heap_limit_bytes,uptime_ms,last_seen_at,requests,requests_omitted,reports FROM public.process_events ORDER BY seq DESC LIMIT $1', [limit]);
       return rows.map((row) => ({
+        seq: Number(row.seq),
         at: time(row.at)!,
         kind: row.kind as ProcessEventKind,
         boot: row.boot as string | null,
@@ -92,6 +155,51 @@ export function healthReader(db: HealthDatabase): HealthReader {
         requests_omitted: Number(row.requests_omitted),
         reports: row.reports as ReportSummary[] | null,
       }));
+    },
+
+    async eventCount(by, { limit }) {
+      requireAdmin(by);
+      const { rows } = await db.query<{ n: number }>('SELECT count(*)::int AS n FROM (SELECT 1 FROM public.process_events LIMIT $1) e', [limit]);
+      return rows[0]!.n;
+    },
+
+    async curve(by, { from, to, points, boot }) {
+      requireAdmin(by);
+      const start = from.getTime();
+      const width = (to.getTime() - start) / points;
+      const values: unknown[] = [from.toISOString(), to.toISOString(), width, points];
+      if (boot !== undefined) values.push(boot);
+      const { rows } = await db.query(
+        `SELECT pg_catalog.floor(EXTRACT(EPOCH FROM sampled_at-$1::pg_catalog.timestamptz)*1000/$3::pg_catalog.float8)::pg_catalog.int4 AS slot,max(sampled_at) AS last_at,count(*)::pg_catalog.int4 AS samples,
+                count(*) FILTER (WHERE pg_catalog.cardinality(failed_reads)>0)::pg_catalog.int4 AS failed,coalesce(sum(dropped_samples),0)::pg_catalog.int4 AS dropped,${CURVE_SQL}
+           FROM public.resource_samples WHERE sampled_at>=$1 AND sampled_at<$2${boot === undefined ? '' : ' AND boot=$5'}
+          GROUP BY slot ORDER BY slot LIMIT $4`,
+        values,
+      );
+      const curve = Array.from({ length: points }, (_, slot) => emptyPoint(new Date(start + slot * width).toISOString()));
+      for (const row of rows) {
+        const point = curve[Number(row.slot)];
+        if (point === undefined) continue;
+        point.last_at = time(row.last_at);
+        point.samples = Number(row.samples);
+        point.failed = Number(row.failed);
+        point.dropped = Number(row.dropped);
+        for (const column of CURVE_COLUMNS) point[column] = number(row[column]);
+      }
+      return curve;
+    },
+
+    async releases(by, { limit, events }) {
+      requireAdmin(by);
+      const { rows } = await db.query(
+        `WITH e AS (SELECT boot,release,at,kind,uptime_ms,last_seen_at FROM public.process_events WHERE release IS NOT NULL ORDER BY seq DESC LIMIT $2),
+              p AS (SELECT release,coalesce(min(at) FILTER (WHERE kind='start'),min(coalesce(last_seen_at,at)-uptime_ms*interval '1 millisecond'),min(at)) AS began,max(at) AS last_event FROM e GROUP BY boot,release),
+              g AS (SELECT *,row_number() OVER (ORDER BY began)-row_number() OVER (PARTITION BY release ORDER BY began) AS run FROM p)
+         SELECT release,min(began) AS first_start,max(last_event) AS last_event,count(*) OVER () AS total
+           FROM g GROUP BY release,run ORDER BY first_start DESC LIMIT $1`,
+        [limit, events],
+      );
+      return { rows: rows.map((row) => ({ release: String(row.release), first_start: time(row.first_start)!, last_event: time(row.last_event)! })), total: rows.length === 0 ? 0 : Number(rows[0]!.total) };
     },
   };
 }

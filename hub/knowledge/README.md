@@ -38,7 +38,8 @@ personal entries are owner-only and use a separate owner-scoped index rather tha
 
 `search` uses records' GIN projection over normalized statement/data/quotation bigrams. ACL scopes filter SQL before paging;
 cursors bind identity, roots, grants and query. Legacy product entries use the same projection without changing their
-content hashes. Missing projection rows are rebuilt from immutable records. Search only finds leads outside a run.
+content hashes. Missing projection rows are rebuilt from immutable records by the background round (below). Search only finds
+leads outside a run.
 Team histories and diffs include product mounts; personal histories/diffs are owner-only, including whole-space grantees. Directory pages and search have byte/node caps.
 
 Personal capacity defaults to 1 GiB and is adjustable only by administrators. The accounting includes admitted entry/source
@@ -47,6 +48,59 @@ not a report of filesystem blocks. Grants and capacity changes are append-only r
 the transaction and also take a per-space database lock; optimistic `expected_version` detects a stale client.
 Local synchronization and account-deletion lifecycle remain later phases on this branch. Upload signing is implemented
 below; it does not implement purge or change the synchronization branch.
+
+### The search index is built in the background
+
+No search builds an index. `search` asks records which of its scopes are ready, in one statement that reads no document, and
+searches those; the rest are named in `warnings`, with the part left out, in the text as well as in `path`, and what comes
+next. A read that registers a new team version (`ensure`, for a new product root) writes the version and leaves its index too.
+Only a write indexes in place, inside its own transaction, because the index limit admits or refuses that write.
+
+Everything else is `search-index.ts`: a loop the server starts with the runs' maintenance (`hub/server/assemble/hub.ts`) and
+stops with it, one round at a time, each a trace named `index-knowledge`.
+
+- **When.** A first round at start visits the team space, every product mount and every member's space. After that a round
+  starts when a search found a scope not ready, when a read registered a version, and when a pointer under `knowledge/` or
+  `seedling/` changed: that is how a root moved by a CLI command in another process is found, within a minute. An idle tick
+  is those two small reads and nothing else: no mount is computed, no version read.
+- **How much at a time.** A batch is 256 rows, in one short transaction, about ten statements in all. Tokenizing is outside the
+  transaction, at most 5 ms between two turns of the event loop, and every batch ends with a turn. A product row brings its
+  content from the composition part and its record digest from `firstDigests`, so a build reads no entry body; a row whose
+  document exists, as most of a new version's do, is not tokenized. A space's bodies are read 64 at a time.
+- **Resuming.** Stored rows are the whole state. A batch first asks which of its rows have their reference; a round that
+  stopped, or a new process, skips those without reading them. The counter charges a reference only when it is inserted.
+- **A limit.** A version that passes a limit is refused once: `states` reports `SPACE_INDEX_LIMIT` from then on, and neither a
+  search nor a round nor a restart tries again, until that limit rises, or the content changes, which is another version. The
+  rows written so far stay and the build goes on from them.
+- **A failure** other than a limit is logged and marks the round's trace as an error; the other scopes of the round are still
+  built. Rounds then go over every space at their own pace, a minute and twice that each time up to an hour, whatever searches
+  ask. The warning stays that the scope is being built.
+- **Damage.** A ready scope's references are counted once per process, in a round. A scope that lost some is repaired, and a
+  search does not rely on it meanwhile, nor after a repair that failed: what the round proved stands until a count comes out
+  right, and a search warns that the scope is being built, or names the limit the repair passed, which is not tried again. A
+  restart forgets the proof and the first round finds it again. Between the damage and that round a search trusts the ready row:
+  the count it used to make for every scope grew with the documents. The runtime role cannot delete these rows; an operator's
+  hand can.
+- **A purge.** A personal batch is written under the lock a purge takes and checks the version was not cleared, so content read
+  before a purge is not written after it.
+
+Measured on 2026-11-04 on the development Mac, among other work, by a script outside the repository, on a synthetic product of
+60,400 entries in one mount (about 1.56 KB of tokens each, 94 MB in all), on a temporary PostgreSQL. The limit is raised for the
+first column except in the row that says otherwise: at 64 MiB the build stopped at 42,752 entries.
+
+| | Before: a search builds | Background rounds |
+| --- | --- | --- |
+| The search that meets the unbuilt version | 22 to 28 s, 62,202 statements, 121,416 rows | 0.01 s, 21 statements, 17 rows, nothing written, a warning naming the mount |
+| Building all of it | inside that search | 18 to 28 s in four runs with no request waiting: 2,262 statements, 121,643 rows |
+| Longest hold of the event loop during it | 7 and 36 ms in two runs | 10, 10, 26 and 31 ms in four runs; the worst was a garbage collection of 30 ms |
+| A search during it | it is the one waiting | slowest of about 200 searches: 17, 41, 42 and 183 ms in four runs |
+| A search once built | 0.05 s, 29 statements | 0.02 s, 23 statements |
+| At a limit of 64 MiB | 20 to 38 s, then every search 1.4 to 6.3 s, 1,548 statements, 129,048 rows, finding nothing | one round of 16 s in the background, 1,620 statements, stopping at the same entry; then every search 0.01 s, 21 statements, with the limit warning, and a later round 16 statements |
+| A new root with the same cases | its first search 3 s, 1,862 statements, 181,787 rows | that search 0.05 s, 39 statements; then a round of 3.9 s, 2,265 statements, 61,287 rows |
+
+The time of a build is PostgreSQL's, GIN above all: in both columns the database takes about nine tenths of it, so on this
+machine fewer statements do not make a build much shorter. What changed is who waits. The production trace of the same work, one
+statement per row against a slower disk, was 268.9 s inside one request.
 
 ## Uploader attribution (decision 140, block one)
 
@@ -557,6 +611,8 @@ catalogs, grounds and provenance.
   production.
 - The views trust the entry content in composition parts (the record digest is verified when a part is read and the
   content was verified when the root was produced); get_nodes and the TreeReader verify each entry digest again.
+- A root moved by another process is searched from the first round after it: until then, at most a minute, a search that
+  registers it warns about that mount and the team space, whose new version has no references yet.
 - A view answer is cut at `maxViewBytes` so that a run's core JSON parser (16 MiB) can read it; the measured impact
   view of 400 changed paths with 18,000 attached cases is 13 MB, close to that budget, and the index of 180,000 cases by
   document is cut at 409 of 3,000 keys (15.6 MB).
@@ -1551,6 +1607,15 @@ page's original view bytes. Zero is an explicit observation. Other incomplete so
 their existing fields; this count does not cover them. The index-view original and its existing byte identity do not change.
 Readers must compare the digest before using the count. A legacy or collated view with absent or mismatched metadata does
 not acquire a zero count by inference; the caller handles the missing fact using its other structural coverage fields.
+
+## An absence observation is not fed
+
+The artifact a read leaves for an object its system does not have (`hub.source-absence@1`, D05 R[3]) says what the read saw, not
+what the object is. A run may bind it and a reader may read it. Feeding stops it at one place, `unlessAbsence`, which both
+`observeSource` and `observeSourceBounded` pass before anything else happens: no job, no usage, no projection, no to-do, and a
+receipt with no pending item, so a caller is never told to read again what the system says does not exist. It looks at the
+capture the read would feed, not at the bytes. `sourceLines` answers a question and writes nothing to the feeding log, and
+`prepare` needs a row of the pack's projection, which no pack here makes of an observation.
 
 ## Frozen feeding cuts
 

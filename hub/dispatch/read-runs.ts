@@ -21,18 +21,35 @@ export interface RunJob {
 }
 const remoteResponse=(phase:unknown)=>typeof phase==='string'&&phase.endsWith('.response');
 /**
- * The jobs of each run a dispatch job is bound to (as its verification run or its plan run), from one scan of the
- * reservations. Job events are indexed by job, not by run: run maintenance reads these jobs' positions to see whether
- * anything happened to the run.
+ * The runs these jobs are bound to (as verification run or plan run), each with its jobs among them, from those jobs' journals
+ * alone. Job events are indexed by job, not by run: run maintenance asks this about the jobs something just happened to.
  */
-export async function dispatchedRuns(records:Pick<RecordsKit,'store'>):Promise<Map<string,string[]>>{
-  const runs=new Map<string,string[]>();let cursor:string|null=null;
+export async function dispatchedRuns(records:Pick<RecordsKit,'store'>,jobs:readonly string[]):Promise<Map<string,string[]>>{
+  const runs=new Map<string,string[]>();
+  for(let at=0;at<jobs.length;at+=128)for(const record of await records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:jobs.slice(at,at+128)})){
+    if(record.body.detail.phase!=='reservation')continue;
+    const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
+    if(typeof binding?.job!=='string')continue;
+    for(const run of [binding.input?.run,binding.input?.plan_run])if(typeof run==='string'){const bound=runs.get(run)??[];if(!bound.includes(binding.job))bound.push(binding.job);runs.set(run,bound);}
+  }
+  return runs;
+}
+/** A reservation's binding as written. It is checked when a run's jobs are read, so a bad record spoils its own run only. */
+interface ReservationBinding {job?:unknown;run?:unknown;executor?:unknown;input?:{run?:unknown;plan_run?:unknown}|null}
+export type RunReservations=ReadonlyMap<string,readonly ReservationBinding[]>;
+/**
+ * Every reservation by the runs it names. Reservations are indexed by phase, not by run, so one run's jobs cost a reading of
+ * them all: a pass over many runs reads this once and hands it to readRunJobs. They are only appended, so an older reading
+ * misses at most the newest, which the next pass sees.
+ */
+export async function runReservations(records:Pick<RecordsKit,'store'>):Promise<RunReservations>{
+  const runs=new Map<string,ReservationBinding[]>();let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<ActionBody>>=await records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:500,cursor});
     for(const record of page.items){
-      const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
-      if(typeof binding?.job!=='string')continue;
-      for(const run of [binding.input?.run,binding.input?.plan_run])if(typeof run==='string'){const jobs=runs.get(run)??[];if(!jobs.includes(binding.job))jobs.push(binding.job);runs.set(run,jobs);}
+      const binding=record.body.detail.binding as ReservationBinding|undefined;
+      if(!binding)continue;
+      for(const run of new Set(binding.input?[binding.input.run,binding.input.plan_run]:[binding.run]))if(typeof run==='string'){const named=runs.get(run);if(named)named.push(binding);else runs.set(run,[binding]);}
     }
     cursor=page.next;
   }while(cursor!==null);
@@ -41,26 +58,20 @@ export async function dispatchedRuns(records:Pick<RecordsKit,'store'>):Promise<M
 /**
  * The jobs bound to a run. With `unbound`, also the run's jobs refused by the preflight before any input was bound (their
  * binding names the run only): the runner's notes list them, run maintenance does not need them. Such a job carries the
- * run as its verification run and no plan run, item or digest.
+ * run as its verification run and no plan run, item or digest. `reservations` saves the reading of runReservations.
  */
-export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick<DispatchService,'status'>,by:Principal,run:string,options:{unbound?:boolean}={}):Promise<RunJob[]>{
+export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick<DispatchService,'status'>,by:Principal,run:string,options:{unbound?:boolean;reservations?:RunReservations}={}):Promise<RunJob[]>{
   RunId.parse(run);
-  const jobs=new Map<string,z.infer<typeof Input>|null>();const executors=new Map<string,string>();let cursor:string|null=null;
-  do{
-    const page:Page<StoredRecord<ActionBody>>=await records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:500,cursor});
-    for(const record of page.items){
-      const binding=record.body.detail.binding as {job?:unknown;run?:unknown;executor?:unknown;input?:{run?:unknown;plan_run?:unknown}|null}|undefined;
-      if(options.unbound&&binding&&!binding.input&&binding.run===run){const job=Sha256.safeParse(binding.job);if(job.success&&!jobs.has(job.data))jobs.set(job.data,null);continue;}
-      if(!binding?.input||binding.input.run!==run&&binding.input.plan_run!==run)continue;
-      const input=Input.safeParse(binding.input),job=Sha256.safeParse(binding.job);
-      if(!input.success||!job.success)throw new IntegrityError('派发预订记录缺少运行绑定');
-      const old=jobs.get(job.data);
-      if(old&&JSON.stringify(old)!==JSON.stringify(input.data))throw new IntegrityError('同一作业有不同运行绑定');
-      jobs.set(job.data,input.data);
-      if(typeof binding.executor==='string'&&/^exe_[0-9a-hjkmnp-tv-z]{26}$/.test(binding.executor))executors.set(job.data,binding.executor);
-    }
-    cursor=page.next;
-  }while(cursor!==null);
+  const jobs=new Map<string,z.infer<typeof Input>|null>();const executors=new Map<string,string>();
+  for(const binding of (options.reservations??await runReservations(records)).get(run)??[]){
+    if(!binding.input){if(options.unbound){const job=Sha256.safeParse(binding.job);if(job.success&&!jobs.has(job.data))jobs.set(job.data,null);}continue;}
+    const input=Input.safeParse(binding.input),job=Sha256.safeParse(binding.job);
+    if(!input.success||!job.success)throw new IntegrityError('派发预订记录缺少运行绑定');
+    const old=jobs.get(job.data);
+    if(old&&JSON.stringify(old)!==JSON.stringify(input.data))throw new IntegrityError('同一作业有不同运行绑定');
+    jobs.set(job.data,input.data);
+    if(typeof binding.executor==='string'&&/^exe_[0-9a-hjkmnp-tv-z]{26}$/.test(binding.executor))executors.set(job.data,binding.executor);
+  }
   const out:RunJob[]=[];
   for(const [job,input] of jobs){
     const {admin_release:_privateRelease,admin_release_missing:_privateMissing,...status}=await dispatch.status(by,job);

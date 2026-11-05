@@ -7,6 +7,7 @@ import { CASE_COMMAND_TABLE, CATALOG_A, CATALOG_B, commandPath, commandTreeXml }
 import { commandCatalog, resolvePhrase, textCommands, withoutListNumbers } from './cases-commands.ts';
 import { extractCommands } from './commands.ts';
 import { randomText, seeded, xml } from '../testing/test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const catalogA = commandCatalog(xml(commandTreeXml(CATALOG_A))).catalog;
 const catalogB = commandCatalog(xml(commandTreeXml(CATALOG_B))).catalog;
@@ -112,13 +113,18 @@ describe('one scan for many texts', () => {
 
   });
 
-  it('stays linear on long and hostile text', () => {
+  it('stays linear on long and hostile text', { timeout: 120_000 }, (t) => {
     const long = ['widget '.repeat(200_000), 'sh '.repeat(200_000), `"${'show health '.repeat(50_000)}`, '1.'.repeat(300_000), 'a'.repeat(1_200_000), '\u0000\ud800widget health interval\u0000'];
-    const start = performance.now();
     const out = textCommands(catalogA, long);
-    assert.ok(performance.now() - start < 10_000, 'took too long');
     assert.equal(out.results.length, long.length);
     assert.deepEqual(out.results[5].paths, []);
+    // The same hostile shapes, each timed on its own at a given length in characters, so a quadratic scan of one shape
+    // is not hidden behind the linear cost of the others. 16 M characters keep the large run well above timer noise.
+    const shapes: Array<[string, string, string]> = [['words', '', 'widget '], ['abbreviations', '', 'sh '], ['quoted', '"', 'show health '], ['numbers', '', '1.'], ['letters', '', 'a']];
+    for (const [name, head, unit] of shapes) {
+      const make = (chars: number) => [head + unit.repeat(Math.ceil(chars / unit.length))];
+      t.diagnostic(describeGrowth(name, assertLinearGrowth(name, make, (texts) => textCommands(catalogA, texts), { small: 2_000_000 })));
+    }
   });
 
   it('extractCommands is the phrase finder: a phrase the resolver gets is one commands.ts finds', () => {

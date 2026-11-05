@@ -30,18 +30,37 @@ entries alone feed new space versions, so withdrawals and replacements free curr
 Product mounts use independent quota scopes, even though their visible space is team. A damaged completed projection reconciles
 only that version's counter before rebuilding missing rows.
 
-The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 1 KiB–16 MiB) and
-`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64
-per referenced document in the current version, independently of personal content/history capacity. Entry overflow asks for
-shorter or split content; current-version overflow asks for withdrawal/replacement or an increased configured limit. Both use
-`SPACE_INDEX_LIMIT` and transactional admission. Search skips an over-limit or incomplete scope and reports warnings alongside
-available matches. Raising the limit permits unfinished product projection work to resume; failed batches are not marked ready.
+The administrator configures `CIRCLE_HUB_MAX_ENTRY_INDEX_BYTES` (default 1 MiB, 1 KiB–16 MiB),
+`CIRCLE_HUB_MAX_SPACE_INDEX_BYTES` (default 64 MiB, 1 KiB–4 GiB) and `CIRCLE_HUB_MAX_PRODUCT_INDEX_BYTES` (default 1 GiB,
+1 KiB–16 GiB). These count UTF-8 token bytes plus 4 bytes per token and 64 per referenced document in the current version,
+independently of personal content/history capacity. Entry overflow asks for shorter or split content; current-version overflow
+asks for withdrawal/replacement or an increased configured limit. For a product, which nobody reading it can change, both ask
+only for the administrator's increased limit. All use `SPACE_INDEX_LIMIT`, and writes to personal and team spaces are admitted
+transactionally. Search skips an over-limit or incomplete scope and reports warnings alongside available matches. Raising a limit permits unfinished projection work to
+resume; failed batches are not marked ready.
+
+The limits protect the database, not memory: nothing loads an index into the process, and a search reads by GIN. The space
+limit is what bounds a member, who can write up to a capacity of 1 GiB and whose writes are refused at the limit. Nobody but a
+sync writes a product mount, and a product's knowledge is as large as the product: at the default limit of the spaces, 64 MiB,
+a real product version no longer fitted and a whole line went unsearched. Hence a separate bound, set to catch a sync that runs
+away (a pack that multiplies entries) and not to size a product. A synthetic corpus of 60,400 entries took 94 MB of logical
+tokens as 211 MB of document heap, TOAST and indexes, 92 MB of it GIN, and 39 MB of reference rows: 2.7 times the logical size.
+
+Searches only read this projection. `states` tells, in one statement over the ready and counter rows, which scopes may be
+searched, whatever their size. Building is the background round's (`hub/knowledge` README), and `ready`, which counts a
+version's references and repairs a damaged counter, is a build's check, never a search's. `present` says which rows of a batch
+have their reference already: that is how a build resumes. Documents go in multi-row statements, in record order, at most 500
+documents or 1 MiB of tokens each; `document` tokenizes outside a transaction for a caller that wants to.
+
+Migration 30 adds `refused_space_bytes` and `refused_entry_bytes` to the counter row of a version: the limit its build passed.
+While that limit stands `states` reports the refusal and the build is not tried again, in this process or the next; a limit
+that rose ends the refusal without a write. A purge needs no change: it deletes these rows by quota scope.
 
 Historical token documents, version/path references, counters, GIN and B-tree indexes still occupy PostgreSQL disk. They are not
 reclaimed by withdrawal and their physical bytes are not the logical token quota or content quota: the independent synthetic
 review measured reference rows at about 2.7 times their charged snapshot metadata. That observation is not a deployment size
 estimate. Administrators must provision and monitor database/backup disk separately. Runtime grants allow updating only the
-counter's `token_bytes`; its quota/version identity and history remain protected. Existing migrations retain their SQL bytes;
+counter's `token_bytes` and refusal columns; its quota/version identity and history remain protected. Existing migrations retain their SQL bytes;
 only the pre-existing whole-source freeze assertion is refreshed. No new data SHA check is added.
 
 `objects.put/stat` accept the caller transaction; upload-only `artifacts.ingest` does too. Space import registers the object,
@@ -115,6 +134,13 @@ Migration 28 holds `resource_samples` and `process_events`, which belong to hub/
 chain, on which the runtime role has SELECT, INSERT and DELETE. `Database.stats()` and `RecordsKit.poolStats()` give that package
 the pool's counters; `createPool` uses a `pg.Client` subclass to count connections that could not be opened, because `pg.Pool` has
 no event for them.
+
+Migration 31 adds `trace_spans.client_platform`, the platform a client declares at MCP `initialize` (decision 147, B08 F[14]),
+and the partial index `trace_spans_mcp_releases` for the p95 by release on the console's 运行状况 page. The platform is not in
+`ClientDeclaration`: the declaration a client's writes are bound to stays its name and version.
+
+`createPool` takes `statementTimeoutMs` for a pool whose statements the server must cut off (the reads of that page);
+`principals.some(ids)` reads the accounts a page names, however many the team holds.
 
 Data directory (all directories 0700): `objects/ab/<sha256>` (files 0400), `vault/<name>.sealed` and `vault/key-check`
 (0600), `logs/calls-YYYY-MM-DD.jsonl` (0600; `CIRCLE_HUB_LOG_DIR` can move it). A backup needs the database, `objects/`,
@@ -415,6 +441,27 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
       Knowledge reserves a deterministic budget for retained parts and index keys, reports coverage and budget omissions,
       and checks the final complete byte sequence. **Follow-up:** admitting an answer as separately checked parts is
       not implemented; this would need an explicit format/policy decision rather than bypassing the scanner cap.
+
+## Following the append log (decision 146)
+
+A background reader that wants what changed uses `readAppended` with an `AppendCursor` (`append-cursor.ts`), not a position of
+its own: `seq` is handed out before commit, so a transaction can commit below a position already read, and `seq > cursor` never
+sees it. The cursor keeps a `settled` mark, below which nothing can still appear, and looks again above it, returning each
+record once. `settled` moves to the last horizon's position once a later horizon's `pg_snapshot_xmin` has reached the last
+horizon's `next`, so it is one read behind even when nothing is open. An open transaction delays `settled`, never what is
+returned. A new cursor waits a short while for the transactions open at its start, so a whole read right after it misses none
+of them; one open longer than that may commit unseen, and only a later whole read of the history finds it.
+
+That rule needs two facts PostgreSQL does not give unasked. `next` must be above every transaction id handed out so far, and
+`pg_snapshot_xmax` is not: it is one past the last id to complete, and a younger transaction can be open above it and in no
+snapshot. So `appendHorizon` reads `pg_current_xact_id()`, the id its own statement takes after its snapshot, at a cost of one
+id and about 40 bytes of WAL per read; it takes no `tx`, because in a transaction that already has an id that function returns
+the older one. And a writer must have its id before its position: `seq` is drawn before the row is written, and the
+`ON CONFLICT` check can then wait for a transaction writing the same digest, holding a position no horizon can see. So `put`,
+the only writer of `records`, asks for the id in the `WHERE` of its insert, which runs before `seq` is drawn.
+
+`appended` reads the range by primary key and its entries by `record_index_digest`, so it costs what was appended in that range
+and reads no body: its rows select work, and acting on a record stays a verified read. The runtime role needs no new right.
 
 ## Limits
 

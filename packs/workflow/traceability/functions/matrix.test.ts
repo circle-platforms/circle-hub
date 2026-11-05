@@ -3,11 +3,11 @@
 // two defects, a known defect, leading zeros, a story id equal to a bug id; then order independence, an independent
 // double-loop join on a random corpus of 2,000 defects, and the scale of the spec (5,000 defects, 60,000 cases).
 import assert from 'node:assert/strict';
-import { performance } from 'node:perf_hooks';
 import { describe, it } from 'node:test';
 import { buildMatrix, summaryOf } from './matrix.ts';
 import { boundPair, caseEntry, defectEntry, indexViewOf, randomOf, reversed, type ViewEntrySpec } from './test-support.ts';
 import { readIndexView } from './views.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 /** Reads the two views and joins them the way the projection does. */
 function matrixOf(defects: ViewEntrySpec[], cases: ViewEntrySpec[], options: { statuses?: string[]; defectsView?: Parameters<typeof indexViewOf>[3]; casesView?: Parameters<typeof indexViewOf>[3] } = {}, slimCases = true) {
@@ -212,25 +212,28 @@ describe('buildMatrix against an independent join', () => {
     assert.equal(expected.size, 0);
   });
 
-  it('computes a matrix of 5,000 defects and 60,000 cases in a few seconds', () => {
-    const random = randomOf(7);
-    const defects: ViewEntrySpec[] = [];
-    for (let i = 0; i < 5000; i++) defects.push(defectEntry({ bug: `${60000 + i}`, status: i % 11 === 0 ? 'known' : 'fixed' }));
-    const cases: ViewEntrySpec[] = [];
-    for (let i = 0; i < 60000; i++) {
-      const defectsOf = [`${60000 + Math.floor(random() * 5000)}`];
-      if (random() < 0.2) defectsOf.push(`${60000 + Math.floor(random() * 5000)}`);
-      cases.push(caseEntry({ defects: defectsOf, case: `C-${i}` }));
-    }
-    const pair = boundPair(defects, cases);
-    const dv = readIndexView(pair.inputs[0], 'defects', { kind: 'defect', key: 'bug' });
-    const cv = readIndexView(pair.inputs[1], 'cases', { kind: 'case', key: 'defects' });
-    assert.ok(dv.ok && cv.ok);
-    const started = performance.now();
-    const rows = buildMatrix(dv.view, cv.view, ['fixed', 'known']);
-    const elapsed = performance.now() - started;
+  it('computes a matrix of 5,000 defects and 60,000 cases in a few seconds', { timeout: 120_000 }, (t) => {
+    // `defectCount` defects and twelve times as many cases, each carrying one or two of the defects.
+    const views = (defectCount: number) => {
+      const random = randomOf(7);
+      const defects: ViewEntrySpec[] = [];
+      for (let i = 0; i < defectCount; i++) defects.push(defectEntry({ bug: `${60000 + i}`, status: i % 11 === 0 ? 'known' : 'fixed' }));
+      const cases: ViewEntrySpec[] = [];
+      for (let i = 0; i < defectCount * 12; i++) {
+        const defectsOf = [`${60000 + Math.floor(random() * defectCount)}`];
+        if (random() < 0.2) defectsOf.push(`${60000 + Math.floor(random() * defectCount)}`);
+        cases.push(caseEntry({ defects: defectsOf, case: `C-${i}` }));
+      }
+      const pair = boundPair(defects, cases);
+      const dv = readIndexView(pair.inputs[0], 'defects', { kind: 'defect', key: 'bug' });
+      const cv = readIndexView(pair.inputs[1], 'cases', { kind: 'case', key: 'defects' });
+      assert.ok(dv.ok && cv.ok);
+      return { dv: dv.view, cv: cv.view };
+    };
+    const join = ({ dv, cv }: ReturnType<typeof views>) => buildMatrix(dv, cv, ['fixed', 'known']);
+    const rows = join(views(5000));
     assert.equal(rows.length, 5000);
-    assert.ok(elapsed < 5000, `the join took ${elapsed.toFixed(0)} ms`);
+    t.diagnostic(describeGrowth('defects and cases', assertLinearGrowth('defects and cases', views, join, { small: 1250 })));
   });
 });
 

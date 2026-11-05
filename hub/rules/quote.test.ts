@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
+import { assertLinearGrowth, describeGrowth } from '../testing/growth.ts';
 import { quoteInterpreter } from './interpreters/quote.ts';
 import { collapseWhitespace, quoteMatches } from './text.ts';
 
@@ -99,14 +100,20 @@ it('documents the strict quotation contract in both package READMEs', () => {
   assert.match(rules, /exact contiguous substring/);
 });
 
-it('checks a shared MiB fragment across many quotations', () => {
-  const fragment = 'alpha beta\n'.repeat(Math.ceil((1 << 20) / 11)).slice(0, 1 << 20);
+it('checks a shared MiB fragment across many quotations', { timeout: 60_000 }, (t) => {
+  const fragmentOf = (length: number): string => 'alpha beta\n'.repeat(Math.ceil(length / 11)).slice(0, length);
   const reference = `src:${'a'.repeat(64)}/text@1/l/1`;
-  const subject = { quotes: Array.from({ length: 100 }, (_, i) => ({ text: `absent${i}`, reference })) };
   const table = { schema: 'quote@1', origin: 'synthetic', quotes: [{ select: '$.quotes[*]', text: '/text', reference: '/reference' }] };
-  const started = performance.now();
-  const outcomes = quoteInterpreter.run({ interpreter: 'quote@1', table, subject, sources: { text: () => fragment }, context: {} });
-  const elapsed = performance.now() - started;
+  const check = (fragment: string, quotes: string[]) =>
+    quoteInterpreter.run({ interpreter: 'quote@1', table, subject: { quotes: quotes.map((text) => ({ text, reference })) }, sources: { text: () => fragment }, context: {} });
+  const outcomes = check(fragmentOf(1 << 20), Array.from({ length: 100 }, (_, i) => `absent${i}`));
   assert.equal(outcomes.length, 100); assert.ok(outcomes.every(o => o.verdict === 'refute'));
-  assert.ok(elapsed < 1000, `shared-fragment verification took ${elapsed}ms`);
+  // A quotation found at the start of the fragment costs the same however long the fragment is: eight times the fragment
+  // may cost at most twice as much, while reading or normalizing the whole fragment for each quotation would cost eight
+  // times as much. That cost stays under the noise floor, where the ratio is not judged, and per-quotation work on the
+  // whole fragment lifts it above. An absent quotation is searched through the whole fragment by nature, so its cost
+  // grows with the fragment either way. A growth ratio does not depend on how fast or busy the runner is.
+  const present = Array.from({ length: 100 }, () => 'alpha beta');
+  assert.ok(check(fragmentOf(1 << 20), present).every(o => o.verdict === 'support'));
+  t.diagnostic(describeGrowth('present quotations', assertLinearGrowth('present quotations', fragmentOf, (fragment) => check(fragment, present), { small: 1 << 17, maxRatio: 2 })));
 });

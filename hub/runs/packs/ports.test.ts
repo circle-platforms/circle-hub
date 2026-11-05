@@ -11,6 +11,8 @@ import { publishCheckMarks } from './marks.ts';
 import { createPackCatalog, createPacksPort, createWorkflowStore } from './ports.ts';
 import { corruptByte, editJson, productPack, systemPack, TITLES_TABLE, withFiles, workflowPack } from './testing/builder.ts';
 import { openPackTestbed, type PackTestbed } from './testing/setup.ts';
+import { installTraceSink, startTrace, type SpanRow, type Usage } from '../../telemetry/usage.ts';
+import { installMindmapFixture } from '../../testing/skills.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -27,6 +29,18 @@ async function testbed(t: { after: (fn: () => Promise<void>) => void }): Promise
 }
 
 const ghost: Principal = { id: 'usr_01jacd5z8q3w7v9h2k4m6n8p0z', name: '不存在', role: 'admin' };
+
+/** What `work` read, as its trace records it: statements and rows are facts of the code, not of the machine. */
+async function usageOf(work: () => Promise<unknown>): Promise<Usage> {
+  const rows: SpanRow[] = [];
+  const uninstall = installTraceSink({ push: (row) => rows.push(row) });
+  try {
+    await startTrace({ name: 'list-tools', origin: 'mcp' }, work);
+  } finally {
+    uninstall();
+  }
+  return rows.find((row) => row.is_root)!.usage;
+}
 
 test('forUser: an assigned user gets the loaded workflow; unknown, unassigned, withdrawn, other kinds and disabled give the same null', async (t) => {
   const bed = await testbed(t);
@@ -146,6 +160,43 @@ test('summaries: the packs a user may use, with the names of the bound product l
   const [bound] = await store.summaries(bed.bob);
   assert.equal(bound.version, '2.0.0');
   assert.deepEqual(bound.products, ['Sprocket'], 'a workflow with product.id binds that line only');
+});
+
+test('summaries read each publish decision once: a further version costs its row, not a row per pack listed', async (t) => {
+  const bed = await testbed(t);
+  for (const id of ['first-review', 'second-review', 'third-review']) {
+    await bed.publish(bed.alice, workflowPack({ id }));
+    await bed.registry.assign(bed.admin, bed.bob.id, id);
+  }
+  const store = createWorkflowStore(bed.registry);
+  await store.summaries(bed.bob);
+  const before = await usageOf(() => store.summaries(bed.bob));
+  const versions = ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4'];
+  for (const version of versions) await bed.publish(bed.alice, workflowPack({ id: 'other-review', version }));
+  const after = await usageOf(() => store.summaries(bed.bob));
+  assert.equal(after['db.rows'], (before['db.rows'] ?? 0) + versions.length, 'on a real deployment every decision was read again for each pack listed');
+  assert.equal(after['db.queries'], before['db.queries']);
+});
+
+test('summaries: a further pack adds the same statements whatever skills are installed, so a listing is not quadratic', async (t) => {
+  const bed = await testbed(t);
+  const store = createWorkflowStore(bed.registry);
+  const add = async (id: string): Promise<void> => {
+    await bed.publish(bed.alice, workflowPack({ id }));
+    await bed.registry.assign(bed.admin, bed.bob.id, id);
+  };
+  const statements = async (): Promise<number> => {
+    await store.summaries(bed.bob);
+    return (await usageOf(() => store.summaries(bed.bob)))['db.queries'] ?? 0;
+  };
+  await add('first-review');
+  const one = await statements();
+  await add('second-review');
+  const bare = (await statements()) - one;
+  await installMindmapFixture(bed.registry, bed.kit, bed.admin);
+  const skilled = await statements();
+  await add('third-review');
+  assert.equal((await statements()) - skilled, bare);
 });
 
 test('summaries: a pack that ships tools/ lists its local tools with the digest-pinned install command', async (t) => {

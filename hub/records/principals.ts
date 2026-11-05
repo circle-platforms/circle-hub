@@ -280,6 +280,12 @@ export class PgPrincipals implements Principals {
     return (await this.#db.query('SELECT * FROM users ORDER BY created_at, id')).rows.map(userOf);
   }
 
+  async some(ids: readonly string[]): Promise<User[]> {
+    const wanted = ids.filter((id) => typeof id === 'string' && USER_ID.test(id));
+    if (wanted.length === 0) return [];
+    return (await this.#db.query('SELECT * FROM users WHERE id = ANY($1::text[])', [wanted])).rows.map(userOf);
+  }
+
   async history(userId: string): Promise<UserChange[]> {
     if (typeof userId !== 'string' || !USER_ID.test(userId)) return [];
     const rows = (await this.#db.query('SELECT * FROM user_history WHERE user_id = $1 ORDER BY seq', [userId])).rows;

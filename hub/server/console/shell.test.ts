@@ -48,6 +48,16 @@ test('all eight areas use one three-column shell, the ordered navigation and a f
   }
 });
 
+test('运行状况 is the ninth place, listed for administrators only', () => {
+  const admin = { name: '合成管理员', role: '管理员', admin: true };
+  const nav = (user: typeof admin, active: NavKey) => elements(bodyOf(page({ title: '合成页面', active, user, csrf: 'synthetic-csrf' }, html`<p>合成内容</p>`).text)).filter((el) => has(el, 'ch-nav-item'));
+  const places = nav(admin, 'health');
+  assert.deepEqual(places.map(text), ['总览', '任务', '知识库', '工作流', '连接', '记录', '团队', '设置', '运行状况']);
+  assert.equal(attr(places[8], 'href'), '/console/health');
+  assert.equal(attr(places[8], 'aria-current'), 'page');
+  assert.ok(!nav(member, 'settings').map(text).includes('运行状况'));
+});
+
 test('pre-sign-in pages are single panels without navigation, account content or layout slots', () => {
   for (const title of ['登录', '修改密码', '创建首位管理员', '登录链接已失效', '授权请求已失效']) {
     const source = page({ title, user: null, csrf: null, wide: true }, pageLayout(html`<form><div class="ch-field"><label class="ch-field-label" for="synthetic-input">合成字段</label><div class="ch-input"><input id="synthetic-input"></div></div></form>`, { sidebar: html`PRIVATE_NAVIGATION`, inspector: html`PRIVATE_INSPECTOR`, detail: true })).text;

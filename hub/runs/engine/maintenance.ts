@@ -10,72 +10,86 @@ import { isObject, receivedDigest } from './util.ts';
 import { randomBytes } from 'node:crypto';
 // Startup and periodic deterministic maintenance. It writes new records; no historical run/result is changed.
 import { digestOf, canonicalBytes, type Page, type StoredRecord } from '../../records/api.ts';
+import type { RunReservations } from '../../dispatch/api.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
-import { INDEX, latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
-import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody } from './requests.ts';
+import { latestAccepted, listRunRecords, putAction, putResult, runById, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
+import { putRequest, recordResultRequests, requestRecords, requestRecordsIn, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody, type RequestScope, type RequestView } from './requests.ts';
 import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
+import { canFollow, clearRequestWork, noteChanges, noteDeadlines, noteRequests, noteVisit, requestsAwaitWork, type MaintenanceMemory } from './maintenance-memory.ts';
 
 /**
  * One maintenance pass. `stop` is asked between runs and between the request sweeps: a pass asked to stop (the service is
- * shutting down) returns there, and what it did not reach is done by the next pass, since every step is idempotent.
+ * shutting down) returns there, and what it did not reach is done by the next pass, since every step is idempotent. With
+ * `memory` (scheduled passes) a pass does what changed since the last one (maintenance-memory.ts) and, the first time and
+ * every FULL_PASS_MS, also visits every run; without it, or when it cannot tell what changed, it visits every run and sweeps
+ * every request.
  */
 export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false,memory?:MaintenanceMemory):Promise<void>{
   const ctx=passContext(base);
+  const reservations=passReservations(ctx);
   const started=ctx.now().getTime();
   const store=ctx.deps.records.store;
-  // A pass with memory visits only the runs something happened to; without one, or when it cannot tell, it visits every run.
-  const full=memory===undefined||memory.fullAt===null||started-memory.fullAt>=FULL_PASS_MS||!store.lastPositions||ctx.deps.dispatch!==undefined&&!ctx.deps.dispatch.runs;
-  // The jobs of the dispatched runs: their events count as the run's records (they are indexed by job, not by run).
-  const dispatched=memory&&store.lastPositions?await ctx.deps.dispatch?.runs?.()??new Map<string,readonly string[]>():null;
-  let cursor:string|null=null;
-  do{
-    const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    // Read on full passes too, so that the memory a full pass leaves lets the next pass skip what did not change.
-    const watched=(run:StoredRecord<RunRecord>)=>[run.body.run,...(run.body.predecessor?[run.body.predecessor]:[]),...(dispatched?.get(run.body.run)??[])];
-    const positions=dispatched===null?null:await store.lastPositions!({keys:RUN_KEYS,values:[...new Set(page.items.flatMap(watched))]});
-    for(const run of page.items){if(stop())return;
-      // The run's own records, its predecessor's (a successor answers the predecessor's requests) and its jobs' events.
-      const position=positions===null?0:Math.max(0,...watched(run).map(value=>positions.get(value)??0));
-      if(memory&&!full&&positions!==null&&unchanged(memory,run.body,position,started))continue;
-      memory?.runs.set(run.body.run,{position,at:started});
-      const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
-    cursor=page.next;
-  }while(cursor!==null);
-  if(memory&&full)memory.fullAt=started;
+  const following=memory!==undefined&&canFollow(ctx)?memory:undefined;
+  if(following){await noteChanges(ctx,following);noteDeadlines(following,started);}
+  if(!following||following.fullAt===null||started-following.fullAt>=FULL_PASS_MS){
+    if(following)following.requests.all=true;
+    let cursor:string|null=null;
+    do{
+      const page:Page<StoredRecord<RunRecord>>=await listRunRecords(store,{}, {limit:200,cursor});
+      for(const run of page.items){if(stop())return;
+        if(following)noteVisit(following,run.body,started);
+        await visitRun(ctx,run,reservations);}
+      cursor=page.next;
+    }while(cursor!==null);
+    if(following){following.fullAt=started;following.visits.clear();following.started.clear();}
+  }else if(following.visits.size>0){
+    // Run ids sort by creation, so this is newest first like the pages above.
+    for(const id of [...following.visits].sort().reverse()){if(stop())return;
+      following.visits.delete(id);
+      const run=await runById(store,id);
+      if(!run)continue;
+      noteVisit(following,run.body,started);
+      await visitRun(ctx,run,reservations);
+    }
+    // What the visits wrote: its requests are swept now, as the sweeps always came after the visits; its runs are visited next.
+    await noteChanges(ctx,following);
+  }
+  const work=following?.requests;
+  if(work&&!requestsAwaitWork(work))return;
+  const listed=async(scope:RequestScope):Promise<RequestView[]>=>{
+    const requests=!work||work.all?await requestRecords(ctx):await requestRecordsIn(ctx,scope);
+    if(following)noteRequests(following,requests,ctx.now().getTime());
+    return requests;
+  };
+  const touched=()=>listed(work?{runs:[...work.runs],packs:[...work.packs]}:{});
   if(stop())return;
-  await repairedPackRequests(ctx);
+  await repairedPackRequests(ctx,()=>listed(work?{records:[...work.answered],packs:[...work.versions]}:{}));
   if(stop())return;
-  await acceptedSourceRequests(ctx);
+  await acceptedSourceRequests(ctx,touched);
   if(stop())return;
-  await escalateOverdueRequests(ctx);
+  await escalateOverdueRequests(ctx,touched);
+  if(work)clearRequestWork(work);
 }
-/**
- * What scheduled passes remember: per run, the newest append position among its records (its predecessor's and its
- * dispatch jobs' events included) when a pass last visited it, and when. A pass then visits a run only when that position
- * moved or its submission deadline passed since.
- */
-export interface MaintenanceMemory {
-  runs: Map<string, { position: number; at: number }>;
-  /** When the last pass that visited every run started (null: none yet). */
-  fullAt: number | null;
+/** Everything maintenance does for one run. */
+async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
+  const stopped=await abandonDecision(ctx,run.body.run);
+  if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run,reservations);return;}
+  if(run.body.predecessor){const before=await runById(ctx.deps.records.store,run.body.predecessor);if(before)await answerSuccessorRequests(ctx,before.body,run);}
+  await reconcileDispatch(ctx,run,reservations);
+  await rootUpdateRequest(ctx,run);
+  await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));
+  await recoverRun(ctx,run);
+  await recoverParent(ctx,run);
+  await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));
 }
 /**
  * How often a scheduled pass visits every run anyway: for what no record of the run shows, such as a moved knowledge root or
  * a disabled account. The first pass after a start always visits every run.
  */
 export const FULL_PASS_MS = 30 * 60 * 1000;
-/** The index keys whose value is a run id (its actions, submissions, results, requests, successor runs) or a job id. */
-const RUN_KEYS = [INDEX.actionRun, INDEX.submissionRun, INDEX.resultRun, INDEX.runPredecessor, 'runs.request.run', 'dispatch.job'];
-function unchanged(memory:MaintenanceMemory,run:RunRecord,position:number,now:number):boolean{
-  const seen=memory.runs.get(run.run);
-  if(!seen||seen.position!==position)return false;
-  const due=run.submission_due?Date.parse(run.submission_due):Number.NaN;
-  // A deadline that passed since the last visit is work no record shows yet.
-  return !(Number.isFinite(due)&&seen.at<due&&due<=now);
-}
 /**
  * The pass reads the account list once: every step looks up the named administrator, and on a store with hundreds of runs
  * and thousands of requests that was one account query per run and per overdue request. An account changed during a pass
@@ -92,6 +106,19 @@ function passContext(ctx:EngineContext):EngineContext{
     return typeof value==='function'?value.bind(target):value;
   }});
   return {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,principals:once}}};
+}
+type PassReservations=()=>Promise<RunReservations|undefined>;
+/**
+ * The reservations of all runs, read once for a pass when the first run asks for its jobs: read per run they were four fifths
+ * of what a pass read, 6 of 7.5 GB on 843 runs. A failed reading is not kept, so the next run tries again.
+ */
+function passReservations(ctx:EngineContext):PassReservations{
+  let read:Promise<RunReservations>|undefined;
+  return async()=>{
+    const dispatch=ctx.deps.dispatch;
+    if(!dispatch?.reservations)return undefined;
+    return read??=dispatch.reservations().catch((error:unknown)=>{read=undefined;throw error;});
+  };
 }
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
@@ -206,10 +233,10 @@ async function rootUpdateRequest(ctx:EngineContext,stored:StoredRecord<RunRecord
   if(successors.some(s=>s.body.runner===run.runner&&s.body.pack.split('@')[0]===run.pack.split('@')[0]))return;
   await putRequest(ctx,{run:run.run,answer_action:'rerun',kind:'disposition',audience:run.runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing:`锁定根 ${run.root} 与当前根 ${current.root} 不同，缺少新根上的复核`,source:stored.digest,code:'awaiting_step',next_action:'运行者用 start_run 以本运行为 predecessor、选当前构建开新修订重跑；原运行和原结果不改写'});
 }
-async function repairedPackRequests(ctx:EngineContext):Promise<void>{
-  for(const request of await requestRecords(ctx)){
+async function repairedPackRequests(ctx:EngineContext,listed:()=>Promise<RequestView[]>):Promise<void>{
+  for(const request of await listed()){
     if(request.answered_by===null||!request.pack_digest||request.kind!=='repair')continue;
-    const origin=request.run?await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,request.run!)):null;
+    const origin=request.run?await runById(ctx.deps.records.store,request.run):null;
     if(origin?.body.pack_space&&origin.body.pack_space!=='team')continue;
     const old=await ctx.deps.workflows.byDigest(request.pack_digest);
     const answer=await ctx.deps.records.store.get<{pack:string;version:string;digest:string}>(request.answered_by);
@@ -226,10 +253,10 @@ async function repairedPackRequests(ctx:EngineContext):Promise<void>{
   }
 }
 
-async function acceptedSourceRequests(ctx:EngineContext):Promise<void>{
-  for(const request of await requestRecords(ctx)){
+async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<RequestView[]>):Promise<void>{
+  for(const request of await listed()){
     if(request.answered_by!==null||!request.run||!request.sources?.length||request.kind!=='disposition')continue;
-    const stored=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,request.run!));
+    const stored=await runById(ctx.deps.records.store,request.run);
     if(!stored)continue;
     const run=stored.body;
     const admin=await ctx.deps.records.principals?.get(request.audience);
@@ -268,13 +295,14 @@ async function acceptedSourceRequests(ctx:EngineContext):Promise<void>{
   }
 }
 
-async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
+async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
   if(!ctx.deps.dispatch)return;
   const run=stored.body;
   const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
   if(!admin)throw new Error('派发核对缺少具名管理员');
   const by={id:admin.id,name:admin.name,role:admin.role};
-  let jobs=await ctx.deps.dispatch.jobs(by,run.run);
+  const reading=await reservations();
+  let jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   if(!jobs.length)return;
   const actions=await actionsOf(ctx.deps.records.store,run.run);
   for(const job of jobs){
@@ -288,7 +316,7 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     catch(error){ctx.log({traceId:null,run:run.run,what:'dispatch reconciliation',detail:String(error)});}
     await putAction(ctx.deps.records.store,{action:'read_back',run:run.run,inputs:[],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{reconciled_job:job.job,events_before:job.status.events,events_after:events}});
   }
-  jobs=await ctx.deps.dispatch.jobs(by,run.run);
+  jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   for(const job of jobs){
     const requestSnapshot=dispatchSnapshot([job]);
     let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot);
@@ -304,6 +332,8 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
   const signature=dispatchSnapshot(jobs);
   if(actions.some(a=>a.body.detail.dispatch_snapshot===signature))return;
   await ctx.lock(`submit:${run.run}`,async()=>{
+    // A result is written from the jobs of this moment: a job reserved since the pass's reading is seen by the next pass.
+    if(reading&&dispatchSnapshot(await ctx.deps.dispatch!.jobs(by,run.run))!==signature)return;
     const latest=await latestAccepted(ctx.deps.records.store,run.run);
     if(!latest)return;
     const result=structuredClone(latest.body);
@@ -388,8 +418,8 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
  * already names an active administrator stays listed as overdue under its own deadline: escalating it again would name the
  * same next action and audience. It advances only when its administrator was disabled or lost the role (decision 101).
  */
-async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
-  const requests=await requestRecords(ctx),byId=new Map(requests.map(request=>[request.record,request]));
+async function escalateOverdueRequests(ctx:EngineContext,listed:()=>Promise<RequestView[]>):Promise<void>{
+  const requests=await listed(),byId=new Map(requests.map(request=>[request.record,request]));
   // The escalations that exist already: writing one again only finds it (requests are deduplicated by this key).
   const existing=new Set(requests.map(requestKeyOf));
   const answerOf=(request:(typeof requests)[number],seen=new Set<string>()):string|null=>{

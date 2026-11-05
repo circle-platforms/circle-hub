@@ -33,6 +33,7 @@ import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, missing, protocolError, unavailable } from './errors.ts';
+import { step } from '../../telemetry/api.ts';
 import { HubReadFailure } from './retry-read.ts';
 import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
 import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
@@ -460,7 +461,7 @@ async function authorizedStart(
   requestDigest: string,
   variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
-  const workflow = await ctx.deps.workflows.forUser(user, input.pack,input.pack_space);
+  const workflow = await step('load-workflow', () => ctx.deps.workflows.forUser(user, input.pack,input.pack_space));
   if (workflow === null || workflow.pack.kind !== 'workflow') throw await packMissing(ctx, user, input.pack, workflow, input.pack_space);
   if(isPersonalSpace(workflow.pack.space)&&personalWorkflowProblems(workflow.workflow,workflow.effects).length)throw new Refusal([personalCapabilityError()]);
   const declaration=PublishableRequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
@@ -533,7 +534,7 @@ async function startFresh(
   const dependencies=workflow.manifest?.dependencies??[];
   let skills:import('../../../contracts/src/skills.ts').SkillLock[]=[];
   if(ctx.parsers.freeze){
-    try{const frozen=await ctx.parsers.freeze(dependencies,{principal:user,space:workflow.pack.space});skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
+    try{const frozen=await step('freeze-skills',()=>ctx.parsers.freeze!(dependencies,{principal:user,space:workflow.pack.space}));skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
     catch(error){throw new Refusal([protocolError('SOURCE_READ_FAILED',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
   }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_READ_FAILED','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
   if(!isPersonalSpace(workflow.pack.space)&&skills.some(skill=>skill.space))throw new Refusal([protocolError('TEAM_PARSER_REQUIRED',PROTOCOL_CODES.TEAM_PARSER_REQUIRED.when,{path:'/pack'})]);
@@ -556,7 +557,7 @@ async function startFresh(
   const defaulted=await defaultPredecessorInputs(ctx,workflow,predecessor,input.inputs,user);
   input={...input,inputs:defaulted.inputs};
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);
-  const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);
+  const target = await step('resolve-target', () => resolveTarget(ctx, user, workflow, input, startedAt, call.traceId));
   if(workflow.knowledge?.requires.length){
     const missing=[] as string[];
     for(const requirement of workflow.knowledge.requires){
@@ -581,12 +582,14 @@ async function startFresh(
 
   const feedingOffset=await ctx.deps.knowledge.feeding?.freeze(user,runId,target.root?.root??null);
   const feedingScope={composition:target.root?.composition??null,product:target.product?.product.id??null,root:target.root?.root??null,run:runId,line:target.line,feeding_offset:feedingOffset,declaredLine:workflow.workflow.feeding?.declared_line_parameter?parameters[workflow.workflow.feeding.declared_line_parameter] as string:undefined};
-  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope);
+  const bound = await step('bind-inputs', () => bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope));
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
-  const criterionReview=await prepareCriterionReview(ctx,user,workflow,bound,predecessor?.body??null);
-  const criterionSnapshot=workflow.workflow.predecessor_access==='view'?{refs:[],requests:[],criteria:[],notices:[]}:await freezeCriteria(ctx,predecessor?.body??null,workflow.pack.id,startedAt);
-  const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null, knownBuilds);
+  const {criterionReview,criterionSnapshot,builds}=await step('read-context',async()=>({
+    criterionReview:await prepareCriterionReview(ctx,user,workflow,bound,predecessor?.body??null),
+    criterionSnapshot:workflow.workflow.predecessor_access==='view'?{refs:[],requests:[],criteria:[],notices:[]}:await freezeCriteria(ctx,predecessor?.body??null,workflow.pack.id,startedAt),
+    builds:await contextBuilds(ctx, workflow, target.product?.product.id ?? null, knownBuilds),
+  }));
   // The lease view is taken BEFORE the projection runs, so the projection sees real rows, none of them this run's own
   // acquisitions. Rows this run's lineage already holds (the holder run sits in the predecessor chain, same user; D04
   // R[0]) are marked `mine`, so an extend or release projection discovers the keys it may operate on (C6 item 5); a run
@@ -620,9 +623,9 @@ async function startFresh(
     ...(builds !== null ? { builds } : {}),
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
-  const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
+  const projection = await step('project-items', () => projectItems(ctx, user, workflow, bound, parameters, context, call.traceId));
   if(isPersonalSpace(workflow.pack.space)&&projection.leaseRequests.length)throw new Refusal([personalCapabilityError()]);
-  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
+  const expected = await step('bind-expected', () => bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null));
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
@@ -732,7 +735,7 @@ async function startFresh(
   if (runTooLarge !== null) throw runTooLarge;
   // A production result names the run record digest; it is computed and sized before anything is stored.
   const runDigest = runRecordDigest(record, startedAt);
-  const production = isProduction(workflow) ? await evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user) : null;
+  const production = isProduction(workflow) ? await step('evaluate-run', () => evaluateProduction(ctx, record, runDigest, workflow, call.traceId, user)) : null;
   if (production !== null) {
     const refusal=await groundsAudience(ctx,record,production.evaluation.result,{pending:true,submitter:user});if(refusal)throw new Refusal([refusal]);
     const resultTooLarge = tooLarge(ctx, production.evaluation.result, `这个被判对象的校验结果（${items.length} 个条目）`, subjectPath);
@@ -753,6 +756,7 @@ async function startFresh(
   }
   if (stored.digest !== runDigest) throw new Error(`run record digest ${stored.digest} differs from the one computed before storing it (${runDigest})`);
   const fn = workflow.workflow.projection;
+  const absences=bound.flatMap(({absence})=>absence?[absence]:[]);
   await putAction(store, {
     action: 'parse',
     run: runId,
@@ -768,7 +772,7 @@ async function startFresh(
       warnings: projection.warnings.slice(0, 100),
       expected: expected.sources.map((s) => ({ external: s.external ?? null, reference: s.reference, role: s.role })),
       unavailable: expected.unavailable,
-      expected_warnings: expected.warnings.slice(0, MAX_WARNINGS),
+      expected_warnings: [...absences, ...expected.warnings].slice(0, MAX_WARNINGS),
       handover,
     },
   });
@@ -781,7 +785,7 @@ async function startFresh(
     runRecord: stored.digest,
     unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),
     // A run without items says so in the answer and carries the projection's notes; with items the projection warnings stay in the parse action.
-    gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...expected.warnings]),
+    gaps: gapsFrom([...(items.length === 0 ? [EMPTY_ITEMS_NOTE, ...projection.warnings] : []), ...absences, ...expected.warnings]),
   };
   } catch (error) {
     // The granted leases of a start that did not store its run are released at once (compensation): an acquire that

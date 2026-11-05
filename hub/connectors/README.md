@@ -36,7 +36,7 @@ it, and the login exchange: role, POST path, JSON body template with `{credentia
 its envelope), the system `envelope` (`code` pointer, `ok` and `expired` codes, `message` pointer), `routes` and `reads`.
 
 A **route** is `{id, role, method GET|POST|PROPFIND, path template, params?, query?, body?, headers?, response
-json|text|xml|html|bytes, media_types_by_extension?, max_bytes, timeout_ms?, envelope?, parse?, read: true}`. Every route is a read (`read: true` is a
+json|text|xml|html|bytes, media_types_by_extension?, max_bytes, keep?, timeout_ms?, envelope?, parse?, read: true}`. `keep` lists the JSON pointers of the members a read may still use when the whole answer is held for scan findings: the answer stays stored as it came and held, and the Hub generates those parts from it (`hub.kept-parts@1`) and scans them on their own, so a hit in them keeps them held too. An answer that nothing holds goes to the function whole. Every route is a read (`read: true` is a
 literal); a write route is simply never listed. Path templates: literal RFC 3986 segments, `{name}` (one segment), a last
 `{name*}` (one or more), an optional trailing `/`. Routes are allow-listed one by one, never by prefix (brief section 8,
 D01 R[10]):

@@ -70,7 +70,8 @@ function encrypted(request: IncomingMessage): boolean {
 
 /** Where a request enters (B08): MCP and sync by their paths; everything else is the Hub's web surface, under the console. */
 function requestEntry(pathname: string | undefined): Pick<TraceOptions, 'name' | 'origin'> {
-  if (pathname === '/mcp') return { name: 'handle-mcp', origin: 'mcp' };
+  // A plain exchange until it gets its call-log line (mcp.ts): a GET, a notification or a refused token never does.
+  if (pathname === '/mcp') return { name: 'serve-http', origin: 'mcp' };
   if (pathname !== undefined && personalSyncTarget(pathname)) return { name: 'serve-sync', origin: 'sync' };
   if (pathname === '/console' || pathname?.startsWith('/console/')) return { name: consoleStep(pathname), origin: 'console' };
   return { name: 'serve-http', origin: 'console' };
@@ -140,6 +141,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     deps, sessions, ownOrigins: () => origins, log, jobs, live,
     staging,
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
+    ...(options.observation ? { observation: options.observation } : {}),
     ...(options.bridge ? { bridge: options.bridge } : {}),
     authorizations, loginLinks, secureRequest,
   };

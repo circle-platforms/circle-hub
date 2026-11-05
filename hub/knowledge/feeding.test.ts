@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {test,type TestContext} from 'node:test';
+import pgModule from 'pg';
 import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,catalogXml,type World} from './test-support.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import {createKnowledge,formatKnowledgeRetract, knowledgeRetract} from './api.ts';
@@ -15,6 +16,15 @@ import {putRun} from '../runs/engine/store.ts';
 import {seedlingName} from './seedling.ts';
 // Scripted product function: the Hub admits its closed structured projection, never parses product text itself.
 const PROJECT=`export default function project(input:any){const m=input.model;if(input.source.system!=='plm'||m.kind!=='bug')return {rows:[]};const fields=m.fields;return {rows:[{body:{schema:'fed-defect@1',product:input.product,root:input.root,path:null,source:{system:'plm',ticket:input.source.key,revision:null,bytes:input.source.bytes},id:m.id,status:fields.status,affected_lines:fields.affected_lines,resolved_lines:[],fix_builds:[]},identity:{id:m.id,fields},lines:fields.affected_lines,selector:'p',grammar:'synthetic-defect@1',conflict:false}]};}`;
+/**
+ * Counts checkouts from a pool of one connection that find that connection taken: each one queues behind the holder, and
+ * while a transaction holds it the queue never moves until the pool's timeout. The count, not the elapsed time, is the cause.
+ */
+function onePoolWaits(t:TestContext){
+ const counts={checkouts:0,waits:0};const connect=pgModule.Pool.prototype.connect;
+ t.mock.method(pgModule.Pool.prototype,'connect',function(this:pgModule.Pool,...args:unknown[]){if(this.options.max===1){counts.checkouts++;if(this.totalCount>=1&&this.idleCount===0)counts.waits++;}return Reflect.apply(connect,this,args);});
+ return counts;
+}
 async function setup(pg:Awaited<ReturnType<typeof startPostgres>>){const build={name:'Synthetic_zx-u_10_8_1',base:'Synthetic_zx-u_10_8_1',family:'ACME',line:'10.8',platform:'zx-u',built_at:'2026-10-01T00:00:00.000Z',released_at:'2026-10-02T00:00:00.000Z',sources:{tree:'site:tree:10_8'}};const w=await makeWorld(pg,{pack:{functions:{'feeding.ts':PROJECT,'plan.ts':STATIC_PLAN_SOURCE},declaration:{sync:{...DEFAULT_SYNC,options:{builds:[build]}},feeding:{project:{module:'functions/feeding.ts'}}}}});w.external.set('site:tree:10_8',{bytes:catalogXml({system:[{name:'show',params:[]}]}),mediaType:'application/xml'});await w.knowledge.syncProduct(w.product,{by:w.admin});return w;}
 async function source(w:World,id:string,fields:Record<string,unknown>={status:'open',affected_lines:[]},readers=[w.user.id]){return w.kit.artifacts.ingest({bytes:Buffer.from(JSON.stringify({kind:'bug',id,fields})),mediaType:'application/json',origin:{read:{object:'plm:bug:'+id}},author:{user:null},provenanceType:'observed',visibility:{readers,admins:true,packs:[],shareable:false},readTier:'model_readable'});}
 async function seed(w:World,line='10.8'){const root=await w.knowledge.rootOfBuild(w.product.id,'Synthetic_zx-u_10_8_1');assert.ok(root);const composition=await w.knowledge.store.composition(root.composition);assert.ok(composition);const original=composition.sources[0];const body=SeedlingBody.parse({product:w.product.id,line,root:root.root,composition:root.composition,build:root.build!.name,origin:[{role:'command-tree',producer:original.producer,slot:original.slot,external:original.external,sha256:original.sha256,revision:null}],parent:null,basis:'synthetic test seed'});const rec=await w.knowledge.store.putClaim('seedling@1','projected',body,[{key:'knowledge.seedling.root',value:w.product.id+'/'+root.root},{key:'knowledge.seedling',value:w.product.id+'/'+line}]);await w.kit.pointers.move({name:seedlingName(w.product.id,line),expected:null,next:rec.digest,by:w.admin,run:null,component:'synthetic.feeding@1'});return root;}
@@ -147,10 +157,11 @@ test('a feeding append reads nothing through the pool once its transaction holds
  const narrow=await openRecords({dataDir:w.kit.dataDir,logDir:join(w.kit.dataDir,'one-connection-logs'),database:w.kit.database,limits:DEFAULT_LIMITS},{keyProvider:w.kit.keyProvider,maxConnections:1});
  t.after(()=>narrow.close());
  const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs:w.packs,external:w.external,jev:null,sandbox:{requireOsIsolation:false},admin:w.admin});
- const started=Date.now();
+ const pool=onePoolWaits(t);
  const [stored]=await knowledge.feeding!.admit(w.user,[proposal],{});
  assert.ok(stored);
- assert.ok(Date.now()-started<8000,'no wait for a second connection');
+ assert.ok(pool.checkouts>0,'the append ran on the one-connection pool');
+ assert.equal(pool.waits,0,'no wait for a second connection');
  assert.equal((await w.kit.store.get(stored!))?.kind,'claim');
 });
 

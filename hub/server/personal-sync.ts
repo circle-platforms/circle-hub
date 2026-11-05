@@ -68,7 +68,7 @@ export async function handlePersonalSync(request:IncomingMessage,response:Server
   if(!identity){request.resume();await send(401,{code:'SOURCE_UNAVAILABLE'},{'www-authenticate':'Bearer'});return;}principal=identity.principal;
   updateTrace({userId:principal.id});
   identifyRequest(request,{userId:principal.id});
-  if(tracing()){const client=await options.clients?.of(principal.id,identity.token_id,null)??null;if(client!==null)updateTrace({clientName:client.name,clientVersion:client.version});}
+  if(tracing()){const client=await options.clients?.of(principal.id,identity.token_id,null)??null;if(client!==null)updateTrace({clientName:client.name,clientVersion:client.version,clientPlatform:client.platform});}
   // Count every authenticated attempt before any append, including unknown routes and wrong methods.
   const write=!!selected&&request.method===routes[selected.route].method&&request.method==='POST'&&selected.route!=='download'&&selected.route!=='missing'&&selected.route!=='modeCheck';
   const entered=options.admission.enter(principal.id,write,now().getTime(),deps.config.limits.syncRequestsPerMinute);if(!entered){request.resume();await error(429,'SYNC_RATE_LIMITED',{'retry-after':'60'});return;}release=entered;

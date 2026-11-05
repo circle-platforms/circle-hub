@@ -2,6 +2,8 @@
 // caps never truncated, timeouts, concurrency and interval limits, the typed mapping of 401 and envelope codes, the login
 // exchange, header values redacted from every error and log event, and the injectable fetch.
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import type { AddressInfo, Socket } from 'node:net';
 import { after, test } from 'node:test';
 import { SystemProfile, type RouteDeclaration } from '../../contracts/src/resources.ts';
 import { installTraceSink, startTrace, type SpanRow } from '../telemetry/api.ts';
@@ -113,16 +115,36 @@ test('byte caps: a declared or streamed answer over the cap is an error, never t
   assert.equal(handed, 1);
 });
 
-test('timeouts: a slow answer or a slow body is SOURCE_TIMEOUT', async () => {
-  const route: RouteDeclaration = { id: 'slow', role: 'plm-api', method: 'GET', path: '/slow/{how}', response: 'text', max_bytes: 100_000, timeout_ms: 200, read: true };
-  const server = await stub((request) =>
-    request.path === '/slow/head' ? { ...text('late', 'text/plain'), delayMs: 1000 } : { status: 200, headers: { 'content-type': 'text/plain' }, chunks: ['a', 'b', 'c', 'd'], chunkDelayMs: 150 },
-  );
-  const http = source(server, { routes: [route] });
-  const started = Date.now();
-  await refusal(http.request({ method: 'GET', path: '/slow/head' }), 'SOURCE_TIMEOUT');
-  await refusal(http.request({ method: 'GET', path: '/slow/body' }), 'SOURCE_TIMEOUT');
-  assert.ok(Date.now() - started < 1500, 'each request stops at its timeout');
+test('timeouts: a slow answer or a slow body is SOURCE_TIMEOUT', { timeout: 30_000 }, async (t) => {
+  const route: RouteDeclaration = { id: 'slow', role: 'plm-api', method: 'GET', path: '/slow/{how}', response: 'text', max_bytes: 100_000, timeout_ms: 500, read: true };
+  // Each answer is held on a gate that opens only after both requests were refused: the status line, or the rest of the
+  // body after its first byte, never arrives in time, so only the route's own timeout can end a request. A request that
+  // waited for the answer instead would never end, and the test's timeout fails it.
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => { open = resolve; });
+  const seen: string[] = [];
+  const sockets = new Set<Socket>();
+  const held = createServer((request, response) => {
+    seen.push(request.url ?? '');
+    if (request.url === '/slow/head') { void gate.then(() => response.end('late')); return; }
+    response.writeHead(200, { 'content-type': 'text/plain' });
+    response.write('a');
+    void gate.then(() => response.end('bcd'));
+  });
+  held.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  await new Promise<void>((resolve) => held.listen(0, '127.0.0.1', resolve));
+  // Also after a timeout, so a request that hangs does not keep the process alive.
+  t.after(async () => {
+    open();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => held.close(() => resolve()));
+  });
+  const http = source({ origin: `http://127.0.0.1:${(held.address() as AddressInfo).port}` } as StubServer, { routes: [route] });
+  for (const how of ['head', 'body']) {
+    const refused = await refusal(http.request({ method: 'GET', path: `/slow/${how}` }), 'SOURCE_TIMEOUT');
+    assert.equal(refused.detail.timeout_ms, 500, `${how}: stopped at the route's timeout`);
+  }
+  assert.deepEqual(seen, ['/slow/head', '/slow/body'], 'both requests reached the source before they were refused');
 });
 
 test('concurrency and interval limits', async () => {

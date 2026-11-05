@@ -9,6 +9,7 @@ import { projectItems } from './test-support.ts';
 import { scopeOf } from './scope.ts';
 import { buildImpact, reversedView, reviewChanges, reviewOptions, SOURCE, type ChangeSpec } from './test-support.ts';
 import { parseView } from './view.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const PARAMETERS = { priorities: null, includeAdded: true };
 
@@ -202,21 +203,25 @@ describe('regression scope on a hand-built pair of trees', () => {
     assert.deepEqual(run.output.items.map((item) => [item.id, item.fields.priority]), [['12:3', 0]]);
   });
 
-  it('scopes five thousand cases', () => {
-    const changes: ChangeSpec[] = [];
-    for (let i = 0; i < 5000; i++) {
-      changes.push({ path: `/commands/c${i}`, change: 'modified', before: [{ n: i }], after: [{ n: i + 1 }], to: [{ document: 'bulk', node: String(i), title: `用例 ${i}`, priority: 1 }] });
-    }
-    const built = buildImpact(changes);
-    const viewParsed = parsed(built);
-    assert.ok(viewParsed);
-    const started = Date.now();
-    const scope = scopeOf(viewParsed, PARAMETERS);
-    const spent = Date.now() - started;
+  it('scopes five thousand cases', { timeout: 60_000 }, (t) => {
+    // `count` modified paths, one later-build case each.
+    const view = (count: number) => {
+      const changes: ChangeSpec[] = [];
+      for (let i = 0; i < count; i++) {
+        changes.push({ path: `/commands/c${i}`, change: 'modified', before: [{ n: i }], after: [{ n: i + 1 }], to: [{ document: 'bulk', node: String(i), title: `用例 ${i}`, priority: 1 }] });
+      }
+      const viewParsed = parsed(buildImpact(changes));
+      assert.ok(viewParsed);
+      return viewParsed;
+    };
+    const scope = scopeOf(view(5000), PARAMETERS);
     assert.equal(scope.items.length, 5000);
     assert.deepEqual(scope.note.uncovered, []);
     assert.equal(scope.items[0].id < scope.items[1].id, true);
-    assert.ok(spent < 8000, `scope of 5000 cases took ${spent} ms`);
+    // The paths, items and detail rows are each sorted (n log n), and the larger maps miss the caches more: each doubling
+    // costs about 2.2 times, so 5,000 to 40,000 measures 11 to 16 times. The bound of three times the factor leaves
+    // room for that and still fails quadratic work (64 times).
+    t.diagnostic(describeGrowth('modified paths', assertLinearGrowth('modified paths', view, (viewParsed) => scopeOf(viewParsed, PARAMETERS), { small: 5000, maxRatio: 24 })));
   });
 });
 

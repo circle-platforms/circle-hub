@@ -2,7 +2,8 @@
 // inputs that make a backtracking engine explode.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { compilePattern, MAX_STATES } from './regex.ts';
+import { assertLinearGrowth, describeGrowth } from '../../testing/growth.ts';
+import { compilePattern, MAX_INPUT, MAX_STATES } from './regex.ts';
 
 const PATTERNS = [
   'abc',
@@ -110,20 +111,26 @@ describe('what the language refuses', () => {
 });
 
 describe('linear time', () => {
-  it('inputs that are catastrophic for backtracking finish quickly', () => {
-    const cases: [string, string, 'full' | 'search'][] = [
-      ['(a+)+$', `${'a'.repeat(20_000)}b`, 'search'],
-      ['(a|aa)*c', 'a'.repeat(20_000), 'search'],
-      ['(a*)*b', 'a'.repeat(20_000), 'search'],
+  // Whether matching stays linear in the input is checked by growth ratios (hub/testing/growth.ts), which do not depend on
+  // how fast or busy the runner is; a backtracking engine grows exponentially on these inputs. The full size is the
+  // longest value matched (MAX_INPUT), so twenty-five matches per timed run lift the cost above the noise floor. A hang is
+  // caught by the test's timeout.
+  it('inputs that are catastrophic for backtracking finish quickly', { timeout: 60_000 }, (t) => {
+    const cases: [string, (n: number) => string, 'full' | 'search'][] = [
+      ['(a+)+$', (n) => `${'a'.repeat(n)}b`, 'search'],
+      ['(a|aa)*c', (n) => 'a'.repeat(n), 'search'],
+      ['(a*)*b', (n) => 'a'.repeat(n), 'search'],
       // Full mode: the whole value must match, as in /^(\w+\s?)*$/.
-      ['(\\w+\\s?)*', `${'word '.repeat(4000)}!`, 'full'],
+      ['(\\w+\\s?)*', (n) => `${'word '.repeat(n / 5)}!`, 'full'],
     ];
     for (const [source, input, mode] of cases) {
       const compiled = compilePattern(source, { mode });
       assert.ok(compiled.ok, source);
-      const started = performance.now();
-      assert.equal(compiled.pattern.test(input), false);
-      assert.ok(performance.now() - started < 2000, `${source} took ${Math.round(performance.now() - started)} ms`);
+      assert.equal(compiled.pattern.test(input(MAX_INPUT)), false, source);
+      const run = (text: string): void => {
+        for (let i = 0; i < 25; i++) compiled.pattern.test(text);
+      };
+      t.diagnostic(describeGrowth(source, assertLinearGrowth(source, input, run, { small: MAX_INPUT / 8 })));
     }
   });
 });

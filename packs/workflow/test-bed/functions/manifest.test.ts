@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { LIMITS, parseManifest } from './manifest.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 /** A small valid manifest used as the base of the failure cases. */
 const valid = {
@@ -218,7 +219,7 @@ describe('parseManifest is total', () => {
       assert.ok('ok' in (parsed as object));
     }
   });
-  it('a randomly mangled manifest never throws and answers within a bounded time', () => {
+  it('a randomly mangled manifest never throws and answers within a bounded time', { timeout: 60_000 }, (t) => {
     let seed = 12345;
     const random = (): number => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -233,15 +234,29 @@ describe('parseManifest is total', () => {
       (v) => { (v as { beds?: { reserved?: unknown[] }[] }).beds?.forEach?.((b) => { if (b !== null && typeof b === 'object') (b as { reserved?: unknown[] }).reserved = ['-', 'a-b', '192.0.2.1-', []]; }); },
       (v) => { (v as { beds?: { services?: unknown[] }[] }).beds?.forEach?.((b) => { if (b !== null && typeof b === 'object') (b as { services?: unknown[] }).services = [{}, { host: [], ip: {}, port: 'x', proto: [] }]; }); },
     ];
-    const started = performance.now();
     for (let round = 0; round < 500; round++) {
       const value: unknown = structuredClone(valid);
       for (let k = 0; k < 3; k++) manglers[Math.floor(random() * manglers.length)](value);
       const parsed = parseManifest(value);
       assert.ok(parsed !== null && 'ok' in (parsed as object), 'an answer');
     }
-    const elapsed = performance.now() - started;
-    assert.ok(elapsed < 5000, `${elapsed.toFixed(0)} ms for 500 mangled manifests`);
+    // The answer's cost grows linearly with the manifest: `beds` beds of 50 devices (up to the 200-bed limit, below 2 MiB),
+    // valid ones and ones carrying the mangled devices, addresses, reserved ranges and services above in turn, under a
+    // schema string that grows with them.
+    const mangledBed = (b: number): unknown => {
+      const devices = Array.from({ length: 10 }, (_v, k) => valid.beds[0].devices.map((device) => ({ ...device, name: `${device.name}-${k}` }))).flat();
+      const bed: Record<string, unknown> = { ...structuredClone(valid.beds[0]), name: `bed-${b}`, devices };
+      if (b % 5 === 1) bed.devices = [...devices.slice(3), undefined, {}, { name: [], type: {}, ipv4: 'x' }];
+      if (b % 5 === 2) bed.devices = devices.map((device) => ({ ...device, ipv4: ['not-an-ip/99', '', 5, null] }));
+      if (b % 5 === 3) bed.reserved = ['-', 'a-b', '192.0.2.1-', []];
+      if (b % 5 === 4) bed.services = [{}, { host: [], ip: {}, port: 'x', proto: [] }];
+      return bed;
+    };
+    const manifestOf = (beds: number) => ({ schema: 'x'.repeat(beds * 50), beds: Array.from({ length: beds }, (_v, b) => mangledBed(b)) });
+    // The large manifest is read bed by bed, not refused as a whole for its size or bed count.
+    const large = parseManifest(manifestOf(200));
+    assert.ok(!large.ok && large.problems.some((problem) => problem.pointer.startsWith('/beds/199/')), 'every bed is read');
+    t.diagnostic(describeGrowth('beds', assertLinearGrowth('beds', manifestOf, parseManifest, { small: 25 })));
   });
 });
 

@@ -104,17 +104,31 @@ function mcpSessionOf(header: string | string[] | undefined): string | null {
   return typeof header === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(header) ? header : null;
 }
 
-/** MCP initialize clientInfo (name, version) as the client reported it; bounded, kept only as a declaration. */
-function clientInfoOf(value: unknown): { client?: ClientDeclaration } {
+/**
+ * MCP initialize clientInfo (name, version, platform) as the client reported it; bounded, kept only as a declaration. The
+ * platform stays apart from `client`: that is what the records bind to a client's writes, and the platform is diagnostic data
+ * only (B08 F[14]). Like the version, it says nothing without a name. Well formed: JSON lets a client send a lone surrogate,
+ * which a resource sample's jsonb and a record's canonical JSON both refuse.
+ */
+function clientInfoOf(value: unknown): { client?: ClientDeclaration; clientPlatform?: string } {
   if (!isPlainObject(value)) return {};
-  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
+  const clean = (text: unknown): string | null => typeof text === 'string' ? ([...text.toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu, '').trim()].slice(0, 100).join('').trim() || null) : null;
   const name = clean(value.name);
-  return name === null ? {} : { client: { name, version: clean(value.version) } };
+  if (name === null) return {};
+  const platform = clean(value.platform);
+  return { client: { name, version: clean(value.version) }, ...(platform === null ? {} : { clientPlatform: platform }) };
 }
 
 /** A line for a refusal no request of the body can carry: tool `mcp`, no arguments. */
 function transportState(reason: string, started: number): CallState {
   return { method: 'mcp', tool: 'mcp', args: null, started, runId: null, callResult: 'transport_failure', acceptance: null, errorCode: null, notes: [reason] };
+}
+
+/** The client on the rows of this trace: what the request itself declares, else what its connection did. */
+async function traceClient(options: McpOptions, principal: Principal, tokenId: string | null, session: string | null, own?: CallState): Promise<void> {
+  if (!tracing()) return;
+  const client = own?.client ? { ...own.client, platform: own.clientPlatform ?? null } : (await options.clients?.of(principal.id, tokenId, session)) ?? null;
+  if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version, clientPlatform: client.platform });
 }
 
 /** One line per request of a refused batch (at most LOGGED_BATCH), or one line when it has none. */
@@ -158,6 +172,8 @@ function headersOf(request: IncomingMessage): Headers {
  * refuses never costs the line: it is written once more without the note, and the operator's log says so.
  */
 async function logCall(options: McpOptions, principal: Principal, traceId: string, sessionId: string | null, state: CallState, tokenId: string | null = null, mcpSessionId: string | null = null, spanId?: string): Promise<void> {
+  // The line is what makes a request a call: one with no span of its own here was refused before any step could name it.
+  if (spanId === undefined) updateTrace({ name: 'handle-mcp' });
   const tool = LOGGED_TOOL.test(state.tool) ? state.tool : state.method === 'tools/call' ? 'tools/call' : 'mcp';
   const errorCode = state.errorCode !== null && LOGGED_CODE.test(state.errorCode) ? state.errorCode : null;
   const note=state.notes.length===0?null:`管理员理由 ${state.notes.length} 条；详见管理员调用日志详情`;
@@ -217,11 +233,17 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   const sessionId = sessionIdOf(request.headers['circle-session-id']);
   updateTrace({ userId: principal.id, sessionId });
   identifyRequest(request, { traceId, userId: principal.id });
-  options.sessions?.seen(mcpSessionOf(request.headers['mcp-session-id']));
+  const session = mcpSessionOf(request.headers['mcp-session-id']);
+  options.sessions?.seen(session);
+  /** The lines of a request no handler ran for: it is a call of the client that declared itself all the same. */
+  const logUnhandled = async (states: readonly CallState[]): Promise<void> => {
+    await traceClient(options, principal, tokenId, session);
+    for (const state of states) await logCall(options, principal, traceId, sessionId, state);
+  };
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
   const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
     setTraceStatus('warning', labelOf('call_result', 'transport_failure'));
-    for (const state of states ?? [transportState(reason, started)]) await logCall(options, principal, traceId, sessionId, state);
+    await logUnhandled(states ?? [transportState(reason, started)]);
     sendRpcError(response, status, code, message, headers);
   };
 
@@ -229,7 +251,7 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     request.resume();
     const message = '只接受 POST：这个服务器是无状态的 JSON 模式，没有 SSE 流';
     // The specification lets a client end its session with DELETE, even where the answer is 405: it is done with it.
-    if (request.method === 'DELETE') options.sessions?.closed(mcpSessionOf(request.headers['mcp-session-id']));
+    if (request.method === 'DELETE') options.sessions?.closed(session);
     // A GET is the streamable HTTP client's probe for the optional server stream; the specification prescribes 405 for a
     // server without one, so it is the expected answer to every session, not a failed call, and gets no line.
     if (request.method === 'GET') return sendRpcError(response, 405, -32000, message, { allow: 'POST' });
@@ -248,7 +270,7 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
         return await refuse(503, -32000, 'Hub 正忙：同时在处理的请求体已到上限，请稍后重试', `request bodies in flight reached the budget of ${options.budget.capacity} bytes`, { 'retry-after': '5', connection: 'close' });
       }
       // The client went away before its body was complete: nobody is left to answer.
-      await logCall(options, principal, traceId, sessionId, transportState('the request body was not received completely (aborted)', started));
+      await logUnhandled([transportState('the request body was not received completely (aborted)', started)]);
       response.destroy();
       return;
     }
@@ -293,10 +315,7 @@ async function answer(
   const own = isRequest(parsed) ? { key: idKey(parsed.id), state: stateOf(parsed, started) } : null;
   if (own !== null) updateTrace({ name: mcpStep(own.state.method, own.state.tool) });
   const session = mcpSessionOf(request.headers['mcp-session-id']);
-  if (tracing()) {
-    const client = own?.state.client ?? (await options.clients?.of(principal.id, tokenId, session)) ?? null;
-    if (client !== null) updateTrace({ clientName: client.name, clientVersion: client.version });
-  }
+  await traceClient(options, principal, tokenId, session, own?.state);
   if (own !== null) identifyRequest(request, { traceId, name: LOGGED_TOOL.test(own.state.tool) ? own.state.tool : own.state.method === 'tools/call' ? 'tools/call' : 'mcp' });
   let finishObserved:(()=>void)|undefined;
   const states: CallState[] = own === null ? [] : [own.state];
@@ -404,7 +423,7 @@ async function answer(
     if (own !== null) {
       updateTrace({ runId: own.state.runId });
       if (own.state.callResult !== 'ok') setTraceStatus('error', own.state.errorCode !== null && LOGGED_CODE.test(own.state.errorCode) ? own.state.errorCode : labelOf('call_result', own.state.callResult ?? 'error'));
-      if (own.state.client !== undefined) options.clients?.remember(principal.id, tokenId, issued, own.state.client);
+      if (own.state.client !== undefined) options.clients?.remember(principal.id, tokenId, issued, { ...own.state.client, platform: own.state.clientPlatform ?? null });
     }
     for (const state of states) await logCall(options, principal, traceId, sessionId, state, tokenId, state === own?.state ? issued : null, state === own?.state ? currentTrace()?.rootSpanId : undefined);
     if (early) {
