@@ -15,7 +15,7 @@ import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8,type ParsedDocument} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {SOURCE_ABSENCE_GENERATOR,canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
+import {SOURCE_ABSENCE_GENERATOR,SOURCE_PENDING_REVIEW_GENERATOR,canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {background} from '../telemetry/api.ts';
@@ -372,7 +372,7 @@ export class FeedingLayer {
   */
  private async unlessAbsence(principal:Principal,sha:string,scope:FeedingScope,feed:()=>Promise<FeedingReceipt>):Promise<FeedingReceipt>{
   const capture=scope.sourceRecord?await this.context.records.store.get<any>(scope.sourceRecord):await this.context.records.artifacts.readable(principal,sha);
-  const absence=capture?.kind==='source_artifact'&&capture.body.sha256===sha&&'generated'in capture.body.origin&&capture.body.origin.generated.generator===SOURCE_ABSENCE_GENERATOR;
+  const absence=capture?.kind==='source_artifact'&&capture.body.sha256===sha&&'generated'in capture.body.origin&&[SOURCE_ABSENCE_GENERATOR,SOURCE_PENDING_REVIEW_GENERATOR].includes(capture.body.origin.generated.generator);
   return absence?{objects:[],offset:null,pending:[]}:feed();
  }
  /** Read hooks wait at most one small slice; queued work has a separate finite worker/call budget. */

@@ -26,6 +26,7 @@ export function scanAcceptanceKey(sha256: string): string {
 
 /** Generator of the source artifact that says "system S has no X, read at T" (D05 R[3]): what a read observed, no content of X. */
 export const SOURCE_ABSENCE_GENERATOR = 'hub.source-absence@1';
+export const SOURCE_PENDING_REVIEW_GENERATOR = 'hub.source-pending-review@1';
 
 /** Schemas of the record bodies this package writes. */
 export const RECORD_SCHEMAS = {

@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTestHub } from '../../../hub/server/testing-real.ts';
+import { PLM_BUGS, PLM_PRODUCTS } from '../../../hub/connectors/testing/plm.ts';
+import { newId } from '../../../hub/records/api.ts';
 
 test('a bug read names its opened build when the build record is readable and stays neutral when the record is held', async () => {
   const hub = await createTestHub({ repositoryPacks: ['plm'] });
@@ -50,6 +52,11 @@ test('a bug read names its opened build when the build record is readable and st
     assert.equal(held.opened_build?.name, null);
     assert.match(held.opened_build?.note ?? '', /^构建 603 的记录没读到：应答对你不可用（原因只记在管理员记录里）$/);
     assert.doesNotMatch(JSON.stringify(held), /凭据|只保留|Zq8-Hunter2|[0-9a-f]{64}/, 'neither the cause nor the held answer reaches the reader');
+    const read4747 = await hub.hub.connectors.reader.read('plm:bug:4747', context);
+    assert.ok(read4747.ok);
+    const heldEntry = (await hub.records.store.get<{ requests: { key: string; sha256: string }[] }>(read4747.manifest))!.body.requests.find((entry) => entry.key === 'opened')!;
+    assert.ok(heldEntry.sha256);
+    assert.ok(!JSON.stringify(read4747.artifacts.find((a) => a.name === 'content')!.artifact.body.origin).includes(heldEntry.sha256), 'no function saw the held answer, so what it made does not name it');
     const unwritable = await content('5050');
     assert.equal(unwritable.opened_build?.name, null, 'kept parts that cannot be written stay held');
     assert.match(unwritable.opened_build?.note ?? '', /^构建 604 的记录没读到：应答对你不可用（原因只记在管理员记录里）$/);
@@ -60,6 +67,37 @@ test('a bug read names its opened build when the build record is readable and st
     assert.match(of('4747').note ?? '', /^没有读进的应答 1 个：opened（路由 build-detail）：应答对你不可用（原因只记在管理员记录里）(；|$)/);
     assert.doesNotMatch(of('4747').note ?? '', /凭据|只保留|Zq8-Hunter2/);
   } finally {
+    await hub.close();
+  }
+});
+
+test('a bug whose own answer is held tells the reader it exists and asks a named administrator; a list says nothing of what is in it', async () => {
+  const hit = ['pass', 'word=Zq8-', 'Hunter2-Secret-79'].join('');
+  PLM_BUGS['5151'] = { id: '5151', title: '组件升级后报错', status: 'active', openedDate: '2026-02-07 09:00:00', steps: `<p>${hit}</p>` };
+  const products = PLM_PRODUCTS.length;
+  const hub = await createTestHub({ repositoryPacks: ['plm'] });
+  try {
+    const resource = await hub.addResource({ system_pack: 'plm', name: '合成缺陷资源', environment: 'test', credentials: { username: 'SYNTHETIC_PLM_USER', password: 'SYNTHETIC_PLM_PASSWORD' }, origins: { 'plm-oauth': hub.stubs!.agile.origin, 'plm-api': hub.stubs!.plm.origin }, allow_plaintext: [hub.stubs!.agile.origin, hub.stubs!.plm.origin] });
+    await hub.setCredential(resource.id, 'username', hub.stubs!.agileAccount.username);
+    await hub.setCredential(resource.id, 'password', hub.stubs!.agileAccount.password);
+    const context = { principal: hub.admin.principal, run: newId('run'), purpose: '合成待核看' };
+    const read = await hub.hub.connectors.reader.read('plm:bug:5151', context);
+    assert.ok(!read.ok, JSON.stringify(read));
+    assert.equal(read.inputError?.code, 'SOURCE_PENDING_REVIEW');
+    assert.doesNotMatch(JSON.stringify(read.inputError), /Zq8-Hunter2|password/);
+    const asked = (await hub.records.store.find<{ detail: { credential?: { external: string }; audience_user: string; deadline: string } }>({ key: 'action.kind', value: 'read', kind: 'action', limit: 100 })).items.filter((row) => row.body.detail?.credential?.external === 'plm:bug:5151');
+    assert.equal(asked.length, 1, 'the assembly reaches the knowledge requests');
+    assert.equal(asked[0].body.detail.audience_user, hub.admin.principal.id);
+    assert.ok(Date.parse(asked[0].body.detail.deadline) > Date.now());
+    // The answer of a list or a lookup shows no object: neither the ids in a set, nor a name the held product list was to resolve.
+    const several = await hub.hub.connectors.reader.read('plm:bugs:5151+9999', context);
+    assert.ok(!several.ok && several.inputError === undefined, JSON.stringify(several));
+    PLM_PRODUCTS.push({ id: 90, name: '合成产品', code: hit });
+    const unknown = await hub.hub.connectors.reader.read('plm:builds:Ghost', context);
+    assert.ok(!unknown.ok && unknown.inputError === undefined, JSON.stringify(unknown));
+  } finally {
+    delete PLM_BUGS['5151'];
+    PLM_PRODUCTS.length = products;
     await hub.close();
   }
 });

@@ -12,7 +12,7 @@ import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import { disclosedExistence, recordExistence, type Principal, type VariableSnapshot } from '../../records/api.ts';
-import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
+import { EXTERNAL_ARTIFACT, PENDING_REVIEW_FIX, pendingReviewLabel, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, missingError, protocolError, unavailableError } from './errors.ts';
@@ -32,7 +32,7 @@ export interface BoundSource {
   record: { digest: string; run: string | null } | null;
   sourceRecord?:string;metaSource?:string;metaRecord?:string;readManifest?:string;requested?:string;
   /** The input is bound to the observation that its system has no such object: said in the answer as an evidence gap. */
-  absence?:{code:'SOURCE_ABSENT';message:string};
+  absence?:{code:'SOURCE_ABSENT'|'SOURCE_PENDING_REVIEW';message:string};
 }
 
 interface Read {
@@ -255,7 +255,7 @@ export async function bindInputs(
       if(scoped.ids.length === 1)requestId = scoped.ids[0];
       else merged = await mergeIndexBindings(scoped.ids,scoped.label,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries});
     }
-    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries}) : await ctx.deps.external.read(requestId,readContext));
+    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries}) : await ctx.deps.external.read(requestId,{...readContext,bindPending:!slot.required&&workflow.requirements.length===0}));
     if (!read.ok) {
       if(read.retry) {
         const step = read.inputError?.fix;
@@ -291,6 +291,7 @@ export async function bindInputs(
       }
       absence={code:'SOURCE_ABSENT',message:absenceLabel(observation)+(next?`；${next}`:'')};
     }
+    if(read.pending)absence={code:'SOURCE_PENDING_REVIEW',message:`${pendingReviewLabel(read.pending)}；${PENDING_REVIEW_FIX}`};
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
     if (chosen === undefined) {
       readFailed(path, `读取 ${id} 没有给出原件或内容件`, '由系统包负责人核对这类外部对象的读取声明和投影后重读', 'the read gave no original or content artifact');
@@ -319,7 +320,7 @@ export async function bindInputs(
       }
     }
     const external = withRevision(read.id, read.revision);
-    const title = read.absent ? absenceLabel(read.absent) : meta !== null && typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
+    const title = read.absent ? absenceLabel(read.absent) : read.pending ? pendingReviewLabel(read.pending) : meta !== null && typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
     return {
       bytes: source.bytes,
       mediaType: source.mediaType,

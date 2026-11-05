@@ -5,6 +5,7 @@ import { KnowledgeSpaces } from './spaces.ts';
 import { KnowledgeError } from './errors.ts';
 import {scheduleSync} from './sync-schedule.ts';
 import {requestKnowledgeFact} from './requests.ts';
+import {requestSourceReview} from './credential-policy.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
@@ -12,7 +13,7 @@ import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, Produc
 import type { KnownBuild } from '../../contracts/src/product.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
-import type { Principal } from '../records/api.ts';
+import type { Principal, SourceArtifact } from '../records/api.ts';
 import { pathSegments, pathOf, type ParserRegistry, type TreeReader } from '../refs/api.ts';
 import type { CatalogView, SandboxLimits } from '../rules/api.ts';
 import { Builds, type LineReconciliation, type MoveRootOptions, type MoveRootResult } from './builds.ts';
@@ -104,6 +105,8 @@ export interface Knowledge extends KnowledgePort {
   reconcileLine(product: string, line: string, by?: Principal | null): Promise<LineReconciliation>;
   /** Provenance for a reader who may read the root; null for anyone else (absent and forbidden alike). */
   provenanceOf(reference: string, reader: Principal): Promise<ProvenanceRow[] | null>;
+  /** A reader was told this held source awaits review: asks a named administrator, once while a request stays open (B02 R[4]). */
+  requestSourceReview(artifact: SourceArtifact, external: string): Promise<void>;
   calibration: KnowledgeCalibration;
   placement: KnowledgePlacement;
   layers: { observations: ObservationLayer; contributions: ContributionLayer };
@@ -281,6 +284,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */
     __context: context,
+    requestSourceReview:(artifact,external)=>requestSourceReview(context,artifact,external),
     feeding,
     async builds(product: string, filter: { line?: string; released?: boolean } = {}): Promise<KnownBuild[]> {
       return (await builds.known(product)).filter(

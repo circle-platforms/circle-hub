@@ -1,5 +1,5 @@
 import type {ProtocolCode} from '../contracts/generated/protocol.ts';
-import type {SourceAbsent} from '../contracts/src/resources.ts';
+import type {SourceAbsent,SourcePendingReview} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
@@ -113,6 +113,8 @@ export interface ExternalReadContext {
   run?: string | null;
   /** Free text for the admin log, for example "sync" or "expected source". */
   purpose: string;
+  /** A run that only reads takes an answer held for review as the observation it is; any other caller gets a refusal. */
+  bindPending?: boolean;
   /** Composition already selected by the caller; it is never replaced with a newer production. */
   composition?: string | null;
   /** Product-wide snapshot selected before the run is persisted; null explicitly means none. */
@@ -142,8 +144,12 @@ export interface ExternalRedirect {status:number;location:string|null;observed_a
 export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
-  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
+  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent;pending?:SourcePendingReview }
   | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: InputError };
+
+/** What a reader of the system is told of an object held for review (D05 R[3]): that it exists, and when that was read. */
+export const pendingReviewLabel=(held:SourcePendingReview):string=>`系统 ${held.system} 里有 ${held.object}，内容待核看（读于 ${held.observed_at}）`;
+export const PENDING_REVIEW_FIX='到来源系统看原文；管理员核看内容后按原对象重读';
 
 /** A caller-input problem of a read, with the claim fields its answer carries (D05 R[8]): grounds, qualifier, the missing fact. */
 export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses'>;
