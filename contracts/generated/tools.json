@@ -2372,7 +2372,7 @@
           "description": "Input slot name to reference or external object"
         },
         "parameters": {
-          "description": "The parameters the pack declares, as one object by name, for example {\"<name>\": <value>}; list_task_packs lists every pack parameter with its name, description and schema",
+          "description": "The parameters the pack declares, as one object by name, for example {\"<name>\": <value>}; list_task_packs with pack_id gives each parameter with its name, description and schema",
           "type": "object",
           "propertyNames": {
             "type": "string"

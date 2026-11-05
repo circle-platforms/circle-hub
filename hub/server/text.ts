@@ -394,12 +394,15 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
 }
 
 /** A pack as one entry: its line, products, inputs, parameters, the example call and its requirements. */
-/** What a brief entry leaves out, named once in the note however many packs are brief (display rule 7). */
-const BRIEF_OMISSION: Omission = { what: '工作流的输入说明、参数说明和要求项', more: '读一个工作流的全部详情：list_task_packs {"pack_id":"<编号>"}，编号不带 @版本' };
+/** How to read one pack whole, from a list that shows it briefly. An ID has no version: PackId refuses one. */
+const READ_ONE = '读一个工作流的全部详情：list_task_packs {"pack_id":"<编号>"}，编号不带 @版本';
+/** How much of an input's description a brief entry keeps: enough for what the written form's placeholder stands for. */
+const BRIEF_DESCRIPTION = 60;
 
 /**
- * One pack of the list. `brief` is for a list whose whole details do not fit one answer: what the pack is, how its inputs are
- * written, the names of its parameters and the example, so a reader can choose and often call without paging (A05 R[1]).
+ * One pack of the list. `brief` is for a list whose whole details do not fit one answer: what the pack is, the start of what
+ * each input takes and how it is written, the names of its parameters and the example, so a reader can choose and often call
+ * without paging (A05 R[1]).
  */
 function packEntry(p: PackSummary, brief = false): Entry {
   const clip = new Clip(null, '在控制台工作流页 /console/packs 查看');
@@ -407,7 +410,7 @@ function packEntry(p: PackSummary, brief = false): Entry {
   if (p.products.length > 0) lines.push(`  产品：${p.products.map((name) => clip.field(name, CLIP.name, '产品名的超出部分')).join('、')}`);
   const shapesOf = (input: PackSummary['inputs'][number]): string => [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
   if (brief) {
-    if (p.inputs.length > 0) lines.push(`  输入：${p.inputs.map((input) => `${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${required(input.required)}${input.many ? '，可多个' : ''}）${clip.field(shapesOf(input).replaceAll(EXAMPLE_SOURCE, `${EXAMPLE_SOURCE.slice(0, 8)}…`), CLIP.line, '输入写法的超出部分')}`).join('；')}`);
+    for (const input of p.inputs) lines.push(`  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, BRIEF_DESCRIPTION, '输入说明的超出部分', READ_ONE)}；写法 ${clip.field(shapesOf(input).replaceAll(EXAMPLE_SOURCE, `${EXAMPLE_SOURCE.slice(0, 8)}…`), CLIP.line, '输入写法的超出部分')}`);
     if (p.parameters.length > 0) lines.push(`  参数：${p.parameters.map((parameter) => `${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）`).join('、')}`);
   } else for (const input of p.inputs) {
     lines.push(
@@ -418,8 +421,7 @@ function packEntry(p: PackSummary, brief = false): Entry {
   if(p.space)lines.push(`  ${labelOf('knowledge_space_kind','personal')}：${p.space}`);
   if (p.local_tools !== undefined) lines.push(`  本地工具 ${p.local_tools.count} 个；安装：${clip.field(p.local_tools.install, CLIP.line, '安装命令的超出部分')}；清单见 structuredContent`);
   lines.push(p.kind==='skill'&&p.requirements.length===0?`  读取做法 get_nodes：${JSON.stringify({pack:p.pack,...(p.space?{pack_space:p.space}:{}),file:'SKILL.md'})}`:`  示例 start_run：${startRunExample(p)}`);
-  if (brief) clip.omitted.push(BRIEF_OMISSION);
-  else for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
+  if (!brief) for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
 }
 
@@ -463,7 +465,7 @@ function listText(v: ListOut, context: TextContext): string {
   } else if (context.packList?.contextUnread === true) {
     blocks.push({ priority: 0, head: ['运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'] });
   }
-  const details = (head: string, entries: Entry[]): Block => ({ priority: 1, head: [head], entries, unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
+  const details = (head: string, entries: Entry[]): Block => ({ priority: 1, head: [head], entries, first: offset + 1, unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
     const list = context.packList;
     if (!list) return '工作流：在控制台工作流页 /console/packs 查看';
     if (from === 0 && list.packId === v.packs[0]?.id) return '单个工作流详情超出回答预算；在控制台工作流页 /console/packs 查看';
@@ -473,10 +475,10 @@ function listText(v: ListOut, context: TextContext): string {
   } });
   const tail = [traceLine(v.trace)];
   const whole = fit([...blocks, details('详情（每个工作流的产品、输入、参数、示例和要求项）：', v.packs.map((p) => packEntry(p)))], { tail });
-  if (whole.shown.at(-1) === v.packs.length || context.packList?.packId !== undefined) return whole.text;
+  if (v.packs.length === 0 || whole.shown.at(-1) === v.packs.length || context.packList?.packId !== undefined) return whole.text;
   // Every pack briefly rather than some in full: paging to find the one pack wanted costs a reader a whole round. An exact
   // query stays as it is, since the note of a brief entry would only send the reader back to that same query.
-  return fit([...blocks, details('详情（每个工作流的说明、输入写法、参数名和示例）：', v.packs.map((p) => packEntry(p, true)))], { tail }).text;
+  return fit([...blocks, details(`详情（${labelOf('qualifier_mark', 'partial')}：全部详情放不下这段回答，这里每个工作流只给说明、输入说明的开头和写法、参数名和示例，不给输入的接受类型、参数的说明和模式、要求项；${READ_ONE}）：`, v.packs.map((p) => packEntry(p, true)))], { tail }).text;
 }
 
 // ---------------------------------------------------------------- upload_file
@@ -1059,7 +1061,7 @@ function startText(v: StartOut, context: TextContext): string {
       head: ['接受这类对象的任务包输入（你能用的任务包里，接受类型与来源的外部对象类型逐字相同的输入；怎么用见 list_task_packs 的详情）：'],
       entries: v.accepted_by.map((a) => `- ${a.type}：${a.inputs.map((i) => `${i.pack} 输入 ${i.slot}（${labelOf('source_role', i.role)}）`).join('；')}`),
       unit: '对象类型', measure: '个',
-      more: () => '其余接受这类对象的输入：list_task_packs 详情里每个输入的“接受”',
+      more: () => `其余接受这类对象的输入看每个输入的“接受”；${READ_ONE}`,
     });
   }
   const items = itemLines(r.items, record, r.run);

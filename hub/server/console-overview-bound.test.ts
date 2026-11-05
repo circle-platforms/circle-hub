@@ -38,7 +38,7 @@ async function overview(others: number, admin = false): Promise<{ body: string; 
   return { body: String((await overviewPage(ctx)).body), read, queries, calls };
 }
 
-test('a business system row keeps its read counts under its name: a column of their own squeezed the name to a character per line', async () => {
+test('a business system row keeps its read line under its name: a column of its own squeezed the name to a character per line', async () => {
   const { body } = await overview(0, true);
   const row = /<a class="ch-row" href="\/console\/connections#systems">.*?<\/a>/s.exec(body)?.[0] ?? '';
   assert.match(row, /<span class="ch-row-body"><b>合成业务系统<\/b><span class="ch-meta">启用<\/span><span class="ch-meta">[^<]+<\/span><\/span><\/a>$/s, row);

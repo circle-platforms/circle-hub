@@ -164,7 +164,7 @@ export const StartRunInput = z.strictObject({
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
   model_identity: ModelIdentitySchema.optional().describe('Explicit model and family declaration; submissions from this same observed session can reuse it'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
-  parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs lists every pack parameter with its name, description and schema'),
+  parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs with pack_id gives each parameter with its name, description and schema'),
   submission_due:IsoTime.optional().describe('Requested absolute submission deadline; the service binds its actual finite policy before writing the run'),
   predecessor: RunId.optional().describe('Earlier run this one continues'),
   client_key: z

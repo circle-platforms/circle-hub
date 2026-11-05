@@ -233,7 +233,7 @@ describe('list_task_packs', () => {
         assert.ok(text.length <= 30_000);
         assert.equal([...text.matchAll(/^- (sample-\d{3})@\S+ \| /gm)].length, 80, 'every page repeats the whole index');
         found.push(...[...text.matchAll(/^- (sample-\d{3})@\S+ (?!\| )/gm)].map((match) => match[1]!));
-        const next = text.match(/list_task_packs (\{[^}]+\})/);
+        const next = text.match(/继续 list_task_packs (\{[^}]+\})/);
         if (!next) break;
         const args = JSON.parse(next[1]!) as { kind: string; offset: number };
         assert.equal(args.kind, 'workflow');
