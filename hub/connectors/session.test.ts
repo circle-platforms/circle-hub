@@ -774,9 +774,9 @@ test('a login that is not sent (a credential missing, a plaintext refusal) leave
   const missing = (e: unknown) => e instanceof ConnectorError && e.code === 'CREDENTIAL_MISSING';
   await assert.rejects(b.manager().token(), missing);
   assert.equal(JSON.parse(b.vault.entries.get(SESSION) ?? '{}').login_until, null);
-  const started = Date.now();
   await assert.rejects(b.manager().token(), missing);
-  assert.ok(Date.now() - started < 1000, 'no wait');
+  // The cause of a wait, not its length: a process that finds another's login mark logs that it waits for it.
+  assert.ok(!b.log.some((event) => event.event === 'login_waiting'), 'no wait');
   // Refused before any I/O: plain HTTP to an origin the resource does not allow it for.
   b.vault.entries.set(CREDENTIALS.password, passwordDigest(PASSWORD));
   const strict = new HttpSource({ resource: RES, origins: { 'agile-oauth': b.agile.origin, 'agile-api': b.agile.origin }, allowPlaintext: [], routes: profile.routes, envelope: profile.envelope });

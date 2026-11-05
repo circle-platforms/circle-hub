@@ -3,6 +3,7 @@ import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub
 import assert from 'node:assert/strict';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { test } from 'node:test';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 import { ParseError, ParseLimitError } from './format.ts';
 import { originalCore } from '../testing/baseline.ts';
 import { readXlsxArchive, XLSX_MODEL_BYTE_LIMIT, XLSX_ZIP_LIMITS } from './xlsx.ts';
@@ -239,7 +240,6 @@ test('xlsx@1 parses a freshly generated workbook from the existing independent E
   assert.deepEqual(document.model, xlsxParser.parse(bytes).model);
 });
 test('xlsx@1 rejects random and corrupted containers only with typed deterministic parse errors', { timeout: 10000 }, () => {
-  const started = performance.now();
   let seed = 2197; const random = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
   const base = workbook();
   for (let i = 0; i < 800; i++) {
@@ -251,7 +251,6 @@ test('xlsx@1 rejects random and corrupted containers only with typed determinist
     };
     assert.deepEqual(outcome(), outcome());
   }
-  assert.ok(performance.now() - started < 5000);
 });
 
 
@@ -299,11 +298,21 @@ test('xlsx rejects repeated resolved sheet parts before rebuilding their cell mo
   badWorkbook({ book, sheet }, /工作表.*同一个部件/);
 });
 
-test('five thousand sheets sharing one part are refused within a bounded parse time', { timeout: 5000 }, () => {
-  const book = `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets>${Array.from({ length: 5000 }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="sheet"/>`).join('')}</sheets></workbook>`;
-  const started = performance.now();
-  badWorkbook({ book }, /工作表.*同一个部件/);
-  assert.ok(performance.now() - started < 2000);
+/** Parses without asserting: a refusal is a valid outcome of a timed run, asserted separately on the full-size input. */
+function parseOutcome(bytes: Buffer): void {
+  try {
+    xlsxParser.parse(bytes);
+  } catch (error) {
+    if (!(error instanceof ParseError)) throw error;
+  }
+}
+const sharedBook = (sheets: number) => `<workbook xmlns="${MAIN}" xmlns:r="${DOC_REL}"><sheets>${Array.from({ length: sheets }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="sheet"/>`).join('')}</sheets></workbook>`;
+test('five thousand sheets sharing one part are refused within a bounded parse time', { timeout: 60_000 }, (t) => {
+  badWorkbook({ book: sharedBook(5000) }, /工作表.*同一个部件/);
+  // Sheets and the cells of the shared part grow together, so rebuilding the part for each sheet before the refusal
+  // would grow quadratically. A growth ratio does not depend on how fast or busy the runner is.
+  const shared = (size: number) => workbook({ book: sharedBook(size), sheet: `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c><v>1</v></c>'.repeat(size)}</row></sheetData></worksheet>` });
+  t.diagnostic(describeGrowth('sheets sharing one part', assertLinearGrowth('sheets sharing one part', shared, parseOutcome, { small: 625 })));
 });
 
 function unicodePath(name: Buffer | string, replacement: string): Buffer {
@@ -319,12 +328,15 @@ test('Unicode path metadata cannot conceal raw unsafe names, duplicates or a dif
   assert.equal(readXlsxArchive(zip([{ name: 'a.xml', extra: unicodePath('a.xml', 'a.xml') }])).size, 1);
 });
 
-test('resolved shared-string text has a separate aggregate cell-model budget before serialization', { timeout: 5000 }, () => {
+test('resolved shared-string text has a separate aggregate cell-model budget before serialization', { timeout: 60_000 }, (t) => {
   const shared = `<sst xmlns="${MAIN}"><si><t>${'x'.repeat(100000)}</t></si></sst>`;
-  const sheet = `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(400)}</row></sheetData></worksheet>`;
-  const started = performance.now();
-  badWorkbook({ shared, sheet }, /模型.*单元格文本.*上限/);
-  assert.ok(performance.now() - started < 2000);
+  const sheet = (cells: number) => `<worksheet xmlns="${MAIN}"><sheetData><row r="1">${'<c r="A1" t="s"><v>0</v></c>'.repeat(cells)}</row></sheetData></worksheet>`;
+  badWorkbook({ shared, sheet: sheet(400) }, /模型.*单元格文本.*上限/);
+  // The budget stops the work once the resolved text exceeds it (after about 170 of these cells): eight times the cells
+  // beyond it may cost at most twice as much, while building or serializing every cell first would cost eight times as
+  // much. A growth ratio does not depend on how fast or busy the runner is.
+  const growth = assertLinearGrowth('cells beyond the model budget', (cells) => workbook({ shared, sheet: sheet(cells) }), parseOutcome, { small: 200, maxRatio: 2 });
+  t.diagnostic(describeGrowth('cells beyond the model budget', growth));
 });
 
 test('decoded NULs are removed and counted once at their source in cells, sheet names and defined names', () => {
@@ -432,7 +444,6 @@ test('refs records the retained resolve test scope deviation', async () => {
 });
 
 test('all descriptor widths and per-member ZIP64 declarations have valid and contradictory vectors', { timeout: 5000 }, () => {
-  const started = performance.now();
   for (const length of [12, 16, 20, 24] as const) {
     const bytes = zip([{ name: 'a.xml', text: 'synthetic', flags: 0x808, descriptor: length }]);
     const central = bytes.readUInt32LE(bytes.length - 6); const dataAt = 30 + bytes.readUInt16LE(26) + bytes.readUInt16LE(28);
@@ -445,7 +456,6 @@ test('all descriptor widths and per-member ZIP64 declarations have valid and con
   assert.equal(wide.readUInt32LE(central + 24), 0xffffffff); assert.equal(readXlsxArchive(wide).get('a.xml')?.toString(), 'synthetic');
   const damaged = Buffer.from(wide); const extraAt = central + 46 + wide.readUInt16LE(central + 28); damaged.writeBigUInt64LE(10n, extraAt + 4);
   refuses(damaged, /本地头大小|大小不一致/);
-  assert.ok(performance.now() - started < 2000);
 });
 
 for (const [name, value] of [['ASCII', 'x'], ['JSON control escapes', '_x0001_'], ['backslashes', '\\']] as const)

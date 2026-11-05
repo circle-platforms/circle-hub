@@ -4,10 +4,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { performance } from 'node:perf_hooks';
 import { caseCommandsGold, commandScanner, sha256 } from './case-commands.ts';
 import { CATALOG_A, commandTreeXml } from '../../../tests/fixtures/case-index/catalog.ts';
 import { CASE_COMMAND_TABLE } from '../../../tests/fixtures/case-index/table.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../hub/testing/growth.ts';
 const xml = commandTreeXml(CATALOG_A);
 const scan = commandScanner(xml);
 const paths = (text: string) => scan(text).map((m) => m.path.slice(10).replaceAll('/', ' ')).sort();
@@ -48,13 +48,16 @@ test('bad XML and unreadable CLI inputs fail without revealing paths', () => {
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('4000 commands and 20000 cases complete within seconds', () => {
-  const start = performance.now();
-  const tree = `<commands><scope><menu name="widget">${Array.from({ length: 4000 }, (_, i) => `<item name="action${i}"/>`).join('')}</menu></scope></commands>`;
-  const maps = Array.from({ length: 20 }, (_, i) => ({ document: `doc${i}`, map: { root: node('root', 'plain', Array.from({ length: 1000 }, (_, k) => node(`case${k}`, `widget action${k}`)), false) } }));
-  const gold = caseCommandsGold(tree, maps);
+test('4000 commands and 20000 cases complete within seconds', { timeout: 120_000 }, (t) => {
+  // A synthetic tree of 4 × `perDocument` commands and 20 maps of `perDocument` cases; 1000 gives the full size.
+  const sized = (perDocument: number) => ({
+    tree: `<commands><scope><menu name="widget">${Array.from({ length: 4 * perDocument }, (_, i) => `<item name="action${i}"/>`).join('')}</menu></scope></commands>`,
+    maps: Array.from({ length: 20 }, (_, i) => ({ document: `doc${i}`, map: { root: node('root', 'plain', Array.from({ length: perDocument }, (_, k) => node(`case${k}`, `widget action${k}`)), false) } })),
+  });
+  const gold = caseCommandsGold(sized(1000).tree, sized(1000).maps);
   assert.equal(gold.totals.cases, 20000); assert.equal(gold.totals.unplaced, 0);
-  assert.ok(performance.now() - start < 8000);
+  // Commands and cases grow together, so a scan of the tree per case (cases × commands) is quadratic here.
+  t.diagnostic(describeGrowth('commands and cases', assertLinearGrowth('commands and cases', sized, ({ tree, maps }) => caseCommandsGold(tree, maps), { small: 125 })));
 });
 
 test('CLI accepts prefixed document ids in manifests and hashes original tree bytes', () => {

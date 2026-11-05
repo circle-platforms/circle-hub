@@ -6,6 +6,7 @@ import { commandCatalog } from './cases-commands.ts';
 import { canonicalJson } from './util.ts';
 import type { ManualCatalog, ManualResult, MarkdownModel } from './types.ts';
 import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, jsonDocument, markdown, markdownDocument, seeded, sliceBytes, utf8 } from '../testing/test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 import {STRICT_MANUAL_CATALOG,placementXml as xml} from '../testing/strict-command-fixture.ts';
 const md = markdownDocument(fixtureBytes('manual.md'));
@@ -356,17 +357,18 @@ describe('manual on bad input', () => {
     }
   });
 
-  it('reads a large manual quickly', () => {
-    const parts: string[] = ['# 章\n\n'];
-    for (let k = 0; k < 8000; k++) parts.push(`**demo c${k} set** *\\<name\\> \\[value\\]*\n\n该命令用于第 ${k} 项设置。\n\n| a | b |\n|---|---|\n| name | 名称 |\n\n`);
-    const model = markdown(parts.join(''));
-    const start = performance.now();
-    const tree=commandCatalog(xml('<commands>'+Array.from({length:8000},(_,k)=>`<item name="demo c${k} set"><arguments><arg type="STRING"/><arg type="STRING" optional="YES"/></arguments></item>`).join('')+'</commands>')).catalog;
-    const result = produceManualEntries(model,null,{catalog:tree});
-    const ms = performance.now() - start;
+  it('reads a large manual quickly', { timeout: 120_000 }, (t) => {
+    // `count` commands, each in the manual and in the tree it is read against.
+    const sized = (count: number) => {
+      const parts: string[] = ['# 章\n\n'];
+      for (let k = 0; k < count; k++) parts.push(`**demo c${k} set** *\\<name\\> \\[value\\]*\n\n该命令用于第 ${k} 项设置。\n\n| a | b |\n|---|---|\n| name | 名称 |\n\n`);
+      return { model: markdown(parts.join('')), tree: xml('<commands>' + Array.from({ length: count }, (_, k) => `<item name="demo c${k} set"><arguments><arg type="STRING"/><arg type="STRING" optional="YES"/></arguments></item>`).join('') + '</commands>') };
+    };
+    const read = ({ model, tree }: ReturnType<typeof sized>) => produceManualEntries(model, null, { catalog: commandCatalog(tree).catalog });
+    const result = read(sized(8000));
     assert.equal(signatures(result).length, 8000);
     assert.equal(result.entries.length, 24000);
-    assert.ok(ms < 3000, `took ${ms} ms`);
+    t.diagnostic(describeGrowth('commands', assertLinearGrowth('commands', sized, read, { small: 1000 })));
   });
 });
 
@@ -440,13 +442,12 @@ describe('author-marked command literals', () => {
     assert.ok(result.entries.every((entry) => entry.data.command_literals === undefined));
   });
 
-  it('extracts literals in linear time over unmatched marks', () => {
-    const text = `# 章\n\n${'“'.repeat(80_000)}\n`;
-    const start = performance.now();
-    const result = produceManualEntries(markdown(text),null,{catalog:STRICT_MANUAL_CATALOG});
-    const ms = performance.now() - start;
-    assert.ok(ms < 3000, `took ${ms} ms`);
+  it('extracts literals in linear time over unmatched marks', { timeout: 60_000 }, (t) => {
+    const marks = (count: number) => markdown(`# 章\n\n${'“'.repeat(count)}\n`);
+    const read = (model: MarkdownModel) => produceManualEntries(model, null, { catalog: STRICT_MANUAL_CATALOG });
+    const result = read(marks(80_000));
     assert.ok(result.entries.every((entry) => entry.data.command_literals === undefined));
+    t.diagnostic(describeGrowth('marks', assertLinearGrowth('marks', marks, read, { small: 500_000 })));
   });
 
   it('dedupes a repeated prose mention and retains the complete mention list', () => {
@@ -1090,14 +1091,15 @@ describe('prose applicability stays undeclared under famx-applicability@1', () =
   });
 
 
-  it('reads conditions in bounded time even on hostile paragraphs (closure findings 7 and 15)', () => {
-    const hostile = (word: string) => undeclaredManual(markdown(`**demo pool add** *\\<name\\>*\n\n${word}\n`),null,{catalog:STRICT_MANUAL_CATALOG});
-    const started1 = Date.now();
-    hostile('适用于'.repeat(20000));
-    assert.ok(Date.now() - started1 < 1000, `适用于×20000 took ${Date.now() - started1} ms`);
-    const started2 = Date.now();
-    hostile('仅 sy-k 平台支持'.repeat(20000));
-    assert.ok(Date.now() - started2 < 1000, `仅…支持×20000 took ${Date.now() - started2} ms`);
+  it('reads conditions in bounded time even on hostile paragraphs (closure findings 7 and 15)', { timeout: 60_000 }, (t) => {
+    const paragraph = (word: string) => (count: number) => markdown(`**demo pool add** *\\<name\\>*\n\n${word.repeat(count)}\n`);
+    const read = (model: MarkdownModel) => produceManualEntries(model, null, { catalog: STRICT_MANUAL_CATALOG });
+    // Each paragraph is read in full with the undeclared invariants at the original size, then timed on its own between
+    // two sizes large enough that even the small run is well above timer noise.
+    for (const [word, small] of [['适用于', 150_000], ['仅 sy-k 平台支持', 60_000]] as const) {
+      undeclaredManual(paragraph(word)(20000), null, { catalog: STRICT_MANUAL_CATALOG });
+      t.diagnostic(describeGrowth(`${word}×n`, assertLinearGrowth(`${word}×n`, paragraph(word), read, { small })));
+    }
   });
 
   it('reads no vague, deictic, negated, exception or garbled model value (closure findings 3 and 12)', () => {
@@ -1166,11 +1168,13 @@ describe('prose applicability stays undeclared under famx-applicability@1', () =
     assert.deepEqual(modelsClosed.entries.find((entry) => entry.data.form === 'text')?.applicability, null, 'a model list in prose remains undeclared');
   });
 
-  it('stays linear on Han runs full of 和 (no exponential backtracking)', () => {
-    const hostile = `适用于${'和平'.repeat(40)}。`;
-    const started = Date.now();
-    undeclaredManual(markdown(`**demo pool add** *\\<name\\>*\n\n${hostile}\n`),null,{catalog:STRICT_MANUAL_CATALOG});
-    assert.ok(Date.now() - started < 500, 'a hostile clause must not backtrack exponentially');
+  it('stays linear on Han runs full of 和 (no exponential backtracking)', { timeout: 60_000 }, (t) => {
+    const clause = (pairs: number) => markdown(`**demo pool add** *\\<name\\>*\n\n适用于${'和平'.repeat(pairs)}。\n`);
+    // Forty pairs already take astronomically long under exponential backtracking: the test's timeout catches a hang.
+    undeclaredManual(clause(40), null, { catalog: STRICT_MANUAL_CATALOG });
+    // Between two clause lengths a backtracking matcher grows far faster than the size, so the ratio fails it.
+    const read = (model: MarkdownModel) => produceManualEntries(model, null, { catalog: STRICT_MANUAL_CATALOG });
+    t.diagnostic(describeGrowth('和平×n', assertLinearGrowth('和平×n', clause, read, { small: 240_000 })));
   });
 
 

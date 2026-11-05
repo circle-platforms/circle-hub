@@ -22,10 +22,23 @@ import type { PackWarning } from './functions/types.ts';
 import { EXAMPLE_INPUT, EXAMPLE_RESULT, exampleBytes, exampleResult } from './testing/examples.ts';
 import { baseDocument, outlineDocument, renamed } from './testing/mindmap.ts';
 import { bind, projectionInput } from './testing/support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../hub/testing/growth.ts';
 
 const json = (path: string): any => JSON.parse(readFileSync(join(PACK_DIR, path), 'utf8'));
 const HAN = /\p{Script=Han}/u;
 const TEMPLATE = json('tables/template-v3.json') as { categories: Array<{ id: string; label: string; required?: boolean }> };
+
+// Hostile maps for the sandbox-limit and growth tests: a dash run of `length` in the root text above 80 cases, and a
+// chain of `depth` groups above `cases` cases.
+const hostileKm = (root: unknown) => new TextEncoder().encode(JSON.stringify({ root, template: 'right', theme: 'classic', version: '1.4.43' }));
+const hostileNode = (id: string, text: string, extra: Record<string, unknown> = {}, ...children: unknown[]) => ({ data: { id, text, ...extra }, children });
+const hostileCase = (id: string) => hostileNode(id, `用例 ${id}`, { priority: 2, resource: ['Function'] }, hostileNode(`${id}e`, '期望'));
+const dashMap = (length: number) => hostileKm(hostileNode('r', `用例${'-'.repeat(length)}`, {}, ...Array.from({ length: 80 }, (_, i) => hostileCase(`c${i}`))));
+function chainMap(depth: number, cases: number): Uint8Array {
+  let chain: unknown = hostileNode(`g${depth - 1}`, `分组 ${depth - 1}`, { priority: 1 }, ...Array.from({ length: cases }, (_, i) => hostileCase(`d${i}`)));
+  for (let k = depth - 2; k >= 0; k--) chain = hostileNode(`g${k}`, `分组 ${k}`, { priority: 1 }, chain);
+  return hostileKm(hostileNode('r', '根', {}, chain));
+}
 
 let staged: { path: string; remove: () => Promise<void> };
 before(async () => {
@@ -273,25 +286,17 @@ describe('the pack functions', () => {
     assert.deepEqual(subject.output, subjectDefault(subjectInput));
   });
 
-  it('stay inside the sandbox limits on hostile maps: a long dash run in the root text, a deep chain above many cases', async (t) => {
+  it('stay inside the sandbox limits on hostile maps: a long dash run in the root text, a deep chain above many cases', { timeout: 120_000 }, async (t) => {
     if (!(await osIsolationAvailable())) return t.skip('sandbox-exec is not available on this machine');
-    const km = (root: unknown) => new TextEncoder().encode(JSON.stringify({ root, template: 'right', theme: 'classic', version: '1.4.43' }));
-    const n = (id: string, text: string, extra: Record<string, unknown> = {}, ...children: unknown[]) => ({ data: { id, text, ...extra }, children });
-    const kase = (id: string) => n(id, `用例 ${id}`, { priority: 2, resource: ['Function'] }, n(`${id}e`, '期望'));
-    // Before: the earlier arrow pattern was quadratic on the dashes and ran once per case (SANDBOX_TIMEOUT after 10 s).
-    const dashes = km(n('r', `用例${'-'.repeat(20_000)}`, {}, ...Array.from({ length: 80 }, (_, i) => kase(`c${i}`))));
-    // Before: every case copied and normalized its 190 ancestors (SANDBOX_VIOLATION, memory, after 1.4 s).
-    let chain: unknown = n('g189', '分组 189', { priority: 1 }, ...Array.from({ length: 20_000 }, (_, i) => kase(`d${i}`)));
-    for (let k = 188; k >= 0; k--) chain = n(`g${k}`, `分组 ${k}`, { priority: 1 }, chain);
-    const deep = km(n('r', '根', {}, chain));
-    for (const [name, bytes, cases] of [['dashes', dashes, 80], ['deep', deep, 20_000]] as const) {
+    // A run that reached the sandbox's time or memory limit is a SANDBOX_TIMEOUT or SANDBOX_VIOLATION error, so an
+    // answer equal to the in-process one is the evidence that both maps stayed inside the limits. Whether the work
+    // grows with the map is checked in process by the test below; the test's timeout catches a hang.
+    for (const [name, bytes, cases] of [['dashes', dashMap(20_000), 80], ['deep', chainMap(190, 20_000), 20_000]] as const) {
       const input = projectionInput([bind(bytes, { external: 'agile:mindmap:700200' })]);
-      const started = performance.now();
       const out = await callPackFunction({ packDir: staged.path, module: 'functions/project.ts' }, input);
-      const took = performance.now() - started;
       const produced = out.output as { items?: Array<{ fields: { caseCount: number } }>; error?: { code?: string } };
+      assert.equal(out.osIsolation, true, name);
       assert.deepEqual(out.output, projectDefault(input), name);
-      assert.ok(took < 5_000, `${name}: ${took.toFixed(0)} ms in the sandbox`);
       if (name === 'deep') {
         // 两万条用例带上逐条分类和 resource 后超过投影自己的 8MB 上限，函数拒绝，不把沙箱超时或内存违规当成通过。
         assert.equal(produced.error?.code, 'template-gap.too_large', name);
@@ -301,6 +306,22 @@ describe('the pack functions', () => {
       const [item] = produced.items;
       assert.equal(item.fields.caseCount, cases, name);
     }
+  });
+
+  it('project the same hostile maps in linear time', { timeout: 120_000 }, (t) => {
+    // In process, with the output limit raised so the large chain is projected in full rather than refused at the end.
+    const read = (input: ReturnType<typeof projectionInput>) => projectDocuments(input, { outputBytes: 64 * 1024 * 1024 });
+    const bound = (bytes: Uint8Array) => projectionInput([bind(bytes, { external: 'agile:mindmap:700200' })]);
+    // Before: the arrow pattern was quadratic on the dashes and ran once per case (SANDBOX_TIMEOUT after 10 s).
+    const dashed = read(bound(dashMap(3_200_000)));
+    assert.ok(!isFailure(dashed) && dashed.items[0].fields.caseCount === 80, 'the large dash run is projected in full');
+    t.diagnostic(describeGrowth('dashes', assertLinearGrowth('dashes', (length) => bound(dashMap(length)), read, { small: 400_000 })));
+    // Before: every case copied and normalized its 190 ancestors (SANDBOX_VIOLATION, memory, after 1.4 s); with depth
+    // and cases growing together that work is quadratic.
+    const chain = (depth: number) => bound(chainMap(depth, depth * 100));
+    const full = read(chain(190));
+    assert.ok(!isFailure(full), 'the large chain is projected in full');
+    t.diagnostic(describeGrowth('deep', assertLinearGrowth('deep', chain, read, { small: 24 })));
   });
 });
 

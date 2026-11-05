@@ -15,6 +15,7 @@ import { parserKey, recognize } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledgeReader, routeKnowledgeViews } from './api.ts';
 import { parseViewId, viewIdExample } from './views.ts';
+import { assertLinearGrowthAsync, describeGrowth } from '../testing/growth.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, extraProducer, makeWorld, mindMap, startPostgres, type World } from './test-support.ts';
 
 let postgres: TemporaryPostgres;
@@ -468,10 +469,11 @@ describe('the facet and index views (facet-view@1, index-view@1)', () => {
     assert.equal(impact.notes.some((note) => note.startsWith(labelOf('knowledge_count', 'tree_unplaced_entries'))), false);
   });
 
-  test('facets and index over 60000 unplaced entries finish within a few seconds', { timeout: 300_000 }, async (t) => {
+  test('facets and index over 60000 unplaced entries batch their queries and grow linearly', { timeout: 300_000 }, async (t) => {
     const source = `
 export default function many(input: any): unknown {
-  const n = (input.params && input.params.n) || 0;
+  // The build of the growth checks takes an eighth of the entries.
+  const n = (input.build && input.build.name === ${JSON.stringify(B)} ? 7_500 : input.params && input.params.n) || 0;
   const entries = new Array(n);
   const fragments = [{ parser: 'xml@1', selector: 'x/catalog/group[1]' }];
   for (let i = 0; i < n; i++) {
@@ -498,19 +500,14 @@ export default function many(input: any): unknown {
     let queries=0;
     const rawQuery=pg.Client.prototype.query;
     t.mock.method(pg.Client.prototype,'query',function(this:pg.Client,...args:unknown[]){queries++;return Reflect.apply(rawQuery,this,args);});
-    const facetStarted = performance.now();
     const facets = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=defect&by=status`));
-    const facetMs = performance.now() - facetStarted;
     assert.deepEqual(facets.rows, [
       { values: { status: 'fixed' }, count: 30_000 },
       { values: { status: 'known' }, count: 30_000 },
     ]);
     assert.equal(facets.total, 60_000);
     assert.ok(facets.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 60000 个，标在根下，计入合计'));
-    assert.ok(facetMs < 8_000, `facets took ${facetMs.toFixed(0)} ms`);
-    const indexStarted = performance.now();
     const index = IndexView.parse(await readJson(w, `knowledge:index:acme:${A}?kind=defect&key=status`));
-    const indexMs = performance.now() - indexStarted;
     assert.deepEqual([index.total_keys, index.total_entries], [2, 60_000]);
     assert.deepEqual(Object.keys(index.keys), ['fixed']);
     assert.equal(index.keys.fixed.length,2_000);
@@ -521,7 +518,20 @@ export default function many(input: any): unknown {
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
     assert.ok(index.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 60000 个，标在根下'));
     assert.ok(queries<1500,`two 60000-entry views used ${queries} queries; entries must be batched`);
-    assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
+    // The work on this thread grows linearly with the entries a view covers, compared by CPU time between builds of fewer
+    // entries (hub/testing/growth.ts). The database's work is not on this thread; the query count above bounds it.
+    w.external.set(`site:tree:${B}`, { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+    const smaller = await w.knowledge.produceTree({ product: w.product, build: { ...build(B, []), sources: { tree: `site:tree:${B}` } } });
+    assert.equal(smaller.ok, true, smaller.reason ?? '');
+    assert.equal(smaller.unplaced, 7_500);
+    const sized = (size: number) => size === 7_500 ? B : size === 60_000 ? A : assert.fail(`no build of ${size} entries`);
+    const facetGrowth = await assertLinearGrowthAsync('facets', sized, (name) => readJson(w, `knowledge:facets:acme:${name}?kind=defect&by=status`), { small: 7_500 });
+    t.diagnostic(describeGrowth('facets', facetGrowth));
+    // An index page lists at most 2000 entries whatever the total, a fixed cost that keeps this ratio near 3. Work that is
+    // affine in the entries never grows faster than they do, so the bound is the factor itself (8) rather than twice it:
+    // twice it would let quadratic work of several seconds hide behind the fixed page.
+    const indexGrowth = await assertLinearGrowthAsync('index', sized, (name) => readJson(w, `knowledge:index:acme:${name}?kind=defect&key=status`), { small: 7_500, maxRatio: 8 });
+    t.diagnostic(describeGrowth('index', indexGrowth));
   });
 
   test('an index over the byte budget supplies a continuation within a key', async (t) => {

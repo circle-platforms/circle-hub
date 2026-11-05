@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ItemProjection } from '../../../../contracts/src/run.ts';
-import { DUPLICATED_ID } from '../../../../tests/fixtures/mindmaps/documents.ts';
+import { DUPLICATED_ID, compactText, largeDocument } from '../../../../tests/fixtures/mindmaps/documents.ts';
 import { fixtureText } from '../../../../tests/fixtures/mindmaps/index.ts';
 import projectDefault, { LIMITS, projectItems } from './project.ts';
 import { assertJson, isFailure, parseFixture, parseLarge, parseText, project, reviewProjection } from '../testing/test-support.ts';
 import type { CaseItem, KityMinderModel, ProjectionResult } from './types.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const review = parseFixture('review-150.km.json');
 const byTitle = (items: CaseItem[], title: string): CaseItem[] => items.filter((item) => item.fields.title === title);
@@ -377,29 +378,30 @@ describe('small and large documents', () => {
     assert.deepEqual(upgrade.expected, ['升级成功，命令改动后的配置自动转换']);
   });
 
-  it('stays linear on the 3,000-node document', async () => {
+  it('stays linear on the 3,000-node document', { timeout: 60_000 }, async (t) => {
     const parsed = parseLarge();
     assert.ok(parsed.model.nodes.length > 2900 && parsed.model.nodes.length < 3100, String(parsed.model.nodes.length));
-    const start = performance.now();
     const { items, groups } = project(parsed.model, 'large');
-    const ms = performance.now() - start;
     assert.ok(items.length > 1000, String(items.length));
     assert.equal(groups.length, 12 + 12 + 12 * 3 * 4);
-    assert.ok(ms < 1000, `${ms} ms`);
     for (const item of items.slice(0, 200)) assert.equal((await parsed.locate(item.location.selector))?.text, item.fields.title);
+    // The same generated shape at a given number of nodes; the output limit is raised so the large run projects in full.
+    const sized = (nodes: number) => parseText(compactText(largeDocument(nodes))).model;
+    const read = (model: KityMinderModel) => project(model, 'large', undefined, { outputBytes: 64 * 1024 * 1024 });
+    assert.ok(read(sized(24_000)).items.length > 8 * 1000);
+    t.diagnostic(describeGrowth('nodes', assertLinearGrowth('nodes', sized, read, { small: 3000 })));
   });
 
-  it('handles 60,000 nodes and 950 children of one node in linear time', () => {
-    const wide = Array.from({ length: 950 }, (_, i) => caseNode(`w${i}`, `用例 ${i}`));
-    const big: unknown[] = [];
-    for (let g = 0; g < 30; g++) big.push({ data: { id: `g${g}`, text: `组 ${g}`, priority: 1 }, children: Array.from({ length: 1000 }, (_, i) => caseNode(`c${g}-${i}`, `用例 ${i}`)) });
-    for (const children of [wide, big]) {
-      const parsed = parseText(mindMap(children));
-      const start = performance.now();
-      const { items } = project(parsed.model, 'doc', undefined, { outputBytes: 64 * 1024 * 1024 });
-      const ms = performance.now() - start;
-      assert.equal(items.length, children === wide ? 950 : 30_000);
-      assert.ok(ms < 3000, `${ms} ms`);
+  it('handles 60,000 nodes and 950 children of one node in linear time', { timeout: 120_000 }, (t) => {
+    // `count` cases under the root, or 30 groups of `count` cases.
+    const wide = (count: number) => Array.from({ length: count }, (_, i) => caseNode(`w${i}`, `用例 ${i}`));
+    const big = (count: number) => Array.from({ length: 30 }, (_, g) => ({ data: { id: `g${g}`, text: `组 ${g}`, priority: 1 }, children: Array.from({ length: count }, (_, i) => caseNode(`c${g}-${i}`, `用例 ${i}`)) }));
+    const read = (model: KityMinderModel) => project(model, 'doc', undefined, { outputBytes: 64 * 1024 * 1024 });
+    for (const [name, children, count, perCount, small] of [['wide', wide, 950, 1, 950], ['big', big, 1000, 30, 125]] as const) {
+      const sized = (n: number) => parseText(mindMap(children(n))).model;
+      // The original size and the timed large size are both projected in full, not refused.
+      for (const n of new Set([count, small * 8])) assert.equal(read(sized(n)).items.length, n * perCount, `${name} ${n}`);
+      t.diagnostic(describeGrowth(name, assertLinearGrowth(name, sized, read, { small })));
     }
   });
 });

@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 import { ParseEncodingError, ParseLimitError, ParseSyntaxError } from '../../../packs/skill/mindmap-format/functions/format.ts';
 import { MAX_SELECTOR_LENGTH } from '../../../packs/skill/mindmap-format/functions/selectors.ts';
 import { kityminderParser, type KityMinderModel, type MindMapNode } from '../../../packs/skill/mindmap-format/api.ts';
-import { fixture, timed, utf8 } from '../test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../testing/growth.ts';
+import { fixture, utf8 } from '../test-support.ts';
 
 const plain = kityminderParser.parse(fixture('mindmap.km.json'));
 const double = kityminderParser.parse(fixture('mindmap.double.json'));
@@ -195,11 +196,26 @@ describe('kityminder@1 text that can be stored, and selectors that can be cited'
     assert.ok(withFields.includes('n/ok/@text') && !withFields.some((selector) => selector.startsWith('n/ok/@k')));
   });
 
-  it('refuses deep position paths repeated over many fields', () => {
-    let deep: unknown = { data: { id: 'leaf' } };
-    for (let i = 0; i < 150; i++) deep = { data: { text: 'x' }, children: [deep, ...(i === 0 ? Array.from({ length: 20_000 }, () => ({ data: Object.fromEntries(Array.from({ length: 10 }, (_, f) => [`f${f}`, f])) })) : [])] };
-    const outcome = timed(() => kityminderParser.parse(map(deep)));
-    assert.ok(outcome.ms < 2_000, `took ${outcome.ms.toFixed(0)} ms`);
-    assert.ok(outcome.error instanceof ParseLimitError && outcome.error.limit === 'maxSelectorChars', String(outcome.error));
+  it('refuses deep position paths repeated over many fields', { timeout: 60_000 }, (t) => {
+    const deepMap = (depth: number, siblings: number): Uint8Array => {
+      let deep: unknown = { data: { id: 'leaf' } };
+      for (let i = 0; i < depth; i++) deep = { data: { text: 'x' }, children: [deep, ...(i === 0 ? Array.from({ length: siblings }, () => ({ data: Object.fromEntries(Array.from({ length: 10 }, (_, f) => [`f${f}`, f])) })) : [])] };
+      return map(deep);
+    };
+    assert.throws(() => kityminderParser.parse(deepMap(150, 20_000)), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars');
+    // Depth and siblings grow together (150 levels at 20000 siblings), so building the position path of every field
+    // would grow quadratically. A growth ratio does not depend on how fast or busy the runner is; four parses per timed
+    // run lift the refusal above its noise floor. The small size is parsed, the large one refused.
+    const parse = (input: Uint8Array): void => {
+      for (let i = 0; i < 4; i++) {
+        try {
+          kityminderParser.parse(input);
+        } catch {
+          // The refusal is asserted above, on the full-size input.
+        }
+      }
+    };
+    const growth = assertLinearGrowth('refused position paths', (size) => deepMap(Math.round((size * 150) / 20_000), size), parse, { small: 2_500 });
+    t.diagnostic(describeGrowth('refused position paths', growth));
   });
 });

@@ -9,6 +9,7 @@ import { ExternalObjectId } from '../../../../contracts/src/reference.ts';
 import sourcesDefault, { expectedSources, extractIds, featureTerms, leadingIds, markedIds, specSearchId } from './expected-sources.ts';
 import { assertJson, isFailure, parseFixture } from '../testing/test-support.ts';
 import type { SourcesOutput } from './types.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 /** `kind:id`, with `?` for an id whose kind nothing declares. */
 const ids = (text: string): string[] => extractIds(text).map((found) => `${found.kind ?? '?'}:${found.id}`);
@@ -152,11 +153,10 @@ describe('expectedSources', () => {
     }
   });
 
-  it('is deterministic and fast on a huge title', () => {
-    const title = `story:20931 ${'示例功能'.repeat(250_000)}`;
-    const start = performance.now();
-    const out = ok(expectedSources({ documents: [{ documentId: 'h', title }] }));
-    assert.ok(performance.now() - start < 2000);
+  it('is deterministic and fast on a huge title', { timeout: 60_000 }, (t) => {
+    const titled = (repeats: number) => ({ documents: [{ documentId: 'h', title: `story:20931 ${'示例功能'.repeat(repeats)}` }] });
+    const out = ok(expectedSources(titled(250_000)));
+    t.diagnostic(describeGrowth('title', assertLinearGrowth('title', titled, expectedSources, { small: 250_000 })));
     // The title is not a whole declared field once prose follows it, so nothing is bound and the exit is named.
     assert.deepEqual(out.external, []);
     assert.deepEqual(out.warnings.map((warning) => warning.code), ['case-review.id_kind_unknown']);

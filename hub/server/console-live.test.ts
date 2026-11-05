@@ -341,21 +341,20 @@ describe('knowledge imports and closing', () => {
     }
   });
 
-  test('close() ends the open streams at once instead of waiting for them', async () => {
-    const other = await createTestServer({ postgres, live: LIVE });
-    let closed = false;
-    try {
-      const stream = await openStream('/console/api/stream', await signIn(other.admin.token, other.port), other.port);
-      await delay(100);
-      const started = Date.now();
-      await other.app.close();
-      assert.ok(Date.now() - started < 2_000, `close took ${Date.now() - started} ms`);
-      await until(stream.isEnded, 'the end of the stream', 1_000);
-      closed = true;
-    } finally {
-      if (!closed) await other.app.close();
-      await other.close();
-    }
+  test('close() ends the open streams at once instead of waiting for them', { timeout: 60_000 }, async (t) => {
+    // The client never ends its stream, and close() waits for requests in flight longer than any test runs (the largest
+    // timer delay, about 24 days). So close() returns only if it ended the stream itself; one that waited for the stream
+    // would not return, and the test's timeout fails it. No elapsed time is compared.
+    const never = 2 ** 31 - 1;
+    const app = createApp(server.deps, { log: () => {}, live: LIVE, closeTimeoutMs: never, closeGraceMs: never });
+    const { port } = await app.listen();
+    let stream: StreamClient | undefined;
+    t.after(() => { stream?.close(); return app.close(); });
+    stream = await openStream('/console/api/stream', await signIn(server.admin.token, port), port);
+    await until(() => stream!.text().length > 0, 'the first bytes of the stream');
+    assert.equal(stream.isEnded(), false, 'the stream is open when close() starts');
+    await app.close();
+    await until(stream.isEnded, 'the end of the stream', 1_000);
   });
 });
 

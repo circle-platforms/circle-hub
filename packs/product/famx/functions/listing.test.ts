@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import listing, { parseListing } from './listing.ts';
 import type { Build, HtmlModel } from './types.ts';
 import { assertTotal, fixtureBytes, hostileInputs, html, internalWarnings, latin1, seeded } from '../testing/test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const famx = parseListing(html(fixtureBytes('listing-famx.html')));
 const famy = parseListing(html(fixtureBytes('listing-famy.html')));
@@ -201,14 +202,15 @@ describe('listing context, encodings and odd models', () => {
     assert.equal(result.builds.find((build) => build.name === 'Rel_FAMX_9_2_1_17')?.note, ', see notes');
   });
 
-  it('reads a line of very many links in linear time', () => {
-    const model = html(`Rel_FAMX_9_2_1_5 (build on 2026-01-01 10:00:00 ): Released on 2026-01-02 ${'<a href=command_tree-Rel_FAMX_9_2_1_5.xml>t</a>'.repeat(200000)}`);
-    const start = performance.now();
-    const result = parseListing(model);
-    const ms = performance.now() - start;
+  it('reads a line of very many links in linear time', { timeout: 60_000 }, (t) => {
+    const linksLine = (count: number) => html(`Rel_FAMX_9_2_1_5 (build on 2026-01-01 10:00:00 ): Released on 2026-01-02 ${'<a href=command_tree-Rel_FAMX_9_2_1_5.xml>t</a>'.repeat(count)}`);
+    const result = parseListing(linksLine(200000));
     assert.equal(result.builds.length, 1);
     assert.equal(result.builds[0].files.commandTree?.name, 'command_tree-Rel_FAMX_9_2_1_5.xml');
-    assert.ok(ms < 1500, `took ${ms} ms`);
+    // The line's links and their per-line set make the large run's live heap eight times larger, so the collections it
+    // triggers cost more per link: linear work measures 10 to 11 times between the sizes. The bound of three times
+    // the factor still fails quadratic work (64 times).
+    t.diagnostic(describeGrowth('links', assertLinearGrowth('links', linksLine, parseListing, { small: 25000, maxRatio: 24 })));
   });
 
   it('says when a page has no build entry but links pages: it is a hub page', () => {
@@ -252,21 +254,21 @@ describe('listing context, encodings and odd models', () => {
     }
   });
 
-  it('reads a page of thousands of entries quickly', () => {
-    const parts = ['<html><body><strong>Build Packages</strong><br>'];
-    for (let n = 6000; n > 0; n--) {
-      const name = `Rel_FAMX_10_6_1_${n}`;
-      const red = n % 25 === 0;
-      parts.push(`${red ? '<font color=red>' : ''}${name} (build on  2026-01-01 10:00:00 ): ${red ? 'Released on 2026-01-02 </font>' : ''} </br> <BLOCKQUOTE> <A href=/b/DemoOS-${name}.demoimg>x ( 900M , SHA256: ${'a'.repeat(64)} )</A><BR><A href=/b/command_tree-${name}.xml>t</A><BR></BLOCKQUOTE>\n`);
-    }
-    parts.push('</body></html>');
-    const model = html(parts.join(''));
-    const start = performance.now();
-    const result = parseListing(model);
-    const ms = performance.now() - start;
+  it('reads a page of thousands of entries quickly', { timeout: 60_000 }, (t) => {
+    const page = (count: number) => {
+      const parts = ['<html><body><strong>Build Packages</strong><br>'];
+      for (let n = count; n > 0; n--) {
+        const name = `Rel_FAMX_10_6_1_${n}`;
+        const red = n % 25 === 0;
+        parts.push(`${red ? '<font color=red>' : ''}${name} (build on  2026-01-01 10:00:00 ): ${red ? 'Released on 2026-01-02 </font>' : ''} </br> <BLOCKQUOTE> <A href=/b/DemoOS-${name}.demoimg>x ( 900M , SHA256: ${'a'.repeat(64)} )</A><BR><A href=/b/command_tree-${name}.xml>t</A><BR></BLOCKQUOTE>\n`);
+      }
+      parts.push('</body></html>');
+      return html(parts.join(''));
+    };
+    const result = parseListing(page(6000));
     assert.equal(result.builds.length, 6000);
     assert.equal(result.builds.filter((build) => build.released !== null).length, 240);
-    assert.ok(ms < 2000, `took ${ms} ms`);
+    t.diagnostic(describeGrowth('entries', assertLinearGrowth('entries', page, parseListing, { small: 750 })));
   });
 });
 

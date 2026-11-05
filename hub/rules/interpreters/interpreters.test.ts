@@ -165,23 +165,25 @@ describe('semantic table checks', () => {
 describe('pattern@1 limits', () => {
   const table = (rule: Record<string, unknown>, rules = 1) => ({ schema: 'pattern@1', origin: 'x', language: 'regexp', rules: Array.from({ length: rules }, () => ({ values: '$.v', ...rule })) });
 
-  it('samples that are too long or too many are refused by the schema, quickly', () => {
-    const started = Date.now();
+  // Quick because nothing is matched: the schema's issues are the only ones, and the semantic check, which matches the
+  // samples, never runs. A hang is caught by the test's timeout.
+  it('samples that are too long or too many are refused by the schema, quickly', { timeout: 30_000 }, () => {
+    const paths = (issues: Array<{ path: string }>): string[] => issues.map((i) => i.path);
     const long = interpreter('pattern@1').validateTable(table({ pattern: '(?:[a-z]|[a-y]){0,99}z', mode: 'search', samples: { match: ['z'], reject: ['a'.repeat(1_000_000)] } }));
-    assert.ok(long.some((i) => i.path === '/rules/0/samples/reject/0'), JSON.stringify(long));
+    assert.deepEqual(paths(long), ['/rules/0/samples/reject/0'], JSON.stringify(long));
     const many = interpreter('pattern@1').validateTable(table({ pattern: 'z', samples: { match: Array(100).fill('z'), reject: ['a'] } }));
-    assert.ok(many.some((i) => i.path === '/rules/0/samples/match'), JSON.stringify(many));
-    assert.ok(interpreter('pattern@1').validateTable(table({ pattern: 'z', samples: { match: ['z'], reject: ['a'] } }, 200)).some((i) => i.path === '/rules'));
-    assert.ok(Date.now() - started < 1000, `validation took ${Date.now() - started} ms`);
+    assert.deepEqual(paths(many), ['/rules/0/samples/match'], JSON.stringify(many));
+    assert.deepEqual(paths(interpreter('pattern@1').validateTable(table({ pattern: 'z', samples: { match: ['z'], reject: ['a'] } }, 200))), ['/rules']);
   });
 
-  it('samples within the size limits whose matching work exceeds the budget are refused', () => {
-    const started = Date.now();
+  // The work is charged before each sample is matched and the check stops at the budget: the only issue is the budget's,
+  // at the first rule, so the seven rules after it are never matched. A hang is caught by the test's timeout.
+  it('samples within the size limits whose matching work exceeds the budget are refused', { timeout: 30_000 }, () => {
     const issues = interpreter('pattern@1').validateTable(
       table({ pattern: '(?:[a-z]|[a-y]){0,99}z', mode: 'search', samples: { match: ['z'], reject: Array(32).fill('a'.repeat(1000)) } }, 8),
     );
+    assert.deepEqual(issues.map((i) => i.path), ['/rules/0/samples'], JSON.stringify(issues));
     assert.ok(issues.some((i) => /工作量/.test(i.message)), JSON.stringify(issues));
-    assert.ok(Date.now() - started < 1500, `validation took ${Date.now() - started} ms`);
   });
 
   it('flags i, required, over-long values and the work budget', () => {

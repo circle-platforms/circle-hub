@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
+import { assertLinearGrowth } from '../testing/growth.ts';
 import { base64Spans, CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
 
 const BS = String.fromCharCode(0x5c);
@@ -306,7 +307,7 @@ test('positions found in other views map back to byte offsets of the original', 
 
 test('32 MiB adversarial inputs: memory stays bounded and every scan is linear', () => {
   const MiB = 1024 * 1024;
-  const fill = (unit: string) => Buffer.from(unit.repeat(Math.ceil((32 * MiB) / Buffer.byteLength(unit))), 'utf8').subarray(0, 32 * MiB);
+  const fill = (unit: string, bytes = 32 * MiB) => Buffer.from(unit.repeat(Math.ceil(bytes / Buffer.byteLength(unit))), 'utf8').subarray(0, bytes);
   const units = [
     'password=Abc12345x\n',
     'PuTTY-User-Key-File-2: ',
@@ -317,20 +318,16 @@ test('32 MiB adversarial inputs: memory stays bounded and every scan is linear',
     'password:\n  ',
     'eyJabcdefgh.',
   ];
-  let worst = 0;
   for (const unit of units) {
     const bytes = fill(unit);
     const rss = process.memoryUsage().rss;
-    const started = performance.now();
     const scan = scanForCredentials(bytes);
-    const elapsed = performance.now() - started;
-    worst = Math.max(worst, elapsed);
     assert.ok(scan.findings.length <= 100);
     // Hits are capped per pattern, so memory does not grow with their number (it grew by about 450 MB before).
     assert.ok(process.memoryUsage().rss - rss < 200 * MiB, `${JSON.stringify(unit.slice(0, 20))}: rss grew by ${process.memoryUsage().rss - rss}`);
+    // Linear, not timed: the scan's CPU time from 1 to 8 MiB of the same input grows with its size (hub/testing/growth.ts).
+    assertLinearGrowth(JSON.stringify(unit.slice(0, 20)), (size) => fill(unit, size), (input) => scanForCredentials(input), { small: MiB });
   }
-  // Measured at about 0.5 s on the development machine; the bound leaves room for slower runners.
-  assert.ok(worst < 10_000, `slowest scan took ${Math.round(worst)} ms`);
   const many = scanForCredentials(fill('password=Abc12345x\n'));
   assert.deepEqual({ findings: many.findings.length, truncated: many.truncated }, { findings: 100, truncated: true });
 });
@@ -349,23 +346,29 @@ test('many hits are capped and marked truncated; large inputs scan in linear tim
   const bytes = largeSyntheticBytes();
   assert.equal(bytes.byteLength, 1_500_000);
   assert.ok(gzipSync(bytes).byteLength > bytes.byteLength * 0.99);
-  const blob = `![diagram](data:image/png;base64,${bytes.toString('base64')})`;
-  const adversarial = [
-    'password'.repeat(50_000),
-    'x'.repeat(300_000) + 'token=' + 'y'.repeat(300_000),
-    `${pemHeader('PRIVATE KEY')} `.repeat(5_000),
-    'PuTTY-User-Key-File-2: '.repeat(5_000),
-    'Bearer short '.repeat(50_000),
-    'https://a:b'.repeat(30_000),
-    'eyJabcdefgh.'.repeat(30_000),
-  ].join('\n');
-  const started = performance.now();
-  const blobScan = scanForCredentials(Buffer.from(blob));
-  const adversarialScan = scanForCredentials(Buffer.from(adversarial));
-  const elapsed = performance.now() - started;
+  const blobOf = (data: Buffer) => Buffer.from(`![diagram](data:image/png;base64,${data.toString('base64')})`);
+  // The adversarial lines; scale 8 is the size whose findings are checked.
+  const adversarialOf = (scale: number) => Buffer.from([
+    'password'.repeat(6_250 * scale),
+    'x'.repeat(37_500 * scale) + 'token=' + 'y'.repeat(37_500 * scale),
+    `${pemHeader('PRIVATE KEY')} `.repeat(625 * scale),
+    'PuTTY-User-Key-File-2: '.repeat(625 * scale),
+    'Bearer short '.repeat(6_250 * scale),
+    'https://a:b'.repeat(3_750 * scale),
+    'eyJabcdefgh.'.repeat(3_750 * scale),
+  ].join('\n'));
+  const blobScan = scanForCredentials(blobOf(bytes));
+  const adversarialScan = scanForCredentials(adversarialOf(8));
   assert.equal(blobScan.clean, true);
   assert.ok(adversarialScan.findings.length <= 100);
-  assert.ok(elapsed < 5000, `scan took ${elapsed} ms`);
+  // Linear, not timed: CPU time from each input to eight times its size grows with the size (hub/testing/growth.ts). The
+  // image is more bytes of the same seeded stream. The growth check ignores a thrown scan, so the largest input is first
+  // scanned here.
+  const syntheticBytes = (length: number) => createHash('shake256', { outputLength: length }).update('circle-hub scan large clean fixture v1').digest();
+  assert.equal(scanForCredentials(blobOf(syntheticBytes(3_000_000))).clean, true);
+  assertLinearGrowth('base64 image', (size) => blobOf(syntheticBytes(size)), (input) => scanForCredentials(input), { small: 375_000 });
+  assert.ok(scanForCredentials(adversarialOf(64)).findings.length <= 100);
+  assertLinearGrowth('adversarial lines', adversarialOf, (input) => scanForCredentials(input), { small: 8 });
 });
 
 test('base64 image data containing a synthetic credential shape is still a cloud key finding', () => {

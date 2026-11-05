@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MAX_SELECTOR_LENGTH, ParseEncodingError, ParseLimitError, ParseSyntaxError, jsonParser } from '../api.ts';
-import { timed, utf8 } from '../test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../testing/growth.ts';
+import { utf8 } from '../test-support.ts';
 
 describe('json@1', () => {
   const document = jsonParser.parse(utf8('{"items":[{"id":1,"name":"甲"},{"id":2,"tags":["a b",null]}],"a/b":{"c:d":true},"":"empty key","__proto__":{"x":1}}'));
@@ -62,16 +63,17 @@ describe('json@1 text that can be stored, and selectors that can be cited', () =
     assert.throws(() => jsonParser.parse(utf8('{"k\\udc00":"v"}')), ParseEncodingError);
   });
 
-  it('hides values whose selector would be too long, and stays linear for long names over many values', async () => {
-    let value: unknown = Object.fromEntries(Array.from({ length: 4_000 }, (_, i) => [`k${i}`, i]));
-    for (let d = 0; d < 30; d++) value = { [`m${d}${'q'.repeat(400)}`]: value };
-    const bytes = utf8(JSON.stringify(value));
-    const outcome = timed(() => {
-      const document = jsonParser.parse(bytes);
-      return document.listSelectors();
-    });
-    assert.ok(outcome.ms < 1_500, `took ${outcome.ms.toFixed(0)} ms`);
-    const selectors = outcome.value!;
+  // Whether the work stays linear is checked by growth ratios (hub/testing/growth.ts), which do not depend on how fast or
+  // busy the runner is; what each case must produce is asserted on the full-size input, untimed. A hang is caught by the
+  // test's timeout.
+  it('hides values whose selector would be too long, and stays linear for long names over many values', { timeout: 60_000 }, async (t) => {
+    const nested = (keys: number, pad: number): Uint8Array => {
+      let value: unknown = Object.fromEntries(Array.from({ length: keys }, (_, i) => [`k${i}`, i]));
+      for (let d = 0; d < 30; d++) value = { [`m${d}${'q'.repeat(pad)}`]: value };
+      return utf8(JSON.stringify(value));
+    };
+    const bytes = nested(4_000, 400);
+    const selectors = jsonParser.parse(bytes).listSelectors();
     assert.equal(selectors.length, 11, 'p and the ten levels that fit');
     assert.ok(selectors.every((selector) => selector.length <= MAX_SELECTOR_LENGTH));
     const document = jsonParser.parse(bytes);
@@ -79,20 +81,46 @@ describe('json@1 text that can be stored, and selectors that can be cited', () =
     const deeper = `${selectors[10]}/m19${'q'.repeat(400)}`;
     assert.ok(deeper.length > MAX_SELECTOR_LENGTH && deeper.length < 8192);
     assert.equal((await document.locate(deeper)), null, 'one level further the selector would be too long to cite');
+    // Values and name lengths grow together (400-character names at the large size), so building a path for each value
+    // would grow quadratically.
+    const growth = assertLinearGrowth('long names over many values', (size) => nested(size, size / 500), (input) => jsonParser.parse(input).listSelectors(), { small: 25_000 });
+    t.diagnostic(describeGrowth('long names over many values', growth));
   });
 
-  it('refuses names just under the budget repeated over many values', () => {
-    let value: unknown = Array.from({ length: 30_000 }, () => 0);
-    for (let d = 0; d < 9; d++) value = { [`m${d}${'q'.repeat(440)}`]: value };
-    const outcome = timed(() => jsonParser.parse(utf8(JSON.stringify(value))));
-    assert.ok(outcome.ms < 1_500, `took ${outcome.ms.toFixed(0)} ms`);
-    assert.ok(outcome.error instanceof ParseLimitError && outcome.error.limit === 'maxSelectorChars', String(outcome.error));
+  it('refuses names just under the budget repeated over many values', { timeout: 60_000 }, (t) => {
+    const nested = (values: number, pad: number): Uint8Array => {
+      let value: unknown = Array.from({ length: values }, () => 0);
+      for (let d = 0; d < 9; d++) value = { [`m${d}${'q'.repeat(pad)}`]: value };
+      return utf8(JSON.stringify(value));
+    };
+    assert.throws(() => jsonParser.parse(nested(30_000, 440)), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars');
+    // Values and name lengths grow together (440-character names at the large size), so building a path for each value
+    // would grow quadratically.
+    // A refusal is cheap even at the full size: forty parses per timed run lift it above the noise floor. The small
+    // size is parsed, the large one refused.
+    const refuse = (input: Uint8Array): void => {
+      for (let i = 0; i < 40; i++) {
+        try {
+          jsonParser.parse(input);
+        } catch {
+          // The refusal is asserted above, on the full-size input.
+        }
+      }
+    };
+    const growth = assertLinearGrowth('refused selector text', (size) => nested(size, Math.round((size * 440) / 30_000)), refuse, { small: 3_750 });
+    t.diagnostic(describeGrowth('refused selector text', growth));
   });
 
-  it('lists under a prefix without walking the rest of the document', () => {
-    const document = jsonParser.parse(utf8(JSON.stringify({ a: Array.from({ length: 300_000 }, (_, i) => i), b: { c: [1, 2] } })));
-    const outcome = timed(() => document.listSelectors('p/b'));
-    assert.deepEqual(outcome.value, ['p/b', 'p/b/c', 'p/b/c/0', 'p/b/c/1']);
-    assert.ok(outcome.ms < 200, `took ${outcome.ms.toFixed(0)} ms`);
+  it('lists under a prefix without walking the rest of the document', { timeout: 60_000 }, (t) => {
+    const document = (values: number) => jsonParser.parse(utf8(JSON.stringify({ a: Array.from({ length: values }, (_, i) => i), b: { c: [1, 2] } })));
+    assert.deepEqual(document(300_000).listSelectors('p/b'), ['p/b', 'p/b/c', 'p/b/c/0', 'p/b/c/1']);
+    // The cost of a prefix listing must not grow with the rest of the document: eight times the values may cost at most
+    // twice as much. Listing under the prefix is so cheap that it stays under the noise floor, where the ratio is not
+    // judged; walking the rest of the document would lift it above the floor with the ratio of the sizes.
+    const list = (doc: ReturnType<typeof document>): void => {
+      for (let i = 0; i < 200; i++) doc.listSelectors('p/b');
+    };
+    const growth = assertLinearGrowth('prefix listing', document, list, { small: 37_500, maxRatio: 2 });
+    t.diagnostic(describeGrowth('prefix listing', growth));
   });
 });

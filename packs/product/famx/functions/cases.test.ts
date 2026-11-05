@@ -28,6 +28,7 @@ import {
   type KmNode,
 } from '../../../../tests/fixtures/case-index/index.ts';
 import { rootsContent } from '../../../system/agile-platform/functions/agile.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 import { caseStatement, cases, elementDocuments, listedIds, storable } from './cases.ts';
 import { commandCatalog } from './cases-commands.ts';
 import { commandIdentity, commandLines } from './commands.ts';
@@ -455,18 +456,19 @@ describe('the producer on bad input', () => {
 });
 
 describe('scale', () => {
-  it('one batch of 40 documents of 60 cases against a catalog of 4,000 commands stays well inside the sandbox time limit', () => {
+  // `size` documents of 60 cases against a catalog of `size` × 100 commands besides CATALOG_A; size 40 is one batch.
+  const scaleInput = (size: number) => {
     const catalog: Command[] = [...CATALOG_A];
-    for (let g = 0; g < 40; g++) for (let c = 0; c < 100; c++) catalog.push({ words: `grp${g} cmd${c} set`, help: 'synthetic', args: [{ type: 'U32', help: 'Value', limit: '[0 - 600]' }] });
+    for (let g = 0; g < size; g++) for (let c = 0; c < 100; c++) catalog.push({ words: `grp${g} cmd${c} set`, help: 'synthetic', args: [{ type: 'U32', help: 'Value', limit: '[0 - 600]' }] });
     const titles = CASE_COMMAND_TABLE.filter((r) => r.where === 'title').map((r) => r.text);
     const documents: Element[] = [];
-    for (let d = 0; d < 40; d++) {
+    for (let d = 0; d < size; d++) {
       const groups: KmNode[] = [];
       for (let g = 0; g < 6; g++) {
         const casesOf: KmNode[] = [];
         for (let c = 0; c < 10; c++) {
           const n = d * 60 + g * 10 + c;
-          const title = n % 3 === 0 ? `grp${n % 40} cmd${n % 100} set ${n}` : titles[n % titles.length];
+          const title = n % 3 === 0 ? `grp${n % size} cmd${n % 100} set ${n}` : titles[n % titles.length];
           casesOf.push({ data: { id: `k${n}`, text: title, priority: 2, resource: ['Function'] }, children: [{ data: { id: `e${n}`, text: n % 2 ? '设备正常' : `返回 ${n}` }, children: [] }] });
         }
         groups.push({ data: { id: `g${d}-${g}`, text: `分组 ${g}`, priority: 1 }, children: casesOf });
@@ -474,13 +476,16 @@ describe('scale', () => {
       documents.push(element({ root: { data: { id: `r${d}`, text: `文档 ${d}` }, children: groups }, template: '', theme: '', version: '' }));
     }
     const ids = documents.map((_, d) => `agile:mindmap:97${String(d).padStart(4, '0')}`);
-    const start = performance.now();
-    const out = cases({ build: buildOf('10.6.1', ids), slots: { tree: treeSlot(catalog), folders: foldersSlot(corpus) }, lists: { documents }, batch: { index: 0, of: 1 }, params: { batch: BATCH } });
-    const ms = performance.now() - start;
+    return { build: buildOf('10.6.1', ids), slots: { tree: treeSlot(catalog), folders: foldersSlot(corpus) }, lists: { documents }, batch: { index: 0, of: 1 }, params: { batch: BATCH } };
+  };
+
+  it('one batch of 40 documents of 60 cases against a catalog of 4,000 commands stays well inside the sandbox time limit', { timeout: 120_000 }, (t) => {
+    const out = cases(scaleInput(40));
     assert.ok(ProducerOutput.safeParse(out).success);
     assert.ok(out.entries.length >= 1500, `${out.entries.length} entries`);
-    assert.ok(ms < 20_000, `${Math.round(ms)} ms for one batch`);
     assert.ok(new TextEncoder().encode(JSON.stringify(out)).length < 64 * 1024 * 1024);
+    // Documents and catalog grow together, so work per case that scans the catalog (cases × commands) is quadratic here.
+    t.diagnostic(describeGrowth('one batch', assertLinearGrowth('one batch', scaleInput, cases, { small: 5 })));
   });
 });
 

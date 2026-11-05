@@ -1,10 +1,11 @@
 import { htmlParser, kityminderParser, xmlParser } from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { describe, it } from 'node:test';
+import { describe, it, type TestContext } from 'node:test';
 import {
   candidatesFrom, collapseWhitespace, findQuote, jsonParser, locateQuote, markdownParser, quoteMatches, sliceUtf8, textParser, type Parser, type QuoteCandidate, type QuoteSearch } from './api.ts';
-import { fixture, seeded, sha256, timed, utf8 } from './test-support.ts';
+import { assertLinearGrowth, assertLinearGrowthAsync, describeGrowth } from '../testing/growth.ts';
+import { fixture, seeded, sha256, utf8 } from './test-support.ts';
 
 const FRAGMENT = '超时时间设为 0 时，配置被拒绝。\r\n提示：参数超出范围 1-3600（Timeout）。';
 
@@ -358,49 +359,62 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
 });
 
 describe('findQuote and candidatesFrom stay linear in the document', () => {
-  const BOUND_MS = 2_500;
-  const within = (label: string, run: () => unknown): void => {
-    const outcome = timed(run);
-    assert.equal(outcome.error, null, `${label}: ${String(outcome.error)}`);
-    assert.ok(outcome.ms < BOUND_MS, `${label} took ${outcome.ms.toFixed(0)} ms`);
-  };
+  // Whether the work stays linear is checked by growth ratios (hub/testing/growth.ts), which do not depend on how fast or
+  // busy the runner is; what each case must produce is asserted on the full-size document, untimed. A timed run that
+  // reads candidates parses its source afresh, so that no run reuses selectors an earlier one cached. A hang is caught
+  // by the test's timeout.
+  async function linear(t: TestContext, label: string, make: (size: number) => Uint8Array, run: (bytes: Uint8Array) => Promise<unknown>, small: number): Promise<void> {
+    t.diagnostic(describeGrowth(label, await assertLinearGrowthAsync(label, make, run, { small })));
+  }
 
-  it('a common word over 40000 sections with a paragraph each', async () => {
-    const bytes = utf8(Array.from({ length: 40_000 }, (_, i) => `# 标题${i}\n\n的段落\n`).join('\n'));
-    const document = markdownParser.parse(bytes);
-    const candidates = (await candidatesFrom(document, sha256(bytes)));
+  it('a common word over 40000 sections with a paragraph each', { timeout: 60_000 }, async (t) => {
+    const sections = (count: number): Uint8Array => utf8(Array.from({ length: count }, (_, i) => `# 标题${i}\n\n的段落\n`).join('\n'));
+    const read = async (count: number): Promise<QuoteCandidate[]> => {
+      const bytes = sections(count);
+      return candidatesFrom(markdownParser.parse(bytes), sha256(bytes));
+    };
+    const candidates = await read(40_000);
     assert.equal(candidates.length, 80_000);
-    within('findQuote', () => assert.equal(findQuote(candidates, '的').total, 40_000));
+    assert.equal(findQuote(candidates, '的').total, 40_000);
+    const prepared = new Map([[5_000, await read(5_000)], [40_000, candidates]]);
+    t.diagnostic(describeGrowth('findQuote', assertLinearGrowth('findQuote', (count) => prepared.get(count)!, (input) => findQuote(input, '的'), { small: 5_000 })));
   });
 
-  it('4 MB of text at depth 60 in XML', () => {
+  it('4 MB of text at depth 60 in XML', { timeout: 60_000 }, async (t) => {
     const leaf = `<t>${'x '.repeat(499)}xy</t>`;
-    const bytes = utf8(`${'<a>'.repeat(60)}${leaf.repeat(4_000)}${'</a>'.repeat(60)}`);
-    const document = xmlParser.parse(bytes);
-    within('candidatesFrom and findQuote', async () => {
-      const candidates = (await candidatesFrom(document, sha256(bytes)));
-      assert.equal(findQuote(candidates, 'x xy').total, 4_000);
-      assert.equal(findQuote(candidates, 'xyx').resolution, 'resolved', 'only the parent of two leaves holds it, across them');
-      assert.equal(findQuote(candidates, 'y x y').resolution, 'unresolved');
-    });
+    const leaves = (count: number): Uint8Array => utf8(`${'<a>'.repeat(60)}${leaf.repeat(count)}${'</a>'.repeat(60)}`);
+    const bytes = leaves(4_000);
+    const candidates = await candidatesFrom(xmlParser.parse(bytes), sha256(bytes));
+    assert.equal(findQuote(candidates, 'x xy').total, 4_000);
+    assert.equal(findQuote(candidates, 'xyx').resolution, 'resolved', 'only the parent of two leaves holds it, across them');
+    assert.equal(findQuote(candidates, 'y x y').resolution, 'unresolved');
+    await linear(t, 'candidatesFrom and findQuote', leaves, async (input) => {
+      const read = await candidatesFrom(xmlParser.parse(input), sha256(input));
+      for (const quote of ['x xy', 'xyx', 'y x y']) findQuote(read, quote);
+    }, 500);
   });
 
-  it('40000 sibling elements', () => {
-    const bytes = utf8(`<r>${'<i/>'.repeat(40_000)}</r>`);
-    const document = xmlParser.parse(bytes);
-    within('candidatesFrom', async () => assert.equal((await candidatesFrom(document, sha256(bytes))).length, 40_001));
+  it('40000 sibling elements', { timeout: 60_000 }, async (t) => {
+    const siblings = (count: number): Uint8Array => utf8(`<r>${'<i/>'.repeat(count)}</r>`);
+    const bytes = siblings(40_000);
+    assert.equal((await candidatesFrom(xmlParser.parse(bytes), sha256(bytes))).length, 40_001);
+    await linear(t, 'candidatesFrom', siblings, (input) => candidatesFrom(xmlParser.parse(input), sha256(input)), 5_000);
   });
 
-  it('200000 JSON values nested 100 deep', () => {
-    let value: unknown = Array.from({ length: 200_000 }, (_, i) => `v${i}`);
-    for (let depth = 0; depth < 99; depth++) value = [value];
-    const bytes = utf8(JSON.stringify(value));
-    const document = jsonParser.parse(bytes);
-    within('candidatesFrom and findQuote', async () => {
-      const candidates = (await candidatesFrom(document, sha256(bytes)));
-      assert.equal(candidates.length, 200_000, 'values only');
-      assert.equal(findQuote(candidates, 'v199999').resolution, 'resolved');
-    });
+  it('200000 JSON values nested 100 deep', { timeout: 60_000 }, async (t) => {
+    const values = (count: number): Uint8Array => {
+      let value: unknown = Array.from({ length: count }, (_, i) => `v${i}`);
+      for (let depth = 0; depth < 99; depth++) value = [value];
+      return utf8(JSON.stringify(value));
+    };
+    const bytes = values(200_000);
+    const candidates = await candidatesFrom(jsonParser.parse(bytes), sha256(bytes));
+    assert.equal(candidates.length, 200_000, 'values only');
+    assert.equal(findQuote(candidates, 'v199999').resolution, 'resolved');
+    await linear(t, 'candidatesFrom and findQuote', values, async (input) => {
+      // Absent at every size, so the search reads every value.
+      findQuote(await candidatesFrom(jsonParser.parse(input), sha256(input)), 'v-1');
+    }, 25_000);
   });
 });
 

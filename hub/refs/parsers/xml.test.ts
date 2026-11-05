@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, type TestContext } from 'node:test';
 import { ParseEncodingError, ParseError, ParseForbiddenError, ParseLimitError, ParseSyntaxError } from '../../../packs/skill/xml-format/functions/format.ts';
 import { MAX_SELECTOR_LENGTH } from '../../../packs/skill/xml-format/functions/selectors.ts';
 import { xmlParser, type XmlElement } from '../../../packs/skill/xml-format/api.ts';
-import { fixture, latin1, timed, utf8 } from '../test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../testing/growth.ts';
+import { fixture, latin1, utf8 } from '../test-support.ts';
 
 const bytes = fixture('command-tree.xml');
 const tree = xmlParser.parse(bytes);
@@ -150,20 +151,18 @@ describe('xml@1 safeguards', () => {
 });
 
 describe('xml@1 on hostile and unusual input', () => {
-  const BOUND_MS = 1_500;
-  function bounded<T>(label: string, run: () => T): T {
-    const outcome = timed(run);
-    assert.ok(outcome.ms < BOUND_MS, `${label} took ${outcome.ms.toFixed(0)} ms`);
-    if (outcome.error !== null) throw outcome.error;
-    return outcome.value as T;
+  // Whether the work stays linear is checked by growth ratios (hub/testing/growth.ts), which do not depend on how fast or
+  // busy the runner is; what each case must produce is asserted on the full-size input, untimed. A hang is caught by the
+  // test's timeout.
+  function linear(t: TestContext, label: string, make: (size: number) => Uint8Array, run: (input: Uint8Array) => unknown, small: number): void {
+    t.diagnostic(describeGrowth(label, assertLinearGrowth(label, make, run, { small })));
   }
 
-  it('repairs start tags in linear time, also when many values never close', () => {
+  it('repairs start tags in linear time, also when many values never close', { timeout: 60_000 }, (t) => {
     for (const unit of ['<a b="', '<c d="', "<e f='"]) {
-      const input = utf8(`<r>${unit.repeat(80_000)}</r>`);
-      const outcome = timed(() => xmlParser.parse(input));
-      assert.ok(outcome.ms < BOUND_MS, `${unit} x 80000 took ${outcome.ms.toFixed(0)} ms`);
-      assert.ok(outcome.error instanceof ParseError, String(outcome.error));
+      const repeated = (count: number): Uint8Array => utf8(`<r>${unit.repeat(count)}</r>`);
+      assert.throws(() => xmlParser.parse(repeated(80_000)), ParseError, `${unit} x 80000`);
+      linear(t, `${unit} repeated`, repeated, (input) => xmlParser.parse(input), 80_000);
     }
     // A value longer than the repair window is left to saxes as written; the tags after it are still repaired.
     const doc = xmlParser.parse(utf8(`<r><a x="${'y'.repeat(70_000)}"/><b help="say "hi""/></r>`));
@@ -212,29 +211,35 @@ describe('xml@1 on hostile and unusual input', () => {
     assert.equal(doc.locate(`${selectors[79]}/@x`), null);
   });
 
-  it('bounds the selector text of long names over many elements', () => {
-    const names = Array.from({ length: 30 }, (_, i) => `n${i}${'q'.repeat(400)}`);
-    const nested = (levels: number, leaves: number): Uint8Array =>
-      utf8(`${names.slice(0, levels).map((name) => `<${name}>`).join('')}${'<l/>'.repeat(leaves)}${names.slice(0, levels).reverse().map((name) => `</${name}>`).join('')}`);
+  it('bounds the selector text of long names over many elements', { timeout: 60_000 }, (t) => {
+    const nested = (levels: number, leaves: number, pad = 400): Uint8Array => {
+      const names = Array.from({ length: levels }, (_, i) => `n${i}${'q'.repeat(pad)}`);
+      return utf8(`${names.map((name) => `<${name}>`).join('')}${'<l/>'.repeat(leaves)}${names.reverse().map((name) => `</${name}>`).join('')}`);
+    };
     // Paths just under the length budget, repeated for 20000 leaves: 73 M characters of selectors, refused at once.
-    const outcome = timed(() => xmlParser.parse(nested(9, 20_000)));
-    assert.ok(outcome.ms < BOUND_MS, `took ${outcome.ms.toFixed(0)} ms`);
-    assert.ok(outcome.error instanceof ParseLimitError && outcome.error.limit === 'maxSelectorChars', String(outcome.error));
+    assert.throws(() => xmlParser.parse(nested(9, 20_000)), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars');
+    // Names and leaves grow together (400-character names at 20000 leaves), so building or copying a path for each leaf
+    // would grow quadratically.
+    linear(t, 'refused selector text', (size) => nested(9, size, size / 50), (input) => xmlParser.parse(input), 2_500);
     // Half as long: parsed, and listing every selector stays cheap.
     const bytes = nested(5, 20_000);
-    const doc = bounded('parse', () => xmlParser.parse(bytes));
-    const listed = bounded('listSelectors', () => doc.listSelectors('x/'));
-    assert.equal(listed.length, 20_005);
+    const doc = xmlParser.parse(bytes);
+    assert.equal(doc.listSelectors('x/').length, 20_005);
+    // Parsed and listed in each run, so that no run lists selectors an earlier one has cached.
+    linear(t, 'parse and list long paths', (size) => nested(5, size, size / 50), (input) => xmlParser.parse(input).listSelectors('x/'), 2_500);
     assert.throws(() => xmlParser.parse(bytes, { maxSelectorChars: 10_000_000 }), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars');
   });
 
-  it('steps through name paths without scanning all siblings', () => {
-    const bytes = utf8(`<r>${'<i/>'.repeat(20_000)}${'<j/>'.repeat(20_000)}</r>`);
-    const doc = xmlParser.parse(bytes);
+  it('steps through name paths without scanning all siblings', { timeout: 60_000 }, (t) => {
+    const siblings = (count: number): Uint8Array => utf8(`<r>${'<i/>'.repeat(count)}${'<j/>'.repeat(count)}</r>`);
+    const doc = xmlParser.parse(siblings(20_000));
     const selectors = doc.listSelectors();
-    bounded('locate every element', () => {
-      for (const selector of selectors) assert.ok(doc.locate(selector));
-    });
+    for (const selector of selectors) assert.ok(doc.locate(selector), selector);
+    // Parsed in each run, so that no run locates through selectors an earlier one has cached.
+    linear(t, 'locate every element', siblings, (input) => {
+      const document = xmlParser.parse(input);
+      for (const selector of document.listSelectors()) document.locate(selector);
+    }, 2_500);
     assert.equal(doc.locate('x/r/j[20000]')!.selector, 'x/r/j[20000]');
     assert.equal(doc.locate('x/r/j[20001]'), null);
   });
