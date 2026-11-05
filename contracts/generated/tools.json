@@ -2391,7 +2391,7 @@
           "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
         },
         "client_key": {
-          "description": "Client chosen key; repeating it within its time window returns the same run",
+          "description": "Leave this out. It is only for sending a call again whose answer was lost: the same arguments with the same key return the same run within its time window. A key stays bound to its arguments for that whole window, in every session of this account, so a key made from what is read collides with a later read or returns an old run",
           "type": "string",
           "minLength": 1,
           "maxLength": 200

@@ -173,7 +173,7 @@ export const StartRunInput = z.strictObject({
     .max(200)
     .refine((key) => !key.includes('\u0000'), 'no NUL character in a client key')
     .optional()
-    .describe('Client chosen key; repeating it within its time window returns the same run'),
+    .describe('Leave this out. It is only for sending a call again whose answer was lost: the same arguments with the same key return the same run within its time window. A key stays bound to its arguments for that whole window, in every session of this account, so a key made from what is read collides with a later read or returns an old run'),
 });
 /** The result the Hub computed itself at start_run, for a run whose requirements are all facts: stored, readable by reference. */
 export const ProductionResult = z.strictObject({
