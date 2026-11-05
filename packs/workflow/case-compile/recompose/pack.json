@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/compile-structure.ts",
-      "sha256": "449511eb624e0bca749f194cef1ebdfcc2b8bf7671e74b6d584486c14705774f",
-      "size": 13117
+      "sha256": "709ccb45846597481fae4c1079c6102df37f14ae4bfc4a5e87a738b151c77786",
+      "size": 14600
     },
     {
       "path": "functions/generated/command-grammar.ts",
@@ -48,7 +48,7 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "f1c0a6f4ce9834daf7dd664f93525c143d7e399250eddfa3f9ec3b784181472c",
+      "sha256": "a16e725105e26ac6e67c31c6bec06c3ebebb2e23bf951e3552ee54c98519a5c8",
       "size": 4185
     },
     {
@@ -88,7 +88,7 @@
     },
     {
       "path": "samples/negative/record.json",
-      "sha256": "074aae0cca2aa0fa16beed0a4d64b3ea93f316e9d74b785efa1659d6770d228a",
+      "sha256": "97b8c3535bdeae54a57df54f0c92e6598b9912951cf366a916b8be84d115120f",
       "size": 28861
     },
     {
@@ -103,7 +103,7 @@
     },
     {
       "path": "samples/positive/record.json",
-      "sha256": "36c6429204b7ede48e7b7ccd62aad9d62f61403f080a627cbdfd53d4a7215646",
+      "sha256": "c9b33769b5de66f48128ff7540027d6c1cfdb4e408e8485668fd91127b4056d8",
       "size": 28927
     },
     {
@@ -118,8 +118,8 @@
     },
     {
       "path": "tables/compile-structure.json",
-      "sha256": "d6ed96abebf56a8bdb4cd684982b457905b0ac864b13d92736d3c7a689833923",
-      "size": 617
+      "sha256": "682de39ce35c104f24cb11f814c079b676d67947a3578a4cef17c7e1c7ba041e",
+      "size": 678
     },
     {
       "path": "tables/quotes.json",

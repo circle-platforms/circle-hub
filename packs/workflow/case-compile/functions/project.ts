@@ -142,7 +142,7 @@ export function projectItems(input: unknown): unknown {
   const items = selected.map((found) => ({
     id: `${documentId}:${(nodeIdCount.get(found.id) ?? 0) > 1 && found.selector ? found.selector : found.id}`,
     label: found.title.slice(0, MAX_TITLE),
-    summary: `${found.steps.length} 步；${found.expected.length + found.steps.reduce((n, step) => n + step.expected.length, 0)} 个期望结果${found.negative ? '；反向用例' : ''}`,
+    summary: `${found.steps.length} 步；${found.expected.length + found.steps.reduce((n, step) => n + step.expected.length, 0)} 个期望结果${found.negative ? '；反向用例' : ''}${found.projection_unknowns?.length ? `；未判定：${found.projection_unknowns[0]}` : ''}`,
     location: { slot: 'subject', source: sha256, parser: 'kityminder@1', selector: found.selector ?? '' },
     fields: {
       command_identities:(()=>{const source=slotOf(inputs,'case_index'),context=isRecord(params.context)?params.context:{};const view=source?.model;

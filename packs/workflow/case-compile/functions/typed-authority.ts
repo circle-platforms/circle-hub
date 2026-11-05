@@ -9,7 +9,7 @@ import {planCommands} from './plan-commands.ts';
 import { destructiveHit, runtimeMethod, scopeAllows, type RuntimeContract } from './runtime-contract.ts';
 import type { RuntimeProfile } from './profile.ts';
 import {readSlots, type PlanSlots} from './slots.ts';
-import {bindArguments} from './binding.ts';
+import {bindArguments,hostProgramLine} from './binding.ts';
 import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from './typed-contract.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
@@ -35,7 +35,7 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
   for(const v of bound.values){if(omitted.has(v.name)){note(v.pointer,`参数 ${v.name} 已声明永不传入`,'refute');continue;}const p=a.parameters[v.name];if(!p){note(v.pointer,`参数 ${v.name} 的原合约类型与角色未声明`);continue;}if(allowed.parameters[v.name]!==p.role){note(v.pointer,`参数 ${v.name} 的配置角色不等于合约闭集声明`,'refute');continue;}
    const kind=p.type.address_kind??p.type.declaration.catalog_type;if((kind==='ipv4'||kind==='ipv6')&&typeof a.roles[p.role]?.bed_member!=='boolean')note(v.pointer,'地址角色缺 bed_member 用途声明');
    const problem=valueProblem(p.type,v.value);if(problem)note(v.pointer,problem,'refute');
-   if(p.role==='host_shell'&&!a.effects.some(e=>e.allowed_literals.includes(String(v.value))))note(v.pointer,'主机命令不在合约效果表的完整字面允许集合','refute');
+   if(p.role==='host_shell'&&!a.effects.some(e=>e.allowed_literals.includes(String(v.value))||hostProgramLine(e.allowed_programs,String(v.value))))note(v.pointer,'主机命令既不在合约效果表的完整字面允许集合，也不是声明程序的静态命令','refute');
    if(p.role==='device_cli'){
     if(knownIds===null||knownIds.some(i=>i===null)){note(v.pointer,'用例声明身份结构未核对；修正 case_index 的明确声明后重核');continue;}
     const parsed=resolution.byLine.get(String(v.value));const matches=parsed?[parsed]:[];
@@ -75,7 +75,7 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
  }
  const resolved=planCommands(contract,profile,slots,catalog);
  const uses:AddressUse[]=[];const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
- for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:true,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
+ for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='host_shell')for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value))?.addresses??[])uses.push({value:address,kind:address.includes(':')?'ipv6':'ipv4',bed_member:true,pointer:v.pointer});if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:true,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }

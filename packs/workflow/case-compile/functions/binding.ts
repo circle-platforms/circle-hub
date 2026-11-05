@@ -1,6 +1,7 @@
 // Bind explicit text values to the original Python signature without expanding defaults or evaluating expressions.
 import type { RuntimeEntry } from './runtime-contract.ts';
 import type { PlanStep, KeywordValue } from './slots.ts';
+import { addressKey } from './manifest.ts';
 export interface BoundValue { name: string; value: KeywordValue; pointer: string }
 export interface BindProblem { code: string; pointer: string; message: string }
 export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, executorProvided: ReadonlySet<string> = new Set()): { values: BoundValue[]; problems: BindProblem[] } {
@@ -54,6 +55,18 @@ export function hasSingleLineValue(value: unknown): value is string {
 }
 
 /** POSIX expansions are active outside single quotes; glob and control syntax only outside quotes. */
+/**
+ * A host line a declared program may run: a static line whose first word is the program. The words after the declared
+ * address prefix are addresses and must parse as one; the caller checks them against the environment. Null for anything else.
+ */
+export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string):{addresses:string[]}|null{
+  if(!programs?.length||hasShellDynamicSyntax(line))return null;
+  const words=line.trim().split(/\s+/),declared=programs.find(row=>row.program===words[0]);
+  if(!declared)return null;
+  const prefix=declared.addressPrefix;
+  const addresses=prefix===undefined?[]:words.slice(1).filter(word=>word.startsWith(prefix)).map(word=>word.slice(prefix.length));
+  return addresses.every(address=>addressKey(address)!==null)?{addresses}:null;
+}
 export function hasShellDynamicSyntax(text:string):boolean {
   let quote:string|null=null;
   for(let i=0;i<text.length;i++){

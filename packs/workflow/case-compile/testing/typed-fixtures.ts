@@ -14,6 +14,8 @@ export function signTypedRuntime<T extends Record<string,unknown>>(value:T){
 }
 /** Explicit full-literal host authorization for codec tests, never an allow-by-word policy. */
 export function hostInput(command:string){const contract=structuredClone(CONTRACT_DOC);contract.effects.effect_1.allowed_literals=[command];return subjectOf({...goodData(),steps:goodData().steps.map((step,i)=>i===1?{...step,args:[command]}:step)},{contractDoc:signTypedRuntime(contract)});}
+/** A host line under declared programs, with no full-literal authorization. */
+export function hostProgramInput(command:string,programs:unknown[]){const contract=structuredClone(CONTRACT_DOC) as Record<string,any>;contract.effects.effect_1.allowed_programs=programs;return subjectOf({...goodData(),steps:goodData().steps.map((step,i)=>i===1?{...step,args:[command]}:step)},{contractDoc:signTypedRuntime(contract)});}
 export function addressIdentity(value:string,kind:'ipv4'|'ipv6'='ipv4'):CommandIdentity{return {tree_root:'d'.repeat(64),path:'/commands/widget/address',signature:source+'/signature',parameters:[{position:0,name:'address',raw:value,type:{name:kind,catalog_type:kind,grammar:'synthetic-address@1',declaration:source+'/types/'+kind},role:{name:'address_target',declaration:source+'/roles/address_target'},parsed:{kind:'address',value:{kind,value} as TypedAddressValue}}]};}
 export function addressInput(value:string,options:{kind?:'ipv4'|'ipv6'|'mask'|'ipv4_prefix'|'ipv6_prefix';bedMember?:boolean;source?:string;leases?:unknown[];replacements?:Array<{case:string;bed:string}>}={}){
  const kind=options.kind??'ipv4',contract=structuredClone(CONTRACT_DOC) as Record<string,any>,profile=structuredClone(PROFILE_DOC),data=goodData();

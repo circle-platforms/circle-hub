@@ -2,8 +2,10 @@
   "schema": "compile-structure@1",
   "layouts": [
     "case_body_expectations",
-    "title_steps_expectations"
+    "title_steps_expectations",
+    "steps_tree_expectations"
   ],
+  "precondition_priority": 3,
   "auto_allowed": [
     "YES",
     "1",

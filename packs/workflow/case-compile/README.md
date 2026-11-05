@@ -1,4 +1,4 @@
-# case-compile 3.9.18
+# case-compile 3.9.19
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -152,7 +152,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 ## R5：runtime-contract@2
 
-新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
+新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象；effects[id] 可声明 allowed_programs（{program, address_prefix?}），放行声明程序的静态主机命令。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
 
 设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 FAMX 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在自动化测试环境/本血缘租约中。
 
@@ -272,7 +272,7 @@ W06：本用例全部期望节点有稳定引用身份；每条都映射到断�
 
 发布单元均在本目录：authority/（recompose-authority，产品声明凭证）、recompose/（recompose，独立重组）、adjudicate/（recompose-adjudication，独立原子裁定）。管理员一次性绑定实际产品包发布记录、发布授权和与清单 SHA 相等的 product.json；从产品生产器 params.recompose 中读 recompose-product@1 声明，再把已受理来源凭证分享给执行者。工作包没有默认规范来源排序，模型的 product-declared 字样不构成权威。普通执行者绑定可共享的真实 Hub 快照和结果，不需要管理员读所有原件。当前产品没有声明时，等待产品包作者补声明并重发。
 
-节点资格由 compile-structure@1 声明：autoid 与原始 auto 值按完全相等闭集；未声明标记单独报告，不按标题或自然语言判断。深度由层级和声明参数核对；嵌套用例及混合布局保留为未判定条目。两种布局共用同一结构投影：用例自身动作+直接叶期望，或标题/动作/叶期望；编号、行和方括号定位是声明的语法，原文字节不改。没有作者定位的多动作/多期望不强配，未绑定原子单列并给作者补定位出口。
+节点资格由 compile-structure@1 声明：autoid 与原始 auto 值按完全相等闭集；未声明标记单独报告，不按标题或自然语言判断。深度由层级和声明参数核对；嵌套用例、没有任何子节点的用例和与结构不符的 compile_layout 保留为未判定条目。三种布局共用同一结构投影：用例自身动作+直接叶期望；标题/动作/叶期望；标题加动作树（步骤可一层套一层，动作下的叶子是它的期望，步骤旁的叶子是没有期望的动作）。优先级等于 precondition_priority 的叶子在三种布局里都是前置，落成没有期望的动作。值为空的 autoid、auto 键等于没有声明；编号、行和方括号定位是声明的语法，原文字节不改。没有作者定位的多动作/多期望不强配，未绑定原子单列并给作者补定位出口。
 
 覆盖分母是结构投影的作者原子全集，不采信模型 author_atoms 自报；mapped/unmapped 由代码与全集双向比。原文账只存逐字原子，释义另留说明。适配 action 为声明操作，commands 为完整命令行，按锁定树比较定义身份及次数；等价理由附声明引用。实际参数变化按产品声明的语义角色核 load_bearing，未能机械判定的语义由独立裁定提出且带逐字引文。具体化只接作者/规范来源/目录声明的值，缺来源或权限一律未知，点名产品包作者或重组者及提交前时点。
 
@@ -295,6 +295,27 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.9.19: the tree decides a node's role, and declared host programs
+
+Real mind maps are not only the two layouts the reference's documents name. The reference's readers never refuse a shape: a leaf
+beside a step is a step no expectation follows, and it delivered such cases on the device. This pack refused them, so a whole
+mind map could end with no atoms and no way out, because a declared `compile_layout` cannot contradict the tree and recompose
+reads the same projection. Nothing here reads a word:
+
+- `steps_tree_expectations`: under a title, a node with children is an action, a chain of steps reads in order, a leaf under an
+  action is its expectation and a leaf beside a step is an action no expectation follows. This goes past the reference, which stops
+  two levels down and takes the second step of a chain for an expectation.
+- `precondition_priority` (3, as in `case-review`) in `tables/compile-structure.json`: such a leaf is a precondition in every
+  layout, carried as an action no expectation follows. A case body with one used to demand it as an expectation.
+- A key with no value declares nothing: a group node exported with `autoid: null` is no case, so its cases are no longer nested.
+- A case that stays undetermined says why in the item summary of the `start_run` answer.
+- `allowed_programs` on a contract effect: a host line may be a declared program with static arguments, besides a full literal.
+  `hasShellDynamicSyntax` still refuses expansion, separators and redirection. `address_prefix` names the arguments that are
+  addresses; they must parse and are checked against the environment like any declared address. A contract without the field
+  behaves as before, and an older pack ignores it.
+
+The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.4 because they copy the projection.
 
 ### 3.9.18: the integration line's 3.8.9–3.9.17 on main
 
@@ -496,6 +517,6 @@ is kept and disclosed.
 - Runs started before keep the item ids recorded with them; records are append-only and nothing is rewritten. The example
   item is now `fixture-document:fixture-case`.
 
-The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.3 with this release (the integration
+The stage packs recompose, recompose-authority and recompose-adjudication moved to 1.0.3 with 3.9.18 (the integration
 line's 1.0.2 and main's 1.0.1 hold different bytes): `functions/recompose-evidence.ts` accepts stage evidence of exactly that
 version, so the pin moves with them (in the parent, the three copies, `testing/recompose.ts` and the recompose samples).

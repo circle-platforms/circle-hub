@@ -37,6 +37,8 @@ export interface StructureReport {
         next_action: string;
     }>;
 }
+// A platform export writes a key with no value on group nodes: that declares nothing, so it makes no node a case.
+const declared = (value: unknown) => value !== undefined && value !== null && value !== '';
 const white = (c: string) => c === ' ' || c === '\t' || c === '\r';
 const ident = (s: string) => s.length > 0 && [...s].every(c => c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c === '_' || c === '-');
 function lineStarts(text: string) { const out = [0]; for (let i = 0; i < text.length; i++)
@@ -81,7 +83,7 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
         seen.add(index);
         active.add(index);
         const data = isRecord(n.data) ? n.data : {};
-        const candidate = data.compile_role === 'case' || Object.hasOwn(data, 'autoid') || Object.hasOwn(data, 'auto') || Array.isArray(data.resource) && data.resource.length > 0 || data.priority === 2 || data.priority === '2';
+        const candidate = data.compile_role === 'case' || declared(data.autoid) || declared(data.auto) || Array.isArray(data.resource) && data.resource.length > 0 || data.priority === 2 || data.priority === '2';
         if (!candidate && !(Array.isArray(n.children) && n.children.length) && parent === null && (!depths || depths.includes(depth)) && !POLICY.node_roles.includes(String(data.compile_role)))
             report.unclassified.push({ selector: typeof n.selector === 'string' ? n.selector : '', missing: '叶节点缺用例身份或角色声明，不能把它静默当注记', next_action: '作者明确 compile_role 或自动化编号后重读' });
         if (candidate)
@@ -109,10 +111,20 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
             excluded.push('不在本轮声明的用例深度');
         if (c.parent !== null || candidates.some(other => other.parent === c.index))
             missing.push('嵌套用例的编译范围未声明；作者拆开或明确独立用例边界');
-        const children = (node.children ?? []).map((index: number) => nodes[index]), allLeaves = children.length > 0 && children.every((n: any) => Array.isArray(n?.children) && n.children.length === 0), allSteps = children.length > 0 && children.every((n: any) => Array.isArray(n?.children) && n.children.length > 0 && n.children.every((i: number) => nodes[i]?.children?.length === 0));
-        let layout = typeof data.compile_layout === 'string' ? data.compile_layout : allLeaves ? POLICY.layouts[0] : allSteps ? POLICY.layouts[1] : null;
-        if (!layout || !POLICY.layouts.includes(layout) || layout === POLICY.layouts[0] && !allLeaves || layout === POLICY.layouts[1] && !allSteps) {
-            missing.push('混合或未声明布局；作者声明动作/期望层级，不能按文字猜测');
+        // Roles come from the tree and declared fields, never from the words. A leaf with the declared precondition priority is a
+        // state to establish. Of the rest, a node with children is an action and a leaf under it is that action's expectation, at
+        // any depth, so a chain of steps reads as its actions in order. A leaf beside a step is an action no expectation follows,
+        // as the reference implementation reads it; it is only an expectation when the case has no step at all.
+        const leaf = (n: any) => Array.isArray(n?.children) && n.children.length === 0;
+        const children = (node.children ?? []).map((index: number) => nodes[index]);
+        const preconditions = children.filter((n: any) => leaf(n) && Number(n?.data?.priority) === POLICY.precondition_priority);
+        const body = children.filter((n: any) => !preconditions.includes(n));
+        const allLeaves = body.length > 0 && body.every(leaf);
+        const allSteps = body.length > 0 && body.every((n: any) => Array.isArray(n?.children) && n.children.length > 0 && n.children.every((i: number) => nodes[i]?.children?.length === 0));
+        const anyStep = body.some((n: any) => !leaf(n));
+        let layout = typeof data.compile_layout === 'string' ? data.compile_layout : allLeaves ? POLICY.layouts[0] : allSteps ? POLICY.layouts[1] : anyStep ? POLICY.layouts[2] : null;
+        if (!layout || !POLICY.layouts.includes(layout) || layout === POLICY.layouts[0] && !allLeaves || layout === POLICY.layouts[1] && !allSteps || layout === POLICY.layouts[2] && !anyStep) {
+            missing.push(body.length ? '声明的布局与节点结构不符；作者改 compile_layout 或节点后重读' : '用例节点下没有动作或期望；作者在脑图里补节点后重读');
             layout = null;
         }
         const atoms: AuthorAtom[] = [], sourceRef = (sel: string) => `src:${sha}/kityminder@1/${sel}`;
@@ -176,18 +188,28 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
             }
             return out;
         };
+        const step = (n: any) => {
+            const actions = take(n, 'action', []);
+            for (const i of n.children)
+                if (leaf(nodes[i]))
+                    take(nodes[i], 'expectation', actions);
+                else
+                    step(nodes[i]);
+        };
         if (layout === POLICY.layouts[0]) {
+            for (const child of preconditions)
+                take(child, 'action', []);
             const actions = take(node, 'action', []);
-            for (const child of children)
+            for (const child of body)
                 take(child, 'expectation', actions);
         }
-        else if (layout === POLICY.layouts[1]) {
+        else if (layout !== null) {
             take(node, 'intent', []);
-            for (const child of children) {
-                const actions = take(child, 'action', []);
-                for (const i of child.children)
-                    take(nodes[i], 'expectation', actions);
-            }
+            for (const child of children)
+                if (leaf(child))
+                    take(child, 'action', []);
+                else
+                    step(child);
         }
         report.cases.push({ id: typeof data.id === 'string' ? data.id : selector, autoid, selector, depth: c.depth, layout, eligible: missing.length === 0 && excluded.length === 0, atoms, missing: [...new Set(missing)], excluded, node: c.index });
     }
