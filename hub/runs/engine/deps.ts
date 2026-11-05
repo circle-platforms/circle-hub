@@ -20,7 +20,10 @@ export interface AdminLogEntry {
 
 export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
-  dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string):Promise<import('../../dispatch/api.ts').RunJob[]>; reconcile(by:import('../../records/api.ts').Principal,job:string):Promise<import('../../dispatch/api.ts').JobStatus>;
+  dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string,reservations?:import('../../dispatch/api.ts').RunReservations):Promise<import('../../dispatch/api.ts').RunJob[]>;
+    /** The reservations of all runs in one reading, for `jobs`; without it maintenance reads them again for every run. */
+    reservations?():Promise<import('../../dispatch/api.ts').RunReservations>;
+    reconcile(by:import('../../records/api.ts').Principal,job:string):Promise<import('../../dispatch/api.ts').JobStatus>;
     /** The runs these jobs are bound to, each with its jobs; without it scheduled maintenance visits every run each pass. */
     runs?(jobs:readonly string[]):Promise<ReadonlyMap<string,readonly string[]>>;
     /** Decision 105 (W03): for an accepted run with a hub_template effect row, report the jobs bound to the run, or, when there

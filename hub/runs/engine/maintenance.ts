@@ -9,7 +9,7 @@ import { submitResult, roundsUsedOf } from './submit.ts';
 import { isObject, receivedDigest } from './util.ts';
 import { randomBytes } from 'node:crypto';
 // Startup and periodic deterministic maintenance. It writes new records; no historical run/result is changed.
-import { digestOf, canonicalBytes, type Page, type StoredRecord } from '../../records/api.ts';
+import { digestOf, canonicalBytes, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
@@ -93,7 +93,8 @@ export const FULL_PASS_MS = 30 * 60 * 1000;
  * and thousands of requests that was one account query per run and per overdue request. An account changed during a pass
  * is seen by the next one.
  */
-function passContext(ctx:EngineContext):EngineContext{
+function passContext(base:EngineContext):EngineContext{
+  const ctx=passDispatch(base);
   const principals=ctx.deps.records.principals;
   const list=principals?.list;
   if(!principals||!list)return ctx;
@@ -104,6 +105,22 @@ function passContext(ctx:EngineContext):EngineContext{
     return typeof value==='function'?value.bind(target):value;
   }});
   return {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,principals:once}}};
+}
+/**
+ * The pass reads the reservations of all runs once, when the first run asks for its jobs: read per run they were three
+ * quarters of what a pass read, 5.6 of 7.5 GB on 843 runs. A reservation written during the pass is the next pass's.
+ */
+function passDispatch(ctx:EngineContext):EngineContext{
+  const dispatch=ctx.deps.dispatch;
+  const reservations=dispatch?.reservations;
+  if(!dispatch||!reservations)return ctx;
+  let read:ReturnType<typeof reservations>|undefined;
+  const once=new Proxy(dispatch,{get(target,property){
+    if(property==='jobs')return async(by:Principal,run:string)=>target.jobs(by,run,await (read??=reservations.call(target)));
+    const value=Reflect.get(target,property,target);
+    return typeof value==='function'?value.bind(target):value;
+  }});
+  return {...ctx,deps:{...ctx.deps,dispatch:once}};
 }
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{

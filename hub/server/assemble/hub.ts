@@ -1,4 +1,4 @@
-import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight } from '../../dispatch/api.ts';
+import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
@@ -190,7 +190,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
-    dispatch:{jobs:(by,run)=>dispatch?readRunJobs(records,dispatch,by,run):Promise.resolve([]),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready)=>dispatch?acceptedDispatch(records,dispatch,run,ready):Promise.resolve([]),inFlight:(run)=>dispatch?runInFlight(records,dispatch,run):Promise.resolve(null)},
+    dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready)=>dispatch?acceptedDispatch(records,dispatch,run,ready):Promise.resolve([]),inFlight:(run)=>dispatch?runInFlight(records,dispatch,run):Promise.resolve(null)},
     records,
     personalPacks:registry.personal,
     workflows,
