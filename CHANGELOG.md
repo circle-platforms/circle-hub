@@ -4,9 +4,9 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
-- Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 5.6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
+- Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
-- Show every workflow briefly in `list_task_packs` when the whole details do not fit one answer: on a deployment with 22 workflows the details filled two pages, 43,000 characters, and a model paged on every question to reach the one it wanted; one answer of 13,700 characters now holds them all, and an exact `pack_id` reads one in full.
+- Show every workflow briefly in `list_task_packs` when the whole details do not fit one answer: on a deployment with 22 workflows the details filled two pages, 43,000 characters, and a model paged on every question to reach the one it wanted; one answer of under 20,000 characters now holds them all, and an exact `pack_id` reads one in full.
 - Let a route name the parts of a JSON answer a read may still use when the whole answer is held for scan findings (`keep` in `system.json`): the PLM build record carries the full text of every bug of that build, 2.8 MB, and a credential-like word in one of them held the whole answer, so a bug read lost the name of its build. The answer stays stored as it came and held; the Hub generates the declared parts from it and scans them on their own, so a hit in them keeps them held too.
 - Name what else a workflow reads in the same system when an object is absent: the same number can be another kind of object.
 - Bind the observation "system S has no X, read at T" into a run that only reads when an optional input has no such object, as the model allows, so a pure read ends `ok`; the answer names what else that workflow reads there. A required input, or a workflow with requirements, is still refused with `SOURCE_ABSENT`.

@@ -9,7 +9,8 @@ import { submitResult, roundsUsedOf } from './submit.ts';
 import { isObject, receivedDigest } from './util.ts';
 import { randomBytes } from 'node:crypto';
 // Startup and periodic deterministic maintenance. It writes new records; no historical run/result is changed.
-import { digestOf, canonicalBytes, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
+import { digestOf, canonicalBytes, type Page, type StoredRecord } from '../../records/api.ts';
+import type { RunReservations } from '../../dispatch/api.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
@@ -28,6 +29,7 @@ import { canFollow, clearRequestWork, noteChanges, noteDeadlines, noteRequests, 
  */
 export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false,memory?:MaintenanceMemory):Promise<void>{
   const ctx=passContext(base);
+  const reservations=passReservations(ctx);
   const started=ctx.now().getTime();
   const store=ctx.deps.records.store;
   const following=memory!==undefined&&canFollow(ctx)?memory:undefined;
@@ -39,7 +41,7 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
       const page:Page<StoredRecord<RunRecord>>=await listRunRecords(store,{}, {limit:200,cursor});
       for(const run of page.items){if(stop())return;
         if(following)noteVisit(following,run.body,started);
-        await visitRun(ctx,run);}
+        await visitRun(ctx,run,reservations);}
       cursor=page.next;
     }while(cursor!==null);
     if(following){following.fullAt=started;following.visits.clear();following.started.clear();}
@@ -50,7 +52,7 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
       const run=await runById(store,id);
       if(!run)continue;
       noteVisit(following,run.body,started);
-      await visitRun(ctx,run);
+      await visitRun(ctx,run,reservations);
     }
     // What the visits wrote: its requests are swept now, as the sweeps always came after the visits; its runs are visited next.
     await noteChanges(ctx,following);
@@ -72,11 +74,11 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
   if(work)clearRequestWork(work);
 }
 /** Everything maintenance does for one run. */
-async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>):Promise<void>{
+async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
   const stopped=await abandonDecision(ctx,run.body.run);
-  if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);return;}
+  if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run,reservations);return;}
   if(run.body.predecessor){const before=await runById(ctx.deps.records.store,run.body.predecessor);if(before)await answerSuccessorRequests(ctx,before.body,run);}
-  await reconcileDispatch(ctx,run);
+  await reconcileDispatch(ctx,run,reservations);
   await rootUpdateRequest(ctx,run);
   await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));
   await recoverRun(ctx,run);
@@ -93,8 +95,7 @@ export const FULL_PASS_MS = 30 * 60 * 1000;
  * and thousands of requests that was one account query per run and per overdue request. An account changed during a pass
  * is seen by the next one.
  */
-function passContext(base:EngineContext):EngineContext{
-  const ctx=passDispatch(base);
+function passContext(ctx:EngineContext):EngineContext{
   const principals=ctx.deps.records.principals;
   const list=principals?.list;
   if(!principals||!list)return ctx;
@@ -106,21 +107,18 @@ function passContext(base:EngineContext):EngineContext{
   }});
   return {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,principals:once}}};
 }
+type PassReservations=()=>Promise<RunReservations|undefined>;
 /**
- * The pass reads the reservations of all runs once, when the first run asks for its jobs: read per run they were three
- * quarters of what a pass read, 5.6 of 7.5 GB on 843 runs. A reservation written during the pass is the next pass's.
+ * The reservations of all runs, read once for a pass when the first run asks for its jobs: read per run they were four fifths
+ * of what a pass read, 6 of 7.5 GB on 843 runs. A failed reading is not kept, so the next run tries again.
  */
-function passDispatch(ctx:EngineContext):EngineContext{
-  const dispatch=ctx.deps.dispatch;
-  const reservations=dispatch?.reservations;
-  if(!dispatch||!reservations)return ctx;
-  let read:ReturnType<typeof reservations>|undefined;
-  const once=new Proxy(dispatch,{get(target,property){
-    if(property==='jobs')return async(by:Principal,run:string)=>target.jobs(by,run,await (read??=reservations.call(target)));
-    const value=Reflect.get(target,property,target);
-    return typeof value==='function'?value.bind(target):value;
-  }});
-  return {...ctx,deps:{...ctx.deps,dispatch:once}};
+function passReservations(ctx:EngineContext):PassReservations{
+  let read:Promise<RunReservations>|undefined;
+  return async()=>{
+    const dispatch=ctx.deps.dispatch;
+    if(!dispatch?.reservations)return undefined;
+    return read??=dispatch.reservations().catch((error:unknown)=>{read=undefined;throw error;});
+  };
 }
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
@@ -297,13 +295,14 @@ async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<Reque
   }
 }
 
-async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
+async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
   if(!ctx.deps.dispatch)return;
   const run=stored.body;
   const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
   if(!admin)throw new Error('派发核对缺少具名管理员');
   const by={id:admin.id,name:admin.name,role:admin.role};
-  let jobs=await ctx.deps.dispatch.jobs(by,run.run);
+  const reading=await reservations();
+  let jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   if(!jobs.length)return;
   const actions=await actionsOf(ctx.deps.records.store,run.run);
   for(const job of jobs){
@@ -317,7 +316,7 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     catch(error){ctx.log({traceId:null,run:run.run,what:'dispatch reconciliation',detail:String(error)});}
     await putAction(ctx.deps.records.store,{action:'read_back',run:run.run,inputs:[],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{reconciled_job:job.job,events_before:job.status.events,events_after:events}});
   }
-  jobs=await ctx.deps.dispatch.jobs(by,run.run);
+  jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   for(const job of jobs){
     const requestSnapshot=dispatchSnapshot([job]);
     let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot);
@@ -333,6 +332,8 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
   const signature=dispatchSnapshot(jobs);
   if(actions.some(a=>a.body.detail.dispatch_snapshot===signature))return;
   await ctx.lock(`submit:${run.run}`,async()=>{
+    // A result is written from the jobs of this moment: a job reserved since the pass's reading is seen by the next pass.
+    if(reading&&dispatchSnapshot(await ctx.deps.dispatch!.jobs(by,run.run))!==signature)return;
     const latest=await latestAccepted(ctx.deps.records.store,run.run);
     if(!latest)return;
     const result=structuredClone(latest.body);
