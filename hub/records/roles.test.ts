@@ -12,7 +12,7 @@ import type { DatabaseConfig } from '../config/index.ts';
 import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { sha256Hex } from './digest.ts';
-import { MigrationError } from './errors.ts';
+import { MigrationError, RecordsError } from './errors.ts';
 import { FileKeyProvider, migrateRecords, openRecords, MIGRATIONS } from './index.ts';
 
 let postgres: TemporaryPostgres;
@@ -95,11 +95,18 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   await kit.pointers.move({ name: 'knowledge/a', expected: sha256Hex('a'), next: sha256Hex('b') });
   await kit.callLog.append({ traceId: 'c'.repeat(32), userId: user.id, sessionId: null, tool: 'get_nodes', runId: null, arguments: {}, callResult: 'error', errorCode: 'SOURCE_UNAVAILABLE', durationMs: 1, adminNote: '原因' });
   assert.equal((await kit.callLog.query(admin)).items[0].admin_note, '原因');
+  // Following the log needs no right the runtime role lacks: it reads records and the index, and the functions it calls are public.
+  const horizon = await kit.store.appendHorizon!();
+  assert.ok(horizon.position > 0 && horizon.oldest <= horizon.next);
+  assert.ok((await kit.store.appended!({ after: 0, through: horizon.position, keys: ['artifact.sha256'], kinds: ['authorization'] })).length > 0);
   await kit.vault.put('db.password', 'synthetic');
   const spaceVersion = await kit.store.put({ kind: 'knowledge_space_version', schema: 'knowledge-space-version@1', provenance: 'projected', body: { synthetic: 'runtime-index' } });
   await kit.spaceIndex!.add(spaceVersion.digest, [{ space: member.id, path: '/', entry: artifact.digest, record: artifact.digest, text: '合成搜索' }]);
   await kit.spaceIndex!.add(spaceVersion.digest,[{space:member.id,path:'/second',entry:artifact.digest,record:artifact.digest}]);
   assert.equal((await sql(runtime,'SELECT count(*)::int AS n FROM knowledge_space_search_totals')).rows[0].n,1);
+  const limit=new RecordsError('合成限额',{code:'SPACE_INDEX_LIMIT',detail:{space_limit_bytes:1024}});
+  await kit.spaceIndex!.refuse(spaceVersion.digest,member.id,limit);
+  assert.equal((await sql(runtime,'SELECT refused_space_bytes::int AS n FROM knowledge_space_search_totals')).rows[0].n,1024);
   await kit.spaceIndex!.complete(spaceVersion.digest, '/');
   assert.equal(await kit.spaceIndex!.ready(spaceVersion.digest, '/'), true);
   assert.equal((await kit.spaceIndex!.search('合成', [{ version: spaceVersion.digest, paths: ['/'] }], 0, 1)).length, 1);

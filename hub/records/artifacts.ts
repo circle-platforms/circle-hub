@@ -74,6 +74,8 @@ const FUNCTION: ProducerKind = 'function';
 const RESOURCE_CONFIG: PermissionKind = 'resource_config';
 /** A note may not share this many consecutive characters (without white space) with the text around a finding. */
 const COPIED_RUN = 6;
+/** The scans kept by digest (RecordArtifacts.#scan): offsets and detector names only, so a few hundred cost next to nothing. */
+const KEPT_SCANS = 512;
 
 function text(value: unknown, field: string, max: number): string | null {
   if (value === undefined || value === null) return null;
@@ -230,6 +232,7 @@ export class RecordArtifacts implements Artifacts {
   readonly #objects: ObjectStore;
   readonly #authorizations: Authorizations;
   readonly #options: ArtifactsOptions;
+  readonly #scans = new Map<string, CredentialScan>();
   readonly #coverage = new WeakMap<DerivedCoverage,{context:CoverageContext;valid:boolean;origin:string;author:string;assess:DerivedCoverage['assess']}>();
 
   constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, options: ArtifactsOptions) {
@@ -312,7 +315,7 @@ export class RecordArtifacts implements Artifacts {
     let prepared = coverage === undefined ? undefined : this.#coverage.get(coverage);
     if (coverage !== undefined && (!prepared || prepared.origin !== digestOf(origin) || prepared.author !== digestOf(author))) throw new TypeError('derivedCoverage must be prepared by these records for this origin and author');
     let assessment = prepared?.assess(bytes);
-    let scan = assessment?.scan ?? this.#scan(bytes);
+    let scan = assessment?.scan ?? this.#scan(bytes, sha256);
     const hit = scan.findings.length > 0;
     if (hit && 'upload' in origin) await this.#refuseUpload({sha256,size,mediaType:input.mediaType,origin,author,run,scan},outer);
     if (hit && coverage === undefined && input.derivedSources !== undefined && fromHub(origin,author)) {
@@ -621,9 +624,18 @@ export class RecordArtifacts implements Artifacts {
     return { by: configuration.body.decided_by, at: configuration.body.decided_at, authorization: configuration.digest };
   }
 
-  #scan(bytes: Uint8Array): CredentialScan {
+  /**
+   * A scan depends on nothing but the bytes and this scanner, and a large answer holds the event loop for seconds: 2.8 MB took
+   * 3.5 s. A connector reads the same answer again and again, so the last scans are kept by digest; they hold no matched text.
+   */
+  #scan(bytes: Uint8Array, sha256 = sha256Hex(bytes)): CredentialScan {
+    const known = this.#scans.get(sha256);
+    if (known !== undefined) return structuredClone(known);
     this.#options.onCredentialScan?.(bytes.byteLength);
-    return scanForCredentials(bytes);
+    const scan = scanForCredentials(bytes);
+    if (this.#scans.size >= KEPT_SCANS) this.#scans.delete(this.#scans.keys().next().value!);
+    this.#scans.set(sha256, scan);
+    return structuredClone(scan);
   }
 
   #context(): CoverageContext {

@@ -54,7 +54,7 @@ class CountedClient extends pg.Client {
  * Every connection parameter is explicit so pg never falls back to PG* environment variables, and the password is a
  * function so pg never reads a password file: a server that asks for a password without one configured fails clearly.
  */
-export function createPool(config: DatabaseConfig, max = 10): pg.Pool {
+export function createPool(config: DatabaseConfig, max = 10, options: { statementTimeoutMs?: number } = {}): pg.Pool {
   const password = config.password;
   const pool = new pg.Pool({
     Client: CountedClient as unknown as pg.PoolConfig['Client'],
@@ -73,6 +73,7 @@ export function createPool(config: DatabaseConfig, max = 10): pg.Pool {
     max,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    ...(options.statementTimeoutMs === undefined ? {} : { statement_timeout: options.statementTimeoutMs }),
   });
   // An idle client that fails is dropped by the pool; the next query reports the failure to its caller.
   pool.on('error', () => {

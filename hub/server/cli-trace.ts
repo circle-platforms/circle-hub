@@ -77,7 +77,7 @@ function treeLines(node: TraceNode, depth: number, lines: string[]): void {
 }
 
 function rootHeader(root: TraceNode, names: ReadonlyMap<string, string>): string {
-  const client = root.client_name === null ? null : `客户端声明 ${root.client_name}${root.client_version === null ? '' : ` ${root.client_version}`}`;
+  const client = root.client_name === null ? null : `客户端声明 ${root.client_name}${root.client_version === null ? '' : ` ${root.client_version}`}${root.client_platform === null ? '' : `（${root.client_platform}）`}`;
   return [
     `入口 ${labelOf('trace_origin', root.origin)}`,
     `开始 ${root.started_at}`,

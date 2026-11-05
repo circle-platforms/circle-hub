@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { candidatesOutcomes } from './candidates.ts';
 import type { CheckOutcome, ContextBuild, ItemFields, LocateSubject } from './types.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const TREE = { root: 'FAMY', ancestors: ['030：FAMX/FAMY测试项目', '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] };
 
@@ -148,17 +149,19 @@ describe('candidatesOutcomes', () => {
     assert.deepEqual([none[0].verdict, none[0].reason], ['unknown', 'check_error']);
   });
 
-  it('2,000 builds of the context are classified without noticeable cost', () => {
-    const many: ContextBuild[] = [];
-    for (let i = 0; i < 2000; i++) many.push(build(`Rel_FAMX_10_6_${1 + (i % 40)}_${i}`, 'FAMX', `10.6.${1 + (i % 40)}`, { released_at: i % 3 === 0 ? `2026-09-${String(1 + (i % 28)).padStart(2, '0')}T00:00:00.000Z` : null }));
-    many.push(build('Rel_FAMY_10_6_1_57', 'FAMY', '10.6.1', { base: 'Rel_FAMX_10_6_1_57', released_at: '2026-09-05T00:00:00.000Z' }));
-    const started = performance.now();
-    const outcomes = candidatesOutcomes(subjectOf([item('24010', 'Rel_FAMY_10_6_1_57 回归')], many));
-    const elapsed = performance.now() - started;
-    assert.ok(elapsed < 2000, `${elapsed.toFixed(0)} ms`);
+  it('2,000 builds of the context are classified without noticeable cost', { timeout: 60_000 }, (t) => {
+    // `count` context builds over 40 lines of 10.6, and the FAMY alias of one FAMX build of 10.6.1.
+    const subjectWith = (count: number) => {
+      const many: ContextBuild[] = [];
+      for (let i = 0; i < count; i++) many.push(build(`Rel_FAMX_10_6_${1 + (i % 40)}_${i}`, 'FAMX', `10.6.${1 + (i % 40)}`, { released_at: i % 3 === 0 ? `2026-09-${String(1 + (i % 28)).padStart(2, '0')}T00:00:00.000Z` : null }));
+      many.push(build('Rel_FAMY_10_6_1_57', 'FAMY', '10.6.1', { base: 'Rel_FAMX_10_6_1_57', released_at: '2026-09-05T00:00:00.000Z' }));
+      return subjectOf([item('24010', 'Rel_FAMY_10_6_1_57 回归')], many);
+    };
+    const outcomes = candidatesOutcomes(subjectWith(2000));
     const [candidates] = outcomes;
     assert.equal(candidates.verdict, 'support');
     assert.equal((candidates.data as { candidates: unknown[] }).candidates.length, 51);
+    t.diagnostic(describeGrowth('context builds', assertLinearGrowth('context builds', subjectWith, candidatesOutcomes, { small: 8000 })));
   });
 
   it('the statement names every candidate: build and family, the built time, an alias with the build it is based on, the release state apart', () => {

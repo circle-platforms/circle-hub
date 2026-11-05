@@ -441,6 +441,18 @@
             "maximum": 268435456,
             "description": "a longer response is an error; it is never truncated"
           },
+          "keep": {
+            "description": "the members of a JSON answer a read may still use when the whole answer is held for scan findings: the answer stays stored as it came, and the Hub generates these parts from it and scans them on their own",
+            "minItems": 1,
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+              "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+            }
+          },
           "pagination": {
             "description": "The planner may request further pages within this finite bound; no hidden fetch or truncated completion",
             "type": "object",

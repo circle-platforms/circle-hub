@@ -121,7 +121,8 @@ migrate: false, keyProvider: w.kit.keyProvider, onCredentialScan: length => {
   assert.equal(stats.view.scans,226,'20 sources + 200 entries + index key, skeleton, final answer, meta and two scope chunks');
   assert.ok(stats.view.bytes <= admittedBytes + 4*canonicalBytes(all).length + 2*output.body.size + scopeBytes + 4096);
   assert.deepEqual([stats.read.scans,stats.read.bytes],[0,0]);
-  assert.ok(performance.now() - started < 60_000, 'loose wall-clock regression allowance; controlled measurements establish the 30-second target');
+  // No wall-clock bound: the cost of the view is held by counts that do not depend on the machine, the query budgets (67
+  // for the view, 16 for a read, enforced as the queries run) and the exact scanner calls and bytes above.
   t.diagnostic(JSON.stringify({sources:3000,admitted:20,entries:200,kept:200,limited:0,sourceScanBytes:admittedBytes,view:stats.view,read:stats.read}));
   // Withdrawal is visible without re-scanning; the immutable coverage fact must not be recalculated on a read.
   assert.ok(output.body.scan.derived?.sources.length);

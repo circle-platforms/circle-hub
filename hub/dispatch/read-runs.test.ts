@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RecordsKit, Principal } from '../records/api.ts';
-import { readRunJobs } from './read-runs.ts';
+import { dispatchedRuns, readRunJobs, runReservations } from './read-runs.ts';
 const run='run_00000000000000000000000001',plan='run_00000000000000000000000002';
 const admin:Principal={id:'usr_00000000000000000000000001',name:'合成管理员',role:'admin'};
 test('run dispatch reads traverse all reservation pages, retain exact bindings and never write',async()=>{
@@ -37,4 +37,49 @@ test('a run job names the executor its reservation bound, and none when the rese
   const jobs = await readRunJobs(records, { status: async (_by: Principal, job: string) => ({ job, phase: 'result', outcome: 'effective' as const, frozen: false, events: 1 }) }, admin, run);
   assert.equal(jobs.find((job) => job.job === 'a'.repeat(64))?.executor, executor);
   assert.equal(jobs.find((job) => job.job === 'c'.repeat(64))?.executor, undefined);
+});
+
+test('one reading of the reservations gives each run what a reading of its own gives, and a bad record spoils only its run', async () => {
+  const job = 'a'.repeat(64), unbound = 'd'.repeat(64), bad = 'run_00000000000000000000000003', none = 'run_00000000000000000000000004';
+  const reservation = (binding: unknown) => ({ body: { detail: { binding } } });
+  const pages = [
+    [reservation({ job, input: { run, plan_run: plan, item: 'verification', items: ['case-a'], sha256: 'b'.repeat(64) } }), reservation({ job: unbound, run }), { body: { detail: {} } }],
+    [reservation({ job: 'not-a-digest', input: { run: bad, plan_run: bad } })],
+  ];
+  let reads = 0;
+  const records = { store: {
+    find: async (query: { cursor: string | null }) => { reads++; return query.cursor === null ? { items: pages[0], next: 'more' } : { items: pages[1], next: null }; },
+    findMany: async (query: { values: string[] }) => [{ digest: 'e'.repeat(64), body: { detail: { job: query.values[0] } } }],
+    put: () => { throw new Error('unexpected write'); },
+  } } as unknown as Pick<RecordsKit, 'store'>;
+  const dispatch = { status: async (_by: Principal, id: string) => ({ job: id, phase: 'result', outcome: 'effective' as const, frozen: false, events: 1 }) };
+  const reservations = await runReservations(records);
+  assert.equal(reads, 2, 'every page is read');
+  reads = 0;
+  for (const named of [run, plan]) assert.deepEqual(await readRunJobs(records, dispatch, admin, named, { reservations }), await readRunJobs(records, dispatch, admin, named));
+  assert.equal(reads, 4, 'only the readings of their own went to the store');
+  reads = 0;
+  assert.deepEqual((await readRunJobs(records, dispatch, admin, run, { unbound: true, reservations })).map((row) => row.job), [job, unbound]);
+  assert.deepEqual(await readRunJobs(records, dispatch, admin, none, { reservations }), []);
+  await assert.rejects(readRunJobs(records, dispatch, admin, bad, { reservations }), /派发预订记录缺少运行绑定/);
+  assert.equal(reads, 0, 'the one reading served them all');
+});
+
+test('the runs of some jobs come from those jobs alone, never from a scan of every reservation', async () => {
+  const job = 'a'.repeat(64), other = 'c'.repeat(64), unbound = 'd'.repeat(64);
+  const event = (phase: string, binding?: unknown) => ({ body: { detail: { phase, ...(binding ? { binding } : {}) } } });
+  const journal: Record<string, unknown[]> = {
+    [job]: [event('dispatch_ordinal'), event('reservation', { job, input: { run, plan_run: plan } }), event('reservation', { job, input: { run, plan_run: plan } }), event('result')],
+    [other]: [event('reservation', { job: other, input: { run: 'run_00000000000000000000000003', plan_run: plan } })],
+    [unbound]: [event('reservation', { job: unbound, run })],
+  };
+  const asked: string[] = [];
+  const records = { store: {
+    find: async () => { throw new Error('unexpected scan of the reservations'); },
+    findMany: async (query: { key: string; values: string[] }) => { assert.equal(query.key, 'dispatch.job'); asked.push(...query.values); return query.values.flatMap((value) => journal[value] ?? []); },
+  } } as unknown as Pick<RecordsKit, 'store'>;
+  const runs = await dispatchedRuns(records, [job, unbound]);
+  assert.deepEqual([...runs.entries()].sort(), [[plan, [job]], [run, [job]]].sort(), 'a job binds its verification and plan run, once each; a job with no input binds neither');
+  assert.deepEqual(asked, [job, unbound]);
+  assert.equal((await dispatchedRuns(records, [])).size, 0);
 });

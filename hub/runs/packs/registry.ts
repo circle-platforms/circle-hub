@@ -1,4 +1,4 @@
-import {scopedRecordStore,memoReadPort} from '../../records/api.ts';
+import {scopedRecordStore,memoReadPort,memoReadValue} from '../../records/api.ts';
 import {defaultParsers} from '../../refs/api.ts';
 import { PersonalPacks } from './personal.ts';
 import { createRequestService } from '../../requests/api.ts';
@@ -306,8 +306,13 @@ class Registry implements PackRegistry {
    * Every version of a pack id by the owner's publish decisions, in one query: the first grant of `id@x.y.z` names its
    * content, the latest decision says whether it still stands (the rule of Authorizations.isPublished: the owner's latest
    * decision, not revoked, not expired, bound to that content). Selecting a version for use asks isPublished again.
+   * The query holds every pack of the owner, so whatever reads several packs does it in a read scope, which answers it once.
    */
-  async #publications(packId: string): Promise<Map<string, Publication>> {
+  #publications(packId: string): Promise<Map<string, Publication>> {
+    return memoReadValue(this, ['publications', packId], () => this.#readPublications(packId));
+  }
+
+  async #readPublications(packId: string): Promise<Map<string, Publication>> {
     const out = new Map<string, Publication>();
     if (parsePackRef(packId) === null) return out;
     const authorizations = this.#records.authorizations;

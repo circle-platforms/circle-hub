@@ -5,6 +5,7 @@ import { createCatalogView, getInterpreter } from '../../../../hub/rules/api.ts'
 import commandTree, { parseLimit, produceCommandEntries } from './command-tree.ts';
 import type { CommandEntryData, ProducedEntry, XmlModel } from './types.ts';
 import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, latin1, seeded, xml, xmlDocument } from '../testing/test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const document = xmlDocument(fixtureBytes('command-tree.xml'));
 const result = produceCommandEntries(document.model);
@@ -325,37 +326,40 @@ describe('command tree on bad input', () => {
     for (const [k, input] of hostileInputs().entries()) assertTotal(commandTree, input, `hostile ${k}`);
   });
 
-  it('walks a very deep tree without recursion', () => {
+  it('walks a very deep tree without recursion', { timeout: 60_000 }, (t) => {
     // The declared container grammar nests menu in menu; the depth limit is tested with legal nesting, not wrappers.
-    let node: { name: string; attributes: { [name: string]: string }; children: unknown[]; range: [number, number]; irregular: null } = {
-      name: 'item',
-      attributes: { name: 'leaf' },
-      children: [],
-      range: [0, 0],
-      irregular: null,
+    const deepModel = (levels: number) => {
+      let node: { name: string; attributes: { [name: string]: string }; children: unknown[]; range: [number, number]; irregular: null } = {
+        name: 'item',
+        attributes: { name: 'leaf' },
+        children: [],
+        range: [0, 0],
+        irregular: null,
+      };
+      for (let depth = 0; depth < levels; depth++) node = { name: 'menu', attributes: { name: `m${depth}` }, children: [node], range: [0, 0], irregular: null };
+      return { charset: 'utf-8', declaration: null, root: { name: 'commands', attributes: {}, children: [node], range: [0, 0], irregular: null }, comments: 0, processingInstructions: 0 } as unknown as XmlModel;
     };
-    for (let depth = 0; depth < 20000; depth++) node = { name: 'menu', attributes: { name: `m${depth}` }, children: [node], range: [0, 0], irregular: null };
-    const model = { charset: 'utf-8', declaration: null, root: { name: 'commands', attributes: {}, children: [node], range: [0, 0], irregular: null }, comments: 0, processingInstructions: 0 };
-    const start = performance.now();
-    const produced = produceCommandEntries(model as unknown as XmlModel);
+    const produced = produceCommandEntries(deepModel(20000));
     assert.equal(produced.entries.length, 0);
     // Strict grammar: a tree that exceeds any completeness limit (depth, words, elements) is whole-invalid, with the
     // repair next-action, instead of keeping a truncated reading.
     assert.ok(produced.warnings.some((warning) => warning.includes('命令结构缺失、无法精确引用或超过完整解析限额')));
-    assert.ok(performance.now() - start < 1000);
+    // A chain this deep outgrows the CPU caches and the structural walk's WeakSet, so linear work measures 10 to 12
+    // times between the two depths; the bound of three times the factor still fails quadratic work (64 times).
+    t.diagnostic(describeGrowth('depth', assertLinearGrowth('depth', deepModel, produceCommandEntries, { small: 30000, maxRatio: 24 })));
   });
 
-  it('produces a large tree quickly', () => {
-    const items: string[] = [];
-    for (let k = 0; k < 20000; k++) {
-      items.push(`<item name="c${k}" help_string="h"><arguments><arg name="" type="${['STRING', 'U16', 'IPADDR', 'IPMASK'][k % 4]}" help_string="x" length="" limit="${k % 3 === 0 ? '[1 - 9]' : ''}" optional="NO" default_value=""></arg></arguments></item>`);
-    }
-    const model = xml(`<commands><scope type="global"><menu name="m">${items.join('')}</menu></scope></commands>`);
-    const start = performance.now();
-    const produced = produceCommandEntries(model);
-    const ms = performance.now() - start;
+  it('produces a large tree quickly', { timeout: 60_000 }, (t) => {
+    const wideModel = (count: number) => {
+      const items: string[] = [];
+      for (let k = 0; k < count; k++) {
+        items.push(`<item name="c${k}" help_string="h"><arguments><arg name="" type="${['STRING', 'U16', 'IPADDR', 'IPMASK'][k % 4]}" help_string="x" length="" limit="${k % 3 === 0 ? '[1 - 9]' : ''}" optional="NO" default_value=""></arg></arguments></item>`);
+      }
+      return xml(`<commands><scope type="global"><menu name="m">${items.join('')}</menu></scope></commands>`);
+    };
+    const produced = produceCommandEntries(wideModel(20000));
     assert.equal(produced.entries.length, 20000);
-    assert.ok(ms < 3000, `took ${ms} ms`);
+    t.diagnostic(describeGrowth('items', assertLinearGrowth('items', wideModel, produceCommandEntries, { small: 2500 })));
   });
 
   it('is deterministic and keeps its invariants on random trees', () => {

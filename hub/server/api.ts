@@ -103,6 +103,8 @@ export interface AppOptions {
   codeRoot?: string;
   /** Operational problems (a call-log write that failed); default stderr. Never receives arguments or secrets. */
   log?: (line: string) => void;
+  /** What the console's 运行状况 page reads (serve gives one); without it that page says 未知. */
+  observation?: import('./console/health.ts').HealthPageSources;
   /** Longest wait in close() for requests in flight, default 10 s. */
   closeTimeoutMs?: number;
   /**

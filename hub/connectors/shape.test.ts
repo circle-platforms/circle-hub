@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Shape } from '../../contracts/src/resources.ts';
+import { assertLinearGrowth } from '../testing/growth.ts';
 import { shapeProblem } from './shape.ts';
 
 const ids: Shape = {
@@ -47,17 +48,23 @@ test('arrays, strings, numbers, enums, const, anyOf', () => {
 });
 
 test('adversarial input is refused quickly', () => {
-  const started = Date.now();
+  // Quick means linear at worst, measured as growth from an eighth of each input to all of it (hub/testing/growth.ts),
+  // not as a time on this machine.
   const s: Shape = { type: 'string', maxLength: 64, pattern: '^[a]+$' };
   assert.match(shapeProblem(s, 'a'.repeat(10_000_000)) ?? '', /longer than 64/);
+  assertLinearGrowth('long string', (n) => 'a'.repeat(n), (value) => shapeProblem(s, value), { small: 1_250_000 });
   assert.match(shapeProblem(s, `${'a'.repeat(63)}!`) ?? '', /does not match/);
   const list: Shape = { type: 'array', items: { type: 'integer' }, maxItems: 10 };
   assert.match(shapeProblem(list, new Array(5_000_000).fill(1)) ?? '', /more than 10/);
-  let deep: unknown = 1;
-  for (let i = 0; i < 10_000; i++) deep = { a: deep };
+  assertLinearGrowth('long array', (n) => new Array(n).fill(1), (value) => shapeProblem(list, value), { small: 625_000 });
+  const nesting = (depth: number) => {
+    let deep: unknown = 1;
+    for (let i = 0; i < depth; i++) deep = { a: deep };
+    return deep;
+  };
   const nested: Shape = { type: 'object', properties: { a: { type: 'integer' } }, additionalProperties: false };
-  assert.match(shapeProblem(nested, deep) ?? '', /not an integer/);
-  assert.ok(Date.now() - started < 2_000, `took ${Date.now() - started} ms`);
+  assert.match(shapeProblem(nested, nesting(10_000)) ?? '', /not an integer/);
+  assertLinearGrowth('deep nesting', nesting, (value) => shapeProblem(nested, value), { small: 1_250 });
 });
 
 test('a shape deeper than the limit is never accepted', () => {

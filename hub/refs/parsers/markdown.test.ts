@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, type TestContext } from 'node:test';
 import { ParseEncodingError, ParseLimitError, markdownParser, selectorSegment, type MarkdownModel } from '../api.ts';
-import { fixture, latin1, timed, utf8 } from '../test-support.ts';
+import { assertLinearGrowth, describeGrowth } from '../../testing/growth.ts';
+import { fixture, latin1, utf8 } from '../test-support.ts';
 
 const bytes = fixture('spec.md');
 const spec = markdownParser.parse(bytes);
@@ -150,15 +151,25 @@ describe('markdown@1 behaviour', () => {
 });
 
 describe('markdown@1 on hostile headings', () => {
-  const BOUND_MS = 1_500;
-  function parsed(markdown: string, options = {}): ReturnType<typeof markdownParser.parse> {
-    const outcome = timed(() => markdownParser.parse(utf8(markdown), options));
-    assert.ok(outcome.ms < BOUND_MS, `${markdown.slice(0, 30)}... took ${outcome.ms.toFixed(0)} ms`);
-    if (outcome.error !== null) throw outcome.error;
-    return outcome.value!;
+  // Whether the work stays linear is checked by growth ratios (hub/testing/growth.ts), which do not depend on how fast or
+  // busy the runner is; what each case must produce is asserted on the full-size input, untimed. A hang is caught by the
+  // test's timeout.
+  const parsed = (markdown: string): ReturnType<typeof markdownParser.parse> => markdownParser.parse(utf8(markdown));
+  /** `repeat` parses per timed run lift a parse that is fast even at the size limit above the noise floor. */
+  function linear(t: TestContext, label: string, markdown: (size: number) => string, small: number, repeat = 1): void {
+    const run = (input: Uint8Array): void => {
+      for (let i = 0; i < repeat; i++) {
+        try {
+          markdownParser.parse(input);
+        } catch {
+          // A refusal is a valid outcome here; each test asserts the outcome on the full-size input.
+        }
+      }
+    };
+    t.diagnostic(describeGrowth(label, assertLinearGrowth(label, (size) => utf8(markdown(size)), run, { small })));
   }
 
-  it('cleans headings with long runs of spaces or tabs in linear time', () => {
+  it('cleans headings with long runs of spaces or tabs in linear time', { timeout: 60_000 }, (t) => {
     const run = ' '.repeat(200_000);
     assert.equal(parsed(`# a${run}b`).model.sections[1].title, `a${run}b`);
     assert.equal(parsed(`# a${run}b${run}`).model.sections[1].title, `a${run}b`);
@@ -167,6 +178,15 @@ describe('markdown@1 on hostile headings', () => {
     assert.equal(parsed(`# {#${run}x`).model.sections[1].attributes, null);
     const attributed = parsed(`# Title${run}{#id .x}${run}`).model.sections[1];
     assert.deepEqual([attributed.title, attributed.attributes], ['Title', '{#id .x}']);
+    const shapes: Array<[string, (spaces: string) => string, number]> = [
+      ['inner run', (spaces) => `# a${spaces}b`, 30],
+      ['trailing run', (spaces) => `# a${spaces}b${spaces}`, 5],
+      ['closing sequence', (spaces) => `# a${spaces}b${spaces}##${spaces}`, 4],
+      ['setext tabs', (spaces) => `a${spaces.replaceAll(' ', '\t')}b\n===\n`, 30],
+      ['unclosed attributes', (spaces) => `# {#${spaces}x`, 30],
+      ['attributes between runs', (spaces) => `# Title${spaces}{#id .x}${spaces}`, 4],
+    ];
+    for (const [label, shape, repeat] of shapes) linear(t, label, (size) => shape(' '.repeat(size)), 250_000, repeat);
   });
 
   it('reads closing sequences and attribute blocks as CommonMark and pandoc do', () => {
@@ -190,8 +210,9 @@ describe('markdown@1 on hostile headings', () => {
     assert.equal(parsed('    # code\n').model.blocks[0].kind, 'code_block');
   });
 
-  it('gives no selector to a section or block whose heading path is too long, and stays linear', async () => {
-    const document = parsed(`# ${'h'.repeat(20_000)}\n\n${'p\n\n'.repeat(40_000)}# short\n\ntext\n`);
+  it('gives no selector to a section or block whose heading path is too long, and stays linear', { timeout: 60_000 }, async (t) => {
+    const long = (blocks: number): string => `# ${'h'.repeat(20_000)}\n\n${'p\n\n'.repeat(blocks)}# short\n\ntext\n`;
+    const document = parsed(long(40_000));
     const { sections, blocks } = document.model;
     assert.equal(sections[1].selector, null);
     assert.equal(blocks.length, 40_001);
@@ -200,25 +221,29 @@ describe('markdown@1 on hostile headings', () => {
     assert.equal((await document.locate(`h/${'h'.repeat(4_100)}`)), null);
     assert.equal((await document.locate('b/0/short'))!.text, 'text');
     // The 20000-character path is no longer repeated in each of 40000 blocks (800 M characters of model).
-    const json = timed(() => JSON.stringify(document.model).length);
-    assert.ok(json.ms < BOUND_MS && (json.value as number) < 10_000_000, `model JSON is ${String(json.value)} characters`);
+    const json = JSON.stringify(document.model).length;
+    assert.ok(json < 10_000_000, `model JSON is ${json} characters`);
+    linear(t, 'blocks under a long heading', long, 20_000);
   });
 
-  it('maps texts without NUL in linear time, however few the NULs', async () => {
-    const document = parsed(`${'p\n\n'.repeat(300_000)}tail\u0000end\n`);
+  it('maps texts without NUL in linear time, however few the NULs', { timeout: 60_000 }, async (t) => {
+    const nul = (blocks: number): string => `${'p\n\n'.repeat(blocks)}tail\u0000end\n`;
+    const document = parsed(nul(300_000));
     assert.equal(document.model.nulRemoved, 1);
     assert.equal(document.model.blocks.at(-1)!.text, 'tailend');
     const many = markdownParser.parse(utf8('# a\u0000b\n\nx\u0000\u0000y\n\n\u0000z\n'));
     assert.deepEqual(many.model.blocks.map((block) => block.text), ['xy', 'z']);
     assert.equal((await many.locate('h/ab'))!.text, '# ab\n\nxy\n\nz');
+    linear(t, 'one NUL after many blocks', nul, 37_500);
   });
 
-  it('refuses headings just under the budget repeated over many blocks', () => {
+  it('refuses headings just under the budget repeated over many blocks', { timeout: 60_000 }, (t) => {
     const heading = 'h'.repeat(4_000);
-    const markdown = `# ${heading}\n\n${'p\n\n'.repeat(20_000)}`;
-    const outcome = timed(() => markdownParser.parse(utf8(markdown)));
-    assert.ok(outcome.ms < BOUND_MS, `took ${outcome.ms.toFixed(0)} ms`);
-    assert.ok(outcome.error instanceof ParseLimitError && outcome.error.limit === 'maxSelectorChars', String(outcome.error));
+    const repeated = (length: number, blocks: number): string => `# ${'h'.repeat(length)}\n\n${'p\n\n'.repeat(blocks)}`;
+    assert.throws(() => parsed(repeated(4_000, 20_000)), (e: unknown) => e instanceof ParseLimitError && e.limit === 'maxSelectorChars');
+    // The heading and the blocks grow together (4000 characters at 20000 blocks), so building or copying the heading path
+    // for each block would grow quadratically.
+    linear(t, 'refused selector text', (size) => repeated(size / 5, size), 2_500, 4);
     const fewer = parsed(`# ${heading}\n\n${'p\n\n'.repeat(1_000)}`);
     assert.equal(fewer.model.blocks[999].selector, `b/999/${heading}`);
   });

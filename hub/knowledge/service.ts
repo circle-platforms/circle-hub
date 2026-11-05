@@ -26,7 +26,7 @@ import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type P
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
 import { KnowledgeStore, INDEX } from './store.ts';
-import { canonicalize } from '../records/api.ts';
+import { canonicalize, withReadScope } from '../records/api.ts';
 import { KnowledgeEntryBody } from '../../contracts/src/knowledge.ts';
 import { syncProduct, type SyncOptions, type SyncReport } from './sync.ts';
 import { LinkReading } from './links.ts';
@@ -148,12 +148,12 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     return root === null ? [] : [{root:root.root,composition:root.composition}];
   };
   const reading = new TreeReading(context);
-  const spaces = new KnowledgeSpaces(context, reading.treeReader(), async () => {
+  // Every start_run freezes the team space and asks for these, so they are read in one scope: pack by pack they cost 4 seconds.
+  const spaces = new KnowledgeSpaces(context, reading.treeReader(), () => withReadScope(async () => {
     const mounts = [];
     for (const pack of await context.packs.products()) {
       const id = pack.product.id;
-      const lines = new Set((await builds.known(id)).map(build => build.line));
-      for (const line of [...lines].sort()) {
+      for (const line of [...await builds.lines(id)].sort()) {
         const info = (await rootForRead(id, { line }))?.info;
         if (info) mounts.push({ product: id, line, path: pathOf(['产品', id, line]), root: info.root });
       }
@@ -161,28 +161,15 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       if (unversioned) mounts.push({ product: id, line: null, path: pathOf(['产品', id, '不分版本']), root: unversioned.root });
     }
     return mounts.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-  }, (query, by) => reading.getNodes(query, by), async mount => {
+  }), (query, by) => reading.getNodes(query, by), async mount => {
     const composition = await reading.compositionOf(mount.root);
     if (!composition) return null;
-    const index = context.records.spaceIndex;
-    if (!index) throw new KnowledgeError('知识搜索索引暂不可用');
-    if (await index.ready(composition.record, mount.path)) return { version: composition.record, rows: [] };
-    // Bound transient text memory while deriving a large legacy product's index.
-    const batch: Array<{path:string;entry:string}> = [];
-    const flush = async () => {
-      const records = await context.records.store.findFirstMany({ key: INDEX.entry, values: batch.map(row => row.entry), kind: 'tree_node' });
-      const rows = batch.map(row => {
-        const record = records.get(row.entry);
-        if (!record) throw new KnowledgeError('产品知识来源的条目记录暂不可读');
-        const body = KnowledgeEntryBody.parse(record.body);
-        return { space: 'team', path: mount.path + (row.path === '/' ? '' : row.path), entry: row.entry, record: record.digest, text: canonicalize([body.statement, body.data]) };
-      });
-      await index.add(composition.record, rows,undefined,'product:'+mount.path);
-      batch.length = 0;
+    return {
+      version: composition.record,
+      rows: () => composition.rows(),
+      records: entries => context.records.store.firstDigests({ key: INDEX.entry, values: entries, kind: 'tree_node' }),
+      contents: entries => context.store.entries(entries, undefined, { cache: false }),
     };
-    for await (const row of composition.rows()) { batch.push(row); if (batch.length === 256) await flush(); }
-    if (batch.length) await flush();
-    return { version: composition.record, rows: [] };
   }, async root => {
     const composition = await reading.compositionOf(root);
     const rows = [];

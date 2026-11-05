@@ -9,8 +9,8 @@ import { scheduleRetention, type RetentionSchedule } from './retention.ts';
 import { installTraceSink } from './usage.ts';
 import { FLUSH_MS, INSERT_SPANS, TraceWriter, type StoredSpanRow, type WriterStats } from './writer.ts';
 
-export { ACCOUNTED_USAGE, STEP_NAMES, USAGE_NAMES, commandStep, consoleStep, isUsageName, mcpStep, syncStep, type StepName, type UsageName } from './names.ts';
-export { MAX_SHOWN_STEPS, TraceReader, type TraceDetail, type TraceListQuery, type TraceNode, type TraceStep, type TraceTopQuery, type TraceTotal } from './reader.ts';
+export { ACCOUNTED_USAGE, BACKGROUND_STEPS, STEP_NAMES, TIMED_BACKGROUND_STEPS, USAGE_NAMES, commandStep, consoleStep, isUsageName, mcpStep, syncStep, type BackgroundStep, type StepName, type UsageName } from './names.ts';
+export { MAX_RELEASE_CALLS_READ, MAX_ROOTS_READ, MAX_ROUNDS_READ, MAX_SHOWN_STEPS, TraceReader, type BackgroundQuery, type BackgroundTotal, type ClientQuery, type ClientTotal, type ClientTotals, type ReadBounds, type ReleaseQuery, type ReleaseTotal, type TraceDetail, type TraceListQuery, type TraceNode, type TraceStep, type TraceTopQuery, type TraceTotal } from './reader.ts';
 export { RETENTION_DAYS, purgeExpired, scheduleRetention, type RetentionSchedule } from './retention.ts';
 export {
   MAX_TRACE_STEPS,

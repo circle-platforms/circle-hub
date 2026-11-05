@@ -1555,6 +1555,18 @@ CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind
  WHERE s.b->>'started_at' ~ '^[0-9T:.Z-]+$' AND s.b->>'run' ~ '^[0-9a-z_]+$'
  ON CONFLICT DO NOTHING;
 `},
+ // The search projection is built in the background: the limit a version's build passed stays beside its counter, so the
+ // build is tried once and not again until that limit rises. Purges already delete these rows by quota scope.
+ {version:30,name:'knowledge_search_refusals',sql:`ALTER TABLE public.knowledge_space_search_totals
+ ADD COLUMN refused_space_bytes pg_catalog.int8 CHECK(refused_space_bytes>0),
+ ADD COLUMN refused_entry_bytes pg_catalog.int8 CHECK(refused_entry_bytes>0);
+`},
+ // Decision 147: the platform a client declares in MCP initialize, a diagnostic declaration like its name and version (B08
+ // F[14]), on the rows of its traces. The index is for the console's 运行状况 page: the p95 of a release reads that release's
+ // newest MCP calls, whatever the table holds of other releases and entries.
+ {version:31,name:'trace_client_platform',sql:`ALTER TABLE public.trace_spans ADD COLUMN client_platform pg_catalog.text;
+CREATE INDEX trace_spans_mcp_releases ON public.trace_spans (release,started_at DESC) WHERE is_root AND origin='mcp';
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
@@ -1596,7 +1608,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   knowledge_space_search: 'SELECT, INSERT',
   knowledge_space_search_documents: 'SELECT, INSERT',
   knowledge_space_search_ready: 'SELECT, INSERT',
-  knowledge_space_search_totals:'SELECT, INSERT, UPDATE (token_bytes)',
+  knowledge_space_search_totals:'SELECT, INSERT, UPDATE (token_bytes,refused_space_bytes,refused_entry_bytes)',
   schema_migrations: 'SELECT',
   records: 'SELECT, INSERT',
   record_index: 'SELECT, INSERT',

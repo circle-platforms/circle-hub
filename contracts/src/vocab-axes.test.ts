@@ -44,9 +44,9 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 39 and the generated vocabulary covers every declared axis', () => {
-  assert.equal(model.version,39);
-  assert.equal(MODEL_VERSION,39);
+test('model version is 40 and the generated vocabulary covers every declared axis', () => {
+  assert.equal(model.version,40);
+  assert.equal(MODEL_VERSION,40);
   assert.equal(model.vocabulary.length, Object.keys(AXES).length);
 });
 
@@ -225,8 +225,10 @@ test('model 39 adds the three B08 axes of the traces, with the values of the des
   assert.equal(labelOf('step_type', 'evaluator'), '重跑检查');
   assert.equal(labelOf('step_level', 'warning'), '警告');
   assert.equal(labelOf('trace_origin', 'cli'), '命令行');
-  const b08 = (model as unknown as { elements: Array<{ id: string; fields: string[]; rules: string[]; changes39?: string[] }> }).elements.find((element) => element.id === 'B08')!;
+  const b08 = (model as unknown as { elements: Array<{ id: string; fields: string[]; rules: string[]; changes39?: string[]; changes40?: string[] }> }).elements.find((element) => element.id === 'B08')!;
   assert.equal(b08.fields.length, 15, 'the three fields come after the indices the rest of the model cites');
   assert.match(b08.rules[5], /保留 14 天/);
   assert.ok(b08.changes39?.length);
+  assert.match(b08.fields[14]!, /平台/, 'model 40: a client declares its platform as well (decision 147)');
+  assert.ok(b08.changes40?.length);
 });

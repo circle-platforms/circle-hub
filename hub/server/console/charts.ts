@@ -53,6 +53,71 @@ export function parts(rows:readonly {label:string;value:number;className:string}
  return html`<figure class="ch-figure"><h3 class="ch-figure-title">${title}</h3><svg class="ch-parts" viewBox="0 0 100 8" preserveAspectRatio="none" role="img" aria-label="${title}">${rects}</svg><div class="ch-legend">${rows.map(row=>html`<span class="${row.className}">${row.label} <b class="num">${fmt(row.value)}</b></span>`)}</div><details class="ch-tableview"><summary>以表格查看</summary>${table(['状态','数量'],rows.map(row=>[row.label,row.value]))}</details></figure>`;
 }
 
+/** One line of a curve. A null value is an interval nobody has a reading for: the line breaks there, it is never drawn as 0. */
+export interface CurveSeries {label:string;className?:string;values:readonly (number|null)[]}
+export interface Curve {
+ title:string;note?:string;
+ /** One per point, for the read-out. */
+ labels:readonly string[];
+ series:readonly CurveSeries[];
+ max:number;ticks:readonly number[];tick:(value:number)=>string;value:(value:number)=>string;
+ /** The x axis: a point's index and its text. */
+ xLabels:readonly (readonly [number,string])[];
+ /** A moment on the curve: a vertical line with its name. */
+ marks?:readonly {index:number;label:string;side?:'left'|'right';low?:boolean}[];
+ /** A known value off the sampled line, such as the heap in a crash report. */
+ points?:readonly {index:number;value:number;label:string}[];
+ /** Points one read-out covers, so that a long curve stays a small page; it shows the largest of them, with `least` the smallest. */
+ hoverEvery?:number;
+ least?:boolean;
+ table?:{head:readonly string[];rows:readonly (readonly unknown[])[]};
+}
+const CW=360,CH=148,CL=44,CR=12,CT=16,CB=22;
+/** The narrowest stretch with no reading that still has room for the word. */
+const GAP_WORD_WIDTH=32;
+
+/** The stretches where no series has a value, as first and last index. */
+function gaps(series:readonly CurveSeries[],points:number):[number,number][]{
+ const out:[number,number][]=[];let start:number|null=null;
+ for(let i=0;i<=points;i++){
+  const empty=i<points&&series.every(line=>line.values[i]===null);
+  if(empty&&start===null)start=i;
+  if(!empty&&start!==null){out.push([start,i-1]);start=null;}
+ }
+ return out;
+}
+
+/** A line that may break, with the same read-outs and table as chart(); `chart` refuses a value that is not a number. */
+export function curve(input:Curve):Html{
+ const pw=CW-CL-CR,ph=CH-CT-CB,n=input.labels.length,every=input.hoverEvery??1;
+ const X=(i:number)=>CL+(n<=1?0:i/(n-1)*pw),Y=(v:number)=>CT+ph-Math.min(v,input.max)/input.max*ph;
+ const f=(value:number)=>value.toFixed(1);
+ const grid=input.ticks.map(value=>html`<line class="grid" x1="${CL}" x2="${CW-CR}" y1="${f(Y(value))}" y2="${f(Y(value))}"></line><text class="tick" x="${CL-6}" y="${f(Y(value)+4)}" text-anchor="end">${input.tick(value)}</text>`);
+ const bands=gaps(input.series,n).map(([from,to])=>{const x=X(from===0?0:from-1),w=X(to===n-1?n-1:to+1)-x;return html`<rect class="gapband" x="${f(x)}" y="${CT}" width="${f(Math.max(w,1))}" height="${ph}"></rect>${w>=GAP_WORD_WIDTH?html`<text class="name" x="${f(x+w/2)}" y="${CT+ph/2+4}" text-anchor="middle">未知</text>`:''}`;});
+ const lines=input.series.map(line=>{
+  const cls=line.className??'',runs:string[][]=[];let run:string[]|null=null;
+  line.values.forEach((value,i)=>{if(value===null){run=null;return;}if(run===null){run=[];runs.push(run);}run.push(f(X(i))+' '+f(Y(value)));});
+  const last=line.values.findLastIndex(value=>value!==null);
+  const wash=input.series.length===1?runs.map(points=>html`<path class="wash ${cls}" d="M ${points.join(' L ')} L ${points.at(-1)!.split(' ')[0]} ${f(CT+ph)} L ${points[0].split(' ')[0]} ${f(CT+ph)} Z"></path>`):'';
+  return html`${wash}${runs.map(points=>html`<path class="line ${cls}" d="M ${points.join(' L ')}"></path>`)}${last===-1?'':html`<circle class="dot ${cls}" cx="${f(X(last))}" cy="${f(Y(line.values[last]!))}" r="4"></circle>`}`;
+ });
+ const marks=(input.marks??[]).map(mark=>{const x=X(mark.index),right=mark.side!=='left';return html`<line class="mark" x1="${f(x)}" x2="${f(x)}" y1="${CT}" y2="${CT+ph}"></line><text class="value" x="${f(x+(right?4:-4))}" y="${mark.low?CT+ph-6:CT+10}" text-anchor="${right?'start':'end'}">${mark.label}</text>`;});
+ const pins=(input.points??[]).map(point=>html`<circle class="dot pin" cx="${f(X(point.index))}" cy="${f(Y(point.value))}" r="4"></circle><text class="value" x="${f(X(point.index))}" y="${CT-6}" text-anchor="end">${point.label}</text>`);
+ const axis=input.xLabels.map(([index,text],i,all)=>html`<text class="tick" x="${f(X(index))}" y="${CH-6}" text-anchor="${i===0?'start':i===all.length-1?'end':'middle'}">${text}</text>`);
+ const hits:Html[]=[],tips:Html[]=[];
+ for(let start=0,slot=0;start<n;start+=every,slot++){
+  const stop=Math.min(n,start+every),mid=Math.min(n-1,start+Math.floor(every/2));
+  const fold=(values:readonly (number|null)[])=>{const inside=values.slice(start,stop).filter((value):value is number=>value!==null);return inside.length===0?null:input.least?Math.min(...inside):Math.max(...inside);};
+  const row=input.series.map(line=>({label:line.label,className:line.className??'',value:fold(line.values)}));
+  const read=(value:number|null)=>value===null?'未知':input.value(value);
+  const left=Math.max(CL,start===0?CL:(X(start-1)+X(start))/2),right=stop>=n?CW-CR:(X(stop-1)+X(stop))/2;
+  hits.push(html`<g data-chart-index="${slot}" tabindex="${slot===0?0:-1}" role="img" aria-label="${input.labels[start]+'；'+row.map(item=>read(item.value)+' '+item.label).join('；')}"><line class="crosshair" x1="${f(X(mid))}" x2="${f(X(mid))}" y1="${CT}" y2="${CT+ph}"></line><rect class="hit" x="${f(left)}" y="${CT}" width="${f(Math.max(1,right-left))}" height="${ph}"></rect></g>`);
+  tips.push(html`<div data-chart-tip="${slot}" hidden><div class="when">${input.labels[start]}</div>${row.map(item=>html`<div class="row ${item.className}"><b>${read(item.value)}</b><span>${item.label}</span></div>`)}</div>`);
+ }
+ const fallbackTable=input.table?html`<details class="ch-tableview"><summary>以表格查看</summary>${table(input.table.head,input.table.rows as unknown[][])}</details>`:'';
+ return html`<figure class="ch-figure" data-chart><h3 class="ch-figure-title">${input.note?tooltip(input.title,input.note):input.title}</h3>${legend(input.series,true)}<div class="ch-plot"><svg class="ch-chart ch-curve" viewBox="0 0 ${CW} ${CH}" role="group" aria-label="${input.title}">${grid}${bands}${lines}${marks}${pins}${axis}${hits}</svg><div class="ch-chart-tip" hidden role="status">${tips}</div></div>${fallbackTable}</figure>`;
+}
+
 export interface Span {label:string;detail?:string;start:number;end:number;point?:boolean;url?:string}
 /** One temporal series: colour denotes the area's elapsed spans, never a mix of activity and result colours. */
 export function timeline(title:string,spans:readonly Span[],note?:string):Html{

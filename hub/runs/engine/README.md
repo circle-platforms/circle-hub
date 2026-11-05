@@ -686,11 +686,21 @@ these layers inherit its named exit and identify the requirement and repair path
 New runs freeze a finite submission deadline (explicit future `submission_due`, otherwise 24 hours after start).
 The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and asks a pass in progress
 to stop at its next run before closing records (serve listens first and starts maintenance in the background); command-only
-assemblies do not start maintenance. Scheduled passes are incremental: they remember, per run, the newest append position
-among its records, its predecessor's and its dispatch jobs' events (`RecordStore.lastPositions`), and visit a run only when
-that moved or its submission deadline passed since the last visit. The first pass after a start and one every half hour
-(`FULL_PASS_MS`) visit every run, for what no record of the run shows (a moved knowledge root, a disabled account); an
-explicit `maintain()` visits every run unless called with `incremental: true`. An expired run with no accepted submission gets
+assemblies do not start maintenance. Scheduled passes are incremental, and what one costs follows what changed, not the
+history (decision 146; `maintenance-memory.ts`). The first pass after a start and one every half hour (`FULL_PASS_MS`) visit
+every run and sweep every request, for what no record of the run shows (a moved knowledge root, a disabled account), and fill
+the schedules below; an explicit `maintain()` does the same unless called with `incremental: true`. Between those a round
+reads the account list and the end of the append log, and when neither moved it stops there. Otherwise it visits the runs a
+record names (`readAppended`): the run itself, its successors, the runs of a dispatch job with a new event, a new run. Three
+things reach it without a record of the run: a passed submission deadline and a passed request deadline, from schedules kept
+in memory, and an account change, which a sweep of every request answers because every request's next step depends on the
+active administrators. The request sweeps look at the requests of the runs and packs involved, which hold whole escalation
+chains; the pack repair sweep looks only at requests with a new answer and at versions a new run started on; held source
+requests are looked at again when an `authorization` or `source_artifact` record appears, since those are what a source's
+availability is decided from. An authorization that lapses by its `expires_at` leaves no record: if that alone changes which
+record of a source decides, the next full pass sees it. Work a round took in stays in memory until it is done, so a round that
+stops or fails leaves it to the next one. A visit is recorded before it runs and is not repeated after a failure until
+something happens to the run, as before. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.

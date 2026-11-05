@@ -6,6 +6,7 @@ import {createTestParserRegistry as createDefaultRegistry} from '../testing/pars
 // to; provenance needs a reader.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import pg from 'pg';
 import { TreeRootBody } from '../../contracts/src/knowledge.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
@@ -61,10 +62,24 @@ const pageSize = (page: NodesPage): number =>
 describe('get_nodes under load', () => {
   test('the reader is checked before the paths are read; duplicates are removed; at most 256 paths are examined', async (t) => {
     const w = await produced(t);
-    const many = Array.from({ length: 50_000 }, (_, i) => `/p${i}`);
-    const started = performance.now();
-    assert.equal(await w.knowledge.getNodes({ root: w.root, paths: many, depth: 6 }, w.outsider), null);
-    assert.ok(performance.now() - started < 1000, `refused before the paths are read (${Math.round(performance.now() - started)} ms)`);
+    // Counted, not timed: the refusal of 50000 paths reads exactly what the refusal of one path reads, and no node.
+    let queries = 0;
+    let nodes = 0;
+    const rawQuery = pg.Client.prototype.query;
+    t.mock.method(pg.Client.prototype, 'query', function (this: pg.Client, ...args: unknown[]) { queries++; return Reflect.apply(rawQuery, this, args); });
+    const rawNode = w.knowledge.store.node.bind(w.knowledge.store);
+    t.mock.method(w.knowledge.store, 'node', (...args: Parameters<typeof rawNode>) => { nodes++; return rawNode(...args); });
+    const refusal = async (paths: string[]) => {
+      queries = 0;
+      nodes = 0;
+      assert.equal(await w.knowledge.getNodes({ root: w.root, paths, depth: 6 }, w.outsider), null);
+      return { queries, nodes };
+    };
+    const one = await refusal(['/p0']);
+    const many = await refusal(Array.from({ length: 50_000 }, (_, i) => `/p${i}`));
+    assert.deepEqual(many, one, 'refused before the paths are read');
+    assert.equal(many.nodes, 0, 'no node is read for a reader who may not read the root');
+    t.mock.restoreAll();
 
     const paths = ['/commands', '/commands', ...Array.from({ length: 300 }, (_, i) => `/none${i}`)];
     const page = await w.knowledge.getNodes({ root: w.root, paths, depth: 0 }, w.user);

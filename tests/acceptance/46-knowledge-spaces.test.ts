@@ -330,10 +330,10 @@ test('MCP and console search report skipped over-limit scopes while retaining av
   await spaces.write(other.principal,input);
   await spaces.grant(other.principal,{path:input.path,audience:'member',member:owner.user.id});
   const own=await spaces.ensure(owner.principal,owner.user.id);
-  const ready=index.ready.bind(index),add=index.add.bind(index),search=spaces.search.bind(spaces);
+  const states=index.states.bind(index),search=spaces.search.bind(spaces);
   const failure=new RecordsError('当前版本知识索引超过合成限额',{code:'SPACE_INDEX_LIMIT',fix:'联系管理员调整空间索引限额'});
-  index.ready=async(version,path,tx)=>version===own.root?false:ready(version,path,tx);
-  index.add=async(version,rows,tx,quota)=>{if(version===own.root)throw failure;await add(version,rows,tx,quota);};
+  await spaces.indexRound();
+  index.states=async scopes=>(await states(scopes)).map((state,at)=>scopes[at].version===own.root?{ready:false,refused:failure}:state);
   const browser=await openConsole(hub,owner.token);
   try{
     const found=await client.call('get_nodes',{search:'降级检索',scope:'all'});
@@ -344,5 +344,5 @@ test('MCP and console search report skipped over-limit scopes while retaining av
     spaces.search=async()=>{throw failure;};
     const fallback=await browser.get('/console/search?'+new URLSearchParams({q:'降级检索',scope:'all'}));
     assert.equal(fallback.status,200,fallback.body);assert.ok(fallback.body.includes(failure.fix!));assert.match(fallback.body,/当前知识范围未检索/);
-  }finally{index.ready=ready;index.add=add;spaces.search=search;await spaces.grant(other.principal,{path:input.path,audience:'member',member:owner.user.id,revoke:true});}
+  }finally{index.states=states;spaces.search=search;await spaces.grant(other.principal,{path:input.path,audience:'member',member:owner.user.id,revoke:true});}
 });

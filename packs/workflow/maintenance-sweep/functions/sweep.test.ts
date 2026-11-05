@@ -9,6 +9,7 @@ import { projectItems } from './test-support.ts';
 import { sweepOf } from './sweep.ts';
 import { buildImpact, reversedView, reviewSweep, SOURCE, type ChangeSpec } from './test-support.ts';
 import { parseView } from './view.ts';
+import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
 
 const NONE = { ignoreFields: [] as string[] };
 
@@ -211,19 +212,24 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
     assert.equal(run.output.items[0].fields.priority, 0);
   });
 
-  it('sweeps five thousand cases', () => {
-    const changes: ChangeSpec[] = [];
-    for (let i = 0; i < 5000; i++) {
-      const n = String(i).padStart(4, '0');
-      changes.push({ path: `/commands/c${n}`, change: 'removed', before: [{ name: 'c' }], from: [{ document: 'doc', node: `n${n}`, title: '用例', priority: 1 }] });
-    }
-    const viewParsed = parsed(buildImpact(changes));
-    assert.ok(viewParsed);
-    const started = Date.now();
-    const sweep = sweepOf(viewParsed, NONE);
-    const elapsed = Date.now() - started;
+  it('sweeps five thousand cases', { timeout: 60_000 }, (t) => {
+    // `count` removed paths, one case each.
+    const view = (count: number) => {
+      const changes: ChangeSpec[] = [];
+      for (let i = 0; i < count; i++) {
+        const n = String(i).padStart(4, '0');
+        changes.push({ path: `/commands/c${n}`, change: 'removed', before: [{ name: 'c' }], from: [{ document: 'doc', node: `n${n}`, title: '用例', priority: 1 }] });
+      }
+      const viewParsed = parsed(buildImpact(changes));
+      assert.ok(viewParsed);
+      return viewParsed;
+    };
+    const sweep = sweepOf(view(5000), NONE);
     assert.equal(sweep.items.length, 5000);
-    assert.ok(elapsed < 8000, `${elapsed}ms`);
+    // The paths, items and detail rows are each sorted (n log n), and the larger maps miss the caches more: each doubling
+    // costs about 2.2 times, so 5,000 to 40,000 measures 11 to 16 times. The bound of three times the factor leaves
+    // room for that and still fails quadratic work (64 times).
+    t.diagnostic(describeGrowth('removed paths', assertLinearGrowth('removed paths', view, (viewParsed) => sweepOf(viewParsed, NONE), { small: 5000, maxRatio: 24 })));
   });
 });
 

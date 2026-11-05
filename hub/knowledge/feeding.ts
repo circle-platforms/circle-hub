@@ -15,7 +15,7 @@ import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8,type ParsedDocument} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
+import {SOURCE_ABSENCE_GENERATOR,canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {background} from '../telemetry/api.ts';
@@ -363,10 +363,21 @@ export class FeedingLayer {
    await job.announced;
    await this.jobLifecycleRecord(job,'running');
    await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(job.principal,job.sha,job.scope,tx);});
-   return this.observeSource(job.principal,job.sha,job.scope,job.pack??undefined);
+   return this.attempt(job.principal,job.sha,job.scope,job.pack??undefined);
   })().catch(error=>this.pendingReceipt(job.sha,error instanceof Error?error.message:'投影没有完成回执','修正或恢复原件后重读该来源；不把未完成投影当已喂入')).then(async receipt=>{try{if(!await this.currentPack(job.pack))await this.jobLifecycleRecord(job,'superseded',receipt);else await this.jobResultRecord(job,receipt.pending.length?'unknown':'completed',receipt);}catch{/* Original sources and the run remain readable; absence of a completion record is still unknown. */}job.resolve(receipt);})).finally(()=>{this.jobs.delete(job.key);this.activeJobs--;this.pump();});}}
+ /**
+  * Both ways a read feeds a source pass here. An absence observation (D05 R[3]) is what a read saw, no content of the object: it
+  * is not fed, so no job, usage, pending item or to-do exists for it, and nobody is told to read again what the system says does
+  * not exist. The capture is the one the read would feed: the record it names, or else the record this reader gets of the bytes.
+  */
+ private async unlessAbsence(principal:Principal,sha:string,scope:FeedingScope,feed:()=>Promise<FeedingReceipt>):Promise<FeedingReceipt>{
+  const capture=scope.sourceRecord?await this.context.records.store.get<any>(scope.sourceRecord):await this.context.records.artifacts.readable(principal,sha);
+  const absence=capture?.kind==='source_artifact'&&capture.body.sha256===sha&&'generated'in capture.body.origin&&capture.body.origin.generated.generator===SOURCE_ABSENCE_GENERATOR;
+  return absence?{objects:[],offset:null,pending:[]}:feed();
+ }
  /** Read hooks wait at most one small slice; queued work has a separate finite worker/call budget. */
- async observeSourceBounded(principal:Principal,sha:string,scope:FeedingScope={}):Promise<FeedingReceipt>{
+ observeSourceBounded(principal:Principal,sha:string,scope:FeedingScope={}):Promise<FeedingReceipt>{return this.unlessAbsence(principal,sha,scope,()=>this.enqueue(principal,sha,scope));}
+ private async enqueue(principal:Principal,sha:string,scope:FeedingScope):Promise<FeedingReceipt>{
   if(scope.readManifest&&!Sha256.safeParse(scope.readManifest).success)scope={...scope,readManifest:undefined};
   const pack=scope.product?await this.context.packs.productById(scope.product):null,captureKey=sha256Hex(canonicalize({by:principal.id,sha,scope:captureScope(scope)}));const key=sha256Hex(canonicalize({captureKey,pack:pack?.digest??null}));let job=this.jobs.get(key);
   if(!job&&!scope.metaSource&&!scope.sourceRecord)job=[...this.jobs.values()].find(candidate=>candidate.pack?.digest===pack?.digest&&candidate.principal.id===principal.id&&candidate.sha===sha&&candidate.scope.product===scope.product&&candidate.scope.root===scope.root&&candidate.scope.composition===scope.composition&&candidate.scope.run===scope.run);
@@ -470,7 +481,8 @@ export class FeedingLayer {
    for(const row of rows)out.set(canonicalize(row),row);
   }return [...out.values()];
  }
- async observeSource(principal:Principal,sha:string,scope:FeedingScope={},selectedPack?:ProductHandle):Promise<FeedingReceipt>{
+ observeSource(principal:Principal,sha:string,scope:FeedingScope={},selectedPack?:ProductHandle):Promise<FeedingReceipt>{return this.unlessAbsence(principal,sha,scope,()=>this.attempt(principal,sha,scope,selectedPack));}
+ private async attempt(principal:Principal,sha:string,scope:FeedingScope,selectedPack?:ProductHandle):Promise<FeedingReceipt>{
   const pack=selectedPack??(scope.product?await this.context.packs.productById(scope.product):undefined);
   try{return await this.observeCaptured(principal,sha,scope,pack??undefined);}catch(error){return this.failedAttempt(principal,sha,scope,error,pack);}
  }

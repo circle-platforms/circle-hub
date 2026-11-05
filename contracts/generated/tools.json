@@ -2,7 +2,7 @@
   {
     "name": "list_task_packs",
     "title": "List task packs",
-    "description": "List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.",
+    "description": "List the task packs you may use, with inputs, parameters and requirements. When the details do not all fit, every pack is shown briefly: read one in full with its exact pack_id, which has no @version. offset continues a truncated list.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -2372,7 +2372,7 @@
           "description": "Input slot name to reference or external object"
         },
         "parameters": {
-          "description": "The parameters the pack declares, as one object by name, for example {\"<name>\": <value>}; list_task_packs lists every pack parameter with its name, description and schema",
+          "description": "The parameters the pack declares, as one object by name, for example {\"<name>\": <value>}; list_task_packs with pack_id gives each parameter with its name, description and schema",
           "type": "object",
           "propertyNames": {
             "type": "string"
@@ -2391,7 +2391,7 @@
           "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
         },
         "client_key": {
-          "description": "Client chosen key; repeating it within its time window returns the same run",
+          "description": "Leave this out. It is only for sending a call again whose answer was lost: the same arguments with the same key return the same run within its time window. A key stays bound to its arguments for that whole window, in every session of this account, so a key made from what is read collides with a later read or returns an old run",
           "type": "string",
           "minLength": 1,
           "maxLength": 200

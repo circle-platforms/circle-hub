@@ -430,13 +430,15 @@ describe('boundaries', () => {
     assert.notEqual(threw.detail.limit, 'memory');
   });
 
-  it('an infinite loop is killed at the time limit', async () => {
+  // The call reports the limit that stopped it: the injected wall-clock limit, not the CPU limit behind it. A call that is
+  // not stopped is caught by the test's timeout.
+  it('an infinite loop is killed at the time limit', { timeout: 30_000 }, async () => {
     const dir = pack({ 'fn.ts': 'export default function () { for (;;) {} }' });
-    const started = Date.now();
     const before = sandboxStats().timeouts;
     const error = await failure(call(dir, null, { timeoutMs: 1000 }));
     assert.equal(error.code, 'SANDBOX_TIMEOUT', detailOf(error));
-    assert.ok(Date.now() - started < 5000);
+    assert.equal(error.detail.limit, 'time', detailOf(error));
+    assert.equal(error.detail.timeoutMs, 1000, detailOf(error));
     assert.equal(sandboxStats().timeouts, before + 1, 'the resource sampling counts it');
   });
 

@@ -6,6 +6,7 @@ import {ValidationResult} from '../../../contracts/src/validation.ts';
 import {SourceRoleSchema} from '../../../contracts/generated/vocabulary.ts';
 import type {EngineContext} from './deps.ts';
 import {groundsOf,groundsAudience,groundsReadableBy,guardedRecords,hasWithdrawnGrounds} from './grounds.ts';
+import {withQueryReads} from './query-scope.ts';
 
 const ref=(digit:string)=>'rec:'+digit.repeat(64);
 test('memory control actions cannot become grounds through a retained binding or a pending action exception',async()=>{
@@ -54,4 +55,15 @@ test('cached receipts use opaque absence when the submitter lost its own ground 
   const value=ValidationResult.parse({...accepted,partitions:partitions({}),cross_item:[{...fixtureClaim,resolutions:[],grounds:[reference],validity:{status:'valid',bound:[],premises:[]}}]});
   const ctx={deps:{records:{principals:{get:async()=>user,list:async()=>[user]},artifacts:{records:async()=>[],canRead:async()=>false}}}} as unknown as EngineContext;
   assert.equal((await groundsAudience(ctx,run,value,{recorded:true,submitter:user}))?.code,'SOURCE_UNAVAILABLE');
+});
+test('a result that cites one root hundreds of times looks that root up once in a read, and still answers from it',async()=>{
+ const by={id:runRecord.runner,name:'合成成员',role:'user' as const},root='a'.repeat(64),run=RunRecord.parse({...runRecord,sources:[]});
+ let asked=0,readable=new Set(['synthetic-product']);
+ const ctx={deps:{records:{store:{},artifacts:{}},packs:{readableProducts:async()=>readable},knowledge:{rootInfo:async()=>{asked+=1;return [{product:'synthetic-product'}];}}}} as unknown as EngineContext;
+ const grounds=Array.from({length:300},(_,n)=>`tree:${root}/synthetic/path-${n}`);
+ assert.equal(await withQueryReads(ctx,current=>groundsReadableBy(current,run,grounds,by)),true);
+ assert.equal(asked,1);
+ readable=new Set();
+ assert.equal(await withQueryReads(ctx,current=>groundsReadableBy(current,run,grounds,by)),false,'the product the root belongs to still decides, in each read');
+ assert.equal(asked,2,'nothing is kept past the read');
 });

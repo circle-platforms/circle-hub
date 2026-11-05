@@ -52,11 +52,11 @@ export async function memoReadCall<K extends readonly unknown[],T>(owner:object,
 /** Loader is trusted control flow; only its explicit data key participates in the memo identity. */
 export function memoReadValue<T>(owner:object,key:readonly unknown[],load:()=>Promise<T>):Promise<T>{return memoReadCall(owner,key,()=>load());}
 /** Integrity is pure, but identity includes the exact normalized raw envelope, not just its claimed digest. */
-export function verifiedReadValue<T>(parts:readonly string[],load:()=>T,transaction?:unknown):T{
+export function verifiedReadValue<T extends {body:unknown}>(parts:readonly string[],load:()=>T,transaction?:unknown):T{
  const scope=scopes.getStore();if(!scope||!current(scope)||transaction)return load();
  const entries=scope.verified.get(parts[0])??[],cached=entries.find(entry=>entry.parts.length===parts.length&&entry.parts.every((value,i)=>value===parts[i]));
  if(cached)return cached.value as T;
- const value=scope.data.freeze(load());entries.push({parts:[...parts],value});scope.verified.set(parts[0],entries);return value;
+ const value=scope.data.freezeRecord(load());entries.push({parts:[...parts],value});scope.verified.set(parts[0],entries);return value;
 }
 /** Only explicitly named, read-only methods may be memoized; callers keep every authorization predicate. */
 export function memoReadPort<T extends object>(port:T,methods:readonly (keyof T)[]):T{

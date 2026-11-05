@@ -164,3 +164,20 @@ test('listing is scoped: administrators see all, run requests follow the callbac
   assert.deepEqual(mine(await scoped.list(alice, visibleRun)), [onVisible.digest], 'a run filter lists only that run');
   assert.deepEqual(mine(await scoped.all(hiddenRun)), [onHidden.digest], 'all() is the trusted unscoped read');
 });
+
+test('a read of a scope gives the requests of those runs and packs and those records, once each, with their answers', async () => {
+  const { alice } = await once();
+  const writer = createRequestService(kit, clock);
+  const [one, two, other] = [newId('run'), newId('run'), newId('run')], pack = 'c'.repeat(64);
+  const bound = await writer.write({ ...fields(alice.id, await sourceRecord('scope-one')), run: one });
+  const both = await writer.write({ ...fields(alice.id, await sourceRecord('scope-both')), run: two, pack_digest: pack });
+  const packOnly = await writer.write({ ...fields(alice.id, await sourceRecord('scope-pack')), pack_digest: pack });
+  const outside = await writer.write({ ...fields(alice.id, await sourceRecord('scope-outside')), run: other });
+  const answer = await sourceRecord('scope-answer');
+  await writer.answer(packOnly.digest, answer);
+  const records = (views: Array<{ record: string }>) => views.map((view) => view.record).sort();
+  assert.deepEqual(records(await writer.within({ runs: [one, two], packs: [pack] })), [bound.digest, both.digest, packOnly.digest].sort(), 'a request in two parts of the scope comes once');
+  assert.deepEqual(records(await writer.within({ records: [outside.digest, answer] })), [outside.digest], 'a named record that is no request is left out');
+  assert.equal((await writer.within({ packs: [pack] })).find((view) => view.record === packOnly.digest)?.answered_by, answer);
+  assert.deepEqual(await writer.within({}), []);
+});

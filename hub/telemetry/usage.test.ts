@@ -167,7 +167,7 @@ test('what is known late reaches every row of the trace, the steps that ended be
     step('authenticate', () => {});
     updateTrace({
       name: 'submit_result', traceId: 'a'.repeat(32), parentSpanId: 'b'.repeat(16), userId: 'usr_late', sessionId: 'session-1', runId: 'run_late',
-      clientName: 'synthetic client', clientVersion: '1.2.3',
+      clientName: 'synthetic client', clientVersion: '1.2.3', clientPlatform: 'synthetic-os',
     });
   });
   const root = named(rows, 'submit_result');
@@ -175,7 +175,7 @@ test('what is known late reaches every row of the trace, the steps that ended be
   assert.equal(root.is_root, true);
   for (const row of rows) {
     assert.equal(row.trace_id, 'a'.repeat(32));
-    assert.deepEqual([row.user_id, row.session_id, row.run_id, row.client_name, row.client_version], ['usr_late', 'session-1', 'run_late', 'synthetic client', '1.2.3']);
+    assert.deepEqual([row.user_id, row.session_id, row.run_id, row.client_name, row.client_version, row.client_platform], ['usr_late', 'session-1', 'run_late', 'synthetic client', '1.2.3', 'synthetic-os']);
   }
   assert.equal(named(rows, 'authenticate').parent_span_id, root.span_id);
 });
@@ -185,11 +185,12 @@ test('the first status mark stays and a lone surrogate or NUL never reaches a ro
   startTrace({ name: 'get_nodes', origin: 'mcp' }, () => {
     setTraceStatus('error', 'SOURCE_ABSENT');
     setTraceStatus('warning', 'HTTP 404');
-    updateTrace({ clientName: 'bad\ud800name\0' });
+    updateTrace({ clientName: 'bad\ud800name\0', clientPlatform: 'bad\ud800os\0' });
   });
   assert.equal(rows[0].level, 'error');
   assert.equal(rows[0].status_message, 'SOURCE_ABSENT');
   assert.equal(rows[0].client_name, 'bad�name');
+  assert.equal(rows[0].client_platform, 'bad�os');
 });
 
 test('a step that outlives its root is still written, and usage after the end goes to what is still open or nowhere', async () => {

@@ -4,7 +4,8 @@ import {withQueryReads} from './query-scope.ts';
 import {requestReadable} from './grounds.ts';
 import { withRequestPermissions } from '../../records/api.ts';
 import { abandonRun } from './management.ts';
-import { maintainRuns, type MaintenanceMemory } from './maintenance.ts';
+import { maintainRuns } from './maintenance.ts';
+import { newMaintenanceMemory } from './maintenance-memory.ts';
 import { requestsOf } from './requests.ts';
 // createRunsService: the RunsService of hub/ports.ts plus the engine's extras (results, runs of a pack, the production result
 // of a start, Hub-side runs for standing obligations). Every call that carries a CallContext reports the real reasons behind
@@ -59,7 +60,7 @@ async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,ope
 }
 
 export interface RunsEngine extends RunsService {
-  /** One pass over every run; with `incremental`, only the runs the scheduled passes' memory shows something happened to. */
+  /** One pass over every run and request; with `incremental`, only what the scheduled passes' memory shows changed or fell due. */
   maintain(options?:{incremental?:boolean}):Promise<void>;
   /**
    * Schedules a pass every minute and resolves when the first pass is done (it is retried on schedule should it fail). The
@@ -95,7 +96,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   let ongoing:Promise<void>|null=null;
   let timer:ReturnType<typeof setInterval>|null=null;
   let aborted=false;
-  const memory:MaintenanceMemory={runs:new Map(),fullAt:null};
+  const memory=newMaintenanceMemory();
   const maintain=(options:{incremental?:boolean}={}):Promise<void>=>ongoing??=(background('maintain-runs',()=>withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted,options.incremental===true?memory:undefined))).finally(()=>{ongoing=null;}));
   // Submissions stored before citations were indexed get their index in the background: a pass at the start and at every
   // tick until one reaches its end (backfillCitations). Stopping aborts the pass under way; the next one resumes it.

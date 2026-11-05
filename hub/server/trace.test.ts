@@ -3,9 +3,10 @@
 // console with its 500 paths, the sync API and a background round.
 import assert from 'node:assert/strict';
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
+import { connect } from 'node:net';
 import { after, before, test, type TestContext } from 'node:test';
 import { Database, createPool, type Row } from '../records/db.ts';
-import { startTelemetry, type Telemetry, type TelemetryOptions } from '../telemetry/api.ts';
+import { TraceReader, startTelemetry, type Telemetry, type TelemetryOptions } from '../telemetry/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { createTestServer, testConsoleCredentials, type TestServer, type TestUser } from './testing.ts';
 
@@ -125,6 +126,159 @@ test('initialize and tools/list are named; the client name comes from what initi
   const rows = (await db.query(`SELECT * FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
   assert.ok(rows.some((row) => row.name === 'initialize' && row.client_name === 'hub-server-test'));
   assert.ok(rows.some((row) => row.name === 'list-tools' && row.client_name === 'hub-server-test'));
+});
+
+/** A raw initialize, with the clientInfo a test wants; the SDK's client sends only a name and a version. */
+async function initialize(token: string, clientInfo: unknown): Promise<string | null> {
+  const response = await fetch(server.mcpUrl, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo } }) });
+  assert.equal(response.status, 200);
+  await response.text();
+  return response.headers.get('mcp-session-id');
+}
+
+const listTools = async (token: string, session: string | null): Promise<void> => {
+  const response = await fetch(server.mcpUrl, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(session === null ? {} : { 'mcp-session-id': session }) }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) });
+  assert.equal(response.status, 200);
+  await response.text();
+};
+
+test('the platform a client declares at initialize reaches the rows of that connection, cleaned and bounded, as a declaration', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: ` synthetic\u0000-os\u200b${'x'.repeat(200)} ` });
+  await listTools(user.token, session);
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT name, client_name, client_version, client_platform FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
+  const platform = `synthetic-os${'x'.repeat(88)}`;
+  assert.equal([...platform].length, 100);
+  assert.deepEqual(rows, [
+    { name: 'initialize', client_name: 'synthetic-client', client_version: '1.0', client_platform: platform },
+    { name: 'list-tools', client_name: 'synthetic-client', client_version: '1.0', client_platform: platform },
+  ]);
+});
+
+test('a root on /mcp is a call exactly when the call log has its line, whatever its name', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const headers = { authorization: `Bearer ${user.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  const post = (body: unknown, extra: Record<string, string> = {}): Promise<Reply> => send('/mcp', { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) });
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0' });
+  assert.ok(session);
+  const inSession = { 'mcp-session-id': session };
+  // No line: the client's probe for a stream, and a notification.
+  assert.equal((await send('/mcp', { headers: { ...headers, ...inSession } })).status, 405);
+  assert.equal((await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, inSession)).status, 202);
+  // A line each: a ping, a tool no one has, and a request or a notification refused at the transport.
+  assert.equal((await post({ jsonrpc: '2.0', id: 2, method: 'ping' }, inSession)).status, 200);
+  assert.equal((await post({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'no_such_tool', arguments: {} } }, inSession)).status, 200);
+  assert.equal((await post({ jsonrpc: '2.0', id: 4, method: 'ping' }, { 'content-type': 'text/plain' })).status, 415);
+  assert.equal((await post({ jsonrpc: '2.0', method: 'notifications/initialized' }, { accept: 'text/plain' })).status, 406);
+  assert.equal((await send('/mcp', { method: 'DELETE', headers: { ...headers, ...inSession } })).status, 405);
+  await telemetry.flush();
+  const roots = (await db.query(`SELECT name, count(*)::int AS n FROM trace_spans WHERE user_id = $1 AND is_root AND origin = 'mcp' GROUP BY name ORDER BY name`, [user.user.id])).rows;
+  assert.deepEqual(roots, [{ name: 'handle-mcp', n: 5 }, { name: 'initialize', n: 1 }, { name: 'serve-http', n: 2 }]);
+  const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 50 })).items;
+  assert.equal(lines.length, 6, 'the calls the page counts are the lines of the call log');
+});
+
+/** A POST that goes away before its body is complete, and the line the call log writes for it. */
+async function abandon(user: TestUser, session: string): Promise<void> {
+  const before = (await server.records.callLog.query(user.principal, { limit: 50 })).items.length;
+  const socket = connect(server.port, '127.0.0.1');
+  socket.write(`POST /mcp HTTP/1.1\r\nhost: 127.0.0.1:${server.port}\r\nauthorization: Bearer ${user.token}\r\ncontent-type: application/json\r\nmcp-session-id: ${session}\r\ncontent-length: 100\r\n\r\n{`, () => socket.destroy());
+  for (let index = 0; index < 500; index += 1) {
+    if ((await server.records.callLog.query(user.principal, { limit: 50 })).items.length > before) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail('the abandoned request got no line');
+}
+
+test('a request refused on the way in is still the call of the client that declared itself: no client without a name appears', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const since = new Date().toISOString();
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  assert.ok(session);
+  const headers = { authorization: `Bearer ${user.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': session };
+  const post = (body: string, extra: Record<string, string> = {}): Promise<Reply> => send('/mcp', { method: 'POST', headers: { ...headers, ...extra }, body });
+  const ping = JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' });
+  assert.equal((await post(ping, { 'content-type': 'text/plain' })).status, 415);
+  assert.equal((await post(ping, { 'content-length': String(2 ** 40) })).status, 413);
+  assert.equal((await post(JSON.stringify({ token: user.token }))).status, 400);
+  assert.equal((await post('not json')).status, 400);
+  assert.equal((await post(`[${ping}]`)).status, 400);
+  await abandon(user, session);
+  assert.equal((await send('/mcp', { method: 'DELETE', headers })).status, 405);
+  await telemetry.flush();
+  const client = { client_name: 'synthetic-client', client_version: '1.0', client_platform: 'synthetic-os' };
+  const roots = (await db.query(`SELECT name, client_name, client_version, client_platform, count(*)::int AS n FROM trace_spans WHERE user_id = $1 AND is_root GROUP BY 1, 2, 3, 4 ORDER BY 1`, [user.user.id])).rows;
+  assert.deepEqual(roots, [{ name: 'handle-mcp', ...client, n: 7 }, { name: 'initialize', ...client, n: 1 }]);
+  const { rows } = await new TraceReader(db).clients(server.admin.principal, { since, limit: 50 });
+  assert.deepEqual(rows.map((row) => [row.origin, row.client_name, row.client_platform, row.calls]), [['mcp', 'synthetic-client', 'synthetic-os', 8]]);
+});
+
+test('a refused request of a connection that declared nothing keeps no name: nothing is guessed from another connection', async (t) => {
+  const telemetry = telemetryFor(t);
+  const [declared, silent] = [await member(), await member()];
+  await initialize(declared.token, { name: 'synthetic-client', version: '1.0' });
+  assert.equal((await send('/mcp', { method: 'DELETE', headers: { authorization: `Bearer ${silent.token}` } })).status, 405);
+  await telemetry.flush();
+  assert.deepEqual((await db.query(`SELECT name, client_name FROM trace_spans WHERE user_id = $1 AND is_root`, [silent.user.id])).rows, [{ name: 'handle-mcp', client_name: null }]);
+});
+
+test('a request on /mcp refused before it could be a call is an exchange, traced like any other', async (t) => {
+  const telemetry = telemetryFor(t);
+  const refused = [
+    ['4bf92f3577b34da6a3ce929d0e0e4737', await send('/mcp', { method: 'POST', headers: { traceparent: `00-4bf92f3577b34da6a3ce929d0e0e4737-${PARENT}-01`, 'content-type': 'application/json' }, body: '{}' }), 401],
+    ['4bf92f3577b34da6a3ce929d0e0e4738', await send('/mcp', { method: 'POST', headers: { traceparent: `00-4bf92f3577b34da6a3ce929d0e0e4738-${PARENT}-01`, host: 'other.example', 'content-type': 'application/json' }, body: '{}' }), 403],
+  ] as const;
+  await telemetry.flush();
+  for (const [trace, reply, status] of refused) {
+    assert.equal(reply.status, status);
+    const root = rootOf(await rowsOf(trace));
+    assert.deepEqual([root.name, root.origin, root.user_id], ['serve-http', 'mcp', null]);
+    await db.query('DELETE FROM trace_spans WHERE trace_id = $1', [trace]);
+  }
+});
+
+test('a refused batch is one root of the MCP entry, whatever its requests asked for', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  const reply = await send('/mcp', { method: 'POST', headers: { authorization: `Bearer ${user.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'ping' }, { jsonrpc: '2.0', id: 2, method: 'tools/list' }]) });
+  assert.equal(reply.status, 400);
+  await telemetry.flush();
+  const roots = (await db.query(`SELECT name FROM trace_spans WHERE user_id = $1 AND is_root`, [user.user.id])).rows;
+  assert.deepEqual(roots.map((row) => row.name), ['handle-mcp']);
+  assert.equal((await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 50 })).items.length, 2, 'a line per request of it');
+});
+
+test('a client that declares no platform has none: absent, not guessed, and not taken from another connection', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  const silent = await initialize(user.token, { name: 'synthetic-client', version: '1.0' });
+  await listTools(user.token, silent);
+  const blank = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: ' \u0000 ' });
+  const wrong = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 42 });
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT client_platform FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
+  assert.deepEqual(rows.map((row) => row.client_platform), ['synthetic-os', null, null, null, null]);
+  assert.ok(blank && wrong);
+});
+
+test('a platform with no name says nothing, and the records that bind a client to its writes do not hold the platform', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  await initialize(user.token, { platform: 'synthetic-os' });
+  const session = await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT client_name, client_platform FROM trace_spans WHERE user_id = $1 AND is_root ORDER BY started_at`, [user.user.id])).rows;
+  assert.deepEqual(rows[0], { client_name: null, client_platform: null });
+  const tokenId = (await server.records.principals.tokens(user.user.id))[0]!.id;
+  assert.deepEqual(await server.records.callLog.declaredClient!(user.user.id, session, tokenId), { name: 'synthetic-client', version: '1.0' });
+  const declarations = (await db.query(`SELECT body FROM records WHERE schema = 'mcp-client-declaration@1' AND body LIKE $1`, [`%${user.user.id}%`])).rows;
+  assert.equal(declarations.length, 1);
+  assert.deepEqual((JSON.parse(String(declarations[0]!.body)) as { client: unknown }).client, { name: 'synthetic-client', version: '1.0' }, 'the declaration bound to writes is the name and version');
 });
 
 test('the traceparent header joins the client trace: the client span is the parent of the root', async (t) => {
@@ -288,6 +442,16 @@ test('requests outside MCP, the console and sync are traced as well, a refusal i
   assert.equal(root.status_message, 'HTTP 404');
   assert.equal(root.parent_span_id, PARENT);
   await db.query('DELETE FROM trace_spans WHERE trace_id = $1', [TRACE]);
+});
+
+test('a sync request takes the platform its token declared, as it takes the name and version', async (t) => {
+  const telemetry = telemetryFor(t);
+  const user = await member();
+  await initialize(user.token, { name: 'synthetic-client', version: '1.0', platform: 'synthetic-os' });
+  await send('/api/sync/v1/state', { headers: { authorization: `Bearer ${user.token}` } });
+  await telemetry.flush();
+  const rows = (await db.query(`SELECT client_name, client_version, client_platform FROM trace_spans WHERE origin = 'sync' AND is_root AND user_id = $1`, [user.user.id])).rows;
+  assert.deepEqual(rows, [{ client_name: 'synthetic-client', client_version: '1.0', client_platform: 'synthetic-os' }]);
 });
 
 test('a sync request is a trace named by its route, with its account', async (t) => {

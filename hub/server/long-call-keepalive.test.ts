@@ -19,18 +19,15 @@ after(async () => {
   await postgres?.stop();
 });
 
-interface Timed {
+interface Reply {
   status: number;
   headers: Record<string, string | string[] | undefined>;
-  headMs: number;
-  endMs: number;
   chunks: string[];
   body: string;
 }
 
-function callListTaskPacks(): Promise<Timed> {
+function callListTaskPacks(onChunk?: (chunks: readonly string[]) => void): Promise<Reply> {
   const payload = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_task_packs', arguments: {} } });
-  const started = performance.now();
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       {
@@ -47,10 +44,9 @@ function callListTaskPacks(): Promise<Timed> {
         },
       },
       (res) => {
-        const headMs = performance.now() - started;
         const chunks: string[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, headMs, endMs: performance.now() - started, chunks, body: chunks.join('') }));
+        res.on('data', (chunk: Buffer) => { chunks.push(chunk.toString('utf8')); onChunk?.(chunks); });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, chunks, body: chunks.join('') }));
       },
     );
     req.on('error', reject);
@@ -59,18 +55,19 @@ function callListTaskPacks(): Promise<Timed> {
 }
 
 describe('long tool calls keep the connection alive', () => {
-  test('a call that works longer than the threshold gets its head early, spaces while it works, then the JSON answer', async () => {
+  test('a call that works longer than the threshold gets its head early, spaces while it works, then the JSON answer', { timeout: 30_000 }, async () => {
     const workflows = server.deps.workflows as { summaries: (...args: unknown[]) => Promise<unknown> };
     const original = workflows.summaries.bind(workflows);
+    // The work ends only once the client holds the head and two spaces: a head kept back for the work could never come.
+    let finish!: () => void;
+    const spaced = new Promise<void>((done) => { finish = done; });
     workflows.summaries = async (...args: unknown[]) => {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await spaced;
       return original(...args);
     };
     try {
-      const reply = await callListTaskPacks();
+      const reply = await callListTaskPacks((chunks) => { if (chunks.filter((chunk) => /^ +$/.test(chunk)).length >= 2) finish(); });
       assert.equal(reply.status, 200);
-      assert.ok(reply.headMs < 700, `the head came before the work was done (${reply.headMs.toFixed(0)} ms)`);
-      assert.ok(reply.endMs >= 1100, `the body waited for the work (${reply.endMs.toFixed(0)} ms)`);
       assert.match(String(reply.headers['content-type']), /application\/json/);
       assert.equal(reply.headers['content-length'], undefined, 'the length is unknown when the head goes out first');
       const spaces = reply.chunks.filter((chunk) => /^ +$/.test(chunk));

@@ -108,8 +108,9 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
         return true;
       }
       const knowledge=ctx.deps.knowledge;
-      const roots=await knowledge?.rootInfo(ref.root)??[];
-      if(roots.length){const readable=await ctx.deps.packs.readableProducts(by);return roots.some(root=>readable.has(root.product));}
+      // A result cites a few roots hundreds of times: each is looked up once per read.
+      const products=await queryRead(ctx,['root-products',ref.root] as const,async([,root])=>(await knowledge?.rootInfo(root)??[]).map(info=>info.product));
+      if(products.length){const readable=await ctx.deps.packs.readableProducts(by);return products.some(product=>readable.has(product));}
       const tree=knowledge?.treeReader();if(await tree?.hasRoot?.(ref.root,identity))return true;
       if(tree)return (await tree.read(ref.root,ref.path,ref.entry??null,identity))!==null;
     }
