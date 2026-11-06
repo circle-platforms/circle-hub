@@ -5,7 +5,7 @@ import {personalPackControls} from './personal-packs.ts';
 // it), and one pack's requirements, checks, versions and permissions. Publishing runs in the console (the publish
 // operation); changing who may use or maintain a pack, retiring a version and switching a product pack are commands for the
 // administrator's Circle (proposal decision 6 of 2026-10-31).
-import { PACK_KIND, axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { PACK_KIND, axisUiLabel, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import {timestamp} from './knowledge-display.ts';
@@ -98,7 +98,7 @@ export async function skillsPage(ctx: PageContext): Promise<PageResult> {
 
 export const PACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
-async function packList(ctx:PageContext,listings:readonly PackListing[],scope:KnowledgeSearchScope,selected?:PackListing,shown:'workflow'|'skill'='workflow'):Promise<Html>{
+async function packList(ctx:PageContext,listings:readonly PackListing[],scope:KnowledgeSearchScope,selected?:PackListing,shown:PackKind='workflow'):Promise<Html>{
   const groups=byId(listings.filter(pack=>inScope(scope,pack.space??'team',ctx.principal.id)));
   const values=KnowledgeSearchScopeSchema.enum,scopes=scope==='all'?[values.personal,values.shared,values.team]:[scope];
   const kinds=PACK_KIND.filter(kind=>kind===(selected?.kind??shown));

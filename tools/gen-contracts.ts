@@ -845,7 +845,8 @@ export function drift(root: string, files: Record<string, string>, packFiles: Re
       if (actual !== expected) out.push(`out of date: ${name} (first difference at line ${firstDifference(expected, actual)})`);
     }
   }
-  for (const name of embeddedOnDisk(canonical(root))) if (!(name in packFiles)) out.push(`stale: ${name}`);
+  // Only a caller that passes the pack files can tell what is stale; generate() alone knows no pack file.
+  if (Object.keys(packFiles).length > 0) for (const name of embeddedOnDisk(canonical(root))) if (!(name in packFiles)) out.push(`stale: ${name}`);
   return out;
 }
 

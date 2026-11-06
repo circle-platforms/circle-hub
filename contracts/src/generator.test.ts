@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { drift, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../tools/gen-contracts.ts';
+import { drift, embeddedPackFiles, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../tools/gen-contracts.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const run = (script: string, args: string[], cwd = repo) => spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' });
@@ -328,3 +328,37 @@ describe('on a temporary copy', () => {
     assert.match(unsafe.stderr, /schema key "\.\.\/escape@1" is not name@major/);
   });
 });
+
+test('a pack embeds exactly the module it names, from the version it names (T01 R[6])', () => {
+  const root = mkdtempSync(join(tmpdir(), 'embed-'));
+  const write = (path: string, text: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text); };
+  const pack = (embeds: unknown) => write('packs/workflow/work/pack.json', JSON.stringify({ embeds }));
+  try {
+    write('packs/skill/format/pack.json', JSON.stringify({ version: '1.0.0' }));
+    write('packs/skill/format/functions/modules/reader/index.ts', "import './table.json';\n");
+    write('packs/skill/format/functions/modules/reader/table.json', '{}\n');
+    write('packs/skill/format/functions/modules/reader/index.test.ts', 'tests stay in the skill\n');
+    pack([{ pack: 'format', version: '1.0.0', module: 'reader' }]);
+    assert.deepEqual(Object.keys(embeddedPackFiles(root)).sort(), ['packs/workflow/work/functions/generated/skills/format/reader/index.ts', 'packs/workflow/work/functions/generated/skills/format/reader/table.json']);
+    pack([{ pack: 'format', version: '0.9.0', module: 'reader' }]);
+    assert.throws(() => embeddedPackFiles(root), /embeds format@0\.9\.0, the skill is at 1\.0\.0/);
+    pack([{ pack: 'format', version: '1.0.0', module: 'writer' }]);
+    assert.throws(() => embeddedPackFiles(root), /has no folder/);
+    pack([{ pack: 'format', version: '1.0.0', module: 'reader' }]);
+    write('packs/skill/format/functions/modules/reader/index.ts', "import '../../outside.ts';\n");
+    assert.throws(() => embeddedPackFiles(root), /outside its module/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an embedded file no pack.json names any more is reported as stale', () => {
+  const root = mkdtempSync(join(tmpdir(), 'embed-stale-'));
+  try {
+    mkdirSync(join(root, 'contracts/generated'), { recursive: true });
+    mkdirSync(join(root, 'packs/workflow/work/functions/generated/skills/format/reader'), { recursive: true });
+    writeFileSync(join(root, 'packs/workflow/work/pack.json'), '{}');
+    writeFileSync(join(root, 'packs/workflow/work/functions/generated/skills/format/reader/index.ts'), 'old\n');
+    writeFileSync(join(root, 'packs/workflow/work/kept.ts'), 'kept\n');
+    assert.deepEqual(drift(root, {}, { 'packs/workflow/work/kept.ts': 'kept\n' }), ['stale: packs/workflow/work/functions/generated/skills/format/reader/index.ts']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+

@@ -10,7 +10,7 @@ import {identityOf,identityKey} from './typed-contract.ts';
 import {readCommandPolicy,pathSegments,type CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {CatalogEntry} from '../../../../contracts/src/tables.ts';
-import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
+import type {CommandParseStatus,Verdict} from '../../../../contracts/generated/vocabulary.ts';
 type CommandVerdict = Extract<Verdict, 'unknown' | 'refute'>;
 export interface CommandCatalog {policy?:unknown;authority_entries?:CatalogEntry[];root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[]}
 export interface CommandProblem {document:string;pointer:string;message:string;verdict:CommandVerdict}
@@ -62,7 +62,7 @@ export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slo
   if(lines.some(({line})=>{const tokens=commandTokens(line);return tokens&&entry.words.every((word,index)=>tokens[index]?.value===word&&!tokens[index].quoted);}))candidates.add(entry as CatalogEntry);
  }
  const grammar=compileGrammar(definitions);
- for(const {line,pointer}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line),parsed=commandIdentity(grammar,line),identity=parsed?identityOf(parsed):null;
+ for(const {line,pointer}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line) as {status:CommandParseStatus;missing?:string},parsed=commandIdentity(grammar,line),identity=parsed?identityOf(parsed):null;
   if(identity)byLine.set(line,identity);else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
  }
  const identities=[...new Map([...byLine.values()].map(identity=>[identityKey(identity),identity])).values()];

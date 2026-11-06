@@ -248,8 +248,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "0dac8170e0e0b4417c91f7a8bedd39c568eea06d6d7bb01658dcd573493387cc",
-      "size": 9439
+      "sha256": "162d68c0815c7aa0af1521ebf67a2a6fcc755bc932388e581586fed62a414c36",
+      "size": 9505
     },
     {
       "path": "functions/profile.ts",

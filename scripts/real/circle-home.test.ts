@@ -540,7 +540,7 @@ test('the case-compile skill commands, filled in as Circle hands them to hooks, 
     const text = readFileSync(join(pack, 'SKILL.md'), 'utf8');
     const commands = [...[...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => m[1]), ...[...text.matchAll(/`(node <技能目录>[^`]*)`/g)].map((m) => m[1])];
     assert.ok(commands.length >= 3 && commands.some((command) => command.includes("<<'EOF'\n%HUB_TOKEN%\nEOF")), 'normalize, fetch and generate, the token by a quoted here-document');
-    const values: Record<string, string> = { 技能目录: skill, 计划运行号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 目录: 'case-compile-run', 导出文件: 'export.json', 规整文件: 'normalized.json' };
+    const values: Record<string, string> = { 技能目录: skill, 计划运行号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 运行号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 模型: 'synthetic-model', 目录: 'case-compile-run', 导出文件: 'export.json', 规整文件: 'normalized.json' };
     for (const raw of commands) {
       // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
       const command = raw.replaceAll('%HUB_URL%', hubUrl).replace(/<([^<>'\s]+)>/g, (whole, name: string) => { assert.ok(Object.hasOwn(values, name), `placeholder ${whole} has no synthetic value`); return values[name]; });
