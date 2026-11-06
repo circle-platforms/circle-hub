@@ -6,7 +6,7 @@ import type {RuntimeProfile} from './profile.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
 import {bindArguments} from './binding.ts';
-import {readCommandPolicy,within,pathSegments} from './command-policy.ts';
+import {readCommandPolicy,within,pathSegments} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {isRecord} from './text.ts';
 import {canonicalJson} from './canonical-json.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';

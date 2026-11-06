@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { recognize, parserKey } from '../../../../hub/refs/api.ts';
 import { unzipSync } from 'fflate';
 import { generateWorkbook, GenerationError, GENERATOR } from './generate.ts';
-import { crc32 } from './zip-store.ts';
+import { crc32 } from './generated/skills/runner-workbook/workbook-writer/zip-store.ts';
 import { generationFixture } from '../testing/workbook.ts';
 import { runtimeDocument } from '../testing/runtime.ts';
 import { parseRuntimeContract } from './runtime-contract.ts';
@@ -45,7 +45,7 @@ function executorDocuments() {
   (profileDoc.runtime as Record<string, unknown>).contract_sha256 = (contractDoc.original as Record<string, unknown>).contract_sha256;
   return { contractDoc, profileDoc };
 }
-import { readWorkbookModel } from './xlsx-model.ts';
+import { readWorkbookModel } from './generated/skills/runner-workbook/workbook-writer/xlsx-model.ts';
 import { TEMPLATE_LAST_ROW, templateDocument } from '../testing/template.ts';
 const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 test('same recipe gives identical XLSX bytes; a slot change changes the artifact digest', () => {

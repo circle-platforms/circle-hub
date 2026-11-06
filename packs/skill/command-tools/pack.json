@@ -1,0 +1,30 @@
+{
+  "schema": "pack@1",
+  "id": "command-tools",
+  "version": "1.0.0",
+  "kind": "skill",
+  "title": "命令工具",
+  "description": "按命令树逐词解析命令、由产品规则推出逆命令。工作流内嵌使用，不写命令",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "cc0f218ce924862bb649391cf3b0ad5f90d46b68884e787c33f3372c67d00780",
+      "size": 173
+    },
+    {
+      "path": "functions/modules/command-check/command-policy.ts",
+      "sha256": "e03fa7ee7d4bfaf45373d392c6bbeac9ebf98e750f223578efb686fc42842d0f",
+      "size": 5501
+    },
+    {
+      "path": "functions/modules/command-check/grammar.ts",
+      "sha256": "2dd2b0f59cbdb827737d1c61bf1056f7e2bb1135b1d28b91cce5af737e2939b7",
+      "size": 11347
+    },
+    {
+      "path": "skill.json",
+      "sha256": "dedc01fd90c1fa47bdd3fcc4614e60419f7cbc5a9e346bb0e78bdabc284b9d89",
+      "size": 271
+    }
+  ]
+}

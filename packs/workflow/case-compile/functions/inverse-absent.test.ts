@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {checkCommandsKnown} from './checks.ts';
 import {selectCommandCatalog} from './subject.ts';
-import {inverseLine,inverseLines,readCommandPolicy} from './command-policy.ts';
+import {inverseLine,inverseLines,readCommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {ROOT,policy,fixture,cleanup} from '../testing/authority-scope.ts';
 import {PROFILE_DOC,MANIFEST_DOC} from './test-support.ts';
 

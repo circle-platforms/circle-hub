@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { bindArguments, hasBalancedCommandText } from './binding.ts';
-import { encodeG, decodeG } from './g-syntax.ts';
+import { encodeG, decodeG } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 import type { RuntimeEntry } from './runtime-contract.ts';
 const method: RuntimeEntry = { object: 'synthetic-object', method: 'literal-value', dispatch: 'direct_method_call', parameters: [{ name: 'value', kind: 'positional_only', required: true, redacted: false }] };
 for (const value of ["can't", 'C:\\synthetic\\']) test(`binding preserves a G-encodable literal ${JSON.stringify(value)} without shell classification`, () => {

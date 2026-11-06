@@ -4,8 +4,8 @@
 // built-ins only; the template itself is data, so this pack names no product.
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
-import FORMAT from '../tables/workbook-format.json' with { type: 'json' };
-import { isRecord } from './text.ts';
+import FORMAT from './format.json' with { type: 'json' };
+const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 import { zipStore } from './zip-store.ts';
 
 export interface TemplateDoc { sha256: string; xlsx_base64: string }

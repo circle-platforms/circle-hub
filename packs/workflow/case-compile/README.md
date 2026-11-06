@@ -319,6 +319,14 @@ follows the rules of the CES `mindmap-recompose` skill, in this pack's fields, w
 `tools/files.ts` and the Hub calls of `fetch-run.ts` and `submit-plans.ts` moved to the module `hub-client` of the skill
 `run-tools`, which `recompose` needs too.
 
+### 3.10.0: writing a workbook and reading commands come from skills
+
+`zip-store`, `workbook-template`, `g-syntax` and `xlsx-model` moved to the module `workbook-writer` of the skill
+`runner-workbook`; `command-policy` and the command grammar moved to the module `command-check` of `command-tools`. They are
+embedded as generated files. What reads a plan stays here: `generate.ts` (a plan into rows), `workbook.ts`, `plan-commands.ts`
+and `command-obligations.ts`. The writer's family is this runner's workbook: it serves every product on this runner, not any
+Excel file. The commands themselves stay the model's: `command-check` parses and derives, it does not write commands.
+
 ### 3.10.0: the structural reading comes from the skill mindmap-format
 
 The structural projection moved to the module `case-structure` of `mindmap-format` (decision 154) and is embedded here and in

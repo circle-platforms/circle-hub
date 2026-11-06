@@ -1,6 +1,6 @@
 // Exact path segments and product-authored structure only. No command words are classified here.
-import {isRecord} from './text.ts';
-import {commandTokens} from './generated/command-grammar.ts';
+const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
+import {commandTokens} from './grammar.ts';
 export interface Confirmation {command_prefix:string;prompt:string;answer:string}
 export interface CommandPolicy {schema:'command-policy@1';read_only:string[];inverse_rules:Array<{source_prefix:string;inverse_prefix:string;leading_parameters?:number}>;inverse_alternatives?:Array<[string,string]>;confirmations?:Confirmation[]}
 export function pathSegments(path:unknown):string[]|null {

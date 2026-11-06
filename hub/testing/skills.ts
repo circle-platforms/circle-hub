@@ -28,15 +28,17 @@ export async function installMindmapFixture(registry:PackRegistry,records:Record
 }
 
 /** A skill a pack embeds has to be published first; it needs no installation, nothing in a run reads it (T01 R[6]). */
-export async function publishRunToolsFixture(registry:PackRegistry,records:RecordsKit,admin:Principal){
- const temp=await temporaryDirectory('hub-run-tools-fixture-');
+export async function publishEmbeddedSkills(registry:PackRegistry,records:RecordsKit,admin:Principal){
+ const temp=await temporaryDirectory('hub-embedded-skills-');
  try{
-  const root=fileURLToPath(new URL('../../packs/skill/run-tools/',import.meta.url));
-  const manifest=JSON.parse(await readFile(join(root,'pack.json'),'utf8'));
-  const files:Record<string,Uint8Array>={};for(const row of manifest.files)files[row.path]=await readFile(join(root,row.path));
-  const staged=await writePack(join(temp.path,'run-tools'),{...manifest,files});
   await records.authorizations.grantPublishRight(admin,admin.id,'显式合成技能发布夹具');
-  const outcome=await registry.publish(admin,staged.dir);if(!outcome.ok)throw new Error('synthetic skill publication refused: '+JSON.stringify(outcome.problems));
+  for(const id of ['run-tools','runner-workbook','command-tools']){
+   const root=fileURLToPath(new URL(`../../packs/skill/${id}/`,import.meta.url));
+   const manifest=JSON.parse(await readFile(join(root,'pack.json'),'utf8'));
+   const files:Record<string,Uint8Array>={};for(const row of manifest.files)files[row.path]=await readFile(join(root,row.path));
+   const staged=await writePack(join(temp.path,id),{...manifest,files});
+   const outcome=await registry.publish(admin,staged.dir);if(!outcome.ok)throw new Error('synthetic skill publication refused: '+JSON.stringify(outcome.problems));
+  }
  }finally{await temp.remove();}
 }
 

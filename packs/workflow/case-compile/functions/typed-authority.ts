@@ -3,7 +3,7 @@ import {blockGraphGaps} from './block-checks.ts';
 import {blockRuntimeGaps,assertionTarget,assertionCells} from './block-runtime.ts';
 import {prepareRestores} from './block-restore.ts';
 import {commandObligations,definitionKey,type RunnerCovered} from './command-obligations.ts';
-import {within} from './command-policy.ts';
+import {within} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
 import { destructiveHit, runtimeMethod, scopeAllows, type RuntimeContract } from './runtime-contract.ts';

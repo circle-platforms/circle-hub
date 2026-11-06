@@ -21,6 +21,16 @@
       "pack": "run-tools",
       "version": "1.0.0",
       "module": "hub-client"
+    },
+    {
+      "pack": "runner-workbook",
+      "version": "1.0.0",
+      "module": "workbook-writer"
+    },
+    {
+      "pack": "command-tools",
+      "version": "1.0.0",
+      "module": "command-check"
     }
   ],
   "title": "用例编译",
@@ -113,8 +123,8 @@
     },
     {
       "path": "functions/block-checks.ts",
-      "sha256": "8bf3a816cf223e75a0104e7ae9aacacf2949444ae0249bd45142e349f0be1e86",
-      "size": 5855
+      "sha256": "983817197e930355a4d5d0794e2e8e5af99449b5c4e20d535d5fb534f653a2b2",
+      "size": 5900
     },
     {
       "path": "functions/block-expected.ts",
@@ -123,8 +133,8 @@
     },
     {
       "path": "functions/block-restore.ts",
-      "sha256": "67d3f58b9c814a06d85b8e27299c20708b39f6e797281d37e5be464e613bc694",
-      "size": 4748
+      "sha256": "3717600a0beef38a9dcf3015625bbceae8097e88064495632f3c621efe8f58cb",
+      "size": 4793
     },
     {
       "path": "functions/block-review-identity.ts",
@@ -153,18 +163,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "ea7de12bdbf7f231e533fda0772f90e1b33323ac28c8d2837207d7fe5c56e125",
-      "size": 26095
+      "sha256": "37dddd9163fc51addb82e626420f9f7010a2362ceda2d7667e381beac0b009b7",
+      "size": 26144
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "e906ccde5cc3030b8867c8b8b56f65d0060ed297e9596219b0f9064c91581608",
-      "size": 19735
-    },
-    {
-      "path": "functions/command-policy.ts",
-      "sha256": "7118b42eb22dc76ee1845c02515f541c06e6517a567de4fe9e36cbce60b17db5",
-      "size": 5411
+      "sha256": "f1222a0f20228230a4b2e496780a63ad8f012a55ac3d0231d49228dbd4ee53af",
+      "size": 19807
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -177,19 +182,19 @@
       "size": 837
     },
     {
-      "path": "functions/g-syntax.ts",
-      "sha256": "cdfb1c16f1fc2e2673f9243dbdc558028ebfdb8afa17523cf65e1d2f596aa1ba",
-      "size": 6326
-    },
-    {
       "path": "functions/generate.ts",
-      "sha256": "e6dbf377b32f9a502ac1ac2d1ea6289f984e4c89b70d78573048bc45f381e02b",
-      "size": 14678
+      "sha256": "7ccf9047c5a4378d2ebea160e655610ed03108a458de5fd22502d9b7a531fca7",
+      "size": 14821
     },
     {
-      "path": "functions/generated/command-grammar.ts",
-      "sha256": "1b0ff7db182cd91bbc8098d0f45208d816db1b370ca793b245cab9869a4c48e4",
-      "size": 11823
+      "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
+      "sha256": "e03fa7ee7d4bfaf45373d392c6bbeac9ebf98e750f223578efb686fc42842d0f",
+      "size": 5501
+    },
+    {
+      "path": "functions/generated/skills/command-tools/command-check/grammar.ts",
+      "sha256": "2dd2b0f59cbdb827737d1c61bf1056f7e2bb1135b1d28b91cce5af737e2939b7",
+      "size": 11347
     },
     {
       "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
@@ -207,6 +212,31 @@
       "size": 8571
     },
     {
+      "path": "functions/generated/skills/runner-workbook/workbook-writer/format.json",
+      "sha256": "e59decb7bd04641d8afa28d707311e6142b878147721c808ffdb9ce77933492c",
+      "size": 84
+    },
+    {
+      "path": "functions/generated/skills/runner-workbook/workbook-writer/g-syntax.ts",
+      "sha256": "cdfb1c16f1fc2e2673f9243dbdc558028ebfdb8afa17523cf65e1d2f596aa1ba",
+      "size": 6326
+    },
+    {
+      "path": "functions/generated/skills/runner-workbook/workbook-writer/workbook-template.ts",
+      "sha256": "46dd548b50312f3549b6d446ef53e864bfae89e464489bb9107c0097aedca248",
+      "size": 9248
+    },
+    {
+      "path": "functions/generated/skills/runner-workbook/workbook-writer/xlsx-model.ts",
+      "sha256": "7f4375955a3364c6b3912a6147f19c535c516e5b2a1453da849f8cf0f27d17ed",
+      "size": 3155
+    },
+    {
+      "path": "functions/generated/skills/runner-workbook/workbook-writer/zip-store.ts",
+      "sha256": "613fcb81036e6991ab907de8193a5a91d7a601fdfe839d981e2d2a437dda4e96",
+      "size": 2351
+    },
+    {
       "path": "functions/generated/vocabulary.ts",
       "sha256": "f60c98ceb6234db4936bdd8406c965574c8c9bdbc6d52f76e817f62e7e3629e0",
       "size": 2527
@@ -218,8 +248,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "08cd6bf4b19fceb7e013b874343dee9d36641b79640748291bbbc97f3f5bc768",
-      "size": 9367
+      "sha256": "0dac8170e0e0b4417c91f7a8bedd39c568eea06d6d7bb01658dcd573493387cc",
+      "size": 9439
     },
     {
       "path": "functions/profile.ts",
@@ -228,8 +258,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "4494f7d4f5f0a056801355eeca45cb884e8da7919da829bd76ccc61020946ccc",
-      "size": 23946
+      "sha256": "74fcaf582b48c5fb6d8ea1a9353eaa094051ba5beb3012000e294740eb0f293c",
+      "size": 23995
     },
     {
       "path": "functions/quote-width.ts",
@@ -248,8 +278,8 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "03fc4e07fc0d0ed202737950002936f58ec56f8f6f57b4d0f196de1644150510",
-      "size": 23167
+      "sha256": "6ce26c089b553e4c53839a3d9bb83fed373fca5d19cd0eb7e068bc74dc27653f",
+      "size": 23208
     },
     {
       "path": "functions/recompose-evidence.ts",
@@ -278,8 +308,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "92ba71bb9fbf6f430d42b5b9d6a2d0868b229bb214bb92e24429247d6ca83632",
-      "size": 12481
+      "sha256": "00b9586c371e6687e096bb84367a72da4b99a8a4bed63b7a1f1a644b15cc0fa4",
+      "size": 12625
     },
     {
       "path": "functions/text.ts",
@@ -288,33 +318,18 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "48d0b84f6c21813d751cee81037cb08a8a4f11bf14c4148e4ebd372573c79d50",
-      "size": 12677
+      "sha256": "05ea021e79ec97c9f7dff17684433a238dd1bba5fa9c74993d684400833f3b7a",
+      "size": 12722
     },
     {
       "path": "functions/typed-contract.ts",
-      "sha256": "ffaae7d1000d2bef9d9dca885d8832414c2c3a7fb9965d6f9c0069b0b10cfe63",
-      "size": 11661
-    },
-    {
-      "path": "functions/workbook-template.ts",
-      "sha256": "27e5a961cf61a98535afcb4557a4efd38bb27b755e37482d1b4a1fc0038f654f",
-      "size": 9159
+      "sha256": "5660c37915b5091f2b8d2b4a5610408b907381f429008b41153f23ec09d21523",
+      "size": 11706
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "fc91afe5e2336dee8d6adaa3eff99e8babfda5f04fe16c2226f717bbb445f486",
-      "size": 24157
-    },
-    {
-      "path": "functions/xlsx-model.ts",
-      "sha256": "da299c2cf882f2d7616e13fdabeb3f8b7ba74d8d60dd886d13974986dbb4f533",
-      "size": 3049
-    },
-    {
-      "path": "functions/zip-store.ts",
-      "sha256": "613fcb81036e6991ab907de8193a5a91d7a601fdfe839d981e2d2a437dda4e96",
-      "size": 2351
+      "sha256": "945f55a92d4f6343de3a72bfc583cc6b20f47f61f4d51a280c8909e083930285",
+      "size": 24304
     },
     {
       "path": "policies/dispatch.json",

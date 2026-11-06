@@ -1,4 +1,4 @@
-import {pathSegments} from './command-policy.ts';
+import {pathSegments} from './generated/skills/command-tools/command-check/command-policy.ts';
 // runtime-contract@2 declarations are policy inputs, never inferences from names or prose.
 import {schema} from './schema.ts';
 import TYPE from '../tables/declared-type.schema.json' with {type:'json'};

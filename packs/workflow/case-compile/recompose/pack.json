@@ -20,6 +20,11 @@
       "pack": "run-tools",
       "version": "1.0.0",
       "module": "hub-client"
+    },
+    {
+      "pack": "command-tools",
+      "version": "1.0.0",
+      "module": "command-check"
     }
   ],
   "files": [
@@ -39,9 +44,14 @@
       "size": 958
     },
     {
-      "path": "functions/generated/command-grammar.ts",
-      "sha256": "46b7682f92a2ad54586840d263e459c8d463f2d833c0556e01290f8018d60237",
-      "size": 11844
+      "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
+      "sha256": "e03fa7ee7d4bfaf45373d392c6bbeac9ebf98e750f223578efb686fc42842d0f",
+      "size": 5501
+    },
+    {
+      "path": "functions/generated/skills/command-tools/command-check/grammar.ts",
+      "sha256": "2dd2b0f59cbdb827737d1c61bf1056f7e2bb1135b1d28b91cce5af737e2939b7",
+      "size": 11347
     },
     {
       "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
@@ -65,8 +75,8 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "03fc4e07fc0d0ed202737950002936f58ec56f8f6f57b4d0f196de1644150510",
-      "size": 23167
+      "sha256": "6ce26c089b553e4c53839a3d9bb83fed373fca5d19cd0eb7e068bc74dc27653f",
+      "size": 23208
     },
     {
       "path": "functions/recompose-evidence.ts",

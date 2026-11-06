@@ -7,7 +7,7 @@ import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed
 import { authoredAddresses, type RunnerCovered } from './command-obligations.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
-import { encodeG, GSyntaxError } from './g-syntax.ts';
+import { encodeG, GSyntaxError } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 import { gOptions } from './generate.ts';
 import { isRecord, markers, type Outcome, opened } from './text.ts';
 import { parseRuntimeContract, runtimeMethod, type RuntimeContract } from './runtime-contract.ts';

@@ -5,8 +5,8 @@ import {selectedExpectedNodes} from './expected-nodes.ts';
 // Independent semantic interpretation of xlsx@1. Only the final identity check calls the client generator.
 import { createHash } from 'node:crypto';
 import FORMAT from '../tables/workbook-format.json' with { type: 'json' };
-import { readWorkbookModel, type WorkbookRow } from './xlsx-model.ts';
-import { decodeG } from './g-syntax.ts';
+import { readWorkbookModel, type WorkbookRow } from './generated/skills/runner-workbook/workbook-writer/xlsx-model.ts';
+import { decodeG } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 import { canonicalJson } from './canonical-json.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { parseRuntimeContract, runtimeMethod } from './runtime-contract.ts';
@@ -15,7 +15,7 @@ import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
 import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
-import { readTemplate, TemplateError, type WorkbookTemplate } from './workbook-template.ts';
+import { readTemplate, TemplateError, type WorkbookTemplate } from './generated/skills/runner-workbook/workbook-writer/workbook-template.ts';
 import { isRecord, markers, type Outcome, opened } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }

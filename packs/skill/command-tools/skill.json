@@ -1,0 +1,11 @@
+{
+  "schema": "skill@1",
+  "parsers": [],
+  "modules": [
+    {
+      "id": "command-check",
+      "title": "命令核对与逆命令",
+      "family": "按产品命令树校验的命令行：逐词语法解析、产品规则的范围判断和逆命令推导"
+    }
+  ]
+}

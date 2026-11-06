@@ -2,7 +2,7 @@
 import T from '../tables/recompose-format.json' with { type: 'json' };
 import { canonicalJson } from './canonical-json.ts';
 import { authorityOf, reviewedAtom, acceptedPair, object } from './recompose-evidence.ts';
-import { compileGrammar, commandIdentity, parseCommandState, type CommandDefinition } from './generated/command-grammar.ts';
+import { compileGrammar, commandIdentity, parseCommandState, type CommandDefinition } from './generated/skills/command-tools/command-check/grammar.ts';
 import type { AuthorAtom } from './generated/skills/mindmap-format/case-structure/index.ts';
 import SHAPE from '../tables/recompose-record.schema.json' with { type: 'json' };
 import { schema } from './schema.ts';
@@ -208,7 +208,7 @@ export function checkRecomposition(input: any): any[] {
             actualCommands.push({ atom: adapted.atom, identity: id });
             if (before && authority) {
                 for (const p of id.parameters) {
-                    const old = before.parameters.find(v => v.position === p.position);
+                    const old = before.parameters.find((v: any) => v.position === p.position);
                     if (old && canonicalJson(old.parsed) !== canonicalJson(p.parsed) && authority.parameters.some((d: any) => d.path === id.path && d.position === p.position && d.load_bearing === true))
                         critical = true;
                     if (old && canonicalJson(old.parsed) !== canonicalJson(p.parsed) && !record.ledgers.concretizations.some((c: any) => c.atom === adapted.atom && canonicalJson(c.value) === canonicalJson((p.parsed as any).value)))
@@ -263,7 +263,7 @@ export function checkRecomposition(input: any): any[] {
             continue;
         }
         const valueEvidence = (s.evidence ?? []).find((e: any) => e.reference === row.value_ref && e.resolved === true), author = sourceCommands.find(c => atoms.some(a => a.id === c.atom && a.reference === row.source_of_value));
-        const fromAuthor = author && row.value_ref === row.source_of_value && declaration.path === author.identity.path && author.identity.parameters.some(p => p.position === declaration.position && canonicalJson((p.parsed as any).value) === canonicalJson(row.value));
+        const fromAuthor = author && row.value_ref === row.source_of_value && declaration.path === author.identity.path && author.identity.parameters.some((p: any) => p.position === declaration.position && canonicalJson((p.parsed as any).value) === canonicalJson(row.value));
         const literal = valueEvidence && valueEvidence.text === String(row.value) && (row.value_ref === row.source_of_value || row.value_ref.startsWith(row.source_of_value + '/'));
         if (!fromAuthor && !literal) {
             unknown('具体化 ' + row.slot + ' 缺与实际来源相等的值或原生参数绑定', '产品包作者');

@@ -1,13 +1,13 @@
 // Device CLI parameters are identified by the frozen runtime contract/profile roles. Only whole grammar parses
 // over the Hub-supplied locked catalog produce identities; source case declarations are a separate constraint.
-import {compileGrammar,commandIdentity,parseCommandState,commandTokens,type CommandDefinition} from './generated/command-grammar.ts';
+import {compileGrammar,commandIdentity,parseCommandState,commandTokens,type CommandDefinition} from './generated/skills/command-tools/command-check/grammar.ts';
 import {isRecord} from './text.ts';
 import {bindArguments} from './binding.ts';
 import {runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
 import type {RuntimeProfile} from './profile.ts';
 import type {PlanSlots} from './slots.ts';
 import {identityOf,identityKey} from './typed-contract.ts';
-import {readCommandPolicy,pathSegments,type CommandPolicy} from './command-policy.ts';
+import {readCommandPolicy,pathSegments,type CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {CatalogEntry} from '../../../../contracts/src/tables.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';

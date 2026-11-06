@@ -1,5 +1,5 @@
 // Local structural contract for the existing xlsx@1 parsed model. No ZIP or XML parsing occurs in this pack.
-import { isRecord } from './text.ts';
+const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 export interface WorkbookCell { reference: string; type: string; text: string; formula: boolean; style: number | null }
 export interface WorkbookRow { number: number; hidden: boolean; cells: WorkbookCell[] }
 export interface WorkbookSheet { relationshipType: string; name: string; state: string; part: string; rows: WorkbookRow[]; lastRow: number }

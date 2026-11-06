@@ -1,7 +1,7 @@
-import {commandTokens} from './generated/command-grammar.ts';
-import {readCommandPolicy,pathSegments,inverseLines} from './command-policy.ts';
-import {authorTexts} from './command-policy.ts';
-import {commandLines} from './generated/command-grammar.ts';
+import {commandTokens} from './generated/skills/command-tools/command-check/grammar.ts';
+import {readCommandPolicy,pathSegments,inverseLines} from './generated/skills/command-tools/command-check/command-policy.ts';
+import {authorTexts} from './generated/skills/command-tools/command-check/command-policy.ts';
+import {commandLines} from './generated/skills/command-tools/command-check/grammar.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 import {planCommands,deviceCommandLines,confirmationSteps} from './plan-commands.ts';
 // Frozen raw inputs are revalidated on every check. This pack only verifies the authored plan slots.

@@ -1,10 +1,10 @@
 // Definition identities count authored operations; fully parsed values still govern authorization and cleanup.
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
-import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDefinition} from './generated/command-grammar.ts';
+import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDefinition} from './generated/skills/command-tools/command-check/grammar.ts';
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
-import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines,type CommandPolicy} from './command-policy.ts';
+import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines,type CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {identityOf,identityKey,commandLine} from './typed-contract.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';

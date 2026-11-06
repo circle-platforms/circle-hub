@@ -14,7 +14,7 @@ import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
 import { templateDocument } from '../../packs/workflow/case-compile/testing/template.ts';
 import { runtimeDigest, stripAdditions, contractCanonical } from '../../packs/workflow/case-compile/functions/runtime-contract.ts';
-import {compileGrammar, commandIdentity} from '../../packs/workflow/case-compile/functions/generated/command-grammar.ts';
+import {compileGrammar, commandIdentity} from '../../packs/workflow/case-compile/functions/generated/skills/command-tools/command-check/grammar.ts';
 import { entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
 import { satisfiedRecipe } from '../../packs/workflow/case-compile/tools/generate-workbook.ts';
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';

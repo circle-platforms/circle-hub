@@ -1,7 +1,7 @@
 import {blockReviewIdentity} from './block-review-identity.ts';
 import {assertionTarget,assertionCells} from './block-runtime.ts';
 import {blockMeta,sourcePlan} from './blocks.ts';
-import {authorTexts} from './command-policy.ts';
+import {authorTexts} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 import { typedAuthorityGaps, authorityRecovery } from './typed-authority.ts';
 // Client deterministic generator, also called solely for byte recomputation by the Hub verifier. Node built-ins only.
@@ -12,8 +12,8 @@ import { readSlots, type PlanSlots } from './slots.ts';
 import { allowedCall, type RuntimeProfile } from './profile.ts';
 import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import { bindArguments, hasSingleLineValue } from './binding.ts';
-import { encodeG, type GOptions } from './g-syntax.ts';
-import { fillTemplate, readTemplate, TemplateError } from './workbook-template.ts';
+import { encodeG, type GOptions } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
+import { fillTemplate, readTemplate, TemplateError } from './generated/skills/runner-workbook/workbook-writer/workbook-template.ts';
 export const GENERATOR = FORMAT.generator;
 export interface GenerationFields {source_atoms?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; path?: string[]; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }

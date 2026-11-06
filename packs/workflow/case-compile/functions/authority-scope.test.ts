@@ -7,7 +7,7 @@ import {projectItems} from './project.ts';
 import {MINDMAP_MODEL,AUTOID} from './test-support.ts';
 import {parseProfile} from './profile.ts';
 import {contractOf,bedsOf} from './test-support.ts';
-import {compileGrammar,commandIdentity} from './generated/command-grammar.ts';
+import {compileGrammar,commandIdentity} from './generated/skills/command-tools/command-check/grammar.ts';
 import {selectCommandCatalog} from './subject.ts';
 import {ROOT,policy,entries,catalog,grammar,fixture,cleanup} from '../testing/authority-scope.ts';
 const good=['demo pool add one 10','demo pool add two 20',cleanup('no demo pool add two'),cleanup('no demo pool add one')];

@@ -9,7 +9,7 @@ import { parseProfile } from './profile.ts';
 import { parseManifest } from './manifest.ts';
 import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
-import { readWorkbookModel, compactModel } from './xlsx-model.ts';
+import { readWorkbookModel, compactModel } from './generated/skills/runner-workbook/workbook-writer/xlsx-model.ts';
 import { documentIdOf, extractCases, rootDocumentId, type CaseRule } from './cases.ts';
 
 interface Slot {

@@ -1,4 +1,4 @@
-import {installMindmapFixture, installWorkbookFixture, publishRunToolsFixture} from '../../../../hub/testing/skills.ts';
+import {installMindmapFixture, installWorkbookFixture, publishEmbeddedSkills} from '../../../../hub/testing/skills.ts';
 import {commandTokens} from '../../../../contracts/generated/command-grammar.ts';
 import {catalogFor,SYNTHETIC_COMMAND_POLICY} from './command-catalog.ts';
 import {COMMAND_IDENTITIES} from '../functions/test-support.ts';
@@ -175,7 +175,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now });
     const parsers=await installMindmapFixture(registry,kit,admin);
     await installWorkbookFixture(registry,kit,admin);
-    await publishRunToolsFixture(registry,kit,admin);
+    await publishEmbeddedSkills(registry,kit,admin);
     const staged = await stage(join(temp.path, 'case-compile'));
     const published = await registry.publish(alice, staged);
     if (!published.ok) throw new Error(`case-compile was not published: ${JSON.stringify(published.problems, null, 1)}`);
