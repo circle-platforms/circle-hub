@@ -259,6 +259,9 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
     await records.authorizations.grantPublishRight(admin.principal, admin.user.id, '测试 Hub 的管理员发布任务包');
 
     const publishPack = async (directory: string, publish: { activate?: boolean } = {}): Promise<PackVersionInfo> => {
+      // A skill a pack embeds has to be published first (T01 R[6]), as a real deployment has to.
+      const embeds = (JSON.parse(await readFile(join(directory, 'pack.json'), 'utf8')) as { embeds?: Array<{ pack: string; version: string }> }).embeds ?? [];
+      for (const row of embeds) if ((await hub.registry.getVersion(row.pack, row.version)) === null) await publishPack(fileURLToPath(new URL(`../../packs/skill/${row.pack}/`, import.meta.url)));
       const staged = await stagePack(directory, scratch);
       const outcome = await hub.registry.publish(admin.principal, staged);
       if (!outcome.ok) {

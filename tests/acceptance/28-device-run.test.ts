@@ -254,7 +254,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     aliasEcho = true;
     const booked = await booking(); const before = submissions;
     const scope = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED };
-    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: {} });
+    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: { pipeline: 'legacy' } });
     const planRun = whole.run!.run; const items = whole.run!.items.map(item => item.id);
     assert.equal(items.length, ids.length, 'every textual-autoid case of the document is an item');
     const planned = (await client.call('submit_result', { run: planRun, model: 'synthetic-scripted-model', items: items.map((item, index) => planItem(index, item)) })).out;
@@ -270,7 +270,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
     const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
     const ref = await client.upload(payload, 'synthetic-whole.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
+    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun, pipeline: 'legacy' }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
     const sent = { run: verification.run!.run, model: 'synthetic-scripted-model', items: verification.run!.items.map((item, index) => planItem(index, item.id)) };
     const result = (await client.call('submit_result', sent)).out;
     assert.equal(result.acceptance, 'accepted', JSON.stringify(result.errors));
