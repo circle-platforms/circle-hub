@@ -1,6 +1,7 @@
 import {scopedRecordStore,memoReadPort,memoReadValue} from '../../records/api.ts';
 import {defaultParsers} from '../../refs/api.ts';
 import { PersonalPacks } from './personal.ts';
+import { embeddedProblems, type EmbeddedSkill } from './embedded.ts';
 import { createRequestService } from '../../requests/api.ts';
 // The pack registry (T01 T02 B04 R01): publication by the owner of a pack id holding a publish right, the publish check,
 // content-addressed storage of every file, assignment of workflow packs to users, activation of product packs for the whole
@@ -117,6 +118,7 @@ export interface PackRegistry {
   install(by: Principal, ref: string, note?: string | null): Promise<AuthorizationRecord>;
   uninstall(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   installedSkills(): Promise<OpenedPack[]>;
+  embeddedSkill(packId: string, version: string): Promise<EmbeddedSkill | null>;
   deactivate(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   isActive(packId: string): Promise<boolean>;
   listPacks(): Promise<PackInfo[]>;
@@ -371,6 +373,14 @@ class Registry implements PackRegistry {
       report: b.report,
       manifest: b.manifest,
     };
+  }
+
+  /** T01 R[6]: what a publication compares embedded files with. Only a team skill version can be embedded. */
+  async embeddedSkill(packId: string, version: string): Promise<EmbeddedSkill | null> {
+    const info = await this.getVersion(packId, version);
+    if (info === null || info.kind !== 'skill') return null;
+    const declarations = info.withdrawn ? null : (await this.open(info.digest))?.declarations;
+    return { manifest: info.manifest, withdrawn: info.withdrawn, modules: declarations?.kind === 'skill' ? (declarations.skill.modules ?? []).map((m) => m.id) : [] };
   }
 
   async getVersion(packId: string, version: string): Promise<PackVersionInfo | null> {
@@ -782,6 +792,7 @@ class Registry implements PackRegistry {
       const validation = await validatePack(read.pack, { policy: this.#options.policy,deferCredentials:dryRun&&options.deferCredentials });
       if (!validation.ok) return refuse(validation.problems);
       if(manifest.dependencies?.some(dep=>dep.space))return refuse([problem('publish.personal_dependency','pack.json','团队发布不能依赖个人空间中的通用技能','先将依赖发布并安装到团队，再移除依赖的个人空间限定')]);
+      const embedded=await embeddedProblems(manifest,(pack,version)=>this.embeddedSkill(pack,version));if(embedded.length)return refuse(embedded);
       // validatePack refuses these too; nothing below may run for a version no reference can name.
       const unnamable = versionProblems(manifest);
       if (unnamable.length > 0) return refuse(unnamable);

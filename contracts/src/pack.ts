@@ -4,8 +4,8 @@
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import {FeedingOffsetSchema} from './feeding.ts';
-import {SkillDependencies,SkillLocks} from './skills.ts';
-export {SkillDependency,SkillLock,SkillDependencies,SkillLocks} from './skills.ts';
+import {EmbeddedModules,SkillDependencies,SkillLocks,SkillModuleId} from './skills.ts';
+export {EmbeddedModule,EmbeddedModules,EMBEDDED_SKILLS_DIR,SKILL_MODULES_DIR,SkillDependency,SkillLock,SkillDependencies,SkillLocks,SkillModuleId} from './skills.ts';
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {FrozenCriterion} from './criterion.ts';
@@ -80,7 +80,10 @@ export const SkillParser = z.strictObject({
   function: PackFunctionRef,
   locate: PackFunctionRef.optional(),
 });
-export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64) }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill');
+/** T01 F[13]: a reusable deterministic module of a skill pack. `family` is what it is generic for (C03 R[3]). */
+export const SkillModule = z.strictObject({ id:SkillModuleId, title:z.string().min(1).max(100), family:z.string().min(1).max(300) });
+export type SkillModule = z.infer<typeof SkillModule>;
+export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64), modules:z.array(SkillModule).max(64).optional() }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill').refine(value=>new Set((value.modules??[]).map(m=>m.id)).size===(value.modules??[]).length,'module names are unique in a skill');
 export type SkillDeclaration = z.infer<typeof SkillDeclaration>;
 
 // ---------------------------------------------------------------- pack.json
@@ -113,6 +116,7 @@ export const PackManifest = z
     title: z.string().min(1),
     description: z.string().min(1),
     dependencies: SkillDependencies.optional(),
+    embeds: EmbeddedModules.optional().describe('skill modules this pack carries as generated files; publication compares them with the named skill version (T01 R[6])'),
     files: z.array(PackFileEntry).describe('every file of the pack except pack.json, sorted by path'),
   })
   .superRefine((m, ctx) => {

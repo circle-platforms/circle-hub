@@ -622,3 +622,9 @@ source shows 没有权限阅读 and gives no text (K02 R[8], D05 R[3], D06 F[3],
 `audience_scope` gains `team_members`. No protocol code or MCP tool changes, so `protocol.ts` changes by `MODEL_VERSION`
 only. `changes42` of the 17 changed elements states the change. Decision 152, the sandbox watchdog and the wording of the
 dispatch refusal, changes no model text.
+
+Decisions 153 and 154 (owner, 2026-11-06) set model 43: a workflow is made of skill modules, acceptance requirements and data
+bindings. `skill@1` gains `modules`, `pack@1` gains `embeds`, and both stay optional, so every published pack still parses.
+A module is the folder `functions/modules/<module>/` of a skill pack; `tools/gen-contracts.ts` copies it to
+`functions/generated/skills/<skill>/<module>/` of each pack that embeds it, refuses an import that leaves the folder, and
+`--check` reports drift and stale copies. No protocol code, record kind or vocabulary axis is added.

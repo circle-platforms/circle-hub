@@ -259,6 +259,8 @@ export interface PackListing {
   samples: Record<string, number>;
   /** User ids the pack is assigned to; filled for admins only. */
   assigned_to?: string[];
+  /** Skill modules the pack carries, checked against the published skill at publication (T01 R[6]). */
+  embeds?: import('../contracts/src/pack.ts').EmbeddedModule[];
 }
 
 /** Provided by runs-packs. A user lists the packs assigned to them; an admin lists every pack. */

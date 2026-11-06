@@ -246,6 +246,7 @@ function listing(info: PackVersionInfo, active: boolean, assigned?: string[]): P
     samples: { ...info.samples },
   };
   if (assigned !== undefined) out.assigned_to = assigned;
+  if (info.manifest.embeds?.length) out.embeds = info.manifest.embeds;
   return out;
 }
 

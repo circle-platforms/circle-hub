@@ -6,6 +6,7 @@ import {contributionSlots} from './slot-schema.ts';
 //   contracts/generated/schemas/*.json  JSON Schema of every registered record and pack-file shape
 //   packs/.../functions/generated/vocabulary.ts  package-local runtime snapshots of the axes each pack uses
 //   packs/product/famx/functions/generated/adoc-directory.ts  package-local copy of the adoc-format skill's directory
+//   packs/.../functions/generated/skills/<skill>/<module>/  the skill modules a pack's pack.json embeds (T01 R[6])
 //     walk (packs/skill/adoc-format/functions/directory.ts), since a sandboxed pack function reads only its own files
 // Usage: node tools/gen-contracts.ts [--check]
 //   without options it writes the files that changed and removes stale ones; --check writes nothing and lists every
@@ -17,7 +18,7 @@ import {contributionSlots} from './slot-schema.ts';
 // partly written file and two runs never interleave.
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { registerHooks } from 'node:module';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join, posix, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -761,6 +762,67 @@ function firstDifference(expected: string, actual: string): number {
 }
 
 /** Every missing, out-of-date or stale file under contracts/generated, sorted; empty when the directory matches. */
+// The same two folders as contracts/src/skills.ts, which this tool cannot import: it writes what that file's imports read.
+const SKILL_MODULES_DIR = 'functions/modules/';
+const EMBEDDED_SKILLS_DIR = 'functions/generated/skills/';
+
+/** Every pack directory under packs/, by its pack.json. Pack data folders are not searched. */
+function packDirectories(root: string, relative = 'packs', depth = 0): string[] {
+  const out: string[] = [];
+  if (existsSync(join(root, relative, 'pack.json'))) out.push(relative);
+  if (depth >= 4) return out;
+  for (const entry of readdirSync(join(root, relative), { withFileTypes: true })) {
+    if (entry.isDirectory() && !['functions', 'tools', 'tables', 'samples', 'examples', 'testing', 'policies', 'node_modules'].includes(entry.name)) out.push(...packDirectories(root, `${relative}/${entry.name}`, depth + 1));
+  }
+  return out;
+}
+
+const filesUnder = (dir: string, relative = ''): string[] => readdirSync(join(dir, relative), { withFileTypes: true }).flatMap((entry) => {
+  const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+  return entry.isDirectory() ? filesUnder(dir, path) : entry.isFile() ? [path] : [];
+});
+
+/** A module is copied as a folder, so no import may leave it: a relative path out of the folder would break in the copy. */
+function moduleEscapes(name: string, text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]/g)) {
+    const depth = posix.normalize(posix.join(posix.dirname(name), match[1]));
+    if (depth.startsWith('..')) out.push(`${name} imports ${match[1]}, outside its module`);
+  }
+  return out;
+}
+
+/** T01 R[6]: the module files each pack's pack.json embeds, from the skill sources. Tests stay in the skill. */
+export function embeddedPackFiles(root: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const problems: string[] = [];
+  for (const consumer of packDirectories(root)) {
+    const manifest = JSON.parse(readFileSync(join(root, consumer, 'pack.json'), 'utf8')) as { embeds?: Array<{ pack: string; version: string; module: string }> };
+    for (const row of manifest.embeds ?? []) {
+      const skillDir = `packs/skill/${row.pack}`;
+      const moduleDir = join(root, skillDir, SKILL_MODULES_DIR, row.module);
+      if (!existsSync(moduleDir)) { problems.push(`${consumer}/pack.json embeds ${row.pack}/${row.module}, which has no folder ${skillDir}/${SKILL_MODULES_DIR}${row.module}`); continue; }
+      const version = (JSON.parse(readFileSync(join(root, skillDir, 'pack.json'), 'utf8')) as { version: string }).version;
+      if (version !== row.version) problems.push(`${consumer}/pack.json embeds ${row.pack}@${row.version}, the skill is at ${version}`);
+      for (const name of filesUnder(moduleDir).filter((path) => !path.endsWith('.test.ts')).sort()) {
+        const text = readFileSync(join(moduleDir, name), 'utf8');
+        problems.push(...moduleEscapes(name, text).map((problem) => `${skillDir}: ${problem}`));
+        out[`${consumer}/${EMBEDDED_SKILLS_DIR}${row.pack}/${row.module}/${name}`] = text;
+      }
+    }
+  }
+  if (problems.length > 0) throw new ContractsError(problems);
+  return out;
+}
+
+/** Files on disk in the embedded folders of the packs, generated earlier; those no pack.json names any more are stale. */
+function embeddedOnDisk(root: string): string[] {
+  return packDirectories(root).flatMap((consumer) => {
+    const dir = join(root, consumer, EMBEDDED_SKILLS_DIR);
+    return existsSync(dir) ? filesUnder(dir).map((name) => `${consumer}/${EMBEDDED_SKILLS_DIR}${name}`) : [];
+  });
+}
+
 export function drift(root: string, files: Record<string, string>, packFiles: Record<string, string> = {}): string[] {
   const dir = join(canonical(root), GENERATED_DIR);
   const out: string[] = [];
@@ -781,6 +843,7 @@ export function drift(root: string, files: Record<string, string>, packFiles: Re
       if (actual !== expected) out.push(`out of date: ${name} (first difference at line ${firstDifference(expected, actual)})`);
     }
   }
+  for (const name of embeddedOnDisk(canonical(root))) if (!(name in packFiles)) out.push(`stale: ${name}`);
   return out;
 }
 
@@ -817,6 +880,11 @@ export function write(root: string, files: Record<string, string>, packFiles: Re
       if (d !== dir && readdirSync(d).length === 0) rmdirSync(d);
     };
     prune(dir);
+    for (const name of embeddedOnDisk(canonical(root))) {
+      if (name in packFiles) continue;
+      rmSync(join(canonical(root), name), { force: true });
+      removed.push(name);
+    }
     for (const [name, expected] of Object.entries(packFiles)) {
       const path = join(canonical(root), name);
       if (existsSync(path) && readFileSync(path, 'utf8') === expected) { unchanged++; continue; }
@@ -879,6 +947,13 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
     const schema=JSON.parse(files['schemas/contribution-input.v1.schema.json']);
     const model=JSON.parse(readFileSync(join(root,'contracts/model.json'),'utf8'));const kinds=model.vocabulary.find((axis:{axis:string})=>axis.axis==='document_output_kind').values;
     packFiles['packs/workflow/knowledge-contribution/slots.schema.json']=JSON.stringify(contributionSlots(schema,kinds),null,2)+'\n';
+  }
+  try { Object.assign(packFiles, embeddedPackFiles(root)); }
+  catch (error) {
+    if (!(error instanceof ContractsError)) throw error;
+    console.error(`cannot embed skill modules (${error.problems.length} problem${error.problems.length > 1 ? 's' : ''}):`);
+    for (const problem of error.problems) console.error(`  ${problem}`);
+    return 2;
   }
   const count = Object.keys(files).length + Object.keys(packFiles).length;
   if (args.includes('--check')) {
