@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Let a whole-document run of `case-compile` leave named cases out with `parameters.exclude` (3.10.2): one case that could not be planned kept the other 16 from a workbook. InfoTest and CES isolate such a case and go on.
 - Say each case's verdict in the answer of a finished dispatch, the failures grouped by their log: a model paged a 960,000-character result for 26 minutes by estimated offsets to find one word per case. `case-compile` 3.10.1 attributes failures in InfoTest's order and asks for assertions a failed feature would not satisfy.
 - Give generic skills their own place in the console: the 通用技能 tab lists what each skill offers and which workflows use it, with install and uninstall; a workflow's page shows what it is made of (skills, connections, knowledge, named documents); named documents appear under 连接 for administrators. The skills `runner-workbook` and `command-tools` carry workbook writing and command checking out of `case-compile`.
 - Connect mind map recomposition (decision 155): a whole mind map goes through it, what the model could not settle goes on to the writer as in InfoTest instead of leaving the case unknown, each case takes its own record, and `recompose/tools/submit-records.ts` fills what the projection knows so the model writes only what takes judgment. `case-compile` 3.10.0, `recompose` 1.1.0, `mindmap-format` 1.0.21 with the module `case-structure`, new skill `run-tools` 1.0.0.

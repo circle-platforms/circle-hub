@@ -106,7 +106,19 @@ export function projectItems(input: unknown): unknown {
     if (malformed.length) return refusal('autoid_invalid', `整份文档有 ${malformed.length} 个用例的 autoid 不符合配置形状 ${profileRead.profile.workbook.autoid_pattern}：${malformed.slice(0,10).map(shown).join('、')}${malformed.length>10?` 等 ${malformed.length} 个`:''}`, '作者改正或删去这些 autoid 后重新上传文档，再开始新运行（没有 autoid 的用例不编译）；或填 parameters.autoid 只编一条');
   }
   const parents=new Map<number,number>();for(const [index,node] of ((subject.model as any)?.nodes??[]).entries())for(const child of Array.isArray(node?.children)?node.children:[])if(typeof child==='number'&&!parents.has(child))parents.set(child,index);
-  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid):c.autoid===parameters.autoid).map(c=>{
+  // A case the plans cannot yet bring through may be left out of a new run (parameters.exclude, whole-document runs only); the
+  // plan run and the verification run take the same list, so both select the same cases. Each excluded autoid must name a case
+  // the rule takes, so a mistyped one is refused instead of silently excluding nothing. InfoTest isolates such a case the same way.
+  const excludeAsked=parameters.exclude;
+  if(excludeAsked!==undefined){
+    if(!whole)return refusal('invalid_parameter','exclude 只用于整份文档编译，不能与 autoid 同时填','要编译整份文档时不填 autoid；只编一条时不填 exclude');
+    if(!Array.isArray(excludeAsked)||excludeAsked.length===0||excludeAsked.length>DISPATCH.max_items||excludeAsked.some(value=>typeof value!=='string'||!autoidShape.test(value))||new Set(excludeAsked).size!==excludeAsked.length)return refusal('invalid_parameter','exclude 必须是不重复的 autoid 文字列表，每个符合配置形状','写成 ["<autoid>", ...]，从用例原文复制 autoid');
+    const numbered=new Set(ruled.map(c=>c.autoid).filter((value):value is string=>value!==null&&autoidShape.test(value)));
+    const unknown=(excludeAsked as string[]).filter(value=>!numbered.has(value));
+    if(unknown.length)return refusal('autoid_not_found',`exclude 里的 ${unknown.slice(0,5).join('、')} 在按规则取到的用例里找不到`,'核对文档、case_rule 和 autoid 原文后重新开始运行');
+  }
+  const excluded=new Set<string>(Array.isArray(excludeAsked)?excludeAsked as string[]:[]);
+  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid)&&!excluded.has(c.autoid):c.autoid===parameters.autoid).map(c=>{
     // The earlier extraction of the same node, by selector: a pasted case keeps the node id of the case it was copied from,
     // the parser then addresses both by position, so only the selector names one node. A model without selectors falls
     // back to a node id that names exactly one case.

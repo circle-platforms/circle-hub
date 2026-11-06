@@ -249,3 +249,12 @@ test('decision 155: a whole mind map without recomposition has to say so, a sing
   assert.equal(project(startInput(two, { autoid: AUTOID })).error, undefined);
 });
 
+test('parameters.exclude leaves cases out of a whole-document run, and only there', () => {
+  const two = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }]);
+  assert.deepEqual(project(startInput(two, { exclude: [AUTOID] })).items.map((item) => item.fields.autoid), [SECOND]);
+  assert.equal(project(startInput(two, { exclude: [AUTOID], autoid: SECOND })).error?.code, 'case-compile.invalid_parameter', 'exclude and autoid do not go together');
+  for (const bad of [[], [AUTOID, AUTOID], ['not-an-autoid'], 'x']) assert.equal(project(startInput(two, { exclude: bad, pipeline: 'legacy' })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
+  assert.equal(project(startInput(two, { exclude: ['990000000000000099'], pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found', 'an autoid the rule does not take');
+  assert.equal(project(startInput(two, { exclude: [AUTOID, SECOND], pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found', 'nothing left to compile');
+});
+
