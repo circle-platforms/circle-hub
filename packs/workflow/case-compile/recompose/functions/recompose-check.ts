@@ -3,7 +3,7 @@ import T from '../tables/recompose-format.json' with { type: 'json' };
 import { canonicalJson } from './canonical-json.ts';
 import { authorityOf, reviewedAtom, acceptedPair, object } from './recompose-evidence.ts';
 import { compileGrammar, commandIdentity, parseCommandState, type CommandDefinition } from './generated/command-grammar.ts';
-import type { AuthorAtom } from './compile-structure.ts';
+import type { AuthorAtom } from './generated/skills/mindmap-format/case-structure/index.ts';
 import SHAPE from '../tables/recompose-record.schema.json' with { type: 'json' };
 import { schema } from './schema.ts';
 import CODES from '../tables/recompose-codes.json' with { type: 'json' };

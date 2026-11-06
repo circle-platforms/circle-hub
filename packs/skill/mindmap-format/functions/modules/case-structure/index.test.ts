@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { kityminderParser } from '../../../skill/mindmap-format/api.ts';
-import { analyzeStructure } from './compile-structure.ts';
+import { kityminderParser } from '../../../api.ts';
+import { analyzeStructure } from './index.ts';
 const parse = (root: any) => kityminderParser.parse(Buffer.from(JSON.stringify({ root })), {}).model;
 const node = (id: string, text: string, children: any[] = [], data = {}) => ({ data: { id, text, ...data }, children });
 const caseNode = (text: string, children: any[], data = {}) => node('case', text, children, { autoid: 'ORBIT-1', auto: 'YES', ...data });

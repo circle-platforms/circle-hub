@@ -1,4 +1,4 @@
-# case-compile 3.9.22
+# case-compile 3.10.0
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -295,6 +295,13 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.10.0: the structural reading comes from the skill mindmap-format
+
+The structural projection moved to the module `case-structure` of `mindmap-format` (decision 154) and is embedded here and in
+`recompose` as generated files; change it in the skill, never here. The copies in `recompose-authority` and
+`recompose-adjudication` were never imported and are gone. `tables/compile-structure.json` is now the module's `policy.json`.
+After a version change run `testing/refresh-workbook-samples.ts`: the generator's name is written into the workbook samples.
 
 ### 3.9.22: a run freezes the cells that hold something
 

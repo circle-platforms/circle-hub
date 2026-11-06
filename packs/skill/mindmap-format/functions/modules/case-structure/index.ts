@@ -1,6 +1,7 @@
-// One declared structural projection for recomposition and compilation. No prose classification.
-import POLICY from '../tables/compile-structure.json' with { type: 'json' };
-import { isRecord } from './text.ts';
+// The module case-structure of mindmap-format: one declared structural reading of a test mind map, for recomposition and
+// compilation. A node's role comes from its tree position and declared fields. No prose classification.
+import POLICY from './policy.json' with { type: 'json' };
+const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 export interface AuthorAtom {
     id: string;
     kind: (typeof POLICY.atom_kinds)[number];

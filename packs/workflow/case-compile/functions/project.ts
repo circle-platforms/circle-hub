@@ -1,4 +1,4 @@
-import {analyzeStructure,type StructureCase} from './compile-structure.ts';
+import {analyzeStructure,type StructureCase} from './generated/skills/mindmap-format/case-structure/index.ts';
 import {admittedRecomposition} from './recomposition.ts';
 // Project the automatable cases of one document (or the one case named by autoid) and freeze the original runner contract,
 // profile, manifest and lease view. Every check recomputes from these inputs; malformed documents refuse the whole run with

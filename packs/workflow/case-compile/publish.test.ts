@@ -7,6 +7,7 @@ import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { createPackRegistry, temporaryDirectory } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
+import { installMindmapFixture } from '../../../hub/testing/skills.ts';
 import { stage } from './pack-files.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
@@ -32,6 +33,7 @@ describe('publishing the case-compile pack', { skip }, () => {
     const owner = await kit.principals.createUser(admin, '所有者');
     await kit.authorizations.grantPublishRight(admin, owner.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted') });
+    await installMindmapFixture(registry, kit, admin);
     const outcome = await registry.publish(owner, await stage(join(temp.path, 'staged')));
     assert.equal(outcome.ok, true, JSON.stringify(outcome.ok ? '' : outcome.problems));
     if (!outcome.ok) return;
@@ -52,7 +54,7 @@ describe('publishing the case-compile pack', { skip }, () => {
         ['dispatch_policy',1,1],
       ],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '3.9.22', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '3.10.0', 'workflow']);
     const again = await registry.publish(owner, await stage(join(temp.path, 'staged-again')));
     assert.equal(again.ok && again.created, false, '同样内容再发布不新建版本');
   });

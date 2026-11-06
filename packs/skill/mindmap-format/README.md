@@ -66,3 +66,8 @@ fragments 的 JSON 估算超过 4 MiB 就不随解析输出，由 locate 按需�
 ## 合线（1.0.19，2026-11-04）
 
 私有集成线在本包上另发了 1.0.2–1.0.3，main 当时是 1.0.18，同号的版本字节不同。本版把集成线的改动带进 main，main 已有的修正保留，版本号高于两边已发布的版本。带进来的改动：本地解析工具 `tools/parse-model.ts` 和 `tools/locate-quotes.ts`（为模板复核准备原文引用跨度）；解析代码不变。
+
+## 模块 case-structure（决定 153、154）
+
+`functions/modules/case-structure/` 是可复用模块：按树位置和声明字段读出用例、前置、动作和期望，不按文字判断角色。工作流在 `pack.json` 的 `embeds` 写 `{"pack":"mindmap-format","version":"<版本>","module":"case-structure"}`，`npm run gen:contracts` 把它生成到 `functions/generated/skills/mindmap-format/case-structure/`。只在这里改模块，不改生成的副本；改了要升本包版本，再改 `embeds` 并重签工作流。模块里的 import 不能离开这个文件夹。
+

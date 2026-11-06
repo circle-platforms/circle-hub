@@ -36,7 +36,7 @@ const copy = (folder: string, files: string[]) => { for (const file of files) {
     writeFileSync(target, text);
 } };
 for (const folder of ['authority', 'recompose', 'adjudicate'])
-    copy(folder, ['functions/text.ts', 'functions/canonical-json.ts', 'functions/schema.ts', 'functions/compile-structure.ts', 'functions/recompose-evidence.ts', 'tables/compile-structure.json', 'tables/recompose-format.json']);
+    copy(folder, ['functions/text.ts', 'functions/canonical-json.ts', 'functions/schema.ts', 'functions/recompose-evidence.ts', 'tables/recompose-format.json']);
 copy('authority', ['functions/recompose-authority.ts', 'tables/recompose-product.schema.json']);
 copy('recompose', ['functions/recompose-check.ts', 'tables/recompose-record.schema.json', 'tables/recompose-codes.json', 'functions/generated/command-grammar.ts']);
 write('adjudicate/tables/decision.schema.json', obj({ atom: str, state: choice(T.states), load_bearing: { type: 'boolean' }, bed_independent: { type: 'boolean' }, reason: str }));

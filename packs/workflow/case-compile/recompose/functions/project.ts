@@ -1,4 +1,4 @@
-import { analyzeStructure } from './compile-structure.ts';
+import { analyzeStructure } from './generated/skills/mindmap-format/case-structure/index.ts';
 export default function (input: any) { const subject = input.inputs?.find((s: any) => s.slot === 'subject'); if (subject?.parser !== 'kityminder@1')
     return { error: { code: 'SUBMISSION_SCHEMA_VIOLATION', message: '重组必须绑定完整脑图结构', fix: '作者重新导出并重读完整脑图' }, warnings: [] }; const context = input.context ?? {}, report = analyzeStructure(subject.model, subject.sha256, input.parameters?.case_depths), selected = report.cases.filter(c => !c.excluded.length), excluded = report.cases.filter(c => c.excluded.length); for (const [index, u] of report.unclassified.entries())
     if (!selected.some(c => c.selector === u.selector)) {

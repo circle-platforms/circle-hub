@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.22",
+  "version": "3.10.0",
   "kind": "workflow",
   "dependencies": [
     {
@@ -9,6 +9,13 @@
     },
     {
       "pack": "workbook-format"
+    }
+  ],
+  "embeds": [
+    {
+      "pack": "mindmap-format",
+      "version": "1.0.21",
+      "module": "case-structure"
     }
   ],
   "title": "用例编译",
@@ -155,11 +162,6 @@
       "size": 5411
     },
     {
-      "path": "functions/compile-structure.ts",
-      "sha256": "709ccb45846597481fae4c1079c6102df37f14ae4bfc4a5e87a738b151c77786",
-      "size": 14600
-    },
-    {
       "path": "functions/dispatch-policy.ts",
       "sha256": "c74e42787ce3ae5fd43a5e5c1caad600788583a1f41cc1a202cc37e72040719e",
       "size": 2114
@@ -185,6 +187,16 @@
       "size": 11823
     },
     {
+      "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
+      "sha256": "475e711c4f178bb35329f841832a6c33b8ef37d92f491eab7a992c08303908d6",
+      "size": 14816
+    },
+    {
+      "path": "functions/generated/skills/mindmap-format/case-structure/policy.json",
+      "sha256": "682de39ce35c104f24cb11f814c079b676d67947a3578a4cef17c7e1c7ba041e",
+      "size": 678
+    },
+    {
       "path": "functions/generated/vocabulary.ts",
       "sha256": "f60c98ceb6234db4936bdd8406c965574c8c9bdbc6d52f76e817f62e7e3629e0",
       "size": 2527
@@ -206,8 +218,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "de0656671a4111278b8cc9ca7ecdc4fce29e287e61ab5cc510cfa5c87d4a94f5",
-      "size": 23066
+      "sha256": "57708f172cbf363c2e738af3f0ebc00482464fb9f494395649c1f660638d5c04",
+      "size": 23101
     },
     {
       "path": "functions/quote-width.ts",
@@ -226,12 +238,12 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "c6ccb66bb6d7f99123a37c3a1353750733be63237907cae3a34a3823419b411a",
-      "size": 23067
+      "sha256": "bcf3d6cde0b6155d23bdd1f3cf339a9fd454001b0229c26ee1e2b91f81a87cdd",
+      "size": 23102
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "a16e725105e26ac6e67c31c6bec06c3ebebb2e23bf951e3552ee54c98519a5c8",
+      "sha256": "43819f6410ef4bd0af2acd0b1323227c5df39b8f9ed94e8324f96c3953f26c52",
       "size": 4185
     },
     {
@@ -376,7 +388,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "2727096c58d8d2fc9ebb4983c4189938b0d2ebfdd6ed0f25df9a54bfcceae6fd",
+      "sha256": "55e4727c10d1c521227ecc6749b1e67dccfd02969ea63b626b9ae545b1bdec57",
       "size": 202654
     },
     {
@@ -416,7 +428,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "8531a3c60d90a534bf4b2d8299899d027b3099ae694ad94575fe33517a0001ed",
+      "sha256": "4b53634d0ae6110c91bc955ccd78dc30eef32d86edff240b72344669d12c62d9",
       "size": 202658
     },
     {
@@ -491,7 +503,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "6526200819e634e920d4c787af201eaa4aa1595c047144acd31768327aca1c98",
+      "sha256": "f4d2ef21259c9b897f08466250e61a0f68cc018131862d4540ff1195f52bf667",
       "size": 202608
     },
     {
@@ -531,7 +543,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "21757c05a88677108521dfe249a3eadf049fea94f203ed0a59769dd26320b459",
+      "sha256": "f2aeba2c4eafe8965adcf5841add1f555f29cc61ecd868239482dad8222a6754",
       "size": 202612
     },
     {
@@ -563,11 +575,6 @@
       "path": "tables/commands.json",
       "sha256": "0726a6fa7b799a842c1da4bc472c8f1a8e254e41894d60f6b9109cef63974bb8",
       "size": 833
-    },
-    {
-      "path": "tables/compile-structure.json",
-      "sha256": "682de39ce35c104f24cb11f814c079b676d67947a3578a4cef17c7e1c7ba041e",
-      "size": 678
     },
     {
       "path": "tables/declared-role.schema.json",
@@ -631,7 +638,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "174db26ee984dd3a6171f9717c81d38dbeb27feb7355784a93ba6984805cfe37",
+      "sha256": "204a808a6483c337dbc99b04cc91142086bdefcd4439bbf6aa731f77cf8c593b",
       "size": 406
     },
     {
