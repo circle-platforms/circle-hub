@@ -106,6 +106,15 @@ function outcomeProblems(outcomes: CheckOutcome[], pack: string): string | undef
   return undefined;
 }
 
+/**
+ * `data.sandbox` is the Hub's own mark of a sandbox failure (publicDetail here, builderFailure in the evaluation), and a refusal
+ * words itself from it. A pack function cannot give it: an outcome it returns loses that key (D05 R[7]: authority comes from
+ * structure the Hub wrote, not from what a pack says). The rest of its data stays.
+ */
+function withoutSandboxMark(outcomes: CheckOutcome[]): CheckOutcome[] {
+  return outcomes.map((o) => (o.data !== undefined && Object.hasOwn(o.data, 'sandbox') ? { ...o, data: Object.fromEntries(Object.entries(o.data).filter(([key]) => key !== 'sandbox')) } : o));
+}
+
 /** The check's tier for its outcomes; a negative-case outcome keeps its own, but never blocks without a basis. */
 function withTier(outcomes: CheckOutcome[], tier: CheckTier, basis: boolean): CheckOutcome[] {
   return outcomes.map((o) => {
@@ -215,7 +224,7 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
     const problem = outcomeProblems(parsed.data, pack);
     if (problem) return [unknown(base, 'check_error', `包内函数 ${name} 的输出无效：${problem}`)];
     if (parsed.data.length === 0) return [unknown(base, 'check_error', `包内函数 ${name} 没有给出结果`)];
-    return withTier(parsed.data, base.tier, basis);
+    return withTier(withoutSandboxMark(parsed.data), base.tier, basis);
   } catch (error) {
     report(error);
     if (error instanceof SandboxError) return [unknown(base, sandboxReason(error), `包内函数 ${name}：${error.message}`, { data: publicDetail(error, fn.module) })];

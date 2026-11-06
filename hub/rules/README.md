@@ -138,7 +138,9 @@ catalog?, sources?, context, packDir?, sourceTexts?, sandbox?, onError? })`. Exa
   `queue_full`) as `budget_exhausted`, everything else as `check_error`. Outcome data keeps only a stable, path-free part:
   `data.sandbox` (the code), `data.module` (pack-relative) and `reason`, `limit`, `stream`, `phase` when present. Messages,
   stacks, timings, specifiers and captured output reach only `onError(error, check)`, for the admin log; an error that is
-  neither a SandboxError nor an invalid call (TypeError, RangeError) is reported without its message.
+  neither a SandboxError nor an invalid call (TypeError, RangeError) is reported without its message. `data.sandbox` is the
+  Hub's own mark (the dispatch refusal words itself from it, D05 R[7]), so a pack function cannot give it: `runCheck` drops
+  that key from the data of the outcomes a function returns and leaves the rest of the data as it is.
 
 ### Sandbox (C03 R[0])
 
