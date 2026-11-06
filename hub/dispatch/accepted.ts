@@ -1,6 +1,6 @@
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
-import { labelOf } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type DynamicTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
@@ -10,6 +10,7 @@ export interface DispatchNote { job?: string; executor?: string; result?: string
 export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
 export const MAX_NOTES = 16, MAX_NOTE_TEXT = 800;
+const MAX_VERDICT_TEXT = 6000;
 const clip = (text: string) => text.length <= MAX_NOTE_TEXT ? text : `${text.slice(0, MAX_NOTE_TEXT - 1)}…`;
 /** The newest notes within the limit, after one line that counts the older jobs left out. */
 function capped(notes: DispatchNote[]): DispatchNote[] {
@@ -86,6 +87,24 @@ function details(status: JobStatus): string[] {
   return parts;
 }
 
+/** The case verdicts in a few lines: a report of many cases is too long to page through for one word each. The cases that did
+ * not pass are grouped by their log, since many share one. */
+function verdicts(status: JobStatus): string | null {
+  const cases = status.cases;
+  if (!cases?.length) return null;
+  const label = (terminal: string) => labelOf('dynamic_terminal', terminal as DynamicTerminal);
+  const counts = new Map<string, number>(), logs = new Map<string, string[]>();
+  for (const row of cases) {
+    counts.set(row.terminal, (counts.get(row.terminal) ?? 0) + 1);
+    if (row.terminal === 'pass') continue;
+    const key = row.log ?? '';
+    logs.set(key, [...(logs.get(key) ?? []), `${row.item}（${label(row.terminal)}）`]);
+  }
+  const groups = [...logs].map(([log, items]) => `${log ? `日志 ${log}` : '没有日志'}：${items.join('、')}`);
+  const text = `逐条结论：${[...counts].map(([terminal, count]) => `${label(terminal)} ${count}`).join('，')}${groups.length ? `；没有通过的：${groups.join('；')}` : ''}`;
+  return text.length <= MAX_VERDICT_TEXT ? text : `${text.slice(0, MAX_VERDICT_TEXT - 1)}…（其余读结果引用）`;
+}
+
 /** The runner's note on one job of the run. */
 export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string): DispatchNote {
   const { status } = job;
@@ -97,5 +116,6 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
     : `结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   if (status.reason) parts.push(`原因：${status.reason}`);
   parts.push(...details(status), `下一步：${nextStep(job, admin)}`);
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), text: clip(parts.join('；')) };
+  const cases = status.result && status.outcome !== 'not_dispatched' ? verdicts(status) : null;
+  return { job: job.job, ...(status.result ? { result: status.result } : {}), text: clip(parts.join('；')) + (cases ? `\n${cases}` : '') };
 }

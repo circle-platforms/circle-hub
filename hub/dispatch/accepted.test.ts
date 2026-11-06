@@ -133,3 +133,26 @@ test('the accepted answer reports the reserved job, then a repeat reads its prog
   assert.match(progress[0].text, /阶段 complete/);
   assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
 });
+
+const verdictJob = 'a'.repeat(64);
+const verdictStatus = (extra: Record<string, unknown>) => ({ job: verdictJob, phase: 'synthetic', outcome: 'unknown', frozen: false, events: 3, next_action: 'x', ...extra }) as unknown as JobStatus;
+
+test('a finished job says each case in the answer, so a long report need not be paged for one word per case', () => {
+  const log = `src:${'c'.repeat(64)}`, other = `src:${'d'.repeat(64)}`;
+  const cases = [{ item: 'doc:one', terminal: 'pass' }, { item: 'doc:two', terminal: 'fail', log }, { item: 'doc:three', terminal: 'fail', log }, { item: 'doc:four', terminal: 'no_verdict', log: other }];
+  const text = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, cases }) }, 'admin-1').text;
+  assert.match(text, /逐条结论：通过 1，失败 2，无判定 1/);
+  assert.ok(text.includes(`日志 ${log}：doc:two（失败）、doc:three（失败）`));
+  assert.ok(text.includes(`日志 ${other}：doc:four（无判定）`));
+  assert.doesNotMatch(text, /doc:one/);
+  const all = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, cases: [{ item: 'doc:one', terminal: 'pass' }] }) }, 'admin-1').text;
+  assert.match(all, /逐条结论：通过 1$/);
+});
+
+test('the pre-dispatch reference is not reported as case verdicts, and an older job without lines keeps the old answer', () => {
+  const held = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'not_dispatched', result: `src:${'b'.repeat(64)}`, cases: [{ item: 'doc:one', terminal: 'fail' }] }) }, 'admin-1').text;
+  assert.doesNotMatch(held, /逐条结论：/);
+  const older = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }) }, 'admin-1').text;
+  assert.doesNotMatch(older, /逐条结论：/);
+});
+
