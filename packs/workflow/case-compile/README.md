@@ -319,6 +319,9 @@ reads the same projection. Nothing here reads a word:
   reference-like string in a subject against one budget per submission (256 references, 16 MiB), and catalog entries carry two
   or more each, so a submission of about fifteen cases stopped with `未校验（中断）` and read some 250 MB for nothing. Nothing
   quotes those references. The content is unchanged, so recipe digests stay.
+- `tools/submit-plans.ts`: a run takes one complete submission, and five cases already took 27 KB of tool arguments, so a whole mind
+  map did not fit in one model message. The model writes one file per case and the tool sends them as that one submission. It
+  decides nothing. A repaired case is rewritten alone, and several writers can each own their files.
 
 The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.4 because they copy the projection.
 

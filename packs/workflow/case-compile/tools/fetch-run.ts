@@ -18,7 +18,7 @@ const SLOTS = ['contract', 'profile', 'inventory'] as const;
 const MAX_BYTES = 16 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 
-async function tokenFromStdin(): Promise<string> {
+export async function tokenFromStdin(): Promise<string> {
   const chunks: Buffer[] = []; for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8').trim();
 }
@@ -39,16 +39,22 @@ async function get(url: string, bearer: string): Promise<Uint8Array> {
   return bytes;
 }
 
+/** The token from standard input, refused when it is Circle's placeholder or plainly no token. */
+export async function bearerFrom(readToken: () => Promise<string>): Promise<string> {
+  const bearer = await readToken();
+  // Circle hands a secret it does not store over as its literal placeholder: that is no token, and it is never sent.
+  const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
+  if (placeholder) throw new Error(`Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出；所有者用 /secrets ${placeholder[1]} 存入 Hub 令牌后重跑`);
+  if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) throw new Error("标准输入里没有令牌；在命令末尾写 <<'EOF'，下一行写 %HUB_TOKEN%，再一行写 EOF，令牌不写进参数");
+  return bearer;
+}
+
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
     if (!/^run_[a-z0-9]+$/.test(args.run)) throw new Error('--run 必须是运行编号');
     let origin: string; try { const url = new URL(args.hub); if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(); origin = url.origin; } catch { throw new Error('--hub 必须是 Hub 的 http 或 https 地址（与 MCP 条目同一台）'); }
-    const bearer = await readToken();
-    // Circle hands a secret it does not store over as its literal placeholder: that is no token, and it is never sent.
-    const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
-    if (placeholder) throw new Error(`Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出；所有者用 /secrets ${placeholder[1]} 存入 Hub 令牌后重跑`);
-    if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) throw new Error("标准输入里没有令牌；在命令末尾写 <<'EOF'，下一行写 %HUB_TOKEN%，再一行写 EOF，令牌不写进参数");
+    const bearer = await bearerFrom(readToken);
     let exported: unknown;
     try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${args.run}`, bearer))); } catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是完整的 UTF-8 JSON'); }
     if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) throw new Error('Hub 的运行导出不合式');

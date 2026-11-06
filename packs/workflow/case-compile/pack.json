@@ -16,8 +16,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "106fda001447d7b4e211e6e7718a9b2ecdaca659ec4324058442487cc0add971",
-      "size": 18572
+      "sha256": "bb1adb4e0441cae91fae6b724badff775df4dc2d7b875e0b4a345988c4f73d09",
+      "size": 18752
     },
     {
       "path": "checks.json",
@@ -631,8 +631,8 @@
     },
     {
       "path": "tools/fetch-run.ts",
-      "sha256": "76558b9f9567c37f6dd2f81bd0c920c5d00062f4535d4074e84b34831c1c36f2",
-      "size": 6961
+      "sha256": "1d3d79921ba7d03644395caa980d396f501c5860723ddab6ce36c17fc57fb5bf",
+      "size": 7211
     },
     {
       "path": "tools/files.ts",
@@ -653,6 +653,11 @@
       "path": "tools/seal-recompose.ts",
       "sha256": "f19bcd432d5c53e687346fc8c9348f3f158f3a4293f4ae41cc9b3e54bc16d8cb",
       "size": 4050
+    },
+    {
+      "path": "tools/submit-plans.ts",
+      "sha256": "7c78935d20c3e0bca3c7a4e370602a5d44c12c3929227267714c24b8e0648216",
+      "size": 5505
     },
     {
       "path": "workflow.json",

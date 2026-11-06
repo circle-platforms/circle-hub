@@ -60,8 +60,9 @@ test('the examples use the original synthetic contract, matching profile and fin
   const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');
 });
 // The budget covers the standard Agent Skills frontmatter (client-neutral loading: every client that reads
-// Agent Skills reads the same name/description) plus the neutral local-tools paragraph; the procedure body is unchanged in intent.
-const SKILL_BUDGET = 8400;
+// Agent Skills reads the same name/description) plus the neutral local-tools paragraph and the plan files of step 4; the procedure
+// body is unchanged in intent.
+const SKILL_BUDGET = 8550;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
 });
