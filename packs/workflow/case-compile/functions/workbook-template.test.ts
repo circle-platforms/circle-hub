@@ -7,6 +7,7 @@ import { unzipSync } from 'fflate';
 import { generateWorkbook, generateWorkbookSet, GenerationError, GENERATOR } from './generate.ts';
 import { readWorkbook } from './workbook.ts';
 import { fillTemplate, readTemplate, TemplateError } from './workbook-template.ts';
+import { compactModel } from './xlsx-model.ts';
 import { zipStore } from './zip-store.ts';
 import { coreModel } from '../testing/workbook-model.ts';
 import { generationFixture } from '../testing/workbook.ts';
@@ -91,4 +92,13 @@ test('a template without the defined name or with another header is no template 
   const header = [...other.header]; header[3] = 'FixtureOther';
   assert.throws(() => readTemplate({ ...other, header }), /表头和配置不一致/);
   assert.throws(() => readTemplate({ ...other, identity_marker: 'FixtureOther' }), /身份标记/);
+});
+
+test('the frozen model drops the empty cells and reads the same; a hidden row and the last row survive', () => {
+  const input = generationFixture(); const model = coreModel(generateWorkbook(input)); const compact = compactModel(model);
+  assert.ok(JSON.stringify(compact).length < JSON.stringify(model).length / 2);
+  assert.equal(compact.sheets[0].lastRow, TEMPLATE_LAST_ROW);
+  assert.deepEqual(readWorkbook(compact, input), readWorkbook(model, input));
+  const hidden = structuredClone(model); const row = hidden.sheets[0].rows.find((value) => value.number === TEMPLATE_HEADER_ROW + 40)!; row.hidden = true;
+  const read = readWorkbook(compactModel(hidden), input); assert.equal(read.ok, false); if (!read.ok) assert.ok(read.problems.some((value) => value.rule === 'subset'), JSON.stringify(read.problems));
 });

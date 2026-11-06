@@ -9,7 +9,7 @@ import { parseProfile } from './profile.ts';
 import { parseManifest } from './manifest.ts';
 import WORKBOOK_FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
-import { readWorkbookModel } from './xlsx-model.ts';
+import { readWorkbookModel, compactModel } from './xlsx-model.ts';
 import { documentIdOf, extractCases, rootDocumentId, type CaseRule } from './cases.ts';
 
 interface Slot {
@@ -204,7 +204,7 @@ export function projectItems(input: unknown): unknown {
         manifest: inventorySlot.model,
         profile: profileSlot.model,
         manifest_sha256: typeof inventorySlot.sha256 === 'string' ? inventorySlot.sha256 : '',
-        workbook: workbook ? { model: workbook.model, sha256: workbook.sha256, source: `src:${workbook.sha256}` } : null,
+        workbook: workbook ? { model: compactModel(readWorkbookModel(workbook.model)!), sha256: workbook.sha256, source: `src:${workbook.sha256}` } : null,
         generation: { plan_run: parameters.plan_run ?? null, build: context.build ?? null, generator: WORKBOOK_FORMAT.generator },
         plan_set: planSet,
         leases: { now: typeof frozenLeases.now === 'string' ? frozenLeases.now : new Date(0).toISOString(), entries: Array.isArray(frozenLeases.entries) ? frozenLeases.entries : [] },

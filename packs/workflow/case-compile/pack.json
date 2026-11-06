@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.21",
+  "version": "3.9.22",
   "kind": "workflow",
   "dependencies": [
     {
@@ -206,8 +206,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "8dd7547f219e2af8db578b14606f35468e438bff12489ca42dfa04efd14815df",
-      "size": 23018
+      "sha256": "de0656671a4111278b8cc9ca7ecdc4fce29e287e61ab5cc510cfa5c87d4a94f5",
+      "size": 23066
     },
     {
       "path": "functions/quote-width.ts",
@@ -286,8 +286,8 @@
     },
     {
       "path": "functions/xlsx-model.ts",
-      "sha256": "814e83be1b42f8b0314c068b17d96b7f78ddbaf2e1d22bc42576f0e8d74a290b",
-      "size": 2358
+      "sha256": "da299c2cf882f2d7616e13fdabeb3f8b7ba74d8d60dd886d13974986dbb4f533",
+      "size": 3049
     },
     {
       "path": "functions/zip-store.ts",
@@ -376,7 +376,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "4df32e4e550507b9a2c55a2ffefe49407eca2edd379f4996c2500efab0a0d864",
+      "sha256": "2727096c58d8d2fc9ebb4983c4189938b0d2ebfdd6ed0f25df9a54bfcceae6fd",
       "size": 202654
     },
     {
@@ -416,7 +416,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "b365bd1d44bfc40180ef5a55f954e75f35f127fc5a2d1f4e355ae2fb7567cfbf",
+      "sha256": "8531a3c60d90a534bf4b2d8299899d027b3099ae694ad94575fe33517a0001ed",
       "size": 202658
     },
     {
@@ -491,7 +491,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "62ff2d53fba45765a608a30463b3dd727bc59a71734ab4763b91da201aa950ba",
+      "sha256": "6526200819e634e920d4c787af201eaa4aa1595c047144acd31768327aca1c98",
       "size": 202608
     },
     {
@@ -531,7 +531,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "bf90183b6ae48a157847f21c88768232d0beb3a01a5578d86953ef3a59b190dc",
+      "sha256": "21757c05a88677108521dfe249a3eadf049fea94f203ed0a59769dd26320b459",
       "size": 202612
     },
     {
@@ -631,7 +631,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "d705a251e7a9c374cf7aa9d7a0638ba62cbaaa20f470264e037bf26cbc76c4ae",
+      "sha256": "174db26ee984dd3a6171f9717c81d38dbeb27feb7355784a93ba6984805cfe37",
       "size": 406
     },
     {
