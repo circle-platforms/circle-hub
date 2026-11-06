@@ -1,6 +1,13 @@
+---
+name: recompose
+description: 把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加适配、具体化和缺口。把整份脑图编译成自动化用例之前先用它；需要这份脑图在敏捷平台上的文档号。
+---
+
 # 脑图重组
 
 把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加适配、具体化和缺口。这一步是搬运，不是创作。
+
+本地工具由客户端装进技能目录（通用根 `~/.agents/skills/<包>/`；装好的目录即下文 `<技能目录>`，Base directory 由客户端在加载时给出）。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Bearer 令牌：模型只写占位符名字，值由客户端执行时展开。
 
 一次处理一整份脑图。Hub 已经按树位置读出每个用例的原子（意图、动作、期望），在 `rec:<运行记录>#/items/<序号>/fields/atoms`，Hub 不调模型。
 
@@ -14,10 +21,17 @@
 
 ## 步骤
 
-1. `start_run` 用 recompose，绑定 subject（同一份脑图）。用例和 case-compile 取的是同一批：带 autoid、没有声明不自动化的。
+1. `start_run` 用 recompose，绑定 subject（同一份脑图）。product、build 和 version 写在 start_run 顶层，和之后编写用同一个构建：重组记录只对同一棵锁定的知识树有效。用例和 case-compile 取的是同一批：带 autoid、没有声明不自动化的。
 2. 读每个用例的 `fields/atoms`，再读需要的命令和手册：`tree:<根>/commands/...`、`tree:<根>/manual/...`。
 3. 每个用例写一个文件 `<目录>/NN.json`，只写需要判断的字段（见下）。
-4. 执行 `node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <运行号> --model <模型> --records <目录>`，下一行开始写 here-doc（`<<'EOF'`、`%HUB_TOKEN%`、`EOF`）。工具补全机械字段，整份一次提交。
+4. 执行下面的命令。工具补全机械字段，整份一次提交：
+
+```sh
+node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <运行号> --model <模型> --records <目录> <<'EOF'
+%HUB_TOKEN%
+EOF
+```
+
 5. 读答复。被拒的用例按修正说明改文件后重交。每个用例都要有文件，全部通过这次重组才完成。
 6. 编写时把运行记录的 `rec:` 绑到 `recomposition_run`，把本运行号写到 `recomposition_result`。
 
