@@ -171,7 +171,7 @@ test('an unobserved tree becomes an unknown with a missing fact and next step, n
 
 test('a round that cannot see the tree ends the call only after a second without a complete measurement (#96)', () => {
   let clock = 0;
-  const verdict = createResidentVerdict(256, 1, 1_000, () => clock);
+  const verdict = createResidentVerdict(256, 1, 5, 1_000, () => clock);
   // A starting child whose thread set is still changing: unobservable rounds within the grace are retried by the next.
   for (clock = 100; clock < 1_000; clock += 100) assert.equal(verdict(null), undefined, `${clock} ms`);
   assert.equal(verdict(100), undefined, 'a complete measurement at 1000 ms');
@@ -180,9 +180,52 @@ test('a round that cannot see the tree ends the call only after a second without
   clock = 2_000;
   assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'a tree unobservable for a whole second still fails closed');
   // A measured overrun is never deferred, also inside the grace.
-  const fresh = createResidentVerdict(256, 1, 1_000, () => 0);
+  const fresh = createResidentVerdict(256, 1, 5, 1_000, () => 0);
   assert.deepEqual(fresh(257), { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: 257, memoryMb: 1 } });
   assert.equal(fresh(RESIDENT_EXITED), undefined);
+});
+
+test('a stall of the Hub costs a call one unobserved round, not the call (decision 116)', () => {
+  let t = 0;
+  const verdict = createResidentVerdict(256, 1, 3, 1_000, () => t);
+  // The Hub's own thread was held for 5 s: no round ran, the last complete measurement is 5 s old, and the round in flight
+  // timed out. That round is one unobserved round, not the evidence of a broken sampler it looked like by the clock alone.
+  t = 5_000; assert.equal(verdict(null), undefined, 'the first unobserved round after the stall');
+  t += 100; assert.equal(verdict(null), undefined, 'the second');
+  t += 100; assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'the third in a row, and a second since the last complete measurement');
+});
+
+test('ordinary rounds 100 ms apart need the count and the second together', () => {
+  let t = 0;
+  const verdict = createResidentVerdict(256, 1, 3, 1_000, () => t);
+  // The third unobserved round in a row comes at 300 ms, when only 300 ms have passed since the last complete measurement:
+  // the count alone does not end the call. The tenth round, at one second, does.
+  for (t = 100; t < 1_000; t += 100) assert.equal(verdict(null), undefined, `${t} ms`);
+  t = 1_000;
+  assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'the tenth round, a second after the last complete measurement');
+});
+
+for (const [seen, observation] of [['a complete measurement', 100], ['proof that the root exited', RESIDENT_EXITED]] as const) {
+  test(`${seen} clears the count of unobserved rounds`, () => {
+    let t = 0;
+    const verdict = createResidentVerdict(256, 1, 3, 1_000, () => t);
+    t = 5_000; assert.equal(verdict(null), undefined, 'unobserved round 1');
+    t += 100; assert.equal(verdict(null), undefined, 'unobserved round 2');
+    t += 100; assert.equal(verdict(observation), undefined, seen);
+    // A whole second passes, so only the count can keep the call alive now. Had the count survived, this would be round 3.
+    t += 5_000; assert.equal(verdict(null), undefined, 'unobserved round 1 again');
+    t += 100; assert.equal(verdict(null), undefined, 'unobserved round 2 again');
+    t += 100; assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'unobserved round 3 again');
+  });
+}
+
+test('a measured overrun ends the call at once, whatever the count and the clock say', () => {
+  let t = 0;
+  const overrun = { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: 257, memoryMb: 1 } };
+  assert.deepEqual(createResidentVerdict(256, 1, 3, 1_000, () => 0)(257), overrun, 'at the start of a call');
+  const verdict = createResidentVerdict(256, 1, 3, 1_000, () => t);
+  t = 100; assert.equal(verdict(null), undefined, 'one unobserved round');
+  t = 200; assert.deepEqual(verdict(257), overrun, 'a measured overrun after it, with the count and the second both unmet');
 });
 
 test('Linux resident accounting finds a child started by a non-leader thread', { skip: process.platform !== 'linux', timeout: 10_000 }, async () => {
