@@ -1,5 +1,6 @@
 // Exact path segments and product-authored structure only. No command words are classified here.
 import {isRecord} from './text.ts';
+import {commandTokens} from './generated/command-grammar.ts';
 export interface Confirmation {command_prefix:string;prompt:string;answer:string}
 export interface CommandPolicy {schema:'command-policy@1';read_only:string[];inverse_rules:Array<{source_prefix:string;inverse_prefix:string;leading_parameters?:number}>;inverse_alternatives?:Array<[string,string]>;confirmations?:Confirmation[]}
 export function pathSegments(path:unknown):string[]|null {
@@ -8,6 +9,20 @@ export function pathSegments(path:unknown):string[]|null {
  try{parts.forEach(part=>decodeURIComponent(part));}catch{return null;}return parts;
 }
 export function within(path:string,prefix:string):boolean {const a=pathSegments(path),b=pathSegments(prefix);return !!a&&!!b&&a.length>=b.length&&b.every((part,index)=>a[index]===part);}
+const wordsOf=(prefix:string)=>pathSegments(prefix)!.slice(1).map(decodeURIComponent);
+/** The line the product's most specific rule makes of a command: the rule's inverse words, then the rest of the command as written. */
+export function inverseLine(policy:CommandPolicy,line:string):string|null {
+ const tokens=commandTokens(line);if(!tokens)return null;
+ const fits=policy.inverse_rules.filter(rule=>wordsOf(rule.source_prefix).every((word,index)=>tokens[index]?.value===word&&!tokens[index].quoted)).sort((a,b)=>wordsOf(b.source_prefix).length-wordsOf(a.source_prefix).length);
+ const rule=fits[0];if(!rule||fits[1]?.source_prefix===rule.source_prefix)return null;
+ return [...wordsOf(rule.inverse_prefix),...tokens.slice(wordsOf(rule.source_prefix).length).map(token=>token.raw)].join(' ');
+}
+/** Every command's line under the rule, read with the plan so a check can tell a cleanup left out from one the locked tree does not have: all of them, or none when they do not fit the selection's limits. */
+export function inverseLines(policy:CommandPolicy|null,lines:readonly string[]):string[] {
+ if(!policy)return [];
+ const fresh=[...new Set(lines.flatMap(line=>{const inverse=inverseLine(policy,line);return inverse!==null&&!lines.includes(inverse)&&Buffer.byteLength(inverse)<=8192?[inverse]:[];}))];
+ return lines.length+fresh.length<=128?fresh:[];
+}
 export function readCommandPolicy(value:unknown):CommandPolicy|null {
  if(!isRecord(value)||value.schema!=='command-policy@1'||Object.keys(value).some(key=>!['schema','read_only','inverse_rules','inverse_alternatives','confirmations'].includes(key))||!Array.isArray(value.read_only)||value.read_only.length>64||value.read_only.some(path=>!pathSegments(path))||!Array.isArray(value.inverse_rules)||value.inverse_rules.length>64)return null;
  for(const rule of value.inverse_rules)if(!isRecord(rule)||Object.keys(rule).some(key=>!['source_prefix','inverse_prefix','leading_parameters'].includes(key))||!pathSegments(rule.source_prefix)||!pathSegments(rule.inverse_prefix)||rule.leading_parameters!==undefined&&(!Number.isSafeInteger(rule.leading_parameters)||Number(rule.leading_parameters)<0||Number(rule.leading_parameters)>128))return null;

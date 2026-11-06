@@ -40,6 +40,12 @@ test('a configuration command a runner rule covers needs no inverse, and the con
   assert.equal(data?.runner_cleanup?.covered.length, 1);
 });
 
+test('a cleanup step that is no declared inverse says the runner already covers this device, so the step can go', () => {
+  const value = declared(fixture(['demo pool add one 10', cleanup('demo lamp dim')]), [{ prefixes: ['demo pool'], line: 12 }]);
+  const rows = checkCommandsKnown(value);
+  assert.ok(rows.some((row) => row.verdict === 'refute' && row.statement.includes('清理段含没有对应执行命令的额外配置操作：“demo lamp dim”不是本设备任何配置的声明逆操作；本设备 1 条配置由运行器清理收尾，不用写清理，删掉这步')), JSON.stringify(rows));
+});
+
 test('a command outside every rule, or on an object the runner does not clear, still needs its inverse', () => {
   const outside = declared(fixture(['demo pool add one 10']), [{ prefixes: ['demo lamp'] }]);
   assert.ok(checkCommandsKnown(outside).some((row) => row.verdict === 'refute' && row.statement.includes('缺同设备、逆序的清理操作')), JSON.stringify(checkCommandsKnown(outside)));

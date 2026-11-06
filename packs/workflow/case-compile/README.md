@@ -1,4 +1,4 @@
-# case-compile 3.9.19
+# case-compile 3.9.20
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -193,7 +193,7 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 `runtime-contract@2.effects[id].command_scope` 是锁定命令树路径前缀的闭集，例如 `/commands/demo/pool` 与 `/commands/no/demo/pool`。按完整路径段匹配；`pool` 不覆盖 `poolish`。`commands` 可以省略；同时声明时与范围取交集，显式空数组仍是不允许。没有两种声明时设备 CLI 不获授权。所有命令先由原有锁定语法完整解析为唯一 CommandIdentity，参数类型、原始角色、地址用途、bed_member 和预算继续逐项核对。见 `examples/runtime-contract-scope.json`。
 
-产品包的 `command_policy` 随知识组成冻结，再随运行传入检查；不是模型槽位，也不读取后来换版的产品声明。`read_only` 只取声明的路径范围；其余设备命令须有规则映射的逆操作。规则映射 source_prefix 到 inverse_prefix，保留剩余路径与前导参数；`leading_parameters` 可明确给出数量，省略时须由已完整解析的逆签名唯一确定。缺规则或有歧义时保持未知并请求产品作者补声明。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令与冻结作者片段的路径，不展开整个 `/commands`；逆路径存在性由计划中完整解析的清理命令证明。
+产品包的 `command_policy` 随知识组成冻结，再随运行传入检查；不是模型槽位，也不读取后来换版的产品声明。`read_only` 只取声明的路径范围；其余设备命令须有规则映射的逆操作。规则映射 source_prefix 到 inverse_prefix，保留剩余路径与前导参数；`leading_parameters` 可明确给出数量，省略时须由已完整解析的逆签名唯一确定。缺规则或有歧义时保持未知并请求产品作者补声明；规则推出的逆路径不在锁定树里时也一样，那条清理没有计划写得出。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令、冻结作者片段和它们按产品规则推出的逆命令的路径，沿确切的边走，不展开整个 `/commands`；推出的命令放不下时一条也不取，这时逆路径存在性由计划中完整解析的清理命令证明。
 
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
@@ -295,6 +295,20 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.9.20: a cleanup the tree cannot send is the product's to declare
+
+A product's generic rule puts `no` in front of a command, and for many commands that path does not exist: `sync to` has a rollback
+instead, and one `no record <name>` removes every record type. The check still asked the plan for the missing path, so no plan
+could pass and the model went looking for a cause that was not there.
+
+- The catalog selection reads each command's line under the product's rule along with the plan, along exact tree edges, so a path
+  the catalog does not hold is one the locked tree does not have. All of those lines or none: when they do not fit the selection's
+  128 lines, the check keeps the earlier wording.
+- Such a command is now `unknown`, names the path and sends the next step to the product author, who declares the real inverse in
+  `inverse_rules` and seeds again. A cleanup the tree can send but the plan left out stays the plan's to write.
+- A cleanup step that undoes nothing now says which line it is, and that the runner covers the device's other configuration, so
+  the step can simply go.
 
 ### 3.9.19: the tree decides a node's role, and declared host programs
 

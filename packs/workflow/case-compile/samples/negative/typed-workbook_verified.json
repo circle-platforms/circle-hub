@@ -826,7 +826,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.9.19"
+      "generator": "case-compile@3.9.20"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -925,14 +925,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.9.19",
+                    "text": "case-compile@3.9.20",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "061c210969c3c2e2c3599c618a5b7bdef7ac800fadbb4eb1aca0caa0e5045197",
+                    "text": "6a97fd6c52ec553908491ce593b4fa0e2e6be0e526e2a72e9dc12b302f6c67be",
                     "formula": false,
                     "style": null
                   }

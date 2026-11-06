@@ -4,7 +4,7 @@ import type {CommandIdentity} from '../../../../contracts/generated/shared-inter
 import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDefinition} from './generated/command-grammar.ts';
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
-import {readCommandPolicy,within,pathSegments,type CommandPolicy} from './command-policy.ts';
+import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines,type CommandPolicy} from './command-policy.ts';
 import {identityOf,identityKey,commandLine} from './typed-contract.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
@@ -58,6 +58,8 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  for(const [key,row]of authored){const actual=planned.get(key)??0;if(actual<row.count)note('/steps',`可以改参数，不可以删命令：${row.identity.path} 作者 ${row.count} 次、计划 ${actual} 次，尚缺 ${row.count-actual} 次`,'refute',{identity:{tree_root:row.identity.tree_root,path:row.identity.path,signature:row.identity.signature},required_count:row.count,planned_count:actual,missing_count:row.count-actual});}
  if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明 command-policy@1 后重新育苗并核验','unknown');return gaps;}
  const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
+ const selected=[...new Set([...operations.map(operation=>operation.line),...sourceTexts.flatMap(text=>commandLines(text).map(line=>line.text))])];
+ const inversesRead=new Set([...selected,...inverseLines(policy,selected)]);
  const actual=cleanup.filter(operation=>modifies(operation.identity!)).map(operation=>({...operation,restore:undefined as typeof slots.steps[number]|undefined}));
  for(const [index,step]of slots.steps.entries())if(step.restore_for!==undefined)actual.push({line:'',pointer:'/steps/'+index,object:step.object,cleanup:true,identity:null,restore:step});
  const ordinal=(pointer:string)=>Number(pointer.split('/')[2]);actual.sort((a,b)=>ordinal(a.pointer)-ordinal(b.pointer));
@@ -119,6 +121,9 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
   const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,verdict:'unknown'};
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
+  // The catalog selection read the rule's line with the plan, so a path the catalog does not hold is one the locked tree does not have: no plan can send it.
+  const line=inverseLine(policy,operation.line);
+  if(line!==null&&inversesRead.has(line)&&!native.some(definition=>definition.path===path))return {pointer:operation.pointer,message:`配置命令 ${identity.path} 按产品规则的逆操作 ${path} 不在锁定树里，计划写不出这条清理；下一步由产品包作者在 inverse_rules 声明这条命令的真实逆操作并重新育苗后重核`,verdict:'unknown'};
   if(!received||received.object!==operation.object||received.identity!.path!==path)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];
@@ -169,7 +174,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   // one that undoes nothing still live there is without an executed command.
   for(const extra of rest.slice(next)){
    const undoes=ordered.find(operation=>inverseProblem(operation,extra)===null);
-   note(extra.pointer,undoes?`清理步骤是第 ${ordinal(undoes.pointer)+1} 步配置“${undoes.line}”的逆操作，但不在同一设备的逆序位置：同一设备上后执行的配置先清理`:'清理段含没有对应执行命令的额外配置操作');
+   note(extra.pointer,undoes?`清理步骤是第 ${ordinal(undoes.pointer)+1} 步配置“${undoes.line}”的逆操作，但不在同一设备的逆序位置：同一设备上后执行的配置先清理`:'清理段含没有对应执行命令的额外配置操作'+(extra.line?`：“${extra.line}”不是本设备任何配置的声明逆操作`:'')+(runnerOwned.length?`；本设备 ${runnerOwned.length} 条配置由运行器清理收尾，不用写清理，删掉这步`:''));
   }
   covered?.push(...runnerOwned);
  }

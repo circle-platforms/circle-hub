@@ -37,15 +37,15 @@ test('authored duplicate identities are counted, parameters may change, and miss
  const none=fixture([],source);none.data.steps=[{object:'widget-clock',method:'pause',args:['1'],keywords:{}}];assert.ok(checkCommandsKnown(none.input).some(row=>row.verdict==='refute'&&row.statement.includes('尚缺 2 次')));
 });
 
-test('selection includes source commands while inverse existence is proven by the parsed cleanup paths',()=>{
+test('selection grows with the submitted and source commands and their rule lines, never the whole namespace',()=>{
  const value=fixture(['demo pool add one 10']);
  const raw={context:{root:ROOT,command_policy:policy,groups:[{kind:'case-compile',contract:value.contract,profile:PROFILE_DOC,manifest:MANIFEST_DOC}]},item:{id:'case-1',group:'frozen',fields:{steps:[{text:'demo pool add omitted 20'}]}},slots:{plan:value.data}};
  // use the exact existing raw input adapter shape below
  const selected=selectCommandCatalog(raw) as {lines:string[]};
  assert.ok(selected.lines.includes('demo pool add omitted 20'));
  assert.ok(selected.lines.includes('demo pool add one 10'));
- assert.ok(!selected.lines.some(line=>line==='no demo pool add one 10'));
- assert.ok(selected.lines.length<=3,'prefetch grows with submitted/source operations, never the whole namespace');
+ assert.ok(selected.lines.includes('no demo pool add one 10'));
+ assert.ok(selected.lines.length<=6,'prefetch grows with submitted/source operations, never the whole namespace');
 });
 
 test('capacity is derived from the frozen device type inventory, and excess ordinals refuse the whole compile',()=>{

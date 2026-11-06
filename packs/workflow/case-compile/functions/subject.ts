@@ -1,5 +1,5 @@
 import {commandTokens} from './generated/command-grammar.ts';
-import {readCommandPolicy,pathSegments} from './command-policy.ts';
+import {readCommandPolicy,pathSegments,inverseLines} from './command-policy.ts';
 import {authorTexts} from './command-policy.ts';
 import {commandLines} from './generated/command-grammar.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
@@ -122,5 +122,6 @@ export function selectCommandCatalog(input:unknown):unknown{
   if(policy)for(const line of restoreLines){const tokens=commandTokens(line);if(!tokens)continue;for(const rule of policy.inverse_rules){const prefix=pathSegments(rule.source_prefix)?.slice(1),inverse=pathSegments(rule.inverse_prefix)?.slice(1);if(prefix&&inverse&&prefix.every((word,index)=>tokens[index]?.value===decodeURIComponent(word)&&!tokens[index].quoted))lines.push([...inverse.map(decodeURIComponent),...tokens.slice(prefix.length).map(token=>token.raw)].join(' '));}}
  }
 
- return {base:'/commands',lines:[...new Set([...lines,...subject.case_texts.flatMap(text=>commandLines(text).map(line=>line.text))])]};
+ const selected=[...new Set([...lines,...subject.case_texts.flatMap(text=>commandLines(text).map(line=>line.text))])];
+ return {base:'/commands',lines:[...selected,...inverseLines(readCommandPolicy(context.command_policy),selected)]};
 }
