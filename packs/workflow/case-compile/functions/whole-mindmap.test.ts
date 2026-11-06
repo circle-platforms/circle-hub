@@ -23,7 +23,7 @@ test('two cases make one workbook: one identity, header and description, each ca
   const inputs = twoCases(); const bytes = generateWorkbookSet(inputs); const read = readWorkbook(coreModel(bytes), inputs);
   assert.ok(read.ok, JSON.stringify(read)); if (!read.ok) return;
   assert.deepEqual(read.autoids, [AUTOID, SECOND]);
-  assert.deepEqual(read.executions.map((v) => v.row), [4, 5, 6, 7, 9, 10, 11, 12]);
+  assert.deepEqual(read.executions.map((v) => v.row), [8, 9, 10, 11, 13, 14, 15, 16]);
   assert.equal(digest(generateWorkbookSet([inputs[0]])), digest(generateWorkbook(inputs[0])));
 });
 
@@ -105,8 +105,8 @@ test('each case carries its mind-map path from the root, and the workbook shows 
   const inputs = twoCases(); inputs[1].fields = { ...inputs[1].fields, path: ['合成文档', '合成分组', '合成用例二'] };
   const bytes = generateWorkbookSet(inputs); const sheet = coreModel(bytes).sheets[0];
   const d = (row: number) => sheet.rows.find((r) => r.number === row)?.cells.find((c) => c.reference === `D${row}`)?.text;
-  assert.equal(d(4), '合成文档>合成分组>合成用例'); assert.equal(d(9), '合成文档>合成分组>合成用例二');
-  assert.equal(d(6), '合成用例'); assert.equal(d(11), '合成用例二');
+  assert.equal(d(8), '合成文档>合成分组>合成用例'); assert.equal(d(13), '合成文档>合成分组>合成用例二');
+  assert.equal(d(10) ?? '', ''); assert.equal(d(15) ?? '', '');
   assert.ok(readWorkbook(coreModel(bytes), inputs).ok);
   // The reader and the recipe both bind the path: another path reads back as a step mismatch and a recipe mismatch.
   const other = structuredClone(inputs); other[1].fields.path = ['合成文档', '合成用例二'];

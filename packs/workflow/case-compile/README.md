@@ -1,4 +1,4 @@
-# case-compile 3.9.20
+# case-compile 3.9.21
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -22,7 +22,7 @@ encodeG always decodes its result and compares types and values. It names the vi
 
 ## Deterministic file and independent reading
 
-The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, then for each case in item order its steps, each with its after expectations immediately following, and a blank row, then the configured closing row. The description contains plan_run and build, never a person. Each case starts at the row of its textual autoid, with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
+The Node-built-in-only generator fills the runner's own template, which the run's profile carries as `workbook.template` (`{sha256, xlsx_base64}`): every member but the worksheet keeps its bytes, and the worksheet keeps its notes, lists, drop-downs and column widths. Output is ZIP32 STORE with its own CRC32, fixed DOS timestamps and the template's member order. A is inline text, C is numeric, 0 on the description row and counting up from 2 inside each case, never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, then for each case in item order its steps, each with its after expectations immediately following, and a blank row, then the configured closing row. The description contains plan_run and build, never a person. Each case starts at the row of its textual autoid, with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
 
 Identity F records the generator id; G records a canonical recipe digest so a changed quote/replacement also changes bytes without copying source content. The workbook-level range points exactly to the header. Invalid XML values are refused rather than dropped; CR text is preserved. SpreadsheetML-looking _xHHHH_ sequences are refused with xstring_escape because literal inline and ST_Xstring readers disagree. The reference circle-packs 10-13 xlsx.mjs was read only for OOXML behavior: differences are STORE versus Deflate, strict fixed layout and subset, no hidden-row facility, exact identity/range, rejection of invalid characters and _xHHHH_ text, and accounted recipe metadata. No reference code or template bytes are imported.
 
@@ -295,6 +295,17 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.9.21: the workbook is the runner's template with rows filled in
+
+Until now this pack wrote its own small workbook: a header on row 2, none of the template's notes, lists or drop-downs, and C at 2 on every row. The runner read it, so nothing failed, and the reader here shared the generator's format, so nothing showed it. People open these files, and the reference compiler clones the template.
+
+- The profile carries the template as `workbook.template`, so the pack stays free of product text and the Hub recomputes the same bytes. Without one, generation stops and says so; there is no fallback layout.
+- Generation edits only the worksheet: the rows below the header, and the generator and recipe cells beside the identity on row 1. The header row comes from the template's defined range, and A1 to C1 must match this run's contract.
+- Rows follow the reference: the description row reads `Author         : <generator>`, then the plan run and the build. Id and priority stand only on a case's first row, priority is `P1` as the reference writes it, C counts up inside each case, a checkpoint has no description, and a blank row closes each case.
+- A plan step may carry `description`, one line for column D. The mind-map path stays on a case's first row, before that step's description.
+- The closing row may name a call, which is how the reference writes its sentinel. The runner does not execute the last case, and the reader does not count it as an execution.
+- The independent reader takes the header row, the members and the relationships from the template, and still compares the rows with the plan. `max_rows` and `max_model_bytes` follow the template's 5,000 rows.
 
 ### 3.9.20: a cleanup the tree cannot send is the product's to declare
 

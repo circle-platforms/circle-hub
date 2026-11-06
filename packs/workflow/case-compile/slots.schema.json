@@ -813,6 +813,11 @@
                 "cleanup": {
                   "type": "boolean",
                   "description": "true 将步骤标为末尾清理段；按产品声明逆序执行对应逆操作，不能从文字猜测"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "这一步做什么的一句话，写进工作簿 D 列，运行报告按它显示步骤"
                 }
               }
             }

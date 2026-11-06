@@ -12,6 +12,7 @@ import { ExecutorDefinition, readRunJobs, type JobStatus } from '../../hub/dispa
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
+import { templateDocument } from '../../packs/workflow/case-compile/testing/template.ts';
 import { runtimeDigest, stripAdditions, contractCanonical } from '../../packs/workflow/case-compile/functions/runtime-contract.ts';
 import {compileGrammar, commandIdentity} from '../../packs/workflow/case-compile/functions/generated/command-grammar.ts';
 import { entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
@@ -41,7 +42,7 @@ CONTRACT_DOC.original = {contract_sha256:String(recovered.contract_sha256),sha25
 CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
 // Keep both address families in the single interface list used by declared per-device probes.
 const MANIFEST_DOC={...BASE_MANIFEST,beds:BASE_MANIFEST.beds.map(bed=>({...bed,devices:bed.devices.map(device=>({...device,interfaces:[...device.ipv4,...device.ipv6]}))}))};
-const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.original.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
+const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.original.contract_sha256 }, workbook: { ...BASE_PROFILE.workbook, template: templateDocument(BASE_PROFILE.workbook, BASE_PROFILE.runtime.minimum_version, CONTRACT_DOC.original.contract_sha256) }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
 const skip = await osIsolationAvailable() ? false : 'sandbox-exec absent: real isolated pack execution unavailable';
 const ids = ['990000000000000041', '990000000000000042'];
 const line = 'widget health interval pool-a 60';

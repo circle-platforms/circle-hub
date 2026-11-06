@@ -15,6 +15,7 @@ import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
 import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
+import { readTemplate, TemplateError, type WorkbookTemplate } from './workbook-template.ts';
 import { isRecord, markers, type Outcome, opened } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }
@@ -30,46 +31,52 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '当前计划槽位不合式' }] }; plans.push(slots.slots); }
   if (new Set(plans.map((plan) => !!blockMeta(plan))).size !== 1) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '同一份工作簿里块计划与普通计划不能混用' }] };
   const recipe = set[0]; const plan = plans[0]; const profile = recipe.profile; const book = profile.workbook;
-  if (JSON.stringify(model.members.map((v) => v.name).sort()) !== JSON.stringify([...FORMAT.members].sort()) || new Set(model.members.map((v) => v.name)).size !== FORMAT.members.length) issue('members', '/members', '成员必须恰好是同版生成器的六个部件');
+  let template: WorkbookTemplate;
+  try { template = readTemplate(book); } catch (error) { if (error instanceof TemplateError) return { ok: false, problems: [{ rule: 'template', pointer: '/profile/workbook/template', message: error.message }] }; throw error; }
+  const headerRow = template.headerRow;
+  if (JSON.stringify(model.members.map((v) => v.name).sort()) !== JSON.stringify(template.members.map((v) => v.name).sort())) issue('members', '/members', '成员必须恰好是运行器模板的部件');
   if(model.nulRemoved>0)issue('subset','/nulRemoved','解析移除了 NUL，不属于生成器原字节子集');
   const relation='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
-  const expected=[{source:'',id:'rId1',type:relation+'officeDocument',target:'xl/workbook.xml',external:false},{source:'xl/workbook.xml',id:'rId1',type:relation+'worksheet',target:'worksheets/sheet1.xml',external:false},{source:'xl/workbook.xml',id:'rId2',type:relation+'styles',target:'styles.xml',external:false}];
-  if(model.relationships.length!==expected.length||expected.some(e=>!model.relationships.some(r=>Object.entries(e).every(([k,v])=>r[k as keyof typeof r]===v))))issue('subset','/relationships','六个部件的关系类型、来源、目标或身份不属于生成子集');
+  const relationKey = (value: { source: string; id: string; type: string; target: string }) => JSON.stringify([value.source, value.id, value.type, value.target]);
+  if (JSON.stringify(model.relationships.map(relationKey).sort()) !== JSON.stringify(template.relationships.map(relationKey).sort())) issue('subset', '/relationships', '部件的关系与运行器模板不一致');
   if (model.sharedStrings.length || model.relationships.some((v) => v.external || v.type.endsWith('/sharedStrings'))) issue('subset', '/relationships', '不接受共享字符串或外部关系');
   if (model.sheets.length !== 1) issue('sheets', '/sheets', '只接受一张工作表');
   const sheet = model.sheets[0]; if (!sheet) return { ok: false, problems };
   if (sheet.relationshipType!==relation+'worksheet' || sheet.name !== book.sheet || sheet.part !== FORMAT.worksheet_part || sheet.state !== 'visible') issue('sheets', '/sheets/0', '表名、部件或可见性不符合生成子集');
   const rows = new Map<number, WorkbookRow>(); const values = new Map<number, string[]>(); let previous = 0;
   for (const [r, row] of sheet.rows.entries()) {
-    if (row.number <= previous || row.number > FORMAT.max_rows || row.hidden) issue('subset', `/sheets/0/rows/${r}`, '行号重复、乱序、过大或有隐藏行'); previous = row.number; rows.set(row.number, row);
+    if (row.number <= previous || row.number > FORMAT.max_rows || row.hidden && row.number !== 1) issue('subset', `/sheets/0/rows/${r}`, '行号重复、乱序、过大或有隐藏行'); previous = row.number; rows.set(row.number, row);
     const grid = Array<string>(9).fill(''); const columns = new Set<number>();
     for (const [c, cell] of row.cells.entries()) {
-      const at = `/sheets/0/rows/${r}/cells/${c}`; const match = /^([A-I])([1-9][0-9]*)$/.exec(cell.reference);
-      if (!match || Number(match[2]) !== row.number) { issue('subset', at, '单元格超出 A–I 或与行号不符'); continue; }
+      const at = `/sheets/0/rows/${r}/cells/${c}`; const match = /^([A-Z])([1-9][0-9]*)$/.exec(cell.reference);
+      if (!match || Number(match[2]) !== row.number || match[1] > 'I' && row.number > headerRow) { issue('subset', at, '表头以下的单元格超出 A–I，或与行号不符'); continue; }
       const column = match[1].charCodeAt(0) - 65;
+      if (column > 8) continue; // The template's own lists; the bytes are compared below.
       if (columns.has(column)) issue('subset', at, '单元格坐标重复'); columns.add(column); grid[column] = cell.text;
       if (cell.formula || cell.text.startsWith('=')) issue('formula', at, '不接受公式或以等号开头的值');
-      if (!FORMAT.cell_types.includes(cell.type) || cell.type === 'n' && !(column === 2 && row.number > 2) || cell.style !== (column === 0 ? 1 : null)) issue('subset', at, '只接受内联字符串及 C 列数字，样式须符合同版子集');
+      if (row.number > headerRow && (!FORMAT.cell_types.includes(cell.type) || cell.type === 'n' && cell.text !== '' && column !== 2)) issue('subset', at, '只接受内联字符串及 C 列数字');
       if (cell.text.length > FORMAT.max_cell_chars) issue('subset', at, '单元格超出文字上限');
-      if (row.number > 2 && column === 2 && (cell.type !== 'n' || !/^[0-9]+$/.test(cell.text) || Number(cell.text) === 1)) issue('initialization', at, 'C 列必须是非初始化的数字类型');
+      if (row.number > headerRow && column === 2 && cell.text !== '' && (cell.type !== 'n' || !/^[0-9]+$/.test(cell.text) || Number(cell.text) === 1)) issue('initialization', at, 'C 列必须是非初始化的数字类型');
     }
     values.set(row.number, grid);
   }
   const grid = (number: number) => values.get(number) ?? Array<string>(9).fill('');
   const headers = [...values].filter(([, cells]) => JSON.stringify(cells) === JSON.stringify(book.header));
-  if (headers.length !== 1 || headers[0][0] !== 2) issue('header', '/sheets/0', '必须恰好一个九列表头，且位于生成器固定的第 2 行');
+  if (headers.length !== 1 || headers[0][0] !== headerRow) issue('header', '/sheets/0', `必须恰好一个九列表头，且在运行器模板的第 ${headerRow} 行`);
   const identities = [...values].filter(([, cells]) => cells[0] === book.identity_marker);
   if (identities.length !== 1 || identities[0][0] !== 1) issue('identity', '/sheets/0', '必须恰好一行身份标记，位于表头上方');
   const identity = grid(1);
   if (identity[1] !== recipe.contract.runtimeVersion || identity[2] !== recipe.contract.pinned.identity || identity[3] || identity[4]) issue('identity', '/sheets/0/rows/0', '运行时/合约身份不符，或认证请求 D/E 格不为空');
   if (identity[FORMAT.identity_generator_column - 1] !== FORMAT.generator) issue('generator', '/sheets/0/rows/0', '工作簿生成器版本与本运行锁定包的生成器版本不符');
   if (identity[FORMAT.identity_recipe_column - 1] !== recipeDigest(set.map((value, k) => caseRecipe({ ...value, generator: FORMAT.generator }, plans[k])))) issue('recipe', '/sheets/0/rows/0', '工作簿没有绑定当前完整槽位、来源字段及配置');
-  const reference = `'${book.sheet.replaceAll("'", "''")}'!$A$2:$I$2`;
-  if (model.definedNames.length !== 1 || model.definedNames[0].name !== book.range_name || model.definedNames[0].scope !== null || model.definedNames[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
-  const expectedLast = 4 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + 1, 0);
-  if (sheet.lastRow !== expectedLast || rows.size !== expectedLast || [...rows.keys()].some((number, i) => number !== i + 1)) issue('closing', '/sheets/0', '收尾行必须是最后一个有单元格的行，不能夹行、漏行或追加样式行');
+  const reference = `'${book.sheet.replaceAll("'", "''")}'!$A$${headerRow}:$I$${headerRow}`;
+  const ranges = model.definedNames.filter((value) => value.name === book.range_name);
+  if (ranges.length !== 1 || ranges[0].scope !== null || ranges[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
+  const expectedLast = headerRow + 2 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + 1, 0);
+  if (sheet.lastRow !== template.lastRow || [...values].some(([number, cells]) => number > expectedLast && cells.some(Boolean))) issue('closing', '/sheets/0', '收尾行之后不能再有内容，模板的行数不能变');
   if (JSON.stringify(grid(expectedLast)) !== JSON.stringify(book.closing_row)) issue('closing', '/sheets/0', '收尾行与配置不符');
-  if (grid(expectedLast - 1).some(Boolean) || grid(3)[2] !== '0' || grid(3)[3] !== `计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(3).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '说明或空行不符合冻结的 plan_run/构建，说明行 E–I 必须为空');
+  const description = headerRow + 1;
+  if (grid(expectedLast - 1).some(Boolean) || grid(description)[2] !== '0' || grid(description)[3] !== `Author         : ${FORMAT.generator}\n计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(description).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '说明或空行不符合冻结的 plan_run/构建，说明行 E–I 必须为空');
   const defaultAssertion=assertionTarget(recipe.contract,profile);
   if (!defaultAssertion) issue('assertion', '/profile/allowed', '缺少唯一的允许字面断言组合');
   // Scan every post-header E–I row, including description, blank and closing rows. Registers live within one case, as in
@@ -79,7 +86,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   const initRegisters=new Set<string>(),caps=runtimeBlocks(recipe.contract); let registers=new Set<string>();
   const executions: ReadExecution[] = []; const executionByRow = new Map<number, ReadExecution>();
   for (const [number, cells] of values) {
-    if (number <= 2) continue;
+    if (number <= headerRow || number === expectedLast) continue;
     const init = cells[2] === '1';
     if (cells[0] !== '' && !init) registers = new Set(initRegisters);
     if (!cells.slice(4).some(Boolean)) continue;
@@ -109,20 +116,20 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
       const execution = { row: number, object, method, ...decoded, assertion,...(blockMeta(plan)?{h,i:variable}:{}) }; executions.push(execution); executionByRow.set(number, execution);
     } catch (error) { issue('G', at, error instanceof Error ? error.message : 'G 无法按运行器规则读取'); }
   }
-  const cases = [...values].filter(([number, cells]) => number > 2 && number < expectedLast && cells[0] !== '');
-  const starts: number[] = []; { let at = 4; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
+  const cases = [...values].filter(([number, cells]) => number > headerRow && number < expectedLast && cells[0] !== '');
+  const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
   if (cases.length !== set.length || cases.some(([number, cells], k) => number !== starts[k] || cells[0] !== set[k].fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cells[0]) || !cells[4]) || new Set(set.map((value) => value.fields.autoid)).size !== set.length) issue('autoid', '/sheets/0', set.length === 1 ? '必须只有一个文本 autoid，等于条目且符合形状，首行 E 不能为空' : '每个用例的首行必须依序是它的文本 autoid，符合形状且互不重复，首行 E 不能为空，用例之间不能夹别的 autoid');
-  let row = 4;
-  for (const [k, recipe] of set.entries()) { const plan = plans[k];
+  let row = headerRow + 2;
+  for (const [k, recipe] of set.entries()) { const plan = plans[k]; let statement = FORMAT.statement_type;
   for (const [i, step] of plan.steps.entries()) {
     const actual = executionByRow.get(row); const cells = grid(row);
-    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(FORMAT.statement_type) || cells[1] !== (recipe.fields.priority ?? '') || cells[3] !== (i === 0 ? pathCell(recipe.fields.path) : recipe.fields.title)||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
+    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(statement++) || cells[1] !== (i === 0 ? FORMAT.case_priority : '') || cells[3] !== [i === 0 ? pathCell(recipe.fields.path) : null, step.description].filter((value) => value !== null && value !== undefined).join('\n')||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
     row++;
     const allowed = allowedCall(profile, step.object, step.method);
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {
       const actual = executionByRow.get(row); const cells = grid(row);
       const target=assertionTarget(recipe.contract,profile,expect),expected=target?assertionCells(expect,target):null;
-      if (!actual?.assertion || !target||!expected||actual.object!==target.call.object||actual.method!==target.call.method||actual.args.length!==1||cells[6]!==expected.g||Object.keys(actual.keywords).length||cells[3]!==expect.text||cells[2]!==String(FORMAT.statement_type)||!blockMeta(plan)&&!Object.values(allowed?.parameters??{}).some(role=>role==='device_cli'||role==='host_shell')||blockMeta(plan)&&(cells[7]!==expected.h||cells[8]!==expected.i))issue('assertion',`/sheets/0/rows/${row-1}`,'断言的算子、字面、输出寄存器或次数不等于冻结块计划');
+      if (!actual?.assertion || !target||!expected||actual.object!==target.call.object||actual.method!==target.call.method||actual.args.length!==1||cells[6]!==expected.g||Object.keys(actual.keywords).length||cells[3]!==''||cells[1]!==''||cells[2]!==String(statement++)||!blockMeta(plan)&&!Object.values(allowed?.parameters??{}).some(role=>role==='device_cli'||role==='host_shell')||blockMeta(plan)&&(cells[7]!==expected.h||cells[8]!==expected.i))issue('assertion',`/sheets/0/rows/${row-1}`,'断言的算子、字面、输出寄存器或次数不等于冻结块计划');
       row++;
     }
   }

@@ -11,9 +11,11 @@ import {parseManifest} from '../functions/manifest.ts';
 import {parseProfile} from '../functions/profile.ts';
 import {generateWorkbook,GENERATOR} from '../functions/generate.ts';
 import {coreModel} from './workbook-model.ts';
+import {templateDocument} from './template.ts';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const read=(name:string)=>JSON.parse(readFileSync(join(root,'examples',name),'utf8'));
 const contract=read('runtime-contract-v2.json'),profile=read('runtime-profile-v2.json'),identities=read('command-identities-v2.json').command_identities;
+profile.workbook.template=templateDocument(profile.workbook,contract.runtime.minimum_version,contract.original?.contract_sha256??contract.contract_sha256);
 const hash=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex');
 function subject(){const data=goodData();return {command_catalog:catalogFor(identities),item:'doc-1:c-1',location:QUOTE.reference,case_texts:[QUOTE.text,'widget health interval 60'],data,contract:structuredClone(contract),profile:structuredClone(profile),manifest:structuredClone(MANIFEST_DOC),command_identities:structuredClone(identities),leases:[],criteria:[],now:'2026-10-23T02:00:00.000Z'};}
 for(const polarity of ['positive','negative'])for(const name of readdirSync(join(root,'samples',polarity))){const old=join(root,'samples',polarity,name),archive=join(root,'testing','legacy-samples',polarity);mkdirSync(archive,{recursive:true});if(name.startsWith('typed-')||name==='quote.json')unlinkSync(old);else if(name.endsWith('.json'))renameSync(old,join(archive,name));}
