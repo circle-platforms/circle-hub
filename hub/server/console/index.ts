@@ -32,7 +32,7 @@ import { LIVE_EVENTS, wantedEvents, type LiveEvents } from './live.ts';
 import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage, systemForgetPage, systemTrialPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
-import { packPage, packsPage } from './packs.ts';
+import { packPage, packsPage, skillsPage } from './packs.ts';
 import { publication } from './pack-display.ts';
 import { actionNotice } from './feedback.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, performSpaceAction, spaceActionFailure, shareHistoryPage,batchSharePage } from './spaces.ts';
@@ -545,6 +545,7 @@ const bridgeRun = (options: ConsoleOptions, session: ConsoleSession) => (options
 const ADMIN_PAGES: Record<string, Route> = {
   calls: (ctx) => recordsPage(ctx, '/console/admin/calls'),
   packs: (ctx) => packsPage(ctx),
+  skills: (ctx) => skillsPage(ctx),
   resources: (ctx) => connectionsPage(ctx),
   secrets: (ctx, _rest, options, session) => settingsPage(ctx, bridgeRun(options, session)),
   knowledge: (ctx, _rest, options) => operationsPage(ctx, 'knowledge', options.jobs, options.staging),
@@ -561,6 +562,7 @@ const ROUTES: Record<string, Route> = {
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/')==='-/publish'?personalPublishPage(ctx,options.staging):rest.length===1?packPage(ctx,rest[0]):Promise.resolve(neutralPage(ctx))),
+  skills: (ctx, rest) => (rest.length === 0 ? skillsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),

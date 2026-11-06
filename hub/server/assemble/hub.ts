@@ -223,6 +223,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    documents: docs,
     config,
     records,
     runs,

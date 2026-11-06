@@ -9,7 +9,7 @@ const consumer = (files: PackManifest['files'], embeds: PackManifest['embeds'] =
   ({ schema: 'pack@1', id: 'work', version: '1.0.0', kind: 'workflow', title: 'Work', description: 'Synthetic', embeds, files });
 const skill = (over: Partial<EmbeddedSkill> = {}): EmbeddedSkill => ({
   manifest: { schema: 'pack@1', id: 'format', version: '1.0.0', kind: 'skill', title: 'Format', description: 'Synthetic', files: [file('SKILL.md', 'a'), file('functions/modules/reader/index.ts', 'b'), file('functions/modules/reader/table.json', 'c'), file('skill.json', 'd')] },
-  withdrawn: false, modules: ['reader'], ...over,
+  withdrawn: false, modules: ['reader'], declared: [], parsers: 0, ...over,
 });
 const rules = async (m: PackManifest, found: EmbeddedSkill | null = skill()) => (await embeddedProblems(m, async () => found)).map((p) => p.rule);
 const both = [file('functions/generated/skills/format/reader/index.ts', 'b'), file('functions/generated/skills/format/reader/table.json', 'c')];

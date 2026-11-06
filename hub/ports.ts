@@ -261,11 +261,15 @@ export interface PackListing {
   assigned_to?: string[];
   /** Skill modules the pack carries, checked against the published skill at publication (T01 R[6]). */
   embeds?: import('../contracts/src/pack.ts').EmbeddedModule[];
+  /** Installed skills a run locks for their parsers. */
+  dependencies?: import('../contracts/src/pack.ts').SkillDependency[];
 }
 
 /** Provided by runs-packs. A user lists the packs assigned to them; an admin lists every pack. */
 export interface PackCatalogPort {
   list(user: Principal): Promise<PackListing[]>;
+  /** What a published skill version declares, for the console; null when it is not a published skill. */
+  skillDeclaration?(id: string, version: string): Promise<{ parsers: number; modules: import('../contracts/src/pack.ts').SkillModule[] } | null>;
 }
 
 export interface ResourceListing {

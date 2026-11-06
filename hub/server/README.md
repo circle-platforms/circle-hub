@@ -1333,3 +1333,8 @@ and the same restriction is enforced on service reads, writes and capacity-error
 Team/member management pages omit capacity metadata and controls when a management-only host has no knowledge port
 or has not enabled spaces. Password sign-in and member-management forms remain available; absent capacity is not
 reported as zero usage. Errors from a present capacity service still propagate rather than hiding failed accounting.
+
+## 通用技能和工作流的组成（模型 43，决定 153、154）
+
+控制台的“通用技能”是独立入口（`/console/skills`），工作流页只列工作流。技能页写它提供的模块、解析器和用到它的工作流；工作流详情的“组成”列内嵌的模块（发布时核对过）、声明的连接、知识和命名文档。技能的安装和卸载是对应 `pack install`、`pack uninstall` 的命令对话框。命名文档列在“连接”页，只给管理员看，写入仍用 `circle-hub doc put`。界面不用“插件”一词。
+

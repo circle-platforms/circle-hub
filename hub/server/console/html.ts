@@ -142,7 +142,7 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
 }
 
 /** The nine places (decision 147); only the current place may expand its authorized navigation. */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings' | 'health';
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
 
 export interface PageChrome {
   title: string;
@@ -214,6 +214,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['tasks', '任务', '/console/runs', 'review'],
   ['knowledge', '知识库', '/console/knowledge', 'book'],
   ['packs', uiLabelOf('pack_kind', 'workflow'), '/console/packs', 'pack'],
+  ['skills', uiLabelOf('pack_kind', 'skill'), '/console/skills', 'pack'],
   ['connections', '连接', '/console/connections', 'sys'],
   ['records', '记录', '/console/records', 'rec'],
   ['team', '团队', '/console/team', 'users'],

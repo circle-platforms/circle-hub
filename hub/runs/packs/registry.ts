@@ -380,7 +380,8 @@ class Registry implements PackRegistry {
     const info = await this.getVersion(packId, version);
     if (info === null || info.kind !== 'skill') return null;
     const declarations = info.withdrawn ? null : (await this.open(info.digest))?.declarations;
-    return { manifest: info.manifest, withdrawn: info.withdrawn, modules: declarations?.kind === 'skill' ? (declarations.skill.modules ?? []).map((m) => m.id) : [] };
+    const skill = declarations?.kind === 'skill' ? declarations.skill : null;
+    return { manifest: info.manifest, withdrawn: info.withdrawn, modules: (skill?.modules ?? []).map((m) => m.id), declared: skill?.modules ?? [], parsers: skill?.parsers.length ?? 0 };
   }
 
   async getVersion(packId: string, version: string): Promise<PackVersionInfo | null> {

@@ -247,11 +247,16 @@ function listing(info: PackVersionInfo, active: boolean, assigned?: string[]): P
   };
   if (assigned !== undefined) out.assigned_to = assigned;
   if (info.manifest.embeds?.length) out.embeds = info.manifest.embeds;
+  if (info.manifest.dependencies?.length) out.dependencies = info.manifest.dependencies;
   return out;
 }
 
 export function createPackCatalog(registry: PackRegistry): PackCatalogPort {
   return {
+    async skillDeclaration(id: string, version: string) {
+      const skill = await registry.embeddedSkill(id, version);
+      return skill === null ? null : { parsers: skill.parsers, modules: skill.declared };
+    },
     async list(user: Principal): Promise<PackListing[]> {
      return withReadScope(async()=>{
       const account = await registry.account(user);

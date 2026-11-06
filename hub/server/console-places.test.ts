@@ -251,7 +251,8 @@ describe('operations and commands', () => {
     const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
     assert.equal(list.status,200);assert.match(list.body,/class="ch-list"/);
     const workflow=/<section class="ch-section" id="team-workflow" aria-label="工作流">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    const skillList=await get('/console/skills',admin);assert.equal(skillList.status,200);assert.doesNotMatch(list.body,/id="team-skill"/);
+    const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(skillList.body)?.[1];
     assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
     assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
     assert.match(workflow,/title="规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果"/);

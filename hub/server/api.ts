@@ -22,6 +22,8 @@ export type { TextContext } from './text.ts';
 /** Everything the server needs; the assembly builds it from the real packages, tests from fakes (hub/server/testing.ts). */
 export interface ServerDeps {
   config: HubConfig;
+  /** Named documents, for the administrators' console; `circle-hub doc` writes them. */
+  documents?: { list(): Promise<Array<{ name: string; sha256: string; size: number }>> };
   records: RecordsKit;
   runs: RunsService;
   maintenance?: Pick<RunsEngine, 'startMaintenance' | 'stopMaintenance'>;
