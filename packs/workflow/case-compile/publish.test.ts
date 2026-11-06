@@ -7,7 +7,7 @@ import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { createPackRegistry, temporaryDirectory } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
-import { installMindmapFixture } from '../../../hub/testing/skills.ts';
+import { installMindmapFixture, publishRunToolsFixture } from '../../../hub/testing/skills.ts';
 import { stage } from './pack-files.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
@@ -34,6 +34,7 @@ describe('publishing the case-compile pack', { skip }, () => {
     await kit.authorizations.grantPublishRight(admin, owner.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted') });
     await installMindmapFixture(registry, kit, admin);
+    await publishRunToolsFixture(registry, kit, admin);
     const outcome = await registry.publish(owner, await stage(join(temp.path, 'staged')));
     assert.equal(outcome.ok, true, JSON.stringify(outcome.ok ? '' : outcome.problems));
     if (!outcome.ok) return;

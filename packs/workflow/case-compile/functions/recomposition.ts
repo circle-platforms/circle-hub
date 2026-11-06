@@ -19,7 +19,7 @@ export function admittedRecomposition(runInput: any, resultInput: any, context: 
         return null;
     return { record, receipt: pair.reference, run: pair.run.run, source, conditional_on_judgment: true };
 }
-export function recompositionGaps(slots: PlanSlots, proof: any, manifestSha?: string): Array<{
+export function recompositionGaps(slots: PlanSlots, proof: any): Array<{
     message: string;
     verdict: Extract<Verdict, 'unknown' | 'refute'>;
 }> {
@@ -59,18 +59,6 @@ export function recompositionGaps(slots: PlanSlots, proof: any, manifestSha?: st
             if (!e || e.quote.reference !== atom?.quote_ref || e.quote.text !== atom?.text || slot.criterion_id !== undefined && e.criterion !== slot.criterion_id)
                 note('重组期望位 ' + slot.slot + ' 的断言、逐字原子或判据 id 不相等', 'refute');
         }
-    }
-    if (use.rebindings.length !== slots.replacements.length)
-        note('重绑定账与 replacements 缺一一对应；等待编写模型提交前补账');
-    for (const r of use.rebindings) {
-        if (!r.authority || !r.source_of_value) {
-            note('重绑定缺 source_of_value/authority；等待编写模型和自动化测试环境维护者提交前补齐');
-            continue;
-        }
-        if (!slots.replacements.some(p => p.case === r.from && p.bed === r.to) || r.authority !== 'src:' + manifestSha)
-            note('重绑定 from/to 或 authority 不等于类型化替换及冻结清单', 'refute');
-        if (!proof.record.ledgers.concretizations.some((c: any) => c.slot === r.slot && c.value === r.from && c.value_ref === r.source_of_value))
-            note('缺原具体化值与原始取值来源；等待产品包作者及重组模型补齐，不能覆盖原文账');
     }
     return issues;
 }

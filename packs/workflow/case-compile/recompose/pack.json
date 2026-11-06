@@ -15,13 +15,18 @@
       "pack": "mindmap-format",
       "version": "1.0.21",
       "module": "case-structure"
+    },
+    {
+      "pack": "run-tools",
+      "version": "1.0.0",
+      "module": "hub-client"
     }
   ],
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "2daa5c014f49f5ad35b7bdd370f5ff5209113f605c227815f7488e324e344dee",
-      "size": 142
+      "sha256": "9b7b6aa10aa496ac14be18ab32f39cf9bef2bed0154124e31a5f8c6664085fbc",
+      "size": 4496
     },
     {
       "path": "checks.json",
@@ -49,14 +54,19 @@
       "size": 678
     },
     {
+      "path": "functions/generated/skills/run-tools/hub-client/index.ts",
+      "sha256": "5b41917e8034b0c78fb013d60e3d1acac8fd40294d6b9174e8640ccbc311acce",
+      "size": 8571
+    },
+    {
       "path": "functions/project.ts",
-      "sha256": "f23347249e1594a32bf33c13bdeadc3f83f517c4be37f47a695c0e964fc626b0",
-      "size": 1867
+      "sha256": "70a6a81e06ade74876e9a66a3c87e80e47380bf271cb8049947400e21e2ac0ae",
+      "size": 1494
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "bcf3d6cde0b6155d23bdd1f3cf339a9fd454001b0229c26ee1e2b91f81a87cdd",
-      "size": 23102
+      "sha256": "03fc4e07fc0d0ed202737950002936f58ec56f8f6f57b4d0f196de1644150510",
+      "size": 23167
     },
     {
       "path": "functions/recompose-evidence.ts",
@@ -147,6 +157,11 @@
       "path": "tables/recompose-record.schema.json",
       "sha256": "d2c0638c22d4b9a79b157eff0b9e85a1e974f443582ecea91d30176f7e512b50",
       "size": 18407
+    },
+    {
+      "path": "tools/submit-records.ts",
+      "sha256": "a4241746f7a5d5a79a827a9b3d8752d123dcae78327c23dfa7dfacde79f9f332",
+      "size": 7163
     },
     {
       "path": "workflow.json",

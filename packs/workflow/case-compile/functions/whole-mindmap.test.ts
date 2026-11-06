@@ -81,7 +81,7 @@ function twoCaseModel(second = SECOND) { return { nodes: [
   { text: '执行 widget health interval 61', data: {}, children: [6] },
   { text: '期望成功', data: {}, children: [] },
 ] }; }
-function startInput(value: unknown, parameters: Record<string, unknown> = {}, extra: unknown[] = []) { return { inputs: [
+function startInput(value: unknown, parameters: Record<string, unknown> = { pipeline: 'legacy' }, extra: unknown[] = []) { return { inputs: [
   { slot: 'subject', sha256: 'a'.repeat(64), parser: 'kityminder@1', model: value },
   { slot: 'contract', model: runtimeDocument() }, { slot: 'profile', model: profileDocument() }, { slot: 'inventory', model: MANIFEST_DOC }, ...extra,
 ], parameters, context: { leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } } }; }
@@ -116,7 +116,7 @@ test('each case carries its mind-map path from the root, and the workbook shows 
 
 test('a workbook of several cases needs the plan run accepted result, and its plans are frozen in item order', () => {
   const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
-  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook])), 'case-compile.workbook_context');
+  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook])), 'case-compile.workbook_context');
   const ids = (projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string }> }).items.map((item) => item.id);
   // The shapes the Hub records: the plan is the model's judgment claim (the plan slot's text and data, no rule verdict), the
   // catalog receipt the commands_known rule verdict.
@@ -127,13 +127,13 @@ test('a workbook of several cases needs the plan run accepted result, and its pl
   ] }));
   const delivered = rows((k) => planClaim({ plan: k }));
   const result = (body: Record<string, unknown>) => ({ slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered }, ...body } } });
-  const out = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({})])) as { groups: Array<{ plan_set: Array<{ item: string; plan: unknown; fields: { autoid: string } }> }> };
+  const out = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({})])) as { groups: Array<{ plan_set: Array<{ item: string; plan: unknown; fields: { autoid: string } }> }> };
   assert.deepEqual(out.groups[0].plan_set.map((entry) => [entry.item, entry.plan, entry.fields.autoid]), [[ids[0], { plan: 0 }, AUTOID], [ids[1], { plan: 1 }, SECOND]]);
-  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_other' }, [workbook, result({})])), 'case-compile.workbook_context');
-  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({ partitions: { delivered: delivered.slice(0, 1) } })])), 'case-compile.workbook_context');
+  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_other', pipeline: 'legacy' }, [workbook, result({})])), 'case-compile.workbook_context');
+  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({ partitions: { delivered: delivered.slice(0, 1) } })])), 'case-compile.workbook_context');
   // A plan claim without the plan's data, or a rule verdict standing in for the model's plan, freezes nothing.
   for (const plan of [(_k: number) => planClaim(undefined), (k: number) => planClaim({ plan: k }, { verdict: 'support' })])
-    assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({ partitions: { delivered: rows(plan) } })])), 'case-compile.workbook_context');
+    assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({ partitions: { delivered: rows(plan) } })])), 'case-compile.workbook_context');
 });
 
 // ---- 3.9.6: node identity, autoid shape, registers per case and the item cap
@@ -238,3 +238,14 @@ test('a tree without node ids is named by a digest of its whole tree: the same o
   assert.equal(out.items.length, 1); assert.ok(out.items[0].id.startsWith(first + ':'), out.items[0].id);
   assert.equal((projectItems(startInput(outline())) as { items: Array<{ id: string }> }).items[0].id, out.items[0].id, 'two starts give the same item id');
 });
+
+test('decision 155: a whole mind map without recomposition has to say so, a single case does not', () => {
+  const two = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }]);
+  const refused = project(startInput(two, {})).error;
+  assert.equal(refused?.code, 'case-compile.invalid_parameter');
+  assert.match(refused!.message, /要先走重组/);
+  assert.match(refused!.fix, /parameters\.pipeline=legacy/);
+  assert.equal(project(startInput(two, { pipeline: 'legacy' })).error, undefined);
+  assert.equal(project(startInput(two, { autoid: AUTOID })).error, undefined);
+});
+

@@ -47,3 +47,15 @@ test('no token, another user, an unbound source, a malformed path and a run with
   const pending = await serve(deps(false)); t.after(pending.close);
   assert.equal((await fetch(`${pending.origin}/run-export/${RUN}`, { headers: { authorization: 'Bearer runner-token' } })).status, 409);
 });
+
+test('the run alone is readable before anything is accepted, and only by the one who may read it', async (t) => {
+  const pending = await serve(deps(false)); t.after(() => pending.close());
+  const answer = await fetch(`${pending.origin}/run-export/${RUN}/run`, { headers: { authorization: 'Bearer runner-token' } });
+  assert.equal(answer.status, 200);
+  const body = await answer.json() as { schema: string; run: unknown; result?: unknown };
+  assert.equal(body.schema, 'run-export@1');
+  assert.ok(body.run);
+  assert.equal(body.result, undefined);
+  assert.equal((await fetch(`${pending.origin}/run-export/${RUN}/run`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
+  assert.equal((await fetch(`${pending.origin}/run-export/${RUN}/run`)).status, 401);
+});

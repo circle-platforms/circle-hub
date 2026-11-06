@@ -296,6 +296,29 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.0: a whole mind map goes through recomposition (decision 155)
+
+Recomposition is connected. The stage now takes the same cases as compilation, one item per case with an autoid; other nodes
+stay disclosed in the group, so a map with 270 unnumbered nodes no longer has 270 items that can never finish.
+
+The threshold follows InfoTest, where 21 of 34 cases were `underdetermined` and still compiled. Settling needs no independent
+ruling, and `underdetermined`, `missing_prerequisite`, `record.unknowns` and a `missing` method go on to the writer instead of
+leaving the case unknown. `conflict` still waits for a person. `recompose-authority` and `recompose-adjudication` stay optional:
+bound or named, they are checked as before; unbound, a record may claim no governing source. Verbatim atoms, the atom set and
+command identities are checked as before. A record may cite the locked tree (`tree:<root>/...`).
+
+Each case takes its own record: the projection looks it up by source and node and freezes it in `fields.recomposition`, where
+the writer reads it. `plan.recomposition.slots` must give every expectation slot an assertion, which also closes, for this
+pipeline, the gap that a flat plan needed only one expectation. The rebinding ledger is no longer checked: `replacements` has
+its own typed check. A whole mind map with no record is refused unless `parameters.pipeline` says `legacy`.
+
+`recompose/tools/submit-records.ts` fills what the projection already knows (atoms, spans, the original ledger, coverage), as
+InfoTest's `fill_mechanical_fields` does; the model writes only what takes judgment. The method text in `recompose/SKILL.md`
+follows the rules of the CES `mindmap-recompose` skill, in this pack's fields, with no product content.
+
+`tools/files.ts` and the Hub calls of `fetch-run.ts` and `submit-plans.ts` moved to the module `hub-client` of the skill
+`run-tools`, which `recompose` needs too.
+
 ### 3.10.0: the structural reading comes from the skill mindmap-format
 
 The structural projection moved to the module `case-structure` of `mindmap-format` (decision 154) and is embedded here and in

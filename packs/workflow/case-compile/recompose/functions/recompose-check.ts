@@ -32,10 +32,10 @@ export function checkRecomposition(input: any): any[] {
         bad('', '重组产物不符合声明的完整形状');
         return out;
     }
+    // Decision 155, as InfoTest does: what the model could not settle stays in the record for the writer, it does not hold the
+    // case back. A named gap with its next step is the record doing its work.
     for (const u of record.unknowns ?? [])
-        if (unknownOk(u))
-            unknown(u.missing + '；' + u.next_action, u.audience);
-        else
+        if (!unknownOk(u))
             bad('missing_without_exit', '未知条目缺 missing/next_action/audience/due');
     if (record.schema !== T.record || record.case?.source_ref !== fields.source_ref || record.case?.node !== fields.node || record.case?.id !== fields.case_id)
         bad('quote_not_verbatim', '产物没有绑定实际作者用例身份');
@@ -65,8 +65,6 @@ export function checkRecomposition(input: any): any[] {
     else if (method.kind === 'missing') {
         if (!record.unknowns?.some(unknownOk))
             bad('missing_without_exit', '方法真实欠缺而没有具名出口');
-        else
-            unknown('缺验证方法：' + record.unknowns.map((u: any) => u.missing).join('；'));
     }
     else if (!text(method.text) || !Array.isArray(method.sources) || !method.sources.length || !text(method.basis))
         unknown('缺方法来源和具名声明位置', '重组模型');
@@ -81,14 +79,10 @@ export function checkRecomposition(input: any): any[] {
     for (const [id, targets] of Object.entries(mapped))
         if (!Array.isArray(targets) || !targets.length || new Set(targets).size !== targets.length || targets.some(t => !slotIds.includes(t)))
             bad('atom_dropped', '原子 ' + id + ' 没有实际期望位映射');
-    if (unmapped.length && record.status === 'complete')
-        bad('atom_dropped', '存在未映射原子，不能自报 complete');
-    for (const id of unmapped) {
-        if (!(record.unknowns ?? []).some((u: any) => unknownOk(u) && (u.atom === id || u.atom === undefined)))
-            bad('missing_without_exit', '未映射原子 ' + id + ' 缺具名出口');
-        else
-            unknown('作者原子 ' + id + ' 尚未映射', '重组模型');
-    }
+    // An action with no expectation of its own is an ordinary step, so only an expectation has to reach a slot (checked below).
+    for (const id of unmapped)
+        if (atoms.find(a => a.id === id)?.kind === 'expectation')
+            bad('atom_dropped', '作者期望 ' + id + ' 没有映射到期望位');
     for (const atom of atoms.filter(a => a.kind === 'expectation'))
         if (!slots.some((v: any) => v.atom === atom.id))
             bad('atom_dropped', '作者期望 ' + atom.id + ' 没有对应期望位');
@@ -96,13 +90,9 @@ export function checkRecomposition(input: any): any[] {
         if (!T.knowledge_locations.includes(slot.knowledge_location))
             bad('', '期望知识位置不在三值闭集');
         if (slot.knowledge_location === 'recomposable_from_elsewhere' && !slot.evidence?.length)
-            unknown('期望位 ' + slot.slot + ' 缺可重组来源', '产品包作者');
-        if (slot.knowledge_location === 'genuinely_missing') {
-            if (!slot.proposal && !record.unknowns?.some(unknownOk))
-                bad('missing_without_exit', '真实欠缺没有提议或出口');
-            else
-                unknown('期望位 ' + slot.slot + ' 的验证知识真实欠缺', '产品包作者');
-        }
+            bad('missing_without_exit', '期望位 ' + slot.slot + ' 声称可从别处重组，却没有写来源');
+        if (slot.knowledge_location === 'genuinely_missing' && !slot.proposal && !record.unknowns?.some(unknownOk))
+            bad('missing_without_exit', '真实欠缺没有提议或出口');
     }
     if (ctx.predecessor === undefined)
         unknown('缺 Hub 实际前驱上下文，不能补造历史前驱', '平台维护者');
@@ -113,9 +103,11 @@ export function checkRecomposition(input: any): any[] {
     }
     else if (record.predecessor !== undefined)
         bad('atom_dropped', '新系列没有实际前驱，不能自填旧记录');
+    // The authority stage is optional since decision 155: the run already locks the product pack. Bound, it is still checked;
+    // unbound, a governing source has nothing to stand on, so the record may not claim one.
     const authority = authorityOf(s.authority_run, s.authority_result, ctx);
-    if (!authority)
-        unknown('缺与锁定产品包、版本、根一致的规范来源凭证', '产品包发布管理员');
+    if (!authority && (record.sources?.governing ?? []).length)
+        bad('candidate_signed', '没有绑定来源凭证，不能声称有签发权的规范来源；放进 candidates');
     const gov = record.sources?.governing ?? [], candidates = record.sources?.candidates ?? [];
     if (authority)
         for (const g of gov)
@@ -126,12 +118,10 @@ export function checkRecomposition(input: any): any[] {
         if (!govRefs.includes(used) && !atoms.some(a => a.reference === used) && !(authority?.declarations.some((d: any) => d.role === 'verification_method' && d.ref === used))) {
             if (candidateRefs.includes(used) || authority)
                 bad('candidate_signed', '候选或未声明来源被当作方法/期望的签发依据');
-            else
-                unknown('缺方法来源的产品声明凭证', '产品包作者');
         }
     const usedRefs = [...method?.sources ?? [], ...slots.flatMap((v: any) => v.evidence ?? []), ...govRefs, ...candidateRefs, ...record.ledgers.adapted.flatMap((a: any) => a.equivalence_refs ?? []), ...record.ledgers.concretizations.flatMap((c: any) => [c.value_ref, c.authority].filter(Boolean))];
     for (const ref of new Set(usedRefs))
-        if (!atoms.some(a => a.reference === ref) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string'))
+        if (!atoms.some(a => a.reference === ref) && !(typeof ctx.root === 'string' && ref.startsWith('tree:' + ctx.root + '/')) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string'))
             unknown('缺可解析且本轮可读的声明片段 ' + ref, '来源维护者');
     const states = record.sources?.states ?? [];
     if (states.length !== ids.length || states.some((v: any) => !ids.includes(v.atom)))
@@ -148,11 +138,14 @@ export function checkRecomposition(input: any): any[] {
             bad('prerequisite_as_conflict', '缺前置不能记成冲突');
         if (!exitOk(state.exit))
             bad('missing_without_exit', '来源状态缺完整 action/object/owner/due 出口');
+        // Decision 155: an independent ruling is checked when the record names one; settling needs none.
         if (state.state === 'settled') {
-            if (!review || review.state !== 'settled' || state.adjudicated_by !== review.reference)
-                unknown('原子 ' + atom.id + ' 缺适用于本提案的已受理独立裁定', '独立裁定模型');
-            else
-                reviews.push(review);
+            if (state.adjudicated_by !== undefined && state.adjudicated_by !== null) {
+                if (!review || review.state !== 'settled' || state.adjudicated_by !== review.reference)
+                    unknown('原子 ' + atom.id + ' 引用的独立裁定不适用于本提案', '独立裁定模型');
+                else
+                    reviews.push(review);
+            }
         }
         else if (state.state === 'conflict') {
             const refs = state.conflicts ?? [];
@@ -170,8 +163,7 @@ export function checkRecomposition(input: any): any[] {
             else
                 unknown('冲突来源的实际签发权尚未核对', '产品包作者');
         }
-        else
-            unknown('原子 ' + atom.id + ' 状态 ' + state.state + '：' + (state.reason ?? '缺来源事实') + '；' + (state.exit?.action ?? '补声明'), state.exit?.owner ?? '产品包作者');
+        // underdetermined and missing_prerequisite go on to the writer with their reason and exit, as in InfoTest.
     }
     const fromBed = (ref: any) => typeof ref === 'string' && (s.bed_sources ?? []).some((base: string) => ref === base || ref.startsWith(base + '/'));
     for (const row of [...record.ledgers.adapted, ...record.ledgers.concretizations])
@@ -195,15 +187,15 @@ export function checkRecomposition(input: any): any[] {
         }
         if (!T.actions.includes(adapted.action))
             bad('', '适配动作不在声明闭集中');
-        if (!text(adapted.source_of_value) || !text(adapted.authority))
-            unknown('适配 ' + adapted.atom + ' 缺 source_of_value/authority', '重组模型');
+        if (!text(adapted.source_of_value))
+            unknown('适配 ' + adapted.atom + ' 缺 source_of_value', '重组模型');
         else if (authority) {
             if (!govRefs.includes(adapted.authority) && !authority.declarations.some((d: any) => d.ref === adapted.authority))
                 unknown('适配 ' + adapted.atom + ' 缺产品授予的 authority', '产品包作者');
             if (!atoms.some(a => a.reference === adapted.source_of_value) && !govRefs.includes(adapted.source_of_value) && !authority.declarations.some((d: any) => d.ref === adapted.source_of_value))
                 unknown('适配 ' + adapted.atom + ' 缺合法 source_of_value', '产品包作者');
         }
-        if (!adapted.equivalence_refs?.length || authority && !adapted.equivalence_refs.every((ref: string) => authority.declarations.some((d: any) => d.ref === ref)))
+        if (authority && !adapted.equivalence_refs?.length || authority && !adapted.equivalence_refs.every((ref: string) => authority.declarations.some((d: any) => d.ref === ref)))
             unknown('适配 ' + adapted.atom + ' 缺产品声明位置的等价依据', '产品包作者');
         let critical = adapted.changes?.some((c: any) => T.critical_roles.includes(c.role)) === true;
         const before = sourceCommands.find(c => c.atom === adapted.atom)?.identity;
@@ -254,8 +246,8 @@ export function checkRecomposition(input: any): any[] {
         if (row.planned < row.count)
             bad('atom_dropped', '可以改参数，不可以删命令', {}, { identity: id, required_count: row.count, planned_count: row.planned, missing_count: row.count - row.planned });
     for (const row of record.ledgers?.concretizations ?? []) {
-        if (!text(row.source_of_value) || !text(row.authority)) {
-            unknown('具体化 ' + row.slot + ' 缺 source_of_value/authority', '重组模型');
+        if (!text(row.source_of_value)) {
+            unknown('具体化 ' + row.slot + ' 缺 source_of_value', '重组模型');
             continue;
         }
         if (!authority) {
@@ -292,5 +284,5 @@ export function checkRecomposition(input: any): any[] {
     }
     if (record.status !== 'complete')
         return [recomposeOut('refute', '实际覆盖、来源与四账均完整，状态应为 complete；重组者重新提交前修正状态', { data: { status: 'complete' } })];
-    return [recomposeOut('support', '重组结构、原文全集、来源凭证、四账和独立裁定已核对；以判断为前提', { data: { schema: T.record, status: 'complete', coverage: { total: ids.length, mapped: ids.length, unmapped: [] }, reviews }, judgment_sources: ['/record/0'] })];
+    return [recomposeOut('support', '重组结构、原文全集和四账已核对；来源状态与缺口是模型判断，交给编写阶段', { data: { schema: T.record, status: 'complete', coverage: { total: ids.length, mapped: ids.length, unmapped: [] }, reviews }, judgment_sources: ['/record/0'] })];
 }

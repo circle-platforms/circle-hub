@@ -12,7 +12,7 @@ import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { readSlots } from '../functions/slots.ts';
 import { generateWorkbookSet, GENERATOR, type GenerationInput } from '../functions/generate.ts';
-import { argumentsOf, readBytes, jsonBytes, writeNew, sha256 } from './files.ts';
+import { argumentsOf, readBytes, jsonBytes, writeNew, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 function record(value: unknown, message: string): Record<string, unknown> { if (!isRecord(value)) throw new Error(message); return value; }
 /** One case of the run (the run's only item). */
 export function satisfiedRecipe(input: { run: unknown; result: unknown; submission: unknown; contract: Uint8Array; profile: Uint8Array; inventory: Uint8Array }): GenerationInput { const all = satisfiedRecipes(input); if (all.length !== 1) throw new Error('本轮只生成一个已核验用例'); return all[0]; }

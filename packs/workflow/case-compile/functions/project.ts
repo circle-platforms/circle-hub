@@ -137,7 +137,10 @@ export function projectItems(input: unknown): unknown {
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const recompositionRun=slotOf(inputs,'recomposition_run'),recompositionResult=slotOf(inputs,'recomposition_result');
   const recompositionRequested=!!recompositionRun||!!recompositionResult||parameters.pipeline==='recomposed';
-  if (recompositionRequested && selected.length > 1) return refusal('invalid_parameter', '整份文档编译不接受单个用例的重组阶段凭证', '不带重组输入开运行，或填 autoid 逐条走重组流水线');
+  // Decision 155: a whole mind map goes through recomposition, as in InfoTest. Skipping it has to be said out loud.
+  if (!recompositionRequested && selected.length > 1 && parameters.pipeline !== 'legacy') return refusal('invalid_parameter', '整份脑图要先走重组：缺重组记录，写手拿不到适配后的步骤和缺口', '先用 recompose 工作流重组这份脑图，再绑定 recomposition_run 和 recomposition_result；确实要跳过时写 parameters.pipeline=legacy，并在最终报告里说明');
+  if (parameters.pipeline === 'recomposed' && selected.length > 1 && (!recompositionRun || !recompositionResult)) return refusal('invalid_parameter', '整份脑图写了 recomposed，却没有绑定重组记录', '绑定 recomposition_run 和 recomposition_result；还没重组就先用 recompose 工作流');
+  const proofOf = (selector: string | null | undefined) => recompositionRequested ? admittedRecomposition(recompositionRun, recompositionResult, context, 'src:' + sha256, selector ?? '') : null;
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const items = selected.map((found) => ({
     id: `${documentId}:${(nodeIdCount.get(found.id) ?? 0) > 1 && found.selector ? found.selector : found.id}`,
@@ -153,7 +156,8 @@ export function projectItems(input: unknown): unknown {
       })(),
       expected_nodes:found.expected_nodes?.every(node=>node.selector!==null)?found.expected_nodes.map(node=>({reference:`src:${sha256}/kityminder@1/${node.selector}`,text:node.text,...(node.declaration!==undefined?{declaration:node.declaration}:{})})):undefined,
       pipeline:recompositionRequested?'recomposed':'legacy',
-      pipeline_note:recompositionRequested?'必须消费独立重组受理凭证':'本运行未走重组阶段，不代表重组完成',
+      pipeline_note:recompositionRequested?'读本条 recomposition：record.contract 是契约，record.ledgers.adapted 和 concretizations 是适配，record.sources.states 与 record.unknowns 是要编写阶段补的缺口':'本运行未走重组阶段，不代表重组完成',
+      recomposition:proofOf(found.selector)??undefined,
       projection_unknowns:found.projection_unknowns,
       source_atoms:found.source_atoms,
       title: found.title,
@@ -198,7 +202,6 @@ export function projectItems(input: unknown): unknown {
         kind: 'case-compile',
         projection_report:structure,
         recomposition_requested:recompositionRequested,
-        recomposition:recompositionRequested?admittedRecomposition(recompositionRun,recompositionResult,context,'src:'+sha256,selected[0].selector??''):null,
         criteria_review:{result:slotOf(inputs,'criteria_review')??null,run:slotOf(inputs,'criteria_review_run')??null},
         contract: contractSlot.model,
         manifest: inventorySlot.model,

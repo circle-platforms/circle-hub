@@ -9,7 +9,7 @@ description: 把一整份测试脑图编译成自动化用例 Excel 工作簿，
 
 本地工具由客户端装进技能目录（通用根 `~/.agents/skills/<包>/`；装好的目录即下文 `<技能目录>`，Base directory 由客户端在加载时给出）。客户端有安装技能的工具时用它安装，并按同一参数跑第 5、6 步；没有时用 list_task_packs 回答里的安装命令，再按下面 here-doc 跑 node。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Bearer 令牌：模型只写占位符名字，值由客户端执行时展开，不进参数、结果、日志或 Git。
 
-1. 先用 test-bed 预订整个自动化测试环境（acquire 的 need.devices 写清单全部设备；已持有整台预订（如刚装过构建）就沿用）。第一次 start_run 用 case-compile，predecessor 写预订运行。对照某个构建时 product、build 和 version 写在 start_run 顶层，不写进 parameters。绑定 subject、contract、inventory、profile。整份脑图不填 parameters.autoid（Hub 选全部带文字 autoid、未声明不自动化的用例）；只编一条时从原文复制 autoid 字符串。后三项是发布的 doc:doc，profile 含 device_count 只读预检事实及可选 fold_newlines 名单。优先用敏捷文档号；只有本地导出时运行 `node <技能目录>/tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>`，上传中性文件名，在说明中原样给出两边摘要和“客户端规整”。不改写用例内容或编号。
+1. 先用 test-bed 预订整个自动化测试环境（acquire 的 need.devices 写清单全部设备；已持有整台预订（如刚装过构建）就沿用）。再按“重组后编写”先重组这份脑图。第一次 start_run 用 case-compile，predecessor 写预订运行。对照某个构建时 product、build 和 version 写在 start_run 顶层，不写进 parameters。绑定 subject、contract、inventory、profile。整份脑图不填 parameters.autoid（Hub 选全部带文字 autoid、未声明不自动化的用例）；只编一条时从原文复制 autoid 字符串。后三项是发布的 doc:doc，profile 含 device_count 只读预检事实及可选 fold_newlines 名单。优先用敏捷文档号；只有本地导出时运行 `node <技能目录>/tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>`，上传中性文件名，在说明中原样给出两边摘要和“客户端规整”。不改写用例内容或编号。
 2. 先读 rec:<运行记录>#/items/<序号>/fields 取每条的步骤和期望，再读绑定的源。启用只说明对象/方法身份存在，不是派发授权。设备命令按锁定命令树放行，只拒合约声明的破坏性命令；不在本环境的地址：作者原文里的照留并披露，计划改出的拒。其余只读原合约结构，不从 help 散文推断。仍缺合约事实时按补证请求交具名维护者，告诉用户在等哪个请求，不让用户替维护者选；不得改冻结 profile、加本地角色或 reviewed 标志绕过。不复制默认值、内部项、认证候选或脱敏凭据。plan 槽见 slots.schema.json：bucket 为自动化测试环境，replacements 为 {case,bed} 一一对应地址。平面计划 blocks: []，steps 为 {object,method,args,keywords}；块计划 blocks 非空，steps/expects 均为 []，不可混写。args 为文字，keywords 为文字或安全非负整数。
 3. 平面 steps 禁止 literal_assertion；expects 写 {text,quote:{reference,text},after}，至少一条；after 从 1 开始，指向产生这段输出的设备命令或主机 shell（流量期望指向触发命令），不指向等待。块断言写 blocks 并指向观察输出，见下文。quote 保留逐字原文及来源身份。replacements 只用于经合约类型确认的地址位置；其他位置的同样文字保持原样，不扫描全文找 IP，不凭外形判用途。平面计划未写 basis 时，text 是替换后引文的精确片段，不能正规化字形或吞掉空白；描述性期望用下述 model_judgment。平面步骤和 text 写最终文字。普通参数单行、无首尾空白、无 {}、{0} 或等号前缀；RESTORE_FROM 的守卫占位 {} 除外。设备命令须被锁定构建的命令树完整解析，参数按树的结构类型完整消费并核值；Hub 由计划命令生成 CommandIdentity，用例无须预先声明命令。用例有 data.command_identities 时，计划解析身份须与其一致（只应用显式类型化替换）。不接受缩写、前缀、字形或大小写折叠、从散文捞命令。主机命令只能在合约声明的具体方法、参数类型和效果授权范围内，安全性不按动作名或参数里的词判断。设备地址允许本自动化测试环境其他设备接口及本血缘分配；其余原地址仅通过 replacements 换入。本次运行冻结了已受理的判据声明时（答复列出声明 rec:、新判据与复核人），期望可逐字取自新判据：quote.reference 写该声明的 rec:，quote.text 逐字抄冻结的新判据，text 是其精确片段；包按冻结字节核对，客户端副本不算数，改写或拼接按 expect_not_in_criterion 退回。声明自己的引文在本次运行边界另行逐字核对，来源未绑定时记未知并补读，不当已通过。
 4. submit_result 后按修正说明修计划并自动重交，最多两轮。类型或效果缺失是缺原合约事实，不是计划内容为假，按第 2 步补齐前不生成或派发。首次只有 workbook_verified 的“缺少文件”可继续；每个用例的其他必需要求项都须 satisfied 才生成工作簿；全部用例同一次提交：每条写成 <目录>/NN.json（{item,handling,slots}），按第 5 步令牌写法执行 `node <技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <运行号> --model <模型> --plans <目录>`。读完整结果，不能把 accepted 当成所有要求满足。
@@ -65,16 +65,16 @@ allowed 只提供已声明范围内的收紧配置，不能替代原合约的参
 
 RESTORE_FROM 在改动前捕获原文，末尾同设备、逆序恢复，for 精确指配置块。只能用已声明的 guarded restore 方法；root/target 由锁根、产品逆规则和冻结清单机械派生。缺执行器守卫能力保持未知，请维护者补实现及发布声明；不把 {} 塞进普通设备命令。OBSERVE_DIST/MEMBER/EXIT 本版暂缓，按声明给出口，不自造正则或成功标记。
 
-## 重组后编写（B2）
+## 重组后编写
 
-新用例先执行 recompose 阶段，case-compile 的 pipeline 显式写 recomposed；旧已锁定运行与旧 flat 路径保持兼容。管理员先发布/分配本目录 authority、recompose、adjudicate 三个独立工作单元；产品包作者在生产器 params.recompose 中声明实际规范来源、适用范围、参数用途与裁决角色。不要把自述的 product-declared 或上传裁定 JSON 当凭证。
+整份脑图先走重组：用 recompose 工作流，它的技能写了怎么做。重组完成后，计划运行和核验运行都绑定 recomposition_run（重组运行记录的 rec:）和 recomposition_result（重组运行号，Hub 换成已受理结果）。确实要跳过重组时写 parameters.pipeline=legacy，并在最终报告里说明原因。
 
-模型理解意图、知识位置、语义等价与缺前置；代码只读结构。读逐节点资格报告，未判定单列，按作者声明深度核对。节点角色只看树位置和声明字段，保留原文及跨度：声明前置优先级的叶子是前置；有子节点的是动作，可一层套一层；动作下的叶子是它的期望；步骤旁的叶子是无期望的动作；没有步骤时用例自身是动作，叶子是期望。编号及方括号定位按声明语法匹配，不能按“成功”“配置”等词判断角色。未绑定期望请作者或核对方明确定位，不静默删掉。
+每条的 fields.recomposition 是这个用例的重组记录：
 
-先绑定完整作者脑图及来源权威运行/结果，提交 record 三元契约、逐字原文账、适配账、具体化账和空重绑定账。所有引用要在本轮可读；声明位置也放进 quotes/grounds，由核心解析和逐字核验。状态 settled 也写后续编写出口；欠定、冲突、缺前置各走自己的角色与时点。冲突不是删除作者输入的许可；作者同意删除时应更新原件并按新来源身份重开。
+- record.contract：契约，意图、验证方法和期望。
+- record.ledgers.adapted、concretizations：适配后的步骤和具体值。
+- record.sources.states 里不是 settled 的原子和 record.unknowns：要你补的缺口。
 
-对初稿提交取得实际 Hub submission 记录，交非作者账号的 recompose-adjudication 作只读前驱复核，绑定 source_run 完整快照及作者/规范来源。裁定由模型写，Hub 核形状、逐字引文、账号独立性与锁定产品/根。之后以原重组运行为 predecessor 新开重组修订，绑定 previous_run/result 和实际独立裁定快照/结果，record.predecessor 须等于真实前驱；不覆盖旧记录。
+缺口由你在计划里解决：missing_prerequisite 写的前置要成为计划的步骤；underdetermined 选一个保持原意的写法，在 description 说明；conflict 交用户决定。环境绑定是编写的工作：重组记录和环境无关，主机、接口和地址在这里按清单选。
 
-逐案分片要保留冻结全集。客户端 <技能目录>/tools/seal-recompose.ts 从实际运行导出和原提交记录数组汇总：未完成项仍携 record:[]，不以 not_covered 冒充完整；每次只替换明确的新候选，其他原记录不改。该工具只产草稿和缺案数，不签发受理；草稿交 submit_result，只有 Hub 的全部条目要求项及 full_set 都满足才算整批完成，分片 worker 不独立封整批。
-
-编写在 recomposition_run/result 绑定真正已受理的记录，并填写 plan.data.recomposition（receipt、case_id、每个期望位的独立 assertion id、rebindings）。平面 expects 的 id 按从 1 开始的文字序号，块断言用显式 id。断言 quote 须等于所履约原子的逐字文本；按 B1 提出并独立复核判据，不能把方法说明当设备输出。物理替换只在此阶段出现，重绑定账保留 from/to、source_of_value、冻结 inventory 的 authority，且与 replacements 一一对应。缺来源或权限就是 unknown，点名等产品包作者、来源维护者或编写方在何时补，不能猜。
+plan.data.recomposition 写 {receipt, case_id, slots:[{slot, assertions}], rebindings:[]}。receipt 取 fields.recomposition.receipt，case_id 取 record.case.id，slots 给每个期望位列本计划的断言：平面计划写 expects 从 1 起的序号，块计划写断言 id。断言的 quote 要逐字等于那个期望原子。期望位没有断言记未知，不能漏。

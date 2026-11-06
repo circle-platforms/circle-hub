@@ -101,7 +101,7 @@
     {
       "slot": "recomposition_run",
       "role": "expected",
-      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "description": "重组运行的完整 Hub 记录：写 start_run 答复里的运行记录 rec:；不接受上传自述",
       "accepts": [
         "application/json"
       ],
@@ -111,12 +111,15 @@
     {
       "slot": "recomposition_result",
       "role": "expected",
-      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "description": "写重组运行号；Hub 换成该运行最近一次受理的结果。整份脑图的每个用例按来源和节点取自己的记录",
       "accepts": [
         "application/json"
       ],
       "required": false,
-      "many": false
+      "many": false,
+      "from_runs": {
+        "pack": "recompose"
+      }
     }
   ],
   "parameters": [
@@ -154,7 +157,7 @@
     },
     {
       "name": "pipeline",
-      "description": "Explicit recomposed pipeline, legacy remains compatible",
+      "description": "recomposed 走重组；legacy 明说跳过重组，整份脑图不绑定重组记录时必须写，最终报告要说明",
       "required": false,
       "schema": {
         "type": "string",

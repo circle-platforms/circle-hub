@@ -1,4 +1,5 @@
 import { assembleRecompose } from '../tools/seal-recompose.ts';
+import { submissionFor } from './tools/submit-records.ts';
 import { fixture as blockFixture, plan as blockPlan, call as blockCall } from '../testing/blocks.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { satisfiedRecipe } from '../tools/generate-workbook.ts';
@@ -78,7 +79,8 @@ test('a product publication, genuine independent adjudication and append-only re
         const submit = (run: string, item: string, data: any) => ({ run, model: 'scripted-recomposer', items: [{ item, handling: 'handled' as const, slots: { record: [{ text: '合成重组判断', quotes, data }] } }] });
         const draft = await h.service.submitResult(h.alice, submit(original.run, original.items[0].id, record), call());
         assert.equal(draft.acceptance, 'accepted', JSON.stringify(draft.errors));
-        assert.ok(Object.values(draft.result!.partitions).flat().some(i => i.requirements.some(r => r.status !== 'satisfied')));
+        // Decision 155: settling needs no ruling. The ruling below is the optional path, checked when a record names one.
+        assert.ok(Object.values(draft.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(draft.result));
         const submission = (await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: original.run })).items[0];
         await h.kit.authorizations.share(h.admin, original.run, [h.bob.id]);
         const review = await h.service.startRunDetailed(h.bob, { pack: 'recompose-adjudication', predecessor: original.run, inputs: { source_run: { reference: 'rec:' + (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: original.run })).items[0].digest }, declaration: { reference: 'rec:' + submission.digest }, evidence: [{ external }, ...inputs.evidence] } }, call());
@@ -178,6 +180,23 @@ test('a product publication, genuine independent adjudication and append-only re
         }
         const storedParts = await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: partsRun.run });
         assert.equal(storedParts.items.length, 2);
+        // Decision 155, the way a real run goes: the model writes one file per case and only what takes judgment; no authority
+        // run, no ruling; a gap travels with the record; compilation takes each case's own record from one run.
+        const wholeStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1] } }, call());
+        assert.equal(wholeStart.answer.call_result, 'ok', JSON.stringify(wholeStart.answer.errors));
+        const wholeRun = wholeStart.answer.run!;
+        const files = wholeRun.items.map((item: any, index: number) => ({ item: item.id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [item.fields.atoms[0].reference], basis: '合成依据' }, ...(index === 1 ? { states: [{ atom: item.fields.atoms[0].id, state: 'missing_prerequisite', reason: '功能默认关闭', prerequisites: ['先打开功能'] }] } : {}) }));
+        const whole = await h.service.submitResult(h.alice, submissionFor(wholeRun as any, files, 'scripted-recomposer') as any, call());
+        assert.equal(whole.acceptance, 'accepted', JSON.stringify(whole.errors));
+        assert.ok(Object.values(whole.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(whole.result));
+        assert.ok(whole.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'support'));
+        const wholeRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: wholeRun.run })).items[0];
+        const compiled = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: { ...compileInputs, subject: { external: multiExternal }, recomposition_run: { reference: 'rec:' + wholeRecord.digest }, recomposition_result: { run: wholeRun.run } }, parameters: {} }, call());
+        assert.equal(compiled.answer.call_result, 'ok', JSON.stringify(compiled.answer.errors));
+        const carried = compiled.answer.run!.items.map((item: any) => item.fields.recomposition);
+        assert.equal(carried.length, wholeRun.items.length);
+        assert.ok(carried.every((proof: any) => proof?.record?.status === 'complete'), JSON.stringify(carried));
+        assert.equal(carried[1].record.sources.states[0].state, 'missing_prerequisite');
     }
     finally {
         await h?.close();

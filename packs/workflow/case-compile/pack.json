@@ -16,6 +16,11 @@
       "pack": "mindmap-format",
       "version": "1.0.21",
       "module": "case-structure"
+    },
+    {
+      "pack": "run-tools",
+      "version": "1.0.0",
+      "module": "hub-client"
     }
   ],
   "title": "用例编译",
@@ -23,8 +28,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "86c84e35664a971ab0714bc56507683b0d30b493f1857227d45c12d184ff0970",
-      "size": 18847
+      "sha256": "1935dde8611f76b7a3add8c6889530ba7bc132240b4f304cd9d6002e2b14a0f1",
+      "size": 17146
     },
     {
       "path": "checks.json",
@@ -148,8 +153,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "566ed512b153ec6ea4a70138a90173b28aee4c44fe0aaa4a63bc3c6ed296d9cc",
-      "size": 26131
+      "sha256": "ea7de12bdbf7f231e533fda0772f90e1b33323ac28c8d2837207d7fe5c56e125",
+      "size": 26095
     },
     {
       "path": "functions/command-obligations.ts",
@@ -197,6 +202,11 @@
       "size": 678
     },
     {
+      "path": "functions/generated/skills/run-tools/hub-client/index.ts",
+      "sha256": "5b41917e8034b0c78fb013d60e3d1acac8fd40294d6b9174e8640ccbc311acce",
+      "size": 8571
+    },
+    {
       "path": "functions/generated/vocabulary.ts",
       "sha256": "f60c98ceb6234db4936bdd8406c965574c8c9bdbc6d52f76e817f62e7e3629e0",
       "size": 2527
@@ -218,8 +228,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "57708f172cbf363c2e738af3f0ebc00482464fb9f494395649c1f660638d5c04",
-      "size": 23101
+      "sha256": "4494f7d4f5f0a056801355eeca45cb884e8da7919da829bd76ccc61020946ccc",
+      "size": 23946
     },
     {
       "path": "functions/quote-width.ts",
@@ -238,8 +248,8 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "bcf3d6cde0b6155d23bdd1f3cf339a9fd454001b0229c26ee1e2b91f81a87cdd",
-      "size": 23102
+      "sha256": "03fc4e07fc0d0ed202737950002936f58ec56f8f6f57b4d0f196de1644150510",
+      "size": 23167
     },
     {
       "path": "functions/recompose-evidence.ts",
@@ -248,8 +258,8 @@
     },
     {
       "path": "functions/recomposition.ts",
-      "sha256": "88a8f8acb67437459cbe77a37f4efeb898a8eab5e091fd7e52435f4ae5d5f396",
-      "size": 4822
+      "sha256": "794bdc9e5e20529ed2405cc65a0924d668c4cb85cdf58e6368e65d8ad19fd663",
+      "size": 3887
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -268,8 +278,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "3d21c890e620b854e6c19dfc6fef26f9c03703ecb67e1a3df5f393b819a31990",
-      "size": 12394
+      "sha256": "92ba71bb9fbf6f430d42b5b9d6a2d0868b229bb214bb92e24429247d6ca83632",
+      "size": 12481
     },
     {
       "path": "functions/text.ts",
@@ -643,23 +653,18 @@
     },
     {
       "path": "tools/fetch-run.ts",
-      "sha256": "1d3d79921ba7d03644395caa980d396f501c5860723ddab6ce36c17fc57fb5bf",
-      "size": 7211
-    },
-    {
-      "path": "tools/files.ts",
-      "sha256": "f05bbebbebdb20543fa85317ab7849bdf2dae3b2df833021fce6bd66d407012e",
-      "size": 2110
+      "sha256": "ae5550223384658a71ea3e7908aa78a532a43886753b8f31c1538745520c48ed",
+      "size": 4796
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "4ee5b1c08ad2fc7064dbdb9c383734313f18cf25b9d47b420c36fe53c7939458",
-      "size": 11438
+      "sha256": "e227a16ad8851c80017beb97df7f71288bea67d63b5196bc41117f7fd42aa3a9",
+      "size": 11487
     },
     {
       "path": "tools/normalize-mindmap.ts",
-      "sha256": "5d705dc319b0bc6134d82993f72214216962a01e10afd61bfb1d025c3c914b66",
-      "size": 2899
+      "sha256": "013cc2670b758c96a5396ed858af769d7d4ccc3c7cb2e717fa03408fcca7d168",
+      "size": 2948
     },
     {
       "path": "tools/seal-recompose.ts",
@@ -668,13 +673,13 @@
     },
     {
       "path": "tools/submit-plans.ts",
-      "sha256": "7c78935d20c3e0bca3c7a4e370602a5d44c12c3929227267714c24b8e0648216",
-      "size": 5505
+      "sha256": "d57ce825020c8413e3eb49da03bf29e853186895decaa0717032c0ed09072a39",
+      "size": 2233
     },
     {
       "path": "workflow.json",
-      "sha256": "acdd5347033c44bfdcf8c3d3ea2ea187ba68ceeea627424599f30c171070b4a1",
-      "size": 6023
+      "sha256": "b3fa2c1c0cdbb762f8544a67b9d77715367dbb65971f97dce8ef1dec39350d8f",
+      "size": 6257
     }
   ]
 }

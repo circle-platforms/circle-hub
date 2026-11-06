@@ -4,7 +4,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { isRecord } from '../functions/text.ts';
-import { argumentsOf, readBytes, writeNew, sha256 } from './files.ts';
+import { argumentsOf, readBytes, writeNew, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 export function normalizeMindmap(bytes: Uint8Array): { bytes: Uint8Array; before_sha256: string; after_sha256: string; transformations: string[] } {
   let text: string; try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw new Error('脑图不是完整 UTF-8，不作猜测修复'); }
   const transformations: string[] = [];

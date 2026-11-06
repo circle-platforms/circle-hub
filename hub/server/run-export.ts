@@ -1,5 +1,5 @@
 // Decision 104: a client generates its artifacts from its own run without an administrator export, independently authorized on
-// every request with the same token as MCP. GET /run-export/<run> answers the run, its latest accepted result and that result's
+// every request with the same token as MCP. GET /run-export/<run>/run answers the run alone. GET /run-export/<run> answers the run, its latest accepted result and that result's
 // submission as stored (runner and administrators only); GET /run-export/<run>/sources/<sha256> answers the original bytes of one
 // source bound to that run, at the reader's readable tier.
 import { performance } from 'node:perf_hooks';
@@ -20,6 +20,7 @@ export async function handleRunExport(request: IncomingMessage, response: Server
   const started = performance.now(); const raw = (request.url ?? '').replace(/^http:\/\/[^/]+/i, '');
   const parts = raw.startsWith(PREFIX) ? raw.slice(PREFIX.length).split('/') : [];
   const run = parts[0] ?? ''; const sha = parts.length === 3 && parts[1] === 'sources' ? parts[2] : null;
+  const runOnly = parts.length === 2 && parts[1] === 'run';
   let principal: Principal | null = null; let status = 500; let bytes: Buffer = Buffer.from('Hub 内部错误\n'); let note = '内部错误';
   const headers: Record<string, string> = { 'content-type': 'text/plain; charset=utf-8' };
   request.resume();
@@ -27,12 +28,14 @@ export async function handleRunExport(request: IncomingMessage, response: Server
     principal = await deps.records.principals.authenticate(typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
     if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
     else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
-    else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
+    else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || runOnly || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
     else {
       status = 404; bytes = ABSENT; note = '运行不可见';
       const exported = await deps.runs.exportRun?.(principal, run) ?? null;
       if (exported && sha === null) {
-        if (!exported.result || exported.submission === null) { status = 409; bytes = Buffer.from('这个运行还没有已受理的提交；按回执改正并重交，被受理后再导出\n'); note = '没有已受理结果'; }
+        // The run alone, before anything is accepted: a client tool needs the frozen items to prepare the first submission.
+        if (runOnly) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run })); note = '运行'; headers['content-type'] = 'application/json'; }
+        else if (!exported.result || exported.submission === null) { status = 409; bytes = Buffer.from('这个运行还没有已受理的提交；按回执改正并重交，被受理后再导出\n'); note = '没有已受理结果'; }
         else { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run, result: exported.result, submission: exported.submission })); note = '运行与已受理结果'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
       } else if (exported && sha !== null) {
         const source = await deps.records.artifacts.sourceForRun(principal, sha, run);
