@@ -606,3 +606,19 @@ read field `object_route`, the JSON route whose answer is the object itself; a r
 object and an echo of a credential the Hub sent stay neutral (B02 R[6]). R02 R[0], the display rule and `SOURCE_UNAVAILABLE`
 follow. The four skill packs that mirror the protocol codes advance with them. No read tier, record kind or MCP tool changes.
 D05 `changes41` states the change.
+
+Decisions 150 and 151 (owner, 2026-11-06) set model 42: teams become real, and the acceptance of credential scan findings can
+cover one business-system resource. A team is a named group of enabled accounts, kept as B04 assignment decisions only
+(registration, membership, assignment of workflows and of resources), so no table, record kind or vocabulary axis is added.
+R01 R[13] states the rule and R01 R[0] to R[2] and R[10] follow; an administrator may use every published workflow by
+default, which is not an assignment and stays out of the tool annotations (R01 R[1], D06 R[4]). A business-system resource
+is assigned to a team or to all members; the assignment governs new reads and an original's way into a team space (R01
+R[13], D05 R[3]). Each team has its own knowledge space and memory, the team `team` being the existing space (K01 DEF, R[4],
+R[9], R[13], R[15]; K02 R[6]); the sync protocol gets the capability name `team-spaces` and the request member `team`.
+B02 R[4] and C04 R[6] let an administrator accept findings per source or per resource (B04 F[0], F[1], R[1]): within an
+accepted resource a source is read at its own tier, the findings stay recorded and what rests on them carries
+`possible_credentials` (B01 R[7]). When an acceptance is withdrawn or lapses, a product knowledge entry that rests on the
+source shows 没有权限阅读 and gives no text (K02 R[8], D05 R[3], D06 F[3], R02 R[1], display rule 9). The axis
+`audience_scope` gains `team_members`. No protocol code or MCP tool changes, so `protocol.ts` changes by `MODEL_VERSION`
+only. `changes42` of the 17 changed elements states the change. Decision 152, the sandbox watchdog and the wording of the
+dispatch refusal, changes no model text.

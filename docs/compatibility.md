@@ -9,7 +9,7 @@
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
 | circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；发行 0.3.0（2026-11-04）是重建后的第一个发行，带安装包；此前的 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md)、[当前状态](hub-status-2026-11.md) | 所有者的持久部署自 2026-11-04 起从 main 部署（决定 145），私有集成分支已封存 |
-| 合约 | 通用模型第 41 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
+| 合约 | 通用模型第 42 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
 | MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权或 Bearer 令牌 |
 | Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | Circle main 已合入六项通用 MCP 客户端改进并删去内置 Hub（circle#309，2026-10-26）和按 MCP 标准授权在浏览器登录（circle#396，2026-11-02）；Circle 里不出现 Hub 专用的界面或标签（D06 R[1]）；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
@@ -77,3 +77,4 @@
 - 2026-11-04：发布 hub v0.3.0，重建后的第一个发行，带 macOS 和 Linux 的一键安装包；所有者的持久部署从这天起由 main 部署（决定 145）；合约一行改正为模型第 37 版。
 - 2026-11-05：合约一行改正为模型第 40 版。AGENTS.md 写明兼容性事实变化时本页和英文页在同一个拉取请求里更新。Hub 的迁移到 31，加运行状况和追踪用的表。Circle 1.14.0 的打包版在模型请求超时后不重试，修复随 Circle 的下一版发布。
 - 2026-11-05：模型第 41 版（决定 149），新增协议码 `SOURCE_PENDING_REVIEW`，同一天的合约一行随之改正。
+- 2026-11-06：模型第 42 版（决定 150 至 152）：团队成为分配的主体（工作流和业务系统资源可分给团队，管理员默认可用全部工作流），每个团队有自己的知识空间和记忆；凭据扫描命中的接受可以以一个业务系统资源为单位，撤回或失效后，产品知识树里依据它的条目显示“没有权限阅读”，不再给文字；词表 `audience_scope` 加取值 `team_members`。没有新的协议码、记录种类或 MCP 工具。这一步只改模型和文档，代码随后续提交落地；同一天的合约一行随之改正。

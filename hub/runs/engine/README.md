@@ -8,6 +8,12 @@ initiator and current-reader grants on every use, outside the immutable-content 
 outside the locked scope; currently granted personal content remains addressable. An administrator's other personal
 permissions never enlarge the initiator's scope. Raw space records are not an alternative route around path grants.
 
+Model 42 (decision 150) gives every team a space: `knowledge_spaces.team` stays the root of the team space with the id
+`team`, the only one today, and the roots of the other teams the initiator belongs to go into a record-only `team_spaces`
+member, written only when the initiator belongs to a team other than `team` (the record of an initiator who is in `team`
+alone stays as it is), so that a run reads the team spaces its initiator belonged to when it started. This is not
+implemented yet: until the commits that keep a space for each team land, a run locks the one team root.
+
 The citation index classifies space roots before indexing accepted submissions. Personal entries use an owner-scoped key;
 equal content cannot enter the team entry count through a private reference. The same classification applies during
 background backfill. Existing legacy node/entry counts and their limits stay compatible.

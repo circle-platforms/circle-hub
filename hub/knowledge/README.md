@@ -102,6 +102,30 @@ The time of a build is PostgreSQL's, GIN above all: in both columns the database
 machine fewer statements do not make a build much shorter. What changed is who waits. The production trace of the same work, one
 statement per row against a slower disk, was 268.9 s inside one request.
 
+## Teams, team spaces and withheld text (model 42, decisions 150 and 151)
+
+Model 42 changes two things in this package. The code does neither yet: the commits that follow do, and until then what
+the sections above and below say is what the code does.
+
+**One space for each team** (K01 DEF, R[4], R[9], R[13], R[15]; K02 R[6]; R01 R[13]). The team space is no longer one space
+for the Hub: every team has its own, and the id of a team is the id of its space. The team `team` is the space that exists
+today, so no record moves, and a request that names no team means `team`. The readers and writers of a team space are the
+members of that team and the administrators. A share, a memory share and a withdrawal of a team entry check the membership
+inside the committing transaction, in a fixed order with a change of the membership (R01 R[6]). A reader who is not a member
+is told that the team space exists and that they may not read it, or that it does not exist when the team is not registered
+(D05 R[3]); a memory list and a search answer such a reader with an empty set of the same shape. The product catalog keeps
+its product lines and version trees; the same registration is mounted in every team space, and its readers are still decided by
+the product line.
+
+**Text that rests on a source without acceptance** (K02 R[8], B02 R[4], D05 R[3]). A tree read stops giving the text of an
+entry when the effective read tier of any source its fragments come from is `retain_only`, whatever took the acceptance
+away: the source's own was withdrawn, the one of its resource was, or one of them lapsed. The entry stays listed with its
+path, kind, reference and digest; its text and data read 没有权限阅读; a reference read answers `retain_only` and not
+readable; the knowledge views and the search do not list it, and a node page and a view that lack entries mark their
+coverage partial. The catalog and the digest of an entry do not change. It holds for every reader, administrators
+included, and ends with the next read after an acceptance is made again. Today a tree read gives the text of an entry
+without looking at the read tier of its sources.
+
 ## Uploader attribution (decision 140, block one)
 
 Claude approved the contract list in `9ba31246` before model 25 was changed. `spaces.attributeSource` requires the enabled

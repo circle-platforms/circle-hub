@@ -823,6 +823,28 @@ the migrations as the owner role and grants the runtime role (`CIRCLE_HUB_DATABA
 hub/platform's peer map). When the owner and the runtime role are the same, it migrates without granting and warns.
 `--migrate` migrates with the connecting role before serving (a single-role development setup).
 
+## Teams, team spaces and per-resource acceptance (model 42, decisions 150 to 152)
+
+Model 42 asks the following of this package. None of it is implemented yet: the commits that follow do it, and the commands,
+pages and tools described elsewhere in this README are what exists.
+
+- **CLI.** `team list|show|create|delete|add|remove`; `pack assign|unassign` take `--team <team>` instead of a user;
+  `resource assign|unassign <resource> (--team <team> | --all)`; `resource accept|withdraw <resource>`. `user add` and the
+  add-member dialog tell the administrator that a member who is in no team reads no team knowledge and memory. `pack unassign`
+  names where a use that remains comes from (a team, or the administrator's default).
+- **Console.** The team page lists the teams with their members, workflows and resources; the connection page shows who may
+  read a resource. Creating a team, assigning, accepting and withdrawing an acceptance are command dialogs, as decision 124
+  has it: the console writes the command and an administrator runs it.
+- **Tools.** The annotations of `submit_result` follow the workflows assigned to the caller, not an administrator's default
+  use of every workflow (D06 R[4]). `get_nodes`, the memory tools and the share tools take an optional `team`; `GET /state`
+  carries `teams`, the teams the account belongs to, and the discovery document names `team-spaces` (section 15 of the sync
+  protocol).
+- **Upgrade of a deployment.** Take `circle-hub backup` before the deployment that applies migration 32, the one that keeps a
+  space for each team: an older program refuses to start on it, so the backup is the only way back. Before the assignment
+  of business-system resources is enforced on reads, register the team `team`, add every enabled account to it (the existing
+  team space belongs to it) and assign the existing resources to all members. No rule makes an unassigned resource open to
+  everyone.
+
 ## Decisions
 
 1. `submit_result` is never refused by the server on its schema: the arguments as received go to
