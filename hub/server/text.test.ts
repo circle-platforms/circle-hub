@@ -1,6 +1,6 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // The text of every tool answer, through the real text functions: synthetic runs of 5, 62, 400 and 3000 items, every answer
-// within TEXT_BUDGET and ending with the trace line, the facts first (counts, every requirement's state, every problem), the
+// whole (no length budget, decisions 157 and 158) and ending with the trace line, the facts first (counts, every requirement's state, every problem), the
 // note exactly when something was left out or shortened, ways to read the rest that the server takes (page cursors when it
 // pages, as the server does; byte ranges, text@1 lines and record pointers otherwise, followed through the real reference
 // resolver and through the server itself), and example calls and skeletons that parse with the tool schemas. What the run
@@ -30,7 +30,6 @@ import type { LoadedWorkflow } from '../ports.ts';
 import { canonicalJson, recordDigest, resolveReference, type RecordRead } from '../refs/api.ts';
 import { slotSchemaOf } from '../runs/engine/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
-import { TEXT_BUDGET } from './budget.ts';
 import { cursorPosition, fallbackText, pageCursor, pageCursorProblem, startRunExample, submitExample, toolText, type TextContext } from './text.ts';
 
 // ---------------------------------------------------------------- synthetic answers, checked against the contracts
@@ -375,8 +374,9 @@ async function follow(context: ReturnType<typeof memory>, reference: string, mar
   throw new Error('reading did not end');
 }
 
+/** No answer is cut to a length (decisions 157 and 158): nothing is left out for want of room. */
 function withinBudget(text: string, what: string): void {
-  assert.ok(text.length <= TEXT_BUDGET, `${what}: ${text.length} characters, over the budget ${TEXT_BUDGET}`);
+  assert.doesNotMatch(text, /个字符为限/, `${what}: nothing is left out for a budget`);
 }
 
 /** The example submission with its lists filled by a test double: one finding per slot list and the cross-item level. */
@@ -482,46 +482,23 @@ describe('start_run text', () => {
     assert.ok(schema.length * 3 < JSON.stringify(run.slots!.schema).length, `${schema.length} characters against ${JSON.stringify(run.slots!.schema).length}`);
   });
 
-  test('items cut from start_run are read page by page from the run record when the server pages, each exactly once', () => {
+  test('a run of 3000 items, some with long labels, lists every item once in order (decision 158: no length budget)', () => {
     const list = items(3000, (i) => `合成用例 ${i}${i % 97 === 0 ? ' 长标题'.repeat(300) : ''}`);
-    const run = runOf(list);
-    const text = toolText('start_run', startAnswer(run), { ...PAGING, record: RUN_RECORD });
-    const shown = itemIdsOf(text);
-    const call = nextCall(text, '条目：')!;
-    const reference = `${RUN_RECORD}#/items`;
-    const rest = pages(reference, canonicalJson(run.items), call.cursor ?? null);
-    for (const page of rest) withinBudget(page, 'a page of run items');
-    const ids = [...shown, ...rest.flatMap(itemIdsOf)];
-    assert.deepEqual(ids, list.map((it) => it.id), 'start_run and the pages show every item once, in order');
-    assert.match(rest[0], new RegExp(`^内容 ${reference.replace(/[$^*+?.()|[\]{}]/g, '\\$&')}：模型可读`));
+    for (const context of [{ ...PAGING, record: RUN_RECORD }, { record: RUN_RECORD }, {}]) {
+      const text = toolText('start_run', startAnswer(runOf(list)), context);
+      withinBudget(text, 'start_run 3000');
+      assert.deepEqual(itemIdsOf(text), list.map((it) => it.id), 'every item once, in order');
+      assert.ok(!text.includes('提交时没有覆盖的条目'), 'no advice to submit just to learn the items (it would cost repair rounds)');
+    }
   });
 
-  test('without paging the items left out are read one by one from the run record; without the record, on the console page', () => {
-    const run = runOf(items(3000));
-    const byPointer = toolText('start_run', startAnswer(run), { record: RUN_RECORD });
-    const shown = itemIdsOf(byPointer).length;
-    assert.deepEqual(nextCall(byPointer, '条目：逐个读 '), { reference: `${RUN_RECORD}#/items/${shown}` });
-    assert.ok(callsIn(byPointer).every((call) => call.cursor === undefined), 'no cursor is offered to a server that does not page');
-    const text = toolText('start_run', startAnswer(run));
-    assert.match(noteOf(text)!, /条目：在控制台运行页 \/console\/runs\/run_0123456789abcdefghjkmnpqrs 查看/);
-    assert.ok(!text.includes('提交时没有覆盖的条目'), 'no advice to submit just to learn the items (it would cost repair rounds)');
-  });
-
-  test('a procedure longer than the budget is cut by whole lines and continues from the run record', () => {
-    const procedure = Array.from({ length: 2000 }, (_, i) => `第 ${i + 1} 步：逐条核对用例里的命令与参数。`).join('\n');
-    const text = toolText('start_run', startAnswer(runOf(items(5), { instructions: procedure })), { ...PAGING, record: RUN_RECORD });
+  test('a procedure of 2000 lines is given whole, and the items keep their place after it', () => {
+    const steps = Array.from({ length: 2000 }, (_, i) => `第 ${i + 1} 步：逐条核对用例里的命令与参数。`);
+    const text = toolText('start_run', startAnswer(runOf(items(5), { instructions: steps.join('\n') })), { ...PAGING, record: RUN_RECORD });
     withinBudget(text, 'long procedure');
     const lines = linesOf(text);
-    assert.ok(lines.includes('- doc7:n4 | 合成用例 4 | 优先级 1，期望结果 0 条'), 'the items keep their place');
-    const shownSteps = lines.filter((l) => /^第 \d+ 步：/.test(l)).length;
-    assert.ok(shownSteps > 0 && shownSteps < 2000);
-    const call = nextCall(text, '规程：')!;
-    assert.deepEqual(call, { reference: `${RUN_RECORD}#/instructions`, cursor: pageCursor(`${RUN_RECORD}#/instructions`, shownSteps) }, 'the cursor names the first line left out');
-    assert.ok(noteOf(text)!.includes(`规程 ${2000 - shownSteps} 行（第 ${shownSteps + 1} 到第 2000 行）`), 'the note counts on from the first part');
-    const rest = pages(`${RUN_RECORD}#/instructions`, procedure, call.cursor ?? null);
-    const continued = rest.flatMap((p) => linesOf(p).filter((l) => /^第 \d+ 步：/.test(l)));
-    assert.equal(shownSteps + continued.length, 2000);
-    assert.equal(continued[0], `第 ${shownSteps + 1} 步：逐条核对用例里的命令与参数。`);
+    assert.deepEqual(lines.filter((l) => /^第 \d+ 步：/.test(l)), steps);
+    assert.ok(indexOf(lines, (l) => l === '- doc7:n4 | 合成用例 4 | 优先级 1，期望结果 0 条') > indexOf(lines, (l) => l === steps.at(-1)), 'the items follow the procedure');
   });
 
   test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
@@ -656,17 +633,11 @@ describe('a production run in the start_run text', () => {
     withinBudget(text, 'production with a long procedure');
     const lines = linesOf(text);
     assert.match(lines[1], /^结果（start_run 时由 Hub 算出）：/);
-    const problems = lines.filter((l) => / \| structure \| ✗ 静态：不通过，core\.structure\.duplicate_key/.test(l)).length;
-    const shownItems = lines.filter((l) => /^- doc7:n[0-9]+ \| 合成用例 [0-9]+ \| 优先级/.test(l)).length;
-    assert.ok(problems > 91, `${problems} problems shown, more than the first part of the list`);
-    if (problems < 600) assert.equal(shownItems, 0, 'the items take only the room the problems leave');
-    const note = noteOf(text)!;
-    assert.ok(note.includes(`问题与未知 ${600 - problems} 条`), 'the problems left out are counted');
-    const call = nextCall(text, '问题与未知：')!;
-    // The result read by reference lists the problems in the same order, so the cursor continues the list.
-    const rest = pages(RESULT_RECORD, canonicalJson(result), call.cursor ?? null);
-    const continued = rest.flatMap((p) => linesOf(p).filter((l) => / \| structure \| ✗ 静态：不通过，core\.structure\.duplicate_key/.test(l)));
-    assert.equal(problems + continued.length, 600, 'paging from the cursor gives exactly the problems left out');
+    const problemAt = lines.flatMap((l, at) => (/ \| structure \| ✗ 静态：不通过，core\.structure\.duplicate_key/.test(l) ? [at] : []));
+    const itemAt = lines.flatMap((l, at) => (/^- doc7:n[0-9]+ \| 合成用例 [0-9]+ \| 优先级/.test(l) ? [at] : []));
+    assert.equal(problemAt.length, 600, 'every problem');
+    assert.equal(itemAt.length, 3000, 'every item');
+    assert.ok(problemAt.at(-1)! < itemAt[0], 'the problems come before any item');
   });
 
   test('without the whole result the text still gives the counts and where the problems are', () => {
@@ -674,7 +645,7 @@ describe('a production run in the start_run text', () => {
     const result = resultOf(list, { production: true });
     const text = toolText('start_run', startAnswer(runOf(list, { production: true }), { result: { reference: RESULT_RECORD, counts: partitionCountsOf(result.partitions) } }));
     assert.ok(text.includes('问题与未知的明细在完整结果里'));
-    assert.ok(text.includes(`完整结果 ${RESULT_RECORD}：用 get_nodes {"reference":"${RESULT_RECORD}"} 读开头`));
+    assert.ok(text.includes(`完整结果 ${RESULT_RECORD}：用 get_nodes {"reference":"${RESULT_RECORD}"} 整份读`));
   });
 });
 
@@ -711,13 +682,9 @@ describe('submit_result text', () => {
       ];
       const ids = [...new Set(lines.slice(problemsAt + 1).filter((l) => l.split(' | ').length >= 3 && !l.startsWith('- 位置')).flatMap((l) => /^- (doc7:n[0-9]+) \| [^|]+ \| (已交付|已拒收|未完成)/.exec(l)?.[1] ?? []))];
       assert.deepEqual(ids.slice(0, Math.min(ids.length, expected.length)), expected.slice(0, Math.min(ids.length, expected.length)), 'the problems in partition order');
-      if (n <= 62) assert.deepEqual(ids.slice(0, expected.length), expected, 'all of them when they fit');
-      const note = noteOf(text);
-      if (n === 5) assert.ok(note === null && text.includes('条目明细（每个条目下是它的要求项和主张）：'), 'a small result shows every item with its claims too');
-      if (n >= 400) {
-        assert.ok(note !== null, 'a large result is cut');
-        assert.ok(note.includes(`get_nodes {"reference":"${RESULT_RECORD}","cursor":"`), 'and says how to read it');
-      }
+      assert.deepEqual(ids.slice(0, expected.length), expected, 'all of them, whatever the size');
+      assert.ok(text.includes('条目明细（每个条目下是它的要求项和主张）：'), 'every item with its claims too');
+      if (n === 5) assert.equal(noteOf(text), null, 'nothing shortened in a small result');
     });
   }
 
@@ -742,8 +709,7 @@ describe('submit_result text', () => {
       assert.ok(lines.includes('- findings：满足 0，未满足 400（独立性未知 400），未决 0；静态：◇ 判断 400；动态：本层不适用'));
       assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，阻断，归责 作者输入 | 未满足（终态不符合期望） | 用例重复'));
       assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | findings | ◇ 静态：判断 | 未满足（独立性未知） | 期望结果缺失'));
-      const note = noteOf(text)!;
-      assert.match(note, /问题与未知 \d+ 条/, 'the problems left out are counted');
+      assert.equal(lines.filter((l) => /^- doc7:n\d+ \| 合成用例 \d+ \| 已交付 \| (structure|findings) \| /.test(l)).length, 800, 'every problem, one line each');
     }
     // Advisory violations on half of the items and unsatisfied requirements on a quarter: still named.
     const mixed = resultWith({
@@ -814,16 +780,14 @@ describe('submit_result text', () => {
     assert.equal(lines[0], '回执：未受理；没有分区（未受理的提交不分区）');
     assert.ok(lines.includes('错误 600 个，按代码：') && lines.includes('  QUOTE_MISMATCH 600 个；修正：按原文逐字引用，或先调用 resolve_reference'), 'the scale and the fix on the first screen');
     assert.ok(lines.some((l) => /^- QUOTE_MISMATCH：原文与引用对不上：.*；位置 \/items\/\d+\/slots\/findings\/0\/quotes\/0；条目 doc7:n\d+；要求项 findings；剩余修复轮数 1$/.test(l)));
-    assert.match(noteOf(without)!, /错误 \d+ 个（第 \d+ 到第 600 个）.*那次提交也会让错误落在其陈述里的要求项用掉一轮修复/);
-    const stored = toolText('submit_result', submitAnswer(result), { record: RESULT_RECORD });
-    const shown = linesOf(stored).filter((l) => l.startsWith('- QUOTE_MISMATCH：')).length;
-    assert.deepEqual(nextCall(stored, '其余错误：逐个读 '), { reference: `${RESULT_RECORD}#/errors/${shown}` }, 'the stored result names the next error');
-    assert.ok(!noteOf(stored)!.includes('改正上面列出的问题再提交'), 'no advice to spend a round to see the rest');
-    const paged = toolText('submit_result', submitAnswer(result), { ...PAGING, record: RESULT_RECORD });
-    const call = nextCall(paged, '其余错误：')!;
-    const rest = pages(RESULT_RECORD, canonicalJson(result), call.cursor ?? null);
-    const continued = rest.flatMap((p) => linesOf(p).filter((l) => l.startsWith('- QUOTE_MISMATCH：')));
-    assert.equal(linesOf(paged).filter((l) => l.startsWith('- QUOTE_MISMATCH：')).length + continued.length, 600, 'the cursor reads exactly the errors left out');
+    assert.equal(lines.filter((l) => l.startsWith('- QUOTE_MISMATCH：')).length, 600, 'every error');
+    assert.ok(!without.includes('改正上面列出的问题再提交'), 'no advice to spend a round to see the rest');
+    for (const context of [{ record: RESULT_RECORD }, { ...PAGING, record: RESULT_RECORD }]) {
+      const stored = toolText('submit_result', submitAnswer(result), context);
+      withinBudget(stored, 'not accepted, stored');
+      assert.equal(linesOf(stored).filter((l) => l.startsWith('- QUOTE_MISMATCH：')).length, 600, 'every error with the stored result too');
+      assert.ok(!stored.includes('其余错误'), 'nothing left to read on');
+    }
   });
 });
 
@@ -834,20 +798,14 @@ describe('get_nodes text', () => {
     const list = items(3000, (i) => (i % 501 === 0 ? `长标题 ${'很'.repeat(5000)}` : `合成用例 ${i}`));
     const result = resultOf(list, { claims: 3, claimText: (i, k) => (i % 733 === 0 && k === 0 ? '超长的发现'.repeat(9000) : `第 ${k} 条发现`) });
     const all = pages(RESULT_RECORD, canonicalJson(result));
-    assert.ok(all.length > 10, `${all.length} pages`);
-    for (const page of all) withinBudget(page, 'a result page');
+    assert.equal(all.length, 1, `${all.length} answers: one, whatever its length`);
+    withinBudget(all[0], 'a whole result');
     const detailsOf = (page: string): string[] => linesOf(page).flatMap((line) => /^- (doc7:n[0-9]+) \| [^|]+ \| (已交付|已拒收|已隔离|未完成)(（[^）]*）)?(；沿用 .*)?$/.exec(line)?.[1] ?? []);
-    const seen = all.flatMap(detailsOf);
     const inPartitionOrder = (['delivered', 'rejected', 'quarantined', 'incomplete'] as const).flatMap((p) => result.partitions[p].map((it) => it.item));
-    assert.deepEqual(seen, inPartitionOrder, 'every item once in the details, in partition order');
+    assert.deepEqual(detailsOf(all[0]), inPartitionOrder, 'every item once in the details, in partition order');
     assert.match(all[0], new RegExp(`^内容 ${RESULT_RECORD}：模型可读\n结果 ${RESULT_RECORD}（运行 ${RUN}）：回执：已受理；分区：`));
-    assert.ok(all.slice(0, -1).every((page) => noteOf(page) !== null), 'a page that does not end the result says how to go on');
-    assert.equal(noteOf(all.at(-1)!), null, 'the last page has no note');
-    assert.ok(all.some((page) => page.includes('（接上页：条目 ')), 'a page that starts inside an item says whose lines follow');
-    assert.ok(all.some((page) => page.includes('行的前 ') && page.includes('个字符在上一页')), 'a line longer than a page is shown in pieces');
-    assert.ok(!all.some((page) => page.includes('超过一页的长度')), 'no line is replaced by a placeholder');
-    const long = all.map((page) => linesOf(page).find((l) => l.includes('超长的发现')) ?? '').join('');
-    assert.ok(long.length > 45_000, 'the 45,000-character finding is read in pieces');
+    assert.ok(!all[0].includes('接上页') && !all[0].includes('超过一页的长度'), 'no page break, no placeholder');
+    assert.ok(all[0].includes('超长的发现'.repeat(9000)), 'the 45,000-character finding whole');
   });
 
   for (const n of SIZES.slice(0, 3)) {
@@ -965,18 +923,17 @@ describe('get_nodes text', () => {
     assert.ok(text.length > 60_000 && !text.includes('\n'), 'one line of canonical JSON, as hub/refs returns it');
     const reference = `${RUN_RECORD}#/slots/schema`;
     const all = pages(reference, text);
-    assert.ok(all.length > 1);
+    assert.equal(all.length, 1, 'one answer');
     const body = (page: string): string[] => {
       const lines = linesOf(page);
       return lines.slice(lines.findIndex((l) => l.startsWith('共 ')) + 1, NOTE.test(lines.at(-2) ?? '') ? -2 : -1);
     };
-    assert.equal(all.flatMap(body).join('\n'), JSON.stringify(JSON.parse(text), null, 1), 'the pages are the schema pretty-printed (canonical key order), each line once');
-    assert.ok(!all.some((p) => p.includes('超过一页的长度')));
-    const unpaged = toolText('get_nodes', contentAnswer(reference, text));
-    assert.deepEqual(nextCall(unpaged, '逐个读：'), { reference: `${reference}/properties` }, 'without paging: the member the page stopped in');
+    const pretty = JSON.stringify(JSON.parse(text), null, 1);
+    assert.equal(body(all[0]).join('\n'), pretty, 'the schema pretty-printed (canonical key order), each line once');
+    assert.equal(body(toolText('get_nodes', contentAnswer(reference, text))).join('\n'), pretty, 'the same without paging');
   });
 
-  test('a page of many nodes keeps whole nodes and names the nodes it left out as get_nodes calls of their paths', () => {
+  test('a page of many nodes shows every node with all its entries and children (decision 158)', () => {
     const root = H('d');
     const nodes = Array.from({ length: 100 }, (_, i) => {
       const path = `/catalog/menu${i}`;
@@ -1008,29 +965,29 @@ describe('get_nodes text', () => {
     assert.ok(head > 0);
     assert.ok(lines[head + 1].startsWith('  · [定义] menu0 的第 0 个签名（适用 全部构建）；引用 ') && lines[head + 1].endsWith('；数据 {"params":[{"name":"zone","type":"integer","limit":"1-8"}]}'), 'the entries right after the node');
     assert.equal(lines[head + 5], '  子节点 /catalog/menu0/item0 item0', 'then the children');
-    const shown = lines.filter((l) => /^- \/catalog\/menu\d+（/.test(l)).length;
-    assert.ok(shown > 0 && shown < 100);
-    const call = nextCall(text, `这一页其余 ${100 - shown} 个节点：`)!;
-    assert.deepEqual(call, { root, paths: nodes.slice(shown).map((n) => n.path), depth: 0 });
+    assert.equal(lines.filter((l) => /^- \/catalog\/menu\d+（/.test(l)).length, 100, 'every node');
+    assert.equal(lines.filter((l) => l.startsWith('  · [定义] menu')).length, 400, 'every entry');
+    assert.equal(lines.filter((l) => l.startsWith('  子节点 /catalog/menu')).length, 3000, 'every child');
+    assert.equal(noteOf(text), null, 'nothing left out');
   });
 
-  test('left-out nodes with long paths: as many paths as fit in the call, and how many more', () => {
+  test('a manual section of 114 entries shows all of them: run 9 got about 20 and untitled references for the rest', () => {
     const root = H('d');
-    const nodes = Array.from({ length: 100 }, (_, i) => {
-      const path = `/命令/${'很长的菜单名称'.repeat(12)}${i}`;
-      return { path, reference: `tree:${root}${path}`, name: `m${i}`, level: 'leaf', digest: H('3'), children: [], entries: [{ entry: H('5'), kind: 'definition', statement: '签'.repeat(1400), reference: `tree:${root}${path}@${H('5')}`, applicability: '全部构建' }] };
+    const path = '/manual/cli/DNS资源记录';
+    const entries = Array.from({ length: 114 }, (_, k) => {
+      const entry = createHash('sha256').update(String(k)).digest('hex');
+      return { entry, kind: 'behaviour', statement: `**sdns 命令 ${k}** *<参数>* 该命令用于……${'说明'.repeat(300)}`, reference: `tree:${root}${path}@${entry}`, applicability: '未声明' };
     });
-    const text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes, trace: TRACE }));
-    withinBudget(text, 'long paths');
-    const shown = linesOf(text).filter((l) => l.startsWith('- /命令/')).length;
-    const note = noteOf(text)!;
-    const call = nextCall(text, `这一页其余 ${100 - shown} 个节点：`)!;
-    assert.ok(call.paths!.length > 1 && call.paths!.length < 100 - shown, `${call.paths!.length} paths in the call`);
-    assert.deepEqual(call.paths, nodes.slice(shown, shown + call.paths!.length).map((n) => n.path));
-    assert.ok(note.includes(`其后的 ${100 - shown - call.paths!.length} 个节点（从 ${nodes[shown + call.paths!.length].path} 起）`));
+    const node = { path, reference: `tree:${root}${path}`, name: 'DNS资源记录', level: 'leaf', digest: H('3'), children: [], entries };
+    const text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes: [node], trace: TRACE }));
+    withinBudget(text, 'a long manual section');
+    const shown = linesOf(text).filter((l) => l.startsWith('  · [行为] **sdns 命令 '));
+    assert.equal(shown.length, 114, 'every entry, in order');
+    assert.ok(shown.every((l, k) => l.startsWith(`  · [行为] **sdns 命令 ${k}** `) && l.includes(entries[k].reference)));
+    assert.ok(!text.includes('再往后的') && !text.includes('/console/knowledge/tree'), 'no entry left to the console, which a model cannot open');
   });
 
-  test('a node too long for a page: its entries first, then children as fit, and a note with a call for the children left out', () => {
+  test('a node with 2000 children shows its entries first, then every child', () => {
     const root = H('d');
     const path = '/commands/show';
     const node = {
@@ -1046,12 +1003,10 @@ describe('get_nodes text', () => {
     withinBudget(text, 'one big node');
     const lines = linesOf(text);
     assert.equal(lines.filter((l) => l.startsWith('  · [定义] show 的第 ')).length, 3, 'every entry is shown');
-    const children = lines.filter((l) => l.startsWith('  子节点 ')).length;
-    assert.ok(children > 300 && children < 2000);
-    const note = noteOf(text)!;
-    assert.ok(note.includes(`节点 ${path} 的子节点 ${2000 - children} 个`));
-    const call = nextCall(text, `节点 ${path} 的其余子节点：`)!;
-    assert.equal(call.paths![0], `${path}/option${children}`);
+    const children = lines.flatMap((l, at) => (l.startsWith('  子节点 ') ? [at] : []));
+    assert.equal(children.length, 2000, 'every child');
+    assert.ok(children[0] > indexOf(lines, (l) => l.startsWith('  · [定义] show 的第 2 ')), 'after the entries');
+    assert.equal(noteOf(text), null);
   });
 
   test('the text of a small source is given whole, verbatim', () => {
@@ -1086,16 +1041,22 @@ function packOf(i: number): PackSummary {
 }
 
 describe('list_task_packs, upload_file and resolve_reference texts', () => {
-  test('a truncated task-pack list names an advancing offset with the same filters', () => {
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE });
-    const text = toolText('list_task_packs', answer, { packList: { offset: 7, kind: 'workflow' } });
-    withinBudget(text, 'task-pack continuation');
-    const match = noteOf(text)?.match(/继续 list_task_packs (\{[^}]+\})/);
-    assert.ok(match, 'the omitted packs have a tool-based continuation');
-    const next = JSON.parse(match[1]!) as { kind: string; offset: number };
-    assert.equal(next.kind, 'workflow');
-    assert.ok(next.offset > 7 && next.offset < 307);
-    assert.match(noteOf(text)!, /\/console\/packs/);
+  test('a long task-pack list and an oversized pack are given whole, every detail of every pack (decision 158)', () => {
+    const packs = Array.from({ length: 300 }, (_, i) => packOf(i));
+    const text = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, trace: TRACE }), { packList: { offset: 7, kind: 'workflow' } });
+    withinBudget(text, '300 packs');
+    const lines = linesOf(text);
+    for (const pack of packs) assert.ok(lines.includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), pack.pack);
+    assert.equal(lines.filter((l) => l.startsWith('  示例 start_run：')).length, 300);
+    assert.ok(!text.includes('继续 list_task_packs') && !text.includes('详情（部分：'), 'no page to go on to, no brief form');
+    const pack = packOf(1);
+    const oversized = { ...pack, inputs: Array.from({ length: 300 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}`, description: '长'.repeat(400) })) };
+    for (const context of [{ packList: { offset: 0 } }, { packList: { offset: 0, packId: pack.id } }]) {
+      const one = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE }), context);
+      withinBudget(one, 'one oversized pack');
+      assert.equal(linesOf(one).filter((l) => /^  输入 input_\d+（/.test(l)).length, 300, 'every input');
+      assert.ok(!one.includes('超出回答预算'));
+    }
   });
 
   test('every pack is in the index whatever the offset, then the declared run context, then the details (decision 113)', () => {
@@ -1115,72 +1076,6 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.ok(lines.includes('- toy-pack-2@1.0.2 合成工作流 2（工作流）：评审合成的思维导图（合成）'), 'the details of the page');
     const unread = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1)], index: index.slice(1, 2), trace: TRACE }), { packList: { offset: 0, contextUnread: true } }));
     assert.ok(unread.includes('运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'), 'a context that could not be read is said, not left out');
-  });
-
-  test('a list whose details do not fit shows every pack briefly and says how to read one in full (A05 R[1])', () => {
-    const long = (i: number) => ({ ...packOf(i), inputs: packOf(i).inputs.map((input) => ({ ...input, description: `输入说明（合成）${'长'.repeat(900)}` })) });
-    const packs = Array.from({ length: 30 }, (_, i) => long(i));
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, index: packs.map((p) => ({ pack: p.pack, title: p.title, kind: p.kind })), trace: TRACE });
-    const text = toolText('list_task_packs', answer, { packList: { offset: 0 } });
-    withinBudget(text, 'brief task packs');
-    const lines = linesOf(text);
-    for (const pack of packs) {
-      assert.ok(lines.includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), `${pack.pack} is shown though the whole details do not fit`);
-      assert.ok(text.includes(`示例 start_run：${startRunExample(pack)}`), 'its example call stays');
-    }
-    const first = packs[0]!.inputs[0]!;
-    const written = lines.find((line) => line.startsWith(`  输入 ${first.slot}（`));
-    assert.ok(written?.startsWith(`  输入 ${first.slot}（${first.required ? '必填' : '可选'}${first.many ? '，可多个' : ''}）：输入说明（合成）长`), written);
-    assert.ok(written?.includes('写法 {"reference":"src:0000…"}') && !written.includes('0'.repeat(64)), 'an input is written the short way');
-    assert.ok(lines.some((line) => line.startsWith('  参数：depth（必填）、strict（可选）')), lines.join('\n'));
-    assert.equal(lines.some((line) => line.startsWith('  要求项 ') || line.startsWith('  参数 ')), false, 'no full line of details');
-    const head = lines.find((line) => line.startsWith('详情（'))!;
-    assert.match(head, /^详情（部分：全部详情放不下这段回答/, 'the shortening is marked and its reason is true');
-    assert.ok(head.includes('list_task_packs {"pack_id":"<编号>"}，编号不带 @版本'), head);
-    const note = noteOf(text)!;
-    assert.match(note, /输入说明的超出部分（\d+ 处）/, 'a clipped description is named as what it is');
-    assert.ok(note.includes('list_task_packs {"pack_id":"<编号>"}，编号不带 @版本'), note);
-  });
-
-  test('one pack too long for an answer is shown briefly rather than left out, unless it was asked for by its exact ID', () => {
-    const pack = packOf(1);
-    const oversized = { ...pack, inputs: Array.from({ length: 100 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}`, description: '长'.repeat(400) })) };
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE });
-    const listed = toolText('list_task_packs', answer, { packList: { offset: 0 } });
-    withinBudget(listed, 'one brief task pack');
-    assert.ok(linesOf(listed).includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), listed);
-    const exact = toolText('list_task_packs', answer, { packList: { offset: 0, packId: pack.id } });
-    assert.equal(linesOf(exact).includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), false, 'an exact query is not sent back to itself');
-    assert.match(noteOf(exact)!, /单个工作流详情超出回答预算/);
-  });
-
-  test('a brief list of short descriptions marks itself though no field was clipped, and an empty list keeps the plain head', () => {
-    const short = (i: number) => ({ ...packOf(i), requirements: Array.from({ length: 40 }, (_, n) => ({ ...REQUIREMENTS[0]!, key: `req_${n}` })) });
-    const packs = Array.from({ length: 12 }, (_, i) => short(i));
-    const text = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, trace: TRACE }), { packList: { offset: 0 } });
-    assert.ok(linesOf(text).some((line) => line.startsWith('详情（部分：')), text.slice(0, 600));
-    assert.equal(noteOf(text), null, 'nothing to say beyond the head: no field went over a cap and no pack was dropped');
-    const empty = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [], trace: TRACE }), { packList: { offset: 0 } }));
-    assert.equal(empty.some((line) => line.startsWith('详情（部分：')), false, empty.join('\n'));
-  });
-
-  test('on a later page the note numbers the packs it left out by their place in the whole list', () => {
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE });
-    const note = noteOf(toolText('list_task_packs', answer, { packList: { offset: 7 } }))!;
-    const left = /第 (\d+) 到第 (\d+) 个/.exec(note);
-    assert.ok(left, note);
-    assert.equal(Number(left[2]), 307, 'the last one left out is the last of the list');
-    assert.ok(Number(left[1]) > 8);
-  });
-
-  test('an oversized single pack does not suggest the same exact query in a loop', () => {
-    const pack = packOf(1);
-    const oversized = { ...pack, inputs: Array.from({ length: 300 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}` })) };
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE });
-    const text = toolText('list_task_packs', answer, { packList: { offset: 0, packId: pack.id } });
-    withinBudget(text, 'oversized task pack');
-    assert.match(noteOf(text)!, /单个工作流详情超出回答预算/);
-    assert.doesNotMatch(noteOf(text)!, /list_task_packs/);
   });
 
   test('a knowledge view input is shown in the form its parser requires, not as a bare number', () => {
@@ -1216,7 +1111,7 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.equal(startRunExample({ ...packOf(4), products: [], parameters: [], inputs: [] }), '{"pack":"toy-pack-4@1.0.4","inputs":{}}', 'no product without bound lines');
     const many = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE }));
     withinBudget(many, '300 packs');
-    assert.match(noteOf(many)!, /\/console\/packs/);
+    assert.equal(linesOf(many).filter((l) => l.startsWith('  示例 start_run：')).length, 300, 'every pack in full');
   });
 
   test('a pack that ships tools/ shows one local-tools line with the digest-pinned install command; a pack without none', () => {
@@ -1228,23 +1123,25 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.equal(lines.filter((l) => l.startsWith('  本地工具')).length, 1, 'only the pack with tools/ carries the line');
   });
 
-  test('an upload with a large structure summary stays within the budget and points at the source', () => {
+  test('an upload with a large structure summary gives it whole', () => {
     const summary = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`element${i}`, i]));
     const answer = UploadFileOutput.parse({ call_result: 'ok', errors: [], acceptance: 'accepted', reference: `src:${H('e')}`, sha256: H('e'), size: 12, media_type: 'application/xml', structure: { parser: 'xml@1', summary }, trace: TRACE });
     const text = toolText('upload_file', answer);
     withinBudget(text, 'upload');
     const lines = linesOf(text);
     assert.deepEqual(lines.slice(0, 5), [`回执：已受理，引用 src:${H('e')}`, '大小 12 字节，媒体类型 application/xml', `sha256 ${H('e')}`, '解析器 xml@1 认出了这份文件', '结构摘要：']);
-    assert.match(noteOf(text)!, new RegExp(`读原文：get_nodes \\{"reference":"src:${H('e')}"\\}`));
+    assert.ok(lines.includes('  element0 0') && lines.includes('  element4999 4999'), 'every element');
+    assert.equal(noteOf(text), null, 'nothing left out');
   });
 
-  test('resolve_reference with many long candidates stays within the budget', () => {
+  test('resolve_reference with many long candidates lists every one, long texts shortened by field', () => {
     const references = Array.from({ length: 2000 }, (_, i) => ({ reference: `src:${H('e')}/text@1/l/${i + 1}`, text: `候选 ${i}：${'原文'.repeat(i % 50 === 0 ? 3000 : 20)}`, role: 'expected' as const }));
     const answer = ResolveReferenceOutput.parse({ call_result: 'ok', errors: [], resolution: 'ambiguous', references, diagnostics: ['这是预览，不是证据'], trace: TRACE });
     const text = toolText('resolve_reference', answer);
     withinBudget(text, 'resolve');
     assert.equal(linesOf(text)[0], '解析状态：有歧义，可能所指 2000 个（预览，不作凭据）');
-    assert.match(noteOf(text)!, /可能所指 \d+ 个/);
+    assert.equal(linesOf(text).filter((l) => l.startsWith(`- src:${H('e')}/text@1/l/`)).length, 2000, 'every candidate');
+    assert.match(noteOf(text)!, /可能所指原文的超出部分（40 处）/, 'a long candidate keeps its start and is named');
   });
 });
 

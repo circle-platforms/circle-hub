@@ -1,13 +1,13 @@
 import { isAbandonedResult } from '../runs/api.ts';
 import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
-// and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
-// text but the text of a source is laid out within TEXT_BUDGET (budget.ts): the facts a model works from come first (receipt
-// and counts, the state of each requirement, every problem and unknown), long lists lose whole entries from their end, a long
-// field keeps its start and says how long it was and where the whole is, and one note before the trace line names what was
-// left out or shortened and exactly how to read it. A way to read is offered only in a form the server takes: page cursors
-// only when the server says it pages (TextContext.paging); otherwise record pointers and the console page. The text of a
-// source goes out whole (decision 157). structuredContent keeps the whole answer as JSON.
+// and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). The
+// facts a model works from come first (receipt and counts, the state of each requirement, every problem and unknown). No
+// answer is cut to a length (decisions 157 and 158, budget.ts): lists, nodes, results and the text of a source go out whole,
+// and how much stays in a model's context is the client's to handle. A long field inside a line keeps its start and says how
+// long it was and where the whole is, and one note before the trace line names what was shortened and exactly how to read
+// it. A way to read is offered only in a form the server takes: page cursors only when the server says it pages
+// (TextContext.paging); otherwise record pointers and the console page. structuredContent keeps the whole answer as JSON.
 import { createHash } from 'node:crypto';
 import { applicabilityText, viewIdExample } from '../knowledge/api.ts';
 import { ZodError, type z } from 'zod';
@@ -44,7 +44,7 @@ import {
 } from '../../contracts/src/tools.ts';
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, type Reference } from '../refs/api.ts';
-import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
+import { fit, oneLine, type Block, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type Labels, type LayerTerminal } from './claims.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
@@ -57,8 +57,8 @@ type ResolveOut = z.infer<typeof ResolveReferenceOutput>;
 type SubmitOut = z.infer<typeof SubmitResultOutput>;
 
 /**
- * What a text may use besides the validated answer. The server passes what it knows; without it every text still fits the
- * budget and names only ways to read that work without it (sources by range, records by pointer, the console page).
+ * What a text may use besides the validated answer. The server passes what it knows; without it a text names only ways to
+ * read that work without it (records by pointer, the console page).
  */
 export interface TextContext {
   /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
@@ -79,8 +79,6 @@ export interface TextContext {
 
 // ---------------------------------------------------------------- shared lines
 
-/** A long procedure or problem list keeps this much at its own priority; the rest yields to what follows (softCap). */
-const SOFT_CAP = Math.floor(TEXT_BUDGET * 0.3);
 /** Up to this many items a list whose locations follow no rule gives each item's location; a longer one is id, label and summary only (ItemProjection.summary). */
 const LOCATED_ITEMS = 50;
 /** The longest a field is shown inside a line; a longer one keeps its start and is marked (Clip). */
@@ -88,12 +86,6 @@ const CLIP = { name: 300, code: 200, label: 300, summary: 300, problemLabel: 80,
 type Limits = { readonly [K in keyof typeof CLIP]: number };
 /** Content read by reference is the place to read things whole: no field is shortened there (long lines are paged). */
 const WHOLE: Limits = Object.fromEntries(Object.keys(CLIP).map((key) => [key, Number.POSITIVE_INFINITY])) as unknown as Limits;
-/** Room kept on a page of knowledge nodes for the note (it can carry a get_nodes call of child paths). */
-const NODE_NOTE_ROOM = 8000;
-/** The longest get_nodes call of node paths a note gives. */
-const PATHS_CALL = 6000;
-/** GetNodesInput.paths takes at most this many paths. */
-const MAX_PATHS = 256;
 
 /** The example reference of an upload in example calls: valid syntax, plainly not a real digest. */
 const EXAMPLE_SOURCE = `src:${'0'.repeat(64)}`;
@@ -397,31 +389,22 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
 /** How to read one pack whole, from a list that shows it briefly. An ID has no version: PackId refuses one. */
 const READ_ONE = '读一个工作流的全部详情：list_task_packs {"pack_id":"<编号>"}，编号不带 @版本';
 /** How much of an input's description a brief entry keeps: enough for what the written form's placeholder stands for. */
-const BRIEF_DESCRIPTION = 60;
-
-/**
- * One pack of the list. `brief` is for a list whose whole details do not fit one answer: what the pack is, the start of what
- * each input takes and how it is written, the names of its parameters and the example, so a reader can choose and often call
- * without paging (A05 R[1]).
- */
-function packEntry(p: PackSummary, brief = false): Entry {
+/** One pack of the list: what it is, its inputs, parameters, example and requirements (A05 R[1]). */
+function packEntry(p: PackSummary): Entry {
   const clip = new Clip(null, '在控制台工作流页 /console/packs 查看');
   const lines: string[] = [`- ${clip.field(p.pack, CLIP.name, '工作流编号的超出部分')} ${clip.field(p.title, CLIP.name, '工作流标题的超出部分')}（${uiLabelOf('pack_kind', p.kind)}）：${clip.field(p.description, CLIP.message, '工作流说明的超出部分')}`];
   if (p.products.length > 0) lines.push(`  产品：${p.products.map((name) => clip.field(name, CLIP.name, '产品名的超出部分')).join('、')}`);
   const shapesOf = (input: PackSummary['inputs'][number]): string => [...new Set(input.accepts.map((a) => JSON.stringify(bindingExample(a))))].join(' 或 ');
-  if (brief) {
-    for (const input of p.inputs) lines.push(`  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, BRIEF_DESCRIPTION, '输入说明的超出部分', READ_ONE)}；写法 ${clip.field(shapesOf(input).replaceAll(EXAMPLE_SOURCE, `${EXAMPLE_SOURCE.slice(0, 8)}…`), CLIP.line, '输入写法的超出部分')}`);
-    if (p.parameters.length > 0) lines.push(`  参数：${p.parameters.map((parameter) => `${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）`).join('、')}`);
-  } else for (const input of p.inputs) {
+  for (const input of p.inputs) {
     lines.push(
       `  输入 ${clip.field(input.slot, CLIP.code, '输入槽名的超出部分')}（${labelOf('source_role', input.role)}，${required(input.required)}${input.many ? '，可多个' : ''}）：${clip.field(input.description, CLIP.message, '输入说明的超出部分')}；接受 ${clip.field(input.accepts.join('、'), CLIP.line, '接受类型的超出部分')}；写法 ${clip.field(shapesOf(input), CLIP.line, '输入写法的超出部分')}`,
     );
   }
-  if (!brief) for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
+  for (const parameter of p.parameters) lines.push(`  参数 ${clip.field(parameter.name, CLIP.code, '参数名的超出部分')}（${required(parameter.required)}）：${clip.field(parameter.description, CLIP.message, '参数说明的超出部分')}${parameter.schema !== undefined ? `；模式 ${clip.field(JSON.stringify(parameter.schema), CLIP.line, '参数模式的超出部分')}` : ''}`);
   if(p.space)lines.push(`  ${labelOf('knowledge_space_kind','personal')}：${p.space}`);
   if (p.local_tools !== undefined) lines.push(`  本地工具 ${p.local_tools.count} 个；安装：${clip.field(p.local_tools.install, CLIP.line, '安装命令的超出部分')}；清单见 structuredContent`);
   lines.push(p.kind==='skill'&&p.requirements.length===0?`  读取做法 get_nodes：${JSON.stringify({pack:p.pack,...(p.space?{pack_space:p.space}:{}),file:'SKILL.md'})}`:`  示例 start_run：${startRunExample(p)}`);
-  if (!brief) for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
+  for (const r of p.requirements) lines.push(`  要求项 ${requirementFacts(r, clip)}`);
   return clip.entry(lines);
 }
 
@@ -465,20 +448,8 @@ function listText(v: ListOut, context: TextContext): string {
   } else if (context.packList?.contextUnread === true) {
     blocks.push({ priority: 0, head: ['运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'] });
   }
-  const details = (head: string, entries: Entry[]): Block => ({ priority: 1, head: [head], entries, first: offset + 1, unit: uiLabelOf('pack_kind', 'workflow'), measure: '个', more: (from) => {
-    const list = context.packList;
-    if (!list) return '工作流：在控制台工作流页 /console/packs 查看';
-    if (from === 0 && list.packId === v.packs[0]?.id) return '单个工作流详情超出回答预算；在控制台工作流页 /console/packs 查看';
-    if (from === 0) return `单个工作流详情超出回答预算；按精确 ID 查询 list_task_packs ${JSON.stringify({ pack_id: v.packs[0]?.id })}，或在控制台工作流页 /console/packs 查看`;
-    const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
-    return `工作流：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台工作流页 /console/packs 查看`;
-  } });
-  const tail = [traceLine(v.trace)];
-  const whole = fit([...blocks, details('详情（每个工作流的产品、输入、参数、示例和要求项）：', v.packs.map((p) => packEntry(p)))], { tail });
-  if (v.packs.length === 0 || whole.shown.at(-1) === v.packs.length || context.packList?.packId !== undefined) return whole.text;
-  // Every pack briefly rather than some in full: paging to find the one pack wanted costs a reader a whole round. An exact
-  // query stays as it is, since the note of a brief entry would only send the reader back to that same query.
-  return fit([...blocks, details(`详情（${labelOf('qualifier_mark', 'partial')}：全部详情放不下这段回答，这里每个工作流只给说明、输入说明的开头和写法、参数名和示例，不给输入的接受类型、参数的说明和模式、要求项；${READ_ONE}）：`, v.packs.map((p) => packEntry(p, true)))], { tail }).text;
+  const details: Block = { priority: 1, head: ['详情（每个工作流的产品、输入、参数、示例和要求项）：'], entries: v.packs.map((p) => packEntry(p)), first: offset + 1, unit: uiLabelOf('pack_kind', 'workflow'), measure: '个' };
+  return fit([...blocks, details], { tail: [traceLine(v.trace)] }).text;
 }
 
 // ---------------------------------------------------------------- upload_file
@@ -901,7 +872,7 @@ const recordOf = (reference: string): string => {
 
 /** How to read the part of a stored result that starts at line `at` of its layout, or the item `tokens` name. */
 function resultWay(reference: string, at: number, tokens: string[] | null, paging: boolean): string {
-  if (paging) return `${callText('get_nodes', { reference, cursor: pageCursor(reference, at) })}，再按每页末尾给出的 cursor 接着读`;
+  if (paging) return `${callText('get_nodes', { reference, cursor: pageCursor(reference, at) })}（从那一处读到末尾）`;
   if (tokens === null) return readCall(reference);
   const numbered = NUMBER.test(tokens.at(-1) ?? '');
   return `逐个读 ${readCall(recReference(recordOf(reference), tokens))}${numbered ? '，读完把末尾的序号加一读下一个' : ''}`;
@@ -926,10 +897,7 @@ function startText(v: StartOut, context: TextContext): string {
     // The run's result first (D05 R[1]): its counts, the state of every requirement, where the whole result is.
     head.push(`结果（start_run 时由 Hub 算出）：${countsText(production.counts)}`);
     if (full !== null) head.push('要求项（满足状态与各层终态的条目数）：', ...requirementCounts(full, r.requirements));
-    const read = paging
-      ? `${readCall(production.reference)} 读第一页，再按每页末尾给出的 cursor 接着读`
-      : `${readCall(production.reference)} 读开头，单个条目读 ${readCall(`${production.reference}#/partitions/<分区>/<序号>`)}`;
-    head.push(`完整结果 ${production.reference}：用 ${read}；也可${seeConsole(r.run)}${full === null ? '；问题与未知的明细在完整结果里' : ''}`);
+    head.push(`完整结果 ${production.reference}：用 ${readCall(production.reference)} 整份读，单个条目读 ${readCall(`${production.reference}#/partitions/<分区>/<序号>`)}；也可${seeConsole(r.run)}${full === null ? '；问题与未知的明细在完整结果里' : ''}`);
   }
   const target = [r.product && `产品 ${headClip.field(r.product, CLIP.name, '产品名的超出部分')}`, r.version && `版本 ${headClip.field(r.version, CLIP.name, '版本名的超出部分')}`, r.build && `构建 ${headClip.field(r.build, CLIP.name, '构建名的超出部分')}`].filter(Boolean);
   if (target.length > 0) head.push(target.join('，'));
@@ -975,8 +943,7 @@ function startText(v: StartOut, context: TextContext): string {
       unit:'支持事实',measure:'条',more:from => `其余支持事实：${resultWay(production.reference, 0, supported[from].tokens, false)}`,
     };
     const problems = problemLines(full, production.reference, null);
-    pushCapped(
-      blocks,
+    blocks.push(
       {
         priority: 1,
         head: [problems.length > 0 ? `问题与未知（${problems.length} 条；${PROBLEMS_HEAD}）：` : '问题与未知：没有'],
@@ -985,7 +952,6 @@ function startText(v: StartOut, context: TextContext): string {
         measure: '条',
         more: (from) => `问题与未知：${resultWay(production.reference, layout.problemsAt + from, problems[from]?.tokens ?? null, paging)}`,
       },
-      2,
     );
   }
   if (r.target_basis.length > 0) {
@@ -1019,7 +985,7 @@ function startText(v: StartOut, context: TextContext): string {
   const paged = (pointer: string, from: number): string | null => {
     if (record === null || !paging) return null;
     const reference = `${record}#${pointer}`;
-    return `${callText('get_nodes', { reference, cursor: pageCursor(reference, from) })}，再按每页末尾给出的 cursor 接着读`;
+    return `${callText('get_nodes', { reference, cursor: pageCursor(reference, from) })}（从那一处读到末尾）`;
   };
   // Lines are shown as the pack wrote them; only a line longer than CLIP.line is shortened.
   const procedure = r.instructions.split('\n').map((line, i): Entry => {
@@ -1027,7 +993,7 @@ function startText(v: StartOut, context: TextContext): string {
     const clip = new Clip(null, `规程全文：${paged('/instructions', i) ?? seeConsole(r.run)}`);
     return clip.entry(clip.field(line, CLIP.line, '规程行的超出部分'));
   });
-  pushCapped(blocks, { priority: 2, head: ['规程：'], entries: procedure, unit: '规程', measure: '行', more: (from) => `规程：${paged('/instructions', from) ?? seeConsole(r.run)}` }, 5);
+  blocks.push({ priority: 2, head: ['规程：'], entries: procedure, unit: '规程', measure: '行', more: (from) => `规程：${paged('/instructions', from) ?? seeConsole(r.run)}` });
   blocks.push({
     priority: 1,
     head: ['要求项：'],
@@ -1072,9 +1038,9 @@ function startText(v: StartOut, context: TextContext): string {
     return `条目：${seeConsole(r.run)}`;
   };
   blocks.push({ priority: 3, head: items.head, entries: items.entries, unit: '条目', measure: '个', more: itemsMore });
-  if(supportedBlock)pushCapped(blocks,supportedBlock,5);
+  if(supportedBlock)blocks.push(supportedBlock);
   if (r.slots !== undefined) {
-    const schemaWay = record === null ? seeConsole(r.run) : `${readCall(`${record}#/slots/schema`)}${paging ? '，再按每页末尾给出的 cursor 接着读' : ''}`;
+    const schemaWay = record === null ? seeConsole(r.run) : readCall(`${record}#/slots/schema`);
     const schema = slotSchemaLines(r.slots, `完整的槽位模式：${schemaWay}`);
     // The compact lines leave out descriptions and patterns: say once where the whole JSON Schema is.
     if (record !== null) schema.head.splice(1, 0, `完整的槽位模式（JSON Schema，带说明和写法）：${schemaWay}`);
@@ -1086,11 +1052,6 @@ function startText(v: StartOut, context: TextContext): string {
     : `示例 submit_result（一行 JSON；把空列表换成你的陈述，跳过的条目写 {"item":"<编号>","handling":"skipped","reason":"<理由>"}${reuse ? '；有“可沿用”的条目可以用 "reuse":"<该引用>" 代替 slots' : ''}）：`;
   blocks.push({ priority: 0, head: [explain, submitExample(r)] });
   return fit(blocks, { fallback: seeConsole(r.run), tail: [traceLine(v.trace)] }).text;
-}
-
-/** Pushes a list as two blocks (softCap): its first SOFT_CAP characters at its own priority, the rest at priority `rest`. */
-function pushCapped(blocks: Block[], block: Block & { entries: readonly Entry[] }, rest: number): void {
-  blocks.push(...softCap(block, SOFT_CAP, rest, blocks.length));
 }
 
 function sourceEntry(s: SourceBinding, run: string): Entry {
@@ -1111,24 +1072,8 @@ function sourceEntry(s: SourceBinding, run: string): Entry {
 /** The console page of a knowledge node. */
 const nodePage = (root: string, path: string): string => `在控制台知识库页 /console/knowledge/tree?root=${root}&path=${encodeURIComponent(path)} 查看`;
 
-/** A get_nodes call of as many of `paths` as fit within PATHS_CALL characters (and MAX_PATHS), and how many it holds. */
-function pathsCall(root: string, paths: readonly string[]): { call: string; count: number } {
-  let size = callText('get_nodes', { root, paths: [], depth: 0 }).length;
-  let n = 0;
-  while (n < paths.length && n < MAX_PATHS) {
-    const add = JSON.stringify(paths[n]).length + (n > 0 ? 1 : 0);
-    if (n > 0 && size + add > PATHS_CALL) break;
-    size += add;
-    n++;
-  }
-  return { call: callText('get_nodes', { root, paths: paths.slice(0, n), depth: 0 }), count: n };
-}
-
-/**
- * A node: its line, its entries (the definitions to cite) and its children. A node too long for one page keeps its line and
- * as many entries, then children, as fit `room`, and names what it left out with a way to read it.
- */
-function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
+/** A node: its line, all its entries (the definitions to cite), its children and the related references the service gave. */
+function nodeEntry(node: KnowledgeNode, root: string): Entry {
   const page = nodePage(root, node.path);
   const own = new Clip(null, page);
   const relationCount=node.backlinks?.configured?`；反向关联共 ${node.backlinks.total} 个条目`:'';
@@ -1163,44 +1108,19 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
   });
   const lines = [head];
   const omitted: Omission[] = [...own.omitted];
-  let used = head.length + 1;
-  let keptEntries = 0;
-  while (keptEntries < entries.length && used + entries[keptEntries].text.length + 1 <= room) used += entries[keptEntries++].text.length + 1;
-  let keptChildren = 0;
-  while (keptEntries === entries.length && keptChildren < children.length && used + children[keptChildren].text.length + 1 <= room) used += children[keptChildren++].text.length + 1;
-  for (const e of entries.slice(0, keptEntries)) {
+  for (const e of [...entries, ...children]) {
     lines.push(e.text);
     omitted.push(...e.omitted);
   }
-  for (const c of children.slice(0, keptChildren)) {
-    lines.push(c.text);
-    omitted.push(...c.omitted);
-  }
   if(node.backlinks){
-    const related=node.backlinks.entries;let shown=0;
-    for(const link of related){
+    for(const link of node.backlinks.entries){
       const clip=new Clip(null,page);
-      const line=`  关联引用 ${link.reference}；摘要 ${clip.field(link.summary.replace(/\s+/g,' '),CLIP.line,'关联摘要的超出部分')}`;
-      if(used+line.length+1>room)break;lines.push(line);used+=line.length+1;shown++;omitted.push(...clip.omitted);
+      lines.push(`  关联引用 ${link.reference}；摘要 ${clip.field(link.summary.replace(/\s+/g,' '),CLIP.line,'关联摘要的超出部分')}`);omitted.push(...clip.omitted);
     }
-    for(const note of node.backlinks.notes){const line='  关联说明：'+plain(note);if(used+line.length+1<=room){lines.push(line);used+=line.length+1;}}
-    const total=node.backlinks.total;
+    for(const note of node.backlinks.notes)lines.push('  关联说明：'+plain(note));
+    // The service gives a page of the related entries; the rest are read through the view's cursor.
+    const total=node.backlinks.total,shown=node.backlinks.entries.length;
     if(total!==null&&shown<total)omitted.push({what:`反向关联条目 ${total-shown} 个`,more:`反向视图还有记录：${node.backlinks.view_id ?? "请用同一运行重新读取节点以取得视图标识"}，读取后沿视图游标翻页`});
-  }
-  if (keptEntries < entries.length) {
-    const left = [...node.entries.map(e => e.reference), ...(node.contributions ?? []).map(e => `rec:${e.record}`)].slice(keptEntries);
-    let listed = 0;
-    let size = 0;
-    while (listed < left.length && (listed === 0 || size + left[listed].length + 1 <= 3000)) size += left[listed++].length + 1;
-    omitted.push({
-      what: `节点 ${node.path} 的条目 ${left.length} 个`,
-      more: `节点 ${node.path} 的其余条目：每个引用用 get_nodes {"reference":"<引用>"} 读一次：${left.slice(0, listed).join('、')}${listed < left.length ? `；再往后的 ${left.length - listed} 个条目${page}` : ''}`,
-    });
-  }
-  if (keptChildren < children.length) {
-    const left = node.children.slice(keptChildren).map((c) => c.path);
-    const { call, count } = pathsCall(root, left);
-    omitted.push({ what: `节点 ${node.path} 的子节点 ${left.length} 个`, more: `节点 ${node.path} 的其余子节点：${call}${count < left.length ? `；再往后的 ${left.length - count} 个子节点${page}` : ''}` });
   }
   return omitted.length === 0 ? lines : { lines, omitted };
 }
@@ -1225,15 +1145,7 @@ function nodesText(v: NodesOut, context: TextContext): string {
   if (covered !== null) head.push(`覆盖：${headClip.field(covered, CLIP.line, '覆盖说明的超出部分')}`);
   // The service's cursor is copied whole: it is a token.
   if (typeof v.next === 'string') head.push(`还有下一页：用同样的 root、paths 和 depth，再加 cursor ${v.next}`);
-  const tail = [traceLine(v.trace)];
-  const room = TEXT_BUDGET - sizeOf(head) - sizeOf(tail) - NODE_NOTE_ROOM;
-  const more = (from: number): string => {
-    const paths = nodes.slice(from).map((n) => n.path);
-    const { call, count } = pathsCall(root, paths);
-    const rest = paths.length - count;
-    return `这一页其余 ${paths.length} 个节点：${call}${rest > 0 ? `；其后的 ${rest} 个节点（从 ${paths[count]} 起）的路径没有列出：读它们的上级节点（depth 1）可以看到` : ''}`;
-  };
-  return fit([{ priority: 0, head, omitted: headClip.omitted }, { priority: 1, entries: nodes.map((node) => nodeEntry(node, root, room)), unit: '节点', measure: '个', more }], { tail }).text;
+  return fit([{ priority: 0, head, omitted: headClip.omitted }, { priority: 1, entries: nodes.map((node) => nodeEntry(node, root)), unit: '节点', measure: '个' }], { tail: [traceLine(v.trace)] }).text;
 }
 
 // ---------------------------------------------------------------- get_nodes: content by reference
@@ -1378,18 +1290,7 @@ function insidePair(text: string, at: number): boolean {
   return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
 }
 
-/** The end of the piece of `text` from `from` that takes at most `room` characters: never inside a surrogate pair, never just before a CR. */
-function pieceEnd(text: string, from: number, room: number): number {
-  let end = Math.min(text.length, from + Math.max(1, room));
-  if (end < text.length) {
-    const code = text.charCodeAt(end - 1);
-    if (code >= 0xd800 && code <= 0xdbff) end = end - 1 > from ? end - 1 : end + 1;
-    if (end < text.length && text.charCodeAt(end) === 0x0d) end++;
-  }
-  return end;
-}
-
-/** Page the disclosed structure itself, never manufacture source byte ranges from a summary. */
+/** The disclosed structure itself, never source byte ranges made up from a summary. */
 function structurePage(c:Content,trace:string,context:TextContext):string {
   const {parser,summary,...rest}=c.structure!;
   const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
@@ -1397,32 +1298,16 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
   const head=[`内容 ${c.reference}：${sourceAccess(c)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...heldStep(c),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
   const tail=[traceLine(trace)];
   if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
+  // The whole summary from where the reader is: a cursor of an earlier page still reads on from its position.
   const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
   const valid=at && lines[at.line] && at.offset<lines[at.line].length;
   const start=valid?at:{line:0,offset:0};
-  if(context.cursor && !valid)head.push('cursor 不对应本页结构的有效位置，下面从第一页显示');
-  const way=(line:number,offset=0):string=>context.paging===true
-    ? `下一页：${callText('get_nodes',{reference:c.reference,cursor:pageCursor(c.reference,line,offset)})}`
-    : '缺少结构续读入口；请管理员提供可公开的结构摘录，再用 get_nodes 按摘录引用读取';
-  const room=TEXT_BUDGET-sizeOf(head)-sizeOf(tail)-1500;
-  const end=pieceEnd(lines[start.line],start.offset,room);
-  let entries:Entry[],more:(shown:number)=>string;
-  if(end<lines[start.line].length) {
-    const next=way(start.line,end);
-    entries=[{lines:[lines[start.line].slice(start.offset,end)],omitted:[{what:'本行及后续结构摘要',more:next}]}];
-    more=()=>next;
-  } else {
-    entries=[lines[start.line].slice(start.offset),...lines.slice(start.line+1)];
-    more=shown=>way(start.line+shown,shown===0?start.offset:0);
-  }
-  return fit([{priority:0,head},{priority:1,entries,unit:'结构摘要',measure:'行',first:start.line+1,more}],{tail,fallback:way(start.line,start.offset)}).text;
+  if(context.cursor && !valid)head.push('cursor 不对应本页结构的有效位置，下面从第一行显示');
+  const entries=[lines[start.line].slice(start.offset),...lines.slice(start.line+1)];
+  return fit([{priority:0,head},{priority:1,entries,unit:'结构摘要',measure:'行',first:start.line+1}],{tail}).text;
 }
 
-/**
- * The content a reference points at, one page at a time within the budget: whole lines, and a line longer than the room
- * of a page in pieces. The way to the rest is a page cursor when the server pages; otherwise a byte range or text@1 lines of
- * a source, a pointer to the next part of a record, or the console page.
- */
+/** The content a reference points at, whole from the reader's position (a cursor an earlier answer gave), else from the start. */
 function contentText(c: Content, trace: string, context: TextContext): string {
   if(c.text===undefined && c.structure!==undefined)return structurePage(c,trace,context);
   const tail = [traceLine(trace)];
@@ -1444,56 +1329,30 @@ function contentText(c: Content, trace: string, context: TextContext): string {
     blocks.push({ priority: 1, head: view.head });
     return fit(blocks, { tail }).text;
   }
-  const paging = context.paging === true;
   const pageHead: string[] = [];
   let start: Position = { line: 0, offset: 0 };
   const cursor = context.cursor ?? null;
   if (cursor !== null) {
     const at = cursorPosition(c.reference, cursor);
-    // The server's own cursors never split a character (pieceEnd); an offset that would is not a page position.
+    // A cursor never splits a character; an offset that would is not a position to read on from.
     const line = at === null ? undefined : lines[at.line];
     if (at !== null && line !== undefined && (at.offset === 0 || (at.offset < line.text.length && !insidePair(line.text, at.offset)))) start = at;
     else pageHead.push(`cursor ${oneLine(cursor).slice(0, 100)} 不是这个引用的翻页位置，下面从第一页显示`);
   }
   const from = `第 ${start.line + 1} 行${start.offset > 0 ? `的第 ${start.offset + 1} 个字符` : ''}起`;
   if (view.text) pageHead.unshift(start.line === 0 && start.offset === 0 ? `原文（${textOf.length} 个字符）：` : `原文（共 ${textOf.length} 个字符、${lines.length} 行），从${from}：`);
-  else pageHead.unshift(...view.head, `共 ${lines.length} 行，这一页从${from}：`);
+  else pageHead.unshift(...view.head, `共 ${lines.length} 行，从${from}：`);
   const first = lines[start.line];
   if (start.offset > 0) pageHead.push(`（接上页：第 ${start.line + 1} 行的前 ${start.offset} 个字符在上一页）`);
   else if (start.line > 0 && first.item !== null && lines[start.line - 1].item === first.item) pageHead.push(`（接上页：条目 ${first.item}）`);
 
-  const wayFrom = (at: Position): string => {
-    if (paging) return `下一页：${callText('get_nodes', { reference: c.reference, cursor: pageCursor(c.reference, at.line, at.offset) })}${view.run !== null ? `；也可${seeConsole(view.run)}` : ''}`;
-    const tokens = lines[at.line]?.tokens ?? null;
-    if (tokens !== null && view.record !== null) {
-      const numbered = NUMBER.test(tokens.at(-1) ?? '');
-      return `逐个读：${readCall(recReference(view.record, tokens))}${numbered ? '，读完把末尾的序号加一读下一个' : ''}${view.run !== null ? `；也可${seeConsole(view.run)}` : ''}`;
-    }
-    if (view.tree !== null) return `其余部分${nodePage(view.tree.root, view.tree.path)}`;
-    return view.run !== null ? `其余部分${seeConsole(view.run)}` : `其余部分${RUNS_PAGE}`;
-  };
-
-  // A text goes out whole from where the reader is (decision 157): how much of an answer stays in a model's context is the
-  // client's to handle, and Circle keeps an answer above its limit in a file and gives the model the path and the start of it.
-  // Anything else is laid out by the budget: the room of the first line is the budget less the heads, the trace and the note.
-  const room = view.text ? Infinity : TEXT_BUDGET - sizeOf(head) - sizeOf(pageHead) - sizeOf(tail) - Math.max(wayFrom({ line: start.line, offset: start.offset + 1 }).length, wayFrom({ line: Math.min(start.line + 1, lines.length - 1), offset: 0 }).length) - 1500;
+  // Everything goes out whole from where the reader is (decisions 157 and 158): how much of an answer stays in a model's context
+  // is the client's to handle, and Circle keeps an answer above its limit in a file and gives the model the path and the start.
   const rest = first.text.slice(start.offset);
-  const entries: Entry[] = [];
-  const end = rest.length + 1 <= room ? first.text.length : pieceEnd(first.text, start.offset, room - 1);
-  if (end < first.text.length) {
-    // A piece of a line too long for the page, and nothing after it: the rest of the line comes first on the next page.
-    const way = wayFrom({ line: start.line, offset: end });
-    const omitted: Omission[] = [...first.omitted, { what: `第 ${start.line + 1} 行的其余 ${first.text.length - end} 个字符`, more: way }];
-    const later = lines.length - start.line - 1;
-    if (later > 0) omitted.push({ what: `${view.unit} ${later} 行（第 ${start.line + 2}${later > 1 ? ` 到第 ${lines.length}` : ''} 行）`, more: way });
-    entries.push({ lines: [first.text.slice(start.offset, end)], omitted });
-  } else {
-    entries.push(first.omitted.length > 0 ? { lines: [rest], omitted: first.omitted } : rest);
-    for (let i = start.line + 1; i < lines.length; i++) entries.push(lines[i].omitted.length > 0 ? { lines: [lines[i].text], omitted: lines[i].omitted } : lines[i].text);
-  }
-  const more = (n: number): string => wayFrom(n === 0 ? start : { line: start.line + n, offset: 0 });
-  blocks.push({ priority: 1, head: pageHead, entries, unit: view.unit, measure: '行', first: start.line + 1, more });
-  return fit(blocks, view.text ? { tail, budget: Infinity } : { tail }).text;
+  const entries: Entry[] = [first.omitted.length > 0 ? { lines: [rest], omitted: first.omitted } : rest];
+  for (let i = start.line + 1; i < lines.length; i++) entries.push(lines[i].omitted.length > 0 ? { lines: [lines[i].text], omitted: lines[i].omitted } : lines[i].text);
+  blocks.push({ priority: 1, head: pageHead, entries, unit: view.unit, measure: '行', first: start.line + 1 });
+  return fit(blocks, { tail }).text;
 }
 
 // ---------------------------------------------------------------- resolve_reference
@@ -1558,7 +1417,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
     };
     if (list.summary !== null) {
       const codesWay = record !== null ? `各代码的错误数：${readCall(record)}` : `各代码的错误数：${toConsole}`;
-      pushCapped(blocks, { priority: 0, head: [list.summary.head], entries: list.summary.entries, unit: '错误代码', measure: '个', more: () => codesWay }, 2);
+      blocks.push({ priority: 0, head: [list.summary.head], entries: list.summary.entries, unit: '错误代码', measure: '个', more: () => codesWay });
     }
     blocks.push({ priority: 1, head: ['错误（逐条）：'], entries: list.entries, unit: '错误', measure: '个', more: errorsMore });
   }
@@ -1580,8 +1439,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
       });
     }
     const problems = problemLines(result, reference, reference === null ? toConsole : null);
-    pushCapped(
-      blocks,
+    blocks.push(
       {
         priority: 2,
         head: [problems.length > 0 ? `问题与未知（${problems.length} 条；${PROBLEMS_HEAD}）：` : '问题与未知：没有'],
@@ -1590,7 +1448,6 @@ function submitText(v: SubmitOut, context: TextContext): string {
         measure: '条',
         more: (from) => `问题与未知：${way((n) => (layout?.problemsAt ?? 0) + n, (n) => problems[n]?.tokens ?? null)(from)}`,
       },
-      3,
     );
     const all = itemsOf(result.partitions);
     if (all.length > 0) {
@@ -1621,9 +1478,9 @@ const RENDERERS: Record<string, (value: never, context: TextContext) => string> 
   submit_result: submitText,
 };
 
-/** Feeding disclosure participates in the same answer budget, including the fallback renderer. */
+/** The feeding disclosure (what was fed, the frozen offset, feeding unknowns) whole before the trace line, also after the fallback renderer. */
 export function feedingText(text:string,value:unknown):string {
-  const v=recordsOf(value),more='完整喂入清单和未知见本次回答的 structuredContent；运行详情见控制台运行页';
+  const v=recordsOf(value);
   const rows:string[]=[];
   if(Array.isArray(v.feeding_pending))for(const pending of v.feeding_pending){const p=recordsOf(pending);rows.push('喂入未知：'+String(p.missing)+'；下一步：'+String(p.next_action));}
   // The frozen offset belongs to a run (W06): an answer about no run (a content read) has none to name, and a run record
@@ -1631,16 +1488,12 @@ export function feedingText(text:string,value:unknown):string {
   const offset='feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'run'in v?'；这个运行没有冻结喂入序号，喂入边界未知':'';
   if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+offset);
   if(!rows.length)return text;
-  // Fit disclosures first so that even a large feeding receipt cannot consume the whole answer.
-  const disclosure=fit([{priority:0,entries:rows,unit:'喂入说明',measure:'条',more:()=>more}],{budget:6000,fallback:more}).text;
-  const lines=text.split('\n'),tail=lines.splice(-2),trace=tail.pop();
-  // A text goes out whole (contentText), so no line of it may be left out here either.
-  const content=recordsOf(v.content);
-  const whole=typeof content.reference==='string'&&typeof content.text==='string'&&contentView(content as Content&{text:string}).text;
-  return fit([{priority:0,entries:lines,unit:'回答原文',measure:'行',more:()=>more}],{tail:[...tail,disclosure,...(trace?[trace]:[])],fallback:more,...(whole?{budget:Infinity}:{})}).text;
+  // Whole, before the trace line: the model reads only this text, so a disclosure cut here could not be read anywhere.
+  const lines=text.split('\n'),trace=lines.pop();
+  return [...lines,...rows,...(trace===undefined?[]:[trace])].join('\n');
 }
 
-/** The plain text of a validated tool answer, at most TEXT_BUDGET characters, ending with the trace line. */
+/** The plain text of a validated tool answer, ending with the trace line. */
 export function toolText(tool: string, value: unknown, context: TextContext = {}): string {
   const render = RENDERERS[tool] as ((value: unknown, context: TextContext) => string) | undefined;
   if (render === undefined) throw new Error(`no text renderer for ${tool}`);

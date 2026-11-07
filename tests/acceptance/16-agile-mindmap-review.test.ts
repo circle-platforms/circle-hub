@@ -131,30 +131,23 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     const bigRun = startAnswer.out.run as RunSummary;
     assert.equal(bigRun.items.length, 95, 'mindmap yields 95 items');
 
-    // Submit a result that skips items, generating > 9000 chars of problems to exercise softCap break and budget truncation
+    // Submit a result that skips every item: a long problem list, given whole (decision 158)
     const skipSubmission = {
       run: bigRun.run,
       model: 'test-model',
       items: bigRun.items.map((it) => ({
         item: it.id,
         handling: 'skipped' as const,
-        reason: '跳过以验证超长问题列表软上限截断路径与预算说明详情文字内容',
+        reason: '跳过以验证长问题列表整份返回',
       })),
       cross_item: [{ nature: 'judgment' as const, statement: '结论等级 P3', grounds: [], code: 'level', rank: 'P3' }],
     };
 
     const submitAnswer = await client.call('submit_result', skipSubmission);
     assert.equal(submitAnswer.isError, false);
-    // Answer text must be within TEXT_BUDGET (30000 characters)
-    assert.ok(submitAnswer.text.length <= 30000, `answer text length ${submitAnswer.text.length} must be <= 30000`);
-    // Note of truncation must be present
-    assert.ok(submitAnswer.text.includes('部分：这段回答以 30000 个字符为限，略去了'));
-    assert.ok(submitAnswer.text.includes('读其余部分：'));
-    // Soft-cap splits the problem list at ~9000 chars so that later items and problems are partially omitted
-    assert.ok(
-      submitAnswer.text.includes('略去了条目明细') || submitAnswer.text.includes('略去了问题与未知') || submitAnswer.text.includes('略去了错误'),
-      'softCap and fit must name omitted errors, problems or item detail: '+submitAnswer.text.split('部分：').at(-1),
-    );
+    // No answer is cut to a length: every skipped item is named, and nothing is left out for a budget.
+    assert.ok(!submitAnswer.text.includes('个字符为限'), 'nothing left out for a budget');
+    for (const it of bigRun.items) assert.ok(submitAnswer.text.includes(`- ${it.id} | `), `${it.id} is in the answer`);
     const counts=submitAnswer.out.counts!;
     assert.equal(counts.delivered+counts.rejected+counts.quarantined+counts.incomplete,95,'counts survive truncation');
     const saved=(await bed.hub.records.store.find({key:'runs.result.run',value:bigRun.run})).items[0];assert.ok(saved);

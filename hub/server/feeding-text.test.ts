@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {feedingText} from './text.ts';
-import {TEXT_BUDGET} from './budget.ts';
-test('feeding disclosure cannot overflow a full answer and retains recovery and trace',()=>{
- const text=Array.from({length:300},(_,i)=>`合成条目 ${i} `+'甲'.repeat(95)).join('\n')+'\n原结果可按引用逐页读取\n追踪 synthetic';
+test('feeding disclosure goes out whole before the trace line, and the answer above it loses no line (decision 158)',()=>{
+ const lines=Array.from({length:300},(_,i)=>`合成条目 ${i} `+'甲'.repeat(95));
+ const text=[...lines,'原结果可按引用读取','追踪 synthetic'].join('\n');
  const value={feeding_objects:['a'.repeat(64)],feeding_offset:{schema:'feeding-offset@1',offset:40},feeding_pending:[{missing:'缺模型判断',next_action:'补交逐字引文'}]};
- const result=feedingText(text,value);assert.ok(result.length<=TEXT_BUDGET);assert.match(result,/喂入未知：缺模型判断/);assert.match(result,/喂入清单/);assert.match(result,/略去了回答原文/);assert.match(result,/读其余部分/);assert.ok(result.endsWith('追踪 synthetic'));assert.equal(feedingText('短回答\n追踪 synthetic',{}),'短回答\n追踪 synthetic');
+ const result=feedingText(text,value);
+ assert.equal(result,[...lines,'原结果可按引用读取','喂入未知：缺模型判断；下一步：补交逐字引文','喂入清单：'+JSON.stringify(value.feeding_objects)+'；冻结序号：'+JSON.stringify(value.feeding_offset),'追踪 synthetic'].join('\n'));
+ assert.equal(feedingText('短回答\n追踪 synthetic',{}),'短回答\n追踪 synthetic');
 });
-test('oversized feeding metadata is disclosed as omitted without dropping the primary receipt',()=>{
- const result=feedingText('回执：已受理\n追踪 synthetic',{feeding_objects:Array(1000).fill('a'.repeat(64)),feeding_pending:[]});
- assert.ok(result.length<=TEXT_BUDGET);assert.match(result,/回执：已受理/);assert.match(result,/喂入说明/);assert.match(result,/structuredContent/);assert.ok(result.endsWith('追踪 synthetic'));
+test('a large feeding list is given whole: the model reads only this text, structuredContent never reaches it',()=>{
+ const objects=Array(1000).fill('a'.repeat(64));
+ const result=feedingText('回执：已受理\n追踪 synthetic',{feeding_objects:objects,feeding_pending:[]});
+ assert.equal(result,'回执：已受理\n喂入清单：'+JSON.stringify(objects)+'\n追踪 synthetic');
+ assert.doesNotMatch(result,/structuredContent|部分：/);
 });
 test('the frozen offset is named only for a run: a content read has none, a run without one says the horizon is unknown',()=>{
  const content=feedingText('内容\n追踪 synthetic',{content:{},feeding_objects:[],feeding_pending:[]});

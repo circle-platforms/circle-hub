@@ -102,7 +102,7 @@ administrator commands of `cli-admin.ts`.
 | `app.ts` | `createApp(deps, options)` → `{ handler, listen(), close(), release }`: the request target parsed once, routes, Host and Origin checks, `/healthz`, the body budget, graceful close |
 | `mcp.ts` | `POST /mcp`: bearer token per request, bounded body, one JSON-RPC request per POST, one SDK `Server` + stateless JSON transport per request, call-log lines |
 | `tools.ts` | the six tools: input parsing, server-owned semantics, delegation, output validation, isError, annotations per caller, the text context of each answer |
-| `text.ts`, `budget.ts`, `claims.ts` | the Chinese content text within `TEXT_BUDGET` (30,000 characters), page cursors, the fallback text of an answer whose text cannot be laid out, claims in `DISPLAY_ORDER`, terminal symbols and kinds, item cells |
+| `text.ts`, `budget.ts`, `claims.ts` | the Chinese content text, whole (decisions 157 and 158), page cursors, the fallback text of an answer whose text cannot be laid out, claims in `DISPLAY_ORDER`, terminal symbols and kinds, item cells |
 | `readers.ts` | the refs `SourceReader` on `Artifacts.source` and the `RecordReader` with R02 visibility |
 | `notes.ts` | admin notes and operator log text that records accept (no NUL, no lone surrogate, cut between code points) |
 | `upload.ts` | strict base64, media types (given, by name, sniffed), the parser structure summary |
@@ -269,10 +269,10 @@ Every tool call:
 4. returns `structuredContent` (the validated answer), `isError = (call_result === 'error')` (the envelope makes this
    exactly "protocol error or a receipt that is not accepted"; unknown never is), and **one** content block of Chinese
    plain text (D05 R[0], display rule 11: content is plain text, the JSON is structuredContent). The real Circle client
-   hands the model this text only (structuredContent never reaches it, and a result over about 50,000 characters does not
-   reach it at all), so every text is laid out within `TEXT_BUDGET` (30,000 characters, `budget.ts`): the facts a model
-   works from first, long lists cut by whole entries, and one note before the trace line naming what was left out and the
-   exact call that reads it; the trace line `追踪 <trace>` is always last. A text that cannot be laid out (a defect, for
+   hands the model this text only (structuredContent never reaches it). No text is cut to a length (decisions 157 and
+   158, `budget.ts`): Circle 1.14 keeps a result over 80,000 characters in a file and gives the model its path and start.
+   The facts a model works from come first, a field longer than its cap keeps its start and names where the whole is, one
+   note before the trace line names what was shortened, and the trace line `追踪 <trace>` is always last. A text that cannot be laid out (a defect, for
    example a production result the engine handed over without its partitions) never costs a valid answer: the call gets
    `fallbackText` (outcome, receipt and counts, the run, the error codes, the stored result, the console page, the trace)
    and the reason goes to the admin note. What the texts say:
@@ -1045,7 +1045,7 @@ Needs：登录停止的具名管理员请求、处置后的自动重读等 hub-u
 
 可重试读取的下一次时刻统一由本次调用的 Hub 时钟计算；get_nodes 按引用读取也向解析器传入同一时钟，不另取 Date.now。
 
-喂入清单、冻结序号与未知出口也受同一个 30,000 字符回答预算约束；它们在正文渲染和降级渲染后统一布局，保留回执、原有补读说明与追踪尾行。超长说明明确标记省略，完整结构仍在 structuredContent。
+喂入清单、冻结序号与未知出口在正文渲染和降级渲染后整份放在追踪尾行之前（决定 158，原来的 6,000 字符上限把其余部分指向模型看不到的 structuredContent）。
 
 Independent integration review: Antigravity reviewed fixed merge `2967a45b` without executing tests or contacting a
 system. The reviewer found no static blocker in the procfs header fix, service ownership checks, or integration of the

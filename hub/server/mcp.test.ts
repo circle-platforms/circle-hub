@@ -212,7 +212,7 @@ describe('initialize and tools/list', () => {
 });
 
 describe('list_task_packs', () => {
-  test('the MCP text can reach every assigned pack across a budget-truncated list', async () => {
+  test('the MCP text gives every assigned pack in full in one answer (decision 158)', async () => {
     const packs = Array.from({ length: 80 }, (_, i) => {
       const pack = fakeWorkflowPack(`sample-${String(i).padStart(3, '0')}`, '合成任务', ['application/json']);
       return { ...pack, summary: { ...pack.summary!, description: '合成说明'.repeat(100) } };
@@ -226,22 +226,10 @@ describe('list_task_packs', () => {
       const first = await client.call('list_task_packs', { kind: 'workflow' });
       assert.deepEqual([...(first.content[0].text ?? '').matchAll(/^- (sample-\d{3})@\S+ \| /gm)].map((match) => match[1]!), packs.map((pack) => pack.id), 'the index lists all 80');
       assert.deepEqual((first.structuredContent.index as { pack: string }[]).map((row) => row.pack.split('@')[0]), packs.map((pack) => pack.id));
-      const found: string[] = [];
-      let offset = 0;
-      for (let page = 0; page < 20; page++) {
-        const result = await client.call('list_task_packs', { kind: 'workflow', offset });
-        const text = result.content[0].text ?? '';
-        assert.ok(text.length <= 30_000);
-        assert.equal([...text.matchAll(/^- (sample-\d{3})@\S+ \| /gm)].length, 80, 'every page repeats the whole index');
-        found.push(...[...text.matchAll(/^- (sample-\d{3})@\S+ (?!\| )/gm)].map((match) => match[1]!));
-        const next = text.match(/继续 list_task_packs (\{[^}]+\})/);
-        if (!next) break;
-        const args = JSON.parse(next[1]!) as { kind: string; offset: number };
-        assert.equal(args.kind, 'workflow');
-        assert.ok(args.offset > offset);
-        offset = args.offset;
-      }
-      assert.deepEqual(found, packs.map((pack) => pack.id));
+      const text = first.content[0].text ?? '';
+      assert.deepEqual([...text.matchAll(/^- (sample-\d{3})@\S+ (?!\| )/gm)].map((match) => match[1]!), packs.map((pack) => pack.id), 'every pack in full');
+      assert.equal(text.match(/^  示例 start_run：/gm)?.length, 80);
+      assert.ok(!text.includes('继续 list_task_packs'), 'nothing to page through');
       const exact = await client.call('list_task_packs', { pack_id: 'sample-079' });
       assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['sample-079']);
       assert.match(exact.content[0].text ?? '', /输入 subject/);
@@ -730,7 +718,7 @@ describe('paging through the server', () => {
     await client.close();
   });
 
-  test('start_run items left out are read from the run record with the cursor the note gives, every item once and in order', async () => {
+  test('start_run gives every item of a 3000-item run once and in order, in one answer (decision 158)', async () => {
     const user = await person(['review']);
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
@@ -740,28 +728,11 @@ describe('paging through the server', () => {
       const started = await startRun(client, reference);
       assert.equal(started.isError, false);
       const run = (started.structuredContent.run as { run: string }).run;
-      const record = server.fakes.runs.runs.get(run)!.recordDigest;
       const text = started.content[0].text ?? '';
-      assert.ok(text.length <= 30_000);
-      const shown = itemIds(text, 'doc-8:');
-      assert.ok(shown.length > 0 && shown.length < 3000, `the first page shows ${shown.length} items`);
-      const first = callAfter(text, '条目：');
-      assert.ok(first !== null, 'the note names the cursor call of the items left out');
-      assert.equal(first.reference, `rec:${record}#/items`);
-      const ids = [...shown];
-      let args: Record<string, unknown> = first;
-      for (let i = 0; i < 200; i++) {
-        const page = await client.call('get_nodes', args);
-        assert.equal(page.isError, false, page.content[0].text?.slice(0, 200));
-        const pageText = page.content[0].text ?? '';
-        assert.ok(pageText.length <= 30_000);
-        ids.push(...itemIds(pageText, 'doc-8:'));
-        const next = callAfter(pageText, '下一页：');
-        if (next === null) break;
-        assert.equal(next.reference, `rec:${record}#/items`);
-        args = next;
-      }
-      assert.deepEqual(ids, Array.from({ length: 3000 }, (_, i) => `doc-8:n${i}`), 'start_run and the pages show every item once, in order');
+      assert.ok(run.length > 0);
+      assert.ok(callAfter(text, '条目：') === null, 'no cursor to read on with');
+      const ids = itemIds(text, 'doc-8:');
+      assert.deepEqual(ids, Array.from({ length: 3000 }, (_, i) => `doc-8:n${i}`), 'every item once, in order');
     } finally {
       server.fakes.runs.items = null;
     }
@@ -794,7 +765,7 @@ describe('paging through the server', () => {
     await client.close();
   });
 
-  test('submit_result names its stored result, accepted or not; the item details left out are read from it by cursor', async () => {
+  test('submit_result names its stored result, accepted or not, and gives every item detail in one answer', async () => {
     const user = await person(['review']);
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
@@ -807,19 +778,9 @@ describe('paging through the server', () => {
       const stored = server.fakes.runs.runs.get(run)!.latest!.record;
       const text = accepted.content[0].text ?? '';
       assert.ok(text.includes(`存下的结果 rec:${stored}（`));
-      const call = callAfter(text, '条目明细：');
-      assert.ok(call !== null && call.reference === `rec:${stored}` && typeof call.cursor === 'string', 'the details left out are read from the stored result by cursor');
+      assert.ok(callAfter(text, '条目明细：') === null, 'no cursor to read on with');
       const seen = new Set(itemIds(text, 'doc-7:'));
-      let args: Record<string, unknown> = call;
-      for (let i = 0; i < 300; i++) {
-        const page = await client.call('get_nodes', args);
-        assert.equal(page.isError, false, page.content[0].text?.slice(0, 200));
-        for (const id of itemIds(page.content[0].text ?? '', 'doc-7:')) seen.add(id);
-        const next = callAfter(page.content[0].text ?? '', '下一页：');
-        if (next === null) break;
-        args = next;
-      }
-      assert.equal(seen.size, 1200, 'every item of the result is read');
+      assert.equal(seen.size, 1200, 'every item of the result is in the answer');
       const refused = await client.call('submit_result', { run, model: 'scripted-model@test', items: [], notes: 'quote-mismatch' });
       assert.equal(refused.isError, true);
       const refusedResult = refused.structuredContent.result as { submission: string };
@@ -855,7 +816,7 @@ describe('start_run with the engine\'s detail', () => {
       assert.match(lines[problems + 1], /^- doc-1:n2 \| 合成用例二 \| 已交付 \| structure \| /);
       const whole = lines.findIndex((line) => line.startsWith(`完整结果 ${production.reference}：`));
       assert.ok(whole > 0 && whole < problems && problems < lines.findIndex((line) => line.startsWith('条目（')), 'the result before the items');
-      assert.match(lines[whole], /get_nodes \{"reference":"rec:[0-9a-f]{64}"\} 读第一页，再按每页末尾给出的 cursor 接着读/);
+      assert.match(lines[whole], /get_nodes \{"reference":"rec:[0-9a-f]{64}"\} 整份读/);
       const read = await client.call('get_nodes', { reference: production.reference });
       assert.equal(read.isError, false, 'the whole result is readable by its reference');
       assert.match(read.content[0].text ?? '', new RegExp(`结果 ${production.reference}（运行 ${run}）：回执：已受理`));

@@ -6,7 +6,6 @@ import { GetNodesOutput } from '../../contracts/src/tools.ts';
 import { readStoredValidationResult, ValidationResult } from '../../contracts/src/validation.ts';
 import { canonicalJson } from '../refs/api.ts';
 import { toolText } from './text.ts';
-import { TEXT_BUDGET } from './budget.ts';
 
 const reference='rec:'+'a'.repeat(64);
 function legacy(){
@@ -40,10 +39,10 @@ for(const [suffix,select] of [
   assert.match(text,/catalog/);assert.match(text,/出口未写/);assert.match(text,/缺失事实未写/);
 });
 
- test('historical notices obey paging without replacing the structured result with a dump',()=>{
+ test('historical notices keep the structured layout of a large result given whole, not a dump',()=>{
   const value=legacy();const item=value.partitions.delivered[1];
   value.partitions.delivered=Array.from({length:500},(_,i)=>({...structuredClone(item),item:'legacy:'+i,label:'合成历史条目'+i+'很'.repeat(200)}));
   const text=render(reference,value);
-  assert.ok(text.length<=TEXT_BUDGET);
-  assert.match(text,/未知 500/);assert.match(text,/出口未写/);assert.match(text,/缺失事实未写/);assert.match(text,/下一页/);
+  assert.match(text,/未知 500/);assert.match(text,/出口未写/);assert.match(text,/缺失事实未写/);
+  assert.match(text,/- legacy:0 \|/);assert.match(text,/- legacy:499 \|/);assert.doesNotMatch(text,/下一页|个字符为限/);
 });
