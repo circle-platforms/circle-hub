@@ -298,7 +298,7 @@ describe('the memo key covers what the function receives (finding: build and bat
     assert.equal(cases.length, 4);
     for (const entry of cases) {
       assert.deepEqual([entry.data?.line, entry.data?.build], ['1.3', C]);
-      assert.match(entry.applicability, /构建 Rel_ACME_1_3_20/);
+      assert.match(entry.applicability ?? "", /构建 Rel_ACME_1_3_20/);
     }
     // Produced alone, in a database without stored outputs, the build has the same root.
     const fresh = await world(t, producers, { pack: { functions: { 'reading.ts': READING } } });

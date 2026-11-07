@@ -393,8 +393,10 @@ catalogs, grounds and provenance.
     overlapping paths cost nothing extra); a page ends at 100 nodes or about 2 MiB counted over statements, canonical data and child
     lists; a node whose entries do not fit is split over pages (the cursor carries the entry to start at, the note says
     so); a cursor is bound to its query and must point inside the walk (a forged offset is refused like an absent root);
-    coverage is complete only on the last page, missing paths in the note. Entries show their applicability text (未声明
-    when undeclared) followed by the placement note when the model placed them. The `TreeReader` gives the entry
+    coverage is complete only on the last page, missing paths in the note. Entries show their applicability text
+    followed by the placement note when the model placed them. An entry none of whose condition fields is declared,
+    judged, in conflict or still being read carries no applicability, field states or admission context at all
+    (decision 159); the empty condition marker a producer writes is dropped when the entry is produced (`entryContentOf`). The `TreeReader` gives the entry
     statement (or a node's statements) with grounds from the version composition and premises naming it: bound to a
     composition (`treeReader({ composition })`, the RootInfo.composition a run locked) from that one alone; unbound, from
     every composition of the root, each also listed with its build under `validity.compositions`. `hasRoot` lets

@@ -23,6 +23,7 @@ import { canonicalSize,compareText, cutText } from './digest.ts';
 import { ObservationLayer } from './layers.ts';
 import { ContributionLayer } from './contributions.ts';
 import { contributionNodes } from './contribution-pages.ts';
+import { withoutEmptyApplicability } from './applicability-fields.ts';
 import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type PlacementOutcome, type PlacementSpan, type PlacementTree } from './placement.ts';
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
@@ -34,6 +35,11 @@ import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
 import { withReadCache } from './read-cache.ts';
 
+
+/** Decision 159: a page's entries without any condition information carry none (after the judgments are merged). */
+function withoutEmptyConditions(page: NodesPage | null): NodesPage | null {
+  return page === null ? null : { ...page, nodes: page.nodes.map((node) => ({ ...node, entries: node.entries.map(withoutEmptyApplicability) })) };
+}
 export interface KnowledgeOptions {
   /** Additional declared scope (for example unversioned knowledge); roots and compositions must belong to this product. */
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
@@ -324,13 +330,13 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       return {...reader,read:(...args)=>withReadCache(()=>reader.read(...args)),readEntry:(...args)=>withReadCache(()=>reader.readEntry(...args)),...(reader.hasRoot?{hasRoot:(...args:Parameters<NonNullable<TreeReader['hasRoot']>>)=>withReadCache(()=>reader.hasRoot!(...args))}:{})};
     },
     getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>withReadCache(async()=>{
-      if(await spaces.version(query.root))return spaces.getNodes(query,reader);
+      if(await spaces.version(query.root))return withoutEmptyConditions(await spaces.getNodes(query,reader));
       // Establish permission before even decoding a contribution cursor.
       if(!(await reading.mayReadRoot(reader,query.root)))return null;
       const page=await contributionNodes(context,reading,contributions,query,reader);if(!page)return null;
       const paths=page.nodes.map(node=>node.path),products=paths.length?await reading.productsOfRoot(query.root):[];const rows=[];for(const product of products)rows.push(...await feeding.entriesAtNodes(reader,product,query.root,paths,query.feeding_offset?.offset??Number.MAX_SAFE_INTEGER));
       for(const node of page.nodes){const relevant=rows.filter(row=>row.validity==='valid'&&row.body.root===query.root&&(row.body.path===node.path||row.body.path===null&&node.path==='/'||Array.isArray(row.body.commands)&&row.body.commands.some((command:Record<string,unknown>)=>command.path===node.path)));const references=[];for(const row of relevant){if(references.length===100)break;const ref={object:row.body.object,reference:'rec:'+row.record};if(canonicalSize(page)+canonicalSize(references)+canonicalSize(ref)>context.limits.pageBytes-1024)break;references.push(ref);}if(relevant.length){node.feeding_objects=references;node.feeding_complete=references.length===relevant.length;if(!node.feeding_complete)page.coverage={...page.coverage,complete:false,note:[page.coverage.note,'喂入引用达到本页预算；从知识 index/facets 视图读取完整范围'].filter(Boolean).join('；')};}}
-      return page;
+      return withoutEmptyConditions(page);
     }),
     diffRoots: (from, to): Promise<RootDiff | null> => withReadCache(()=>reading.diff(from, to)),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => withReadCache(()=>reading.diffEntries(from, to, diffOptions)),

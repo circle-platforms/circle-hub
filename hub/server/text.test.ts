@@ -976,7 +976,7 @@ describe('get_nodes text', () => {
     const path = '/manual/cli/DNS资源记录';
     const entries = Array.from({ length: 137 }, (_, k) => {
       const entry = createHash('sha256').update(String(k)).digest('hex');
-      return { entry, kind: 'behaviour', statement: `**sdns 命令 ${k}** *<参数>* 该命令用于……${'说明'.repeat(300)}`, reference: `tree:${root}${path}@${entry}`, applicability: '未声明' };
+      return { entry, kind: 'behaviour', statement: `**sdns 命令 ${k}** *<参数>* 该命令用于……${'说明'.repeat(300)}`, reference: `tree:${root}${path}@${entry}` };
     });
     const node = { path, reference: `tree:${root}${path}`, name: 'DNS资源记录', level: 'leaf', digest: H('3'), children: [], entries };
     const text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes: [node], trace: TRACE }));
@@ -985,6 +985,7 @@ describe('get_nodes text', () => {
     assert.equal(shown.length, 137, 'every entry, in order');
     assert.ok(shown.every((l, k) => l.startsWith(`  · [行为] **sdns 命令 ${k}** `) && l.includes(entries[k].reference)));
     assert.ok(!text.includes('再往后的') && !text.includes('/console/knowledge/tree'), 'no entry left to the console, which a model cannot open');
+    assert.ok(!text.includes('适用'), 'entries that declare no condition say nothing of conditions (decision 159)');
   });
 
   test('a node with 2000 children shows its entries first, then every child', () => {

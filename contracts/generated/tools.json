@@ -5597,6 +5597,7 @@
                       "description": "Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground"
                     },
                     "applicability": {
+                      "description": "The conditions under which the entry holds; absent when nothing is declared, judged or in conflict (K02 F[6], decision 159)",
                       "type": "string"
                     },
                     "applicability_fields": {
@@ -5727,8 +5728,7 @@
                     "entry",
                     "kind",
                     "statement",
-                    "reference",
-                    "applicability"
+                    "reference"
                   ],
                   "additionalProperties": false
                 }

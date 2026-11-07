@@ -465,14 +465,16 @@ export class TreeReading {
       children: node.children.map((child) => ({ name: child.name, path: pathOf([...segments, child.name]), digest: child.digest })),
       entries: entries.map(({ digest: entry, content }) => {
         const placement = rows?.get(entry)?.placement;
-        const applicability = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
+        // Decision 159: nothing is said of conditions nobody declared; a placement note still goes out on its own.
+        const conditions = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
+        const applicability = [...(conditions === UNDECLARED ? [] : [conditions]), ...(placement === undefined ? [] : [placement.note])].join('；');
         return {
           entry,
           // Entries are checked against the entry_kind axis before they are stored; a stored kind outside it is corruption.
           kind: EntryKindSchema.parse(content.kind),
           statement: content.statement,
           reference: treeReference(root, path, entry),
-          applicability: placement === undefined ? applicability : `${applicability}；${placement.note}`,
+          ...(applicability === '' ? {} : { applicability }),
           applicability_fields:applicabilityFields(content.data,content.applicability),
           applicability_context:{composition:composition?.record??null,criteria_digest:applicabilityCriterion(composition?.body.applicability_context,composition?.body.known_builds)},
           data: content.data,

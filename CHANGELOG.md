@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Leave conditions out of a knowledge entry that declares none (model 44, decision 159): such an entry no longer says "（适用 未声明）", carries no field states, and the empty condition marker a producer writes is dropped when the entry is produced. An entry with any declared, judged or conflicting condition is shown as before. `applicability` in the `get_nodes` output is now optional.
 - Give every tool answer whole: knowledge nodes with all their entries and children, a run's items and procedure, a result's errors, problems and item details, the task-pack list, records read by reference and the feeding disclosure. A manual section of 137 entries showed 23 and named the other 114 by untitled references or a console page the model cannot open; the rule that a zone record must be a subdomain of the zone and the entry that creates a zone were among them. A long field inside a line is still shortened with a reference to its whole text.
 - Answer the text of a source whole in `get_nodes`: the 30,000-character page came from a limit Circle no longer has, as it now keeps an answer above 80,000 characters in a file and hands the model the path.
 - Let a whole-document run of `case-compile` leave named cases out with `parameters.exclude` (3.10.2): one case that could not be planned kept the other 16 from a workbook. InfoTest and CES isolate such a case and go on.

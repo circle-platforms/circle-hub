@@ -228,7 +228,7 @@ const NodeEntry = z.strictObject({
   kind: EntryKindSchema,
   statement: z.string(),
   reference: referenceUriOf('tree').describe('Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground'),
-  applicability: z.string(),
+  applicability: z.string().optional().describe('The conditions under which the entry holds; absent when nothing is declared, judged or in conflict (K02 F[6], decision 159)'),
   applicability_fields:ApplicabilityFields.optional(),
   applicability_context:z.strictObject({composition:Sha256.nullable(),criteria_digest:Sha256.nullable()}).optional(),
   data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable content of the entry, for example the signatures and typed parameters of a catalog leaf'),
