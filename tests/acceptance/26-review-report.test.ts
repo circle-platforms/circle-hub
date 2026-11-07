@@ -462,7 +462,7 @@ test('IPv4 subitem tables preserve original cells, dispositions, suggestions and
   assert.equal(run.items[0].id,'report');assert.match(report.summary??'',/#\/items\/0\/fields\/review_tables/);
   const actual=await readProjectedText(client,recordReferenceOf(started.text)+'#/items/0/fields/review_tables');
   assert.equal(actual.text,report.fields.review_tables);
-  assert.ok(actual.pages.length>1,'the public continuation reads every piece of the long row');
+  assert.equal(actual.pages.length,1,'the long field of the record comes whole in one answer');
   assert.match(actual.text,/^## 用例评审结果：/);assert.match(actual.text,/### 1\..*IPv4/);
   const rows=actual.text.split('\n').filter(line=>/^\| \d+ \|/u.test(line));
   assert.equal(rows.length,cases.length);
