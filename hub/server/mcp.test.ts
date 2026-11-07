@@ -16,6 +16,7 @@ import { SERVER_INSTRUCTIONS, TOOLS } from '../../contracts/src/tools.ts';
 import { canonicalize, sha256Hex, type CallLogInput } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, defaultPacks, fakeWorkflowPack } from './fakes.ts';
+import { pageCursor } from './text.ts';
 import { createTestServer, type TestMcpClient, type TestServer, type TestUser, type ToolCallResult } from './testing.ts';
 
 type Published = { name: string; title: string; description: string; inputSchema: unknown; outputSchema: unknown; annotations: Record<string, boolean> };
@@ -701,31 +702,17 @@ function callAfter(text: string, marker: string): Record<string, unknown> | null
 const itemIds = (text: string, prefix: string): string[] => text.split('\n').flatMap((line) => (line.startsWith(`- ${prefix}`) ? [line.slice(2, line.indexOf(' | '))] : []));
 
 describe('paging through the server', () => {
-  test('a source read by reference is read on with the 下一页 cursor the note gives, every line once; a foreign cursor is refused at /cursor', async () => {
+  test('a source read by reference comes whole in one answer; a foreign cursor is refused at /cursor', async () => {
     const client = await connect(await person());
     const markdown = Array.from({ length: 4000 }, (_, i) => `- 第 ${i + 1} 条：合成说明 ${'长'.repeat(i % 23)}`).join('\n');
     const reference = String((await upload(client, markdown, { media_type: 'text/markdown' })).structuredContent.reference);
     const other = String((await upload(client, '另一份合成文本\n')).structuredContent.reference);
-    let args: Record<string, unknown> = { reference };
-    const seen: string[] = [];
-    let pages = 0;
-    for (; pages < 100; pages++) {
-      const page = await client.call('get_nodes', args);
-      assert.equal(page.isError, false, `${JSON.stringify(args)}: ${page.content[0].text?.slice(0, 200)}`);
-      const text = page.content[0].text ?? '';
-      assert.ok(text.length <= 30_000, `a page is ${text.length} characters`);
-      const lines = text.split('\n');
-      const from = lines.findIndex((line) => line.startsWith('原文（')) + 1;
-      seen.push(...lines.slice(from, lines.length - (lines.at(-2)?.startsWith('部分：') ? 2 : 1)));
-      const next = callAfter(text, '下一页：');
-      if (next === null) break;
-      assert.deepEqual(Object.keys(next).sort(), ['cursor', 'reference'], 'the next page is the same reference with a cursor');
-      assert.equal(next.reference, reference);
-      args = next;
-    }
-    assert.ok(pages > 1, 'the text needed more than one page');
-    assert.deepEqual(seen, markdown.split('\n'), 'every line once, in order');
-    const cursor = String(args.cursor);
+    const page = await client.call('get_nodes', { reference });
+    assert.equal(page.isError, false, page.content[0].text?.slice(0, 200));
+    const text = page.content[0].text ?? '';
+    assert.ok(text.length > 30_000, `the answer is ${text.length} characters`);
+    assert.ok(text.includes(markdown), 'every line once, in order');
+    const cursor = pageCursor(reference, 3000);
     const foreign = await client.call('get_nodes', { reference: other, cursor });
     assert.equal(foreign.isError, true);
     assert.deepEqual([firstError(foreign).code, firstError(foreign).path], ['SUBMISSION_SCHEMA_VIOLATION', '/cursor']);

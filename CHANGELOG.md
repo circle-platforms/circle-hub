@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Answer the text of a source whole in `get_nodes`: the 30,000-character page came from a limit Circle no longer has, as it now keeps an answer above 80,000 characters in a file and hands the model the path. Lists and laid-out answers keep their budget for now.
 - Let a whole-document run of `case-compile` leave named cases out with `parameters.exclude` (3.10.2): one case that could not be planned kept the other 16 from a workbook. InfoTest and CES isolate such a case and go on.
 - Give the runner one device return for a finished dispatch: every case's verdict, then the log and device sessions of each case that did not pass, word for word (`case-compile` 3.10.3 reads it). The per-case notes that listed logs are gone: logs hold the commands sent, not the device's replies, and a model wrote "no error" where the device had refused the command.
 - Give generic skills their own place in the console: the 通用技能 tab lists what each skill offers and which workflows use it, with install and uninstall; a workflow's page shows what it is made of (skills, connections, knowledge, named documents); named documents appear under 连接 for administrators. The skills `runner-workbook` and `command-tools` carry workbook writing and command checking out of `case-compile`.

@@ -934,51 +934,27 @@ describe('get_nodes text', () => {
     assert.equal(fallbackText('get_nodes', null, {}), '这次回答的文字没能排出（原因已记入管理员日志）\n追踪 （未知）');
   });
 
-  test('without paging a source fragment is read on by byte ranges that the resolver reads exactly, long lines in pieces, to its end', async () => {
+  test('a source goes out whole in one answer, its long lines and astral characters untouched, and a cursor reads on from its place', () => {
     const lines = Array.from({ length: 3000 }, (_, i) => `第 ${i + 1} 行：分区 ${i % 8} 浇灌 ${i % 120} 分钟。`);
     lines[1500] = '超长的一行'.repeat(4000);
     lines[2200] = `${'甲'.repeat(20_000)}${'😀'.repeat(15_000)}`;
     const text = lines.join('\n');
-    const bytes = new TextEncoder().encode(text);
-    const sha = sha256(bytes);
-    const context = memory(new Map([[sha, { bytes, mediaType: 'text/plain' }]]));
-    const all = await follow(context, `src:${sha}/text@1/l/1-3000`, '接着读：');
-    reassembles(all, text);
-    assert.ok(all.some((page) => /第 1 行的其余 \d+ 个字符/.test(noteOf(page) ?? '')), 'the 50,000-character line is read in pieces');
-    assert.ok(!all.some((page) => page.includes('超过一页的长度')), 'no placeholder');
-    // With paging the same source pages by cursor, pieces of long lines included.
-    reassembles(pages(`src:${sha}/text@1/l/1-3000`, text), text);
+    const reference = `src:${H('e')}/text@1/l/1-3000`;
+    const all = pages(reference, text);
+    assert.equal(all.length, 1, 'the Hub sets no page limit on a text: its length is the client\'s to handle');
+    assert.ok(all[0].includes(text), 'every character, in order');
+    assert.equal(noteOf(all[0]), null, 'nothing was left out, so no note says so');
+    const rest = toolText('get_nodes', contentAnswer(reference, text), { ...PAGING, cursor: pageCursor(reference, 2999) });
+    assert.deepEqual(shownSource(rest), [lines[2999]], 'a cursor an earlier answer gave reads the rest, no line twice');
   });
 
-  test('without paging a whole source is read on by text@1 lines; a 17,272-character line that fits is shown whole', async () => {
-    const markdown = Array.from({ length: 4000 }, (_, i) => `- 第 ${i + 1} 条：分区 ${i % 8} 的说明文字，${'很'.repeat(i % 13)}。`).join('\n');
-    const json = JSON.stringify({ root: { data: { id: 'r', text: '根'.repeat(17_200) } } });
-    const files = new Map([
-      [sha256(new TextEncoder().encode(markdown)), { bytes: new TextEncoder().encode(markdown), mediaType: 'text/markdown' }],
-      [sha256(new TextEncoder().encode(json)), { bytes: new TextEncoder().encode(json), mediaType: 'application/json' }],
-    ]);
-    const context = memory(files);
-    const all = await follow(context, `src:${sha256(new TextEncoder().encode(markdown))}`, '接着读：');
-    assert.ok(all.length > 1);
-    assert.match(noteOf(all[0])!, /接着读：get_nodes \{"reference":"src:[0-9a-f]{64}\/text@1\/l\/\d+-4000"\}/);
-    const seen = all.flatMap(shownSource);
-    assert.deepEqual(seen, markdown.split('\n'), 'every line once, in order');
-    const one = await follow(context, `src:${sha256(new TextEncoder().encode(json))}`, '接着读：');
-    assert.equal(one.length, 1);
-    assert.deepEqual(shownSource(one[0]), [json], 'shown whole');
-    assert.equal(noteOf(one[0]), null);
-  });
-
-  test('a long string of a record (a 40,000-character statement) is paged in pieces by cursor; without paging the note names the console', () => {
+  test('a long string of a record (a 40,000-character statement) goes out whole', () => {
     const statement = `${'一'.repeat(20_000)}${'二'.repeat(20_000)}`;
     const reference = `${RESULT_RECORD}#/partitions/delivered/0/requirements/0/claims/0/statement/text`;
     const all = pages(reference, statement);
-    assert.equal(all.length, 2);
-    assert.equal(all.map((p) => shownSource(p).join('')).join(''), statement, 'the pieces add up to the statement');
-    const alone = toolText('get_nodes', contentAnswer(reference, statement));
-    assert.match(noteOf(alone)!, /第 1 行的其余 \d+ 个字符.*在控制台运行页/);
-    const fits = toolText('get_nodes', contentAnswer(reference, '三'.repeat(16_000)));
-    assert.equal(noteOf(fits), null, 'a 16,000-character string fits a page and is shown whole');
+    assert.equal(all.length, 1);
+    assert.equal(shownSource(all[0]).join(''), statement);
+    assert.equal(noteOf(all[0]), null);
   });
 
   test('other record JSON is laid out one member a line: the full slot schema reads without placeholders', () => {
@@ -1076,22 +1052,6 @@ describe('get_nodes text', () => {
     assert.ok(note.includes(`节点 ${path} 的子节点 ${2000 - children} 个`));
     const call = nextCall(text, `节点 ${path} 的其余子节点：`)!;
     assert.equal(call.paths![0], `${path}/option${children}`);
-  });
-
-  test('a source fragment cut by lines gives a byte range that reads exactly the rest; a whole-file reference gives text@1 lines', () => {
-    const lines = Array.from({ length: 3000 }, (_, i) => `第 ${i + 1} 行：分区 ${i % 8} 浇灌 ${i % 120} 分钟。`);
-    const text = lines.join('\n');
-    const reference = `src:${H('e')}/text@1/l/1-3000`;
-    const first = toolText('get_nodes', contentAnswer(reference, text));
-    withinBudget(first, 'source page');
-    assert.match(first, /^内容 src:e{64}\/text@1\/l\/1-3000：模型可读\n原文（\d+ 个字符）：\n第 1 行：/);
-    const shown = linesOf(first).filter((l) => /^第 \d+ 行：/.test(l)).length;
-    const range = nextCall(first, '接着读：')!;
-    const [, from, to] = /:([0-9]+)-([0-9]+)$/.exec(range.reference!)!.map(Number);
-    assert.equal(Buffer.from(text, 'utf8').subarray(from, to).toString('utf8'), lines.slice(shown).join('\n'), 'the range is exactly the rest of the fragment');
-    const whole = toolText('get_nodes', contentAnswer(`src:${H('e')}`, text));
-    const shownWhole = linesOf(whole).filter((l) => /^第 \d+ 行：/.test(l)).length;
-    assert.equal(nextCall(whole, '接着读：')!.reference, `src:${H('e')}/text@1/l/${shownWhole + 1}-3000`);
   });
 
   test('the text of a small source is given whole, verbatim', () => {
@@ -1331,46 +1291,23 @@ describe('through the MCP server: the ways to read the rest that the notes give 
     await postgres?.stop();
   });
 
-  test('a 4,000-line upload read by reference: the page cursors the server offers and the ranges a text without paging gives both read every line once', async () => {
+  test('a 4,000-line upload read by reference comes whole through the server, with its disclosure, and a cursor reads on', async () => {
     const user = await server.createUser('读者');
     const client = await server.client(user.token);
     const markdown = Array.from({ length: 4000 }, (_, i) => `- 第 ${i + 1} 条：分区 ${i % 8} 的合成说明，${'长'.repeat(i % 17)}。`).join('\n');
     const uploaded = await client.call('upload_file', { file_path: Buffer.from(markdown).toString('base64'), media_type: 'text/markdown' });
     const reference = String(uploaded.structuredContent.reference);
-    // The server pages (TextContext.paging): its notes give get_nodes {reference, cursor}.
-    let args: Record<string, unknown> = { reference };
-    const seen: string[] = [];
-    for (let i = 0; i < 100; i++) {
-      const page = await client.call('get_nodes', args);
-      assert.equal(page.isError, false, `${JSON.stringify(args).slice(0, 160)}: ${page.content[0].text?.slice(0, 300)}`);
-      const text = page.content[0].text ?? '';
-      withinBudget(text, 'a page through the server');
-      seen.push(...shownSource(text));
-      const note = linesOf(text).find((l) => NOTE.test(l));
-      if (note === undefined) break;
-      const at = note.indexOf('下一页：get_nodes ');
-      assert.ok(at >= 0, `the note offers the next page: ${note.slice(0, 300)}`);
-      args = jsonAt(note, at + '下一页：get_nodes '.length) as Record<string, unknown>;
-      assert.deepEqual([args.reference, typeof args.cursor], [reference, 'string'], 'the same reference with a cursor');
-    }
-    assert.deepEqual(seen, markdown.split('\n'));
-    // A text made without paging names text@1 lines and byte ranges instead: the server takes those references too.
-    args = { reference };
-    const ranged: string[] = [];
-    for (let i = 0; i < 100; i++) {
-      const page = await client.call('get_nodes', args);
-      assert.equal(page.isError, false, `${JSON.stringify(args).slice(0, 160)}: ${page.content[0].text?.slice(0, 300)}`);
-      const text = toolText('get_nodes', page.structuredContent);
-      withinBudget(text, 'a page without paging');
-      ranged.push(...shownSource(text));
-      const note = linesOf(text).find((l) => NOTE.test(l));
-      if (note === undefined) break;
-      const at = note.indexOf('接着读：get_nodes ');
-      assert.ok(at >= 0, `without paging the note offers a reference to read on: ${note.slice(0, 300)}`);
-      args = jsonAt(note, at + '接着读：get_nodes '.length) as Record<string, unknown>;
-      assert.equal(args.cursor, undefined, 'no cursor without paging');
-    }
-    assert.deepEqual(ranged, markdown.split('\n'));
+    const page = await client.call('get_nodes', { reference });
+    assert.equal(page.isError, false, page.content[0].text?.slice(0, 300));
+    const text = page.content[0].text ?? '';
+    assert.ok(text.length > 30_000, `the answer is ${text.length} characters`);
+    assert.ok(text.includes(markdown), 'every line once, in order');
+    assert.doesNotMatch(text, /下一页|部分：/);
+    assert.match(linesOf(text).at(-1)!, /^追踪 /, 'the trace still ends the answer');
+    const rest = await client.call('get_nodes', { reference, cursor: pageCursor(reference, 3999) });
+    assert.equal(rest.isError, false, rest.content[0].text?.slice(0, 300));
+    assert.ok((rest.content[0].text ?? '').includes(markdown.split('\n')[3999]));
+    assert.ok(!(rest.content[0].text ?? '').includes(markdown.split('\n')[3998]), 'no line twice');
     await client.close();
   });
 });

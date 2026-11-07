@@ -2,12 +2,12 @@ import { isAbandonedResult } from '../runs/api.ts';
 import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
 // and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
-// text is laid out within TEXT_BUDGET (budget.ts): the facts a model works from come first (receipt and counts, the state of
-// each requirement, every problem and unknown), long lists lose whole entries from their end, a long field keeps its start
-// and says how long it was and where the whole is, and one note before the trace line names what was left out or shortened
-// and exactly how to read it. A way to read is offered only in a form the server takes: page cursors only when the server
-// says it pages (TextContext.paging); otherwise byte ranges and text@1 line ranges of sources, record pointers and the
-// console page. structuredContent keeps the whole answer as JSON.
+// text but the text of a source is laid out within TEXT_BUDGET (budget.ts): the facts a model works from come first (receipt
+// and counts, the state of each requirement, every problem and unknown), long lists lose whole entries from their end, a long
+// field keeps its start and says how long it was and where the whole is, and one note before the trace line names what was
+// left out or shortened and exactly how to read it. A way to read is offered only in a form the server takes: page cursors
+// only when the server says it pages (TextContext.paging); otherwise record pointers and the console page. The text of a
+// source goes out whole (decision 157). structuredContent keeps the whole answer as JSON.
 import { createHash } from 'node:crypto';
 import { applicabilityText, viewIdExample } from '../knowledge/api.ts';
 import { ZodError, type z } from 'zod';
@@ -43,7 +43,7 @@ import {
   type UploadFileOutput,
 } from '../../contracts/src/tools.ts';
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
-import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, withRange, type Reference } from '../refs/api.ts';
+import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, type Reference } from '../refs/api.ts';
 import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type Labels, type LayerTerminal } from './claims.ts';
 
@@ -1353,63 +1353,6 @@ function buildView(c: Content & { text: string }): ContentView {
   return { head: [], lines: jsonLines(value, tokens), unit: '内容', run: null, record, tree: null, text: false };
 }
 
-/** Line starts and ends as text@1 counts lines (CR LF, CR or LF; a final line break opens no line). */
-function textLines(text: string): { starts: number[]; ends: number[] } {
-  const starts: number[] = [];
-  const ends: number[] = [];
-  if (text.length === 0) return { starts, ends };
-  const breaks = /\r\n|\r|\n/g;
-  let start = 0;
-  for (let match = breaks.exec(text); match !== null; match = breaks.exec(text)) {
-    starts.push(start);
-    ends.push(match.index);
-    start = match.index + match[0].length;
-  }
-  if (start < text.length) {
-    starts.push(start);
-    ends.push(text.length);
-  }
-  return { starts, ends };
-}
-
-/**
- * A reference that reads a source from UTF-16 index `at` of its text to its end, without a cursor: a byte range of the
- * same fragment, or for a whole source the text@1 lines from there (with a byte range when `at` is inside a line).
- */
-function sourceFrom(reference: string, text: string, at: number, lines: () => { starts: number[]; ends: number[] }): string | null {
-  let ref: Reference;
-  try {
-    ref = parseReference(reference);
-  } catch (error) {
-    if (error instanceof ReferenceSyntaxError) return null;
-    throw error;
-  }
-  if (ref.scheme !== 'src') return null;
-  if (ref.selector !== undefined) {
-    const base = ref.range?.[0] ?? 0;
-    const end = ref.range?.[1] ?? base + Buffer.byteLength(text, 'utf8');
-    const from = base + Buffer.byteLength(text.slice(0, at), 'utf8');
-    return from < end ? withRange(reference, [from, end]) : null;
-  }
-  const { starts, ends } = lines();
-  let k = 0;
-  let hi = starts.length - 1;
-  while (k < hi) {
-    const mid = (k + hi + 1) >> 1;
-    if (starts[mid] <= at) k = mid;
-    else hi = mid - 1;
-  }
-  if (starts.length === 0 || at >= ends[ends.length - 1]) return null;
-  const total = starts.length;
-  const selector = ['l', k + 1 === total ? String(total) : `${k + 1}-${total}`];
-  const offset = at - starts[k];
-  if (offset <= 0) return srcFragment(ref.sha256, 'text@1', selector);
-  const x = Buffer.byteLength(text.slice(starts[k], at), 'utf8');
-  let y = 0;
-  for (let j = k; j < total; j++) y += Buffer.byteLength(text.slice(starts[j], ends[j]), 'utf8') + (j < total - 1 ? 1 : 0);
-  return x < y ? srcFragment(ref.sha256, 'text@1', selector, [x, y]) : null;
-}
-
 /** Where a page shows from: a line and a UTF-16 offset inside it (a line longer than a page is shown in pieces). */
 interface Position {
   line: number;
@@ -1519,22 +1462,8 @@ function contentText(c: Content, trace: string, context: TextContext): string {
   if (start.offset > 0) pageHead.push(`（接上页：第 ${start.line + 1} 行的前 ${start.offset} 个字符在上一页）`);
   else if (start.line > 0 && first.item !== null && lines[start.line - 1].item === first.item) pageHead.push(`（接上页：条目 ${first.item}）`);
 
-  let starts: number[] | null = null;
-  const lineStart = (line: number): number => {
-    starts ??= (() => {
-      const out = [0];
-      for (let i = textOf.indexOf('\n'); i >= 0; i = textOf.indexOf('\n', i + 1)) out.push(i + 1);
-      return out;
-    })();
-    return starts[line] ?? textOf.length;
-  };
-  let tl: { starts: number[]; ends: number[] } | null = null;
   const wayFrom = (at: Position): string => {
     if (paging) return `下一页：${callText('get_nodes', { reference: c.reference, cursor: pageCursor(c.reference, at.line, at.offset) })}${view.run !== null ? `；也可${seeConsole(view.run)}` : ''}`;
-    if (view.text) {
-      const reference = sourceFrom(c.reference, textOf, lineStart(at.line) + at.offset, () => (tl ??= textLines(textOf)));
-      if (reference !== null) return `接着读：${readCall(reference)}`;
-    }
     const tokens = lines[at.line]?.tokens ?? null;
     if (tokens !== null && view.record !== null) {
       const numbered = NUMBER.test(tokens.at(-1) ?? '');
@@ -1544,9 +1473,10 @@ function contentText(c: Content, trace: string, context: TextContext): string {
     return view.run !== null ? `其余部分${seeConsole(view.run)}` : `其余部分${RUNS_PAGE}`;
   };
 
-  // The room the first line has on this page: the budget less the heads, the trace and the note (with its way on).
-  const longestWay = Math.max(wayFrom({ line: start.line, offset: start.offset + 1 }).length, wayFrom({ line: Math.min(start.line + 1, lines.length - 1), offset: 0 }).length);
-  const room = TEXT_BUDGET - sizeOf(head) - sizeOf(pageHead) - sizeOf(tail) - longestWay - 1500;
+  // A text goes out whole from where the reader is (decision 157): how much of an answer stays in a model's context is the
+  // client's to handle, and Circle keeps an answer above its limit in a file and gives the model the path and the start of it.
+  // Anything else is laid out by the budget: the room of the first line is the budget less the heads, the trace and the note.
+  const room = view.text ? Infinity : TEXT_BUDGET - sizeOf(head) - sizeOf(pageHead) - sizeOf(tail) - Math.max(wayFrom({ line: start.line, offset: start.offset + 1 }).length, wayFrom({ line: Math.min(start.line + 1, lines.length - 1), offset: 0 }).length) - 1500;
   const rest = first.text.slice(start.offset);
   const entries: Entry[] = [];
   const end = rest.length + 1 <= room ? first.text.length : pieceEnd(first.text, start.offset, room - 1);
@@ -1563,7 +1493,7 @@ function contentText(c: Content, trace: string, context: TextContext): string {
   }
   const more = (n: number): string => wayFrom(n === 0 ? start : { line: start.line + n, offset: 0 });
   blocks.push({ priority: 1, head: pageHead, entries, unit: view.unit, measure: '行', first: start.line + 1, more });
-  return fit(blocks, { tail }).text;
+  return fit(blocks, view.text ? { tail, budget: Infinity } : { tail }).text;
 }
 
 // ---------------------------------------------------------------- resolve_reference
@@ -1704,7 +1634,10 @@ export function feedingText(text:string,value:unknown):string {
   // Fit disclosures first so that even a large feeding receipt cannot consume the whole answer.
   const disclosure=fit([{priority:0,entries:rows,unit:'喂入说明',measure:'条',more:()=>more}],{budget:6000,fallback:more}).text;
   const lines=text.split('\n'),tail=lines.splice(-2),trace=tail.pop();
-  return fit([{priority:0,entries:lines,unit:'回答原文',measure:'行',more:()=>more}],{tail:[...tail,disclosure,...(trace?[trace]:[])],fallback:more}).text;
+  // A text goes out whole (contentText), so no line of it may be left out here either.
+  const content=recordsOf(v.content);
+  const whole=typeof content.reference==='string'&&typeof content.text==='string'&&contentView(content as Content&{text:string}).text;
+  return fit([{priority:0,entries:lines,unit:'回答原文',measure:'行',more:()=>more}],{tail:[...tail,disclosure,...(trace?[trace]:[])],fallback:more,...(whole?{budget:Infinity}:{})}).text;
 }
 
 /** The plain text of a validated tool answer, at most TEXT_BUDGET characters, ending with the trace line. */

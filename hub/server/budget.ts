@@ -1,16 +1,15 @@
-// The text budget of one tool answer. Measured on the real Circle client 1.10 with a scripted model: Circle forwards only the
-// text content of a tool result (structuredContent never reaches the model) and concatenates its text blocks; an answer of
-// about 49,000 characters reached the model whole, one of about 61,000 was replaced by "Tool output is too large to include
-// here" and could not be used; a CJK character counts as one. So every answer is laid out from blocks within TEXT_BUDGET:
-// a line is never cut here, what does not fit is left out whole, and one Chinese note names what was left out and how to
-// read it (display rule 7: a truncation is marked 部分). What a renderer shortened itself (an entry's Omission) is named in the
-// same note. The tail (the trace line) always ends the text, after the note.
+// The text budget of one tool answer that lists or lays out what a reader chooses from: every such answer is laid out from
+// blocks within TEXT_BUDGET, a line is never cut here, what does not fit is left out whole, and one Chinese note names what was
+// left out and how to read it (display rule 7: a truncation is marked 部分). What a renderer shortened itself (an entry's
+// Omission) is named in the same note. The tail (the trace line) always ends the text, after the note.
+// A source's own text has no budget (decision 157): Circle forwards only the text content of a tool result, keeps an answer
+// above its own limit (80,000 characters in 1.14) in a file and gives the model the path and the start of it, so nothing is
+// lost and how much of it stays in the context is the client's to handle.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 
 /**
- * The most characters the text of one tool answer has, the note and the tail included. Well below the ~49,000 the client
- * delivered, so that the client's own framing and a client with a smaller limit still fit. Counted as String.length (UTF-16
- * code units): never less than the characters a client counts (an astral character counts twice).
+ * The most characters a laid-out answer has, the note and the tail included. Counted as String.length (UTF-16 code units):
+ * never less than the characters a client counts (an astral character counts twice).
  */
 export const TEXT_BUDGET = 30_000;
 

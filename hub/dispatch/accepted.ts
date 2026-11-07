@@ -76,7 +76,7 @@ function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, ad
   if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${PROGRESS}`;
   if (status.outcome === 'not_dispatched') return job.boundary_refused ? '按原因补齐（例如预订整个自动化测试环境）后原样重交，Hub 会再试一次' : NO_MORE;
   if (status.missing_fact) return '部分条目没有判定，缺的事实写在结果引用对应的行里；要管理员补的 Hub 已记下';
-  return status.device_return ? '读设备返回，读完全部页再判断' : '读结果引用看逐条结论';
+  return status.device_return ? '读设备返回，读完再判断' : '读结果引用看逐条结论';
 }
 
 /** A failed bed check is reported as it is, the way the reference compile skill reports its environment check before a run. */

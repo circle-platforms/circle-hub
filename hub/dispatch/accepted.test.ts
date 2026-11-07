@@ -142,7 +142,7 @@ const verdictStatus = (extra: Record<string, unknown>) => ({ job: verdictJob, ph
 test('a finished job points at the device return and judges nothing itself; the note fits the schema a connected client caches', () => {
   const returned = `src:${'c'.repeat(64)}`;
   const note = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, device_return: returned }) }, 'admin-1');
-  assert.ok(note.text.includes(`设备返回 ${returned}`)); assert.match(note.text, /读设备返回，读完全部页再判断/);
+  assert.ok(note.text.includes(`设备返回 ${returned}`)); assert.match(note.text, /读设备返回，读完再判断/);
   assert.ok(note.text.length <= MAX_NOTE_TEXT);
   assert.deepEqual(SubmitResultOutput.shape.dispatch.safeParse([note]).error?.issues ?? [], []);
 });
