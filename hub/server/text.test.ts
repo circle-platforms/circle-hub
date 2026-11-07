@@ -971,10 +971,10 @@ describe('get_nodes text', () => {
     assert.equal(noteOf(text), null, 'nothing left out');
   });
 
-  test('a manual section of 114 entries shows all of them: run 9 got about 20 and untitled references for the rest', () => {
+  test('a manual section of 137 entries shows all of them: run 9 got 23 and untitled references for the rest', () => {
     const root = H('d');
     const path = '/manual/cli/DNS资源记录';
-    const entries = Array.from({ length: 114 }, (_, k) => {
+    const entries = Array.from({ length: 137 }, (_, k) => {
       const entry = createHash('sha256').update(String(k)).digest('hex');
       return { entry, kind: 'behaviour', statement: `**sdns 命令 ${k}** *<参数>* 该命令用于……${'说明'.repeat(300)}`, reference: `tree:${root}${path}@${entry}`, applicability: '未声明' };
     });
@@ -982,7 +982,7 @@ describe('get_nodes text', () => {
     const text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes: [node], trace: TRACE }));
     withinBudget(text, 'a long manual section');
     const shown = linesOf(text).filter((l) => l.startsWith('  · [行为] **sdns 命令 '));
-    assert.equal(shown.length, 114, 'every entry, in order');
+    assert.equal(shown.length, 137, 'every entry, in order');
     assert.ok(shown.every((l, k) => l.startsWith(`  · [行为] **sdns 命令 ${k}** `) && l.includes(entries[k].reference)));
     assert.ok(!text.includes('再往后的') && !text.includes('/console/knowledge/tree'), 'no entry left to the console, which a model cannot open');
   });

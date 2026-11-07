@@ -4,7 +4,7 @@
 // A tool answer has no length budget (decisions 157 and 158): Circle forwards only the text content of a tool result, keeps
 // an answer above its own limit (80,000 characters in 1.14) in a file and gives the model the path and the start of it, so
 // nothing is lost and how much of it stays in the context is the client's to handle. A list cut to a budget sent the model to
-// entries it could not reach (a manual section of 114 entries showed about 20, the rest named by untitled references or the
+// entries it could not reach (a manual section of 137 entries showed 23, the other 114 named by untitled references or the
 // console page). `budget` stays for a caller that needs a cap: then a line is never cut, what does not fit is left out whole,
 // and the note names it too.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
