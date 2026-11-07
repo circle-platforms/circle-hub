@@ -281,7 +281,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.deepEqual(latest.ids, ids); assert.deepEqual(latest.payload, payload);
     const report = await resultReport(state);
     assert.deepEqual(report.rows.map((row: { item: string }) => row.item), ids, 'one verdict row per case of the workbook');
-    assert.deepEqual((state as { cases?: Array<{ item: string }> }).cases?.map((row) => row.item), ids, 'the job status says each case, so an answer need not send the runner through the whole report');
+    const returned = await client.call('get_nodes', { reference: state.device_return }); assert.equal(returned.isError, false, JSON.stringify(returned));
+    for (const id of ids) assert.ok(JSON.stringify(returned).includes(`${id}：`), 'the device return says each case, so an answer need not send the runner through the whole report');
     for (const row of report.rows) assert.equal(row.reported_terminal, 'pass');
     const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
     aliasEcho = false;
