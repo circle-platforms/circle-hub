@@ -1,6 +1,6 @@
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
-import { labelOf, type DynamicTerminal } from '../../contracts/generated/vocabulary.ts';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
@@ -10,8 +10,6 @@ export interface DispatchNote { job?: string; executor?: string; result?: string
 export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
 export const MAX_NOTES = 16, MAX_NOTE_TEXT = 800;
-/** Case verdicts travel as ordinary notes: a new field would fail the strict output schema a connected client has cached. */
-const MAX_VERDICT_TEXT = 6000;
 const clip = (text: string) => text.length <= MAX_NOTE_TEXT ? text : `${text.slice(0, MAX_NOTE_TEXT - 1)}…`;
 /** The newest notes within the limit, after one line that counts the older jobs left out. */
 function capped(notes: DispatchNote[]): DispatchNote[] {
@@ -34,7 +32,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   // the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as the reference compile skill
   // resubmits a workbook its gateway refused. A job that reached the target, its precheck included, is only read.
   const retry = ready && jobs.length > 0 && jobs.every((job) => job.ended === 'done' && job.boundary_refused && job.status.outcome === 'not_dispatched');
-  if (jobs.length && !retry) return capped(jobs.flatMap((job) => jobNotes(job, admin.id)));
+  if (jobs.length && !retry) return capped(jobs.map((job) => runnerNote(job, admin.id)));
   if (!ready) return [];
   const state: { reserved?: { job: string; executor: string } } = {};
   let wake: () => void = () => {};
@@ -78,7 +76,7 @@ function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, ad
   if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${PROGRESS}`;
   if (status.outcome === 'not_dispatched') return job.boundary_refused ? '按原因补齐（例如预订整个自动化测试环境）后原样重交，Hub 会再试一次' : NO_MORE;
   if (status.missing_fact) return '部分条目没有判定，缺的事实写在结果引用对应的行里；要管理员补的 Hub 已记下';
-  return '读结果引用看逐条结论';
+  return status.device_return ? '读设备返回，读完全部页再判断' : '读结果引用看逐条结论';
 }
 
 /** A failed bed check is reported as it is, the way the reference compile skill reports its environment check before a run. */
@@ -86,39 +84,6 @@ function details(status: JobStatus): string[] {
   const parts = (status.failed_checks ?? []).map((check) => `未通过的核对 ${[check.step, check.seat, check.check].filter(Boolean).join(' ')}：${check.missing_fact}`);
   if (status.failed_conditions?.length) parts.push(`未满足的条件：${status.failed_conditions.map((c) => `${c.pointer} ${c.operator}`).join('、')}`);
   return parts;
-}
-
-/** The case verdicts in a few lines: a report of many cases is too long to page through for one word each. The cases that did
- * not pass are grouped by their log, since many share one. */
-function verdicts(status: JobStatus): string | null {
-  const cases = status.cases;
-  if (!cases?.length) return null;
-  const label = (terminal: string) => labelOf('dynamic_terminal', terminal as DynamicTerminal);
-  const counts = new Map<string, number>(), logs = new Map<string, string[]>();
-  for (const row of cases) {
-    counts.set(row.terminal, (counts.get(row.terminal) ?? 0) + 1);
-    if (row.terminal === 'pass') continue;
-    const key = row.log ?? '';
-    logs.set(key, [...(logs.get(key) ?? []), `${row.item}（${label(row.terminal)}）`]);
-  }
-  const groups = [...logs].map(([log, items]) => `${log ? `日志 ${log}` : '没有日志'}：${items.join('、')}`);
-  const text = `逐条结论：${[...counts].map(([terminal, count]) => `${label(terminal)} ${count}`).join('，')}${groups.length ? `；没有通过的：${groups.join('；')}` : ''}`;
-  const more = '…（其余读结果引用）';
-  return text.length <= MAX_VERDICT_TEXT ? text : `${text.slice(0, MAX_VERDICT_TEXT - more.length)}${more}`;
-}
-
-/** A job's note and, once it has a result, its case verdicts in notes within the note limit, cut between cases. */
-export function jobNotes(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string): DispatchNote[] {
-  const text = job.status.result && job.status.outcome !== 'not_dispatched' ? verdicts(job.status) : null;
-  const notes = [runnerNote(job, admin)];
-  if (text === null) return notes;
-  let line = '';
-  for (const part of text.split(/(?<=[、；])/u)) {
-    if (line.length + part.length > MAX_NOTE_TEXT) { notes.push({ job: job.job, text: line }); line = ''; }
-    line += part;
-  }
-  notes.push({ job: job.job, text: line });
-  return notes;
 }
 
 /** The runner's note on one job of the run. */
@@ -129,6 +94,7 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   // Before anything is sent the reference holds the pre-dispatch device checks, never results of the cases (decision 116).
   if (status.result) parts.push(status.outcome === 'not_dispatched'
     ? `派发前核对的结论 ${status.result}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）`
+    : status.device_return ? `设备返回 ${status.device_return}（逐条结论和没有通过的条目的日志、各设备会话原文，一字未改）；结果引用 ${status.result}`
     : `结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   if (status.reason) parts.push(`原因：${status.reason}`);
   parts.push(...details(status), `下一步：${nextStep(job, admin)}`);

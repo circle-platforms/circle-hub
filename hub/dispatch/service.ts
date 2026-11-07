@@ -80,7 +80,9 @@ export interface DispatchOptions {
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus {/** One short line per case of the result, so an answer need not send a reader through the whole report. */cases?:Array<{item:string;terminal:string;log?:string}>;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus {/** The source holding what the target returned, word for word: see deviceReturn. */device_return?:string;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+/** One piece of what the target returned for a row; text is null when the credential scan holds it back. */
+interface ReturnedPiece {name:string;text:string|null;}
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
 interface Heartbeat {stop:()=>Promise<void>;held:()=>boolean;lastConfirmedAt:()=>number|null;}
 interface LeaseClock {at:number;mono:number;ttl:number;}
@@ -185,8 +187,8 @@ export class DispatchService {
     if(typeof note==='string'){try{const bytes=await this.options.records.objects.get(note);if(!bytes||sha256Hex(bytes)!==note)throw new Error('missing');adminRelease=JSON.parse(new TextDecoder().decode(bytes)).checks;}catch{adminReleaseMissing=true;}}
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=roundRecords(events).filter(e=>typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
-    const cases=projectedResult(events)?.body.detail.cases;
-    return { job,...(Array.isArray(cases)?{cases:cases as NonNullable<JobStatus['cases']>}:{}),...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
+    const deviceReturn=projectedResult(events)?.body.detail.device_return;
+    return { job,...(typeof deviceReturn==='string'?{device_return:deviceReturn}:{}),...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:pendingReport&&!unknown&&!missingReceipt?{next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:`circle-hub job resume ${job}；只读补报告，不重交`}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
@@ -979,14 +981,18 @@ export class DispatchService {
    * and the session dumps of every non-pass case to attribute the failure). The raw report stays readable by functions only;
    * a session the credential scan holds back leaves the other sessions and the verdicts readable.
    */
-  private async failureEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<Map<string, { log?: string; sessions?: Record<string, string> }>> {
-    const found = new Map<string, { log?: string; sessions?: Record<string, string> }>();
-    if (!d.result.log && !d.result.sessions) return found;
+  private async failureEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<{ found: Map<string, { log?: string; sessions?: Record<string, string> }>; returned: Map<string, ReturnedPiece[]> }> {
+    const found = new Map<string, { log?: string; sessions?: Record<string, string> }>(), returned = new Map<string, ReturnedPiece[]>();
+    if (!d.result.log && !d.result.sessions) return { found, returned };
     // A session name that is no valid source name (empty, over 300 characters, control characters) gets a positional one,
     // and a piece that cannot be saved is logged and left out: this runs after the receipt, so it must not stall the job.
     const sourceName = (name: string, index: number) => name.length > 0 && name.length <= 300 && !/\p{Cc}/u.test(name) && name.isWellFormed() ? name : `session-${index + 1}.txt`;
-    const save = async (text: string, name: string): Promise<string | undefined> => {
-      try { return `src:${(await this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [response.source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name })).body.sha256}`; }
+    const save = async (id: string, label: string, text: string, name: string): Promise<string | undefined> => {
+      try {
+        const { body } = await this.saveText(binding, response.source, text, name);
+        returned.set(id, [...(returned.get(id) ?? []), { name: label, text: body.read_tier === 'retain_only' ? null : text }]);
+        return `src:${body.sha256}`;
+      }
       catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'failure evidence ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
     };
     for (const id of items) {
@@ -995,11 +1001,36 @@ export class DispatchService {
       const log = d.result.log ? at(row, d.result.log) : undefined;
       const sessions = d.result.sessions ? at(row, d.result.sessions) : undefined;
       const evidence: { log?: string; sessions?: Record<string, string> } = {};
-      if (typeof log === 'string' && log) { const saved = await save(log, 'log.txt'); if (saved) evidence.log = saved; }
-      if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(text, sourceName(name, index)); if (saved) (evidence.sessions ??= {})[name] = saved; }
+      if (typeof log === 'string' && log) { const saved = await save(id, '日志', log, 'log.txt'); if (saved) evidence.log = saved; }
+      if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(id, sourceName(name, index), text, sourceName(name, index)); if (saved) (evidence.sessions ??= {})[name] = saved; }
       if (evidence.log || evidence.sessions) found.set(id, evidence);
     }
-    return found;
+    return { found, returned };
+  }
+  private saveText(binding: JobBinding, source: string, text: string, name: string) {
+    return this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name });
+  }
+  /**
+   * What the target returned, in one text for the runner: every row's verdict, then the log and device sessions of each row
+   * that did not pass, word for word. Judging them is the reader's work, so nothing here picks, groups or interprets them
+   * (the reference engine passes device output through whole, with no keyword digest). Only two things touch the text: a
+   * piece the credential scan holds back is named and not quoted, so one hit leaves the rest readable, and a piece several
+   * rows share is written once.
+   */
+  private async deviceReturn(binding: JobBinding, source: string, rows: ReadonlyArray<{ item: string; dynamic_terminal: DynamicTerminal }>, returned: ReadonlyMap<string, readonly ReturnedPiece[]>): Promise<string | undefined> {
+    const label = (row: { dynamic_terminal: DynamicTerminal }) => labelOf('dynamic_terminal', row.dynamic_terminal);
+    const lines = [`作业 ${binding.job} 的设备返回。逐条结论：`, ...rows.map(row => `${row.item}：${label(row)}`)];
+    const written = new Map<string, string>();
+    for (const row of rows) for (const piece of returned.get(row.item) ?? []) {
+      const head = `==== ${row.item}（${label(row)}）${piece.name} ====`;
+      if (piece.text === null) { lines.push('', head, '（Hub 的凭据扫描扣住了这一段，这里不引用；管理员能在原件里看）'); continue; }
+      const first = written.get(piece.text);
+      if (first !== undefined) { lines.push('', head, `（和上面 ${first} 相同）`); continue; }
+      written.set(piece.text, `${row.item} ${piece.name}`);
+      lines.push('', head, piece.text);
+    }
+    try { return `src:${(await this.saveText(binding, source, lines.join('\n'), 'device-return.txt')).body.sha256}`; }
+    catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'device return ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
   }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
     return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
@@ -1831,7 +1862,7 @@ export class DispatchService {
     const ownershipObservation={declared:!!attribution,certified:ownershipCertified,matched:ownershipMatched,consistent:!ownershipConflict,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:ownershipReason===undefined?null:ownershipReason,source:response.source};
     const admin=binding.acting_by ?? binding.initiated_by;
     const ownershipFailure=!attribution?{missing_fact:'执行器尚未声明本次结果的归属字段和唯一归属值',next_action:`请管理员 ${admin} 核对 ${response.source} 并登记 result.ownership 的字段、唯一归属值及原因指针声明；本作业保留无判定，不重交`}:!ownershipMatched?{missing_fact:'本结果未报告声明的唯一归属；具体原因见归属观察及原件',next_action:`请管理员 ${admin} 依据 ${response.source} 检查原派发日志、收集器目录和保留证据，恢复归属或登记该版本的能力缺口；本作业保留无判定，不重交`}:ownershipConflict?{missing_fact:'本结果的唯一归属值与原因字段相互矛盾，不能采用为归属事实',next_action:`请管理员 ${admin} 依据 ${response.source} 核对目标协议实现及报告归属，修复肯定值与原因的矛盾或登记能力缺口；本作业保留无判定，不重交`}:{missing_fact:'本结果的归属值相符，但当前目标版本的归属前提尚未认证',next_action:`请管理员 ${admin} 复核 ${response.source} 的归属证据，为该目标版本登记 result_ownership 认证；认证用于后续核验，本作业保留无判定，不重交`};
-    const evidence = await this.failureEvidence(binding, d, response, input.items);
+    const { found: evidence, returned } = await this.failureEvidence(binding, d, response, input.items);
     const projected = input.items.map(id => {
       const resolution=reportOutcome(response.value,d,id),{row,reported}=resolution;
       if(!resolution.check.resolved)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'result interpretation '+binding.job,detail:JSON.stringify(resolution.check)});}catch{}
@@ -1853,7 +1884,8 @@ export class DispatchService {
     const vocabularyLimits=[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])].map(mark=>labelOf('qualifier_mark',mark));
     const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(pending?{report_pending:true}:{}), ...(roundList.length ? { rounds: roundList } : {}), ownership:ownershipObservation, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: digestOfValue(d), operation_definition_sha256:binding.executor_digest, limitations: d.limitations }, lease_drift:options?.execution?(options.execution.drift??null):drift,lease_interrupted:options?.execution?(options.execution.lease_interrupted??null):leaseInterrupted, qualifier_marks:[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])],limits:[...vocabularyLimits, ...(bed?.limits ?? [])],...(bed?{bed_state:bed}:{}),...(input.judgments?.length?{judgment_premises:input.judgments}:{}) }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
-    await this.journal.append(binding, 'result', 'read_back', 'completed', {reference:`src:${artifact.body.sha256}`,items:projected.length,cases:projected.map(row=>({item:row.item,terminal:row.dynamic_terminal,...('evidence' in row&&object(row.evidence)&&typeof row.evidence.log==='string'?{log:row.evidence.log}:{})})),no_verdict:projected.filter(row=>row.dynamic_terminal==='no_verdict').length,report_pending:pending,execution_integrity:options?.execution??{intent:intent.digest,continuity:!drift&&!leaseInterrupted,drift,lease_interrupted:leaseInterrupted}}, [response.source]);
+    const deviceReturn = await this.deviceReturn(binding, response.source, projected, returned);
+    await this.journal.append(binding, 'result', 'read_back', 'completed', {reference:`src:${artifact.body.sha256}`,items:projected.length,...(deviceReturn?{device_return:deviceReturn}:{}),no_verdict:projected.filter(row=>row.dynamic_terminal==='no_verdict').length,report_pending:pending,execution_integrity:options?.execution??{intent:intent.digest,continuity:!drift&&!leaseInterrupted,drift,lease_interrupted:leaseInterrupted}}, [response.source]);
     if(!options?.execution)await this.release(binding,client,remoteLease);
     const unresolved=projected.filter(row=>row.dynamic_terminal==='no_verdict');
     await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective',...(pending?{report_pending:true,missing_fact:'原请求已执行结束，判定仍缺事实：'+unresolved.map(row=>'missing_fact' in row?row.missing_fact:row.missing_facts.join('、')).join('；'),next_action:unresolved.find(row=>'next_action'in row)?.next_action??`circle-hub job resume ${binding.job}；只读补齐报告，不重交`}:{}),...(!pending&&unresolved.length?{missing_fact:[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:'动态完整性事实尚不齐全；见 missing_facts'))].join('；'),next_action:[...new Set(unresolved.map(row=>row.next_action))].join('；')}:{} ) });

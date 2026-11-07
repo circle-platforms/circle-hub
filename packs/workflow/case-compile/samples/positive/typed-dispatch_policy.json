@@ -830,7 +830,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.10.2"
+      "generator": "case-compile@3.10.3"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -965,14 +965,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.10.2",
+                    "text": "case-compile@3.10.3",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "c640e866f4559d2833641652a1f2cae32df0f7c7906b5375f9331c4eee535bfc",
+                    "text": "76a8d1f5b948470a92bca3a4a68e43da5f4abebeb200559de7c41fb693d48f17",
                     "formula": false,
                     "style": null
                   }
@@ -1174,7 +1174,7 @@
                   {
                     "reference": "D7",
                     "type": "inlineStr",
-                    "text": "Author         : case-compile@3.10.2\n计划运行 run_00000000000000000000000000；构建 Fixture_Build_A",
+                    "text": "Author         : case-compile@3.10.3\n计划运行 run_00000000000000000000000000；构建 Fixture_Build_A",
                     "formula": false,
                     "style": 5
                   },
@@ -6421,7 +6421,7 @@
           }
         ]
       },
-      "sha256": "35e0065f2e9396e3f384a55757ca4270002d872f23a0fa684e744f661c92f541"
+      "sha256": "00c26c415296f52260991d90e382dccb0a73cbec8866b876f301a4f83beea980"
     }
   },
   "expect": [

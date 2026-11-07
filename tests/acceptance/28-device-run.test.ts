@@ -240,7 +240,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       const report = await resultReport(state); assert.equal(report.rows[0].reported_terminal, 'pass'); assert.equal(report.rows[0].dynamic_terminal, 'no_verdict'); assert.ok(report.rows[0].limits.includes('未排除本地操作'));
       // Like the task id the reference compile skill prints: repeating the same submission reads this job and its result, it never dispatches again.
       const count = submissions; const again = (await client.call('submit_result', v.sent!)).out;
-      assert.equal(again.dispatch?.length, 2); assert.match(again.dispatch![1].text, /^逐条结论：/); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
+      assert.equal(again.dispatch?.length, 1); assert.match(again.dispatch![0].text, /设备返回 src:[a-f0-9]{64}/); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
       const read = await client.call('get_nodes', { reference: state.result }); assert.equal(read.isError, false);
       const stored = await bed.hub.hub.runs.getRun(bed.reviewer.principal, p.run); assert.equal(stored!.run.predecessor, booked); await release(booked);
     }

@@ -132,6 +132,34 @@ test('a row that did not pass names its log and device sessions as sources its r
   }
 });
 
+test('the device return gives the runner what the target said word for word: every verdict, the words of each row that did not pass, nothing read into them', async t => {
+  const said = 'Error: synthetic-peer is not found in the peer list\nFailed to execute the command';
+  const held = ['pass', 'word: ', 'Synth', 'heldvalue1!9\n'].join('');
+  const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [
+    { id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'device-a.txt': said, 'device-b.txt': held, 'device-c.txt': 'synthetic log' } },
+  ] } : value }); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
+  await c.freezeExecutor();
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.match(state.device_return ?? '', /^src:[a-f0-9]{64}$/, JSON.stringify(state));
+  const source = await c.kit.artifacts.source(c.owner, state.device_return!.slice(4));
+  const text = new TextDecoder().decode(source!.bytes!);
+  assert.ok(text.includes('synthetic-case：无判定'), text);
+  assert.ok(text.includes(said), 'the device reply is quoted whole');
+  assert.equal(text.split('synthetic log').length, 2, 'a piece two places share is written once');
+  assert.ok(text.includes('device-b.txt') && !text.includes('heldvalue'), 'a piece the scan holds back is named, never quoted');
+  assert.equal(await c.kit.artifacts.source(await c.kit.principals.createUser(c.admin, '其他合成用户'), state.device_return!.slice(4)).then(read => read?.bytes ?? null), null);
+});
+
+test('a passing row is a verdict line in the device return, and its words stay out', async t => {
+  const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome: 'good', log: 'synthetic passing log', sessions: { 'device-a.txt': 'synthetic passing session' } }] } : value }); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
+  await c.freezeExecutor();
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const text = new TextDecoder().decode((await c.kit.artifacts.source(c.owner, state.device_return!.slice(4)))!.bytes!);
+  assert.match(text, /^作业 .* 的设备返回。逐条结论：\nsynthetic-case：/); assert.doesNotMatch(text, /synthetic passing/);
+});
+
 test('a session name that is no valid source name still saves the session under a positional name and the job completes', async t => {
   const long = 'x'.repeat(301);
   const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'bad\u0007name': 'synthetic bell session', [long]: 'synthetic long session' } }] } : value }); t.after(() => c.close());
