@@ -2,7 +2,7 @@
 // token from standard input, fetches a run's export and sends one submission. It decides nothing and reads no environment
 // variable: every check stays in the Hub. Node built-ins only, as local tools require.
 import { createHash } from 'node:crypto';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const MAX_BYTES = 16 * 1024 * 1024;
@@ -31,6 +31,9 @@ export async function tokenFromStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8').trim();
 }
 
+/** The Hub answered with an HTTP error status; the message is the one every caller already shows. */
+export class HubReplyError extends Error { readonly status: number; constructor(status: number, message: string) { super(message); this.name = 'HubReplyError'; this.status = status; } }
+
 // A failure to reach the Hub is reported as what it is, never as a malformed answer (a submission that never arrived is told apart
 // from one whose results could not be read).
 export async function get(url: string, bearer: string): Promise<Uint8Array> {
@@ -43,9 +46,57 @@ export async function get(url: string, bearer: string): Promise<Uint8Array> {
     const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined)?.code ?? error.message : '未知原因';
     throw new Error(`Hub 不可达（${String(cause).slice(0, 120)}）；核对 --hub 是 MCP 条目的地址、网络可达后重取`);
   }
-  if (!reply.ok) throw new Error(`Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
+  if (!reply.ok) throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
   if (bytes.length > MAX_BYTES) throw new Error('Hub 答复超过 16 MiB 上限');
   return bytes;
+}
+
+const SOURCE_REFERENCE = /^src:([0-9a-f]{64})(?:\/|$)/;
+const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
+
+/**
+ * A run on local disk, so a model reads it with its own file tools instead of one Hub call per item: `run.json` (the run record,
+ * indented so a file reader goes line by line), `items/<index>.json` (one frozen item each, the index of `#/items/<index>`),
+ * `sources/<sha256>` (the original bytes of every source the run binds, each checked against its digest) and `sources.json`
+ * (each binding: slot, role, reference, label, media type, file). A source the reader's tier gives no bytes for is listed as
+ * withheld, never guessed. Everything is fetched and checked before anything is written; the directory must be new or empty.
+ * It reads the run alone, so it works before anything is submitted; it decides nothing about the content.
+ */
+export async function downloadRun(origin: string, bearer: string, run: string, out: string): Promise<{ run: string; out: string; items: number; sources: number; withheld: string[]; files: Record<string, string> }> {
+  let exported: unknown;
+  try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${run}/run`, bearer))); }
+  catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是完整的 UTF-8 JSON'); }
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run)) throw new Error('Hub 的运行导出不合式');
+  const record = exported.run;
+  if (record.run !== run) throw new Error(`Hub 导出的运行不是 --run 指定的 ${run}，什么都没有写入；核对运行号后重取`);
+  const items = Array.isArray(record.items) ? record.items : [];
+  const bindings = Array.isArray(record.sources) ? record.sources.filter(isRecord) : [];
+  const outputs: Array<{ name: string; bytes: Uint8Array }> = [{ name: 'run.json', bytes: json(record) }];
+  const width = String(Math.max(items.length - 1, 0)).length;
+  items.forEach((item, index) => outputs.push({ name: join('items', `${String(index).padStart(width, '0')}.json`), bytes: json(item) }));
+  const fetched = new Map<string, 'file' | 'withheld'>(), withheld: string[] = [];
+  for (const binding of bindings) {
+    const sha = SOURCE_REFERENCE.exec(String(binding.reference))?.[1];
+    if (sha === undefined || fetched.has(sha)) continue;
+    let bytes: Uint8Array;
+    try { bytes = await get(`${origin}/run-export/${run}/sources/${sha}`, bearer); }
+    catch (error) { if (error instanceof HubReplyError && error.status === 403) { fetched.set(sha, 'withheld'); withheld.push(sha); continue; } throw error; }
+    if (sha256(bytes) !== sha) throw new Error(`原件 ${sha.slice(0, 12)} 的字节与运行绑定的摘要不符，什么都没有写入`);
+    fetched.set(sha, 'file');
+    outputs.push({ name: join('sources', sha), bytes });
+  }
+  outputs.push({ name: 'sources.json', bytes: json(bindings.map((binding) => {
+    const sha = SOURCE_REFERENCE.exec(String(binding.reference))?.[1];
+    const state = sha === undefined ? undefined : fetched.get(sha);
+    return { slot: binding.slot ?? null, role: binding.role ?? null, reference: binding.reference, label: binding.label ?? null, media_type: binding.media_type ?? null, file: state === 'file' ? `sources/${sha}` : null, ...(state === 'withheld' ? { withheld: '你的读取层级不给这份原件的字节' } : {}) };
+  })) });
+  const present = await readdir(out).catch(() => []);
+  if (present.length) throw new Error(`--out 目录 ${out} 里已有文件（${present.slice(0, 3).join('、')}），不覆盖；另选一个新目录重取`);
+  await mkdir(join(out, 'items'), { recursive: true, mode: 0o700 }); await mkdir(join(out, 'sources'), { recursive: true, mode: 0o700 });
+  const files: Record<string, string> = {}, written: string[] = [];
+  try { for (const { name, bytes } of outputs) { const path = join(out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
+  catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
+  return { run, out, items: items.length, sources: [...fetched.values()].filter((state) => state === 'file').length, withheld, files };
 }
 
 /** The token from standard input, refused when it is Circle's placeholder or plainly no token. */

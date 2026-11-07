@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -18,7 +18,7 @@
     },
     {
       "pack": "run-tools",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "module": "hub-client"
     },
     {
@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "cdd78b6a3e642e04c8ad6e9ef7b74399bc45a5e68ef698367b07215c246d06f3",
-      "size": 5213
+      "sha256": "cbe7e8915882fe13a316d039f17ad39777a100714a49dc97265ed3803e200743",
+      "size": 5628
     },
     {
       "path": "checks.json",
@@ -65,8 +65,8 @@
     },
     {
       "path": "functions/generated/skills/run-tools/hub-client/index.ts",
-      "sha256": "5b41917e8034b0c78fb013d60e3d1acac8fd40294d6b9174e8640ccbc311acce",
-      "size": 8571
+      "sha256": "7e83ef705101ffafa758d67c7865c7bdfb1340d1c8b8a18cb29d90f210d2a1c3",
+      "size": 13221
     },
     {
       "path": "functions/project.ts",
@@ -80,7 +80,7 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "43819f6410ef4bd0af2acd0b1323227c5df39b8f9ed94e8324f96c3953f26c52",
+      "sha256": "7b4baf5c483ff1b2984ba62a6482b8aa33a836fa536bceb405a68b378fb10729",
       "size": 4185
     },
     {
@@ -120,7 +120,7 @@
     },
     {
       "path": "samples/negative/record.json",
-      "sha256": "e8badd450134eec96bfc554fed8f08ebbf984b01473692a8b568460aaf7fd502",
+      "sha256": "86864199e4e75f80f31637d8aee574e3ad4be621b6a3ece4acc690b9198ed04a",
       "size": 28861
     },
     {
@@ -135,7 +135,7 @@
     },
     {
       "path": "samples/positive/record.json",
-      "sha256": "f3ab32ec81fc9089e3d74d39220831e930e94297cc39e68e1e5cc83101fa6c14",
+      "sha256": "5ece6f71bbe42ef22d2e51978a330a7d3d985f484268aeef096ec672951e7224",
       "size": 28927
     },
     {
@@ -167,6 +167,11 @@
       "path": "tables/recompose-record.schema.json",
       "sha256": "d2c0638c22d4b9a79b157eff0b9e85a1e974f443582ecea91d30176f7e512b50",
       "size": 18407
+    },
+    {
+      "path": "tools/download-run.ts",
+      "sha256": "1786c275018d668f8159de14af45d711f3ec1f879edd8df561542b7e7d53d5e5",
+      "size": 1594
     },
     {
       "path": "tools/submit-records.ts",

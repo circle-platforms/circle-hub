@@ -296,6 +296,13 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.5: the run on disk before the plans
+
+`tools/download-run.ts` (module `hub-client` of `run-tools` 1.0.1, decision 160) writes the run record, one file per item and the
+original bytes of every bound source right after `start_run`, each checked against its digest. Step 2 tells the model to read
+these files: in the last real run it read 83 items one `get_nodes` call each. `recompose` 1.1.1 ships the same tool, and the
+three recompose stages move to 1.1.1 together, since a stage takes as predecessor only a run of its own pack at that version.
+
 ### 3.10.4: no paging of the device return
 
 The Hub now answers a source whole, so step 9 no longer tells the model to page.

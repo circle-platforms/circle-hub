@@ -1479,15 +1479,22 @@ const RENDERERS: Record<string, (value: never, context: TextContext) => string> 
   submit_result: submitText,
 };
 
-/** The feeding disclosure (what was fed, the frozen offset, feeding unknowns) whole before the trace line, also after the fallback renderer. */
+/**
+ * The feeding disclosure before the trace line, also after the fallback renderer: each distinct feeding unknown, and how
+ * many objects were fed with the frozen offset. The digests themselves stay in structuredContent and the run's usage
+ * records: inside a run every answer carries the run's whole list, which repeated a list of hundreds of digests on every
+ * read (a real 17-case run: 12.8K characters per get_nodes) and gave the model nothing it could act on.
+ */
 export function feedingText(text:string,value:unknown):string {
   const v=recordsOf(value);
   const rows:string[]=[];
-  if(Array.isArray(v.feeding_pending))for(const pending of v.feeding_pending){const p=recordsOf(pending);rows.push('喂入未知：'+String(p.missing)+'；下一步：'+String(p.next_action));}
+  if(Array.isArray(v.feeding_pending))for(const pending of v.feeding_pending){const p=recordsOf(pending);const row='喂入未知：'+String(p.missing)+'；下一步：'+String(p.next_action);if(!rows.includes(row))rows.push(row);}
   // The frozen offset belongs to a run (W06): an answer about no run (a content read) has none to name, and a run record
   // without one is a run started before offsets were frozen, whose feeding horizon stays unknown (decision 113).
+  const inRun='feeding_offset'in v||'run'in v;
   const offset='feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'run'in v?'；这个运行没有冻结喂入序号，喂入边界未知':'';
-  if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+offset);
+  const count=Array.isArray(v.feeding_objects)?v.feeding_objects.length:0;
+  if('feeding_objects'in v&&(inRun||count>0))rows.push((inRun?`本运行累计喂入 ${count} 个对象`:`这次读取喂入 ${count} 个对象`)+offset);
   if(!rows.length)return text;
   // Whole, before the trace line: the model reads only this text, so a disclosure cut here could not be read anywhere.
   const lines=text.split('\n'),trace=lines.pop();
