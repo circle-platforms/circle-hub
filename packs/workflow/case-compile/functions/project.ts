@@ -1,5 +1,5 @@
 import {analyzeStructure,type StructureCase} from './generated/skills/mindmap-format/case-structure/index.ts';
-import {admittedRecomposition} from './recomposition.ts';
+import {admittedRecomposition, recompositionProblem} from './recomposition.ts';
 // Project the automatable cases of one document (or the one case named by autoid) and freeze the original runner contract,
 // profile, manifest and lease view. Every check recomputes from these inputs; malformed documents refuse the whole run with
 // all problem pointers.
@@ -170,6 +170,7 @@ export function projectItems(input: unknown): unknown {
       pipeline:recompositionRequested?'recomposed':'legacy',
       pipeline_note:recompositionRequested?'读本条 recomposition：record.contract 是契约，record.ledgers.adapted 和 concretizations 是适配，record.sources.states 与 record.unknowns 是要编写阶段补的缺口':'本运行未走重组阶段，不代表重组完成',
       recomposition:proofOf(found.selector)??undefined,
+      recomposition_problem:recompositionRequested&&!proofOf(found.selector)?recompositionProblem(recompositionRun,recompositionResult,context,'src:'+sha256,found.selector??''):undefined,
       projection_unknowns:found.projection_unknowns,
       source_atoms:found.source_atoms,
       title: found.title,

@@ -1111,6 +1111,7 @@ nav_order: 3
    - 对照（`$A/review/compile-25365/mechanical-rules-comparison-20261109.md`，两份逐行盘点加人工复核）显示：第十二轮上机失败的 10 条里有 8 条按 InfoTest 的机械规则会在上机前退回编写，交付的 6 条里有 3 条的断言文字就在它读取的命令里（恒真的假通过）；模型的三处归因与设备原话不符。
    - case-compile 3.10.8 补三条：查询主机可达（InfoTest `driver_no_declared_path`）——被断言读取输出的查询，执行它的清单主机须有接口在目标网段，否则 `case-compile.driver_no_path`，作者亲笔且无主机够得着的地址只披露；断言不在自身命令里（InfoTest `assertion_matches_command_echo`）——期望文字出现在它读取的那一步命令里则 `case-compile.assertion_in_command`；归因逐字（InfoTest 归因提交校验）——没交付且上过机的用例，说明里的 evidence 必须逐字出自它最后一次上机的运行日志或设备会话，组交付工具核对，报告里列为“设备原话”。
    - 不搬的：InfoTest 已于 2026-08-26 删除的 DNS 段长规则（外部规范不作判据）；“逆操作不在命令树只披露残留”（我们的床面残留会挡住后续派发，保持拒绝）。DNSSEC 用例要把 keygen 现场生成的密钥文件名填进 keypub，跳转机运行器只能整段捕获命令输出（含回显和提示符）、没有取匹配片段的能力，InfoTest 的 I 列注入同样做不到；按 InfoTest 判定图是平台限制，要运行器补“按正则取片段存进寄存器”的能力才能编写。
+   - 第十三轮（kimi-for-coding）停在编写：两个计划运行都把 recomposition_run 和 recomposition_result 绑成同一条结果记录，Hub 只回“缺可受理的独立重组记录；等待重组模型与核对方……”，模型据此认定要等非作者账号复核，停下问人。原因在规则的说法：重组记录不被受理有八种原因，全折成一句。case-compile 3.10.9 逐条说出是哪一条（例如“recomposition_run 绑的是 validation_result 记录 rec:…，不是重组运行的运行记录：两个槽写成了同一个引用”），并写明两个槽各绑什么，不再提“核对方”。同一轮里模型还说过一次“上下文即将耗尽”（实际 153.7k/1.0M，models.dev 记 kimi-for-coding 窗口 1,048,576），操作方发“继续”，已披露。
 
 ## 待所有者定
 

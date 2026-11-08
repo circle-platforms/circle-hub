@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.10.8",
+  "version": "3.10.9",
   "kind": "workflow",
   "dependencies": [
     {
@@ -163,8 +163,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "eac8950277274904f38dcfc36484ce491f2b1ddf186c7c9216e68cee7bb70b21",
-      "size": 30340
+      "sha256": "848729f89bccf207798cef1c3a10df1657821afae43c582aa03a94d96e2787ed",
+      "size": 30649
     },
     {
       "path": "functions/command-obligations.ts",
@@ -268,8 +268,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "220c7e90b2a85e24defe27bbdba0e6a7a8e3eb30b669f1687d1c4df3b54d5982",
-      "size": 25589
+      "sha256": "e9353170aa5e8ddd57d93cf1a9432154737fc37ca000942c1715fa59235a8183",
+      "size": 25799
     },
     {
       "path": "functions/quote-width.ts",
@@ -298,8 +298,8 @@
     },
     {
       "path": "functions/recomposition.ts",
-      "sha256": "794bdc9e5e20529ed2405cc65a0924d668c4cb85cdf58e6368e65d8ad19fd663",
-      "size": 3887
+      "sha256": "4bcf613957efbeccc05953f54455d87075acbbd07bcc087cd2ec7db041d1c0ba",
+      "size": 7151
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -318,8 +318,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "00b9586c371e6687e096bb84367a72da4b99a8a4bed63b7a1f1a644b15cc0fa4",
-      "size": 12625
+      "sha256": "f38f36635eab16017969d7ae2a138b08b772a79d7d699c401571a809d1375c3e",
+      "size": 12796
     },
     {
       "path": "functions/text.ts",
@@ -423,7 +423,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "38023cbf68683005baf521b774470049768e8d3d7c6a22474a982169d0477425",
+      "sha256": "a20296bdbb0732013c4b843c9f4cba29057f571130e3d064f3084445845a262b",
       "size": 202654
     },
     {
@@ -463,7 +463,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "433df611e925441489457b287ebc2eaa65d39453ad7a811cbea0b14ca5592390",
+      "sha256": "4649e6389ab74e9efcf7eb141c6148b6ac518a35a1ed6dfcea2aa5ac5a4a109b",
       "size": 202658
     },
     {
@@ -538,7 +538,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "7cb0686d7eb529f7217e8c6285291d309562764b05a753212b67142cd92d7d7f",
+      "sha256": "b0e4526a4d01f750de2eee1b03b480a3652c52c66664e1fd0093b6b616b071df",
       "size": 202608
     },
     {
@@ -578,7 +578,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "b0e2527d53e411f8c2edb2653429a70ddbc1c53cb1fb0704271e9a45211612cc",
+      "sha256": "958833da3b76e01fa85aa1cf26c407324b2ab2cca7b8d8288ac29c70db82384e",
       "size": 202612
     },
     {
@@ -673,7 +673,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "ab2dfb71a2b0df76a5ed45bb617c9892ac69c0d147380e0446dd1c098b31a585",
+      "sha256": "8dca7efd3445b47e7bf90cbb69d9f65a6660b9496ed3b8401f03ab16e2ffa2b7",
       "size": 406
     },
     {

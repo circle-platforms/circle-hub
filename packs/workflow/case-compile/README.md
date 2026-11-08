@@ -296,6 +296,12 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.9: a recomposition refusal that names its condition
+
+`functions/recomposition.ts` `recompositionProblem` walks the admission conditions in order and the projection freezes the first
+one that fails on the case (`recomposition_problem`); the plan checks quote it. In run 13 the old single sentence ("缺可受理的独立
+重组记录……核对方") made the model wait for a reviewer when it had bound one result record in both slots.
+
 ### 3.10.8: three rules from the reference engine
 
 Compared rule by rule with InfoTest after run 12 (decision 163). `bed_addresses` refuses an asserted query sent from a host with
