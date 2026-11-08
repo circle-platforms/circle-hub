@@ -125,3 +125,22 @@ test('a meeting intermittent carries no attribution and a missing one is unattri
   assert.equal(hypothesis.items.length, 1);
   assert.deepEqual((hypothesis.items[0].body as { hypotheses: Array<{ statement: string }> }).hypotheses.map(entry => entry.statement), ['被测对象缺陷', '环境', '执行上下文']);
 });
+
+test('the runner exports the jobs of its run, with verdicts only from the dispatch service\'s own projection of that job', {skip}, async () => {
+  const map = await h.upload(h.alice, toyMap(standardDocument()));
+  const run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '10.6.1', build: 'Rel_MEADOW_10_6_1_7', inputs: { map: { reference: map } } }, h.call())).run!;
+  const item = run.items[0].id, id = 'e'.repeat(64), workbook = 'f'.repeat(64), log = `src:${'1'.repeat(64)}`, deviceReturn = `src:${'2'.repeat(64)}`;
+  const rows = [{ item, dynamic_terminal: 'fail', accepted_as_fact: false, qualifier: { nature: 'judgment', marks: ['target_reported'] }, missing_facts: [], evidence: { log } }];
+  const ingest = (body: unknown, generator: string) => h.kit.artifacts.ingest({ bytes: canonicalBytes(body), mediaType: 'application/json', origin: { generated: { generator, inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [h.alice.id], admins: true, packs: [], shareable: false } });
+  const own = await ingest({ job: id, sha256: workbook, rows }, 'dispatch@1');
+  const forged = await ingest({ job: id, sha256: workbook, rows, note: 'not the dispatch service' }, 'synthetic@1');
+  const otherWorkbook = await ingest({ job: id, sha256: 'a'.repeat(64), rows }, 'dispatch@1');
+  let result = `src:${own.body.sha256}`;
+  const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, phase: 'complete', outcome: 'effective', frozen: false, events: 3, result, device_return: deviceReturn }, ended: 'done', boundary_refused: false });
+  const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch: { jobs: async () => [job()], reconcile: async () => job().status } });
+  const exported = await service.exportJobs!(h.alice, run.run);
+  assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows: [{ item, dynamic_terminal: 'fail', evidence: { log } }] }] });
+  assert.ok(!('record' in exported!.jobs[0]), 'the administrative proof stays out');
+  for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
+  assert.equal(await service.exportJobs!({ id: 'u_01aaaaaaaaaaaaaaaaaaaaaaaa', name: '合成路人', role: 'user' }, run.run), null);
+});

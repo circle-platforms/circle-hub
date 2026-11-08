@@ -18,6 +18,7 @@ import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, getRunSummary, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
 import { submissionByDigest } from './store.ts';
+import { exportedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
@@ -147,6 +148,13 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
         const result = detail.latest?.result.acceptance === 'accepted' ? detail.latest.result : null;
         const submission = result ? (await submissionByDigest(current.deps.records.store, run, result.submission))?.body ?? null : null;
         return { run: detail.run, result, submission };
+      }));
+    },
+    exportJobs(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const detail = await getRun(current, user, run);
+        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        return { run, jobs: await exportedJobs(current, run) };
       }));
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},

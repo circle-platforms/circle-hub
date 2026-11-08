@@ -7,7 +7,11 @@ export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_
 export type QualifierMark = (typeof QUALIFIER_MARK)[number];
 export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分', 'intermittent': '间歇', 'decision_shape_unruled': '判定形状未裁定', 'legacy_keyword_rules': '旧规则（关键词）', 'possible_credentials': '可能含凭据' } as const satisfies Record<QualifierMark, string>;
 export function isQualifierMark(value: unknown): value is QualifierMark { return typeof value === 'string' && (QUALIFIER_MARK as readonly string[]).includes(value); }
-export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; }
+export const DYNAMIC_TERMINAL = ['pass', 'fail', 'no_verdict', 'not_run', 'incomplete'] as const;
+export type DynamicTerminal = (typeof DYNAMIC_TERMINAL)[number];
+export const DYNAMIC_TERMINAL_LABEL = { 'pass': '通过', 'fail': '失败', 'no_verdict': '无判定', 'not_run': '未运行', 'incomplete': '未完成' } as const satisfies Record<DynamicTerminal, string>;
+export function isDynamicTerminal(value: unknown): value is DynamicTerminal { return typeof value === 'string' && (DYNAMIC_TERMINAL as readonly string[]).includes(value); }
+export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; dynamic_terminal: DynamicTerminal; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL, dynamic_terminal: DYNAMIC_TERMINAL_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }

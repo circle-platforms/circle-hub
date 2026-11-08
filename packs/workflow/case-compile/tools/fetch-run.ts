@@ -15,35 +15,40 @@ import { isRecord } from '../functions/text.ts';
 import { argumentsOf, bearerFrom, get, hubOrigin, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
+export interface RunInputs { run: Record<string, unknown>; result: Record<string, unknown>; submission: Record<string, unknown>; originals: Record<typeof SLOTS[number], Uint8Array> }
+/** The run, its latest accepted result and submission, and the run's bound contract, profile and inventory, each checked. */
+export async function fetchRunInputs(origin: string, bearer: string, run: string): Promise<RunInputs> {
+  let exported: unknown;
+  try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${run}`, bearer))); } catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是合式 JSON'); }
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) throw new Error('Hub 的运行导出不合式');
+  if (exported.run.run !== run || exported.result.run !== run || exported.submission.run !== run) throw new Error(`Hub 导出的运行、结果或提交不属于 --run 指定的 ${run}，什么都没有写入；核对运行号后重取`);
+  const sources = Array.isArray(exported.run.sources) ? exported.run.sources : [];
+  const originals = {} as RunInputs['originals'];
+  for (const slot of SLOTS) {
+    const bound = sources.filter((value) => isRecord(value) && value.slot === slot);
+    const match = bound.length === 1 && isRecord(bound[0]) ? /^src:([0-9a-f]{64})$/.exec(String(bound[0].reference)) : null;
+    if (!match) throw new Error(`运行没有唯一绑定的 ${slot} 原件`);
+    const bytes = await get(`${origin}/run-export/${run}/sources/${match[1]}`, bearer);
+    if (sha256(bytes) !== match[1]) throw new Error(`${slot} 原件摘要与运行绑定不符，什么都没有写入`);
+    originals[slot] = bytes;
+  }
+  return { run: exported.run, result: exported.result, submission: exported.submission, originals };
+}
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 必须是运行编号');
     const origin = hubOrigin(args.hub);
     const bearer = await bearerFrom(readToken);
-    let exported: unknown;
-    try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${args.run}`, bearer))); } catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是完整的 UTF-8 JSON'); }
-    if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) throw new Error('Hub 的运行导出不合式');
-    if (exported.run.run !== args.run || exported.result.run !== args.run || exported.submission.run !== args.run) throw new Error(`Hub 导出的运行、结果或提交不属于 --run 指定的 ${args.run}，什么都没有写入；核对运行号后重取`);
-    const sources = Array.isArray(exported.run.sources) ? exported.run.sources : [];
-    const wanted = SLOTS.map((slot) => {
-      const bound = sources.filter((value) => isRecord(value) && value.slot === slot);
-      const match = bound.length === 1 && isRecord(bound[0]) ? /^src:([0-9a-f]{64})$/.exec(String(bound[0].reference)) : null;
-      if (!match) throw new Error(`运行没有唯一绑定的 ${slot} 原件`);
-      return { slot, sha: match[1] };
-    });
     // Every original is fetched and checked before anything is written, and a failed write removes what this call wrote, so
     // a failure never leaves part of the inputs behind.
+    const fetched = await fetchRunInputs(origin, bearer, args.run);
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [
-      { name: 'run.json', bytes: Buffer.from(JSON.stringify(exported.run)) },
-      { name: 'result.json', bytes: Buffer.from(JSON.stringify(exported.result)) },
-      { name: 'submission.json', bytes: Buffer.from(JSON.stringify(exported.submission)) },
+      { name: 'run.json', bytes: Buffer.from(JSON.stringify(fetched.run)) },
+      { name: 'result.json', bytes: Buffer.from(JSON.stringify(fetched.result)) },
+      { name: 'submission.json', bytes: Buffer.from(JSON.stringify(fetched.submission)) },
+      ...SLOTS.map((slot) => ({ name: `${slot}.json`, bytes: fetched.originals[slot] })),
     ];
-    for (const { slot, sha } of wanted) {
-      const bytes = await get(`${origin}/run-export/${args.run}/sources/${sha}`, bearer);
-      if (sha256(bytes) !== sha) throw new Error(`${slot} 原件摘要与运行绑定不符，什么都没有写入`);
-      outputs.push({ name: `${slot}.json`, bytes });
-    }
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const taken: string[] = [];
     for (const { name } of outputs) if (await lstat(join(args.out, name)).then(() => true, () => false)) taken.push(name);

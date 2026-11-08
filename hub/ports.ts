@@ -213,6 +213,15 @@ export interface RunListing extends Page<RunRecordView> {requests?:RunRequestVie
 /** Protected result heads for list rows and aggregate charts, without submission/request detail or display qualifiers. */
 export type RunSummary=Pick<RunDetail,'run'|'latest'|'production'|'management'>;
 
+/** One dispatch job of a run as its runner may download it: what was dispatched, how it ended and each item's verdict. */
+export interface ExportedJob {
+  job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean;
+  /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
+  result: string | null; device_return: string | null;
+  /** Null until the result projection is the dispatch service's own and covers every item of the job exactly once. */
+  rows: Array<{ item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal; evidence?: { log?: string; sessions?: Record<string, string> } }> | null;
+}
+
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
   listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
@@ -230,6 +239,9 @@ export interface RunsService {
   /** Decision 104: what a client needs to generate from its own run without an administrator export: the run, its latest
    * accepted result and that result's submission as stored. Only the runner and administrators; null when absent or forbidden. */
   exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
+  /** Decision 160 (relay): the jobs the run was dispatched in, each item's verdict from the checked result projection and the
+   * references of what the target returned; same readers as exportRun. */
+  exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
   /** `requests: false` leaves out requests, overdue_requests and open_runs, which read every request the user may see. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;

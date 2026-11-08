@@ -1,0 +1,152 @@
+// The delivery directory at the end of a compile run, after the reference engine's (InfoTest docs/engine/07_display_contract.md
+// §11.9): case.xlsx (the pass volume), unsuccessful_cases.xlsx, delivery_report.md, unsuccessful_cases.md and delivery.json.
+// Verdicts come from the Hub's relay of the jobs (GET /run-export/<run>/jobs); the pass volume is regenerated from its plan run
+// and must be byte for byte the workbook that was dispatched; the unsuccessful volume is generated from the plan of the latest
+// dispatch that held every case not passed. The model supplies only the judged paragraphs (--notes). The token is read from
+// standard input only, in the one form the skills home admits:
+//   node <skill directory>/tools/assemble-delivery.ts --hub %HUB_URL% --runs <run>,<run> --recompose <run> --notes <file> --out <directory> <<'EOF'
+//   %HUB_TOKEN%
+//   EOF
+import { realpathSync } from 'node:fs';
+import { mkdir, readdir, rm } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isRecord } from '../functions/text.ts';
+import { canonicalJson } from '../functions/canonical-json.ts';
+import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
+import { assemble, deliveryReport, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type Dispatch, type Original, type ReportInput } from '../functions/delivery.ts';
+import { bearerFrom, get, hubOrigin, HubReplyError, jsonBytes, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
+import { satisfiedRecipes } from './generate-workbook.ts';
+
+const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false } as const;
+function options(argv: string[]): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (let i = 0; i < argv.length; i += 2) {
+    const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
+    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) throw new Error('参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
+    values[key] = argv[i + 1];
+  }
+  const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
+  if (missing.length) throw new Error(`缺少参数：${missing.join('、')}`);
+  return values;
+}
+const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
+const decode = (bytes: Uint8Array) => new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+function localTime(date: Date): string { const p = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`; }
+const autoidOf = (item: unknown): string | null => isRecord(item) && isRecord(item.fields) && typeof item.fields.autoid === 'string' ? item.fields.autoid : null;
+function excludedOf(run: Record<string, unknown>): string[] { const p = run.parameters; return isRecord(p) && Array.isArray(p.exclude) ? p.exclude.filter((v): v is string => typeof v === 'string') : []; }
+/** A plan run's original of a case: its title and steps with their expectations, as the run froze them. */
+function planOriginal(item: Record<string, unknown>): Original | null {
+  const f = item.fields;
+  if (!isRecord(f) || typeof f.title !== 'string' || !Array.isArray(f.steps)) return null;
+  return { title: f.title, lines: f.steps.filter(isRecord).map((s) => ({ text: String(s.text ?? ''), expected: Array.isArray(s.expected) ? s.expected.map(String) : [] })) };
+}
+/** A recomposition run's original of a case, from its atoms: the intent is the title, each action a line, each expectation under the action it follows. */
+function atomOriginal(item: Record<string, unknown>): { autoid: string; original: Original } | null {
+  const f = item.fields;
+  if (!isRecord(f) || typeof f.case_id !== 'string' || !Array.isArray(f.atoms)) return null;
+  let title = ''; const lines: Array<{ id: string; text: string; expected: string[] }> = [];
+  for (const atom of f.atoms.filter(isRecord)) {
+    const content = String(atom.content ?? '');
+    if (atom.kind === 'intent' && !title) title = content;
+    else if (atom.kind === 'action') lines.push({ id: String(atom.id), text: content, expected: [] });
+    else if (atom.kind === 'expectation') {
+      const after = Array.isArray(atom.after) ? atom.after.map(String) : [];
+      const owner = [...lines].reverse().find((line) => after.includes(line.id)) ?? lines.at(-1);
+      if (owner) owner.expected.push(content); else lines.push({ id: String(atom.id), text: '', expected: [content] });
+    }
+  }
+  return { autoid: f.case_id, original: { title, lines: lines.map(({ text, expected }) => ({ text, expected })) } };
+}
+async function emptyOrAbsent(directory: string): Promise<void> {
+  const entries = await readdir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw new Error('--out 无法读取'); });
+  if (entries.length) throw new Error(`--out 目录里已有 ${entries.slice(0, 3).join('、')}${entries.length > 3 ? ' 等' : ''}，不覆盖；另选一个新目录`);
+}
+
+export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date()): Promise<number> {
+  try {
+    const args = options(argv);
+    const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
+    if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) throw new Error('--runs 写按上机先后排列、逗号分隔的核验运行号；--recompose 写重组运行号');
+    const notesValue = jsonBytes(await readBytes(args.notes, 'notes'), 'notes');
+    await emptyOrAbsent(args.out);
+    const origin = hubOrigin(args.hub);
+    const bearer = await bearerFrom(readToken);
+
+    const dispatches: Dispatch[] = [];
+    for (const run of runs) dispatches.push(settledDispatch(run, parseRunJobs(JSON.parse(decode(await get(`${origin}/run-export/${run}/jobs`, bearer))), run)));
+    const plans = new Map<string, RunInputs>();
+    for (const d of dispatches) if (!plans.has(d.plan_run)) plans.set(d.plan_run, await fetchRunInputs(origin, bearer, d.plan_run));
+
+    // The document's cases: the recomposition run's, or else every case and exclusion the plan runs name, in first-seen order.
+    const originals: Record<string, Original> = {}; let population: string[] = [];
+    if (args.recompose) {
+      const exported = JSON.parse(decode(await get(`${origin}/run-export/${args.recompose}/run`, bearer)));
+      if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 给的重组运行不合式或不是 --recompose 指定的');
+      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组运行的条目没有 case_id 和原子，不是重组运行'); population.push(read.autoid); originals[read.autoid] = read.original; }
+    }
+    const excluded = [...new Set([...plans.values()].flatMap((p) => excludedOf(p.run)))];
+    for (const d of dispatches) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
+      const autoid = autoidOf(item); if (!autoid || !isRecord(item)) continue;
+      const original = planOriginal(item); if (original) originals[autoid] = original;
+      if (!args.recompose && !population.includes(autoid)) population.push(autoid);
+    }
+    if (!args.recompose) for (const autoid of excluded) if (!population.includes(autoid)) population.push(autoid);
+    population = population.filter((v, k, all) => all.indexOf(v) === k);
+
+    const assembly = assemble(population, dispatches);
+    const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
+    const notes = readNotes(notesValue, undelivered);
+
+    const recipesOf = (plan: RunInputs) => satisfiedRecipes({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
+    const outputs: Array<{ name: string; bytes: Uint8Array }> = [];
+    let passFile: { sha256: string } | null = null, unsuccessfulFile: { sha256: string } | null = null;
+    if (assembly.pass) {
+      const bytes = generateWorkbookSet(recipesOf(plans.get(assembly.pass.plan_run)!));
+      if (sha256(bytes) !== assembly.pass.sha256) throw new Error(`从计划运行 ${assembly.pass.plan_run} 重算的工作簿和核验运行 ${assembly.pass.run} 派发的那份字节不一致；通过卷只能是终验上机的那份`);
+      outputs.push({ name: 'case.xlsx', bytes }); passFile = { sha256: assembly.pass.sha256 };
+    }
+    if (assembly.unsuccessful) {
+      const { from, items } = assembly.unsuccessful; const plan = plans.get(from.plan_run)!;
+      const planItems = plan.run.items as unknown[]; const recipes = recipesOf(plan);
+      const slotsOf = (inputs: RunInputs, autoid: string) => { const id = (inputs.run.items as unknown[]).find((item) => autoidOf(item) === autoid); const row = (inputs.submission.items as unknown[]).find((v) => isRecord(v) && isRecord(id) && v.item === id.id); return isRecord(row) ? canonicalJson(row.slots) : null; };
+      for (const autoid of items) {
+        const latest = assembly.cases.find((c) => c.autoid === autoid)!.history.at(-1)!;
+        const latestPlan = dispatches.find((d) => d.run === latest.run)!.plan_run;
+        if (latestPlan !== from.plan_run && slotsOf(plans.get(latestPlan)!, autoid) !== slotsOf(plan, autoid)) throw new Error(`用例 ${autoid} 最后一次上机用的计划（计划运行 ${latestPlan}）和未通过卷取用的计划运行 ${from.plan_run} 里的不同；未通过卷要装它最后上机的那份计划`);
+      }
+      const selected = recipes.filter((_, k) => items.includes(autoidOf(planItems[k]) ?? ''));
+      const bytes = generateWorkbookSet(selected);
+      outputs.push({ name: 'unsuccessful_cases.xlsx', bytes }); unsuccessfulFile = { sha256: sha256(bytes) };
+    }
+
+    const logs: ReportInput['logs'] = {};
+    for (const outcome of assembly.cases.filter((c) => c.status !== 'delivered')) {
+      const last = outcome.history.at(-1); const found = last?.log ? /^src:([0-9a-f]{64})$/.exec(last.log) : null;
+      if (!last || !found) continue;
+      try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) !== found[1]) throw new Error('日志字节和引用的摘要不符'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
+      catch (error) { logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? 'Hub 的读取层级不给这份日志的字节' : `没有取到：${error instanceof Error ? error.message : '读取失败'}` }; }
+    }
+    const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
+    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs };
+    outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
+    const summary = {
+      schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, totals: assembly.totals,
+      dispatches: dispatches.map((d) => ({ run: d.run, job: d.job, plan_run: d.plan_run, sha256: d.sha256, items: d.items })),
+      pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items } : null,
+      unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, plan_run: assembly.unsuccessful.from.plan_run, run: assembly.unsuccessful.from.run, items: assembly.unsuccessful.items, dispatched: false } : null,
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal) })) })),
+    };
+    outputs.push({ name: 'delivery.json', bytes: json(summary) });
+
+    await emptyOrAbsent(args.out);
+    await mkdir(args.out, { recursive: true, mode: 0o700 });
+    const written: string[] = []; const files: Record<string, string> = {};
+    try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
+    catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
+    process.stdout.write(JSON.stringify({ out: args.out, totals: assembly.totals, files }) + '\n');
+    return 0;
+  } catch (error) { process.stderr.write(`交付没有组成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+}
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

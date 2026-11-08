@@ -296,6 +296,16 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.6: the delivery directory
+
+`tools/assemble-delivery.ts` ends a run as InfoTest's engine does (decision 161): `case.xlsx` is the pass volume, regenerated
+from the plan run of the final verification and refused unless it is byte for byte the workbook that verification dispatched and
+every item of it passed; `unsuccessful_cases.xlsx` holds the cases with a plan that did not pass, from the plan of the latest
+dispatch that held them all; `delivery_report.md`, `unsuccessful_cases.md` and `delivery.json` account for every case of the
+document. Verdicts come from the Hub's `GET /run-export/<run>/jobs`; the model writes only how each case not delivered was
+judged and its fix or trade-off. `tools/delivery.md` holds the closing steps (at most two rework rounds, a final verification of
+the pass volume, the answer with counts and paths only), so SKILL.md only points to it.
+
 ### 3.10.5: the run on disk before the plans
 
 `tools/download-run.ts` (module `hub-client` of `run-tools` 1.0.1, decision 160) writes the run record, one file per item and the

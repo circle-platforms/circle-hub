@@ -59,3 +59,24 @@ test('the run alone is readable before anything is accepted, and only by the one
   assert.equal((await fetch(`${pending.origin}/run-export/${RUN}/run`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
   assert.equal((await fetch(`${pending.origin}/run-export/${RUN}/run`)).status, 401);
 });
+
+test("the run's jobs come with each item's verdict, and what a job returned is downloadable by its digest", async (t) => {
+  const deviceReturn = Buffer.from('作业 j1 的设备返回。逐条结论：\ncase-1：通过\ncase-2：失败\n'), log = Buffer.from('合成日志\n');
+  const sha = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+  const job = { job: 'j1', verification_run: RUN, plan_run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', items: ['case-1', 'case-2'], sha256: 'c'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'f'.repeat(64)}`, device_return: `src:${sha(deviceReturn)}`, rows: [{ item: 'case-1', dynamic_terminal: 'pass' }, { item: 'case-2', dynamic_terminal: 'fail', evidence: { log: `src:${sha(log)}` } }] };
+  const d = deps(false) as unknown as { runs: Record<string, unknown>; records: { artifacts: Record<string, unknown> } };
+  d.runs.exportJobs = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run, jobs: [job] } : null;
+  d.records.artifacts.source = async (principal: { id: string }, wanted: string) => principal.id !== 'u_runner' ? null : wanted === sha(deviceReturn) ? { bytes: deviceReturn } : wanted === sha(log) ? { bytes: log } : null;
+  const s = await serve(d as unknown as ServerDeps); t.after(s.close);
+  const answer = await fetch(`${s.origin}/run-export/${RUN}/jobs`, { headers: { authorization: 'Bearer runner-token' } });
+  assert.equal(answer.status, 200, 'readable before or after acceptance: the jobs are their own answer');
+  assert.deepEqual(await answer.json(), { schema: 'run-jobs@1', run: RUN, jobs: [job] });
+  for (const bytes of [deviceReturn, log]) {
+    const source = await fetch(`${s.origin}/run-export/${RUN}/sources/${sha(bytes)}`, { headers: { authorization: 'Bearer runner-token' } });
+    assert.equal(source.status, 200); assert.deepEqual(Buffer.from(await source.arrayBuffer()), bytes);
+  }
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/sources/${'e'.repeat(64)}`, { headers: { authorization: 'Bearer runner-token' } })).status, 404, 'a digest no job of the run returned');
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/sources/${sha(log)}`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs`)).status, 401);
+});

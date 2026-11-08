@@ -1,7 +1,9 @@
 // Decision 104: a client generates its artifacts from its own run without an administrator export, independently authorized on
 // every request with the same token as MCP. GET /run-export/<run>/run answers the run alone. GET /run-export/<run> answers the run, its latest accepted result and that result's
 // submission as stored (runner and administrators only); GET /run-export/<run>/sources/<sha256> answers the original bytes of one
-// source bound to that run, at the reader's readable tier.
+// source bound to that run, at the reader's readable tier. Decision 160 (relay): GET /run-export/<run>/jobs answers the jobs the
+// run was dispatched in with each item's verdict, and the sources route also answers what those jobs returned (the result
+// projection, the device return, each failed item's log and sessions), at the reader's readable tier.
 import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { RunId } from '../../contracts/src/common.ts';
@@ -16,11 +18,23 @@ const ABSENT = Buffer.from('没有这个运行或原件，或它不是你的运�
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 export function runExportTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/run-export(?:[\/\\%]|$)/i.test(target ?? ''); }
 
+/** What one of the run's jobs returned, when sha names it: read at the reader's own tier, as any source of theirs. */
+async function jobOutput(deps: ServerDeps, principal: Principal, run: string, sha: string) {
+  const listed = await deps.runs.exportJobs?.(principal, run) ?? null;
+  const produced = new Set<string>();
+  for (const job of listed?.jobs ?? []) for (const reference of [job.result, job.device_return, ...(job.rows ?? []).flatMap((row) => [row.evidence?.log, ...Object.values(row.evidence?.sessions ?? {})])]) {
+    const found = typeof reference === 'string' ? /^src:([0-9a-f]{64})$/.exec(reference) : null;
+    if (found) produced.add(found[1]);
+  }
+  return produced.has(sha) ? deps.records.artifacts.source(principal, sha) : null;
+}
+
 export async function handleRunExport(request: IncomingMessage, response: ServerResponse, deps: ServerDeps, log: (line: string) => void): Promise<void> {
   const started = performance.now(); const raw = (request.url ?? '').replace(/^http:\/\/[^/]+/i, '');
   const parts = raw.startsWith(PREFIX) ? raw.slice(PREFIX.length).split('/') : [];
   const run = parts[0] ?? ''; const sha = parts.length === 3 && parts[1] === 'sources' ? parts[2] : null;
   const runOnly = parts.length === 2 && parts[1] === 'run';
+  const jobsOnly = parts.length === 2 && parts[1] === 'jobs';
   let principal: Principal | null = null; let status = 500; let bytes: Buffer = Buffer.from('Hub 内部错误\n'); let note = '内部错误';
   const headers: Record<string, string> = { 'content-type': 'text/plain; charset=utf-8' };
   request.resume();
@@ -28,18 +42,22 @@ export async function handleRunExport(request: IncomingMessage, response: Server
     principal = await deps.records.principals.authenticate(typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
     if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
     else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
-    else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || runOnly || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
+    else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || runOnly || jobsOnly || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
     else {
       status = 404; bytes = ABSENT; note = '运行不可见';
       const exported = await deps.runs.exportRun?.(principal, run) ?? null;
-      if (exported && sha === null) {
+      if (exported && jobsOnly) {
+        const listed = await deps.runs.exportJobs?.(principal, run) ?? null;
+        if (listed) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-jobs@1', run, jobs: listed.jobs })); note = '运行的作业'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
+        else note = '作业不可读';
+      } else if (exported && sha === null) {
         // The run alone, before anything is accepted: a client tool needs the frozen items to prepare the first submission.
         if (runOnly) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run })); note = '运行'; headers['content-type'] = 'application/json'; }
         else if (!exported.result || exported.submission === null) { status = 409; bytes = Buffer.from('这个运行还没有已受理的提交；按回执改正并重交，被受理后再导出\n'); note = '没有已受理结果'; }
         else { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run, result: exported.result, submission: exported.submission })); note = '运行与已受理结果'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
       } else if (exported && sha !== null) {
-        const source = await deps.records.artifacts.sourceForRun(principal, sha, run);
-        if (!source) note = '原件没有绑定在这个运行上';
+        const source = await deps.records.artifacts.sourceForRun(principal, sha, run) ?? await jobOutput(deps, principal, run, sha);
+        if (!source) note = '原件没有绑定在这个运行上，也不是它的作业产出';
         else if (!source.bytes) { status = 403; bytes = Buffer.from('这份原件在你的读取层级不给字节\n'); note = '读取层级不给字节'; }
         else if (sha256Hex(source.bytes) !== sha) throw new Error('integrity');
         else { status = 200; bytes = Buffer.from(source.bytes); note = '原字节已核对'; headers['content-type'] = 'application/octet-stream'; headers['content-digest'] = digestHeader(bytes); headers.etag = `"${sha}"`; }
