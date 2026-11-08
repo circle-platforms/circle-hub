@@ -17,7 +17,7 @@ import { createEngineContext, type EngineContext, type RunsEngineDeps } from './
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, getRunSummary, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
-import { submissionByDigest } from './store.ts';
+import { submissionByDigest, successorsOf } from './store.ts';
 import { exportedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
@@ -155,6 +155,14 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
         const detail = await getRun(current, user, run);
         if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
         return { run, jobs: await exportedJobs(current, run) };
+      }));
+    },
+    exportSuccessors(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const detail = await getRun(current, user, run);
+        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        const visible = (await successorsOf(current.deps.records.store, run)).map((stored) => stored.body).filter((r) => user.role === 'admin' || r.runner === user.id);
+        return { run, successors: visible.map((r) => ({ run: r.run, pack: r.pack, started_at: r.started_at, predecessor: r.predecessor ?? null, parameters: r.parameters, sources: (r.sources ?? []).map((source) => ({ slot: source.slot ?? null, reference: source.reference })) })) };
       }));
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},

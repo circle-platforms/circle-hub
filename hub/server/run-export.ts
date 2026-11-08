@@ -3,7 +3,9 @@
 // submission as stored (runner and administrators only); GET /run-export/<run>/sources/<sha256> answers the original bytes of one
 // source bound to that run, at the reader's readable tier. Decision 160 (relay): GET /run-export/<run>/jobs answers the jobs the
 // run was dispatched in with each item's verdict, and the sources route also answers what those jobs returned (the result
-// projection, the device return, each failed item's log and sessions), at the reader's readable tier.
+// projection, the device return, each failed item's log and sessions), at the reader's readable tier. Decision 162: GET
+// /run-export/<run>/successors answers the runs started with that run as predecessor that the reader may export, reduced to
+// pack, start, parameters and bound references, so a client tool walks a lineage instead of trusting a list of runs.
 import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { RunId } from '../../contracts/src/common.ts';
@@ -35,6 +37,7 @@ export async function handleRunExport(request: IncomingMessage, response: Server
   const run = parts[0] ?? ''; const sha = parts.length === 3 && parts[1] === 'sources' ? parts[2] : null;
   const runOnly = parts.length === 2 && parts[1] === 'run';
   const jobsOnly = parts.length === 2 && parts[1] === 'jobs';
+  const successorsOnly = parts.length === 2 && parts[1] === 'successors';
   let principal: Principal | null = null; let status = 500; let bytes: Buffer = Buffer.from('Hub 内部错误\n'); let note = '内部错误';
   const headers: Record<string, string> = { 'content-type': 'text/plain; charset=utf-8' };
   request.resume();
@@ -42,7 +45,7 @@ export async function handleRunExport(request: IncomingMessage, response: Server
     principal = await deps.records.principals.authenticate(typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
     if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
     else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
-    else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || runOnly || jobsOnly || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
+    else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || runOnly || jobsOnly || successorsOnly || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
     else {
       status = 404; bytes = ABSENT; note = '运行不可见';
       const exported = await deps.runs.exportRun?.(principal, run) ?? null;
@@ -50,6 +53,10 @@ export async function handleRunExport(request: IncomingMessage, response: Server
         const listed = await deps.runs.exportJobs?.(principal, run) ?? null;
         if (listed) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-jobs@1', run, jobs: listed.jobs })); note = '运行的作业'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
         else note = '作业不可读';
+      } else if (exported && successorsOnly) {
+        const listed = await deps.runs.exportSuccessors?.(principal, run) ?? null;
+        if (listed) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-successors@1', run, successors: listed.successors })); note = '运行的后继'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
+        else note = '后继不可读';
       } else if (exported && sha === null) {
         // The run alone, before anything is accepted: a client tool needs the frozen items to prepare the first submission.
         if (runOnly) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run })); note = '运行'; headers['content-type'] = 'application/json'; }

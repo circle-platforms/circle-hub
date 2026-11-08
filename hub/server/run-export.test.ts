@@ -80,3 +80,16 @@ test("the run's jobs come with each item's verdict, and what a job returned is d
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/sources/${sha(log)}`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs`)).status, 401);
 });
+
+test("the runs started from a run come back reduced to their lineage, at the reader's own visibility", async (t) => {
+  const successor = { run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', pack: 'synthetic-flow@1.0.0', started_at: '2026-11-08T08:00:00.000Z', predecessor: RUN, parameters: { plan_run: RUN }, sources: [{ slot: 'recomposition_result', reference: `rec:${'d'.repeat(64)}` }] };
+  const d = deps(false) as unknown as { runs: Record<string, unknown> };
+  d.runs.exportSuccessors = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run, successors: [successor] } : null;
+  const s = await serve(d as unknown as ServerDeps); t.after(s.close);
+  const answer = await fetch(`${s.origin}/run-export/${RUN}/successors`, { headers: { authorization: 'Bearer runner-token' } });
+  assert.equal(answer.status, 200);
+  assert.deepEqual(await answer.json(), { schema: 'run-successors@1', run: RUN, successors: [successor] });
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/successors`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/successors/x`, { headers: { authorization: 'Bearer runner-token' } })).status, 404);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/successors`)).status, 401);
+});

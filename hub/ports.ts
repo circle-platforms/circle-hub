@@ -214,6 +214,8 @@ export interface RunListing extends Page<RunRecordView> {requests?:RunRequestVie
 export type RunSummary=Pick<RunDetail,'run'|'latest'|'production'|'management'>;
 
 /** One dispatch job of a run as its runner may download it: what was dispatched, how it ended and each item's verdict. */
+/** A run started from another, reduced to what places it in a lineage: its pack, start, parameters and bound references. */
+export interface ExportedSuccessor { run: string; pack: string; started_at: string; predecessor: string | null; parameters: Record<string, unknown>; sources: Array<{ slot: string | null; reference: string }> }
 export interface ExportedJob {
   job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean;
   /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
@@ -242,6 +244,8 @@ export interface RunsService {
   /** Decision 160 (relay): the jobs the run was dispatched in, each item's verdict from the checked result projection and the
    * references of what the target returned; same readers as exportRun. */
   exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  /** The runs started with `run` as predecessor that the reader may export, as the run lineage a client tool walks (decision 162). */
+  exportSuccessors?(user: Principal, run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
   /** `requests: false` leaves out requests, overdue_requests and open_runs, which read every request the user may see. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;
