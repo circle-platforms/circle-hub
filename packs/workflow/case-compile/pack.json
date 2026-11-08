@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.10.10",
+  "version": "3.10.11",
   "kind": "workflow",
   "dependencies": [
     {
@@ -173,8 +173,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "54603543a5d7dd8f2fa35d59d434e76c7ec9ffe2831f9dcebdb4b188dd6ab3b1",
-      "size": 17833
+      "sha256": "6c41cb94e1f1b6a32c325dd4a11bd30f669e2230902dd6ccb73097a014ecddec",
+      "size": 24058
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -423,7 +423,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "d1ead6a3e11d856dcf9a900aeb5a5f8499861c887398456b834d94b1b70a809d",
+      "sha256": "5eb1c951155669150479268a2db3430e1c5757ad1bd9dbbdc355bdf0f88ab4b6",
       "size": 202657
     },
     {
@@ -463,7 +463,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "a6dbd79868921eb4a994c7bafe6718508b012e79f5731ea2dbeff258188c348f",
+      "sha256": "a02831fad89b26fdbfe958c174597ad9a524697ea6ee03adbccec758e2726def",
       "size": 202661
     },
     {
@@ -538,7 +538,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "759bab442ff2981950d43a7d4744890a7a92bdcf86c643c2dc1515a7d4da0c66",
+      "sha256": "5e689c4afb530d105805080a41ac064c6d7e4ac82f535dd61bc1fe3321e1b2d4",
       "size": 202611
     },
     {
@@ -578,7 +578,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "7318644ef772a3c84bcfd974490b69f020e6a910a98e72b8982f5252b7e9d455",
+      "sha256": "7c94a0a44214c2bb1789d12b7d4fb9cbc254abfbe55bde38f406e50ea1f281bd",
       "size": 202615
     },
     {
@@ -673,18 +673,18 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "8087608fa131cd8417681c73b1799fc89ecf38f4bd5e6117a71cd585e83e88ee",
+      "sha256": "c91596315202412248bf8d3c55def7dea35538bc6dc137db55935d29c446dc94",
       "size": 407
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "477a7bec0c854599c57ca8e9f642384af4a9328d3699ee84f7f08d6cc5ab4def",
-      "size": 20301
+      "sha256": "04614e9e3c5cf8e2107a64ed2908e931c10d982a9cc2d25663558a82439222fe",
+      "size": 22254
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "ae410238e30ef23250559d0cdd79857757af137c4f771a02f12e648b10659681",
-      "size": 4089
+      "sha256": "e67861346bee5e16608fef086f41b033d5e13fd13f375fdaa663cfe232e3ad9a",
+      "size": 4869
     },
     {
       "path": "tools/download-run.ts",

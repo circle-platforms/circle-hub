@@ -296,6 +296,24 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.11: a failed case closes by the reference engine's rules
+
+`functions/delivery.ts` `closeFailed` closes a case that failed on the bed as InfoTest's engine does (`compile_engine/remedies.py`
+with `max_rounds` 3, `terminal_outcomes.py` and `render.py`; `tools/device/fail_attribution.py` and `verifiability_tool.py`). It
+goes back to authoring until three authored versions of it failed; the tool counts, per case, the distinct plans of it among its
+failed dispatches, so a rerun of the same plan is not a round. Before that it closes only as a product-defect candidate
+(`defect_candidate`: `repro`, `expected` verbatim from the author's expectation, `actual` verbatim from its last device output),
+reported as “声明与设备行为冲突（待仲裁）”. At the cap it closes as “模型未找到解决方案”, and its judged paragraphs are reported as
+the model's own account. A written judgement that the bed lacks a prerequisite, that the product is at fault or that the cause is
+undetermined is not a terminal credential, as in the reference engine ("A free-text claim that the bed lacks data, certificates,
+topology, or a helper is not a terminal credential. Continue authoring the case as written."); `tools/delivery.md` no longer says
+that such cases are not reworked. In run 14 one case failed in four authored rounds, each time on the device's refusal of a step its
+own plan wrote, and was delivered as 上机未通过 on the model's judgement that the bed lacked a prerequisite.
+
+Not ported yet: a case never dispatched (excluded) still closes on the model's notes alone, where the reference engine accepts an
+unauthorable report only on two grounds it can recompute; a case whose latest dispatch gave no verdict is not rerun up to three
+times before it closes as a platform limit.
+
 ### 3.10.10: one plan directory for every run of the batch
 
 `tools/submit-plans.ts` reads the run's items from the Hub (`GET /run-export/<run>/run`) and submits only the case files of those

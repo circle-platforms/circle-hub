@@ -2,8 +2,9 @@
 // reference engine): a pass volume that was dispatched whole and passed item by item, an unsuccessful volume of the cases that
 // have a plan but did not pass, a report with one section per case not delivered (what happened, how it was judged, the fix or
 // the trade-off), a longer report for whoever picks those cases up, and a machine summary. Every status and count here comes
-// from the jobs' verdicts as the Hub relays them (decision 160); the model writes only the two judged paragraphs of each case
-// not delivered, and nothing here reads device prose to decide anything.
+// from the jobs' verdicts as the Hub relays them (decision 160), and a failed case closes by the reference engine's rules
+// (closeFailed). The model writes only the judged paragraphs of each case not delivered and, for a product-defect candidate, quotes
+// that are checked verbatim; nothing here reads device prose to decide anything.
 import { isRecord } from './text.ts';
 import { isDynamicTerminal, labelOf } from './generated/vocabulary.ts';
 
@@ -14,7 +15,9 @@ export interface JobRow { item: string; dynamic_terminal: string; evidence?: { l
 export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null }
 /** One dispatch that settled: the run it verified, the plan run it was generated from, the workbook digest and each item's verdict. */
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
-export interface CaseNote { judged: string; remedy: string; evidence?: string }
+/** A product-defect candidate (InfoTest fail_attribution.py defect_candidate): how to reproduce it, the author's expected text and the device's actual words. */
+export interface DefectCandidate { repro: string; expected: string; actual: string }
+export interface CaseNote { judged: string; remedy: string; evidence?: string; defect_candidate?: DefectCandidate }
 export interface Notes { batch?: string; cases: Record<string, CaseNote> }
 /** What the document holds for a case: its title and original lines (steps with their expectations), when known. */
 export interface Original { title: string; lines: Array<{ text: string; expected: string[] }> }
@@ -51,7 +54,7 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string> }>; leftOut?: string }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string> }>; leftOut?: string; rounds?: number; closing?: Closing }
 export interface Assembly {
   cases: CaseOutcome[];
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
@@ -104,7 +107,7 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
 
 /** The model's notes: one judged paragraph and one fix-or-trade-off paragraph for exactly the cases not delivered. */
 export function readNotes(value: unknown, undelivered: string[]): Notes {
-  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件要写成 {"cases":{"<autoid>":{"judged":"…","remedy":"…"}},"batch":"…"}（batch 可省）');
+  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件要写成 {"cases":{"<autoid>":{"judged":"…","remedy":"…","evidence":"…"}},"batch":"…"}（batch 可省）');
   const text = (v: unknown, where: string): string => {
     if (typeof v !== 'string' || !v.trim() || v.length > NOTE_MAX || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(v)) throw new Error(`${where} 要是 1 到 ${NOTE_MAX} 字的文字（可换行，不含其他控制字符）`);
     return v.trim();
@@ -115,8 +118,14 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
   const cases: Record<string, CaseNote> = {};
   for (const autoid of undelivered) {
     const note = value.cases[autoid];
-    if (!isRecord(note) || Object.keys(note).some((k) => k !== 'judged' && k !== 'remedy' && k !== 'evidence')) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）、remedy（修复方案或取舍）和 evidence（设备原话）`);
-    cases[autoid] = { judged: text(note.judged, `用例 ${autoid} 的 judged`), remedy: text(note.remedy, `用例 ${autoid} 的 remedy`), ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的 evidence`) }) };
+    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate'].includes(k))) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）、remedy（修复方案或取舍）、evidence（设备原话）和判产品缺陷时的 defect_candidate`);
+    const candidate = note.defect_candidate;
+    if (candidate !== undefined && (!isRecord(candidate) || Object.keys(candidate).sort().join() !== 'actual,expected,repro')) throw new Error(`用例 ${autoid} 的 defect_candidate 恰好写 repro（复现步骤）、expected（作者期望原文）和 actual（设备原话）三项`);
+    cases[autoid] = {
+      judged: text(note.judged, `用例 ${autoid} 的 judged`), remedy: text(note.remedy, `用例 ${autoid} 的 remedy`),
+      ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的 evidence`) }),
+      ...(isRecord(candidate) ? { defect_candidate: { repro: text(candidate.repro, `用例 ${autoid} 的 defect_candidate.repro`), expected: text(candidate.expected, `用例 ${autoid} 的 defect_candidate.expected`), actual: text(candidate.actual, `用例 ${autoid} 的 defect_candidate.actual`) } } : {}),
+    };
   }
   return { ...(value.batch === undefined ? {} : { batch: text(value.batch, 'batch') }), cases };
 }
@@ -138,6 +147,51 @@ export function evidenceProblems(notes: Notes, deviceTexts: Record<string, strin
   return problems;
 }
 
+/**
+ * How a case that failed on the bed closes, after the reference engine (InfoTest compile_engine/remedies.py derive_queue with
+ * max_rounds 3, terminal_outcomes.py, render.py; tools/device/fail_attribution.py and verifiability_tool.py). It goes back to
+ * authoring until MAX_ROUNDS authored versions of it failed on the bed (a rerun of the same plan is not a new round). Before that
+ * it closes only as a device-defect candidate whose expected text is the author's and whose actual text is the device's, both
+ * verbatim; a written judgement that the bed lacks a prerequisite, that the product is at fault or that the cause is undetermined
+ * is not a terminal credential ("continue authoring the case as written"; undetermined goes back with a read-only observation).
+ * At the cap it closes as the model not finding a solution, and the judged paragraphs stay the model's own account.
+ */
+export const MAX_ROUNDS = 3;
+export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）' } as const;
+export type Closing = keyof typeof CLOSING;
+
+/**
+ * Closes every failed case, or says why the delivery cannot be assembled yet. `rounds` holds, per failed case, how many distinct
+ * plans of it failed on the bed; `authored` the author's expectation texts of each case; `deviceTexts` its last device output.
+ */
+export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<string, number>, authored: Record<string, string[]>, deviceTexts: Record<string, string[]>): { cases: CaseOutcome[]; problems: string[] } {
+  const problems: string[] = [];
+  const plain = (text: string) => text.replace(/\r/g, '');
+  const closed = cases.map((outcome) => {
+    if (outcome.status !== 'failed') return outcome;
+    const used = rounds[outcome.autoid] ?? 0;
+    const candidate = notes.cases[outcome.autoid]?.defect_candidate;
+    if (candidate) {
+      const wrong: string[] = [];
+      if (!(authored[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.expected)))) wrong.push('expected 不是这条用例作者期望原文里的字');
+      if (!(deviceTexts[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.actual)))) wrong.push('actual 不是它最后一次上机设备返回里的原话');
+      if (!wrong.length) return { ...outcome, rounds: used, closing: 'device_defect' as const };
+      problems.push(`用例 ${outcome.autoid} 的 defect_candidate：${wrong.join('；')}；逐字复制，不改写、不拼接`);
+      return outcome;
+    }
+    if (used >= MAX_ROUNDS) return { ...outcome, rounds: used, closing: 'authoring_failure' as const };
+    problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它收口：环境缺数据、缺拓扑、缺前置这类文字主张不是凭据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）可以提前收口`);
+    return outcome;
+  });
+  return { cases: closed, problems };
+}
+/** The closing of a case as one line: what it is and the fact it rests on. */
+export function closingLine(outcome: CaseOutcome): string | null {
+  if (outcome.closing === 'authoring_failure') return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是收口凭据。`;
+  if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
+  return null;
+}
+
 export const terminalLabel = (terminal: string): string => isDynamicTerminal(terminal) ? labelOf('dynamic_terminal', terminal) : '无法识别的结论';
 /** What happened, mechanically from the verdict sequence (the reference engine translates its verdict ledger the same way). */
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
@@ -154,10 +208,16 @@ export interface ReportInput {
   logs: Record<string, { reference: string; job: string; text: string | null; withheld?: string }>;
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || `用例 …${autoid.slice(-6)}`;
+/** The closings of the failed cases as one sentence, naming only those that occur; empty when no case failed. */
+export function closingCounts(cases: CaseOutcome[]): string {
+  const counts = (Object.keys(CLOSING) as Closing[]).map((closing) => [closing, cases.filter((c) => c.closing === closing).length] as const).filter(([, n]) => n > 0);
+  return counts.length ? `${STATUS.failed}的终态：${counts.map(([closing, n]) => `${CLOSING[closing]} ${n}`).join('，')}。` : '';
+}
 function head(input: ReportInput): string[] {
   const { totals, pass, unsuccessful } = input.assembly;
+  const closings = closingCounts(input.assembly.cases);
   const lines = [
-    `本份脑图选中 ${totals.cases} 个用例：${STATUS.delivered} ${totals.delivered}，${STATUS.failed} ${totals.failed}，${STATUS.unsettled} ${totals.unsettled}，${STATUS.unrun} ${totals.unrun}。`,
+    `本份脑图选中 ${totals.cases} 个用例：${STATUS.delivered} ${totals.delivered}，${STATUS.failed} ${totals.failed}，${STATUS.unsettled} ${totals.unsettled}，${STATUS.unrun} ${totals.unrun}。${closings}`,
     '',
     pass && input.files.pass ? `- 通过卷 \`case.xlsx\`：${pass.items.length} 个用例。这份工作簿（sha256 ${input.files.pass.sha256.slice(0, 12)}…）在核验运行 ${pass.run}（作业 ${pass.job.slice(0, 12)}）里整卷上机，逐条通过。` : '- 没有通过卷：最后一次上机没有用例通过。',
     unsuccessful && input.files.unsuccessful ? `- 未通过卷 \`unsuccessful_cases.xlsx\`：${unsuccessful.items.length} 个用例，每条用它最后一次上机的计划（计划运行 ${[...new Set(unsuccessful.items.map((item) => unsuccessful.sources[item].plan_run))].join('、')}），没有再上机。` : '- 没有未通过卷：没有带计划却没通过的用例。',
@@ -168,11 +228,16 @@ function head(input: ReportInput): string[] {
 }
 function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const note = input.notes.cases[outcome.autoid];
+  const fence = (text: string) => ['```device-evidence', text.replace(/```/g, '`​``'), '```'];
+  const closing = closingLine(outcome);
+  const candidate = outcome.closing === 'device_defect' ? note.defect_candidate : undefined;
   return [
     `## ${title(input, outcome.autoid)}`,
-    `- 编号 \`${outcome.autoid}\` · 状态：${STATUS[outcome.status]} · 上机 ${outcome.history.length} 次`,
+    `- 编号 \`${outcome.autoid}\` · 状态：${STATUS[outcome.status]} · 上机 ${outcome.history.length} 次${outcome.closing ? ` · 终态：${CLOSING[outcome.closing]}` : ''}`,
     '', `**发生了什么**：${timeline(outcome, input.excluded.includes(outcome.autoid))}`,
-    ...(note.evidence ? ['', `**设备原话**（已核对出自最后一次上机的设备返回）：`, '```device-evidence', note.evidence.replace(/```/g, '`​``'), '```'] : []),
+    ...(note.evidence ? ['', `**设备原话**（已核对出自最后一次上机的设备返回）：`, ...fence(note.evidence)] : []),
+    ...(closing ? ['', `**结论**：${closing}`] : []),
+    ...(candidate ? ['', `**缺陷候选**：复现步骤：${candidate.repro}`, '', '作者期望（原文）：', ...fence(candidate.expected), '', '设备实际（原话）：', ...fence(candidate.actual)] : []),
     '', `**怎么判断的**：${note.judged}`,
     '', `**修复方案／取舍**：${note.remedy}`,
   ];

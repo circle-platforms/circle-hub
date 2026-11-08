@@ -13,7 +13,8 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
-import { assemble, deliveryReport, evidenceProblems, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type Dispatch, type Original, type ReportInput } from '../functions/delivery.ts';
+import { assemble, closeFailed, closingCounts, CLOSING, deliveryReport, evidenceProblems, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type Original, type ReportInput } from '../functions/delivery.ts';
+import { canonicalJson } from '../functions/canonical-json.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, jsonBytes, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { satisfiedRecipes } from './generate-workbook.ts';
@@ -78,9 +79,17 @@ function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack
   });
 }
 /** The answer the model gives the person, made here so it holds the counts and paths and nothing else. */
-export function replyText(out: string, totals: Record<string, number>, files: string[]): string {
+export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = []): string {
   const counts = (Object.keys(STATUS) as Array<keyof typeof STATUS>).map((status) => `${STATUS[status]} ${totals[status] ?? 0}`).join('，');
-  return [`交付目录：${out}`, `共 ${totals.cases} 条：${counts}。`, ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+  const closings = closingCounts(cases);
+  return [`交付目录：${out}`, `共 ${totals.cases} 条：${counts}。`, ...(closings ? [closings] : []), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+}
+/** A case's plan in a plan run, as its digest: the slots the model submitted for it (a rerun of the same plan has the same digest). */
+function planDigest(plan: RunInputs, autoid: string): string {
+  const item = (plan.run.items as unknown[] ?? []).find((i) => autoidOf(i) === autoid);
+  const id = isRecord(item) ? item.id : undefined;
+  const entry = Array.isArray(plan.submission.items) ? plan.submission.items.find((s) => isRecord(s) && s.item === id) : undefined;
+  return isRecord(entry) && id !== undefined ? sha256(canonicalJson(entry.slots ?? null)) : `run:${String(plan.run.run)}`;
 }
 
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date()): Promise<number> {
@@ -201,8 +210,15 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       }
       deviceTexts[outcome.autoid] = texts;
     }
-    const unproven = evidenceProblems(notes, deviceTexts);
+    // The reference engine's closing rules: a failed case is reworked until three authored versions of it failed on the bed, unless
+    // it closes earlier as a verbatim product-defect candidate (closeFailed in functions/delivery.ts).
+    const rounds: Record<string, number> = {};
+    for (const outcome of assembly.cases.filter((c) => c.status === 'failed')) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail').map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid))).size;
+    const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
+    const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts);
+    const unproven = [...evidenceProblems(notes, deviceTexts), ...closed.problems];
     if (unproven.length) throw new Error(unproven.join('；'));
+    assembly.cases = closed.cases;
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
     const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
@@ -212,7 +228,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       added_runs: added,
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false } : null,
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal) })) })),
+      closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal) })) })),
     };
     outputs.push({ name: 'delivery.json', bytes: json(summary) });
 
@@ -222,7 +239,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
-    process.stdout.write(JSON.stringify({ out, totals: assembly.totals, files, runs: dispatches.map((d) => d.run), added_runs: added, reply: replyText(out, assembly.totals, Object.keys(files)) }) + '\n');
+    process.stdout.write(JSON.stringify({ out, totals: assembly.totals, files, runs: dispatches.map((d) => d.run), added_runs: added, reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases) }) + '\n');
     return 0;
   } catch (error) { process.stderr.write(`交付没有组成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
