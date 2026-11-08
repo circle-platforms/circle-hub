@@ -14,7 +14,7 @@ export interface JobRow { item: string; dynamic_terminal: string; evidence?: { l
 export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null }
 /** One dispatch that settled: the run it verified, the plan run it was generated from, the workbook digest and each item's verdict. */
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
-export interface CaseNote { judged: string; remedy: string }
+export interface CaseNote { judged: string; remedy: string; evidence?: string }
 export interface Notes { batch?: string; cases: Record<string, CaseNote> }
 /** What the document holds for a case: its title and original lines (steps with their expectations), when known. */
 export interface Original { title: string; lines: Array<{ text: string; expected: string[] }> }
@@ -51,7 +51,7 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string }>; leftOut?: string }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string> }>; leftOut?: string }
 export interface Assembly {
   cases: CaseOutcome[];
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
@@ -83,7 +83,7 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   if (!pass && lastPassed.length) throw new Error(`还没有一次整卷全部通过、之后也没再失败的上机，${lastPassed.join('、')} 最近一次上机通过了。通过卷要单独整卷上机：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交通过用例的计划，生成、核验、派发，再把那次核验运行加到 --runs 末尾`);
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
-    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.evidence?.log ? { log: r.evidence.log } : {}) })));
+    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}) })));
     if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history };
     const latest = history.at(-1);
     if (!latest) return { autoid, status: 'unrun' as const, history };
@@ -115,10 +115,27 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
   const cases: Record<string, CaseNote> = {};
   for (const autoid of undelivered) {
     const note = value.cases[autoid];
-    if (!isRecord(note) || Object.keys(note).some((k) => k !== 'judged' && k !== 'remedy')) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）和 remedy（修复方案或取舍）`);
-    cases[autoid] = { judged: text(note.judged, `用例 ${autoid} 的 judged`), remedy: text(note.remedy, `用例 ${autoid} 的 remedy`) };
+    if (!isRecord(note) || Object.keys(note).some((k) => k !== 'judged' && k !== 'remedy' && k !== 'evidence')) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）、remedy（修复方案或取舍）和 evidence（设备原话）`);
+    cases[autoid] = { judged: text(note.judged, `用例 ${autoid} 的 judged`), remedy: text(note.remedy, `用例 ${autoid} 的 remedy`), ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的 evidence`) }) };
   }
   return { ...(value.batch === undefined ? {} : { batch: text(value.batch, 'batch') }), cases };
+}
+
+/**
+ * The reference engine accepts an attribution only when its evidence is a verbatim substring of the device context (InfoTest
+ * fail_attribution.py). Here: every case not delivered whose last device output was read must carry evidence copied from that
+ * output (the runner log or a device session); carriage returns are ignored, nothing else is normalized. Returns the problems.
+ */
+export function evidenceProblems(notes: Notes, deviceTexts: Record<string, string[]>): string[] {
+  const problems: string[] = [];
+  const plain = (text: string) => text.replace(/\r/g, '');
+  for (const [autoid, texts] of Object.entries(deviceTexts)) {
+    if (!texts.length) continue;
+    const evidence = notes.cases[autoid]?.evidence;
+    if (evidence === undefined) problems.push(`用例 ${autoid} 上过机，说明里缺 evidence：从它最后一次上机的设备返回（运行日志或设备会话）逐字复制说明失败的那一段`);
+    else if (!texts.some((text) => plain(text).includes(plain(evidence)))) problems.push(`用例 ${autoid} 的 evidence 不是它最后一次上机设备返回里的原话；逐字复制，不改写、不拼接`);
+  }
+  return problems;
 }
 
 export const terminalLabel = (terminal: string): string => isDynamicTerminal(terminal) ? labelOf('dynamic_terminal', terminal) : '无法识别的结论';
@@ -155,6 +172,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
     `## ${title(input, outcome.autoid)}`,
     `- 编号 \`${outcome.autoid}\` · 状态：${STATUS[outcome.status]} · 上机 ${outcome.history.length} 次`,
     '', `**发生了什么**：${timeline(outcome, input.excluded.includes(outcome.autoid))}`,
+    ...(note.evidence ? ['', `**设备原话**（已核对出自最后一次上机的设备返回）：`, '```device-evidence', note.evidence.replace(/```/g, '`​``'), '```'] : []),
     '', `**怎么判断的**：${note.judged}`,
     '', `**修复方案／取舍**：${note.remedy}`,
   ];

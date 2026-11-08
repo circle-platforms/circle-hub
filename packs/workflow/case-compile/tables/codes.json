@@ -59,6 +59,11 @@
       "fix": "环境不可达，整卷不跑。把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译"
     },
     {
+      "code": "case-compile.driver_no_path",
+      "when": "被断言读取输出的查询，执行它的清单主机没有接口在目标地址的网段（清单没有声明路由）",
+      "fix": "改由与目标同网段的主机发起查询，或把目标换成执行主机所在网段上的被测设备接口地址"
+    },
+    {
       "code": "case-compile.replacement_invalid",
       "when": "替换表不是一一对应的有效地址映射",
       "fix": "每个原地址和目标地址各出现一次，按数值去重"
@@ -82,6 +87,11 @@
       "code": "case-compile.expect_after",
       "when": "期望没有判断设备命令行或主机 shell 步骤",
       "fix": "after 写对应命令步骤从 1 开始的编号，不指向等待或断言"
+    },
+    {
+      "code": "case-compile.assertion_in_command",
+      "when": "断言文字出现在它读取输出的那一步命令里（运行器读取的输出以命令回显开头）",
+      "fix": "改成只会出现在设备输出数据行里的文字，或换一条不含该文字的观察命令"
     },
     {
       "code": "case-compile.assertion_in_steps",

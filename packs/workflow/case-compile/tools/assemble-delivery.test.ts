@@ -71,7 +71,7 @@ async function outputOf(run: () => Promise<number>) {
   try { return { code: await run(), stdout: out.join(''), stderr: err.join('') }; } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
 }
 async function notes(cases: Record<string, unknown>) { const dir = await mkdtemp(join(tmpdir(), 'cc-notes-')); const path = join(dir, 'notes.json'); await writeFile(path, JSON.stringify({ cases })); return path; }
-const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑' }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
+const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑', evidence: '第 3 步断言没有命中' }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
 const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批'], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z')));
 
 test('the pass volume is the dispatched final workbook, the unsuccessful volume holds the failed plan, and every case is accounted for', async (t) => {
@@ -139,7 +139,7 @@ test('cases that last failed in different dispatches go into the unsuccessful vo
   }, { [PLAN3]: plan3, [PLAN4]: plan4 });
   t.after(() => h.close());
   const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'delivery');
-  const notesPath = await notes({ ...NOTES, [CASES[2]]: { judged: '合成判断：返工后仍失败', remedy: '合成取舍：继续加轮' } });
+  const notesPath = await notes({ ...NOTES, [CASES[2]]: { judged: '合成判断：返工后仍失败', remedy: '合成取舍：继续加轮', evidence: '合成日志：第 3 步断言没有命中' } });
   const result = await run(h, notesPath, out, `${WHOLE},${REWORK},${FINAL2}`);
   assert.equal(result.code, 0, result.stderr);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
@@ -203,4 +203,19 @@ test('the verification runs the model left out are found in the Hub lineage, and
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), new RegExp(`第 1 次上机（核验运行 ${WHOLE}）：失败`));
+});
+
+test("a case not delivered that went to the bed is explained with the device's own words, checked verbatim", async (t) => {
+  const h = await hub(); t.after(() => h.close());
+  const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
+  const missing = await run(h, await notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成修法' } }), join(dir, 'a'));
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /用例 990000000000000102 上过机，说明里缺 evidence/);
+  const invented = await run(h, await notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成修法', evidence: '设备说一切正常' } }), join(dir, 'b'));
+  assert.equal(invented.code, 1);
+  assert.match(invented.stderr, /用例 990000000000000102 的 evidence 不是它最后一次上机设备返回里的原话/);
+  const out = join(dir, 'c');
+  const ok = await run(h, await notes(NOTES), out);
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /\*\*设备原话\*\*（已核对出自最后一次上机的设备返回）：\n```device-evidence\n第 3 步断言没有命中\n```/);
 });

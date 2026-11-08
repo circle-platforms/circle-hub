@@ -13,9 +13,9 @@ import { isRecord, markers, type Outcome, opened } from './text.ts';
 import { parseRuntimeContract, runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall, type RuntimeProfile } from './profile.ts';
 import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
-import { inBlindSegment, readAddress, triggerTypesOf, type LeaseRow } from './bed.ts';
+import { hostReaches, inBlindSegment, interfacesOf, readAddress, triggerTypesOf, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
-import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
+import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue, hostProgramLine } from './binding.ts';
 import {identityOf} from './typed-contract.ts';
 import { replacedQuote } from './addresses.ts';
 import { citedCriterion, type FrozenItemCriterion } from './subject.ts';
@@ -133,15 +133,55 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(off)out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址，也不是作者原文命令里的地址（作者写的地址照原值保留并披露，只拒计划自己改出来的）。下一步：换用有触发设备的网段里的接口地址，或用作者原文里的地址，或先取得本血缘租约后再编译',use.pointer));
     else out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段，也不是作者原文命令里的地址。下一步：把计划地址改到有触发设备的网段，或用作者原文里的地址，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
   }
+  // The reference engine's driver_no_declared_path (InfoTest structural_gate.py:951, env_facts.py:346): a query whose output an
+  // assertion reads is sent from a host with an interface on the target's segment. A segment with some trigger device is not
+  // enough when the step runs on another host (run 12: routera queried 172.16.35.70 six times and never reached it). A target the
+  // author wrote that no listed host reaches is kept and disclosed, as there; any other unreachable pair is refused.
+  for(const [index,step]of slots.steps.entries()){
+    const host=s.profile!.hosts.find(h=>h.object===step.object&&h.method===step.method);
+    const entry=host?runtimeMethod(s.contract!,step.object,step.method):undefined,a=entry?.authority;
+    if(!host||!entry||!a||!slots.expects.some(e=>e.after===index+1))continue;
+    for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){
+      if(a.parameters[v.name]?.role!=='host_shell')continue;
+      for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value))?.addresses??[]){
+        if(hostReaches(bed,host.device,address)!==false)continue;
+        const reaching=s.profile!.hosts.filter(h=>hostReaches(bed,h.device,address)===true).map(h=>`${h.object}.${h.method}（${h.device}）`);
+        const key=addressKey(address);
+        if(key&&authored.has(key)&&!reaching.length){if(!kept.includes(address))kept.push(address);continue;}
+        out.push(refute(s,'driver_no_path',`查询发不到目标：${step.object}.${step.method} 在清单设备 ${host.device} 上执行，它的接口（${interfacesOf(bed,host.device).join('、')||'清单未列'}）都不在 ${address} 所在网段，清单也没有声明路由；这一步的输出被断言读取，上机只会超时或网络不可达。下一步：改由与 ${address} 同网段的主机发起（${reaching.length?reaching.join('、'):'清单里没有这样的主机'}），或把目标换成 ${host.device} 所在网段上的被测设备接口地址`,v.pointer));
+      }
+    }
+  }
   const disclosed=kept.length?`；作者原文命令里的 ${kept.length} 个地址不在本环境可达范围里，照原值保留（同 SyntheticReference：只拒计划自己编的地址，作者写的写进披露），上机时可能连不通：${kept.join('、')}`:'';
   return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描'+disclosed,{typed_positions:uses,replacements:slots.replacements,author_kept:kept})];
 }
+/**
+ * The reference engine's assertion_matches_command_echo (InfoTest structural_gate.py:1319): the runner's output window starts with
+ * the echo of the command it reads, so an expected text that is part of that command is found whatever the device answers (a
+ * fake pass), and an absence check on it always fails. Run 12 delivered three such cases and passed one whose device refused the
+ * domain, because the name was in the error message and the command. Register-based expectations take their text elsewhere.
+ */
+function assertionsInCommand(s: CheckSubject, slots: PlanSlots): Outcome[] {
+  const out: Outcome[] = [];
+  for (const [i, expect] of slots.expects.entries()) {
+    if (expect.register !== undefined || typeof expect.text !== 'string' || !expect.text) continue;
+    const step = slots.steps[expect.after - 1]; if (!step) continue;
+    const allowed = allowedCall(s.profile!, step.object, step.method);
+    if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) continue;
+    const command = [...step.args.map(String), ...Object.values(step.keywords ?? {}).map(String)];
+    if (!command.some((text) => text.includes(expect.text))) continue;
+    const pointer = blockMeta(slots) && expect.origin ? '/data' + expect.origin : `/data/expects/${i}`;
+    out.push(refute(s, 'assertion_in_command', `断言文字“${expect.text.length > 80 ? expect.text.slice(0, 80) + '…' : expect.text}”就在它读取的第 ${expect.after} 步命令里；运行器读取的输出以命令回显开头，这条断言无论设备回什么都能找到（找不到型则必然失败），分不出成败。下一步：改成只会出现在设备输出数据行里的文字（计数、状态值、应答记录等），或换一条不含该文字的观察命令`, `${pointer}/text`));
+  }
+  return out;
+}
+
 export function checkExpectedSources(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const out: Outcome[] = [];
-  if(blockMeta(slots))return checkBlockExpected(slots,s.expected_nodes,s.criteria_review,isRecord(s.command_catalog)?s.command_catalog.root:undefined,s.item);
+  if(blockMeta(slots)){const echoed=assertionsInCommand(s,slots);const judged=checkBlockExpected(slots,s.expected_nodes,s.criteria_review,isRecord(s.command_catalog)?s.command_catalog.root:undefined,s.item);return echoed.length?[...echoed,...judged.filter(o=>o.verdict!=='support')]:judged;}
   if (!slots.expects.length) return [refute(s, 'expect_without_source', '至少一条期望结果必须带逐字来源并指明它判断的步骤', '/data/expects')];
   const byCriterion: Array<{ at: number; criterion: FrozenItemCriterion }> = [];
   for (const [i, expect] of slots.expects.entries()) {
@@ -170,6 +210,7 @@ export function checkExpectedSources(input: unknown): Outcome[] {
     const step = slots.steps[expect.after - 1]; const allowed = step ? allowedCall(s.profile!, step.object, step.method) : null;
     if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) out.push(refute(s, 'expect_after', 'after 必须指向设备命令行或主机 shell 步骤，不能指向等待或断言步骤', `${pointer}/after`));
   }
+  out.push(...assertionsInCommand(s, slots));
   if (out.length) return out;
   const accepted = [...new Map(byCriterion.map((row) => [row.criterion.declaration, { declaration: row.criterion.declaration, review: row.criterion.review, reviewer: row.criterion.reviewer, expects: byCriterion.filter((other) => other.criterion.declaration === row.criterion.declaration).map((row) => row.at) }])).values()];
   const told = accepted.length === 0

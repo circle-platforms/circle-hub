@@ -138,6 +138,11 @@
           "max_rounds": 2
         },
         {
+          "code": "case-compile.driver_no_path",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
           "code": "case-compile.replacement_invalid",
           "action": "repair",
           "max_rounds": 2
@@ -239,6 +244,11 @@
         },
         {
           "code": "case-compile.expect_after",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.assertion_in_command",
           "action": "repair",
           "max_rounds": 2
         },

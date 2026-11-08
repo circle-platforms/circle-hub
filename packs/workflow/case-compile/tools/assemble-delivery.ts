@@ -13,7 +13,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
-import { assemble, deliveryReport, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type Dispatch, type Original, type ReportInput } from '../functions/delivery.ts';
+import { assemble, deliveryReport, evidenceProblems, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type Dispatch, type Original, type ReportInput } from '../functions/delivery.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, jsonBytes, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { satisfiedRecipes } from './generate-workbook.ts';
@@ -173,6 +173,20 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) !== found[1]) throw new Error('日志字节和引用的摘要不符'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
       catch (error) { logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? 'Hub 的读取层级不给这份日志的字节' : `没有取到：${error instanceof Error ? error.message : '读取失败'}` }; }
     }
+    // The reference engine's attribution rule: a case not delivered that went to the bed is explained with the device's own words,
+    // verbatim from its last device output (the runner log or a device session), checked here against the bytes the Hub relays.
+    const deviceTexts: Record<string, string[]> = {};
+    for (const outcome of assembly.cases.filter((c) => c.status !== 'delivered')) {
+      const last = outcome.history.at(-1); if (!last) continue;
+      const texts: string[] = []; const logText = logs[outcome.autoid]?.text; if (logText) texts.push(logText);
+      for (const reference of Object.values(last.sessions ?? {})) {
+        const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) continue;
+        try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) === found[1]) texts.push(new TextDecoder('utf-8').decode(bytes)); } catch { /* an unreadable session is evidence neither way */ }
+      }
+      deviceTexts[outcome.autoid] = texts;
+    }
+    const unproven = evidenceProblems(notes, deviceTexts);
+    if (unproven.length) throw new Error(unproven.join('；'));
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
     const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });

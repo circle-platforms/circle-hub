@@ -296,6 +296,15 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.8: three rules from the reference engine
+
+Compared rule by rule with InfoTest after run 12 (decision 163). `bed_addresses` refuses an asserted query sent from a host with
+no interface on the target's segment (`driver_no_path`, after InfoTest `driver_no_declared_path`; the inventory declares no
+routes, an author-written target no host reaches is disclosed). `expected_grounded` refuses an expected text that is part of the
+command whose output it reads (`assertion_in_command`, after `assertion_matches_command_echo`: the runner's window starts with
+the echo). The delivery notes take `evidence`, the device's own words copied from the case's last runner log or session, and
+`tools/assemble-delivery.ts` refuses notes whose evidence is missing or not verbatim (after InfoTest's attribution check).
+
 ### 3.10.7: literals of a set length
 
 A plan writes a literal the author gives by length as a placeholder: `{{domain:N}}`, `{{domain:N|prefix}}`,
