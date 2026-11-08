@@ -12,11 +12,27 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
-import { argumentsOf, bearerFrom, hubOrigin, itemFiles, RUN_ID, submitResult, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { argumentsOf, bearerFrom, get, hubOrigin, itemFiles, RUN_ID, submitResult, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { isRecord } from '../functions/text.ts';
 
 export const planItems = itemFiles;
 
 const SHOWN_CHARS = 12_000;
+
+/**
+ * One case file read strictly, with a refusal that names the file, the place and the text around it. The shared reader only said
+ * "不是完整的 UTF-8 JSON" for any of them, and in run 14 a model spent an hour on encodings for a missing closing brace.
+ */
+export function parsedPlanFile(name: string, bytes: Uint8Array): unknown {
+  let text: string;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw new Error(`${name} 不是合法的 UTF-8 文本；用 write_file 重新写这个文件`); }
+  try { return JSON.parse(text); } catch (error) {
+    const message = error instanceof Error ? error.message : '无法解析';
+    const at = /position (\d+)/.exec(message); const position = at ? Number(at[1]) : null;
+    const around = position === null ? '' : `；出错位置第 ${position} 个字符，附近原文：${JSON.stringify(text.slice(Math.max(0, position - 60), position + 20))}`;
+    throw new Error(`${name} 不是合法的 JSON（${message}）${around}。常见原因是括号或引号没有成对；改好这个文件再提交`);
+  }
+}
 
 /** Expands the length placeholders of every case file in `directory`, rewriting only the files that had one; returns what each became. */
 export async function expandPlanFiles(directory: string): Promise<string[]> {
@@ -25,10 +41,9 @@ export async function expandPlanFiles(directory: string): Promise<string[]> {
   const lines: string[] = [];
   for (const name of names) {
     const path = join(directory, name);
-    const text = await readFile(path, 'utf8');
+    const value = parsedPlanFile(name, await readFile(path));
+    const text = JSON.stringify(value);
     if (!text.includes('{{')) continue;
-    let value: unknown;
-    try { value = JSON.parse(text); } catch { continue; } // the reader below names the file that is not JSON
     let expanded: ReturnType<typeof expandValue>;
     try { expanded = expandValue(value); } catch (error) { throw new Error(`${name}：${error instanceof Error ? error.message : '长度占位无法展开'}`); }
     if (!expanded.expansions.length) continue;
@@ -38,6 +53,18 @@ export async function expandPlanFiles(directory: string): Promise<string[]> {
   return lines;
 }
 
+/**
+ * The item ids of the run, from the Hub's export of the run alone. A final verification runs a subset of the cases (the others
+ * excluded), and the reference engine composes that volume from each case's sealed artifact without writing it again; here the
+ * same plan directory is submitted and the files of items the run does not hold are left out, so a passed case's plan reaches
+ * the new run byte for byte. In run 14 a model copied sixteen plans by hand for this and could not reproduce the long literals.
+ */
+async function runItems(origin: string, bearer: string, run: string): Promise<Set<string>> {
+  const value: unknown = JSON.parse(new TextDecoder('utf-8').decode(await get(`${origin}/run-export/${run}/run`, bearer)));
+  if (!isRecord(value) || value.schema !== 'run-export@1' || !isRecord(value.run) || value.run.run !== run || !Array.isArray(value.run.items)) throw new Error('Hub 给的运行导出不合式或不是 --run 指定的运行');
+  return new Set(value.run.items.filter(isRecord).map((item) => String(item.id)));
+}
+
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'model', 'plans']);
@@ -45,8 +72,12 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const origin = hubOrigin(args.hub);
     const expanded = await expandPlanFiles(args.plans);
     if (expanded.length) process.stdout.write(`长度占位已展开并写回文件：\n${expanded.join('\n')}\n`);
-    const items = await planItems(args.plans);
+    const files = await planItems(args.plans);
     const bearer = await bearerFrom(readToken);
+    const held = await runItems(origin, bearer, args.run);
+    const items = files.filter((item) => held.has(String(item.item))), left = files.filter((item) => !held.has(String(item.item)));
+    if (!items.length) throw new Error(`--plans 目录里没有本运行的条目（本运行有 ${held.size} 个条目）；条目编号照 start_run 回执写`);
+    if (left.length) process.stdout.write(`跳过 ${left.length} 个不属于本运行的条目文件（本运行没有这些条目，例如被 parameters.exclude 排除）：${left.map((item) => String(item.item)).join('、')}\n`);
     const { text, failed } = await submitResult(origin, bearer, { run: args.run, model: args.model, items });
     const path = join(args.plans, `answer-${Date.now()}.txt`);
     await writeNew(path, Buffer.from(text));

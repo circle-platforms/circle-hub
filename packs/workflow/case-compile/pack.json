@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.10.9",
+  "version": "3.10.10",
   "kind": "workflow",
   "dependencies": [
     {
@@ -423,8 +423,8 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "a20296bdbb0732013c4b843c9f4cba29057f571130e3d064f3084445845a262b",
-      "size": 202654
+      "sha256": "d1ead6a3e11d856dcf9a900aeb5a5f8499861c887398456b834d94b1b70a809d",
+      "size": 202657
     },
     {
       "path": "samples/negative/typed-effect-budget.json",
@@ -463,8 +463,8 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "4649e6389ab74e9efcf7eb141c6148b6ac518a35a1ed6dfcea2aa5ac5a4a109b",
-      "size": 202658
+      "sha256": "a6dbd79868921eb4a994c7bafe6718508b012e79f5731ea2dbeff258188c348f",
+      "size": 202661
     },
     {
       "path": "samples/positive/quote.json",
@@ -538,8 +538,8 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "b0e4526a4d01f750de2eee1b03b480a3652c52c66664e1fd0093b6b616b071df",
-      "size": 202608
+      "sha256": "759bab442ff2981950d43a7d4744890a7a92bdcf86c643c2dc1515a7d4da0c66",
+      "size": 202611
     },
     {
       "path": "samples/positive/typed-effect-budget.json",
@@ -578,8 +578,8 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "958833da3b76e01fa85aa1cf26c407324b2ab2cca7b8d8288ac29c70db82384e",
-      "size": 202612
+      "sha256": "7318644ef772a3c84bcfd974490b69f020e6a910a98e72b8982f5252b7e9d455",
+      "size": 202615
     },
     {
       "path": "slots.schema.json",
@@ -673,13 +673,13 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "8dca7efd3445b47e7bf90cbb69d9f65a6660b9496ed3b8401f03ab16e2ffa2b7",
-      "size": 406
+      "sha256": "8087608fa131cd8417681c73b1799fc89ecf38f4bd5e6117a71cd585e83e88ee",
+      "size": 407
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "de6f682acf515d26ba965bf89758b51b27788ff2667233a4844ba884d3d50e77",
-      "size": 19150
+      "sha256": "477a7bec0c854599c57ca8e9f642384af4a9328d3699ee84f7f08d6cc5ab4def",
+      "size": 20301
     },
     {
       "path": "tools/delivery.md",
@@ -713,8 +713,8 @@
     },
     {
       "path": "tools/submit-plans.ts",
-      "sha256": "f128f1bc3cb32be7dc3e0a5af41dfb1671f8ea6c25cf2cddf7ff2929f96b5d14",
-      "size": 3978
+      "sha256": "a1e7135df2600cbf99f136ba588f5c9e22aba8bb6a0a2365aea5285f9f903cea",
+      "size": 6687
     },
     {
       "path": "workflow.json",

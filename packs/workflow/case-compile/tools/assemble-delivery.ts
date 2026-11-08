@@ -104,15 +104,31 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     // under the same booking bound to the same recomposition, or the same document without one) is read from the Hub's lineage,
     // so a dispatch the model left out still counts (decision 162).
     const keys = new Set<string>(), roots = new Set<string>(), started = new Map<string, string>();
-    for (const d of given.values()) {
-      const plan = (await planOf(d.plan_run)).run as Record<string, unknown>;
-      const key = lineageKey(plan); if (key) keys.add(key);
-      if (typeof plan.predecessor === 'string') roots.add(plan.predecessor);
-    }
+    const runOf = async (run: string): Promise<Record<string, unknown> | null> => { const exported = JSON.parse(decode(await get(`${origin}/run-export/${run}/run`, bearer))); return isRecord(exported) && isRecord(exported.run) && exported.run.run === run ? exported.run : null; };
+    const ours = (run: Record<string, unknown> | null, key: string) => !!run && typeof run.pack === 'string' && run.pack.split('@')[0] === 'case-compile' && lineageKey(run) === key;
+    for (const d of given.values()) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
     if (keys.size !== 1) throw new Error('--runs 的核验运行不是同一份重组（或同一份脑图）编出来的；只写这份脑图的核验运行');
     const [key] = keys;
-    for (const root of roots) for (const planRun of (await successorsOf(root)).filter((r) => r.pack.split('@')[0] === 'case-compile' && r.parameters.plan_run === undefined && lineageKeyOf(r.sources) === key))
-      for (const verification of (await successorsOf(planRun.run)).filter((r) => r.pack.split('@')[0] === 'case-compile' && r.parameters.plan_run === planRun.run)) started.set(verification.run, verification.started_at);
+    // Up: a rework's plan run may name the booking or the verification run before it as predecessor (run 12 did the first, run 14
+    // the second), so the walk climbs while the predecessor is a run of this compilation and starts below the first one that is not.
+    for (const d of given.values()) {
+      let current = (await planOf(d.plan_run)).run as Record<string, unknown>;
+      for (let hops = 0; typeof current.predecessor === 'string' && hops < 200; hops++) {
+        const up = await runOf(current.predecessor);
+        if (!ours(up, key)) { roots.add(current.predecessor); break; }
+        current = up!;
+      }
+    }
+    // Down: every case-compile run of this compilation under those roots; the verification runs among them are the dispatches.
+    const queue = [...roots], visited = new Set<string>();
+    while (queue.length) {
+      const run = queue.shift()!; if (visited.has(run)) continue; visited.add(run);
+      for (const next of await successorsOf(run)) {
+        if (next.pack.split('@')[0] !== 'case-compile' || lineageKeyOf(next.sources) !== key) continue;
+        if (typeof next.parameters.plan_run === 'string') started.set(next.run, next.started_at);
+        queue.push(next.run);
+      }
+    }
     for (const run of given.keys()) if (!started.has(run)) { const exported = JSON.parse(decode(await get(`${origin}/run-export/${run}/run`, bearer))); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
     const dispatches: Dispatch[] = [], added: string[] = [];
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {

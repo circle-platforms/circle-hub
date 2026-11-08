@@ -296,6 +296,14 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.10: one plan directory for every run of the batch
+
+`tools/submit-plans.ts` reads the run's items from the Hub (`GET /run-export/<run>/run`) and submits only the case files of those
+items, naming the ones it leaves out, so a final verification that excludes cases takes the same directory and each passed plan
+reaches it byte for byte, as the reference engine composes a volume from sealed cases. It also reads each file strictly and names
+the file, the position and the text around a JSON or UTF-8 error. In run 14 the model copied sixteen plans by hand for its final
+verification, dropped a closing brace in all of them, and was told only "不是完整的 UTF-8 JSON".
+
 ### 3.10.9: a recomposition refusal that names its condition
 
 `functions/recomposition.ts` `recompositionProblem` walks the admission conditions in order and the projection freezes the first

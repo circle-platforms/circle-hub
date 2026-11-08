@@ -39,23 +39,33 @@ const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/$
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
-async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[]) {
+async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false) {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
   const jobs = Object.fromEntries(runsInOrder.map((run) => [run, all[run]]));
   const plans: Record<string, ReturnType<typeof planRun>> = { [PLAN1]: plan1, [PLAN2]: plan2, ...extraPlans };
   const planOfRun = (run: string) => (jobs[run][0] as { plan_run: string }).plan_run;
   const at = (k: number) => `2026-11-08T0${Math.floor(k / 60)}:${String(k % 60).padStart(2, '0')}:00.000Z`;
-  const successors: Record<string, unknown[]> = { [BOOKING]: [...new Set(runsInOrder.map(planOfRun))].map((plan, k) => ({ run: plan, pack: 'case-compile@9.9.9', started_at: at(2 * k), predecessor: BOOKING, parameters: { exclude: [] }, sources: plans[plan].record.sources.map((s) => ({ slot: s.slot, reference: s.reference })) })) };
-  runsInOrder.forEach((run, k) => { (successors[planOfRun(run)] ??= []).push({ run, pack: 'case-compile@9.9.9', started_at: at(2 * k + 1), predecessor: planOfRun(run), parameters: { plan_run: planOfRun(run) }, sources: [] }); });
+  // The lineage: each plan run under the booking, or (chain) under the verification run before it, as a rework may name either.
+  const records: Record<string, Record<string, unknown>> = { [BOOKING]: { run: BOOKING, pack: 'test-bed@1.0.0', started_at: at(0), predecessor: null, parameters: {}, sources: [] } };
+  let previous: string | null = null, k = 1;
+  for (const run of runsInOrder) {
+    const plan = planOfRun(run);
+    if (!records[plan]) records[plan] = { ...plans[plan].record, started_at: at(k++), predecessor: chain && previous ? previous : BOOKING };
+    records[run] = { run, pack: 'case-compile@9.9.9', started_at: at(k++), predecessor: plan, parameters: { plan_run: plan }, sources: plans[plan].record.sources };
+    previous = run;
+  }
+  const successors: Record<string, unknown[]> = {};
+  for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
   const originals = new Map([contract, profile, inventory, log].map((bytes) => [sha256(bytes), bytes]));
   const server = createServer((request, response) => {
     const url = request.url ?? '';
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
     const jobsOf = /^\/run-export\/(run_\w+)\/jobs$/.exec(url); if (jobsOf && jobs[jobsOf[1]]) { response.end(JSON.stringify({ schema: 'run-jobs@1', run: jobsOf[1], jobs: jobs[jobsOf[1]] })); return; }
     const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url); if (next) { response.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
-    const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: p.record, result: p.result, submission: p.submission })); return; }
+    const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: records[whole[1]] ?? p.record, result: p.result, submission: p.submission })); return; }
     if (url === `/run-export/${RECOMPOSE}/run`) { response.end(JSON.stringify({ schema: 'run-export@1', run: recomposed })); return; }
+    const alone = /^\/run-export\/(run_\w+)\/run$/.exec(url); if (alone && records[alone[1]]) { response.end(JSON.stringify({ schema: 'run-export@1', run: records[alone[1]] })); return; }
     const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url); if (source && originals.has(source[1])) { response.end(originals.get(source[1])); return; }
     response.statusCode = 404; response.end('没有\n');
   });
@@ -218,4 +228,15 @@ test("a case not delivered that went to the bed is explained with the device's o
   const ok = await run(h, await notes(NOTES), out);
   assert.equal(ok.code, 0, ok.stderr);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /\*\*设备原话\*\*（已核对出自最后一次上机的设备返回）：\n```device-evidence\n第 3 步断言没有命中\n```/);
+});
+
+test('a rework whose plan run names the previous verification run as predecessor is still found, up to the booking and back down', async (t) => {
+  const h = await hub(undefined, undefined, {}, {}, undefined, true);
+  t.after(() => h.close());
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'delivery');
+  const result = await run(h, await notes(NOTES), out, FINAL);
+  assert.equal(result.code, 0, result.stderr);
+  const printed = JSON.parse(result.stdout);
+  assert.deepEqual(printed.runs, [WHOLE, FINAL]);
+  assert.deepEqual(printed.added_runs, [WHOLE]);
 });

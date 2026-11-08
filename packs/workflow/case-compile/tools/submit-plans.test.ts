@@ -15,9 +15,11 @@ async function plans(files: Record<string, unknown>) {
   for (const [name, value] of Object.entries(files)) await writeFile(join(directory, name), typeof value === 'string' ? value : JSON.stringify(value));
   return directory;
 }
+let RUN_ITEMS = ['doc:a', 'doc:b'];
 async function hub(answer: unknown, status = 200) {
   const seen: Array<{ url?: string; authorization?: string; body: any }> = [];
   const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id) => ({ id })) } })); return; }
     let body = '';
     request.on('data', (chunk) => { body += chunk; });
     request.on('end', () => {
@@ -137,4 +139,41 @@ test('a length placeholder is expanded, written back to its file and sent as wri
   assert.equal(refused.code, 1);
   assert.equal(stub2.seen.length, 0);
   assert.match(refused.err, /01\.json：长度占位写法不对/);
+});
+
+test('a final verification takes the same plan directory: files of items the run does not hold are left out and named', async () => {
+  RUN_ITEMS = ['doc:a'];
+  try {
+    const directory = await plans({ '01.json': item('doc:a'), '02.json': item('doc:b') });
+    const stub = await hub(said('受理'));
+    const result = await run(stub.url, directory);
+    await stub.close();
+    assert.equal(result.code, 0, result.err);
+    assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a')]);
+    assert.match(result.out, /跳过 1 个不属于本运行的条目文件（本运行没有这些条目，例如被 parameters\.exclude 排除）：doc:b/);
+    RUN_ITEMS = ['doc:z'];
+    const stub2 = await hub(said('受理'));
+    const none = await run(stub2.url, directory);
+    await stub2.close();
+    assert.equal(none.code, 1);
+    assert.equal(stub2.seen.length, 0);
+    assert.match(none.err, /--plans 目录里没有本运行的条目（本运行有 1 个条目）/);
+  } finally { RUN_ITEMS = ['doc:a', 'doc:b']; }
+});
+
+test('a case file that is not valid JSON is named with the place and the text around it, and nothing is sent', async () => {
+  const good = JSON.stringify(item('doc:a'));
+  const directory = await plans({ '01.json': good, '02.json': JSON.stringify(item('doc:b')).slice(0, -1) });
+  const stub = await hub(said('受理'));
+  const result = await run(stub.url, directory);
+  await stub.close();
+  assert.equal(result.code, 1);
+  assert.equal(stub.seen.length, 0);
+  assert.match(result.err, /02\.json 不是合法的 JSON（[^）]*）；出错位置第 \d+ 个字符，附近原文：".*"。常见原因是括号或引号没有成对/);
+  const bytes = await plans({ '01.json': Buffer.from([0x7b, 0xff, 0x7d]).toString('latin1') });
+  await writeFile(join(bytes, '01.json'), Buffer.from([0x7b, 0xff, 0x7d]));
+  const stub2 = await hub(said('受理'));
+  const bad = await run(stub2.url, bytes);
+  await stub2.close();
+  assert.match(bad.err, /01\.json 不是合法的 UTF-8 文本/);
 });
