@@ -189,12 +189,15 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
 - **Discovery.** An unauthenticated `/mcp` answer carries `WWW-Authenticate: Bearer realm="circle-hub",
   resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`, plus `error="invalid_token"` when a token was
   sent and does not work (the body stays the same for every reason). The resource metadata names `<origin>/mcp` and this
-  Hub as its authorization server; the authorization server metadata offers the authorization code with PKCE S256 only,
-  public clients only (`none`), no refresh token, and the `iss` response parameter. `<origin>` is the scheme of the
+  Hub as its authorization server; the authorization server metadata offers the authorization code with PKCE S256 and
+  the device code (`device_authorization_endpoint`, RFC 8628), public clients only (`none`), no refresh token, and the
+  `iss` response parameter. `<origin>` is the scheme of the
   channel and the Host the request came with (already checked against the allowed hosts).
 - **Registration** (`POST /oauth/register`, RFC 7591): JSON; what the Hub does not support is replaced, not refused
-  (RFC 7591 3.2.1): every client is public (`none`, no secret, whatever method was asked) and gets the authorization code
-  only; a client whose `grant_types` or `response_types` leave the code out is refused. Redirect URIs are sent in the form
+  (RFC 7591 3.2.1): every client is public (`none`, no secret, whatever method was asked) and gets the authorization code,
+  and the device code when its `grant_types` ask for it; a client whose `grant_types` or `response_types` leave the
+  authorization code out is refused, so a client that only uses the device code still registers a redirect URI. Grant
+  types are not stored with a client: the token endpoint takes either grant from any registered client. Redirect URIs are sent in the form
   a URL parser writes them (they are stored, shown and matched as sent), and are https to a plain DNS name or IP
   address, http on a loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme named by a
   reversed domain name (`com.example.app:`, RFC 8252 7.1, which leaves out the operating system's handlers such as `tel:`
@@ -222,6 +225,26 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   on every request, so revocation is immediate: disconnecting a Circle is revoking its token (`circle-hub token revoke`).
 - **Revocation** (`POST /oauth/revoke`, RFC 7009): whoever holds a token revokes it by its value; an unknown token gets
   the same 200.
+- **Device code** (RFC 8628; owner, 2026-11-09: a client signs in without opening a browser itself or taking a redirect,
+  as GitHub's device login does). `POST /oauth/device_authorization` (form encoding) takes a registered `client_id` and
+  optionally the `resource`, which must be this Hub's `/mcp` (`invalid_target` otherwise); `scope` is ignored. It answers
+  a 43-character `device_code`, a `user_code` of eight letters of twenty consonants shown as `XXXX-XXXX` (about 34 bits),
+  `verification_uri` `<origin>/console/device`, `verification_uri_complete` with `?user_code=`, `expires_in` 600 and
+  `interval` 5. Device requests live in memory for `DEVICE_REQUEST_TTL_MS` (10 minutes) with the same bounds as
+  authorization requests (ten per client, a hundred per sender, 5000 in all). A person types the code on
+  `/console/device` (any case, with a space or a dash; the form carries a one-time nonce in the `circle_hub_device`
+  cookie, SameSite=Strict, and is taken from this console's own origin only). Ten codes per sender in 15 minutes, right or
+  wrong, then 429, so codes cannot be guessed at speed. A code of an undecided request opens an authorization request for
+  it, bound to that browser with `circle_hub_authorize` exactly like one from `/oauth/authorize`, and the browser goes to
+  `/console/authorize/<request>`: the same identity step (invitation or console session) and confirm page, which shows
+  the user code to compare with the client's and warns against a code sent by someone else, instead of a redirect URI. The
+  decision redirects nowhere: the page says how it was decided, and the client's next poll of `/oauth/token` with
+  `grant_type=urn:ietf:params:oauth:grant-type:device_code` gets it. Until then the poll answers
+  `authorization_pending`, and `slow_down` (the interval grows by five seconds) when it comes sooner than the interval.
+  After the decision it answers `access_denied` once, or an ordinary Hub token once (the same kind and label as from a
+  code). After that, and for another client's device code, it answers `invalid_grant`; after the lifetime it answers
+  `expired_token`. When two browsers typed the same code, the first decision counts; the other page says the code was
+  handled and spends no invitation.
 - **Invitations**: `circle-hub user invite <user>` (an administrator; the console's 添加成员) prints a twelve-character
   code once; the records keep its SHA-256 (`invitations`, migration 7), valid 24 hours, used once by the client it
   authorized. Requests, codes and login links live in memory and end with the process, like console sessions.

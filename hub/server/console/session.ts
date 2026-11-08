@@ -36,6 +36,9 @@ export const SESSION_COOKIE = 'circle_hub_session';
 export const LOGIN_COOKIE = 'circle_hub_login';
 export const SECURE_SESSION_COOKIE = '__Secure-circle_hub_session';
 export const SECURE_LOGIN_COOKIE = '__Secure-circle_hub_login';
+/** The one-time nonce of the device page's form (the user code a client shows is typed there). */
+export const DEVICE_COOKIE = 'circle_hub_device';
+export const SECURE_DEVICE_COOKIE = '__Secure-circle_hub_device';
 
 const secret = (): string => randomBytes(32).toString('base64url');
 
