@@ -48,15 +48,19 @@ export function recipeDigest(recipes: unknown[]): string {
 /** Rows are constructed only here; the independent workbook reader does not call this routine to interpret input. */
 export function generateWorkbook(input: GenerationInput): Uint8Array { return generateWorkbookSet([input]); }
 /** One workbook for the cases of one run (decision 104): the runner's template, then below its header the description row,
- * each case's rows in the given order followed by a blank row, and the closing case. One case gives exactly the single-case layout. */
-export function generateWorkbookSet(inputs: GenerationInput[]): Uint8Array {
+ * each case's rows in the given order followed by a blank row, and the closing case. One case gives exactly the single-case layout.
+ * `merged` lets the cases come from several plan runs of the same contract, profile, build and generator, as the unsuccessful
+ * volume of a delivery does (each case as it last went to the bed); the description row then names every plan run. Such a
+ * workbook is not one plan run's recomputation, so it is never what a verification run binds. */
+export function generateWorkbookSet(inputs: GenerationInput[], options: { merged?: boolean } = {}): Uint8Array {
   if (!inputs.length) reject('/cases', '至少一个已核验用例才可生成');
   const first = inputs[0]; const { contract, profile } = first; const many = inputs.length > 1;
   const at = (k: number, pointer: string) => many ? `/cases/${k}${pointer}` : pointer;
-  for (const [k, input] of inputs.entries()) if (input.contract.pinned.identity !== contract.pinned.identity || input.contract.runtimeVersion !== contract.runtimeVersion || canonicalJson(input.profile) !== canonicalJson(profile) || input.plan_run !== first.plan_run || input.build !== first.build || input.generator !== first.generator) reject(at(k, '/context'), '同一份工作簿的用例必须共用同一合约、配置、计划运行、构建和生成器');
+  for (const [k, input] of inputs.entries()) if (input.contract.pinned.identity !== contract.pinned.identity || input.contract.runtimeVersion !== contract.runtimeVersion || canonicalJson(input.profile) !== canonicalJson(profile) || (!options.merged && input.plan_run !== first.plan_run) || input.build !== first.build || input.generator !== first.generator) reject(at(k, '/context'), '同一份工作簿的用例必须共用同一合约、配置、计划运行、构建和生成器');
   if (new Set(inputs.map((input) => input.fields.autoid)).size !== inputs.length) reject('/cases', '同一份工作簿里的 autoid 重复');
   if (first.generator !== undefined && first.generator !== GENERATOR) reject('/generator', '生成器版本与当前包版本不符');
-  if (!first.plan_run || !first.plan_run.startsWith('run_') || /[\r\n]/.test(first.plan_run) || !first.build || /[\r\n]/.test(first.build)) reject('/context', '缺少已满足的计划运行号或锁定构建');
+  const planRuns = [...new Set(inputs.map((input) => input.plan_run))];
+  if (planRuns.some((run) => !run || !run.startsWith('run_') || /[\r\n]/.test(run)) || !first.build || /[\r\n]/.test(first.build)) reject('/context', '缺少已满足的计划运行号或锁定构建');
   if (contract.pinned.identity !== profile.digest || contract.runtimeVersion !== profile.runtimeVersion) reject('/identity', '合约身份与配置不符');
   if(profile.seats.some(seat=>!Number.isSafeInteger(seat.ordinal)||seat.ordinal<0||seat.ordinal>=profile.device_count))reject('/profile/seats','框架取不到那台设备，整卷不跑：对象序号超出冻结预检容量');
   const defaultAssertion=assertionTarget(contract,profile);
@@ -65,7 +69,7 @@ export function generateWorkbookSet(inputs: GenerationInput[]): Uint8Array {
   if (assertionSeat && assertionSeat.ordinal >= profile.device_count) reject('/profile/seats', '断言对象的座位超出预检设备数');
   const plans: PlanSlots[] = inputs.map((input, k) => { const read = readSlots(input.slots); if (!read.ok) reject(at(k, '/slots'), read.problems[0].pointer + ' ' + read.problems[0].message); return read.ok ? read.slots : input.slots; });
   const digest = recipeDigest(inputs.map((input, k) => caseRecipe(input, plans[k])));
-  const rows: Array<Array<string | number>> = [['', '', 0, describedRun(first.plan_run, first.build)]];
+  const rows: Array<Array<string | number>> = [['', '', 0, describedRun(planRuns.join('、'), first.build)]];
   for (const [k, input] of inputs.entries()) { rows.push(...caseRows(input, plans[k], (pointer) => at(k, pointer))); rows.push([]); }
   rows.push(closingRow(profile.workbook.closing_row));
   if (rows.length > FORMAT.max_rows) reject('/rows', `工作簿 ${rows.length} 行，超过本包上限 ${FORMAT.max_rows} 行；把脑图拆成几份分别上传、各开一次运行，或填 autoid 一次编一条`);

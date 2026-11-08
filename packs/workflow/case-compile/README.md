@@ -296,6 +296,29 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.7: literals of a set length
+
+A plan writes a literal the author gives by length as a placeholder: `{{domain:N}}`, `{{domain:N|prefix}}`,
+`{{domain:N|prefix|suffix}}`, `{{name:N}}` (decision 162). `tools/submit-plans.ts` expands it with `functions/length-literals.ts`
+before sending: a domain name is filled with labels of at most 63 characters to exactly N, the fixed parts kept verbatim, a name
+without dots; the same placeholder always gives the same literal. The expanded case is written back to its file, so the file is
+what the Hub receives, and each expansion is reported with its length and label lengths. A model miscounts long runs of
+characters; the reference engine generates such literals from the stated length too.
+
+The same release fixes the unsuccessful volume of `tools/assemble-delivery.ts`: cases that last failed in different dispatches
+(one in the whole-volume dispatch, another only after a rework) go in each with the plan it last ran, merged by
+`generateWorkbookSet(inputs, { merged: true })`, whose description row names every plan run; the default path and its bytes
+are unchanged. The pass volume is the latest dispatch that passed whole after which none of its cases failed; a later dispatch may try
+other cases or rerun its cases if they pass again, and a case whose latest verdict is a pass but which was left out of it is reported as not delivered (with no
+pass volume at all, such a pass is refused: it was never final-verified). Run 12 stopped on both: the tool asked for one dispatch holding all
+ten cases not passed, and a rerun of them would then have stood after the final verification.
+
+The tool no longer trusts the list of runs it is given: `--runs` names at least the final verification, and every
+verification run of the same compilation (plan runs under the same booking bound to the same recomposition result, read through
+the Hub's `GET /run-export/<run>/successors`) is taken in start order; the ones added are printed as `added_runs`. In run 12 the
+model named two of nine and the report said “上机 1 次” for cases that ran five times. The tool also prints `reply`, the
+answer for the person (directory, counts, paths), which `tools/delivery.md` has the model give verbatim.
+
 ### 3.10.6: the delivery directory
 
 `tools/assemble-delivery.ts` ends a run as InfoTest's engine does (decision 161): `case.xlsx` is the pass volume, regenerated

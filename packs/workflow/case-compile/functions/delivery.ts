@@ -51,49 +51,51 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string }> }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string }>; leftOut?: string }
 export interface Assembly {
   cases: CaseOutcome[];
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
   pass: Dispatch | null;
-  /** The dispatch whose plan run the unsuccessful volume is generated from, and the cases it holds. */
-  unsuccessful: { from: Dispatch; items: string[] } | null;
+  /** The cases of the unsuccessful volume in document order, each with the dispatch of its latest verdict (its plan goes in). */
+  unsuccessful: { items: string[]; sources: Record<string, Dispatch> } | null;
   totals: Record<Status, number> & { cases: number };
 }
 
 /**
- * Settles every case of the document from the dispatches in the order they ran. The last dispatch must be all passes (the
- * pass volume, dispatched whole: the final verification) or have no pass at all; a case that passed last must be in the pass
- * volume. Mixed verdicts in the last dispatch mean the pass volume was never dispatched on its own, which the reference engine
- * requires before anything is delivered.
+ * Settles every case of the document from the dispatches in the order they ran. The pass volume is the latest dispatch that
+ * passed whole (the final verification: the reference engine delivers only a volume dispatched on its own and passed item by
+ * item) after which none of its cases failed; a later dispatch may rerun its cases if they pass again, and may try other cases.
+ * Every case whose latest verdict is a pass must be in it, or it was never final-verified with the volume it would ship in.
  */
 export function assemble(population: string[], dispatches: Dispatch[]): Assembly {
   if (!population.length || new Set(population).size !== population.length) throw new Error('用例清单为空或有重复的 autoid');
   if (!dispatches.length) throw new Error('没有上机过的核验运行；--runs 至少写一次整卷上机');
   if (new Set(dispatches.map((d) => d.run)).size !== dispatches.length) throw new Error('--runs 里同一个核验运行写了两次');
   for (const d of dispatches) for (const item of d.items) if (!population.includes(item)) throw new Error(`运行 ${d.run} 派发了不在这份脑图用例清单里的 ${item}`);
-  const last = dispatches.at(-1)!;
-  const passes = last.rows.filter((r) => r.dynamic_terminal === 'pass').length;
-  if (passes > 0 && passes < last.rows.length) {
-    const others = last.rows.filter((r) => r.dynamic_terminal !== 'pass').map((r) => r.item);
-    throw new Error(`最后一次上机（运行 ${last.run}）还有没通过的用例：${others.join('、')}。通过卷要单独整卷上机：开新的计划运行，parameters.exclude 写上这些和没编出来的用例，原样重交通过用例的计划，生成、核验、派发，再把那次核验运行加到 --runs 末尾`);
-  }
-  const pass = passes > 0 ? last : null;
+  const passedWhole = (d: Dispatch) => d.rows.length > 0 && d.rows.every((r) => r.dynamic_terminal === 'pass');
+  const latestOf = (item: string) => [...dispatches].reverse().flatMap((d) => d.rows.filter((r) => r.item === item))[0]?.dynamic_terminal;
+  const lastPassed = population.filter((item) => latestOf(item) === 'pass');
+  const holds = (k: number) => dispatches.slice(k + 1).every((later) => later.rows.every((r) => !dispatches[k].items.includes(r.item) || r.dynamic_terminal === 'pass'));
+  const at = dispatches.findLastIndex((d, k) => passedWhole(d) && holds(k));
+  const pass = at < 0 ? null : dispatches[at];
+  // Without a pass volume a case that passed has never been final-verified: dispatch one. With one, a case that passed but was
+  // left out of it (judged unstable, say) is not delivered and is reported as such; nothing is delivered unverified either way.
+  if (!pass && lastPassed.length) throw new Error(`还没有一次整卷全部通过、之后也没再失败的上机，${lastPassed.join('、')} 最近一次上机通过了。通过卷要单独整卷上机：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交通过用例的计划，生成、核验、派发，再把那次核验运行加到 --runs 末尾`);
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
     const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.evidence?.log ? { log: r.evidence.log } : {}) })));
     if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history };
     const latest = history.at(-1);
     if (!latest) return { autoid, status: 'unrun' as const, history };
-    if (latest.terminal === 'pass') throw new Error(`用例 ${autoid} 最近一次上机（运行 ${latest.run}）通过了，却不在最后的通过卷里；把它放进通过卷再整卷上机`);
+    if (latest.terminal === 'pass') return { autoid, status: 'unsettled' as const, history, leftOut: pass!.run };
     return { autoid, status: latest.terminal === 'fail' ? 'failed' as const : 'unsettled' as const, history };
   });
   const unpassed = cases.filter((c) => c.status === 'failed' || c.status === 'unsettled').map((c) => c.autoid);
   let unsuccessful: Assembly['unsuccessful'] = null;
   if (unpassed.length) {
-    const from = [...dispatches].reverse().find((d) => unpassed.every((item) => d.items.includes(item)));
-    if (!from) throw new Error(`没有一次上机同时包含 ${unpassed.join('、')}；未通过卷要从同一份计划生成，先整卷重跑一次`);
-    unsuccessful = { from, items: from.items.filter((item) => unpassed.includes(item)) };
+    const sources: Record<string, Dispatch> = {};
+    for (const item of unpassed) sources[item] = dispatches.find((d) => d.run === cases.find((c) => c.autoid === item)!.history.at(-1)!.run)!;
+    unsuccessful = { items: unpassed, sources };
   }
   const totals = { cases: cases.length, delivered: 0, failed: 0, unsettled: 0, unrun: 0 } as Assembly['totals'];
   for (const c of cases) totals[c.status]++;
@@ -123,7 +125,8 @@ export const terminalLabel = (terminal: string): string => isDynamicTerminal(ter
 /** What happened, mechanically from the verdict sequence (the reference engine translates its verdict ledger the same way). */
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   if (!outcome.history.length) return excluded ? '没有上机：计划运行用 parameters.exclude 排除了这一条，没有编出可执行的计划。' : '没有上机：没有一次派发包含这一条。';
-  return outcome.history.map((h) => `第 ${h.ordinal} 次上机（核验运行 ${h.run}）：${terminalLabel(h.terminal)}`).join(' → ') + '。';
+  const steps = outcome.history.map((h) => `第 ${h.ordinal} 次上机（核验运行 ${h.run}）：${terminalLabel(h.terminal)}`).join(' → ');
+  return outcome.leftOut ? `${steps}；最近一次通过了，但不在终验（核验运行 ${outcome.leftOut}）的通过卷里，没有交付。` : steps + '。';
 }
 
 export interface ReportInput {
@@ -140,7 +143,7 @@ function head(input: ReportInput): string[] {
     `本份脑图选中 ${totals.cases} 个用例：${STATUS.delivered} ${totals.delivered}，${STATUS.failed} ${totals.failed}，${STATUS.unsettled} ${totals.unsettled}，${STATUS.unrun} ${totals.unrun}。`,
     '',
     pass && input.files.pass ? `- 通过卷 \`case.xlsx\`：${pass.items.length} 个用例。这份工作簿（sha256 ${input.files.pass.sha256.slice(0, 12)}…）在核验运行 ${pass.run}（作业 ${pass.job.slice(0, 12)}）里整卷上机，逐条通过。` : '- 没有通过卷：最后一次上机没有用例通过。',
-    unsuccessful && input.files.unsuccessful ? `- 未通过卷 \`unsuccessful_cases.xlsx\`：${unsuccessful.items.length} 个用例，取自计划运行 ${unsuccessful.from.plan_run}（核验运行 ${unsuccessful.from.run} 那次上机的计划），没有再上机。` : '- 没有未通过卷：没有带计划却没通过的用例。',
+    unsuccessful && input.files.unsuccessful ? `- 未通过卷 \`unsuccessful_cases.xlsx\`：${unsuccessful.items.length} 个用例，每条用它最后一次上机的计划（计划运行 ${[...new Set(unsuccessful.items.map((item) => unsuccessful.sources[item].plan_run))].join('、')}），没有再上机。` : '- 没有未通过卷：没有带计划却没通过的用例。',
   ];
   if (input.build) lines.push(`- 构建：${input.build}`);
   if (input.notes.batch) lines.push('', `> ${input.notes.batch.replace(/\n/g, '\n> ')}`);
