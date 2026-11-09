@@ -49,6 +49,8 @@
 
 ## 历史
 
+- 2026-11-09：source-read 工作流源码升为0.1.8，新增可选 `spec_list` 输入，接受既有 manual-store 的 `manual:spec-list:configured` 只读目录清单；沿用 `workflow@1` / `system@1`，无核心或schema升级。要求启用、获准的手册库资源配置 `spec_folders`，不会自动配置或发布。main此前0.1.6，未合入#190已占0.1.7；0.1.8不包含该提案或证明生产已升级。
+
 - 2026-10-13：建立本页。改名尚未开始；验收 Circle 提交 8b2ceb6；foundation/circle 1.0.4；circle 主线 1.1.1。
 - 2026-10-13 晚：7420 就地升级到 server-s2 8e212a6（§5，迁移 28）；circle 主线 1.2.1；circle-hub 与 circle-packs 改为 Apache-2.0，提交需签署；circle-packs 验收固定提交 316760a（products/famx 1.2.0）。
 

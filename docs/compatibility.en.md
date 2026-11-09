@@ -49,6 +49,8 @@ The following belonged to the retired task-and-approval server (up to 0.2.0) and
 
 ## History
 
+- 2026-11-09: source-read workflow sources move to 0.1.8 with an optional `spec_list` input accepting the existing manual-store `manual:spec-list:configured` read-only inventory. `workflow@1` / `system@1` are unchanged; no core or schema upgrade. An enabled, permitted manual-store resource must declare `spec_folders`; no automatic configuration or publication. Main was at 0.1.6 and the unmerged #190 proposal already uses 0.1.7; 0.1.8 does not incorporate that proposal or establish a production upgrade.
+
 - 2026-10-13: this page was created. The rename has not started; the acceptance Circle commit is 8b2ceb6; foundation/circle is 1.0.4; circle's main line is 1.1.1.
 - Evening of 2026-10-13: 7420 upgraded in place to server-s2 8e212a6 (§5, migration 28); circle mainline 1.2.1; circle-hub and circle-packs relicensed under Apache-2.0 with signed-off commits; circle-packs acceptance pinned at 316760a (products/famx 1.2.0).
 
