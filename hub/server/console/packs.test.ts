@@ -21,6 +21,15 @@ test('received skills stay in their own group and team scopes disclose assignmen
  assignments=['owner','peer','disabled'];const all=await render();assert.match(all,/使用范围：合成作者、合成协作者/);assert.doesNotMatch(all,/使用范围：[^<]*合成停用成员/);
 });
 
+test('workflow and skill details retain the unified list scope counts without including system or product packs',async()=>{
+ const principal={id:'reader',name:'合成成员',role:'user'},base={version:'1.0.0',owner:'admin',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T00:00:00.000Z'};
+ const listings=[{...base,id:'workflow-one',title:'合成工作流',kind:'workflow'},{...base,id:'skill-one',title:'合成技能',kind:'skill'},{...base,id:'skill-one',title:'合成旧技能',kind:'skill',version:'0.9.0',withdrawn:true},{...base,id:'system-one',title:'合成系统',kind:'system'},{...base,id:'product-one',title:'合成产品',kind:'product'}];
+ const ctx={principal,admin:false,url:new URL('http://127.0.0.1/console/packs?scope=all'),userName:async()=>principal.name,chrome:(title:string,extra:object)=>({title,...extra,csrf:null,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>listings},workflows:{byDigest:async()=>null},records:{authorizations:{canPublish:async()=>false}}}} as unknown as PageContext;
+ const counts=(body:string)=>[...body.matchAll(/<span class="ch-count">([^<]+)<\/span>/g)].map(match=>match[1]);
+ const list=String((await packsPage(ctx)).body);assert.deepEqual(counts(list),['2','0','2']);
+ for(const id of ['workflow-one','skill-one']){ctx.url=new URL('http://127.0.0.1/console/packs/'+id+'?scope=all');const detail=String((await packPage(ctx,id)).body);assert.deepEqual(counts(detail),counts(list));assert.match(detail,/合成工作流/);assert.match(detail,/合成技能/);assert.doesNotMatch(detail,/合成系统|合成产品/);}
+});
+
 test('member team scopes reveal neither assignment counts nor member names on cards or detail pages',async()=>{
  const principal={id:'reader',name:'合成阅读成员',role:'user'},hidden=['synthetic-private-one','synthetic-private-two'];
  let assigned:string[]=[];

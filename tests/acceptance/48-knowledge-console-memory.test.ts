@@ -62,6 +62,17 @@ test('space panels show all four readable scopes and only verified own knowledge
  const metadata=await adminBrowser.get('/console/team/'+owner.user.id);assert.equal(metadata.status,200,metadata.body);assert.match(metadata.body,/私人空间容量/);assert.doesNotMatch(metadata.body,/合成认证观察|合成待验证笔记|本文件夹条目/);
 });
 
+test('folder statistics disclose historical records separately from the paginated current listing',{skip},async()=>{
+ const spaces=hub.hub.knowledge.spaces!,path='/合成计数',first=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数初稿'});
+ const revised=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数修订',replaces:first.entry,expected_version:first.root});
+ const removed=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数撤回'});await spaces.withdraw(owner.principal,removed.entry,owner.user.id);
+ const current=await spaces.current(owner.user.id);assert.ok(current);assert.equal(current.body.entries.filter(row=>row.path===path).length,3);
+ const page=await browser.get(space({space:owner.user.id,path}));assert.equal(page.status,200,page.body);const text=textOf(parse(page.body));
+ assert.match(text,/本文件夹条目记录（含历史及撤回）3/);assert.match(text,/本页当前可读条目/);assert.match(text,/只统计本页已加载的当前可读条目/);
+ const rows=rowTexts(parse(page.body));assert.ok(rows.some(row=>row.includes('合成计数修订')));assert.ok(!rows.some(row=>row.includes('合成计数初稿')||row.includes('合成计数撤回')));
+ assert.ok(revised.entry!==first.entry);
+});
+
 test('a duplicate stops the preview before credential scanning and team rows retain their actual source', {skip},async()=>{
  const spaces=hub.hub.knowledge.spaces!,original=await spaces.entry(owner.principal,verified.root,verified.path,verified.entry);assert.ok(original);
  const saved=await spaces.write(owner.principal,{path:verified.path,kind:EntryKindSchema.enum.observation,statement:'合成重复预检观察',grounds:original.body.grounds});
