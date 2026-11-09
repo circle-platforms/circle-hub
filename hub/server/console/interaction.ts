@@ -51,6 +51,7 @@ export const INTERACTION_SCRIPT = `(() => {
  };
  const focusOriginal=()=>{const hit=document.getElementById('quoted-text');if(hit&&location.hash==='#quoted-text')requestAnimationFrame(()=>{if(hit.isConnected){hit.scrollIntoView({block:'center',inline:'nearest'});hit.focus({preventScroll:true});}});};
  const controlTips=()=>{for(const control of document.querySelectorAll('button[title],a.ch-btn[title]')){if(control.closest('.ch-tip')||control.querySelector('.ch-tip-bubble'))continue;const description=control.getAttribute('title');let host=control;if(control.matches(':disabled,[aria-disabled="true"]')){host=document.createElement('span');control.replaceWith(host);host.append(control);host.tabIndex=0;host.setAttribute('title',description);}if(control.tagName==='BUTTON')control.dataset.actionLabel=control.textContent.trim();host.classList.add('ch-tip');host.setAttribute('aria-description',description);const bubble=document.createElement('span');bubble.className='ch-tip-bubble';bubble.setAttribute('role','tooltip');bubble.setAttribute('aria-hidden','true');bubble.textContent=description;host.append(bubble);}};
+ document.addEventListener('invalid',event=>{const node=event.target;if(!node.closest?.('[data-editor-foreground]'))return;for(let parent=node.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;},true);
  const initialize = () => {
   controlTips();focusOriginal();updateBulk(document);syncDialog();
   document.dispatchEvent(new Event('circle-hub:render'));

@@ -24,8 +24,9 @@ import {sharingRows} from './sharing-history.ts';
 import {entryProvenance,entryClientName} from './client-provenance.ts';
 import {shareFeedback,NO_TEAM_SHARES} from './feedback.ts';
 const field = inputField;
-function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false): Html {
-  return html `<form method="post" action="/console/knowledge/do/${action}"${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}<div data-fields>${fields}</div><button type="submit" class="ch-btn ${action==='revoke'||action==='withdraw'?'ch-btn--danger':'ch-btn--primary'}"${disabled?html` disabled`:html``}>${label}</button></form>`;
+function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false, back?:string): Html {
+  const submit=html`<button type="submit" class="ch-btn ${action==='revoke'||action==='withdraw'?'ch-btn--danger':'ch-btn--primary'}"${disabled?html` disabled`:html``}>${label}</button>`;
+  return html `<form method="post" action="/console/knowledge/do/${action}"${back?html` data-entry-editor`:''}${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}<div data-fields>${fields}</div>${back?html`<div class="ch-editor-actions ch-actions">${submit}${actionLink(back,'取消并返回')}</div>`:submit}</form>`;
 }
 const spaceContent = (content: Html) => html `<div class="ch-section" data-area-content>${content}</div>`;
 const spaceLink = (space: string, root?: string, path = '/') => ({ space, ...(root ? { root } : {}), path });
@@ -49,17 +50,21 @@ function editor(ctx: PageContext, space: string, path: string, draft?: SpaceEntr
   const content = draft?.body.content, grounds = draft?.body.grounds ?? [];
   const title = draft ? (space === 'team' ? '修改团队条目' : '修改我的条目') : (space === 'team' ? '导入团队知识条目' : '新建条目');
   const hint = space === 'team' ? '仅管理员可导入；条目及来源原文对全体成员可读。可用团队读取的来源，或管理员本人的普通上传；本次导入记录上传声明。私人空间原文及私人凭据来源仍受原有共享限制。' : '没有来源的笔记记为待验证；提供来源时逐字核对引文与路径，验证不代表陈述内容已被判为事实。修改会创建新条目并取代旧条目。';
-  return card({ title, hint }, form(ctx, 'entry', html `
+  const back='/console/knowledge/space?'+new URLSearchParams({...spaceLink(space,draft?.root,path),...(draft?{entry:draft.row.entry}:{}),scope:ctx.url.searchParams.get('scope')??(space==='team'?'team':'personal')});
+  const ground=(i:number)=>html`<div data-wide-field data-fields>${field(`来源引用 ${i+1}`,html`<input name="ground_${i}" value="${grounds[i]?.reference??''}"${space==='team'&&i===0?html` required`:''}>`)}${field(`逐字引文 ${i+1}`,html`<textarea name="quotation_${i}" rows="2"${space==='team'&&i===0?html` required`:''}>${grounds[i]?.quotation??''}</textarea>`)}</div>`;
+  return html`<section class="ch-section" data-editor-foreground>${card({ title, hint }, form(ctx, 'entry', html `
 <input type="hidden" name="space" value="${space}">
 ${draft ? html `<input type="hidden" name="replaces" value="${draft.row.entry}"><input type="hidden" name="expected_version" value="${draft.root}">` : ''}
 ${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
 ${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
 ${field('陈述', html `<textarea name="statement" required maxlength="262144" rows="4">${content?.statement ?? ''}</textarea>`)}
-${field('结构化数据（可选 JSON）', html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`)}
+<details data-editor-advanced data-wide-field${content&&(Object.keys(content.data).length||content.applicability)?html` open`:''}><summary>结构化数据与适用条件</summary><div data-fields>${field('结构化数据（可选 JSON）', html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`)}
 ${field('适用条件（可选 JSON）', html `<textarea name="applicability" rows="2" placeholder="null">${content?.applicability ? JSON.stringify(content.applicability, null, 2) : ''}</textarea>`, '产品线、版本和运行环境等条件；留空表示未声明，不要求产品包')}
-${Array.from({ length: Math.min(100, Math.max(3, grounds.length + 1)) }, (_, i) => html `<div data-wide-field data-fields>${field(`来源引用 ${i + 1}`, html `<input name="ground_${i}" value="${grounds[i]?.reference ?? ''}"${space === 'team' && i === 0 ? html ` required` : ''}>`)}${field(`逐字引文 ${i + 1}`, html `<textarea name="quotation_${i}" rows="2"${space === 'team' && i === 0 ? html ` required` : ''}>${grounds[i]?.quotation ?? ''}</textarea>`)}</div>`)}
+</div></details>
+${ground(0)}
+<details data-editor-sources data-wide-field${grounds.length>1?html` open`:''}><summary>更多来源与逐字引文</summary><div data-fields>${Array.from({length:Math.min(100,Math.max(3,grounds.length+1))-1},(_,i)=>ground(i+1))}</div></details>
 ${field('修改原因', html `<input name="reason" maxlength="1000" value="${draft ? '修订知识条目' : space === 'team' ? '团队知识导入' : '我的条目写入'}" required>`)}
-`, draft ? '保存修改' : space === 'team' ? '导入条目' : '保存条目'));
+`, draft ? '保存修改' : space === 'team' ? '导入条目' : '保存条目',false,false,back))}</section>`;
 }
 export async function spacePage(ctx: PageContext): Promise<PageResult> {
   ctx.personalEpoch=(await ctx.deps.records.personalSync?.state(ctx.principal))?.epoch;
@@ -104,6 +109,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
       return neutralPage(ctx);
     }
     const canEdit = (own || space === 'team' && ctx.admin) && (entry.row.status === 'verified' || entry.row.status === 'unverified');
+    if(canEdit&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page({...chrome,title:'编辑知识条目'},await spaceLayout(ctx,pageLayout(editor(ctx,space,path,entry),{inspector:null})))};
     const canWithdraw=canEdit||space==='team'&&entry.body.by===ctx.principal.id&&entry.body.shared_from!==undefined;
     const shared=entry.body.shared_from;
     const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',await personalOriginCleared(ctx,shared.root)?clearedPersonalFolder():technical(code('tree:'+shared.root+shared.path+'@'+shared.entry),'查看')]]):html``;
@@ -140,6 +146,7 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后不能再�
     const listing=await knowledgeDirectory(ctx,nodes,version,space,own,showCitations);
     return {status:200,body:page(chrome,await spaceLayout(ctx,pageLayout(html`${knowledgeTabs(ctx)}${listing}`,{inspector:details,detail:true,back:link('/console/knowledge/space','返回列表',{...spaceLink(space,version.root,path),scope:ctx.url.searchParams.get('scope'),node_cursor:ctx.url.searchParams.get('node_cursor')})})))};
   }
+  if((own||space==='team'&&ctx.admin)&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page({...chrome,title:'新建知识条目'},await spaceLayout(ctx,pageLayout(editor(ctx,space,path),{inspector:null})))};
   const nodes = await ctx.deps.knowledge.getNodes({ root: version.root, paths: [path], depth: 1, cursor: ctx.url.searchParams.get('node_cursor') }, ctx.principal);
   if (!nodes)
     return neutralPage(ctx);

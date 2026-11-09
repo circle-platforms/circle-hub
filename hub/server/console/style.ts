@@ -42,6 +42,12 @@ const SHELL_CSS = `
 .ch-chart [data-chart-index]:focus-visible .hit{stroke:var(--focus-ring);stroke-width:2}
 .ch-chart [data-row-href] .hit{cursor:pointer}
 .ch-field-error{display:block}
+.ch-app [data-editor-foreground]{width:100%;max-width:850px;min-width:0}
+[data-editor-foreground] form>[data-fields]{grid-template-columns:minmax(0,1fr)}
+[data-editor-foreground] details>div{padding-block:var(--space-3)}
+.ch-editor-actions{position:sticky;bottom:0;z-index:2;background:var(--surface-0);border-top:1px solid var(--line-hairline);padding-block:var(--space-4);flex-wrap:wrap}
+[data-editor-foreground] textarea[name="statement"]{min-height:100px}
+[data-editor-foreground] textarea[name="markdown"]{min-height:160px}
 .ch-app[aria-busy="true"] .ch-table tbody{opacity:.9}
 .ch-connection-map{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--space-5)}
 @media(max-width:760px){.ch-connection-map{grid-template-columns:minmax(0,1fr)}}
