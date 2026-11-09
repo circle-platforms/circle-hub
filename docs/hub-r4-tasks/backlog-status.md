@@ -116,7 +116,7 @@
 **冲突（实测）：**
 
 - 文档冲突几乎处处都有：`CHANGELOG.md`（每个分支都在同一处新增）、`hub/server/console/README.md`、`hub/runs/engine/README.md`、`docs/compatibility*.md`，都是在同一处追加，两边都保留即可。
-- 代码冲突只有四处：#265 与 #264（`hub/server/console/style.ts` 同一处追加 CSS；合并后要重新生成 `style.generated.ts`）；#266 与 #256（`hub/server/console/tasks.ts`，保留 #266 的紧凑统计版四 worker；另外 `hub/ports.ts`、`hub/runs/engine/service.ts` 里与 #270 的新增相邻，保留两边）；#267 与 #263（`hub/server/console/connections.ts` 的措辞，保留 #263 的“已登记的客户端”；`interaction.ts` 两处相邻编辑，保留两边）；#273 与 #270（相邻新增的两个端口）——这一处已经消除：#273 的分支合并了 #270 的分支，PR 的基底改为 `fix/run-visibility-probe`，须先合 #270。
+- 代码冲突只有四处：#265 与 #264（`hub/server/console/style.ts` 同一处追加 CSS，两边都留；`style.generated.ts` 由设计令牌生成，与这一处无关，不用重新生成）；#266 与 #256（`hub/server/console/tasks.ts`，保留 #266 的紧凑统计版四 worker；另外 `hub/ports.ts`、`hub/runs/engine/service.ts` 里与 #270 的新增相邻，保留两边）；#267 与 #263（`hub/server/console/connections.ts` 的措辞，保留 #263 的“已登记的客户端”；`interaction.ts` 两处相邻编辑，保留两边）；#273 与 #270（相邻新增的两个端口）——这一处已经消除：#273 的分支合并了 #270 的分支，PR 的基底改为 `fix/run-visibility-probe`，须先合 #270。
 - #253 的负向对照读取 #262 保留的 `testing/undeclared-example.json`，两者须一起集成。
 - #278、#279 另测：#278 并入 24 分支树只有 `CHANGELOG.md` 冲突；#279 未并入。
 
