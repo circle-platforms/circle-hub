@@ -164,6 +164,20 @@ const HEALTH_CSS = `
 [data-area-content] > [data-cards] { margin-top: var(--space-4); }
 [data-area-content] > [data-cards] + .ch-section, [data-area-content] > .ch-section + [data-cards] { margin-top: var(--space-5); }
 .ch-tool { white-space: nowrap; }
+/* The knowledge folder list: the table fits its box (the statement wraps, the other columns keep their text on one line) instead of
+   scrolling inside it; on a narrow screen each entry is a block with its column names beside the values. */
+.ch-table[data-view="knowledge-entries"] { width: 100%; }
+.ch-table[data-view="knowledge-entries"] td { max-width: none; white-space: nowrap; }
+.ch-table[data-view="knowledge-entries"] td:has([data-statement]) { white-space: normal; min-width: 14rem; }
+@media (max-width: 760px) {
+ .ch-table[data-view="knowledge-entries"] thead { display: none; }
+ .ch-table[data-view="knowledge-entries"], .ch-table[data-view="knowledge-entries"] tbody, .ch-table[data-view="knowledge-entries"] tr, .ch-table[data-view="knowledge-entries"] td { display: block; }
+ .ch-table[data-view="knowledge-entries"] tr { position: relative; padding: 10px 14px 10px 44px; box-shadow: inset 0 1px 0 var(--line-hairline); }
+ .ch-table[data-view="knowledge-entries"] tr:first-child { box-shadow: none; }
+ .ch-table[data-view="knowledge-entries"] td { padding: 2px 0; box-shadow: none; white-space: normal; min-width: 0; }
+ .ch-table[data-view="knowledge-entries"] [data-label]::before { content: attr(data-label) "："; color: var(--text-tertiary); }
+ .ch-table[data-view="knowledge-entries"] td:has(input[type="checkbox"]) { position: absolute; left: 14px; top: 10px; padding: 0; }
+}
 /* Number columns that hold text with a unit: table() only right-aligns real numbers. */
 :is(.ch-table[data-view="background"] :is(th, td):nth-child(n+2):not(:nth-child(4)):not(:nth-child(6)),
     .ch-table[data-view="clients"] :is(th, td):nth-child(n+5),

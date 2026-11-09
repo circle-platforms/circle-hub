@@ -18,6 +18,9 @@ import {currentAudience,spaceLayout} from './space-layout.ts';
 import {checkTable} from './grant-dialog.ts';
 import {type PageContext,type PageResult,neutralPage} from './pages.ts';
 
+// A cell that names its column for the narrow layout, where the table becomes a list of rows and the header row is hidden.
+const labelled=(label:string,value:unknown):Html=>html`<span data-label="${label}">${value}</span>`;
+
 export function existingTeamLink(reference:string):Html{
  const ref=parseReference(reference);
  return ref.scheme==='tree'?link('/console/knowledge/space','已有团队条目',{space:'team',root:ref.root,path:ref.path,entry:ref.entry}):html``;
@@ -35,10 +38,10 @@ export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version
    const source=shared?await personalOriginCleared(ctx,shared.root)?clearedPersonalFolder():await ctx.deps.knowledge.spaces!.mayRead(ctx.principal,shared.space,shared.path)?link('/console/knowledge/space',uiLabelOf('knowledge_origin','personal_entry'),{space:shared.space,root:shared.root,path:shared.path,entry:shared.entry}):uiLabelOf('knowledge_origin','personal_entry'):view?uiLabelOf('knowledge_origin','team_import'):product?uiLabelOf('knowledge_origin','product_source'):'—';
    const location={space,path:node.path,root:version.root,entry:entry.entry,scope:ctx.url.searchParams.get('scope'),node_cursor:ctx.url.searchParams.get('node_cursor')};
    rowLinks.push(href('/console/knowledge/space',location));
-   rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择条目">`:html`<input type="checkbox" disabled aria-label="无法选择条目" title="只有本人的已验证条目可以分享到团队">`]:[]),link('/console/knowledge/space',evidence(entry.statement),location),uiLabelOf('entry_kind',entry.kind),(await currentAudience(ctx,space,node.path,product)).text,entry.status?knowledgeState(entry.status):'—',...(showCitations?[entry.cited_count==null?'—':number(entry.cited_count)]:[]),...(space==='team'?[view?await ctx.userName(view.body.by):'—',source,view?timestamp(view.body.at):'—']:[])]);
+   rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择条目">`:html`<input type="checkbox" disabled aria-label="无法选择条目" title="只有本人的已验证条目可以分享到团队">`]:[]),html`<span data-statement>${link('/console/knowledge/space',evidence(entry.statement),location)}</span>`,labelled('类型',uiLabelOf('entry_kind',entry.kind)),labelled('分享范围',(await currentAudience(ctx,space,node.path,product)).text),labelled('状态',entry.status?knowledgeState(entry.status):'—'),...(showCitations?[labelled('被引用',entry.cited_count==null?'—':number(entry.cited_count))]:[]),...(space==='team'?[labelled('提交人',view?await ctx.userName(view.body.by):'—'),labelled('来源',source),labelled('合并时间',view?timestamp(view.body.at):'—')]:[])]);
   }
   const selectedIndex=node.entries.findIndex(entry=>entry.entry===ctx.url.searchParams.get('entry'));
-  const listing=table(headers,rows,{title:'这个文件夹还没有知识',text:'新建一条知识，或导入文件后从中摘录；每条知识都附带来源。',...(own?{action:emptyAction('/console/knowledge/space','新建',{space,path:node.path,edit:'1',scope:ctx.url.searchParams.get('scope')})}:{})},undefined,{selected:selectedIndex,hrefs:rowLinks});
+  const listing=table(headers,rows,{title:'这个文件夹还没有知识',text:'新建一条知识，或导入文件后从中摘录；每条知识都附带来源。',...(own?{action:emptyAction('/console/knowledge/space','新建',{space,path:node.path,edit:'1',scope:ctx.url.searchParams.get('scope')})}:{})},'knowledge-entries',{selected:selectedIndex,hrefs:rowLinks});
   const selected=own?html`<form data-knowledge-selection method="get" action="/console/knowledge/share-batch"><input type="hidden" name="root" value="${version.root}"><input type="hidden" name="path" value="${node.path}"><div class="ch-bulkbar"><span data-bulk-count>已选条目</span><button class="ch-btn ch-btn--primary" type="submit">分享到团队…</button></div>${listing}</form>`:listing;
   blocks.push(html`${node.path===(ctx.url.searchParams.get('path')??'/')?'':sectionHead(directoryName(node.path))}${node.children.length?table(['子文件夹'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})])):''}${selected}`);
  }
