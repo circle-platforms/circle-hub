@@ -408,7 +408,8 @@ export class DispatchService {
    * that do not hold are named by their fixed labels; what only an administrator can see or do goes to the administrator
    * log, errors included, and the answer says the administrator has it.
    */
-  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
+  /** `final`: no repeat of this run can change the refusal (its bytes went out in an earlier job that ended). */
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; final?: boolean }> {
     const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
@@ -434,7 +435,7 @@ export class DispatchService {
       return { started: true, executor: chosen.id, status };
     } catch (error) {
       log('error', `${chosen.id}: ${described(error)}`);
-      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交'
+      return { started: false, executor: chosen.id, ...(error instanceof AlreadyDispatchedError && error.ended ? { final: true } : {}), reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
           // The same bytes are dispatched at most once (V07): that is the runner's matter, not the administrator's.
           ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后开新运行` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`

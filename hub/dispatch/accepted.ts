@@ -24,28 +24,55 @@ async function activeAdmin(records: Pick<RecordsKit, 'principals'>) {
   return (await records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
 }
 
+type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
+/** One dispatch attempt of a run in this process. A repeat of the submission reads it (PROGRESS) instead of starting another,
+ * so a refusal that comes after the answer, when the release checks take longer than the wait, reaches the next repeat. */
+interface Attempt { woken: Promise<void>; reserved?: { job: string; executor: string }; settled?: Settled }
+const attempts = new WeakMap<DispatchService, Map<string, Attempt>>();
+/** Attempts kept per service: a settled one waits for the runner's repeat, and a final refusal answers every repeat. */
+const MAX_ATTEMPTS = 256;
+function attemptsOf(service: DispatchService): Map<string, Attempt> {
+  let open = attempts.get(service);
+  if (!open) attempts.set(service, open = new Map());
+  return open;
+}
+function begin(service: DispatchService, run: string): Attempt {
+  let wake: () => void = () => {};
+  const attempt: Attempt = { woken: new Promise<void>((resolve) => { wake = resolve; }) };
+  // The job itself keeps running after this answer; its journal and the scheduled reconciliation carry it to its end.
+  void service.dispatchAccepted(run, (job, executor) => { attempt.reserved = { job, executor }; wake(); })
+    .then((result) => { attempt.settled = result; wake(); }, (error: unknown) => { attempt.settled = { started: false, reason: error instanceof Error ? error.message : '派发前核对失败' }; wake(); });
+  return attempt;
+}
+
 export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'principals'>, service: DispatchService, run: string, ready: boolean, wait = RESERVE_WAIT_MS): Promise<DispatchNote[]> {
   const admin = await activeAdmin(records);
   if (!admin) return ready ? [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动派发；等管理员开通账号' }] : [];
+  const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
   // A job refused at the effect boundary before any remote call sent nothing and used nothing of the run's dispatch: once
   // the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as the reference compile skill
   // resubmits a workbook its gateway refused. A job that reached the target, its precheck included, is only read.
   const retry = ready && jobs.length > 0 && jobs.every((job) => job.ended === 'done' && job.boundary_refused && job.status.outcome === 'not_dispatched');
-  if (jobs.length && !retry) return capped(jobs.map((job) => runnerNote(job, admin.id)));
+  if (jobs.length && !retry) { open.delete(run); return capped(jobs.map((job) => runnerNote(job, admin.id))); }
   if (!ready) return [];
-  const state: { reserved?: { job: string; executor: string } } = {};
-  let wake: () => void = () => {};
-  const woken = new Promise<void>((resolve) => { wake = resolve; });
-  // The job itself keeps running after this answer; its journal and the scheduled reconciliation carry it to its end.
-  const work = service.dispatchAccepted(run, (job, executor) => { state.reserved = { job, executor }; wake(); })
-    .then((result) => { wake(); return result; }, (error: unknown) => { wake(); return { started: false, reason: error instanceof Error ? error.message : '派发前核对失败' } as Awaited<ReturnType<DispatchService['dispatchAccepted']>>; });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
-  clearTimeout(timer);
-  if (state.reserved) { const { job, executor } = state.reserved; return [{ job, executor, text: clip(`Hub 已按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]; }
-  const settled = await Promise.race([work, Promise.resolve(null)]);
-  if (settled === null) return [{ text: `Hub 正在做派发前核对；${PROGRESS}` }];
+  let attempt = open.get(run);
+  if (!attempt) {
+    attempt = begin(service, run);
+    open.set(run, attempt);
+    for (const key of open.keys()) { if (open.size <= MAX_ATTEMPTS) break; open.delete(key); }
+  }
+  if (!attempt.settled && !attempt.reserved) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([attempt.woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
+    clearTimeout(timer);
+  }
+  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return [{ job, executor, text: clip(`Hub 已按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]; }
+  const settled = attempt.settled;
+  if (!settled) return [{ text: `Hub 正在做派发前核对；${PROGRESS}` }];
+  // A settled attempt is answered once, and a repeat after that tries again (a cause the runner fixes, as a booking); a
+  // refusal that no repeat of this run can change (its bytes went out in an earlier job) answers every repeat.
+  if (!settled.final) open.delete(run);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
   // the executor's whole target): nothing was sent, so the answer says why instead of reporting a dispatch.
   if (settled.started && settled.status) {

@@ -153,3 +153,44 @@ test('the pre-dispatch reference is no device return, and an older job without o
   const older = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }) }, 'admin-1');
   assert.match(older.text, /读结果引用看逐条结论/);
 });
+
+type Attempted = Awaited<ReturnType<C['service']['dispatchAccepted']>>;
+test('a repeat reads the attempt still running instead of starting another, and gets the refusal that came after the answer', async (t) => {
+  // As on the bed host: the release checks outlast the wait, so the first answer says the check still runs and the refusal
+  // (the bytes went out in an earlier job) settles afterwards; it must reach the repeats, never only the operator's log.
+  const c = await setup(); t.after(() => c.close());
+  let release: (value: Attempted) => void = () => {}; let started = 0;
+  c.service.dispatchAccepted = () => { started++; return new Promise<Attempted>((resolve) => { release = resolve; }); };
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做派发前核对/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做派发前核对/);
+  assert.equal(started, 1, 'a repeat does not start a second attempt');
+  release({ started: false, executor: c.executor.id, reason: '合成：这份产物已经由作业 x 派发过，作业已结束；同一份字节只派发一次', final: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  for (let i = 0; i < 3; i++) {
+    const [refused] = await acceptedDispatch(c.kit, c.service, c.run, true, 5);
+    assert.match(refused.text, /^Hub 没有派发：合成：这份产物已经由作业 x 派发过/);
+  }
+  assert.equal(started, 1, 'a refusal no repeat can change answers every repeat without a new attempt');
+});
+
+test('a refusal the runner can remove is answered once, and the repeat after it tries again', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  let started = 0;
+  c.service.dispatchAccepted = async () => { started++; await new Promise((resolve) => setTimeout(resolve, 30)); return { started: false, reason: '合成：自动化测试环境正被作业占用' }; };
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^Hub 正在做派发前核对/);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^Hub 没有派发：合成：自动化测试环境正被作业占用/);
+  assert.equal(started, 1);
+  await acceptedDispatch(c.kit, c.service, c.run, true, 1);
+  assert.equal(started, 2, 'the repeat after the answer tries again');
+});
+
+test('bytes that went out in a job that ended are refused for good', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  assert.equal((await c.service.dispatchAccepted(c.run)).started, true);
+  await settled(c);
+  const again = await c.service.dispatchAccepted(c.run);
+  assert.equal(again.started, false); assert.equal(again.final, true, JSON.stringify(again));
+  assert.match(again.reason ?? '', /同一份字节只派发一次/);
+  assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
+});
