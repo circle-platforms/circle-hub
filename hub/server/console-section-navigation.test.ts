@@ -12,7 +12,7 @@ test('connection directory uses unique native section anchors rather than false 
  const hub=await createTestServer();t.after(()=>hub.close());const user=await hub.createUser('合成目录读者');
  for(const member of [hub.admin,user]){
   const console=await openConsole(hub,member.token),response=await console.get('/console/connections');assert.equal(response.status,200,response.body);
-  const nav=response.body.match(/<nav class="ch-page-toc"[^>]*>[\s\S]*?<\/nav>/)?.[0];assert.ok(nav);assert.match(nav,/连接页内目录/);assert.match(nav,/本页内容/);assert.doesNotMatch(nav,/ch-seg|role="tab|aria-current="page"/);
+  const nav=response.body.match(/<nav class="ch-page-toc"[^>]*>[\s\S]*?<\/nav>/)?.[0];assert.ok(nav);assert.match(nav,/连接页分区/);assert.match(nav,/本页内容/);assert.doesNotMatch(nav,/ch-seg|role="tab|aria-current="page"/);
   for(const id of ['system-sources','circles','systems','envs','more']){assert.ok(nav.includes('href="#'+id+'"'));assert.equal((response.body.match(new RegExp(' id="'+id+'"','g'))??[]).length,1,id);}
   assert.match(response.body,/业务系统接入，再在连接页配置具体系统/);assert.match(response.body,/id="live-system-sources"/);assert.match(response.body,/data-theme-switch/);
   if(member===user){assert.match(response.body,/业务系统的配置仅管理员可见/);assert.match(response.body,/运行环境仅管理员可见/);assert.doesNotMatch(response.body,/href="\/console\/operations\/system"/);}

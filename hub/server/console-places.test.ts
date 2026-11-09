@@ -254,8 +254,11 @@ describe('operations and commands', () => {
     const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
     assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
     assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
-    assert.match(workflow,/title="规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果"/);
-    assert.match(skills,/title="只规定做法，没有验收要求"/);
+    // The purpose of each kind is visible text on the list (issue 219), not a tooltip.
+    // It is shown once per kind, on the first scope group of the page.
+    assert.match(list.body,/要完成一项有验收要求的任务，选择工作流/);
+    assert.match(list.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);
+    assert.doesNotMatch(workflow,/title="规定做法与验收要求/);
     assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
     const detail=await get('/console/packs/review',admin);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
