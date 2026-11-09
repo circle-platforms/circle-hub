@@ -141,7 +141,7 @@ test('a runtime field other than the closed additions still refuses the pinned o
 test('a runtime without block_model or checkpoint_two_argument recovers the same original identity', () => {
   const built = v2Document(runtimeDocument());
   const document = built.document as Record<string, unknown>;
-  assert.deepEqual(RUNTIME_ADDITIONS, ['block_model', 'checkpoint_two_argument', 'checkpoint_match_register']);
+  assert.deepEqual(RUNTIME_ADDITIONS, ['block_model', 'checkpoint_two_argument']);
   assert.ok(isRecord(document.runtime));
   assert.equal(document.runtime.block_model, undefined);
   assert.equal(document.runtime.checkpoint_two_argument, undefined);

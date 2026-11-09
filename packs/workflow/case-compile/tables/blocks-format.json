@@ -162,24 +162,6 @@
       ]
     },
     {
-      "kind": "PICK",
-      "enabled": true,
-      "required": [
-        "id",
-        "kind",
-        "from",
-        "call"
-      ],
-      "fields": [
-        "id",
-        "kind",
-        "from",
-        "starts_with",
-        "after",
-        "call"
-      ]
-    },
-    {
       "kind": "OBSERVE_DIST",
       "enabled": false,
       "required": [
@@ -399,23 +381,6 @@
     "payload": {
       "type": "object",
       "additionalProperties": true
-    },
-    "from": {
-      "type": "string",
-      "minLength": 1,
-      "description": "PICK: the register an earlier CAPTURE (or STEP with register) saved; the word is taken from that output."
-    },
-    "starts_with": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200,
-      "description": "PICK, one of starts_with/after: take the whole word (up to whitespace or a quote) that begins with this literal text."
-    },
-    "after": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200,
-      "description": "PICK, one of starts_with/after: take the word that follows this literal text (whitespace and one quote in between are skipped)."
     }
   },
   "assertion_ops": [

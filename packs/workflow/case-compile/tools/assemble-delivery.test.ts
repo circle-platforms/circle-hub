@@ -215,6 +215,20 @@ test('the verification runs the model left out are found in the Hub lineage, and
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), new RegExp(`第 1 次上机（核验运行 ${WHOLE}）：失败`));
 });
 
+test('a verification run whose job ended before anything went to the bed is no run of the cases, and the lineage skips it', async (t) => {
+  // Run 16: a Hub fault stopped a job in its pre-dispatch device probe; it ended as not dispatched, and the run was verified again.
+  const STUCK = 'run_01ssssssssssssssssssssssss';
+  const notSent = { job: 'c'.repeat(64), verification_run: STUCK, plan_run: PLAN2, items: [CASES[0], CASES[2]], sha256: sha256(plan2.workbook), ended: 'done', outcome: 'not_dispatched', frozen: false, result: null, device_return: null, rows: null };
+  const h = await hub(undefined, undefined, { [STUCK]: [notSent] }, {}, [WHOLE, STUCK, FINAL]);
+  t.after(() => h.close());
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'delivery');
+  const result = await run(h, await notes(NOTES), out, FINAL);
+  assert.equal(result.code, 0, result.stderr);
+  const printed = JSON.parse(result.stdout);
+  assert.deepEqual(printed.runs, [WHOLE, FINAL]);
+  assert.deepEqual(printed.added_runs, [WHOLE]);
+});
+
 test("a case not delivered that went to the bed is explained with the device's own words, checked verbatim", async (t) => {
   const h = await hub(); t.after(() => h.close());
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
@@ -284,7 +298,7 @@ test('a failed case goes back to authoring until three authored versions failed;
 });
 
 test('a pass whose device words carry an execution-failure line its assertions do not read is no verdict, as the reference engine reviews passes', async (t) => {
-  // InfoTest batch_tools.py single-case downgrade with the contract's exec_failure_markers; the Hub saves every row's words.
+  // InfoTest batch_tools.py single-case downgrade with the contract's exec_failure_markers, read from the run log of each pass.
   const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
   doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
   const marked = Buffer.from(JSON.stringify(signTypedRuntime(doc)));
@@ -292,8 +306,8 @@ test('a pass whose device words carry an execution-failure line its assertions d
   const plan7 = planRun(PLAN7, CASES.slice(0, 3), [CASES[3]], undefined, marked), plan8 = planRun(PLAN8, [CASES[0], CASES[2]], [CASES[1], CASES[3]], undefined, marked);
   const clean = Buffer.from('seat# configure widget\nseat#\n'), refused = Buffer.from('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
   const read = Buffer.from('seat# configure widget\n健康检查间隔设置成功 Failed to run the synthetic command\nseat#\n');
-  const words = (session: Uint8Array) => ({ evidence: { log: `src:${sha256(log)}`, sessions: { 'dev-a.txt': `src:${sha256(session)}` } } });
-  const rows = (items: string[], verdicts: string[], sessions: Uint8Array[]) => items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...words(sessions[k]) }));
+  // A pass carries its own run log; a failure keeps the shared log its notes quote word for word.
+  const rows = (items: string[], verdicts: string[], logs: Uint8Array[]) => items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], evidence: { log: `src:${sha256(verdicts[k] === 'pass' ? logs[k] : log)}` } }));
   const jobOf = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, r: unknown[]) => ({ ...job(id, run, plan, items, workbook, items.map(() => 'pass')), rows: r });
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const notesPath = await notes({ [CASES[1]]: NOTES[CASES[1]], [CASES[3]]: NOTES[CASES[3]] });
@@ -315,7 +329,7 @@ test('a pass whose device words carry an execution-failure line its assertions d
   assert.equal(passed.code, 0, passed.stderr);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.cases.map((c: { status: string }) => c.status), ['delivered', 'failed', 'delivered', 'unrun']);
-  assert.deepEqual(summary.pass_audit, { markers: 1, read: 4, downgraded: [{ run: WHOLE2, item: CASES[2], where: '设备会话 dev-a.txt', line: 'Failed to run the synthetic command' }], wordless: 0 });
+  assert.deepEqual(summary.pass_audit, { markers: 1, read: 4, downgraded: [{ run: WHOLE2, item: CASES[2], where: '运行日志', line: 'Failed to run the synthetic command' }], wordless: 0 });
   assert.deepEqual(summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal), ['no_verdict', 'pass']);
-  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /- 通过复核（InfoTest 的执行失败标记，合约声明 1 条）：读了 4 条通过的日志和设备会话，1 条里有本条断言没读的执行失败原话、改记无判定。/);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /- 通过复核（InfoTest 的执行失败标记，合约声明 1 条）：读了 4 条通过的运行日志，1 条里有本条断言没读的执行失败原话、改记无判定。/);
 });

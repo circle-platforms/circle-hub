@@ -112,9 +112,9 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
  * The reference engine's single-case verdict downgrade (tools/device/batch_tools.py:1091-1158 with the domain grammar's
  * exec_failure_markers): a pass whose output carries a line with an execution-failure marker that none of the case's own
  * assertions reads is no verdict there ("broken", a vacuous-pass suspicion). That engine scans the run log of a pass, having
- * fetched device sessions only for cases that failed; this runner's log holds only the commands it sent, so a pass's device
- * sessions (gateway 0.4.7, saved by the Hub for every row) are read as well. `texts` maps where (log, session name) to its
- * text; a line is exempt when one of the assertion texts is part of it. Returns the first such line, or null.
+ * fetched device sessions only for cases that failed, and so does this one (owner 2026-11-09: the reference engine's way, no
+ * session scan of passes). `texts` maps where (the run log) to its text; a line is exempt when one of the assertion texts is
+ * part of it. Returns the first such line, or null.
  */
 export function failureLine(texts: Readonly<Record<string, string>>, markers: readonly string[], assertions: readonly string[]): RowAudit | null {
   for (const [where, text] of Object.entries(texts)) for (const raw of text.replace(/\r/g, '').split('\n')) {
@@ -254,7 +254,7 @@ function head(input: ReportInput): string[] {
   const audit = input.passAudit;
   if (audit) lines.push(audit.markers === null
     ? '- 通过复核：合约没有声明执行失败标记，通过的条目没有按 InfoTest 的规则复核。'
-    : `- 通过复核（InfoTest 的执行失败标记，合约声明 ${audit.markers} 条）：读了 ${audit.read} 条通过的日志和设备会话，${audit.downgraded} 条里有本条断言没读的执行失败原话、改记无判定${audit.wordless ? `；${audit.wordless} 条通过没有存下设备原话（网关 0.4.7 之前的上机），没有复核` : ''}。`);
+    : `- 通过复核（InfoTest 的执行失败标记，合约声明 ${audit.markers} 条）：读了 ${audit.read} 条通过的运行日志，${audit.downgraded} 条里有本条断言没读的执行失败原话、改记无判定${audit.wordless ? `；${audit.wordless} 条通过没有存下运行日志，没有复核` : ''}。`);
   if (input.notes.batch) lines.push('', `> ${input.notes.batch.replace(/\n/g, '\n> ')}`);
   return lines;
 }

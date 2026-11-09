@@ -976,13 +976,13 @@ export class DispatchService {
 
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, build_base:binding.input?.build_base ?? binding.context?.build_base, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
   /**
-   * Where the evidence of every row is: the log and the per-device sessions the target reported for it, at the result's declared
-   * pointers, each saved on its own and readable by the runner. Rows that did not pass also go into the device return the model
-   * reads (the reference compile skill hands the model the failed checks and the session dumps of every non-pass case to
-   * attribute the failure); a passing row's words are saved but kept out of that text, so a reviewer can check that a pass did
-   * not rest on a command the device refused (the reference engine downgrades such a pass) without the answer growing with
-   * every pass. The raw report stays readable by functions only; a session the credential scan holds back leaves the other
-   * sessions and the verdicts readable.
+   * Where the evidence of every row is, at the result's declared pointers, each piece saved on its own and readable by the
+   * runner: the log of every row, and the per-device sessions of a row that did not pass. The reference engine reviews a pass
+   * by its run log alone (it downgrades a pass whose log shows a command the device refused) and fetches device sessions only
+   * for failures, so a passing row keeps its log, kept out of the device return the model reads. Rows that did not pass also
+   * go into that device return (the reference compile skill hands the model the failed checks and the session dumps of every
+   * non-pass case to attribute the failure). The raw report stays readable by functions only; a session the credential scan
+   * holds back leaves the other sessions and the verdicts readable.
    */
   private async rowEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<{ found: Map<string, { log?: string; sessions?: Record<string, string> }>; returned: Map<string, ReturnedPiece[]> }> {
     const found = new Map<string, { log?: string; sessions?: Record<string, string> }>(), returned = new Map<string, ReturnedPiece[]>();
@@ -1003,7 +1003,7 @@ export class DispatchService {
       if (!object(row)) continue;
       const relay = reported !== 'pass';
       const log = d.result.log ? at(row, d.result.log) : undefined;
-      const sessions = d.result.sessions ? at(row, d.result.sessions) : undefined;
+      const sessions = relay && d.result.sessions ? at(row, d.result.sessions) : undefined;
       const evidence: { log?: string; sessions?: Record<string, string> } = {};
       if (typeof log === 'string' && log) { const saved = await save(id, '日志', log, 'log.txt', relay); if (saved) evidence.log = saved; }
       if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(id, sourceName(name, index), text, sourceName(name, index), relay); if (saved) (evidence.sessions ??= {})[name] = saved; }

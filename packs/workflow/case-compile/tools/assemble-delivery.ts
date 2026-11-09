@@ -144,7 +144,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {
       if (given.has(run)) { dispatches.push(given.get(run)!); continue; }
       const jobs = await jobsOf(run);
-      if (!jobs.some((job) => job.verification_run === run)) continue; // verified but never sent to the bed
+      // Verified but never sent to the bed: no job, or only jobs that ended before anything went out (not_dispatched, as when a
+      // pre-dispatch check failed); like the reference engine, a dispatch that never reached the bed is not a run of the cases.
+      if (!jobs.some((job) => job.verification_run === run && !(job.ended === 'done' && job.outcome === 'not_dispatched'))) continue;
       dispatches.push(settledDispatch(run, jobs)); added.push(run);
     }
     for (const d of dispatches) await planOf(d.plan_run);
@@ -168,7 +170,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const recipesOf = (plan: RunInputs) => satisfiedRecipes({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
     // The reference engine's pass review (functions/delivery.ts failureLine): a pass whose words carry an execution-failure line
     // that the case's own assertions do not read is no verdict. The markers are the contract declaration of each dispatch's plan
-    // run; the words are the log and device sessions the Hub saved for the row, checked against their digests.
+    // run; the words are the run log the Hub saved for the row, checked against its digest (the reference engine reads only
+    // the run log of a pass).
     const texts = new Map<string, string | null>();
     const textOf = async (run: string, reference: string): Promise<string | null> => {
       const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) return null;
@@ -185,11 +188,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       const assertionsOf = new Map(recipesOf(plan).map((recipe) => [String(recipe.fields.autoid), recipe.slots.expects.map((expect) => expect.text).filter((text) => typeof text === 'string' && text.length > 0)]));
       for (const row of d.rows) {
         if (row.dynamic_terminal !== 'pass') continue;
-        const words: Record<string, string> = {};
-        if (row.evidence?.log) { const text = await textOf(d.run, row.evidence.log); if (text !== null) words['运行日志'] = text; }
-        for (const [name, reference] of Object.entries(row.evidence?.sessions ?? {})) { const text = await textOf(d.run, reference); if (text !== null) words[`设备会话 ${name}`] = text; }
-        if (!Object.keys(row.evidence?.sessions ?? {}).length) wordless++; else read++;
-        const hit = failureLine(words, markers, assertionsOf.get(row.item) ?? []);
+        const text = row.evidence?.log ? await textOf(d.run, row.evidence.log) : null;
+        if (text === null) { wordless++; continue; }
+        read++;
+        const hit = failureLine({ 运行日志: text }, markers, assertionsOf.get(row.item) ?? []);
         if (hit) hits.set(auditKey(d.run, row.item), hit);
       }
     }

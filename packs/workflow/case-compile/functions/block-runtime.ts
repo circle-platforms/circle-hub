@@ -37,7 +37,6 @@ export function blockRuntimeGaps(contract:RuntimeContract,profile:RuntimeProfile
   const at=step.origin??'/steps/'+index,call=profile.allowed.find(value=>value.object===step.object&&value.method===step.method);
   if(step.output&&!outputs.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method&&row.output===TABLE.raw_output))note(at,'缺该调用产生完整原文输出的运行器声明；下一步：维护者补 output_methods 后重新发布，不从方法名猜输出');
   if(step.save_as&&(contract.objects.includes(step.save_as)||Array.isArray(cap.reserved_registers)&&cap.reserved_registers.includes(step.save_as)))note(at,'捕获寄存器与运行器对象或保留命名冲突',true);
-  if(step.pick&&!contract.matchRegister)note(at,'运行器合约没有声明检查点命中寄存器（runtime.checkpoint_match_register）；下一步：执行器维护者核对运行器保存命中片段的源文件与属性、在合约里声明后重新发布，不能改冻结输入绕过');
   if(step.save_as&&!Array.isArray(cap.reserved_registers))note(at,'缺运行器保留寄存器闭集；下一步：维护者按实现声明完整命名空间，不按前缀猜测');
   if(step.save_as&&cap.capture_registers!==true)note(at,'缺 H 列原文捕获能力；下一步：执行器维护者实现并声明 capture_registers 后重开运行');
   if(step.block_kind==='SLEEP'&&(!call||!Object.values(call.parameters).length||Object.values(call.parameters).some(role=>role!=='wait')))note(at,'SLEEP 必须精确对应本轮允许的 wait 调用',true);
