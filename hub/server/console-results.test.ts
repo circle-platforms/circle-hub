@@ -50,6 +50,9 @@ test('result page keeps the production record and counts after accepted model co
   assert.match(result.body,new RegExp(original.record));
   assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions,INTERFACE_LABELS)));
   assert.match(result.body,/生产结果记录（start_run 计算）/);
+  // Issue 230: the page says what 生产结果 is (not a result from the production environment) and what its link to the task page is.
+  assert.match(result.body,/由 Hub 在启动任务时按规则算出的结果，是工作流的产物，与生产环境无关/);
+  assert.match(result.body,/>查看任务完整记录（以任务页的记录为准）</);assert.doesNotMatch(result.body,/权威视图/);
   assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续受理的模型评论/);
   assert.ok(!result.body.includes('模型评论独立标记'));
   const run=await send(`/console/runs/${id}`,cookie);

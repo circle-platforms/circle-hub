@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Say on a production result's page what 生产结果 is and what its link to the task page is: the page now says it is the result the Hub works out by rule when the task starts, a product of the workflow and not a result from the production environment, and the link read "查看运行（权威视图）" (a claim of authority with no statement of how it relates to this page) and now reads "查看任务完整记录（以任务页的记录为准）". The formal names 生产结果, 任务 and 运行 are unchanged; unifying how the console alternates between 任务 and 运行 needs the vocabulary owners and is not done here.
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
