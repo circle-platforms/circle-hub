@@ -1,5 +1,9 @@
 # hub/runs/engine
 
+## Check source accounting
+
+Each evaluation owns its byte/reference budget and shares only the process-wide read concurrency gate. Repeated reads of one exact reference charge its maximum observed text size once, including across items and checks; larger later reads add only the difference. Different fragments retain different accounting, and other evaluations do not inherit consumed bytes. Limits refuse excess instead of returning a successful empty source. Unit controls cover repeated large sources, growing/shrinking reads, distinct fragments, independent evaluations and a total-byte overflow; case-compile has a separate four-case/large-contract whole-workbook engine regression. These synthetic observations are not deployed or real-source evidence.
+
 ## Space locks and citations (decision 133)
 
 New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy

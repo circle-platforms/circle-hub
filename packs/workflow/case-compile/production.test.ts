@@ -2,8 +2,9 @@ import {createTestParserRegistry as createDefaultRegistry} from '../../../hub/te
 import {readAddress} from './functions/bed.ts';
 import {bedsOf} from './functions/test-support.ts';
 import { createHash } from 'node:crypto';
-import { satisfiedRecipe } from './tools/generate-workbook.ts';
-import { generateWorkbook, GENERATOR } from './functions/generate.ts';
+import {readFileSync} from 'node:fs';
+import { satisfiedRecipe, satisfiedRecipes } from './tools/generate-workbook.ts';
+import { generateWorkbook, generateWorkbookSet, GENERATOR } from './functions/generate.ts';
 // Real run engine and temporary PostgreSQL; every contract, profile, document, device and model is synthetic.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
@@ -18,6 +19,8 @@ import { stage as stageBed } from '../test-bed/pack-files.ts';
 import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, AUTOID, COMMAND_IDENTITIES, goodData } from './functions/test-support.ts';
 import { checkAddresses } from './functions/checks.ts';
 import { planSubject } from './functions/subject.ts';
+import {parseRuntimeContract,runtimeDigest,stripAdditions} from './functions/runtime-contract.ts';
+import {profileDocument} from './testing/runtime.ts';
 import { call, openHub, sha, ROOT, type Hub } from './testing/hub.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres; let hub: Hub;
@@ -66,6 +69,58 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const receipt = own.find((v) => v.statement.data?.contract_sha256 === CONTRACT_DOC.original.contract_sha256)!;
     assert.equal(receipt.statement.data?.runtime_version, CONTRACT_DOC.runtime.minimum_version);
     assert.ok(!JSON.stringify(result).includes('exec-plan@1')); assert.ok(!JSON.stringify(result).includes('"plan_json"'));
+  });
+  it('binds bundled example ids and quotations verbatim without treating undeclared commands as verified',async()=>{
+    const bytes=(name:string)=>readFileSync(new URL('./examples/'+name,import.meta.url));
+    const json=(name:string)=>JSON.parse(bytes(name).toString());const example=json('start-run.json').arguments;
+    const inputBytes={contract:bytes('runtime-contract-v2.json'),profile:bytes('runtime-profile-v2.json'),inventory:bytes('bed-topology.json')};
+    const inputs:Record<string,{reference:string}|{external:string}>={};for(const [slot,source] of Object.entries(inputBytes)){
+      const external='doc:doc:synthetic-example-'+slot;hub.external.put(external,{bytes:source,mediaType:'application/json'});inputs[slot]={external};
+    }
+    const subject=await hub.kit.artifacts.ingest({bytes:bytes('case-mindmap.json'),mediaType:'application/json',origin:{read:{object:'fixture:example:subject'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});inputs.subject={reference:'src:'+subject.body.sha256};
+    assert.deepEqual(inputs.subject,example.inputs.subject);
+    const args={...example,product:'widget',build:'Fixture_Build_A',inputs};
+    const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;
+    const submitted={...json('submit-result.json'),run:plan.run};assert.deepEqual(submitted.items.map((item:{item:string})=>item.item),plan.items.map(item=>item.id));
+    const answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+    const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,1);
+    const contractRequirement=rows[0].requirements.find(row=>row.requirement==='contract_methods')!;assert.equal(contractRequirement.status,'unsatisfied');
+    const problems=contractRequirement.claims.flatMap(claim=>(claim.statement.data?.problems??[]) as Array<{document:string;pointer:string}>);
+    assert.deepEqual(problems.map(problem=>[problem.document,problem.pointer]),[0,2,3,4].map(index=>['catalog',`/steps/${index}/args/0`]));
+    assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission:submitted,...inputBytes}),/计划仍有工作簿缺输入以外的错误/);
+    const quotes=submitted.items.flatMap((item:{slots:{plan:Array<{quotes:Array<{reference:string;text:string}>}>}})=>item.slots.plan.flatMap(claim=>claim.quotes));
+    for(const quote of quotes){const resolved=await hub.service.resolveReference(hub.alice,{run:plan.run,text:quote.text,expect:'quotation'},call());assert.equal(resolved.resolution,'resolved',JSON.stringify(resolved));assert.ok(JSON.stringify(resolved).includes(quote.reference));}
+  });
+  it('verifies a complete four-case workbook with one three-MiB frozen contract', {timeout:180_000}, async () => {
+    const contract=structuredClone(CONTRACT_DOC);contract.entries[0].h_semantics='synthetic contract documentation '.repeat(110_000);
+    const original=stripAdditions(contract)!;contract.original.contract_sha256=runtimeDigest(original);original.contract_sha256=contract.original.contract_sha256;
+    contract.original.sha256=sha(JSON.stringify(original));contract.contract_sha256=runtimeDigest(contract);
+    const parsedContract=parseRuntimeContract(contract);assert.ok(parsedContract.ok,JSON.stringify(parsedContract));
+    const profile=profileDocument(contract),contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>3*1024*1024);
+    const document=map();document.root.data.id='batch-doc';document.root.children=Array.from({length:4},(_,i)=>{
+      const node=structuredClone(map().root.children[0]);node.data.id='case-'+i;node.data.autoid=String(BigInt(AUTOID)+BigInt(i));
+      const step=node.children[0];assert.ok('children' in step);step.data.id='step-'+i;step.children[0].data.id='expected-'+i;return node;
+    });
+    const sourceBytes=Buffer.from(JSON.stringify(document));const parsed=recognize(createDefaultRegistry(),sourceBytes,'application/json')!;
+    const nodes=(parsed.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
+    const put=(external:string,bytes:Uint8Array)=>hub.external.put(external,{bytes,mediaType:'application/json'});
+    put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
+    const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;delete (args.parameters as Partial<typeof args.parameters>).autoid;
+    args.inputs.subject.external='agile:mindmap:synthetic-batch';args.inputs.contract.external='doc:doc:synthetic-large-contract';args.inputs.profile.external='doc:doc:synthetic-large-profile';
+    const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,4);
+    const send=(run:string)=>({run,model:'synthetic-model',items:plan.items.map((item,i)=>{
+      const data=goodData(),leaf=nodes.find(node=>node.data.id==='expected-'+i)!;assert.ok(leaf);data.expects[0].quote.reference=`src:${sha(sourceBytes.toString())}/kityminder@1/${leaf.selector}`;
+      return {item:item.id,handling:'handled' as const,slots:{plan:[{text:'合成整卷计划',quotes:data.expects.map(row=>row.quote),data}]}};
+    })});
+    const submitted=send(plan.run),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+    const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,4);
+    for(const row of rows)for(const requirement of row.requirements.filter(value=>value.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
+    const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,4);
+    const workbook=generateWorkbookSet(recipes);const artifact=await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:four-cases'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
+    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
+    const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!.run),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
+    const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,4);
+    for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,4);}}
   });
   it('resolves complete plan commands for a natural-language case without authored identities', async () => {
     const document = map(); document.root.children[0].children[0].data.text = '开启合成服务，同时添加合成监听';
