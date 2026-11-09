@@ -34,6 +34,8 @@ test('the knowledge list rules fit the table into its box and make rows of its c
   '.ch-table[data-view="knowledge-entries"] { width: 100%; }',
   '.ch-table[data-view="knowledge-entries"] td:has([data-statement]) { white-space: normal; min-width: 14rem; }',
   '.ch-table[data-view="knowledge-entries"] thead { display: none; }',
+  '.ch-table[data-view="knowledge-entries"] [data-statement] a { color: var(--text-primary); text-decoration: underline;',
+  '.ch-table[data-view="knowledge-entries"] [data-statement] a:is(:hover, :focus-visible) { color: var(--text-link);',
   '.ch-table[data-view="knowledge-entries"] [data-label]::before { content: attr(data-label) "："; color: var(--text-tertiary); }',
  ])assert.ok(CSS.includes(rule),rule);
  const narrow=/@media \(max-width: 760px\) \{\n \.ch-table\[data-view="knowledge-entries"\] thead/.exec(CSS);assert.ok(narrow,'the row layout starts at the existing narrow breakpoint');

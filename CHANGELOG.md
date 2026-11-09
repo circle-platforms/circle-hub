@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Show a knowledge entry's statement in the text colour with an underline instead of link blue: the link colour returns on hover and keyboard focus, so a long statement no longer outweighs the status and the other links beside it.
 - Fit the knowledge folder's entry table into its box and name where the reader is: the statement wraps and the other columns stay on one line instead of scrolling inside the table with the status out of sight, an entry becomes a block with its column names on a screen of 760 px or less, and a line under the tabs says the scope, the content and the folder.
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
