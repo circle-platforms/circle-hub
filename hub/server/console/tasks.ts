@@ -267,7 +267,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'—':duration(total))}</div>`;
   const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；提交前的空档是客户端本机时间，Hub 不观测这段时间。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow=[...calls].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,3);
-  const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),'毫秒'):'';
+  const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),undefined,'耗时（毫秒）'):'';
   return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;
 }
 
