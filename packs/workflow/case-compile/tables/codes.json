@@ -137,6 +137,36 @@
       "code": "case-compile.expect_not_in_criterion",
       "when": "引用的期望与本运行冻结的已受理判据声明不一致",
       "fix": "逐字引用本运行冻结的新判据，或使用原件逐字引文"
+    },
+    {
+      "code": "case-compile.fidelity_missing",
+      "when": "计划没带场景保真审计判断（data.fidelity）",
+      "fix": "照 tools/fidelity.md 算简报、交新开的子代理审计，把判断原样写进 data.fidelity 再交卷"
+    },
+    {
+      "code": "case-compile.fidelity_stale",
+      "when": "审计判断针对的简报不是这份计划的",
+      "fix": "计划改过就重算简报、重新审计，再交卷"
+    },
+    {
+      "code": "case-compile.fidelity_shape",
+      "when": "审计判断的形状不对，或有作者步骤没判、判了两次",
+      "fix": "每条作者步骤恰好一行 {n, verdict, step_indices, rationale}，外加 brief_sha256 和 disclosure"
+    },
+    {
+      "code": "case-compile.scenario_changed",
+      "when": "审计判某条作者步骤的场景被改了",
+      "fix": "对照作者原文和审计引用的证据，保住作者写的约束，改计划后重新审计再交卷"
+    },
+    {
+      "code": "case-compile.author_step_unrealized",
+      "when": "审计判某条作者步骤没有计划步骤实现",
+      "fix": "补上实现它的步骤后重新审计再交卷，或报告它实现不了的原因"
+    },
+    {
+      "code": "case-compile.author_step_unbound",
+      "when": "审计判保住的作者步骤没指出实现它的计划步骤",
+      "fix": "在 step_indices 写上实现它的计划步骤号"
     }
   ],
   "refusals": [

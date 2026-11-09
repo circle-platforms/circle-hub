@@ -275,6 +275,53 @@
       ]
     },
     {
+      "key": "scenario_kept",
+      "name": "作者场景保住",
+      "description": "照 InfoTest 的场景保真：重组记录里每条作者动作原句都由一个新开的审计会话对照计划步骤判一次（保住、改了、没实现），判断随计划写在 data.fidelity。Hub 按同一规则重算简报核对摘要，只核能机械核的：每条原句恰好一行、结论在三种之内、判保住的写出实现它的计划步骤；改了、没实现和保住却没引用步骤的都退回编写。没有步骤结构层，机械比对不做，全部原句交审计。没有重组记录的用例不适用。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "scenario_fidelity"
+      ],
+      "error_handling": [
+        {
+          "code": "case-compile.fidelity_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.fidelity_stale",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.fidelity_shape",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.scenario_changed",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.author_step_unrealized",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.author_step_unbound",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
       "key": "workbook_verified",
       "name": "工作簿原字节核验",
       "description": "客户端工作簿由独立读取器解释，符合运行器布局、原合约和本轮配置，再从槽位重算字节与绑定原件摘要相同才支持；缺少文件时自动转客户端生成并开始后继核验运行",
@@ -347,6 +394,7 @@
           "bed_addresses",
           "commands_known",
           "expected_grounded",
+          "scenario_kept",
           "workbook_verified"
         ],
         "artifact": "workbook_verified"

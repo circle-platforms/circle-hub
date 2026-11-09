@@ -19,6 +19,7 @@ import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingle
 import {identityOf} from './typed-contract.ts';
 import { replacedQuote } from './addresses.ts';
 import { citedCriterion, type FrozenItemCriterion } from './subject.ts';
+import { fidelityBrief, fidelityProblems } from './fidelity.ts';
 interface CheckSubject {projection_unknowns?:string[];recomposition_requested?:boolean;recomposition?:any;recomposition_problem?:string;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ capacityExceeded?:boolean; document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -225,4 +226,20 @@ export function checkExpectedSources(input: unknown): Outcome[] {
 export function checkCommandsKnown(input:unknown):Outcome[]{
  const s=subjectOf(input),missing=prerequisites(s);if(missing)return missing;const read=slotsOf(s);if(read.errors)return read.errors;
  const gaps=typedPrerequisites(s,read.slots);if(gaps)return gaps;const resolved=s.contract&&s.profile?planCommands(s.contract,s.profile,read.slots,s.command_catalog):null;const declarations=resolved?.problems.filter(problem=>problem.pointer==='/command_identities')??[];if(declarations.length)return declarations.map(problem=>refute(s,'slots_invalid',problem.message+'；删除可选 command_identities，由 Hub 从 steps 解析；或按 Hub 回执修正声明','/data/command_identities'));return [support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved?.identities??[],command_catalog:resolved?.catalog})];
+}
+/**
+ * scenario_kept: the audit verdict in data.fidelity answers the brief of this very plan and keeps every authored action of the
+ * frozen recomposition record (functions/fidelity.ts, after the reference engine's scenario fidelity). A case without authored
+ * actions has nothing to audit.
+ */
+export function checkScenarioFidelity(input: unknown): Outcome[] {
+  const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
+  const read = slotsOf(s); if (read.errors) return read.errors;
+  const frozen = isRecord(s.recomposition) && isRecord(s.recomposition.record) ? s.recomposition.record : s.recomposition;
+  const { fidelity, ...plan } = isRecord(s.data) ? s.data : {};
+  const brief = fidelityBrief(s.item, frozen, plan);
+  if (!brief) return [support(s, '这条用例没有重组记录里的作者动作原句，场景保真不适用')];
+  const judged = fidelityProblems(brief, fidelity);
+  if (judged.problems.length) return judged.problems.map((p) => refute(s, p.code, p.message, p.pointer));
+  return [support(s, `作者 ${judged.rows.length} 条动作原句逐条判为保住，判断针对这份计划的简报 ${brief.brief_sha256.slice(0, 12)}…；审计由客户端新开的会话做出，Hub 只核对格式和简报摘要`, { brief_sha256: brief.brief_sha256, steps: judged.rows, disclosure: (fidelity as { disclosure: string }).disclosure })];
 }

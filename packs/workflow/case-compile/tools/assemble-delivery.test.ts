@@ -14,7 +14,7 @@ import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-suppo
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { generationFixture } from '../testing/workbook.ts';
 import { satisfiedRecipes } from './generate-workbook.ts';
-import { main } from './assemble-delivery.ts';
+import { main, planDigest } from './assemble-delivery.ts';
 import { assemble, timeline } from '../functions/delivery.ts';
 
 const TOKEN = 'synthetic-token-1234';
@@ -38,15 +38,20 @@ function planRun(run: string, autoids: string[], exclude: string[], pause?: stri
 const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
 const plan2 = planRun(PLAN2, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
 // The plan run that held CASES[3] before the model left it out of the others.
-const GAP = 'run_01777777777777777777777777', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里';
-type Gap = 'recorded' | 'workbook' | 'unsubmitted' | 'none';
-/** The Hub left the plan of CASES[3] pending on a missing fact with a request (`recorded`), on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`). */
-function gapRun(kind: Exclude<Gap, 'none'>) {
-  const p = planRun(GAP, [CASES[3]], []);
+const GAP = 'run_01777777777777777777777777', LATER = 'run_01888888888888888888888888', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里', SPENT_WORDS = '合成：缺少修复后符合要求的产物（修复轮数用完）';
+type Gap = 'recorded' | 'exhausted' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
+/**
+ * The Hub left the plan of CASES[3] pending on a missing fact with a request (`recorded`), without an accepted plan after the
+ * repair rounds (`exhausted`), on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`).
+ */
+function gapRun(kind: 'recorded' | 'exhausted' | 'workbook' | 'unsubmitted', run = GAP) {
+  const p = planRun(run, [CASES[3]], []);
   const pending = (missing: string) => ({ status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'clarification' }, missing }] });
+  const spent = { status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'incomplete', reason: 'repair_exhausted', attribution: 'producer_error', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'repair' }, missing: SPENT_WORDS }] };
   for (const r of p.result.partitions.delivered[0].requirements as Array<Record<string, unknown>>) {
-    if (r.requirement === 'workbook_verified') Object.assign(r, pending('合成：缺少客户端生成的工作簿'));
-    if (kind === 'recorded' && r.requirement === 'contract_methods') Object.assign(r, pending(GAP_WORDS));
+    if (r.requirement === 'workbook_verified') Object.assign(r, kind === 'exhausted' ? spent : pending('合成：缺少客户端生成的工作簿'));
+    else if (kind === 'recorded' && r.requirement === 'contract_methods') Object.assign(r, pending(GAP_WORDS));
+    else if (kind === 'exhausted') Object.assign(r, spent);
   }
   return { plan: p, submitted: kind !== 'unsubmitted' };
 }
@@ -70,7 +75,9 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
     records[run] = { run, pack: 'case-compile@9.9.9', started_at: at(k++), predecessor: plan, parameters: { plan_run: plan }, sources: plans[plan].record.sources };
     previous = run;
   }
-  if (gap !== 'none') { const g = gapRun(gap); records[GAP] = { ...g.plan.record, started_at: '2026-11-08T00:00:30.000Z', predecessor: BOOKING }; if (g.submitted) plans[GAP] = g.plan; }
+  if (gap !== 'none') { const g = gapRun(gap === 'shadowed' ? 'recorded' : gap); records[GAP] = { ...g.plan.record, started_at: '2026-11-08T00:00:30.000Z', predecessor: BOOKING }; if (g.submitted) plans[GAP] = g.plan; }
+  // A later plan run that holds the case but was never answered judged no plan, so the earlier record still stands.
+  if (gap === 'shadowed') records[LATER] = { ...gapRun('unsubmitted', LATER).plan.record, started_at: '2026-11-08T00:00:40.000Z', predecessor: BOOKING };
   const successors: Record<string, unknown[]> = {};
   for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
   const originals = new Map([contract, profile, inventory, log, ...extraOriginals].map((bytes) => [sha256(bytes), bytes]));
@@ -356,18 +363,43 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.equal(summary.cases[3].status, 'unrun');
   assert.equal(summary.cases[3].closing, 'missing_fact');
-  assert.deepEqual(summary.cases[3].missing, { plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS });
+  assert.deepEqual(summary.cases[3].missing, { kind: 'data_gap', plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS });
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1 });
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /上机未通过的终态：声明与设备行为冲突（待仲裁） 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。/);
   assert.ok(report.includes(`**结论**：缺少 Hub 点名的事实（待补齐）：它的计划在计划运行 ${GAP} 交给 Hub，Hub 判它缺少事实并点名了补证请求（Hub 原话：${GAP_WORDS}）；补齐前不生成工作簿、不上机。`));
+  // A later plan run that holds the case but was never answered does not hide the record of the earlier one.
+  const shadowed = await hub(undefined, undefined, {}, {}, undefined, false, [], 'shadowed'); t.after(shadowed.close);
+  const shadowedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
+  assert.equal((await run(shadowed, await notes(NOTES), shadowedOut)).code, 0);
+  assert.equal(JSON.parse(await readFile(join(shadowedOut, 'delivery.json'), 'utf8')).cases[3].missing.plan_run, GAP);
   // The missing workbook of a plan run is no missing fact; a plan run with no accepted submission or none holding the case certifies nothing.
   for (const gap of ['workbook', 'unsubmitted', 'none'] as const) {
     const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);
     assert.equal(refused.code, 1, gap);
-    assert.match(refused.stderr, new RegExp(`用例 ${CASES[3]} 没有上机，Hub 也没有给它的计划记下缺少的事实。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机`), gap);
+    assert.match(refused.stderr, new RegExp(`用例 ${CASES[3]} 没有上机，Hub 也没有给它的计划记下缺少的事实或修正轮次用完。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机`), gap);
     await assert.rejects(readdir(refusedOut), `${gap}: nothing was written`);
   }
+});
+
+test('a plan audited again without a change is not another authored round; a changed plan is', () => {
+  const inputs = (p: ReturnType<typeof planRun>) => ({ run: p.record, result: p.result, submission: p.submission, originals: {} }) as unknown as Parameters<typeof planDigest>[0];
+  const first = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]), audited = structuredClone(first);
+  ((audited.submission.items[1].slots.plan[0] as unknown as { data: Record<string, unknown> }).data).fidelity = { brief_sha256: 'a'.repeat(64), steps: [], disclosure: '合成：重新审计' };
+  assert.equal(planDigest(inputs(audited), CASES[1]), planDigest(inputs(first), CASES[1]));
+  assert.notEqual(planDigest(inputs(planRun(PLAN1, CASES.slice(0, 3), [CASES[3]], '2')), CASES[1]), planDigest(inputs(first), CASES[1]));
+});
+
+test('a case whose plan the Hub refused until the repair rounds were spent closes as the model not finding a solution, without a dispatch', async (t) => {
+  const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'exhausted'); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
+  const done = await run(h, await notes(NOTES), out);
+  assert.equal(done.code, 0, done.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual([summary.cases[3].status, summary.cases[3].closing, summary.cases[3].missing.kind, summary.cases[3].missing.plan_run], ['unrun', 'authoring_failure', 'repair_exhausted', GAP]);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /没有上机的终态：模型未找到解决方案 1。/);
+  assert.ok(report.includes(`**结论**：模型未找到解决方案：它的计划在计划运行 ${GAP} 交给 Hub，修正轮次用完也没有受理（Hub 原话：${SPENT_WORDS}），没有上机；按 InfoTest 的收口规则`));
 });

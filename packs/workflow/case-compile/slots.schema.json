@@ -1283,6 +1283,71 @@
               "slots",
               "rebindings"
             ]
+          },
+          "fidelity": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "brief_sha256": {
+                "type": "string",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "n": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "preserved",
+                        "changed",
+                        "unrealized"
+                      ]
+                    },
+                    "step_indices": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 256,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "rationale": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "verdict",
+                    "step_indices",
+                    "rationale"
+                  ]
+                }
+              },
+              "disclosure": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              }
+            },
+            "required": [
+              "brief_sha256",
+              "steps",
+              "disclosure"
+            ]
           }
         }
       }

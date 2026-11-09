@@ -86,9 +86,9 @@ export function replyText(out: string, totals: Record<string, number>, files: st
   return [`交付目录：${out}`, `共 ${totals.cases} 条：${counts}。`, ...(closings ? [closings] : []), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
 }
 /**
- * What the Hub recorded missing for item `id` in a plan run's latest accepted result: a requirement of the plan, not the
- * workbook's (a plan run has no workbook yet), left pending on a data gap with a request to a named audience. Null for anything
- * else, including a run with no accepted submission.
+ * What the Hub recorded for item `id` in a plan run's latest accepted result, on a requirement of the plan, not the workbook's (a
+ * plan run has no workbook yet): pending on a data gap with a request to a named audience (a missing fact), or else no accepted
+ * plan after the repair rounds were used up. Null for anything else, including a run with no accepted submission.
  */
 export function missingFactOf(exported: unknown, run: string, id: string): MissingFact | null {
   if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return null;
@@ -97,17 +97,28 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
     for (const requirement of entry.requirements) {
       if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
       const layer = requirement.layers.find((l) => isRecord(l) && l.attribution === 'data_gap' && isRecord(l.exit) && l.exit.action === 'request');
-      if (isRecord(layer)) return { plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
+      if (isRecord(layer)) return { kind: 'data_gap', plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
+    }
+    for (const requirement of entry.requirements) {
+      if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
+      const layer = requirement.layers.find((l) => isRecord(l) && l.reason === 'repair_exhausted');
+      if (isRecord(layer)) return { kind: 'repair_exhausted', plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
     }
   }
   return null;
 }
+/** The slots a round counts: the plan as authored, without the audit verdict it carries (auditing the same plan again is no new round). */
+function withoutAudit(slots: unknown): unknown {
+  if (!isRecord(slots)) return slots;
+  const strip = (entry: unknown) => (isRecord(entry) && isRecord(entry.data) && Object.hasOwn(entry.data, 'fidelity') ? { ...entry, data: Object.fromEntries(Object.entries(entry.data).filter(([key]) => key !== 'fidelity')) } : entry);
+  return { ...slots, ...(slots.plan !== undefined ? { plan: Array.isArray(slots.plan) ? slots.plan.map(strip) : strip(slots.plan) } : {}) };
+}
 /** A case's plan in a plan run, as its digest: the slots the model submitted for it (a rerun of the same plan has the same digest). */
-function planDigest(plan: RunInputs, autoid: string): string {
+export function planDigest(plan: RunInputs, autoid: string): string {
   const item = (plan.run.items as unknown[] ?? []).find((i) => autoidOf(i) === autoid);
   const id = isRecord(item) ? item.id : undefined;
   const entry = Array.isArray(plan.submission.items) ? plan.submission.items.find((s) => isRecord(s) && s.item === id) : undefined;
-  return isRecord(entry) && id !== undefined ? sha256(canonicalJson(entry.slots ?? null)) : `run:${String(plan.run.run)}`;
+  return isRecord(entry) && id !== undefined ? sha256(canonicalJson(withoutAudit(entry.slots ?? null))) : `run:${String(plan.run.run)}`;
 }
 
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date()): Promise<number> {
@@ -265,20 +276,25 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts);
     // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
-    // dispatched is looked up in the latest plan run of this compilation that holds it (closeUnrun in functions/delivery.ts).
+    // dispatched is looked up in the latest plan run of this compilation that holds it and has an accepted result: a plan run
+    // opened but never answered judged no plan (closeUnrun in functions/delivery.ts).
     const facts: Record<string, MissingFact> = {};
     const unrun = closed.cases.filter((c) => c.status === 'unrun').map((c) => c.autoid);
     if (unrun.length) {
       const latestFirst = [...planRuns.keys()].sort((a, b) => (planRuns.get(a)! > planRuns.get(b)! ? -1 : planRuns.get(a)! < planRuns.get(b)! ? 1 : a > b ? -1 : 1));
       const itemsOf = new Map<string, unknown[]>();
       for (const run of latestFirst) { try { const record = await runOf(run); itemsOf.set(run, Array.isArray(record?.items) ? record.items : []); } catch { itemsOf.set(run, []); } }
+      const answered = new Map<string, unknown>();
       for (const autoid of unrun) {
-        const holder = latestFirst.find((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid)); if (!holder) continue;
-        const item = itemsOf.get(holder)!.find((i) => autoidOf(i) === autoid);
-        if (!isRecord(item) || typeof item.id !== 'string') continue;
-        let exported: unknown = null;
-        try { exported = JSON.parse(decode(await get(`${origin}/run-export/${holder}`, bearer))); } catch { /* no accepted submission: the Hub never judged its plan */ }
-        const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
+        for (const holder of latestFirst.filter((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid))) {
+          const item = itemsOf.get(holder)!.find((i) => autoidOf(i) === autoid);
+          if (!isRecord(item) || typeof item.id !== 'string') continue;
+          if (!answered.has(holder)) { let exported: unknown = null; try { exported = JSON.parse(decode(await get(`${origin}/run-export/${holder}`, bearer))); } catch { /* no accepted submission */ } answered.set(holder, exported); }
+          const exported = answered.get(holder);
+          if (!isRecord(exported) || !isRecord(exported.result)) continue; // never answered: no plan was judged there
+          const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
+          break;
+        }
       }
     }
     const settled = closeUnrun(closed.cases, facts);

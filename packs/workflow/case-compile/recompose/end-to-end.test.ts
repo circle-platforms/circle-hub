@@ -7,6 +7,7 @@ import { generateWorkbook } from '../functions/generate.ts';
 // The real run engine, registry, record reader and sandboxes; all systems and model decisions are synthetic.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fidelityBrief } from '../functions/fidelity.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -144,6 +145,10 @@ test('a product publication, genuine independent adjudication and append-only re
         const finalInputs = { ...compileInputs, criteria_review_run: { reference: 'rec:' + criterionSnapshot.digest }, criteria_review: { reference: 'rec:' + criterionReceipt.digest } };
         const ready = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', predecessor: planStarted.answer.run!.run, inputs: finalInputs, parameters: compileParameters }, call());
         assert.equal(ready.answer.call_result, 'ok', JSON.stringify(ready.answer.errors));
+        // The scenario-fidelity audit a fresh session makes before submitting (tools/fidelity.md): here a scripted verdict that keeps every action.
+        const { fidelity: _judged, ...plain } = data as unknown as Record<string, unknown>, frozenItem = ready.answer.run!.items[0] as any;
+        const brief = fidelityBrief(frozenItem.id, frozenItem.fields?.recomposition?.record, plain)!;
+        (data as unknown as Record<string, unknown>).fidelity = { brief_sha256: brief.brief_sha256, steps: brief.author_steps.map((s) => ({ n: s.n, verdict: 'preserved', step_indices: [brief.blocks.length], rationale: '合成审计：计划实现了作者这一步' })), disclosure: '合成审计：作者步骤逐条保住。' };
         const sent = planSubmission(ready.answer.run!), readyResult = await h.service.submitResult(h.alice, sent, call());
         assert.equal(readyResult.acceptance, 'accepted', JSON.stringify(readyResult.errors));
         for (const requirement of Object.values(readyResult.result!.partitions).flat().flatMap(i => i.requirements).filter(r => r.requirement !== 'workbook_verified'))

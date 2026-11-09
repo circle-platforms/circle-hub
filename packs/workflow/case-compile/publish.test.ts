@@ -40,7 +40,7 @@ describe('publishing the case-compile pack', { skip }, () => {
     if (!outcome.ok) return;
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [46, 46, 0, 46]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [48, 48, 0, 48]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
     assert.deepEqual(
@@ -51,11 +51,12 @@ describe('publishing the case-compile pack', { skip }, () => {
         ['commands_catalog', 4, 4],
         ['expected_sources', 2, 2],
         ['expected_quotes', 1, 1],
+        ['scenario_fidelity', 1, 1],
         ['workbook_verified', 1, 1],
         ['dispatch_policy',1,1],
       ],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '3.10.15', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '3.11.0', 'workflow']);
     const again = await registry.publish(owner, await stage(join(temp.path, 'staged-again')));
     assert.equal(again.ok && again.created, false, '同样内容再发布不新建版本');
   });

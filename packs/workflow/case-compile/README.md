@@ -296,6 +296,29 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.11.0: the reference engine's scenario fidelity, audit and effects first
+
+Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario
+fidelity (`main/case_compiler/scenario_fidelity.py`: `build_scenario_fidelity_brief`, `parse_scenario_fidelity_result`).
+`tools/fidelity-brief.ts` computes, from the plan run's frozen recomposition record and the plan as it will be submitted (length
+placeholders expanded first, as `tools/submit-plans.ts` does), a brief that lists every authored action with its adaptation, the
+expectations and the plan's steps without the model's own descriptions. A fresh session judges each action once as preserved,
+changed or unrealized (`tools/fidelity.md`, the reference engine's auditor rules), and the verdict travels in `data.fidelity`. The
+Hub recomputes the brief and checks only what is mechanical: the verdict answers this very brief (its digest), decides every action
+exactly once from the closed set, and a preserved action cites plan steps; changed, unrealized and a preserved action that cites no
+step go back to authoring, as in the reference engine. Who judged is the procedure's concern, not a check (owner, 2026-11-09). There
+is no step-structure layer yet, so the mechanical comparison is unavailable and every action is audited, which is what the reference
+engine does for a case without that layer. In run 17 a case whose author wrote a TCP query was planned with a UDP query and passed
+every check. Not ported yet: the step structure (recompose) and the mechanical comparison, the license override that needs the
+comparison, counting a fidelity rejection as an authored round, and the scenario line of the delivery report.
+
+The same version adds the reference engine's round-cap closing for a case never dispatched: when the latest plan run that holds
+it and has an accepted result shows its plan without an accepted version after the repair rounds were used up
+(`repair_exhausted`), it closes as 模型未找到解决方案, as the reference engine closes a case whose authored attempts were all refused
+at its round cap. A plan run opened but never answered is skipped in that lookup. In run 18 the model declined to plan a case in
+three submissions, the Hub recorded the spent repair rounds, and 3.10.15 refused the delivery because it knew only the
+missing-fact exit.
+
 ### 3.10.15: a case never dispatched closes only on a fact the Hub recorded missing
 
 `closeUnrun` in `functions/delivery.ts` ports the first of the reference engine's exits for a case it could not compile

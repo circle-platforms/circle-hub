@@ -830,7 +830,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.10.15"
+      "generator": "case-compile@3.11.0"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -879,7 +879,7 @@
           },
           {
             "name": "xl/worksheets/sheet1.xml",
-            "size": 22545,
+            "size": 22543,
             "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
           }
         ],
@@ -965,14 +965,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.10.15",
+                    "text": "case-compile@3.11.0",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "6a28d075c4da60d116dab210a58f88a8b6e8ed5bbe0135b10ba8b8862c3b425e",
+                    "text": "68d98fdbba16aeab5b8cd86fe7d7f3a15878b7c9096f681364430908834754d4",
                     "formula": false,
                     "style": null
                   }
@@ -1174,7 +1174,7 @@
                   {
                     "reference": "D7",
                     "type": "inlineStr",
-                    "text": "Author         : case-compile@3.10.15\n计划运行 run_00000000000000000000000000；构建 Fixture_Build_A",
+                    "text": "Author         : case-compile@3.11.0\n计划运行 run_00000000000000000000000000；构建 Fixture_Build_A",
                     "formula": false,
                     "style": 5
                   },
@@ -6421,7 +6421,7 @@
           }
         ]
       },
-      "sha256": "0e1ecb81ea4f32886cb1fab0534aeefaf59b82fb82d3e76383973498a634964b"
+      "sha256": "293362372c5361e89503a9ea04469ff866088e3699d1f40e932ad8dfc9443f88"
     }
   },
   "expect": [

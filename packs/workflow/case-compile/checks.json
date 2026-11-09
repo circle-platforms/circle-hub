@@ -105,6 +105,22 @@
       }
     },
     {
+      "id": "scenario_fidelity",
+      "title": "审计判断对得上这份计划，作者场景逐条保住",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkScenarioFidelity"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 scenario_kept：照 InfoTest 场景保真，审计判断须针对按同一规则重算的这份计划的简报（摘要相等），每条作者动作原句恰好一行、结论属闭集、判保住的引用计划步骤；改了、没实现、保住却未引用的退回编写"
+    },
+    {
       "id": "workbook_verified",
       "title": "独立回读及重算工作簿原件",
       "function": {

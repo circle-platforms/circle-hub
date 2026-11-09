@@ -53,7 +53,7 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: 'a'.repeat(32) }).success);
     const run = detail.answer.run!; assert.deepEqual(run.items.map((v) => v.id), ['doc-1:c-1']);
     assert.deepEqual([run.items[0].fields.autoid, run.items[0].fields.auto, run.items[0].fields.priority], [AUTOID, '1', '2']);
-    assert.deepEqual(run.requirements.map((v) => v.key), ['plan', 'contract_methods', 'bed_addresses', 'commands_known', 'expected_grounded', 'workbook_verified']);
+    assert.deepEqual(run.requirements.map((v) => v.key), ['plan', 'contract_methods', 'bed_addresses', 'commands_known', 'expected_grounded', 'scenario_kept', 'workbook_verified']);
     const answer = await hub.service.submitResult(hub.alice, submission(run.run), call());
     assert.ok(SubmitResultOutput.safeParse({ ...answer, trace: 'a'.repeat(32) }).success, JSON.stringify(answer));
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors)); const result = ValidationResult.parse(answer.result);
