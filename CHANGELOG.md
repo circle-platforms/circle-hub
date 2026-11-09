@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Say plainly what goes into the optional fields of the knowledge and memory editors: the memory body hint "纯文本保存，不执行 Markdown" now says the body may use Markdown marks, is saved as written and is neither rendered nor converted; the structured data field says an empty field means none and that a filled one must be a JSON object, with an example; the applicability field says it must be a JSON object and an empty field means not declared, and shows "留空表示未声明" instead of the protocol value null as its placeholder. Nothing about what is accepted or stored changed (an empty field was already read as no data and no applicability).
 - Put knowledge and memory creation/revision into a standalone main-column editing foreground after authorization, with exact return links and existing concurrency/security tokens. Keep primary text and save/cancel accessible, group optional structured data and extra sources without dropping values, and expand folded groups for native invalid-field focus.
 
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
