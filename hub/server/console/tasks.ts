@@ -27,15 +27,19 @@ export interface TaskRow {
 
 /** The detail of each run, to derive its result; a run that cannot be read is listed without one. */
 export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]): Promise<TaskRow[]> {
-  return Promise.all(runs.map(async (run): Promise<TaskRow> => {
-    let detail: RunSummary | null = null;
-    try {
-      detail = await (ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal, run.run));
-    } catch {
-      detail = null;
+  const rows=new Array<TaskRow>(runs.length);let next=0;
+  await Promise.all(Array.from({length:Math.min(4,runs.length)},async()=>{
+    while(next<runs.length){
+      const index=next++,run=runs[index];let detail:RunSummary|null=null;
+      try{
+        detail=await(ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal,run.run));
+      }catch{
+        detail=null;
+      }
+      rows[index]={run,detail,result:detail===null?null:taskResultOf(detail),pending:detail===null?0:pendingCount(detail)};
     }
-    return { run, detail, result: detail === null ? null : taskResultOf(detail), pending: detail === null ? 0 : pendingCount(detail) };
   }));
+  return rows;
 }
 
 /** The unanswered requests of the listed tasks: a page never needs the requests of any other run. Asked together, its read scope batches them. */
