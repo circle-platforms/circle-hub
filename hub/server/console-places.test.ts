@@ -161,14 +161,14 @@ describe('tasks', () => {
     assert.equal((await get('/console/runs?result=bogus', session)).status, 400);
     const detail = await get(`/console/runs/${run}`, session);
     for (const text of ['执行过程', '工具调用', 'Hub 校验', '任务结果', '完整记录', '提交结果', '启动任务']) assert.ok(detail.body.includes(text), text);
-    assert.ok(detail.body.indexOf('执行过程') < detail.body.indexOf('完整记录'), 'the process stays before the full record');
+    assert.ok(detail.body.indexOf('执行过程') < detail.body.indexOf('id="task-evidence"'), 'the process stays before the full record section');
     // Issue 218: the page opens with the task's result, its counts and what waits for someone; the process is a secondary area below.
     const outcome = detail.body.indexOf('data-task-outcome');
     assert.ok(outcome >= 0, 'the page has a result block');
     assert.ok(outcome < detail.body.indexOf('data-timeline'), 'the result comes before the execution timeline');
     assert.ok(outcome < detail.body.indexOf('执行过程'), 'and before the process heading');
-    assert.ok(detail.body.indexOf('查看结果分类与检查依据') > outcome && detail.body.indexOf('查看结果分类与检查依据') < detail.body.indexOf('data-timeline'), 'with the way to the evidence inside it');
-    assert.match(detail.body, /href="#task-evidence">查看结果分类与检查依据</);
+    assert.ok(detail.body.indexOf('查看结果分类与完整记录') > outcome && detail.body.indexOf('查看结果分类与完整记录') < detail.body.indexOf('data-timeline'), 'with the way to the evidence inside it');
+    assert.match(detail.body, /href="#task-evidence">查看结果分类与完整记录</);
     assert.equal((detail.body.match(/id="task-evidence"/g) ?? []).length, 1, 'one evidence section, nothing removed');
     assert.match(detail.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
   });

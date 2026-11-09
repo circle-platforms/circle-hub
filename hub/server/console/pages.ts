@@ -387,7 +387,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
   // Issue 218: the page opens with what the task came to and what waits for someone; the process below is the secondary area.
   const outcome = html`<div data-task-outcome>${card({ title: '任务结果' }, html`<div class="ch-actions">${resultCell({ result: taskResultOf(detail), pending: pendingCount(detail) })}</div>
 ${primary === null ? html`<p class="ch-meta">${factOnly ? '没有找到生产结果记录，原因见下方完整记录。' : '还没有校验结果。'}</p>` : html`<p><strong>${resultHeadline(primary.result)}</strong></p>`}
-<p><a class="ch-btn ch-btn--ghost" href="#task-evidence">查看结果分类与检查依据</a></p>`)}${await awaitingRequests(ctx, detail.requests ?? [])}</div>`;
+<p><a class="ch-btn ch-btn--ghost" href="#task-evidence">查看结果分类与完整记录</a></p>`)}${await awaitingRequests(ctx, detail.requests ?? [])}</div>`;
   const showRecord=ctx.url.searchParams.get('view')==='record';
   const sourcePanels=[];for(const source of run.sources)sourcePanels.push(await sourceBlock(ctx,source.reference));
   const inspector=html`<div data-inspector-content>${head}${card({title:'来源',meta:sourcePanels.length},html`${sourcePanels}`)}${card({title:'任务信息'},definitions([['执行人',run.runner?await ctx.userName(run.runner):uiLabelOf('execution_host',run.host)],['开始时间',when(run.started_at)],['交付',detail.latest?'已有交付结果':'尚未交付']]))}${technical(summary)}<footer class="ch-inspector-actions"><a class="ch-btn ch-btn--ghost" href="/console/runs/${run.run}?view=record#task-evidence">查看完整记录</a></footer></div>`;
