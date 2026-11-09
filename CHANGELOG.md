@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Say beside the source type 声明 and the team-source status of an original what they mean: 声明 now carries a tooltip saying the bytes were provided by the uploader, nothing independent was collected and that is not a verification; 未署名 says the uploader has not yet confirmed the original as a team source, that unsigned uploads are not accepted by team knowledge and that this has nothing to do with who uploaded it; 已署名为团队来源 says the uploader confirmed it, that everyone can read it and that a signature is neither a digital signature nor a copyright transfer. The formal labels are unchanged; the list and the detail of an original both show them.
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
