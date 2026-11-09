@@ -16,7 +16,7 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { createEngineContext, type EngineContext, type RunsEngineDeps } from './deps.ts';
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
-import { getResult, getRun, getRunSummary, listRuns, runHeader, runsFor, resultState, type StoredResult } from './queries.ts';
+import { getResult, getRun, getRunSummary, listRuns, runHeader, runsFor, resultState, runVisible, type StoredResult } from './queries.ts';
 import { submissionByDigest } from './store.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
@@ -151,6 +151,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},
     runHeader(user,run){return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runHeader(current,user,run)));},
+    runVisible(user,run){return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runVisible(current,user,run)));},
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {

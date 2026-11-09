@@ -64,6 +64,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `terminals.ts`, `partitions.ts`, `independence.ts`, `claims.ts` | the pure rules, tested on their own |
 | `reuse.ts` | carry-over offers and carried items (C08 R[4]) |
 | `preview.ts`, `queries.ts` | resolve_reference; getRun, runHeader, listRuns, getResult, runsFor |
+| `preview.ts`, `queries.ts` | resolve_reference; getRun, runVisible, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
 
@@ -1110,3 +1111,6 @@ and stored run bytes stay unchanged.
 ## Run header for record reads (B1)
 
 `runHeader(user, run)` answers null exactly when `getRun` does (same `visibleRun` rule) and otherwise returns only `runner`, `host` and `pack_space`, the fields `canSeeRun` decides on. The server's record reader (`hub/server/readers.ts`, behind every `rec:` read of the tools) uses it instead of the full detail; the receipts are read only when someone other than the runner reads a submission, whose answer depends on them. An engine without the port keeps the full read.
+## Run visibility without history (B1)
+
+`runVisible(user, run)` answers whether `getRun` would answer for the run: it applies the same run-visibility rule (`visibleRun`: the account is enabled, the reader may view the run, and the run's grounds are readable) and reads neither submissions, results, requests nor withdrawal state. The console live stream asks it for every run event instead of reading the full detail once per subscriber and run; an engine without the port keeps the old `getRun(...) !== null` answer. The port keeps no verdict of its own (the stream's 30-second verdict cache is unchanged), so a revoked share is seen by the next question. It does not shorten the detail page, the export or the summary reads.

@@ -220,6 +220,8 @@ export interface RunsService {
   getRunSummary?(user:Principal,run:string):Promise<RunSummary|null>;
   /** The fields run visibility and `canSeeRun` decide on, null exactly when `getRun` answers null; reads no submission, result or request. */
   runHeader?(user:Principal,run:string):Promise<Pick<RunRecord,'runner'|'host'|'pack_space'>|null>;
+  /** Whether `getRun` would answer for this run, by the same visibility rule and without reading its submissions or results. */
+  runVisible?(user:Principal,run:string):Promise<boolean>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
