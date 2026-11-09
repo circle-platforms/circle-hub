@@ -623,7 +623,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of
   its data, keeps it, and polls every 15 s until the stream is back.
 - **The neutral page** says “该内容不存在或无权查看” on the console (the MCP tools keep their own neutral text), the same
-  words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
+  words whatever the path, with one sentence of next step (go back to the overview or the list, ask the content's owner or an
+  administrator) that does not tell absent from forbidden. A session that ended (revoked token, disabled account, expiry) returns to the login page with
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
 
 - **The authorization page** (`/console/authorize/<request>`, `console/authorize.ts`, decision 125): the request the

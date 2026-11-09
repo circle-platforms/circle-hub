@@ -266,6 +266,9 @@ describe('pages', () => {
     assert.ok(list.body.includes(run));
     const page = await get(`/console/runs/${run}`, session);
     assert.equal(page.status, 200);
+    // Issue 239: a run recorded without a submission deadline says what the reader can do, in plain words.
+    assert.ok(page.body.includes('这次任务未记录提交期限。请从此任务创建新的修订后继续。'));
+    assert.ok(!page.body.includes('旧运行没有记录期限'));
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
     for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录']) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
@@ -358,6 +361,8 @@ describe('pages', () => {
     assert.equal(forbidden.status, 404);
     assert.equal(withoutNonces(forbidden.body),withoutNonces(absent.body));
     assert.ok(forbidden.body.includes(NEUTRAL));
+    // Issue 239: the neutral page points to a next step without telling the two cases apart (the bodies above are identical).
+    assert.ok(forbidden.body.includes('请返回总览或列表重新进入；仍需要时联系内容所有者或管理员确认。'));
     assert.ok(!(await get('/console/runs', session)).body.includes(run), 'a user lists only their own runs');
     for (const path of ['/console/__proto__', '/console/constructor', '/console/knowledge/__proto__', '/console/runs/a/b']) {
       const reply = await get(path, session);
