@@ -218,6 +218,8 @@ export interface RunsService {
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   getRunSummary?(user:Principal,run:string):Promise<RunSummary|null>;
+  /** The fields run visibility and `canSeeRun` decide on, null exactly when `getRun` answers null; reads no submission, result or request. */
+  runHeader?(user:Principal,run:string):Promise<Pick<RunRecord,'runner'|'host'|'pack_space'>|null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;

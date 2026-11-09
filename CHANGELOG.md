@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Decide whether a caller may read a record of a run from the run's header, not from its whole detail: the record reader behind every `rec:` read of the tools called the full run read for each record, which loads every submission, result body and request of the run, and now reads the run record and its grounds only. A synthetic run with 24 historical results of 64 KiB loads 50 result bodies through the old read and none through the new one, with the same verdict for the runner, an administrator and a member before, during and after a share. A submission read by someone other than its runner still reads the receipts, because that answer depends on them.
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.

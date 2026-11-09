@@ -63,6 +63,12 @@ async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord
   return {latest,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{})};
 }
 
+/** What a record-level read needs of a run: whether `getRun` would answer, and the fields `canSeeRun` decides on. Never reads the history. */
+export async function runHeader(ctx:EngineContext,user:Principal,run:string):Promise<Pick<RunRecord,'runner'|'host'|'pack_space'>|null>{
+  const stored=await visibleRun(ctx,user,run);if(stored===null)return null;
+  const {runner,host,pack_space}=stored.body;return {host,...(runner===undefined?{}:{runner}),...(pack_space===undefined?{}:{pack_space})};
+}
+
 /** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
 export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
   const stored=await visibleRun(ctx,user,run);if(!stored)return null;

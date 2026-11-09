@@ -63,7 +63,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `lineage.ts` | the author of the work a run judges (A04): the predecessor chain, the runs of handed-over records, their producers |
 | `terminals.ts`, `partitions.ts`, `independence.ts`, `claims.ts` | the pure rules, tested on their own |
 | `reuse.ts` | carry-over offers and carried items (C08 R[4]) |
-| `preview.ts`, `queries.ts` | resolve_reference; getRun, listRuns, getResult, runsFor |
+| `preview.ts`, `queries.ts` | resolve_reference; getRun, runHeader, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
 
@@ -1106,3 +1106,7 @@ Deleted owners do not invalidate exact already-frozen workflow evaluation or an 
 declaration. This custody adds no current namespace access or new-run eligibility. MCP lease context resolves historical
 holder and registration-owner names through the generated deleted-account interface label, while stable identity keys
 and stored run bytes stay unchanged.
+
+## Run header for record reads (B1)
+
+`runHeader(user, run)` answers null exactly when `getRun` does (same `visibleRun` rule) and otherwise returns only `runner`, `host` and `pack_space`, the fields `canSeeRun` decides on. The server's record reader (`hub/server/readers.ts`, behind every `rec:` read of the tools) uses it instead of the full detail; the receipts are read only when someone other than the runner reads a submission, whose answer depends on them. An engine without the port keeps the full read.
