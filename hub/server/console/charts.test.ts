@@ -27,6 +27,22 @@ test('a single comparison is a Stat; composition and temporal spans retain a ful
  assert.ok(span.includes('2026-11-01T10:00:00.000Z'));assert.ok(span.includes('2026-11-01T10:00:01.200Z'));assert.match(text(span),/原始说明 <raw>/);assert.match(span,/<td class="num">1,200<\/td>/);
 });
 
+test('timeline event points disclose an instant and unrecorded duration while measured zero remains zero',()=>{
+ const start=Date.parse('2026-11-01T10:00:00Z');const markup=timeline('合成事件',[
+  {label:'合成检查 <raw>',detail:'原始说明 <script>',start,end:start,point:true},
+  {label:'实测零时长',start,end:start},
+  {label:'实测调用',start,end:start+8},
+ ]).text;
+ const rows=[...markup.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(match=>text(match[1]));
+ assert.ok(rows.some(row=>row.includes('合成检查 <raw>')&&row.includes('记录时间点')&&row.endsWith('未记录')),JSON.stringify(rows));
+ assert.ok(rows.some(row=>row.includes('实测零时长')&&row.endsWith('0')),JSON.stringify(rows));
+ assert.ok(rows.some(row=>row.includes('实测调用')&&row.endsWith('8')),JSON.stringify(rows));
+ const eventTip=markup.slice(markup.indexOf('<div data-chart-tip="0"'),markup.indexOf('<div data-chart-tip="1"'));
+ assert.match(text(eventTip),/2026-11-01T10:00:00\.000Z记录于/);assert.match(text(eventTip),/耗时未记录/);assert.doesNotMatch(text(eventTip),/0 秒/);
+ assert.match(markup,/aria-label="合成检查 &lt;raw&gt;；原始说明 &lt;script&gt;；记录时间点；耗时未记录"/);
+ assert.doesNotMatch(markup,/<script>/);assert.match(markup,/<circle class="dot"/);assert.match(markup,/<b>0 毫秒<\/b>/);assert.match(markup,/<b>8 毫秒<\/b>/);
+});
+
 test('a curve breaks where nothing was read: no value is invented, the gap is named and the read-out says 未知',()=>{
  const base:Curve={title:'合成曲线',labels:['甲','乙','丙','丁','戊','己'],series:[{label:'合成值',values:[1,2,null,null,5,6]}],max:10,ticks:[0,5,10],tick:String,value:value=>value+' 个',xLabels:[[0,'甲'],[5,'己']]};
  const figure=curve(base).text;
