@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Preserve safe knowledge and memory drafts after rejected edits, with accessible validation feedback, original version conditions and a fresh intent for a corrected refused memory write. Omit credential-like fields from the returned editor. When a form's result cannot be confirmed, keep the input and clear its busy display while requiring an explicit check-before-edit step instead of automatically resending.
+
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
