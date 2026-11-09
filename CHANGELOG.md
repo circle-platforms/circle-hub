@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Make existing source-review requests reachable on the administrator records page with independent pagination, named recipients, deadlines and historical progress. Recheck each pinned source's permissions and omit its bytes and credential findings; an expired request is not accepted and a recorded request is not proof of external notification.
+
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
