@@ -2,6 +2,12 @@
 
 依据决定 141 与任务页 `docs/hub-r4-tasks/console-visual.md` 的 Claude 审查结论。这里记录控制台自身的实现边界；阶段进度由集成者记录。
 
+## 子文件夹空态（B5）
+
+非空父文件夹展开空子节点时只显示带完整可读路径的紧凑入口，不再为每个空子节点重复大型空态和新建框。进入空文件夹后标题明确其路径；本人仍使用原新建入口，获得分享的读者不见写动作。链接保留space/root/path/scope，展开/分页和所有原知识表格保持原规则，不把父目录有知识说成空。
+
+没有来源的私人笔记仍可写入并记为待验证，说明不再承诺每条知识都有来源。此批只改knowledge-directory，与#264编辑前景、#252恢复运行时可独立合成；不改知识/来源读取或权限判断。
+
 ## 设定、字体与标志（第一块）
 
 - 运行 `node tools/gen-console-style.ts`，从共享设计目录的 `tokens.json` 和原样的 `components/bundle.css` 生成 `style.generated.ts`。`node tools/gen-console-style.ts --check` 检查漂移；`style.test.ts` 对照完整源文件与生成文件，放在控制台目录以纳入常规单元测试的发现范围。运行时只导入生成模块，不读取设计文档，也没有构建或网络依赖。
