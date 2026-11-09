@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Open the task page with what the task came to instead of with its execution timeline: a result block above the process shows the task result, its pending count, the receipt and the counts by classification, with a link to the evidence, and the requests waiting for someone sit directly under it instead of far down the full record. The process stays below as a secondary area and every section of the full record is still there. On a narrow screen the default view still shows the inspector (whose head carries the result) and the full record opens with the result block first.
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
