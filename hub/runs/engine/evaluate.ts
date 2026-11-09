@@ -1120,7 +1120,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const crossBound = [...baseBound, ...itemDigests];
   const cross: Claim[] = [];
   for(const {check,index} of unruledChecks)cross.push(judgmentClaim({
-    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版台账裁定`,
+    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版的裁定清单里裁定`,
     data:{requirement:check.requirement,interpreter:check.interpreter},model:submission!.model,
     marks:['decision_shape_unruled'],grounds:[],resolutions:[],bound:[...crossBound,input.submissionDigest,receivedDigest(run).digest],
   }));

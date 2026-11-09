@@ -29,7 +29,7 @@
       "slot": "e1",
       "knowledge_location": "genuinely_missing",
       "evidence": [],
-      "proposal": "作者或产品包补一份声明 show pools 输出字段与判定点的规范来源；在此之前该期望位只有提议，不是契约"
+      "proposal": "作者或产品包补一份声明 show pools 输出字段与判定点的规范来源；在此之前这条期望的判断依据只有提议，不是契约"
     }
   ],
   "coverage": {
@@ -104,7 +104,7 @@
   "unknowns": [
     {
       "missing": "声明 show pools 的观察字段与判定点的规范来源（现有合成手册夹具里没有这条命令的任何记载）",
-      "next_action": "产品包作者补规范来源并重新发布，或作者改写期望位到已有来源覆盖的观察",
+      "next_action": "产品包作者补规范来源并重新发布，或作者把期望改成已有来源覆盖的观察",
       "audience": "产品包作者",
       "due": "重新提交之前"
     }

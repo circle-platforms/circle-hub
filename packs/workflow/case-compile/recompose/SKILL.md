@@ -1,20 +1,20 @@
 ---
 name: recompose
-description: 把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加适配、具体化和缺口。把整份脑图编译成自动化用例之前先用它；需要这份脑图在敏捷平台上的文档号。
+description: 把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加改写、具体化和缺口。把整份脑图编译成自动化用例之前先用它；需要这份脑图在敏捷平台上的文档号。
 ---
 
 # 脑图重组
 
-把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加适配、具体化和缺口。这一步是搬运，不是创作。
+把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加改写、具体化和缺口。这一步是搬运，不是创作。
 
 本地工具由客户端装进技能目录（通用根 `~/.agents/skills/<包>/`；装好的目录即下文 `<技能目录>`，Base directory 由客户端在加载时给出）。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Bearer 令牌：模型只写占位符名字，值由客户端执行时展开。
 
-一次处理一整份脑图。Hub 已经按树位置读出每个用例的原子（意图、动作、期望），在运行记录每个条目的 `fields/atoms` 里，Hub 不调模型。
+一次处理一整份脑图。Hub 已经按树位置读出用例原句（意图、动作、期望），在运行记录每个条目的 `fields/atoms` 里，Hub 不调模型。
 
 ## 铁律
 
 1. **零发明。** 契约里的意图和期望必须是作者原文，工具会逐字取出，你不用重打。作者没写的知识不进契约，写进缺口。
-2. **搬运，不是改写。** 知识常常写错了位置：验证方法写在步骤里，结果写在标题里。把它们对应起来，不要重新表述。
+2. **搬运，不是重新表述。** 知识常常写错了位置：验证方法写在步骤里，结果写在标题里。把它们对应起来，不要重新表述。
 3. **不丢东西。** 作者写的否定、条件、差异和命令都要留下。可以改命令的参数，不能删命令，也不能加作者没写的对象或动作。
 4. **和环境无关。** 记录里不写设备、座位和环境地址。换成环境地址是编写阶段的事。
 5. **说不清就写缺口。** 缺口是这一步的产出，不是失败。一个诚实的缺口比一个像样的编造好。
@@ -48,16 +48,16 @@ EOF
 ```json
 {
   "item": "<条目编号>",
-  "method": {"kind": "declared", "text": "怎么验证", "sources": ["<原子或树的引用>"], "basis": "为什么这样验证"},
+  "method": {"kind": "declared", "text": "怎么验证", "sources": ["<用例原句或树的引用>"], "basis": "为什么这样验证"},
   "slots": [{"atom": "a4", "knowledge_location": "has_verification_knowledge", "evidence": [], "proposal": null}],
   "states": [{"atom": "a2", "state": "missing_prerequisite", "reason": "缺什么", "prerequisites": ["要先做什么"]}],
-  "adapted": [{"atom": "a2", "action": "structural_completion", "text": "适配后的步骤", "commands": ["完整命令行"], "equivalence_reason": "为什么等价", "equivalence_refs": ["tree:<根>/commands/..."]}],
+  "adapted": [{"atom": "a2", "action": "structural_completion", "text": "改写后的步骤", "commands": ["完整命令行"], "equivalence_reason": "为什么等价", "equivalence_refs": ["tree:<根>/commands/..."]}],
   "concretizations": [{"slot": "e1", "value": "具体值", "value_ref": "<来源引用>", "source_kind": "catalog"}],
   "unknowns": [{"missing": "缺什么", "next_action": "下一步", "audience": "编写模型", "due": "编写提交之前"}]
 }
 ```
 
-除 `item` 和 `method` 外都可以省略。没提到的原子算 `settled`。
+除 `item` 和 `method` 外都可以省略。没提到的用例原句算 `settled`。
 
 - `method.kind`：`declared` 作者写了验证方法；`recomposed` 方法在别的位置，你把它搬来；`missing` 确实没有，这时 `unknowns` 必须写明。
 - `knowledge_location`：`has_verification_knowledge` 期望可以判断；`recomposable_from_elsewhere` 判断依据在别处，`evidence` 写来源；`genuinely_missing` 真的没有，`proposal` 写缺什么。只有结果标签（如“设置成功”）而没有可判定的观察目标时，写 `genuinely_missing`，不要把标签当判据。
@@ -70,4 +70,4 @@ EOF
 
 ## 命令
 
-`adapted.commands` 写完整命令行，Hub 按锁定命令树解析。命令头不在树里就被拒，改之前先读树。作者写的命令不能丢，只能改参数。
+`adapted.commands` 写完整命令行，Hub 按锁定命令树解析。命令名不在树里就被拒，改之前先读树。作者写的命令不能丢，只能改参数。

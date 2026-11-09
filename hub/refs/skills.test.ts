@@ -91,10 +91,10 @@ test('new run records freeze skills and historical explicit bindings never modif
   const binding=await bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.1'],'合成历史声明');
   const resolved=await resolveReference(reference,ctx);assert.ok(resolved.resolved&&resolved.note?.includes('事后声明')&&resolved.note.includes(binding));
   assert.equal((await bed.kit.store.find({kind:'run',key:'runs.id',value:old.run,limit:1})).items[0].digest,saved.digest);
-  await assert.rejects(bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.1'],'重绑'),/不接受改绑/);
+  await assert.rejects(bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.1'],'重新绑定'),/不接受改绑/);
   const modern={...original.items[0].body,run:newId('run')};
   await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',created_at:original.items[0].created_at,body:modern,index:[{key:'runs.id',value:modern.run}]});
-  await assert.rejects(bindLegacySkills(options(),bed.admin,modern.run,['mindmap-format@1.0.1'],'重绑'),/已有冻结/);
+  await assert.rejects(bindLegacySkills(options(),bed.admin,modern.run,['mindmap-format@1.0.1'],'重新绑定'),/已有冻结/);
   await bed.registry.install(bed.admin,'mindmap-format@1.0.1');
   await bed.registry.uninstall(bed.admin,'mindmap-format');
   const restarted=createSkillParserRegistry({...options(),registry:bed.second()});

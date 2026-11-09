@@ -10,7 +10,7 @@
 - A44：`packs/product/famx/functions/commands.ts:18`；抽取：停止词、命令称呼及上下文字符决定自由文本里的命令边界。
 - A45：`packs/product/famx/functions/cases-commands.ts:35`；抽取/分类：英语排除表和唯一前缀缩写把标题/祖先文字归到命令。
 - A46：`scripts/real/gold/case-commands.ts:14`；抽取：短词、STOP 表、中英上下文和前缀缩写产生独立命令答案。
-- A47：`scripts/real/gold/regression-doc.ts:33`；抽取/分类：值词表、CJK、数字符号区分命令头和参数，含有目录分支仍复用文字分词。
+- A47：`scripts/real/gold/regression-doc.ts:33`；抽取/分类：值词表、CJK、数字符号区分命令名和参数，含有目录分支仍复用文字分词。
 - A48：`packs/product/famx/functions/command-tree.ts:33`；检查/分类：help_string 的 or/hostname/URL 等词改变参数域。
 - A49：`packs/product/famx/functions/command-tree.ts:190`；检查/分类：hostname、URL/list/empty、IP/address 决定 hostname/union/string 类型。
 - A50：`scripts/real/gold/catalog-marks.ts:119`；检查/分类：help 的 or/hostname/URL 将 DOTTEDIP 放宽到 STRING。

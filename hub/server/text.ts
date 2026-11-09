@@ -1360,7 +1360,7 @@ function contentText(c: Content, trace: string, context: TextContext): string {
 
 function resolveText(v: ResolveOut): string {
   if (v.call_result === 'error' || v.resolution === undefined) return errorText(v);
-  const head = [`${axisLabel('resolution')}：${labelOf('resolution', v.resolution)}，可能所指 ${v.references.length} 个（预览，不作凭据）`];
+  const head = [`${axisLabel('resolution')}：${labelOf('resolution', v.resolution)}，可能所指 ${v.references.length} 个（预览，不作依据）`];
   const references = v.references.map((r) => {
     const clip = new Clip(null, '读全文：用 get_nodes 按各可能所指的引用读');
     return clip.entry(`- ${r.reference}：${clip.field(r.text, CLIP.message, '可能所指原文的超出部分')}${r.role ? `（${labelOf('source_role', r.role)}）` : ''}`);

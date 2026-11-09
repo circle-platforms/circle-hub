@@ -25,7 +25,7 @@ export function recordFor(item: Row, file: Row, model: string): Row {
   if (file.method === undefined) throw new Error(`条目 ${item.id} 缺 method；写 {"kind":"declared|recomposed|missing","text":"...","sources":[...],"basis":"..."}`);
   const expectations = atoms.filter((a) => a.kind === 'expectation');
   const given = new Map(list(file.slots).map((slot) => [slot.atom, slot]));
-  for (const id of given.keys()) if (!expectations.some((a) => a.id === id)) throw new Error(`条目 ${item.id} 的 slots 写了 ${String(id)}，它不是这个用例的期望原子`);
+  for (const id of given.keys()) if (!expectations.some((a) => a.id === id)) throw new Error(`条目 ${item.id} 的 slots 写了 ${String(id)}，它不是该条目里期望的用例原句`);
   const slots = expectations.map((a, index) => ({ slot: `e${index + 1}`, atom: a.id, knowledge_location: 'has_verification_knowledge', evidence: [], proposal: null, ...given.get(a.id) }));
   const mapped: { [atom: string]: string[] } = {}, unmapped: string[] = [];
   for (const a of atoms) {
@@ -35,7 +35,7 @@ export function recordFor(item: Row, file: Row, model: string): Row {
     if (targets.length) mapped[a.id] = targets.map((slot) => slot.slot); else unmapped.push(a.id);
   }
   const states = new Map(list(file.states).map((state) => [state.atom, state]));
-  for (const id of states.keys()) if (atom(id) === undefined) throw new Error(`条目 ${item.id} 的 states 写了 ${String(id)}，这个用例没有这个原子`);
+  for (const id of states.keys()) if (atom(id) === undefined) throw new Error(`条目 ${item.id} 的 states 写了 ${String(id)}，该条目里没有这条用例原句`);
   const candidates = list(file.candidates).map((row) => ({ found_by: model, ...row, signing_authority: false }));
   return {
     schema: 'recompose-record@1',

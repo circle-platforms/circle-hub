@@ -56,7 +56,7 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; leftOut?: string; rounds?: number; closing?: Closing }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; closing?: Closing }
 export interface Assembly {
   cases: CaseOutcome[];
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
@@ -68,9 +68,10 @@ export interface Assembly {
 
 /**
  * Settles every case of the document from the dispatches in the order they ran. The pass volume is the latest dispatch that
- * passed whole (the final verification: the reference engine delivers only a volume dispatched on its own and passed item by
- * item) after which none of its cases failed; a later dispatch may rerun its cases if they pass again, and may try other cases.
- * Every case whose latest verdict is a pass must be in it, or it was never final-verified with the volume it would ship in.
+ * passed whole after which none of its cases failed; a later dispatch may rerun its cases if they pass again, and may try other
+ * cases. As in the reference engine, every case whose latest verdict is a pass goes to the bed in that one volume and passes
+ * there item by item: a pass outside it was never run with the volume it would ship in, so the delivery is refused until such a
+ * volume is dispatched (run 15 ran fourteen passes together, reran one alone, and that one became the only delivered case).
  */
 export function assemble(population: string[], dispatches: Dispatch[]): Assembly {
   if (!population.length || new Set(population).size !== population.length) throw new Error('用例清单为空或有重复的 autoid');
@@ -83,8 +84,9 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   const holds = (k: number) => dispatches.slice(k + 1).every((later) => later.rows.every((r) => !dispatches[k].items.includes(r.item) || r.dynamic_terminal === 'pass'));
   const at = dispatches.findLastIndex((d, k) => passedWhole(d) && holds(k));
   const pass = at < 0 ? null : dispatches[at];
-  // Without a pass volume a case that passed has never been final-verified: dispatch one. With one, a case that passed but was
-  // left out of it (judged unstable, say) is not delivered and is reported as such; nothing is delivered unverified either way.
+  // Every latest pass belongs in the pass volume; without one, or with passes outside it, dispatch the volume that holds them all.
+  const outside = pass ? lastPassed.filter((item) => !pass.items.includes(item)) : [];
+  if (pass && outside.length) throw new Error(`最近一次上机通过的 ${outside.join('、')} 不在最后一次整卷全部通过的那一卷（核验运行 ${pass.run}）里。所有最近一次上机通过的用例要放在同一卷里一起整卷上机、逐条通过才交付：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交所有最近一次上机通过的用例的计划，生成、核验、派发，再组交付`);
   if (!pass && lastPassed.length) throw new Error(`还没有一次整卷全部通过、之后也没再失败的上机，${lastPassed.join('、')} 最近一次上机通过了。通过卷要单独整卷上机：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交通过用例的计划，生成、核验、派发，再把那次核验运行加到 --runs 末尾`);
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
@@ -92,7 +94,6 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
     if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history };
     const latest = history.at(-1);
     if (!latest) return { autoid, status: 'unrun' as const, history };
-    if (latest.terminal === 'pass') return { autoid, status: 'unsettled' as const, history, leftOut: pass!.run };
     return { autoid, status: latest.terminal === 'fail' ? 'failed' as const : 'unsettled' as const, history };
   });
   const unpassed = cases.filter((c) => c.status === 'failed' || c.status === 'unsettled').map((c) => c.autoid);
@@ -205,14 +206,14 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
       return outcome;
     }
     if (used >= MAX_ROUNDS) return { ...outcome, rounds: used, closing: 'authoring_failure' as const };
-    problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它收口：环境缺数据、缺拓扑、缺前置这类文字主张不是凭据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）可以提前收口`);
+    problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置这类文字主张不是依据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）可以提前定下结论`);
     return outcome;
   });
   return { cases: closed, problems };
 }
 /** The closing of a case as one line: what it is and the fact it rests on. */
 export function closingLine(outcome: CaseOutcome): string | null {
-  if (outcome.closing === 'authoring_failure') return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是收口凭据。`;
+  if (outcome.closing === 'authoring_failure') return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
   return null;
 }
@@ -222,7 +223,7 @@ export const terminalLabel = (terminal: string): string => isDynamicTerminal(ter
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   if (!outcome.history.length) return excluded ? '没有上机：计划运行用 parameters.exclude 排除了这一条，没有编出可执行的计划。' : '没有上机：没有一次派发包含这一条。';
   const steps = outcome.history.map((h) => `第 ${h.ordinal} 次上机（核验运行 ${h.run}）：${terminalLabel(h.terminal)}${h.audit ? `（运行器报通过，但 ${h.audit.where} 里有执行失败的设备原话“${h.audit.line}”，本条断言没有读它，不算通过）` : ''}`).join(' → ');
-  return outcome.leftOut ? `${steps}；最近一次通过了，但不在终验（核验运行 ${outcome.leftOut}）的通过卷里，没有交付。` : steps + '。';
+  return steps + '。';
 }
 
 export interface ReportInput {

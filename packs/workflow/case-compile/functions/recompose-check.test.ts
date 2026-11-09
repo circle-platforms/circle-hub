@@ -5,7 +5,7 @@ import { checkRecomposition } from './recompose-check.ts';
 const outcomes = (f: ReturnType<typeof fixture>) => checkRecomposition({ subject: f.subject });
 test('the migrated synthetic complete path has exact original atoms and verified receipts', () => { const f = fixture(); assert.deepEqual(outcomes(f).map(o => o.verdict), ['support'], JSON.stringify(outcomes(f))); });
 for (const name of ['underdetermined', 'missing-prerequisite'] as const)
-    test(name + ' goes on to the writer with its reason, as in InfoTest (decision 155)', () => { const f = fixture(name); f.record.status = 'complete'; f.record.unknowns = f.record.unknowns ?? []; const result = outcomes(f); assert.ok(!result.some(o => /^原子 .* 状态 /.test(o.statement)), JSON.stringify(result)); assert.ok(f.record.sources.states.some((s: any) => s.state !== 'settled')); });
+    test(name + ' goes on to the writer with its reason, as in InfoTest (decision 155)', () => { const f = fixture(name); f.record.status = 'complete'; f.record.unknowns = f.record.unknowns ?? []; const result = outcomes(f); assert.ok(!result.some(o => /^用例原句 .* 状态 /.test(o.statement)), JSON.stringify(result)); assert.ok(f.record.sources.states.some((s: any) => s.state !== 'settled')); });
 test('conflict between two signed sources refuses completion without choosing a side', () => { const f = fixture('conflict'); assert.ok(outcomes(f).some(o => o.verdict === 'refute' && o.data?.status === 'refused')); });
 for (const [name, mutate, code] of [
     ['quote', (f: any) => f.record.contract.expectation.text = '非原文', 'quote_not_verbatim'],

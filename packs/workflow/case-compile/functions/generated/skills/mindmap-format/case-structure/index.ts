@@ -132,7 +132,7 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
         const take = (n: any, kind: AuthorAtom['kind'], after: AuthorAtom[]) => {
             const text = typeof n.text === 'string' ? n.text : '', sel = typeof n.selector === 'string' ? n.selector : '';
             if (!text.length) {
-                missing.push('存在空的作者原子；作者补完整原文');
+                missing.push('存在空的用例原句；作者补完整原文');
                 return [];
             }
             const starts = lineStarts(text);

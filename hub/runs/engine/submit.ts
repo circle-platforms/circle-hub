@@ -559,14 +559,14 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
 /** Whole-submission boundary; an unruled interpreter is preserved but never executed. */
 export function runtimeCheckProblems(workflow: LoadedWorkflow, items: readonly {id:string}[], submission: Submission): ProtocolError[] {
   const errors: ProtocolError[] = [];
-  const add = (path:string,message:string) => errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION',message,{path,fix:'按要求项的 run_table 和已发布台账修正；样例必须引用本运行的条目后重交'}));
+  const add = (path:string,message:string) => errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION',message,{path,fix:'按要求项的 run_table 和已发布的裁定清单修正；样例必须引用本运行的条目后重交'}));
   for (const [i,check] of (submission.checks ?? []).entries()) {
     const at = pointerOf('checks',i);
     const requirement = workflow.requirements.find(r=>r.key===check.requirement);
     if (!requirement?.run_table) add(at+'/requirement','要求项没有声明允许运行内的表');
     if (workflow.ledger?.shapes.some(row=>row.requirement===check.requirement && row.interpreter===check.interpreter)) {
       const interpreter = getInterpreter(check.interpreter);
-      if (!interpreter || interpreter.validateTable(check.table).length) add(at+'/table','表不符合台账允许的解释器格式');
+      if (!interpreter || interpreter.validateTable(check.table).length) add(at+'/table','表不符合裁定清单允许的解释器格式');
     }
     check.samples.forEach((sample,j)=>{
       if (!items.some(item=>item.id===sample.item)) add(at+`/samples/${j}/item`,'样例不在本运行的条目中');

@@ -32,7 +32,7 @@ EOF
    - 跨用例：多条失败同一症状时先找共同的前置。“全都坏了”的解释必须说明为什么别的用例过了。
    - 排除以上才判环境或产品。判产品要说得清：作者期望被忠实实现、手册要求的前置都配了、观察方法和对象没错。说不清就写“未定”，下一轮在被测命令前加只读观察区分，不写成产品问题，不建议提缺陷。
 
-   设备回显只用来理解失败，不抄进期望：回显点名的命令或配置先在锁定命令树和手册读到再改计划；说明不了的推断（时序、等待）是判断，写明预测，不符就换假设。只改失败用例，已通过用例的计划逐字不变。返工、终验和交付目录照 <技能目录>/tools/delivery.md 做完，中途不问用户。之后作业都有终态时用 test-bed release 释放该预订。
+   设备回显只用来理解失败，不抄进期望：回显点名的命令或配置先在锁定命令树和手册读到再改计划；说明不了的推断（时序、等待）是判断，写明预测，不符就换假设。只改失败用例，已通过用例的计划逐字不变。返工、最后一次整卷上机和交付目录照 <技能目录>/tools/delivery.md 做完，中途不问用户。之后作业都有终态时用 test-bed release 释放该预订。
 
 等待写 max_wait_seconds 内的正整数秒；断言 text 同普通参数的取值规则。
 
@@ -42,9 +42,9 @@ allowed 只提供已声明范围内的收紧配置，不能替代原合约的参
 
 喂入层：经 Hub 读到的用例、缺陷、构建、规格由程序自动喂入（带冻结序号），视图只读冻结序号之前的喂入；客户端只经 knowledge-contribution 回注程序填不了的语义（带逐字引文）。
 
-## 自动化测试环境适配、前置与清理（写计划前先读完）
+## 按自动化测试环境改写、前置与清理（写计划前先读完）
 
-环境事实来自 start_run 答复里的 inventory（test-bed-manifest@1）：每台设备的类型、每个接口的地址与所在网段、每个网段上有哪些设备、服务清单里哪台设备在哪个网段提供触发通路。模型据此自己适配，不需人再指定：
+环境事实来自 start_run 答复里的 inventory（test-bed-manifest@1）：每台设备的类型、每个接口的地址与所在网段、每个网段上有哪些设备、服务清单里哪台设备在哪个网段提供触发通路。模型据此自己改写，不需人再指定：
 
 - 选口与选地址：从清单为本步骤选未被占用的接口与地址；不得选用承载监听或触发通路的接口与地址（服务清单列出的 host 及其地址）。需要新地址时选空闲地址并写进计划；被改动地址的接口必须在清理段恢复原地址（原文地址照抄清单）。
 - 前置补齐：断言结果必须真实可产生。平面查询类断言先在 steps 前部安排创建步骤，块计划先建被查记录；配置类先写入再查询。前置操作在触发前。
@@ -77,9 +77,9 @@ RESTORE_FROM 在改动前捕获原文，末尾同设备、逆序恢复，for 精
 每条的 fields.recomposition 是这个用例的重组记录：
 
 - record.contract：契约，意图、验证方法和期望。
-- record.ledgers.adapted、concretizations：适配后的步骤和具体值。
-- record.sources.states 里不是 settled 的原子和 record.unknowns：要你补的缺口。
+- record.ledgers.adapted、concretizations：改写后的步骤和具体值。
+- record.sources.states 里不是 settled 的用例原句和 record.unknowns：要你补的缺口。
 
 缺口由你在计划里解决：missing_prerequisite 写的前置要成为计划的步骤；underdetermined 选一个保持原意的写法，在 description 说明；conflict 交用户决定。环境绑定是编写的工作：重组记录和环境无关，主机、接口和地址在这里按清单选。
 
-plan.data.recomposition 写 {receipt, case_id, slots:[{slot, assertions}], rebindings:[]}。receipt 取 fields.recomposition.receipt，case_id 取 record.case.id，slots 给每个期望位列本计划的断言：平面计划写 expects 从 1 起的序号，块计划写断言 id。断言的 quote 要逐字等于那个期望原子。期望位没有断言记未知，不能漏。
+plan.data.recomposition 写 {receipt, case_id, slots:[{slot, assertions}], rebindings:[]}。receipt 取 fields.recomposition.receipt，case_id 取 record.case.id，slots 给每个期望的判断依据列本计划的断言：平面计划写 expects 从 1 起的序号，块计划写断言 id。断言的 quote 要逐字等于该期望的用例原句。某条期望还没有断言时记未知，不能漏。

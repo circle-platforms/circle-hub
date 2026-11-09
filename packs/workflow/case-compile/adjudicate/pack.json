@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose-adjudication",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "kind": "workflow",
   "title": "recompose-adjudication",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "95710166ba5e3126adb15405443ee32a8c085841be5f7498feaae9f74584b1ac",
-      "size": 1229
+      "sha256": "eb0fc5e8f5845a1fd9787abf7a41198f9d96dbb1788012f540c0d4da65a7b433",
+      "size": 1244
     },
     {
       "path": "functions/project.ts",
@@ -38,7 +38,7 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "7b4baf5c483ff1b2984ba62a6482b8aa33a836fa536bceb405a68b378fb10729",
+      "sha256": "fc4a99910c08ac0e3ef8409537cf26790b5d1866e79b651dd0281a6e59db44be",
       "size": 4185
     },
     {
@@ -83,8 +83,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "d3c71245bc1271cbefddd28d242da8102cb4d0091685dd6ce629da9d3ed7d612",
-      "size": 271
+      "sha256": "5fa7f8c7187a5e712274c1ccbed17144cd10884c87a0b077ba2cc6c4b9ff63af",
+      "size": 277
     },
     {
       "path": "tables/decision.schema.json",

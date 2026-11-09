@@ -270,7 +270,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       if (ledger!.shapes.findIndex(r => r.requirement === row.requirement && r.interpreter === row.interpreter) !== i) c.add(problem('ledger.duplicate', 'ledger.json', '同一判定形状重复裁定', '删除重复的形状', {field}));
     }
     requirements.requirements.forEach((r,i) => {
-      if (r.run_table && !ledger?.shapes.some(shape=>shape.requirement===r.key)) c.warn(problem('ledger.unruled','requirements.json',`要求项 ${r.key} 的台账为空，带来的表都会是未裁定`, '由包作者在下一版 ledger.json 裁定允许的解释器', {field:`/requirements/${i}/run_table`}));
+      if (r.run_table && !ledger?.shapes.some(shape=>shape.requirement===r.key)) c.warn(problem('ledger.unruled','requirements.json',`要求项 ${r.key} 的裁定清单为空，带来的表都会是未裁定`, '由包作者在下一版 ledger.json 裁定允许的解释器', {field:`/requirements/${i}/run_table`}));
     });
   }
 

@@ -154,7 +154,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (args.recompose) {
       const exported = JSON.parse(decode(await get(`${origin}/run-export/${args.recompose}/run`, bearer)));
       if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 给的重组运行不合式或不是 --recompose 指定的');
-      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组运行的条目没有 case_id 和原子，不是重组运行'); population.push(read.autoid); originals[read.autoid] = read.original; }
+      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组运行的条目没有 case_id 和用例原句，不是重组运行'); population.push(read.autoid); originals[read.autoid] = read.original; }
     }
     const excluded = [...new Set([...plans.values()].flatMap((p) => excludedOf(p.run)))];
     for (const d of dispatches) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
@@ -202,7 +202,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     let passFile: { sha256: string } | null = null, unsuccessfulFile: { sha256: string } | null = null;
     if (assembly.pass) {
       const bytes = generateWorkbookSet(recipesOf(plans.get(assembly.pass.plan_run)!));
-      if (sha256(bytes) !== assembly.pass.sha256) throw new Error(`从计划运行 ${assembly.pass.plan_run} 重算的工作簿和核验运行 ${assembly.pass.run} 派发的那份字节不一致；通过卷只能是终验上机的那份`);
+      if (sha256(bytes) !== assembly.pass.sha256) throw new Error(`从计划运行 ${assembly.pass.plan_run} 重算的工作簿和核验运行 ${assembly.pass.run} 派发的那份字节不一致；通过卷只能是最后一次整卷上机的那份`);
       outputs.push({ name: 'case.xlsx', bytes }); passFile = { sha256: assembly.pass.sha256 };
     }
     if (assembly.unsuccessful) {

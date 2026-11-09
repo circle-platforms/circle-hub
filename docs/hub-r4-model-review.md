@@ -16,7 +16,7 @@
 | **里程碑 1 范围内元素** | **65** | 89.0% | 本里程碑应实现与落地的模型规范（含决定 9/16 带入的 W09 与 D04） |
 | ├─ **落实（Fully Implemented）** | **55** | 75.3% (占范围 84.6%) | 规则完整落地于核心代码，并由自动化测试严密覆盖 |
 | ├─ **部分落实（Partially Implemented）** | **7** | 9.6% (占范围 10.8%) | 核心机制已实现，辅助特性（如写候选层、人工接管区间、效果前边界）受里程碑边界约束暂未开放（A05、K03、K04、C06、D03、P11）；P05 见下面的更正 |
-| └─ **没落实（Not Implemented）** | **3** | 4.1% (占范围 4.6%) | 模型已定义但在当前代码中缺失（W04 判定台账、W10 判据变更声明、V07 多轮重复策略） |
+| └─ **没落实（Not Implemented）** | **3** | 4.1% (占范围 4.6%) | 模型已定义但在当前代码中缺失（W04 裁定清单、W10 判据变更声明、V07 多轮重复策略） |
 
 ---
 
@@ -32,9 +32,9 @@
 3. **V07 重复策略（k-of-n / all / first_pass 多轮聚合）未进入运行引擎（未落实）**
    - **模型要求**：间歇性波动观察须按配置策略（`all`、`k_of_n`、`first_pass`）执行多次运行并呈现观测分布（如 `3/3 未见失败`），混合结果记未知。
    - **实现现状**：词表生成了聚合轴，但运行引擎 `hub/runs/engine/terminals.ts` 仅按单次提交与修复轮数计算终态，未实现多轮聚合器。
-4. **W04 判定台账与运行期未裁定形状流转机制缺失（未落实）**
-   - **模型要求**：运行中遇到台账外的判定形状不挂起，相关项记为“判断（判定形状未裁定）”，下版由包作者裁定进台账。
-   - **实现现状**：未建判定台账实体；遇到未声明解释器的检查在发布包校验阶段即直接拦截拒绝（`checks.interpreter_missing`），无法在运行中作为未裁定形状流转。
+4. **W04 裁定清单与运行期未裁定形状流转机制缺失（未落实）**
+   - **模型要求**：运行中遇到裁定清单外的判定形状不挂起，相关项记为“判断（判定形状未裁定）”，下版由包作者裁定进裁定清单。
+   - **实现现状**：未建裁定清单实体；遇到未声明解释器的检查在发布包校验阶段即直接拦截拒绝（`checks.interpreter_missing`），无法在运行中作为未裁定形状流转。
 5. **K03/K04 个人候选层写入与模型智能归位通道未开通（部分落实）**
    - **模型要求**：知识树支持树本身、观察层、个人候选层三层写入；无显式路径的片段可由 bot 提议归位并由 Hub 确定性核验。
    - **实现现状**：受 2026-10-22 所有者决定（决定 15：“Hub 不调用判断模型”）约束，严格落实了确定性规则归类与未归位存根，但个人候选层写入（架构第 1 节明确排除）和智能归位提议通道未开放。
@@ -208,7 +208,7 @@
 | **W01** | 条目与条目投影 | item & item projection | 工作结构 | 在范围 | **落实** | `contracts/src/pack.ts`<br>`hub/runs/engine/projection.ts` | `hub/runs/engine/projection-source.test.ts:95`<br>two sources with the same node ids: with source, each item resolves in its own source | 任务包的 project 函数将输入源文件（脑图/文档）投影成具稳定 ID、位置与字段的条目集合。 |
 | **W02** | 要求项 | requirement | 工作结构 | 在范围 | **落实** | `contracts/src/pack.ts`<br>`hub/runs/packs/validate.ts`<br>`hub/runs/engine/terminals.ts` | `hub/runs/packs/validate.test.ts:63`<br>every check a requirement lists exists, once<br><br>`hub/runs/packs/validate.test.ts:86`<br>a blocking check names its contract clause (C05 R[1])<br><br>`hub/runs/packs/validate.test.ts:390`<br>every check must declare an explicit tier upon publication: missing tier is refused, declaring tier is accepted | 声明静态检查、判断或执行要求，带依据条款、默认档位与覆盖层，发布校验强制要求完整声明。 |
 | **W03** | 工作流 | workflow | 工作结构 | 在范围 | **落实** | `contracts/src/pack.ts`<br>`hub/runs/engine/start.ts`<br>`hub/runs/packs/registry.ts` | `hub/runs/engine/start.test.ts:36`<br>a review run: target, sources, items, slots, the frozen record and the action<br><br>`hub/runs/engine/start.test.ts:149`<br>inputs: required slots, unknown slots, accepted types, readable references, whole sources | 绑定要求项模板与产品线，声明输入槽位、上下文需求（builds、leases）与目录需求。 |
-| **W04** | 判定形状与判定台账 | verdict shapes & ledger | 工作结构 | 在范围 | **没落实** | `contracts/model.json`<br>`hub/runs/packs/validate.ts` | `hub/runs/packs/validate.test.ts:69`<br>a check's table exists under tables/ or policies/, is JSON and passes the interpreter's admission | 核心代码未建立判定台账；遇到未安装解释器在包发布校验阶段直接拒绝，无法在运行中作为未裁定形状流转。 |
+| **W04** | 判定形状与裁定清单 | verdict shapes & ledger | 工作结构 | 在范围 | **没落实** | `contracts/model.json`<br>`hub/runs/packs/validate.ts` | `hub/runs/packs/validate.test.ts:69`<br>a check's table exists under tables/ or policies/, is JSON and passes the interpreter's admission | 核心代码未建立裁定清单；遇到未安装解释器在包发布校验阶段直接拒绝，无法在运行中作为未裁定形状流转。 |
 | **W05** | 中间表示与槽位 | IR & slots | 工作结构 | 在范围 | **落实** | `contracts/src/pack.ts`<br>`hub/runs/engine/slots.ts` | `hub/runs/engine/slots.test.ts:89`<br>a valid submission has no structure problems<br><br>`hub/runs/engine/slots.test.ts:192`<br>specificFix renders expected shape dynamically from synthetic slot schema and real commands schema | 任务包声明 slots.schema.json，Hub 在提交前用 JSON 指针和通用 Schema 校验输入形状与动态推导错误提示。 |
 | **W06** | 运行 | run | 工作结构 | 在范围 | **落实** | `contracts/src/run.ts`<br>`hub/runs/engine/start.ts`<br>`hub/runs/engine/store.ts` | `hub/runs/engine/start.test.ts:36`<br>a review run: target, sources, items, slots, the frozen record and the action<br><br>`hub/runs/engine/start.test.ts:213`<br>a client key returns the same run inside its window; other content is IDEMPOTENCY_MISMATCH; an expired key starts a new run | start_run 冻结运行目标、要求项、知识根、输入源与租约上下文，存储为 run 记录并保障客户端幂等窗口。 |
 | **W07** | 提交 | submission | 工作结构 | 在范围 | **落实** | `contracts/src/submission.ts`<br>`hub/runs/engine/submit.ts`<br>`hub/runs/engine/evaluate.ts` | `hub/runs/engine/submit.test.ts:74`<br>an accepted submission: terminals, satisfaction, attribution, partitions, derived counts<br><br>`hub/runs/engine/submit.test.ts:191`<br>the submission is stored exactly as received, even when it is not accepted | submit_result 接收槽位填充主张，重跑沙箱检查，校验事实与主张，计算终态和分区清单，返回回执。 |

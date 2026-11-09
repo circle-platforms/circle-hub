@@ -127,15 +127,13 @@ test('a last dispatch with mixed verdicts, a regenerated workbook that differs a
   await assert.rejects(readdir(out), 'nothing was written');
 });
 
-test('a passed case left out of the pass volume is reported, not delivered; with no pass volume a pass is refused; an all-fail last dispatch delivers nothing', () => {
+test('a recent pass outside the pass volume refuses the delivery, as does a pass with no pass volume; an all-fail last dispatch delivers nothing', () => {
   const d = (run: string, items: string[], verdicts: string[]) => ({ run, job: 'j-' + run, plan_run: PLAN1, sha256: 'c'.repeat(64), items, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k] })) });
-  const left = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0]], ['pass'])]);
-  assert.equal(left.pass?.run, FINAL);
-  assert.deepEqual(left.totals, { cases: 3, delivered: 1, failed: 1, unsettled: 1, unrun: 0 });
-  const out = left.cases.find((c) => c.autoid === CASES[2])!;
-  assert.equal(out.status, 'unsettled');
-  assert.match(timeline(out, false), /第 1 次上机（核验运行 run_01a+）：通过；最近一次通过了，但不在终验（核验运行 run_01b+）的通过卷里，没有交付。/);
-  assert.deepEqual(left.unsuccessful?.items, [CASES[1], CASES[2]]);
+  // Run 15's shape: the passes ran together, one was rerun alone and passed; the volume that ships must hold every recent pass.
+  assert.throws(() => assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0]], ['pass'])]), /最近一次上机通过的 990000000000000103 不在最后一次整卷全部通过的那一卷（核验运行 run_01b+）里。所有最近一次上机通过的用例要放在同一卷里一起整卷上机/);
+  const together = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0], CASES[2]], ['pass', 'pass'])]);
+  assert.deepEqual(together.totals, { cases: 3, delivered: 2, failed: 1, unsettled: 0, unrun: 0 });
+  assert.match(timeline(together.cases[1], false), /^第 1 次上机（核验运行 run_01a+）：失败。$/);
   assert.throws(() => assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass'])]), /还没有一次整卷全部通过、之后也没再失败的上机，990000000000000101、990000000000000103 最近一次上机通过了/);
   const none = assemble(CASES.slice(0, 2), [d(WHOLE, CASES.slice(0, 2), ['fail', 'no_verdict'])]);
   assert.equal(none.pass, null); assert.deepEqual(none.totals, { cases: 2, delivered: 0, failed: 1, unsettled: 1, unrun: 0 });
@@ -197,11 +195,9 @@ test('after the final verification, a rerun of other cases that passes nothing l
   assert.equal(settled.pass?.run, FINAL);
   assert.deepEqual(settled.unsuccessful?.items, [CASES[1]]);
   assert.equal(settled.unsuccessful?.sources[CASES[1]].run, retry.run);
-  // A later volume that passed whole becomes the pass volume; passes outside it are not delivered.
+  // A later volume that passed whole while recent passes stay outside it is not a delivery: they go to the bed together first.
   const extra = { ...retry, run: 'run_01rrrrrrrrrrrrrrrrrrrrrrrr', items: [CASES[1]], rows: [{ item: CASES[1], dynamic_terminal: 'pass' }] };
-  const later = assemble(CASES, [...dispatches, retry, extra]);
-  assert.equal(later.pass?.run, extra.run);
-  assert.deepEqual(later.cases.filter((c) => c.status === 'unsettled').map((c) => c.autoid), [CASES[0], CASES[2]]);
+  assert.throws(() => assemble(CASES, [...dispatches, retry, extra]), /最近一次上机通过的 990000000000000101、990000000000000103 不在最后一次整卷全部通过的那一卷（核验运行 run_01r+）里/);
 });
 
 test('the verification runs the model left out are found in the Hub lineage, and the reply holds only counts and paths', async (t) => {
@@ -253,7 +249,7 @@ test('a failed case goes back to authoring until three authored versions failed;
   const once = await hub(); t.after(once.close);
   const early = await run(once, await notes(judgedOnly), join(dir, 'a'));
   assert.equal(early.code, 1);
-  assert.match(early.stderr, /用例 990000000000000102 上机没通过的编写轮次是 1，还不到 3 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它收口：环境缺数据、缺拓扑、缺前置这类文字主张不是凭据，照用例原样继续编写/);
+  assert.match(early.stderr, /用例 990000000000000102 上机没通过的编写轮次是 1，还不到 3 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置这类文字主张不是依据，照用例原样继续编写/);
   const unquoted = await run(once, await notes({ ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], defect_candidate: { ...CANDIDATE, expected: '作者没写过的期望', actual: '设备说一切正常' } } }), join(dir, 'b'));
   assert.equal(unquoted.code, 1);
   assert.match(unquoted.stderr, /用例 990000000000000102 的 defect_candidate：expected 不是这条用例作者期望原文里的字；actual 不是它最后一次上机设备返回里的原话/);
@@ -277,7 +273,7 @@ test('a failed case goes back to authoring until three authored versions failed;
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /上机未通过 1，上机没有结论 0，没有上机 1。上机未通过的终态：模型未找到解决方案 1。/);
   assert.match(report, /- 编号 `990000000000000102` · 状态：上机未通过 · 上机 3 次 · 终态：模型未找到解决方案/);
-  assert.match(report, /\*\*结论\*\*：模型未找到解决方案：编写 3 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是收口凭据。\n\n\*\*怎么判断的\*\*：合成判断：环境缺前置/);
+  assert.match(report, /\*\*结论\*\*：模型未找到解决方案：编写 3 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。\n\n\*\*怎么判断的\*\*：合成判断：环境缺前置/);
 
   // A verbatim defect candidate closes it after one round and is shown as a candidate for arbitration.
   const candidateOut = join(dir, 'f');

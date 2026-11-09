@@ -32,7 +32,7 @@ export function recompositionProblem(runInput: any, resultInput: any, context: a
     const how = 'recomposition_run 绑重组运行的运行记录（rec:），recomposition_result 绑重组运行号（run_…，Hub 换成该运行已受理的结果）';
     if (!run) return `recomposition_run 绑的是 ${kindOf(runInput)} 记录 ${named(runInput)}，不是重组运行的运行记录${same ? '：两个槽写成了同一个引用' : ''}；${how}`;
     if (!result) return `recomposition_result 绑的是 ${kindOf(resultInput)} ${named(resultInput)}，不是重组运行已受理的结果；${how}`;
-    if (run.body.pack !== T.packs.stage + '@1.1.1') return `recomposition_run 是 ${run.body.pack} 的运行，不是 ${T.packs.stage}@1.1.1 的重组运行`;
+    if (run.body.pack !== T.packs.stage + '@1.1.2') return `recomposition_run 是 ${run.body.pack} 的运行，不是 ${T.packs.stage}@1.1.2 的重组运行`;
     if (result.body.schema !== 'validation@1' || result.body.run !== run.body.run) return `recomposition_result 不是重组运行 ${run.body.run} 的结果（它属于 ${result.body.run}）`;
     if (result.body.acceptance !== 'accepted') return `重组运行 ${run.body.run} 的这份结果没有被受理；按它的回执改正重交，受理后再绑定`;
     if (result.body.locks?.pack !== run.body.pack || result.body.locks?.pack_digest !== run.body.pack_digest) return `重组结果锁定的包和重组运行 ${run.body.run} 的包不一致`;
@@ -65,24 +65,24 @@ export function recompositionGaps(slots: PlanSlots, proof: any): Array<{
     const expects = slots.expects.map((e, i) => ({ ...e, identity: e.id ?? String(i + 1) })), assigned = new Set<string>();
     for (const row of use.slots) {
         if (!proof.record.expectation_slots.some((s: any) => s.slot === row.slot))
-            note('映射含重组产物之外的期望位', 'refute');
+            note('对应关系里有重组记录之外的期望判断依据', 'refute');
         for (const id of row.assertions) {
             if (assigned.has(id))
-                note('不同期望位不能共用一个断言替代履约', 'refute');
+                note('不同的期望判断依据不能共用一个断言', 'refute');
             assigned.add(id);
         }
     }
     for (const slot of proof.record.expectation_slots) {
         const rows = use.slots.filter(r => r.slot === slot.slot);
         if (rows.length !== 1 || !rows[0].assertions.length) {
-            note('重组期望位 ' + slot.slot + ' 缺独立断言履约；等待编写模型提交前补齐');
+            note('重组记录里的期望判断依据 ' + slot.slot + ' 还没有自己的断言；编写模型提交前补齐');
             continue;
         }
         const atom = proof.record.atoms.find((a: any) => a.id === slot.atom);
         for (const id of rows[0].assertions) {
             const e = expects.find(e => e.identity === id);
             if (!e || e.quote.reference !== atom?.quote_ref || e.quote.text !== atom?.text || slot.criterion_id !== undefined && e.criterion !== slot.criterion_id)
-                note('重组期望位 ' + slot.slot + ' 的断言、逐字原子或判据 id 不相等', 'refute');
+                note('重组记录里的期望判断依据 ' + slot.slot + ' 的断言、用例原句的原文或判据 id 对不上', 'refute');
         }
     }
     return issues;

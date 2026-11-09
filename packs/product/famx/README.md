@@ -1117,7 +1117,7 @@ systems have not been read or validated; the integrator supplies the actual bran
 
 ### famx-red-b 测试修复记录
 
-三块生产接线测试按 R2/R4/R6 的精确结构规则更新；无锁定树、容错 XML 和正文许可都不能恢复旧推断。用例来源字节变化须重绑摘要与位置，完整条目比较逐条进行，避免失败时格式化巨型数组。命令树 optional 非法字段保留全部结构诊断，重复警告按字段汇总；见 [任务记录](../../../docs/hub-r4-tasks/famx-red-b.md)。
+三块生产接线测试按 R2/R4/R6 的精确结构规则更新；无锁定树、容错 XML 和正文许可都不能恢复旧推断。用例来源字节变化须重新绑定摘要与位置，完整条目比较逐条进行，避免失败时格式化巨型数组。命令树 optional 非法字段保留全部结构诊断，重复警告按字段汇总；见 [任务记录](../../../docs/hub-r4-tasks/famx-red-b.md)。
 
 ## famx-trunk-red 收尾
 

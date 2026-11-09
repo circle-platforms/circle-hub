@@ -30,8 +30,8 @@ test('what the model judged replaces only the atom it names', () => {
 
 test('a candidate never signs, and an atom the case does not have is refused', () => {
   assert.equal(recordFor(item(), { method, candidates: [{ ref: 'x', signing_authority: true }] }, 'scripted').sources.candidates[0].signing_authority, false);
-  assert.throws(() => recordFor(item(), { method, states: [{ atom: 'a9', state: 'conflict' }] }, 'scripted'), /没有这个原子/);
-  assert.throws(() => recordFor(item(), { method, slots: [{ atom: 'a1' }] }, 'scripted'), /不是这个用例的期望原子/);
+  assert.throws(() => recordFor(item(), { method, states: [{ atom: 'a9', state: 'conflict' }] }, 'scripted'), /没有这条用例原句/);
+  assert.throws(() => recordFor(item(), { method, slots: [{ atom: 'a1' }] }, 'scripted'), /不是该条目里期望的用例原句/);
   assert.throws(() => recordFor(item(), {}, 'scripted'), /缺 method/);
 });
 

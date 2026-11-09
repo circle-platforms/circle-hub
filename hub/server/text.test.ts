@@ -1140,7 +1140,7 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     const answer = ResolveReferenceOutput.parse({ call_result: 'ok', errors: [], resolution: 'ambiguous', references, diagnostics: ['这是预览，不是证据'], trace: TRACE });
     const text = toolText('resolve_reference', answer);
     withinBudget(text, 'resolve');
-    assert.equal(linesOf(text)[0], '解析状态：有歧义，可能所指 2000 个（预览，不作凭据）');
+    assert.equal(linesOf(text)[0], '解析状态：有歧义，可能所指 2000 个（预览，不作依据）');
     assert.equal(linesOf(text).filter((l) => l.startsWith(`- src:${H('e')}/text@1/l/`)).length, 2000, 'every candidate');
     assert.match(noteOf(text)!, /可能所指原文的超出部分（40 处）/, 'a long candidate keeps its start and is named');
   });

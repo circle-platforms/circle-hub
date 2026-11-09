@@ -209,7 +209,7 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 | `buildsite.command_check` | `{build,commands:[...]}` | build/sourceSha256/ruleVersion/commands；每条含 status=`hit` 或 `missing`、head、arguments、violations、matchedSignatures、signatureChecks |
 | `docs.list` / `docs.get` | `{path?,page?,limit?}` / `{file}` | root/path/files/total/page/limit/nextPage/revision / path/contentBase64 |
 | `docs.search` | `{query,path?,version?,limit?,after?}` | hits：file/line/snippet/sourceSha256；行号从 1 开始；nextCursor/revision/coverage/limits 说明当前页与完整范围 |
-| `docs.section` | `{file,anchor}` 或 `{file,line,window?}` | file/lines[{line,text}]/sourceSha256；anchor 对应以 `**<命令头>**` 开头的小节；窗口默认 40、最多 80 行，超长小节明确失败 |
+| `docs.section` | `{file,anchor}` 或 `{file,line,window?}` | file/lines[{line,text}]/sourceSha256；anchor 对应以 `**<命令名>**` 开头的小节；窗口默认 40、最多 80 行，超长小节明确失败 |
 | `zentao.bug_search` | `{keyword?,product?,status?,severity?,assignedTo?,openedBy?,lastEditedDate_start?,lastEditedDate_end?,page?,limit?}` | items/total/page/limit/nextPage/revision；必须有 product、status 或日期筛选；keyword 还必须带 product |
 | `zentao.products` | `{page?,limit?}` | items[{id,name}]/total/page/limit/nextPage/revision；先查产品名对应的 id，不猜编号 |
 | `zentao.bug_detail` | `{ids:[...]}`（1–100） | items；数字/日期统一，未知 resolution 留在 unmapped |
@@ -217,9 +217,9 @@ task 工具返回 202 `{"taskId":"task_...","phase":"admitted"}`（phase 以实�
 | `env.framework_files` / `env.framework_get` | `{}` / `{path}` | 框架只读镜像目录/文件 |
 | `knowledge.claim_submit` | `{claim:{subject,predicate,value,conditions?},evidence:[{evidenceId,sha256}]}` | **write/task**；最终 `result` 为个人沉淀候选记录，附原工具返回，不自动提升 |
 
-E 的 `command-tree/1.1.0` 规则采用 POSIX quote/escape 分词并转小写，最多八词的最长前缀匹配。hit 表示命令头存在，参数另报 `ARGUMENT_COUNT`、`TYPE_MISMATCH`、`ENUM_MISMATCH`、`OUT_OF_RANGE` 或 `UNSUPPORTED_PARAMETER_TYPE`；missing 报 `HEAD_MISSING`，不能用手册命中改成 hit。STRING/XSTRING 为非空字符串，U16/U32 检查整数和位宽及 XML 范围；IPADDR 支持 IP 地址，DOTTEDIP 为 IPv4，IPMASK 为连续位的 IPv4 点分掩码。未知参数类型保留违规，不猜测支持。同一固定 XML 和输入产生相同结果，构建树不同的 missing 保持独立。
+E 的 `command-tree/1.1.0` 规则采用 POSIX quote/escape 分词并转小写，最多八词的最长前缀匹配。hit 表示命令名存在，参数另报 `ARGUMENT_COUNT`、`TYPE_MISMATCH`、`ENUM_MISMATCH`、`OUT_OF_RANGE` 或 `UNSUPPORTED_PARAMETER_TYPE`；missing 报 `HEAD_MISSING`，不能用手册命中改成 hit。STRING/XSTRING 为非空字符串，U16/U32 检查整数和位宽及 XML 范围；IPADDR 支持 IP 地址，DOTTEDIP 为 IPv4，IPMASK 为连续位的 IPv4 点分掩码。未知参数类型保留违规，不猜测支持。同一固定 XML 和输入产生相同结果，构建树不同的 missing 保持独立。
 
-同一命令头可有多个参数签名，heads 去重后列出，不因其他头重载而失败。param 总是返回 signatures；单签名仍把该签名放在旧 parameters 中，多签名时 parameters=[]、overloaded=true，调用者须读完整 signatures。重复的相同签名去重，签名携带 scope；可选 scope 先筛选 XML，再匹配。check 检查全部签名，至少一条完全通过则 violations=[]，matchedSignatures 列出通过项；全部失败时保留一组确定性违规并在 signatureChecks 列出每条失败原因。不会把不同签名的参数拼成一个签名。异步产品知识也合并完整签名，不取最后一条覆盖其他重载。
+同一命令名可有多个参数签名，heads 去重后列出，不因其他命令名重载而失败。param 总是返回 signatures；单签名仍把该签名放在旧 parameters 中，多签名时 parameters=[]、overloaded=true，调用者须读完整 signatures。重复的相同签名去重，签名携带 scope；可选 scope 先筛选 XML，再匹配。check 检查全部签名，至少一条完全通过则 violations=[]，matchedSignatures 列出通过项；全部失败时保留一组确定性违规并在 signatureChecks 列出每条失败原因。不会把不同签名的参数拼成一个签名。异步产品知识也合并完整签名，不取最后一条覆盖其他重载。
 
 版本线来自首页链接标题或页面文件名；平台是独立维度，不是型号。正式发布需要 `Rel_` 且有 Released on 日期。构建段落没变时不重取 XML 和修复清单；ISO-8859-1 XML 按声明解码，引用 SHA 始终来自解码前原字节。命令存在只证明结构，完整功能语义需要产品证据。
 
@@ -229,7 +229,7 @@ nextPage=null 表示已到匹配结果末尾，hasMore 明确标识分页，不�
 
 版本列表支持首页 → 汇总页 → 列表页。产品线清单的 `connectorOptions.build-site.buildSite` 声明 listingPathPattern（可带 versionLine/variant 命名捕获）与 variantPlatforms，通用连接器按该配置筛选汇总页链接和映射平台。遍历有 maxDepth（默认 3、最多 5）及 maxPages（默认 128、最多 256），循环页去重；旧的直接列表仍支持。列表按标题文本加紧随 BLOCKQUOTE 取构建，font 仅是展示标记；支持带变体前缀的 .demopkg 镜像、命令 XML 和修复页，绝对/相对链接都须同源。
 
-`buildId` 是名称与 platform 的稳定身份。所有命令工具的 build、修复工具的 builds 都可用版本列表给出的 buildId；旧构建名仅在结果唯一时使用。同名多平台时返回 INVALID_PAYLOAD，details.reason=ambiguous_build；也可传 platform（null 为普通平台）明确选择。command_heads/param/check 同样新增可选 platform/scope/versionLine。XML 命令头由全部祖先 menu 名加 item 名组成，scope 单独保留；parserVersion=menu-path/2，所有命令工具和产品投影共用该解析。
+`buildId` 是名称与 platform 的稳定身份。所有命令工具的 build、修复工具的 builds 都可用版本列表给出的 buildId；旧构建名仅在结果唯一时使用。同名多平台时返回 INVALID_PAYLOAD，details.reason=ambiguous_build；也可传 platform（null 为普通平台）明确选择。command_heads/param/check 同样新增可选 platform/scope/versionLine。XML 命令名由全部祖先 menu 名加 item 名组成，scope 单独保留；parserVersion=menu-path/2，所有命令工具和产品投影共用该解析。
 
 版本列表记住 buildId/名称到列表页、版本线和平台的定位，保存在 worker 私有缓存，绑定调用身份/资产修订/凭据及产品策略；worker 重启后继续使用。后续命令调用只重读相关列表页，再按段落修订复用或重新取选定 XML；fixed_releases 只重读相关列表页与选定清单。未建立定位的冷调用先发现一次。定位只减少访问范围，当前段落和权限仍重查，不直接采用旧元数据。
 

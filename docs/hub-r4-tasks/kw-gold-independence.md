@@ -9,7 +9,7 @@
 
 - A43：`scripts/real/gold/cases.ts:85`；检查/分类/计数：短语相等即含糊期望，全部期望命中则 vague_expected。
 - A46：`scripts/real/gold/case-commands.ts:14`；抽取：短词、STOP 表、中英上下文和前缀缩写产生独立命令答案。
-- A47：`scripts/real/gold/regression-doc.ts:33`；抽取/分类：值词表、CJK、数字符号区分命令头和参数，含有目录分支仍复用文字分词。
+- A47：`scripts/real/gold/regression-doc.ts:33`；抽取/分类：值词表、CJK、数字符号区分命令名和参数，含有目录分支仍复用文字分词。
 - A50：`scripts/real/gold/catalog-marks.ts:119`；检查/分类：help 的 or/hostname/URL 将 DOTTEDIP 放宽到 STRING。
 - A51：`scripts/real/gold/command-domains.ts:16`；检查/分类：help 的 or/hostname/URL 标记 otherForm 约束未核。
 - A54：`scripts/real/gold/locations.ts:65`；分类：以模块排除词和数字约束构造定位答案。

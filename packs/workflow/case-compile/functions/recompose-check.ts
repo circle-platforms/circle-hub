@@ -24,7 +24,7 @@ export function checkRecomposition(input: any): any[] {
     }
     const physical = (v: any): boolean => Array.isArray(v) ? v.some(physical) : object(v) ? Object.entries(v).some(([k, x]) => T.bed_fields.includes(k) || physical(x)) : false;
     if (physical(record) || record.ledgers?.rebindings?.length)
-        bad('bound_to_bed', '重组账本出现物理目标字段或重绑定项');
+        bad('bound_to_bed', '重组账本出现物理目标字段或用例参数替换项');
     for (const c of Array.isArray(record.sources?.candidates) ? record.sources.candidates : [])
         if (c.signing_authority !== false)
             bad('candidate_signed', '候选没有签发权，必须显式 false');
@@ -42,22 +42,22 @@ export function checkRecomposition(input: any): any[] {
     if (fields.missing?.length)
         unknown(fields.missing.join('；'), '作者');
     if (!atoms.length)
-        unknown('缺由结构投影计算的作者原子全集', '作者');
+        unknown('缺由结构投影计算的用例原句全集', '作者');
     const ids = atoms.map(a => a.id), declared = Array.isArray(record.atoms) ? record.atoms : [];
     const key = (values: any) => Array.isArray(values) ? [...values].sort() : [];
     if (canonicalJson(key(declared.map((a: any) => a.id))) !== canonicalJson(key(ids)))
-        bad('atom_dropped', '作者原子全集不等于结构投影', {}, { expected: ids });
+        bad('atom_dropped', '用例原句全集不等于结构投影', {}, { expected: ids });
     if (record.ledgers?.original?.length !== atoms.length || record.ledgers.original.some((o: any) => !ids.includes(o.atom)))
-        bad('quote_not_verbatim', '原文账含重复或作者全集之外的原子');
+        bad('quote_not_verbatim', '原文账含重复的用例原句，或含全集之外的用例原句');
     for (const atom of atoms) {
         const row = declared.find((a: any) => a.id === atom.id), original = record.ledgers?.original?.filter((a: any) => a.atom === atom.id) ?? [];
         if (!row || row.text !== atom.text || row.quote_ref !== atom.reference || canonicalJson(row.span) !== canonicalJson([atom.start, atom.end]) || original.length !== 1 || original[0].text !== atom.text || original[0].quote_ref !== atom.reference)
-            bad('quote_not_verbatim', '原文账必须逐字等于投影的原子及位置');
+            bad('quote_not_verbatim', '原文账必须逐字等于投影的用例原句及位置');
     }
     for (const [name, kind] of [['intent', 'action'], ['expectation', 'expectation']]) {
         const v = record.contract?.[name];
         if (!object(v) || v.verbatim !== true || !atoms.some(a => (a.kind === kind || name === 'intent' && a.kind === 'intent') && a.text === v.text && a.reference === v.quote_ref))
-            bad('quote_not_verbatim', name + ' 不等于原件中声明位置的逐字原子');
+            bad('quote_not_verbatim', name + ' 不等于原件中声明位置的用例原句');
     }
     const method = record.contract?.method;
     if (!object(method) || !T.method_kinds.includes(method.kind))
@@ -72,25 +72,25 @@ export function checkRecomposition(input: any): any[] {
         bad('atom_dropped', '必须分开保留四本账');
     const coverage = record.coverage ?? {}, mapped = object(coverage.mapped) ? coverage.mapped : {}, unmapped = Array.isArray(coverage.unmapped) ? coverage.unmapped : [], slots = Array.isArray(record.expectation_slots) ? record.expectation_slots : [];
     if (canonicalJson(key(coverage.author_atoms)) !== canonicalJson(key(ids)) || canonicalJson(key([...Object.keys(mapped), ...unmapped])) !== canonicalJson(key(ids)) || new Set([...Object.keys(mapped), ...unmapped]).size !== ids.length)
-        bad('atom_dropped', '覆盖分母和分子必须逐项对应实际作者原子，不能自报覆盖率');
+        bad('atom_dropped', '覆盖分母和分子必须逐项对应实际的用例原句，不能自报覆盖率');
     const slotIds = slots.map((v: any) => v.slot);
     if (new Set(slotIds).size !== slotIds.length)
-        bad('atom_dropped', '期望位身份重复');
+        bad('atom_dropped', '期望的判断依据有重复的编号');
     for (const [id, targets] of Object.entries(mapped))
         if (!Array.isArray(targets) || !targets.length || new Set(targets).size !== targets.length || targets.some(t => !slotIds.includes(t)))
-            bad('atom_dropped', '原子 ' + id + ' 没有实际期望位映射');
+            bad('atom_dropped', '用例原句 ' + id + ' 没有对应的期望判断依据');
     // An action with no expectation of its own is an ordinary step, so only an expectation has to reach a slot (checked below).
     for (const id of unmapped)
         if (atoms.find(a => a.id === id)?.kind === 'expectation')
-            bad('atom_dropped', '作者期望 ' + id + ' 没有映射到期望位');
+            bad('atom_dropped', '作者期望 ' + id + ' 没有对应的判断依据');
     for (const atom of atoms.filter(a => a.kind === 'expectation'))
         if (!slots.some((v: any) => v.atom === atom.id))
-            bad('atom_dropped', '作者期望 ' + atom.id + ' 没有对应期望位');
+            bad('atom_dropped', '作者期望 ' + atom.id + ' 没有对应的判断依据');
     for (const slot of slots) {
         if (!T.knowledge_locations.includes(slot.knowledge_location))
             bad('', '期望知识位置不在三值闭集');
         if (slot.knowledge_location === 'recomposable_from_elsewhere' && !slot.evidence?.length)
-            bad('missing_without_exit', '期望位 ' + slot.slot + ' 声称可从别处重组，却没有写来源');
+            bad('missing_without_exit', '期望的判断依据 ' + slot.slot + ' 说可以从别处找到，却没有写来源');
         if (slot.knowledge_location === 'genuinely_missing' && !slot.proposal && !record.unknowns?.some(unknownOk))
             bad('missing_without_exit', '真实欠缺没有提议或出口');
     }
@@ -125,12 +125,12 @@ export function checkRecomposition(input: any): any[] {
             unknown('缺可解析且本轮可读的声明片段 ' + ref, '来源维护者');
     const states = record.sources?.states ?? [];
     if (states.length !== ids.length || states.some((v: any) => !ids.includes(v.atom)))
-        bad('atom_dropped', '来源状态必须与作者原子全集一一对应');
+        bad('atom_dropped', '来源状态必须与用例原句全集一一对应');
     const reviews: any[] = [], sourceRun = ctx.predecessor ?? ctx.run ?? null;
     for (const atom of atoms) {
         const rows = states.filter((v: any) => v.atom === atom.id);
         if (rows.length !== 1 || !T.states.includes(rows[0]?.state)) {
-            bad('atom_dropped', '每个原子必须有唯一来源状态');
+            bad('atom_dropped', '每条用例原句必须有唯一来源状态');
             continue;
         }
         const state = rows[0], review = reviewedAtom(record, atom.id, s.review_run, s.review_result, sourceRun, ctx);
@@ -142,7 +142,7 @@ export function checkRecomposition(input: any): any[] {
         if (state.state === 'settled') {
             if (state.adjudicated_by !== undefined && state.adjudicated_by !== null) {
                 if (!review || review.state !== 'settled' || state.adjudicated_by !== review.reference)
-                    unknown('原子 ' + atom.id + ' 引用的独立裁定不适用于本提案', '独立裁定模型');
+                    unknown('用例原句 ' + atom.id + ' 引用的独立裁定不适用于本提案', '独立裁定模型');
                 else
                     reviews.push(review);
             }
@@ -182,27 +182,27 @@ export function checkRecomposition(input: any): any[] {
     for (const adapted of record.ledgers?.adapted ?? []) {
         const atom = atoms.find(a => a.id === adapted.atom);
         if (!atom) {
-            bad('atom_dropped', '适配项没有一一对应作者原子');
+            bad('atom_dropped', '改写项没有一一对应用例原句');
             continue;
         }
         if (!T.actions.includes(adapted.action))
-            bad('', '适配动作不在声明闭集中');
+            bad('', '改写动作不在声明闭集中');
         if (!text(adapted.source_of_value))
-            unknown('适配 ' + adapted.atom + ' 缺 source_of_value', '重组模型');
+            unknown('改写 ' + adapted.atom + ' 缺 source_of_value', '重组模型');
         else if (authority) {
             if (!govRefs.includes(adapted.authority) && !authority.declarations.some((d: any) => d.ref === adapted.authority))
-                unknown('适配 ' + adapted.atom + ' 缺产品授予的 authority', '产品包作者');
+                unknown('改写 ' + adapted.atom + ' 缺产品授予的 authority', '产品包作者');
             if (!atoms.some(a => a.reference === adapted.source_of_value) && !govRefs.includes(adapted.source_of_value) && !authority.declarations.some((d: any) => d.ref === adapted.source_of_value))
-                unknown('适配 ' + adapted.atom + ' 缺合法 source_of_value', '产品包作者');
+                unknown('改写 ' + adapted.atom + ' 缺合法 source_of_value', '产品包作者');
         }
         if (authority && !adapted.equivalence_refs?.length || authority && !adapted.equivalence_refs.every((ref: string) => authority.declarations.some((d: any) => d.ref === ref)))
-            unknown('适配 ' + adapted.atom + ' 缺产品声明位置的等价依据', '产品包作者');
+            unknown('改写 ' + adapted.atom + ' 缺产品声明位置的等价依据', '产品包作者');
         let critical = adapted.changes?.some((c: any) => T.critical_roles.includes(c.role)) === true;
         const before = sourceCommands.find(c => c.atom === adapted.atom)?.identity;
         for (const line of adapted.commands ?? []) {
             const id = identity(line);
             if (!id) {
-                unknown('适配命令没有锁定目录的完整语法身份', '产品包作者');
+                unknown('改写后的命令没有锁定目录的完整语法身份', '产品包作者');
                 continue;
             }
             actualCommands.push({ atom: adapted.atom, identity: id });
@@ -212,7 +212,7 @@ export function checkRecomposition(input: any): any[] {
                     if (old && canonicalJson(old.parsed) !== canonicalJson(p.parsed) && authority.parameters.some((d: any) => d.path === id.path && d.position === p.position && d.load_bearing === true))
                         critical = true;
                     if (old && canonicalJson(old.parsed) !== canonicalJson(p.parsed) && !record.ledgers.concretizations.some((c: any) => c.atom === adapted.atom && canonicalJson(c.value) === canonicalJson((p.parsed as any).value)))
-                        unknown('适配 ' + adapted.atom + ' 的新参数值缺具体化账与来源', '重组模型与产品包作者');
+                        unknown('改写 ' + adapted.atom + ' 的新参数值缺具体化账与来源', '重组模型与产品包作者');
                 }
             }
         }
@@ -220,11 +220,11 @@ export function checkRecomposition(input: any): any[] {
         if (review?.load_bearing === true)
             critical = true;
         if (critical && adapted.load_bearing !== true)
-            bad('unmarked_load_bearing', '产品声明或独立裁定认定承载语义，但适配未标注');
+            bad('unmarked_load_bearing', '产品声明或独立裁定认定承载语义，但改写未标注');
         if (adapted.load_bearing === true && (!Array.isArray(adapted.conditions) || !adapted.conditions.length || adapted.conditions.some((v: any) => !text(v))))
-            bad('unmarked_load_bearing', '承载语义适配缺等价条件');
+            bad('unmarked_load_bearing', '承载语义的改写缺等价条件');
         if (review?.bed_independent === false)
-            bad('bound_to_bed', '独立裁定认定本适配依赖具体床', '/record', { conditional_on_judgment: true, adjudication: review.reference, reviewer: review.reviewer, model: review.model });
+            bad('bound_to_bed', '独立裁定认定本改写依赖具体床', '/record', { conditional_on_judgment: true, adjudication: review.reference, reviewer: review.reviewer, model: review.model });
     }
     if (!raw.root)
         unknown('缺锁定命令目录', '产品包作者');

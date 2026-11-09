@@ -121,5 +121,5 @@ showing 100 of 342 · narrow with /knowledge search <words>
 
 - **控制台**：`hub/server/console-*.test.ts`，文案守卫（`console/testing-wording.ts`）加上“Circle 不得作为客户端名”的检查，再做两种主题 × 1440 / 1024 / 390 的合成截图。
 - **桌面**：`apps/desktop/test/knowledge-native.mjs`（语言 × 主题 × 宽度、键盘、减少动效、未连服务器），i18n 测试检查用词表。
-- **终端**：渲染快照测试。用脚本化模型在临时家目录里跑一次真实终端并抓屏，覆盖 60 列和中文宽度。
+- **终端**：渲染快照测试。用脚本化模型在临时的 Circle 配置目录里跑一次真实终端并抓屏，覆盖 60 列和中文宽度。
 - **三端一致**：一个脚本比对三端文案和第 1 节的说法表。

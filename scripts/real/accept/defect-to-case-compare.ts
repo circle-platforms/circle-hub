@@ -258,19 +258,19 @@ const percent = (ratio: number | null): string => (ratio === null ? '无（集�
 export function renderComparison(comparison: Comparison): string {
   const { headOverlap: h, quotes: q, duplicates: d } = comparison;
   const lines: string[] = ['缺陷转用例与已有回归文档的比对', ''];
-  lines.push(`1. 命令头重叠（只报告，不判通过）：草稿用到 ${h.draftHeads} 个命令头，已有文档用到 ${h.docHeads} 个，共同 ${h.shared} 个`);
-  lines.push(`   草稿的命令头里已有文档也用到的比例：${percent(h.draftRatio)}；已有文档的命令头里草稿也用到的比例：${percent(h.docRatio)}`);
+  lines.push(`1. 命令名重叠（只报告，不判通过）：草稿用到 ${h.draftHeads} 个命令名，已有文档用到 ${h.docHeads} 个，共同 ${h.shared} 个`);
+  lines.push(`   草稿的命令名里已有文档也用到的比例：${percent(h.draftRatio)}；已有文档的命令名里草稿也用到的比例：${percent(h.docRatio)}`);
   lines.push(`   草稿独有 ${h.missingInDoc.length}；文档独有 ${h.missingInDrafts.length}；未识别文档行 ${h.unrecognizedInDoc?.length ?? 0}；未识别草稿行 ${h.unrecognizedInDrafts?.length ?? 0}`);
   lines.push('');
   lines.push(`2. Hub 引文主张（仅作对照）：grounded 主张 ${q.claims} 条，支持 ${q.support} 条`);
   lines.push('   独立重判不采信这些主张作为答案');
   lines.push(`   引文问题 ${q.problems.length} 条`);
   lines.push('');
-  lines.push('3. 与已有用例完全相同（命令头和参数值都相同）的草稿：');
+  lines.push('3. 与已有用例完全相同（命令名和参数值都相同）的草稿：');
   lines.push(`   gold 集合 ${d.goldIdentical.length}；Hub 集合 ${d.hubFlagged.length}；仅 gold ${d.onlyGold.length}；仅 Hub ${d.onlyHub.length}`);
   lines.push(`   回归文档命令组合对照${d.equal ? '相同' : '不同'}（仅报告，不是全量查重结论）`);
   const p = comparison.parameters;
-  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同头异参 ${p.different}；文档无命令头 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : `参数：${labelOf('reason',MISSING)}；缺构建命令树原件，需集成者 Claude 导出`);
+  lines.push(p ? `参数组合（只报告）：相同 ${p.same}；同命令名异参 ${p.different}；文档无命令名 ${p.absent}；文档组合覆盖 ${percent(p.docRatio)}` : `参数：${labelOf('reason',MISSING)}；缺构建命令树原件，需集成者 Claude 导出`);
   if (p) {
     const items = p.domains.items;
     lines.push(`取值域：支持 ${p.domains.counts.support}；反驳 ${p.domains.counts.refute}；其中目录外 ${p.domains.notMember}；暂态待补证 ${p.domains.counts.unknown}`);

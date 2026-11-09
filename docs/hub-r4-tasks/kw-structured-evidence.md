@@ -17,7 +17,7 @@
 - U25：`hub/rules/quote-width.ts:45`；待核：现有引文宽窄/空白正规化是否满足本次“逐字”要求未得到新规则豁免；case-compile/quote-width.ts、gold/quote-widths.ts 有独立副本。需冻结原字节+精确跨度，比对时不能吞掉有意义差异。
 
 - 分支和工作树：待集成者从合入模型前置项后的 `hub-redesign` 开 `kw-structured-evidence`，目录 `circle-hub-kw-structured-evidence`；本次只编写任务页的分支是 `keyword-remediation-pages`，目录 `circle-hub-keyword-pages`。
-- 可以改的路径（实施分支）：`hub/rules/sandbox/sandbox.ts` 的错误原因分支及测试；`packs/product/famx/functions/adoc/index.ts` 的引擎错误分支及测试；`packs/workflow/knowledge-contribution/tools/jev/lib/http.ts`、`judge.ts` 的结构错误/片段身份分支和测试；这些包 README/pack.json。U17/U18/U21/U25 的跨目录改动已按 A 要改裁定，实施路径仍由集成者明确补充分派后执行；不改校准/CLI/引文通用核心以越权收口。
+- 可以改的路径（实施分支）：`hub/rules/sandbox/sandbox.ts` 的错误原因分支及测试；`packs/product/famx/functions/adoc/index.ts` 的引擎错误分支及测试；`packs/workflow/knowledge-contribution/tools/jev/lib/http.ts`、`judge.ts` 的结构错误/片段身份分支和测试；这些包 README/pack.json。U17/U18/U21/U25 的跨目录改动已按 A 要改裁定，实施路径仍由集成者明确补充分派后执行；不改校准/CLI/引文通用核心，不靠越权来结束这件事。
 - 规则：本页是待分派的实施任务，不是本次文档分支已经实现的能力。实施者只在下列范围改动，模型和共享契约先由集成者另行提交。只用合成资源、脚本化模型；不碰 7420、钥匙串、环境配置文件、真实数据、设备和任何真实系统。不推送、不建 PR、不发布、不部署；不改 Circle、foundation/circle、references。显式路径暂存、`git commit -s`。未知必须给 missing 和出口（动作、具名受众、期限），不能停在未知，也不能转成支持或反驳。
 
 ## 集成者先做：模型与词表

@@ -237,7 +237,7 @@ Gemini CLI 各页页首写明：2026-06-18 起，未付费和 Google One 的 Gem
 
 来源：[AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)。查阅 2026-10-13。
 
-纯 Markdown，未查到 frontmatter 模式。全局：Codex 家目录（默认 `~/.codex`，可用 `CODEX_HOME` 改）里先读 `AGENTS.override.md`，否则读 `AGENTS.md`，只用第一个非空文件。项目：从项目根走到当前目录，每层先 `AGENTS.override.md`，再 `AGENTS.md`，再 `project_doc_fallback_filenames` 里的名字，每层至多一个文件。自根向下拼接，近的在后。空文件跳过。合计大小到 `project_doc_max_bytes` 停止，默认 32 KiB。该页示例把 fallback 设为 `TEAM_GUIDE.md` 和 `.agents.md`，并把上限设为 65536。
+纯 Markdown，未查到 frontmatter 模式。全局：Codex 配置目录（默认 `~/.codex`，可用 `CODEX_HOME` 改）里先读 `AGENTS.override.md`，否则读 `AGENTS.md`，只用第一个非空文件。项目：从项目根走到当前目录，每层先 `AGENTS.override.md`，再 `AGENTS.md`，再 `project_doc_fallback_filenames` 里的名字，每层至多一个文件。自根向下拼接，近的在后。空文件跳过。合计大小到 `project_doc_max_bytes` 停止，默认 32 KiB。该页示例把 fallback 设为 `TEAM_GUIDE.md` 和 `.agents.md`，并把上限设为 65536。
 
 | 中立字段 | 结果 |
 |---|---|

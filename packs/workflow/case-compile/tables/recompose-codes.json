@@ -23,17 +23,17 @@
     },
     {
       "code": "recompose.unmarked_load_bearing",
-      "when": "承载语义的适配未标 load_bearing",
-      "fix": "标注并给等价条件；不标则该适配不生效"
+      "when": "承载语义的改写未标 load_bearing",
+      "fix": "标注并给等价条件；不标则该改写不生效"
     },
     {
       "code": "recompose.bound_to_bed",
       "when": "重组产物里出现具体自动化测试环境事实",
-      "fix": "移到编写/计划阶段的重绑定账"
+      "fix": "移到编写/计划阶段的用例参数替换"
     },
     {
       "code": "recompose.atom_dropped",
-      "when": "作者原子/命令出现次数在适配后减少",
+      "when": "用例原句/命令出现次数在改写后减少",
       "fix": "缺失次数留作义务，补回或写明作者同意删除的引用"
     }
   ],

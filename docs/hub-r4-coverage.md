@@ -38,7 +38,7 @@
 | **W01** | 工作结构 | 条目与投影 | item / item projection | `implemented` | `hub/runs/engine/projection.ts`, `packs/skill/mindmap-format/functions/kityminder.ts`, `packs/workflow/case-review/functions/projection.ts` | 场景 01, 场景 10, 场景 16, 场景 20 |
 | **W02** | 工作结构 | 要求项 | requirement item | `implemented` | `contracts/generated/schemas/requirements.v1.schema.json`, `packs/workflow/case-review/requirements.json`, `hub/runs/engine/evaluate.ts` | 场景 01, 场景 08, 场景 16, 场景 20 |
 | **W03** | 工作结构 | 工作流与绑定 | workflow / product binding | `implemented` | `contracts/generated/schemas/workflow.v1.schema.json`, `packs/workflow/case-review/workflow.json`, `packs/product/famx/product.json`, `packs/product/lumen-api/product.json`, `hub/runs/packs/validate.ts` | 场景 01, 场景 08, 场景 15, 场景 16 |
-| **W04** | 工作结构 | 判定形状与台账 | decision shape / ledger | `implemented` | `contracts/src/run.ts`, `contracts/generated/schemas/validation.v1.schema.json`, `hub/runs/engine/terminals.ts`, `hub/runs/engine/evaluate.ts` | 场景 01, 场景 06, 场景 21 |
+| **W04** | 工作结构 | 判定形状与裁定清单 | decision shape / ledger | `implemented` | `contracts/src/run.ts`, `contracts/generated/schemas/validation.v1.schema.json`, `hub/runs/engine/terminals.ts`, `hub/runs/engine/evaluate.ts` | 场景 01, 场景 06, 场景 21 |
 | **W05** | 工作结构 | 中间表示与槽位 | IR / slots | `implemented` | `contracts/generated/schemas/slots.v1.schema.json`, `contracts/generated/schemas/slot-claim.v1.schema.json`, `packs/workflow/case-review/slots.schema.json`, `hub/runs/engine/slots.ts`, `hub/rules/sandbox/slots.ts` | 场景 01, 场景 16, 场景 20 |
 | **W06** | 工作结构 | 运行 | run (= 任务修订) | `implemented` | `contracts/src/run.ts`, `contracts/generated/schemas/run.v1.schema.json`, `hub/runs/engine/start.ts`, `hub/runs/engine/service.ts`, `hub/runs/engine/store.ts` | 场景 01, 场景 13, 场景 17, 场景 19 |
 | **W07** | 工作结构 | 提交 | submission | `implemented` | `contracts/src/submission.ts`, `contracts/generated/schemas/submission.v1.schema.json`, `contracts/generated/schemas/submission-received.v1.schema.json`, `hub/runs/engine/submit.ts` | 场景 01, 场景 02, 场景 13, 场景 19, 场景 21, 场景 22 |
@@ -154,7 +154,7 @@
 - **W01 (条目与投影)**：脑图节点展开为条目并合取投影；用例节点规则默认“带标签或带标记”（`marked`），`case_rule: tagged` 限制为只认标签，摘要带规则说明行与 `marked_only` 计数。已验证（场景 01、场景 10、场景 16、场景 20，均按新规则更新）。
 - **W02 (要求项)**：包内 requirements 声明。已验证（场景 01、场景 08、场景 16、场景 20）。
 - **W03 (工作流包与产品绑定)**：同一个用例评审工作流包绑定两个不同产品包。已验证（场景 01、场景 08、场景 15、场景 16）。
-- **W04 (判定形状与台账)**：台账校验，未分配报 SOURCE_UNAVAILABLE。已验证（场景 01、场景 06、场景 21）。
+- **W04 (判定形状与裁定清单)**：裁定清单校验，未分配报 SOURCE_UNAVAILABLE。已验证（场景 01、场景 06、场景 21）。
 - **W05 (中间表示与槽位)**：沙箱内规则提取槽位。已验证（场景 01、场景 16、场景 20）。
 - **W06 (运行 run)**：冻结输入、版本、条目集合；运行上下文 builds 冻结带 `built_at`、`base`、`has_root`；构建候选每个写制作时间和“基于”的构建，按制作时间从新到旧，发布状态另写。已验证（场景 01、场景 13、场景 17、场景 19，及构建候选的金标准场景）。
 - **W07 (提交 submission)**：支持批量条目交付与多次修订。已验证（场景 01、场景 02、场景 13、场景 19、场景 21、场景 22）。

@@ -17,7 +17,7 @@
 2. case-review：负向用例没引用命令行时从用例自身的命令行取 phrases（subjects.ts:57），一行都没有时记提示档反驳；删去无槽位记录的死分支（checks.ts:35、case-review-verify verify.ts:59）；SKILL 写明跳过要附理由、会被续做；case-review-verify、case-review-report：缺判定记可修复的反驳，缺等级的草稿和缺块的报告在投影里拒绝，并列出要先复核的块或条目。
 3. regression-scope、maintenance-sweep：合法的空范围给支持“范围为空”（check.ts:141、363）；maintenance-sweep 只在 skipped_from > 0 时记未知并点名文档；投影拒绝没带 catalog=commands@1 的影响视图；视图有键没内容时按摘要从树上读，不编“/ null → null”。
 4. regression-scope、maintenance-sweep：按新的视图范围把“没有用例覆盖路径 P”记成确定的覆盖缺口，未归位的用例以数目加引用列出。
-5. defect-to-case：检查时经 reads 按草稿用到的命令头读收窄的索引；SKILL.md:31 删去“缺口未修”。
+5. defect-to-case：检查时经 reads 按草稿用到的命令名读收窄的索引；SKILL.md:31 删去“缺口未修”。
 6. case-location：未标记的编号两种都读，存在的那个定种类（expected.ts:50-60）；用例粒度用“带标签或带标记”（project.ts:79，决定 18）；在配置的根之外、构建站没列出的构建名都记确定结论（后者为提示档反驳）。
 7. 验收脚本：任何以未知结束的检查判失败并打印原因（scripts/real/accept/traceability.ts、case-location.ts）；compile-check 里 Hub 缺结论算差异，逐位置比较不跳过。
 8. quality-board、template-gap：未打标签的用例单独计数；阈值写进参数模式，由 start_run 拒绝非法值；template-gap 的 covered 一律给出。

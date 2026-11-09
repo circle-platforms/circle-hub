@@ -6,7 +6,7 @@
 
 - **开始运行**：要对照某个构建时，build 和 version 写在 start_run 顶层，与 pack、product、inputs 并列，不写进 parameters。
 - **输入 defects**：一个或多个缺陷外部标识（例如 `plm:bug:<编号>`）。为每个缺陷起草回归测试用例；若缺陷无法起草用例（如底层代码重构、无外部可测命令行或行为变化），必须在条目中声明跳过（`handling: "skipped"`）并写明诚实理由。
-- **输入 indexed_cases**：当前锁定构建的已索引用例清单。绑定 `knowledge:index:<product>:<build>?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure`，不要写 `only`，也不要在槽位里声明 `read_keys`。Hub 从起草命令在目录中的 CommandIdentity 完整路径算出读取键，并在同一修订上把索引重绑为 `only=<命令路径>&fields=commands,document,node,title,negative,case_structure`。索引里没有同命令用例时，结论是范围内没有重复。
+- **输入 indexed_cases**：当前锁定构建的已索引用例清单。绑定 `knowledge:index:<product>:<build>?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure`，不要写 `only`，也不要在槽位里声明 `read_keys`。Hub 从起草命令在目录中的 CommandIdentity 完整路径算出读取键，并在同一修订上把索引重新绑定为 `only=<命令路径>&fields=commands,document,node,title,negative,case_structure`。索引里没有同命令用例时，结论是范围内没有重复。
 - **参数**：
   - `max_cases`：每个缺陷最多起草用例数（整数，1 到 20，默认 6）。
   - `priority`：默认用例优先级（整数，1 到 3，默认 2）。
@@ -62,7 +62,7 @@ Hub 对提交进行两层核对：
    - `shape`（结构）：空标题、缺失步骤或期望结果、优先级越界、未声明的 resource 标签、同次提交重复用例；标签结构问题按提示档处理。
    - `commands`（命令与参数）：参数类型不符、参数越界或命令不存在；反向用例反驳与预期不一致（退回修复，最多 2 轮）。
    - `grounded`（依据）：只允许本条缺陷 src 原件的 json@1/p/fields/<fix_field>、json@1/p/fix_notes/<序号>/comment，或 manual 槽绑定手册的 src 片段。quote 只写 text 和 reference。Hub 自己推出完整期望引用身份并核对原始字节；引文在片段中不唯一或原件读不到时仍是未知。期望文字不是引文的逐字片段则退回修复，最多 2 轮。
-   - `not_duplicate`（去重）：读取键由 Hub 从命令目录解析出的 CommandIdentity 完整路径计算，并自动重绑索引。不要在 data 里写 read_keys。索引在这些命令上没有用例时，结论是范围内没有重复。有同命令用例时，仍按 case-structure@2 比较；缺作者结构则未知，不把未知说成没有重复。
+   - `not_duplicate`（去重）：读取键由 Hub 从命令目录解析出的 CommandIdentity 完整路径计算，并自动重新绑定索引。不要在 data 里写 read_keys。索引在这些命令上没有用例时，结论是范围内没有重复。有同命令用例时，仍按 case-structure@2 比较；缺作者结构则未知，不把未知说成没有重复。
 
 ## 5. 提交样例
 

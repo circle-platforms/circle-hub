@@ -158,13 +158,13 @@ Claude 复核 `9a8efd3` 后补充实际构建页结构，本轮先改桩和回�
 
 实际 `node --test --test-concurrency=1 tests/acceptance/r2-03-knowledge.test.ts tests/acceptance/s2-objects.test.ts` **9/9**（知识 6 + 对象 3），`npm run typecheck` 通过。中途发现 JSONB 不保留对象键序，改为在快照中保存 canonical manifest 字符串并校验其原字节；独立客户端下载验收通过。
 
-用户确认 `knowledge.claim_submit` 为 write/task，其余新增脑图知识工具为 read/sync，Circle 已支持调用前询问写工具与后台等待 task 结束。工具需求已纳入第 4 幕：构建列表、命令头/参数/确定性命令检查、手册全文/章节、查询镜像搜索/详情和候选提交。产品线包统一位于 `packs/<产品线>/`；Claude 在独立 famx-pack 分支提交 `e147364`，尚未合入或作为本分支运行验收。已通过 Otty 向 Claude 确认 headless Circle 的精确依赖入口，当前本地 Circle 1.1.1 仍为 private 且无 library exports，先继续目录步骤。
+用户确认 `knowledge.claim_submit` 为 write/task，其余新增脑图知识工具为 read/sync，Circle 已支持调用前询问写工具与后台等待 task 结束。工具需求已纳入第 4 幕：构建列表、命令名/参数/确定性命令检查、手册全文/章节、查询镜像搜索/详情和候选提交。产品线包统一位于 `packs/<产品线>/`；Claude 在独立 famx-pack 分支提交 `e147364`，尚未合入或作为本分支运行验收。已通过 Otty 向 Claude 确认 headless Circle 的精确依赖入口，当前本地 Circle 1.1.1 仍为 private 且无 library exports，先继续目录步骤。
 
 ## 10：目录与脑图知识工具（2026-10-12）
 
 先写 `r2-04-tools.test.ts` 并确认 0/4，再实现调用者过滤目录、tenant 唯一名称/别名、对象 JSON Schema、ETag/304、同步调用和候选 task。连接器 SDK 通过 C 受理及 D 原有操作账本/租约/fence 推进，worker 执行真实本机合成 HTTP 请求；B 核对回传原字节 SHA 并保存来源/证据，结果再交付。同键同内容及 server 重启复用收据，同键不同内容拒绝，工具参数固定在当前修订。个人凭据仅通过共享本机的加密注入引用交给 worker，值不在 API 元数据、操作 args/result、审计或日志里。
 
-新增构建列表、命令树、命令头/参数/核对，文档目录/原件/全文/章节，镜像缺陷列表/详情，环境清单/拓扑/状态/框架查看和个人候选提交。E 的命令规则独立写了验收，原模块缺席失败后实现，2/2；几十条虚构命令覆盖 STRING/U16/IPADDR/枚举和构建缺失。最长八词匹配、参数数量/类型/位宽/枚举/范围违规分别输出；超过 128 头明确 result_too_large，不截断，手册不改变 missing。
+新增构建列表、命令树、命令名/参数/核对，文档目录/原件/全文/章节，镜像缺陷列表/详情，环境清单/拓扑/状态/框架查看和个人候选提交。E 的命令规则独立写了验收，原模块缺席失败后实现，2/2；几十条虚构命令覆盖 STRING/U16/IPADDR/枚举和构建缺失。最长八词匹配、参数数量/类型/位宽/枚举/范围违规分别输出；超过 128 头明确 result_too_large，不截断，手册不改变 missing。
 
 新工具任务/事件归调用者个人，普通同 scope 读者不能从 task/result/events 绕过来源 ACL 或读到个人候选；task/admin 列表和事件在 limit 前过滤。包里同时返回构建页与 XML 时，来源类型按原件分别记录，修复首次联验发现的同一页被误标成两种类型而撞上不可变修订的问题。资产清单允许暂未安装执行包的资产，但不为其发布工具；修复目录 hook 误拦资产第 1 幕的回归。
 
@@ -322,7 +322,7 @@ Claude 报告 Circle bd646a5 已把工作页改用 kind=work&limit=20，工具/�
 
 ### 真实构建站点冒烟发现的下一步阻塞
 
-Claude 报告以 a04f84c 连接器和其控制的 7420 栈新资产做过只读冒烟，并发 2、间隔 200ms，只取 1 个 XML 和少量页面；本代理没有访问真实源。发现四项结构差异：索引先链接汇总页，汇总页混合多个产品及变体再链接列表；只有正式已发布构建标题被 font 包住，其余是纯文本紧随 BLOCKQUOTE，变体文件有前缀和不同镜像后缀；命令头须由全部祖先 menu 与 item 拼接、scope 独立保留；修复链接同时有直接缺陷编号和历史外部编号，须标识编号体系。现有合成全绿不覆盖这些结构，真实连接器路径尚不可用。下一步先用同形虚构数据验收，再修通用解析、产品包过滤/平台配置与知识投影，保持按需下载和来源证据，不写内网地址、域名或真实构建名，也不改 Claude 的技能脚本。
+Claude 报告以 a04f84c 连接器和其控制的 7420 栈新资产做过只读冒烟，并发 2、间隔 200ms，只取 1 个 XML 和少量页面；本代理没有访问真实源。发现四项结构差异：索引先链接汇总页，汇总页混合多个产品及变体再链接列表；只有正式已发布构建标题被 font 包住，其余是纯文本紧随 BLOCKQUOTE，变体文件有前缀和不同镜像后缀；命令名须由全部祖先 menu 与 item 拼接、scope 独立保留；修复链接同时有直接缺陷编号和历史外部编号，须标识编号体系。现有合成全绿不覆盖这些结构，真实连接器路径尚不可用。下一步先用同形虚构数据验收，再修通用解析、产品包过滤/平台配置与知识投影，保持按需下载和来源证据，不写内网地址、域名或真实构建名，也不改 Claude 的技能脚本。
 
 用户提供 Claude 对 a22ea1b 的独立复核：固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 78/78、typecheck 通过、无 skip；连接器搜不到产品线名，两条非阻塞建议均认可。真实站点结构修复提交后，仍由 Claude 在其控制的 7420 栈只读复测。
 
@@ -442,7 +442,7 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 
 用户指出过严的 test_env 拒绝使两份真实工作簿无法提交，并提供脱敏行形状及框架接口。其 F 是启用的主机方法，G 是 shell 实参，返回值供紧邻检查点；不是不透明设备函数。生命周期/未知 reboot 由客户端纠正，FAMX execute 的模糊分派仍须拒绝或展开。console 真实用途不能据名字猜，须以床配置角色为准。只读核对用户指定的 ../synthetic-reference-engine/knowledge/framework/mirror 的 test_xlsx/env/ssh_server 源函数及 compile_ref/excel_contract，未运行、导入或复制代码/配置值。
 
-先写 test_env 分派验收，实际失败；再写实参/闭集规则，缺模块失败后自写 TS dialect。支持八个明确测试主机方法、引号外逗号、prompt/timeout、多行整体、H 捕获，拒绝 I 替换、未知/生命周期/禁用方法和未验证 console。FAMX 字面 cmd 及 kwargs 也按实际实参重新 command_check；shell 单列证明与审批摘要，不当 FAMX 命令头。直接主机的字面 cmd 支持，模糊 execute 拒绝。新增合成 HTTP 流量/检查点、默认闭集、运行时缩小名单、证据分离和未知方法门禁，执行/旧连接器/方言联合 **17/17**；最终实参/读取方法 **5/5**，typecheck 通过。未改 Claude 的技能包，不以来源统计冒充真实投递。
+先写 test_env 分派验收，实际失败；再写实参/闭集规则，缺模块失败后自写 TS dialect。支持八个明确测试主机方法、引号外逗号、prompt/timeout、多行整体、H 捕获，拒绝 I 替换、未知/生命周期/禁用方法和未验证 console。FAMX 字面 cmd 及 kwargs 也按实际实参重新 command_check；shell 单列证明与审批摘要，不当 FAMX 命令名。直接主机的字面 cmd 支持，模糊 execute 拒绝。新增合成 HTTP 流量/检查点、默认闭集、运行时缩小名单、证据分离和未知方法门禁，执行/旧连接器/方言联合 **17/17**；最终实参/读取方法 **5/5**，typecheck 通过。未改 Claude 的技能包，不以来源统计冒充真实投递。
 
 本机单跑也复现 record-feed-b 等待 unknown 阶段 10 秒超时，下一轮加状态诊断后未再复现；不能只认定是游标等待。按独立复核建议，仅 Act 8 的事件/阶段/游标等待扩到 30 秒，原期待值、去重数量、标记与资源核对不变，其他验收默认期限不变。保留合成超时状态/操作诊断，联合两条均通过。
 
@@ -894,7 +894,7 @@ B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7*
 
 ## 65：统一标识、冻结包基线与执行流迁移设计
 
-按维护者一份简报顺序签署三笔：**69363e3** 统一 circle-hub 标识与 `CIRCLE_HUB_*`，新名优先（包含显式空值），仅新名未定义时读取旧名，启动只输出一行不含值的旧键弃用提示；旧 controller lookup 集中适配、编译器 creator 与 Circle 扩展旧协议保留，原生 Execution **1.1.1** 及实现摘要不变，HTTP 路由、dev-login 与数据库 schema 不改，专项 **54/54**（新用例 5、直接消费者 38、mindmap 4、归档 7）及 typecheck 通过。**dfd8144** 默认样本改钉 **ba06eed**，Hub hooks **3/3**、冻结产品线 **31/31**、技能 **57/57** 与 catalog **4/4**（合计 **61/61**）通过，TAP 用例数动态读取，均无 skip，typecheck 通过；只读冻结包字节，不修改独立包。**b87c64c** 提交 148 行中文执行流迁移设计，四个相对文档链接及路径/凭据静态检查通过；明确当前 loader 不会运行完整 controller，后续需通用驱动、历史批准 pin、设备终态与产品解析隔离及 Meridian 双产品执行验收，旧任务不改数据库重绑，本轮未实施迁移，待维护者复核与后续实施授权。最终仅对齐 packs/README 的主配置新名说明并追加本段；未运行全套（由维护者独立执行），未 push、部署、访问 7420/真实网关或改 Circle 与独立包源，只用合成验收与只读冻结样本，不扩事件、通知或分页面。
+按维护者一份简报顺序签署三笔：**69363e3** 统一 circle-hub 标识与 `CIRCLE_HUB_*`，新名优先（包含显式空值），仅新名未定义时读取旧名，启动只输出一行不含值的旧键弃用提示；旧 controller lookup 集中适配、编译器 creator 与 Circle 扩展旧协议保留，原生 Execution **1.1.1** 及实现摘要不变，HTTP 路由、dev-login 与数据库 schema 不改，专项 **54/54**（新用例 5、直接消费者 38、mindmap 4、归档 7）及 typecheck 通过。**dfd8144** 默认样本改钉 **ba06eed**，Hub hooks **3/3**、冻结产品线 **31/31**、技能 **57/57** 与 catalog **4/4**（合计 **61/61**）通过，TAP 用例数动态读取，均无 skip，typecheck 通过；只读冻结包字节，不修改独立包。**b87c64c** 提交 148 行中文执行流迁移设计，四个相对文档链接及路径/凭据静态检查通过；明确当前 loader 不会运行完整 controller，后续需通用驱动、历史批准 pin、设备终态与产品解析隔离及 Meridian 双产品执行验收，旧任务不改数据库重新绑定，本轮未实施迁移，待维护者复核与后续实施授权。最终仅对齐 packs/README 的主配置新名说明并追加本段；未运行全套（由维护者独立执行），未 push、部署、访问 7420/真实网关或改 Circle 与独立包源，只用合成验收与只读冻结样本，不扩事件、通知或分页面。
 
 ## 66：公开 CI 的隔离前提显式跳过
 
@@ -906,11 +906,11 @@ B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7*
 
 先写历史产品/来源 pin 验收，旧实现 **1/5**（基础来源实时 ACL 负例原本成立），随后实现内部 `{assetId,version,sha256,digest?}` 精确绑定。来源制品与产品模块读取历史 approved/running 修订，未指定版本时选择本资产最新批准修订；跨产品/原生多实现必须显式选择，旧 assetId 字符串不被称作冻结。缓存与原件读取前重核批准摘要、历史与最新批准 readers 交集及当前角色；草稿收窄 readers 不撤旧批准 pin，批准 reader 撤销、旧修订 disabled/retired 和批准失效均拒绝。pin 只适用于批准清单中的自有原件记录，basis 引用、企业原件及其它来源继续原实时 ACL；补篡改记录摘要、空 digest 和缓存回执边界。合法合成 builders 明确选各自方法，通用请求/任务提交不偷注入 selector，无 selector 歧义负例仍有效。
 
-新历史绑定六例与既有 FAMX/执行链/外部来源/模块/服务客户端相关六文件 **47/47**，providers 方法 **8/8**，共 **55/55，无 skip**；typecheck/diff 通过，固定 Circle 8b2ceb6、冻结产品包 ba06eed，只用合成资源和脚本模型。原生 1.1.1 及摘要依赖、HTTP 路由、数据库迁移/归档字节不改；公开 SAR 语义与旧任务不自动重绑。A2 契约待复核、A3 未实施，本步单独本地签署，全套仍由维护者跑；未 push、部署或访问 7420/真实网关/Circle/独立包工作树。
+新历史绑定六例与既有 FAMX/执行链/外部来源/模块/服务客户端相关六文件 **47/47**，providers 方法 **8/8**，共 **55/55，无 skip**；typecheck/diff 通过，固定 Circle 8b2ceb6、冻结产品包 ba06eed，只用合成资源和脚本模型。原生 1.1.1 及摘要依赖、HTTP 路由、数据库迁移/归档字节不改；公开 SAR 语义与旧任务不自动重新绑定。A2 契约待复核、A3 未实施，本步单独本地签署，全套仍由维护者跑；未 push、部署或访问 7420/真实网关/Circle/独立包工作树。
 
 ## 68：A2 有界 transition 内部契约
 
-仅定义 `hub-execution-transition/1` 的输入/输出 schema、六种严格动作、步骤身份与独立请求摘要，F 的 factory 不反向依赖 B/D/E。当前输入值、canonical SHA 与冻结 binding 双重相等，仍须由 C 按不可变修订提供并核验；自报一致不证明权限。依维护者提供的真实 21 案纯数字统计推导 state 256 KiB、metadata 512 KiB、output 256 KiB、受控解码字节 8 MiB 等初版预算，完整 wire 仍受现有 24/16 MiB 限制；明确请求估算与实测字节的区别、环境/结果 Tool 可见事实与原件清单。有限 JSON、累计预算、规范 base64、原件 SHA/大小与真实字节长度均有合成负例，不截断；sessions 缺样本如实记为覆盖缺口。定向合同 **6/6，无 skip**，typecheck/diff 通过，多 agent 交叉复核；只定义数据与校验函数，未注册驱动或新增 HTTP，原生执行 **1.1.1** 字节不改。A3 须待维护者复核本契约后才开始，仅 Meridian 合成流程；FAMX 新 Tool/flow 由独立产品包负责，旧任务不重绑。未跑全套、push、部署或访问真实系统，全套仍由维护者独立运行。
+仅定义 `hub-execution-transition/1` 的输入/输出 schema、六种严格动作、步骤身份与独立请求摘要，F 的 factory 不反向依赖 B/D/E。当前输入值、canonical SHA 与冻结 binding 双重相等，仍须由 C 按不可变修订提供并核验；自报一致不证明权限。依维护者提供的真实 21 案纯数字统计推导 state 256 KiB、metadata 512 KiB、output 256 KiB、受控解码字节 8 MiB 等初版预算，完整 wire 仍受现有 24/16 MiB 限制；明确请求估算与实测字节的区别、环境/结果 Tool 可见事实与原件清单。有限 JSON、累计预算、规范 base64、原件 SHA/大小与真实字节长度均有合成负例，不截断；sessions 缺样本如实记为覆盖缺口。定向合同 **6/6，无 skip**，typecheck/diff 通过，多 agent 交叉复核；只定义数据与校验函数，未注册驱动或新增 HTTP，原生执行 **1.1.1** 字节不改。A3 须待维护者复核本契约后才开始，仅 Meridian 合成流程；FAMX 新 Tool/flow 由独立产品包负责，旧任务不重新绑定。未跑全套、push、部署或访问真实系统，全套仍由维护者独立运行。
 
 ## 69：合入设计文档收敛
 
@@ -1290,7 +1290,7 @@ transition 的动作被 C 拒绝时，原 generic failure.code / message 保留�
 
 ## 121：XML 原件必须经模块运行时消费的验收
 
-基 60220cf，现有 famxModuleFlow 增加可选 treeOriginal='xml'。此分支上传 / 登记 / 注入仅 workbook、command-tree XML 与 function-contract 三件原件，不含 command-check；原默认 JSON 四件原件与既有负例行为保留。合成 XML 采用 Hub commandsFrom 支持的 commands→scope(configuration)→menu(service)→item(inspect)→STRING target 参数，命令头 service inspect 加 alpha 对应 famxDeviceCommand。局部 checked 返回只为旧夹具类型兼容，不上传或作为新用例的核对依据。
+基 60220cf，现有 famxModuleFlow 增加可选 treeOriginal='xml'。此分支上传 / 登记 / 注入仅 workbook、command-tree XML 与 function-contract 三件原件，不含 command-check；原默认 JSON 四件原件与既有负例行为保留。合成 XML 采用 Hub commandsFrom 支持的 commands→scope(configuration)→menu(service)→item(inspect)→STRING target 参数，命令名 service inspect 加 alpha 对应 famxDeviceCommand。局部 checked 返回只为旧夹具类型兼容，不上传或作为新用例的核对依据。
 
 新增原 opt-in 下的完整流程用例，要求实际 delivered：已批准来源与输入均无 command-check，真实 tools/command-check.ts 的 checkCommands Tool 动作使用字面命令 / identity 参数及 command-tree byteSlots，字节由现 Hub 运行时追加。断言该步骤成功观察的 heads 对 famxDeviceCommand 为 present:true、result.sourceSha256 等于上传 XML 原件；若 C 返回投影指针则按真实 B 引用回读 / 核 SHA。后续设备 Hook 消费该投影，provider 只 submit 一次，所有操作为 flow.invoke，原生文件 SHA 不变。没有直接在测试里调用产品 Tool 或使用预编回执替代运行。
 
@@ -1386,7 +1386,7 @@ v0.2.0 指向 2f9cd20 并已创建 GitHub Release。部署前确认原生 11 条
 
 前后守卫冻结原 19 条任务及其依赖，而非将新治理任务混入历史集合：19 个输入修订、645 个操作、657 个证据、2364 个制品及绑定、11 个旧回执、12 个来源，八类表使用 PostgreSQL canonical jsonb 原文本核 SHA，避免日期微秒或大整数经 JavaScript 丢精度。2450 份 B 原件合计 47,489,389 字节逐件重读 size / SHA，与部署前 manifest 全部一致。部署后再核原进程与数据库未重启，全站活动 / unknown 操作和租约均为零，网关 lease_status 明确 leased=false、bed_busy=false。现场滚动没有新增模型调用或设备任务；原 21 例的 13 pass / 8 fail 仍按既有原件披露，不重写成全绿。
 
-现场原先未承载 skill-run 的脚本 runtime 从 1.1.1 改为用户确认的 fd8524a / 1.7.0，仅替换 Circle 入口、版本、提交三个字段，model 整块 canonical SHA 不变。独立 approver 批准同一 runtime 资产的 2.0.0 修订，approved_digest 与 SHA 一致、绑定变更集 approved；旧 1.0.0 整行 PostgreSQL 原文本 SHA 不变。没有扩展 readers 或重绑历史运行。父 supervisor 仍使用弃用输入回退，不为清旧名重启会清理临时库的 dev-stack；运行中的依赖路径保留，本机秘密、备份、原件和操作回执均不进 Git。
+现场原先未承载 skill-run 的脚本 runtime 从 1.1.1 改为用户确认的 fd8524a / 1.7.0，仅替换 Circle 入口、版本、提交三个字段，model 整块 canonical SHA 不变。独立 approver 批准同一 runtime 资产的 2.0.0 修订，approved_digest 与 SHA 一致、绑定变更集 approved；旧 1.0.0 整行 PostgreSQL 原文本 SHA 不变。没有扩展 readers 或重新绑定历史运行。父 supervisor 仍使用弃用输入回退，不为清旧名重启会清理临时库的 dev-stack；运行中的依赖路径保留，本机秘密、备份、原件和操作回执均不进 Git。
 
 ## 133：Circle 修复版与并行收尾
 
