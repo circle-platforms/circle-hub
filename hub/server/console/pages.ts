@@ -6,6 +6,7 @@ import { digestOf } from '../../records/api.ts';
 // waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isEntryKind, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
+import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
@@ -317,7 +318,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     run.sources.map((s) => [uiLabelOf('source_role', s.role), technicalCode(s.reference), s.slot ?? '', s.external ? technicalCode(s.external) : '', s.media_type ?? '', html`${s.label??''}${s.upload_declaration?html`<p>${tooltip('本次任务可读','绑定原文为输入只对本次任务的读者开放，不改变全局读取权限。')}</p>`:''}`]),
   );
   const requirements = table(
-    ['键', '名称', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '修复轮数'],
+    ['键', '名称', '说明', axisUiLabel('layer'), doneRuleHead(), acceptedProducerHead(), '修复轮数'],
     run.requirements.map((r) => [
       code(r.key),
       r.name,

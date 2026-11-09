@@ -1,3 +1,4 @@
+import { ACCEPTED_PRODUCER_NOTE, DONE_RULE_NOTE } from './console/pack-display.ts';
 import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // The seven places of the redesigned console (proposal decisions 3 and 6 of 2026-10-31) over HTTP with the fake services:
@@ -259,6 +260,8 @@ describe('operations and commands', () => {
     assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
     const detail=await get('/console/packs/review',admin);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
+    // Issue 229: the abstract column heads of the requirement table say what they mean.
+    assert.ok(detail.body.includes(DONE_RULE_NOTE)&&detail.body.includes(ACCEPTED_PRODUCER_NOTE),'the workflow page explains the delivery rule and the accepted producer');
     assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);
     const memberSession=await signIn((await member()).token), mine=await get('/console/packs',memberSession);
     assert.ok(!mine.body.includes(skill.title));

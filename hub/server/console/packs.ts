@@ -6,6 +6,7 @@ import {personalPackControls} from './personal-packs.ts';
 // operation); changing who may use or maintain a pack, retiring a version and switching a product pack are commands for the
 // administrator's Circle (proposal decision 6 of 2026-10-31).
 import { PACK_KIND, axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import {timestamp} from './knowledge-display.ts';
@@ -109,7 +110,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
 </div>`);
   const personalControls=await personalPackControls(ctx,pack);
   const requirements = loaded === null ? (pack.kind === 'workflow' ? card({title:'验收要求'}, html`<p class="notice">验收要求暂不可读</p>`) : html``) : card({ title: '验收要求', meta: `${loaded.requirements.length} 项` }, table(
-    ['要求项', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '必需', '检查项'],
+    ['要求项', '说明', axisUiLabel('layer'), doneRuleHead(), acceptedProducerHead(), '必需', '检查项'],
     loaded.requirements.map((r) => [html`<b>${r.name}</b>${technical(code(r.key),'查看')}`, r.description, r.layers.map((layer) => uiLabelOf('layer', layer)).join('、'), uiLabelOf('done_rule', r.done_rule), uiLabelOf('accepted_producer', r.accepted_producer), r.required ? '必需' : '可选', r.checks.length === 0 ? '未配置检查' : r.checks.map(id=>loaded?.checks.find(check=>check.id===id)?.title??'检查项').join('、')]),
     '没有要求项',
   ));

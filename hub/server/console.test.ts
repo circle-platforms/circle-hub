@@ -11,6 +11,7 @@ import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { NEUTRAL } from './console/pages.ts';
+import { ACCEPTED_PRODUCER_NOTE, DONE_RULE_NOTE } from './console/pack-display.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -267,7 +268,7 @@ describe('pages', () => {
     const page = await get(`/console/runs/${run}`, session);
     assert.equal(page.status, 200);
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
-    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录']) {
+    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录', DONE_RULE_NOTE, ACCEPTED_PRODUCER_NOTE]) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
     }
     const blocks = [...page.body.matchAll(/<div class="ch-source"(?: data-evidence)?><dl[^>]*>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));

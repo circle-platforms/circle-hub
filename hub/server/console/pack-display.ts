@@ -1,7 +1,8 @@
 // Navigation and publication presentation only; kind selection never changes the uploaded manifest or its validation.
-import { isPackKind, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
-import type { PageChrome } from './html.ts';
+import { axisUiLabel, isPackKind, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
+import type { Html, PageChrome } from './html.ts';
 import type { PageContext } from './pages.ts';
+import { tooltip } from './presentation.ts';
 
 export function publishingKind(ctx: PageContext): PackKind {
   const kind = ctx.url.searchParams.get('kind');
@@ -21,3 +22,11 @@ export function publication(ctx: PageContext, kind: PackKind = publishingKind(ct
     active: packHome(kind).active,
   };
 }
+
+/** What the two delivery rules mean, from the model's definition of done (V06) in plain words (issue 229). */
+export const DONE_RULE_NOTE='记账型：每个条目都有终态、证据齐全、效果已知或已处置，就算交付；结果只显示已交付和各分区的数量，不显示“通过”。门禁型：要求同一运行、同一产物，全部必需的要求项都满足才算交付。';
+/** Who may produce the result of a requirement (W02): the formal names stay, this says what they stand for. */
+export const ACCEPTED_PRODUCER_NOTE='这一要求项的结果接受谁产生的：事实由 Hub 按规则算出；判断由模型给出；独立判断要求给出判断的不是起草者自己，是否独立按任务包的规定核对。';
+export const doneRuleHead=():Html=>tooltip(axisUiLabel('done_rule'),DONE_RULE_NOTE);
+export const acceptedProducerHead=():Html=>tooltip(axisUiLabel('accepted_producer'),ACCEPTED_PRODUCER_NOTE);
+
