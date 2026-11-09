@@ -1,5 +1,9 @@
 # hub/runs/engine
 
+## Summary history reads
+
+A summary reads validation candidates newest-first one body at a time, stopping at the accepted technical head, and reads production candidates separately through the existing run/submission index. The selected management head and current-ground permissions remain the same as full detail: a hidden technical head never falls back to an older success, while production retains its existing last-readable ordering. Every candidate still comes through the integrity-checked records port. The regression inserts large unrelated history and counts exact loaded bodies and bytes rather than measuring wall-clock speed. This does not yet replace full run/result bodies with a verified summary projection or paginate full task detail; rejected or unreadable candidate chains may still require successive reads.
+
 ## Space locks and citations (decision 133)
 
 New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy
