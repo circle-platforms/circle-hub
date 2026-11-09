@@ -1,6 +1,6 @@
 import {reportOutcome} from './report-outcome.ts';
 import {REPORT_READ_ATTEMPTS,REPORT_READ_WINDOW_MS,reportPending,reportReadDelay,trustedStatus} from './report-read.ts';
-import {releaseDigest,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
+import {releaseDigest,releaseField,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
 import type {AdminLogEntry} from '../runs/api.ts';
 import {RETRY_RULES} from './retry-policy.ts';
 import {prepareEffectGate,EffectBoundaryError} from './effect-gate.ts';
@@ -203,11 +203,25 @@ export class DispatchService {
         const applicable=row.resource_kind==='executor'&&row.action==='submit'&&row.effect_class===gate.context.write.effect_class&&row.trigger===gate.context.trigger;
         const report=await gate.inspectRelease(row);rows.push({row_sha256:releaseDigest(row.id),applicable,checks:report.checks});
       }
-      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows,no_verdict};
+      // The gate dispatch applies after every release condition: the run's lineage holds every resource key the executor declares.
+      // Reported beside the clause-3 verdict, not inside it: dispatchAccepted picks its executor by `satisfied` and then lets the dispatch itself refuse and tell the runner.
+      const coverage=await this.explainCoverage(by,run,d);
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows,no_verdict,lease_coverage:coverage};
     }catch(error){
       const proof=await inspectInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
-      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[],no_verdict};
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[],no_verdict,lease_coverage:null as ReleaseCheck|null};
     }
+  }
+  /** The lease-coverage clause of explain-release: read-only, names the declared keys the lineage lacks, never contacts the executor. */
+  private async explainCoverage(by:Principal,run:string,d:ExecutorDefinition):Promise<ReleaseCheck>{
+    const condition='lease.coverage',label='同一谱系持有执行器声明的全部资源键';
+    const proof=await inspectInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
+    if(!proof.input)return {condition,label,satisfied:null,fields:[],missing_fact:'派发前提尚未全部核对通过，无法确定运行的谱系和发起用户，因此还不能判断租约是否覆盖',next_action:'先处理上面未满足的放行条件，再重跑 job explain-release'};
+    try{
+      const {missing}=await this.coverage(proof.input.ancestors,proof.input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);
+      const fields=[releaseField('lease.resources.uncovered',0,missing.length,missing.length===0)];
+      return missing.length===0?{condition,label,satisfied:true,fields}:{condition,label,satisfied:false,fields,missing_fact:`缺少覆盖派发窗口的同血缘有效租约：${missing.join('、')}（执行器共声明 ${d.resources.length} 把）`,next_action:'执行器的目标是这些键所在的整个自动化测试环境：在本运行的预订谱系里取得全部键（整台预订）后，重开计划与核验；只订刚好够用的设备不能派发'};
+    }catch(error){return {condition,label,satisfied:null,fields:[releaseField('exception',undefined,error instanceof Error?{name:error.name}:error,null)],missing_fact:'读不到租约持有记录，无法判断租约是否覆盖',next_action:'管理员恢复租约表的可读性后重跑 job explain-release'};}
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
     await this.registry.admin(by);const current=await this.registry.get(executor);
@@ -903,11 +917,16 @@ export class DispatchService {
       }
     });
   }
-  private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
+  /** Which declared keys the lineage does not hold for the whole dispatch window; the one rule dispatch and explain-release share. */
+  private async coverage(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<{ rows: HolderSnapshot[]; missing: string[] }> {
     const rows = await this.options.leases.holderSnapshot(keys);
     const held = (key: string) => rows.some(r => r.key === key && !r.released && r.user === user && ancestors.includes(r.run) && (r.expires_at === null || Date.parse(r.expires_at) > this.now().getTime() + requiredMs));
     const missing = keys.filter(key => !held(key));
-    if (rows.length !== keys.length || missing.length) throw new LeaseCoverageError(missing.length ? missing : keys);
+    return { rows, missing: missing.length ? missing : rows.length !== keys.length ? keys : [] };
+  }
+  private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
+    const { rows, missing } = await this.coverage(ancestors, user, keys, requiredMs);
+    if (missing.length) throw new LeaseCoverageError(missing);
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
