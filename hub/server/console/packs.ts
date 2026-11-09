@@ -1,3 +1,4 @@
+import {packPurpose} from './pack-display.ts';
 import {memoReadPort} from '../../records/api.ts';
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
@@ -56,7 +57,7 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
   const canPublish=await ctx.deps.records.authorizations.canPublish(ctx.principal.id);
   const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope)),listings);
   return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {
-    active: 'packs', hint: '按当前读取权限列出工作流与通用技能',
+    active: 'packs', hint: '工作流用于完成有验收要求的任务，通用技能用于指导客户端做法；这里只列出当前账户可用的内容',
     actions:html`${button('/console/packs/-/publish','发布我的工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的工作流分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
@@ -78,7 +79,7 @@ async function packList(ctx:PageContext,listings:readonly PackListing[],scope:Kn
       rows.push(html`<li class="ch-row${on?' is-selected':''}"${on?html` aria-current="true"`:''} data-row-href="${url}"><span class="ch-row-mark" aria-hidden="true"></span><div class="ch-row-body"><a class="ch-row-title" href="${url}">${pack.title}</a><div class="ch-row-meta">${chip(state.text,state.tone)}<span>使用范围：${await usageAudience(ctx,pack)}</span>${timestamp(pack.published_at)}</div></div></li>`);
     }
     if(group==='shared'&&!rows.length)continue;
-    sections.push(html`<section class="ch-section" id="${group}-${kind}" aria-label="${uiLabelOf('pack_kind',kind)}">${group===scopes[0]?html`<span id="${kind}" aria-hidden="true"></span>`:''}${card({title:uiLabelOf('knowledge_search_scope',group)+' · '+uiLabelOf('pack_kind',kind),meta:`${rows.length} 个`,hint:kind==='workflow'?'规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果':'只规定做法，没有验收要求'},rows.length?html`<ul class="ch-list">${rows}</ul>`:html`<div class="ch-empty"><p class="ch-empty-title">尚无可用的${uiLabelOf('pack_kind',kind)}</p></div>`)}</section>`);
+    sections.push(html`<section class="ch-section" id="${group}-${kind}" aria-label="${uiLabelOf('pack_kind',kind)}">${group===scopes[0]?html`<span id="${kind}" aria-hidden="true"></span>`:''}${card({title:uiLabelOf('knowledge_search_scope',group)+' · '+uiLabelOf('pack_kind',kind),meta:`${rows.length} 个`},html`${group===scopes[0]?html`<p class="ch-meta">${packPurpose(kind)}</p>`:''}${rows.length?html`<ul class="ch-list">${rows}</ul>`:html`<div class="ch-empty"><p class="ch-empty-title">尚无可用的${uiLabelOf('pack_kind',kind)}</p></div>`}`)}</section>`);
   }
   return html`<div class="ch-section" data-area-content>${sections}</div>`;
 }

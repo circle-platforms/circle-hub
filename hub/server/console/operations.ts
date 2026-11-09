@@ -5,7 +5,7 @@ import {field as sharedField,technicalCode} from './presentation.ts';
 // 75). Adding a member issues an invitation code for the standard authorization, or a token for a client without it;
 // publishing a task pack is a check of the upload and then its 发布 step (manage.ts). Connecting a business system may be
 // tried first (尝试连接, trial.ts): a read-only trial that records its outcomes without saving the typed configuration.
-import { publication, publishingKind, packHome } from './pack-display.ts';
+import { publication, publishingKind, packHome, packPurpose } from './pack-display.ts';
 import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { TRIAL_LOGIN_STOPPED } from '../../connectors/api.ts';
 import { code, html, link, liveModule, page, type Html } from './html.ts';
@@ -87,7 +87,7 @@ function packPage(ctx: PageContext, staging: PackStaging): Html {
   const form = actionForm('pack-stage', ctx.csrf ?? '', html`<div data-fields>${field(`${label} zip 文件`, html`<input type="file" name="archive" accept=".zip,application/zip" required>`, { hint: '发布文件夹压缩成的 zip，文件夹中要有 pack.json', full: true })}</div>`, '上传并校验', { multipart: true, primary: true, kind });
   const staged = staging.list(ctx.principal.id).filter(stage=>!stage.space&&(stage.kind??'workflow')===kind);
   const waiting = staged.length === 0 ? '' : html`<div>${card({ title: `暂存的${label}`, tail: chip('等待发布中', 'judgment'), hint: '仅暂存人可见，30 分钟内有效' }, html`<div class="ch-section">${staged.map((stage) => html`<div><p>${technicalCode(`${stage.pack}@${stage.version} · ${stage.digest}`)} <span class="ch-meta">暂存至 ${when(new Date(stage.expires).toISOString())}</span></p>${stageForms(stage, ctx.csrf ?? '')}</div>`)}</div>`)}</div>`;
-  return html`${steps(['上传', '发布校验', '发布', '完成'], 0)}
+  return html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose(kind)}</p><div class="ch-actions">${link('/console/operations/pack','完成有验收要求的任务',{kind:'workflow'})}${link('/console/operations/pack','提供通用做法',{kind:'skill'})}${ctx.admin?link('/console/operations/pack','接入业务系统',{kind:'system'}):''}</div><p class="ch-meta">选择的是发布入口；上传内容的类型仍由 pack.json 声明并按原规则校验。</p></section>${steps(['上传', '发布校验', '发布', '完成'], 0)}
 <section class="ch-section" data-columns="2">
 ${card({ title: `上传${label}`, hint: '上传人需为维护人；先检查结构、样例和来源，通过后暂存 30 分钟，确认发布时重新检查，相同内容不重复发布。' }, html`${form}`)}
 ${card({ title: '在 Hub 主机上发布',hint:'维护人在 Hub 主机上先检查再发布，检查与记录和控制台相同。' }, html`<pre class="ch-quote">${'circle-hub pack publish <文件夹> --dry-run\ncircle-hub pack publish <文件夹>'}</pre><p>${link(packHome(kind).path,'查看已发布版本')}</p>`)}
