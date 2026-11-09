@@ -68,7 +68,7 @@ test('folder statistics disclose historical records separately from the paginate
  const removed=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数撤回'});await spaces.withdraw(owner.principal,removed.entry,owner.user.id);
  const current=await spaces.current(owner.user.id);assert.ok(current);assert.equal(current.body.entries.filter(row=>row.path===path).length,3);
  const page=await browser.get(space({space:owner.user.id,path}));assert.equal(page.status,200,page.body);const text=textOf(parse(page.body));
- assert.match(text,/本文件夹条目记录（含历史及撤回）3/);assert.match(text,/本页当前可读条目/);assert.match(text,/只统计本页已加载的当前可读条目/);
+ assert.match(text,/本文件夹条目记录（含早期版本及撤回）3/);assert.match(text,/本页当前可读条目/);assert.match(text,/只统计本页已加载的当前可读条目/);
  const rows=rowTexts(parse(page.body));assert.ok(rows.some(row=>row.includes('合成计数修订')));assert.ok(!rows.some(row=>row.includes('合成计数初稿')||row.includes('合成计数撤回')));
  assert.ok(revised.entry!==first.entry);
 });

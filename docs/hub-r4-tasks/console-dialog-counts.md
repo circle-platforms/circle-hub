@@ -26,3 +26,7 @@
 - `node --test "hub/server/console/*.test.ts" hub/server/console.test.ts hub/server/console-knowledge.test.ts`：74通过、0失败、0跳过。
 - `npm run typecheck`退出0；`npm run test:docs`333通过、0失败、0跳过。共享设计源与生成资源未变。
 - 未运行全仓unit/acceptance、Linux隔离或实际部署；合成预检和容量表单不证明真实删除已发生。
+
+## 修正（2026-11-10）
+
+把草稿合并成一棵临时本地树跑整套单元测试时，`hub/server/console-wording.test.ts` 失败：本批新增的计数口径说明用了文案守卫禁用的旧词“历史”（“条目记录（含历史及撤回）”）。该守卫在 PR 的快速 CI 里不运行，所以此前没有发现；原 `origin/main` 上通过，本分支单独也失败。改为“早期版本”（“条目记录（含早期版本及撤回）”），验收断言和 README 同步；其余不变。修正后 `console-wording`、控制台 `packs.test.ts` 和验收 48 共 16 项通过，0 失败，0 跳过。
