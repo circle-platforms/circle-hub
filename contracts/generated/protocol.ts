@@ -6,7 +6,7 @@ export const PROTOCOL_CODES = {
   REFERENCE_AMBIGUOUS: { when: '精确值有歧义（T03 整份不受理之一）', fix: '从诊断给出的可能所指里选一个' },
   QUOTE_MISMATCH: { when: '原文与引用对不上（T03 整份不受理之一）', fix: '按原文逐字引用，或先调用 resolve_reference' },
   SOURCE_UNPARSEABLE: { when: '所有候选解析器拒收来源，保留最后确定的解析原因', fix: '按解析器在抛出处给出的修正说明修改后重传' },
-  SOURCE_UNAVAILABLE: { when: '别人个人空间里的内容（不区分有没有），或凭据与登录类读取失败：Hub 登录来源失败或过期、来源系统拒绝 Hub 的账号、应答里有疑似凭据被扣下、读取者不是有效账号、个人凭据来源；调用者面前同形（D05 R[3]）', fix: '核对引用；需要时请内容的主人分享，或请管理员按管理员记录恢复读取后按原引用重读；原因只记在管理员记录里' },
+  SOURCE_UNAVAILABLE: { when: '别人个人空间里的内容（不区分有没有），或凭据与登录类读取失败：Hub 登录来源失败或过期、来源系统拒绝 Hub 的账号、应答回显 Hub 发出的凭据、被扣的应答说明不了对象存在、读取者不是有效账号、个人凭据来源；调用者面前同形（D05 R[3]）', fix: '核对引用；需要时请内容的主人分享，或请管理员按管理员记录恢复读取后按原引用重读；原因只记在管理员记录里' },
   SOURCE_NOT_PERMITTED: { when: '团队、产品或业务系统的对象存在，读者没有读取权限（D05 R[3]）', fix: '请对象的主人或管理员分享读取权限，工作流和通用技能请管理员分配；也可以换一个你能读的引用' },
   IDEMPOTENCY_MISMATCH: { when: '同一步骤键或意图键内容不同（D05、B06）', fix: '改了内容就不要带原键' },
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },
@@ -22,6 +22,7 @@ export const PROTOCOL_CODES = {
   SOURCE_READ_LIMIT: { when: '有权读者的确定读取拒绝：超过声明的路由页数、请求数或读取字节预算；内部码仍为 READ_LIMIT', fix: '由资源管理员调整声明或缩小读取范围后重新完整读取' },
   SOURCE_REDIRECT_REFUSED: { when: '来源明确要求重定向，但同源声明、路由或跳转上限不允许继续；附状态和安全的 Location', fix: '由资源管理员核对来源给出的 Location 与路由声明，修复配置后按原对象重读' },
   SOURCE_ABSENT: { when: 'Hub 里或外部系统里确定没有这个对象（D05 R[3]）；外部系统的附系统、对象和读取时刻', fix: '核对编号或名称；外部系统的回答按这条确定观察处理' },
+  SOURCE_PENDING_REVIEW: { when: '业务系统里有这个对象，它的应答里有未核看的疑似凭据（D05 R[3]）；附系统、对象和读取时刻，不给内容，也不说命中的是什么', fix: '到来源系统看原文；管理员核看内容后按原对象重读' },
   EFFECT_NOT_ALLOWED: { when: 'P11 R[3] 第 1 款：动作不在冻结的允许效果表', fix: '使用已声明的动作，或发布包后以新修订重跑' },
   EFFECT_PARAMETER_OUT_OF_RANGE: { when: 'P11 R[3] 第 2 款：参数超出该行范围', fix: '按声明范围改参数并重新核验产物' },
   EFFECT_RELEASE_UNMET: { when: 'P11 R[3] 第 3 款：放行条件未满足', fix: '先完成声明的核验要求项，再派发其已核验产物' },
@@ -118,4 +119,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 40;
+export const MODEL_VERSION = 41;

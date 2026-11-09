@@ -4,9 +4,16 @@ import {canonicalize,sha256Hex} from '../records/api.ts';
 import type {KnowledgeContext} from './context.ts';
 import {ACTION,COMPONENTS} from './store.ts';
 
-export async function requestKnowledgeFact(context:KnowledgeContext,input:{subject:string;missing:string;action:string;inputs:string[];kind?:RequestKind;deadlineHours?:number;attribution?:Attribution;reason?:Reason;credential?:{sha256:string;record:string;external:string};expiredFrom?:string}):Promise<{reference:string;audience_user:string;deadline:string}>{
+/** The administrator a request names: the configured one while enabled, else any enabled administrator. */
+export async function namedAdmin(context:KnowledgeContext){
  const preferred=context.admin===null?null:await context.records.principals.get(context.admin.id);
- const admin=preferred?.role==='admin'&&!preferred.disabled?preferred:(await context.records.principals.list?.()??[]).find(user=>user.role==='admin'&&!user.disabled);
+ return preferred?.role==='admin'&&!preferred.disabled?preferred:(await context.records.principals.list?.()??[]).find(user=>user.role==='admin'&&!user.disabled);
+}
+/** Index value of the object a credential request is about: its bytes can change from one read to the next. */
+export const credentialObject=(external:string):string=>sha256Hex(canonicalize(external));
+
+export async function requestKnowledgeFact(context:KnowledgeContext,input:{subject:string;missing:string;action:string;inputs:string[];kind?:RequestKind;deadlineHours?:number;attribution?:Attribution;reason?:Reason;credential?:{sha256:string;record:string;external:string};expiredFrom?:string}):Promise<{reference:string;audience_user:string;deadline:string}>{
+ const admin=await namedAdmin(context);
  if(!admin)throw new Error('缺少可接收知识核对请求的具名管理员；请先配置启用的同步管理员再重试');
  let key=sha256Hex(canonicalize({...input,admin:admin.id}));
  let known=await context.store.newest<{detail:{audience_user:string;deadline:string}}>({key:'knowledge.request',value:key,kind:'action'});
@@ -19,6 +26,6 @@ export async function requestKnowledgeFact(context:KnowledgeContext,input:{subje
  const record=await context.store.putAction({action:ACTION.read,run:null,item:null,inputs:input.inputs,component:COMPONENTS.sync,lease:null,
   started_at:now,ended_at:now,result:'completed',error_code:null,acceptance:null,codes:[],
   detail:{...(input.credential?{credential:input.credential}:{}),...(input.expiredFrom?{expired_from:input.expiredFrom}:{}),request_kind:input.kind??'clarification',...(input.attribution?{attribution:input.attribution}:{}),...(input.reason?{reason:input.reason}:{}),subject:input.subject,missing:input.missing,next_action:input.action,
-   audience_user:admin.id,audience_name:admin.name,deadline,channel:{component:COMPONENTS.sync},question_sha256:key}},[{key:'knowledge.request',value:key},...(input.credential?[{key:'knowledge.credential.request',value:input.credential.sha256},{key:'knowledge.credential.request.all',value:'1'}]:[])]);
+   audience_user:admin.id,audience_name:admin.name,deadline,channel:{component:COMPONENTS.sync},question_sha256:key}},[{key:'knowledge.request',value:key},...(input.credential?[{key:'knowledge.credential.request',value:input.credential.sha256},{key:'knowledge.credential.request.all',value:'1'},{key:'knowledge.credential.object',value:credentialObject(input.credential.external)}]:[])]);
  return {reference:`rec:${record.digest}`,audience_user:admin.id,deadline};
 }

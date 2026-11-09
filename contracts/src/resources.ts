@@ -497,6 +497,7 @@ export const ReadDeclaration = z
     plan: PackFunctionRef.optional().describe('ReadPlanInput -> ReadPlanOutput, called again with the responses so far, at most 5 rounds'),
     request: ReadRequestTemplate.optional().describe('one declared request instead of a planner'),
     project: PackFunctionRef.optional().describe('ReadProjectionInput -> ReadProjectionOutput: derived artifacts such as content and meta'),
+    object_route: RouteId.optional().describe('the JSON route whose successful answer is this object itself, not a lookup or a list: held for suspected credentials it still shows the object exists (D05 R[3]); without it a held answer stays neutral'),
     absent_codes:z.array(z.string().min(1).max(100)).min(1).max(20).optional().describe('Projection error codes that explicitly mean this whole object is absent; valid only with fully readable supporting responses'),
     max_requests: z.number().int().min(1).max(MAX_READ_REQUESTS).optional(),
     max_bytes: z.number().int().min(1).max(1024 * 1024 * 1024).optional().describe('all responses of one read together'),
@@ -592,6 +593,7 @@ export const SystemProfile = z
       reads.add(read.name);
       if (types.has(read.external)) ctx.addIssue({ code: 'custom', path: ['reads', i, 'external'], message: `${read.external} is served by two reads` });
       types.add(read.external);
+      if (read.object_route !== undefined && routes.get(read.object_route)?.response !== 'json') ctx.addIssue({ code: 'custom', path: ['reads', i, 'object_route'], message: `route ${read.object_route} is not a declared JSON route` });
       if (read.request !== undefined) {
         const route = routes.get(read.request.route);
         if (route === undefined) {
@@ -827,6 +829,15 @@ export const SourceAbsent=z.strictObject({
   responses:z.array(RequestKey).min(1).optional().describe('Stored response keys that support the observation; the service verifies them against the current read'),
 });
 export type SourceAbsent=z.infer<typeof SourceAbsent>;
+
+/** An object of a business system whose answer holds unreviewed suspected credentials (D05 R[3]): it exists, nothing more is said of it. */
+export const SourcePendingReview=z.strictObject({
+  code:z.literal('SOURCE_PENDING_REVIEW' satisfies ProtocolCode),
+  system:PackId,
+  object:ExternalObjectId,
+  observed_at:IsoTime,
+});
+export type SourcePendingReview=z.infer<typeof SourcePendingReview>;
 
 export const ReadProjectionOutput = z.union([
   z.strictObject({
