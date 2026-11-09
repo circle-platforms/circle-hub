@@ -94,7 +94,7 @@ test("the runs started from a run come back reduced to their lineage, at the rea
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/successors`)).status, 401);
 });
 
-test("a run's job outputs are found with one listing of its jobs, not one per file, and a later output is found after the recheck", async (t) => {
+test("a run's job outputs are found with one listing of its jobs, not one per file; a digest not found lists them again", async (t) => {
   const sha = (value: Buffer) => createHash('sha256').update(value).digest('hex');
   const files = Array.from({ length: 6 }, (_, i) => Buffer.from(`合成会话 ${i}\n`));
   const later = Buffer.from('合成：作业结束后才有的日志\n');
@@ -106,14 +106,12 @@ test("a run's job outputs are found with one listing of its jobs, not one per fi
   const all = [...files, later];
   d.records.artifacts.source = async (_principal: unknown, wanted: string) => { const found = all.find((file) => sha(file) === wanted); return found ? { bytes: found } : null; };
   const s = await serve(d as unknown as ServerDeps); t.after(s.close);
-  const get = (file: Buffer) => fetch(`${s.origin}/run-export/${RUN}/sources/${sha(file)}`, { headers: { authorization: 'Bearer runner-token' } });
+  const get = (file: Buffer, token = 'runner-token') => fetch(`${s.origin}/run-export/${RUN}/sources/${sha(file)}`, { headers: { authorization: `Bearer ${token}` } });
   for (const file of files) { const answer = await get(file); assert.equal(answer.status, 200); assert.deepEqual(Buffer.from(await answer.arrayBuffer()), file); }
   assert.equal(listings, 1, 'six files of one run, one listing of its jobs');
   rows = [...job.rows, row('case-6', later)];
-  assert.equal((await get(later)).status, 404, 'not returned at the last listing, and the recheck has not come yet');
-  assert.equal(listings, 1);
-  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 11_000 });
   const found = await get(later);
-  assert.equal(found.status, 200, 'found once the recheck lists the jobs again'); assert.equal(listings, 2);
-  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/sources/${sha(files[0])}`, { headers: { authorization: 'Bearer other-token' } })).status, 404, 'a reader who may not export the run gets nothing from the kept digests');
+  assert.equal(found.status, 200, 'an output of a job that ended since is found at once'); assert.equal(listings, 2);
+  assert.equal((await get(Buffer.from('合成：没有哪个作业返回过'))).status, 404); assert.equal(listings, 3);
+  assert.equal((await get(files[0], 'other-token')).status, 404, 'a reader who may not export the run gets nothing from the kept digests');
 });

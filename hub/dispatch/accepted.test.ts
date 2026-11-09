@@ -157,20 +157,17 @@ test('the pre-dispatch reference is no device return, and an older job without o
 type Attempted = Awaited<ReturnType<C['service']['dispatchAccepted']>>;
 test('a repeat reads the attempt still running instead of starting another, and gets the refusal that came after the answer', async (t) => {
   // As on the bed host: the release checks outlast the wait, so the first answer says the check still runs and the refusal
-  // (the bytes went out in an earlier job) settles afterwards; it must reach the repeats, never only the operator's log.
+  // (the bytes went out in an earlier job) settles afterwards; it must reach a repeat, never only the operator's log.
   const c = await setup(); t.after(() => c.close());
   let release: (value: Attempted) => void = () => {}; let started = 0;
   c.service.dispatchAccepted = () => { started++; return new Promise<Attempted>((resolve) => { release = resolve; }); };
   assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做派发前核对/);
   assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做派发前核对/);
   assert.equal(started, 1, 'a repeat does not start a second attempt');
-  release({ started: false, executor: c.executor.id, reason: '合成：这份产物已经由作业 x 派发过，作业已结束；同一份字节只派发一次', final: true });
+  release({ started: false, executor: c.executor.id, reason: '合成：这份产物已经由作业 x 派发过，作业已结束；同一份字节只派发一次' });
   await new Promise((resolve) => setImmediate(resolve));
-  for (let i = 0; i < 3; i++) {
-    const [refused] = await acceptedDispatch(c.kit, c.service, c.run, true, 5);
-    assert.match(refused.text, /^Hub 没有派发：合成：这份产物已经由作业 x 派发过/);
-  }
-  assert.equal(started, 1, 'a refusal no repeat can change answers every repeat without a new attempt');
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 没有派发：合成：这份产物已经由作业 x 派发过/);
+  assert.equal(started, 1);
 });
 
 test('a refusal the runner can remove is answered once, and the repeat after it tries again', async (t) => {
@@ -185,12 +182,12 @@ test('a refusal the runner can remove is answered once, and the repeat after it 
   assert.equal(started, 2, 'the repeat after the answer tries again');
 });
 
-test('bytes that went out in a job that ended are refused for good', async (t) => {
+test('bytes that went out in a job that ended are refused, naming the one-dispatch rule', async (t) => {
   const c = await setup(); t.after(() => c.close());
   assert.equal((await c.service.dispatchAccepted(c.run)).started, true);
   await settled(c);
   const again = await c.service.dispatchAccepted(c.run);
-  assert.equal(again.started, false); assert.equal(again.final, true, JSON.stringify(again));
+  assert.equal(again.started, false, JSON.stringify(again));
   assert.match(again.reason ?? '', /同一份字节只派发一次/);
   assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
 });

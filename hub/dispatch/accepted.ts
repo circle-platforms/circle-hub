@@ -29,8 +29,6 @@ type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
  * so a refusal that comes after the answer, when the release checks take longer than the wait, reaches the next repeat. */
 interface Attempt { woken: Promise<void>; reserved?: { job: string; executor: string }; settled?: Settled }
 const attempts = new WeakMap<DispatchService, Map<string, Attempt>>();
-/** Attempts kept per service: a settled one waits for the runner's repeat, and a final refusal answers every repeat. */
-const MAX_ATTEMPTS = 256;
 function attemptsOf(service: DispatchService): Map<string, Attempt> {
   let open = attempts.get(service);
   if (!open) attempts.set(service, open = new Map());
@@ -57,11 +55,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (jobs.length && !retry) { open.delete(run); return capped(jobs.map((job) => runnerNote(job, admin.id))); }
   if (!ready) return [];
   let attempt = open.get(run);
-  if (!attempt) {
-    attempt = begin(service, run);
-    open.set(run, attempt);
-    for (const key of open.keys()) { if (open.size <= MAX_ATTEMPTS) break; open.delete(key); }
-  }
+  if (!attempt) { attempt = begin(service, run); open.set(run, attempt); }
   if (!attempt.settled && !attempt.reserved) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([attempt.woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
@@ -70,9 +64,8 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return [{ job, executor, text: clip(`Hub 已按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]; }
   const settled = attempt.settled;
   if (!settled) return [{ text: `Hub 正在做派发前核对；${PROGRESS}` }];
-  // A settled attempt is answered once, and a repeat after that tries again (a cause the runner fixes, as a booking); a
-  // refusal that no repeat of this run can change (its bytes went out in an earlier job) answers every repeat.
-  if (!settled.final) open.delete(run);
+  // A settled attempt is answered once; a repeat after that tries again, as before (a cause the runner fixes, as a booking).
+  open.delete(run);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
   // the executor's whole target): nothing was sent, so the answer says why instead of reporting a dispatch.
   if (settled.started && settled.status) {
