@@ -139,7 +139,7 @@ test('R11 positive reconciliation treats foreign timestamps as records regardles
 test('R11 submission timeout consumes only the remaining committed window',async t=>{
   const c=await setup({timeout:150,onSubmit:async()=>{await new Promise(resolve=>setTimeout(resolve,100));}});t.after(()=>c.close());
   const transaction=c.kit.store.withTransaction.bind(c.kit.store);let changed=false;
-  c.kit.store.withTransaction=async(fn,parent)=>{const value=await transaction(fn,parent);if(!changed && await c.kit.store.getByKey('action',`dispatch.bytes:${c.payload.body.sha256}:1`)){changed=true;c.clock.ms+=100;}return value;};
+  c.kit.store.withTransaction=async(fn,parent)=>{const value=await transaction(fn,parent);if(!changed && await c.kit.store.getByKey('action',`dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`)){changed=true;c.clock.ms+=100;}return value;};
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(result.outcome,'unknown');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });

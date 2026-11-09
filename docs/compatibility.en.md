@@ -49,6 +49,8 @@ The following belonged to the retired task-and-approval server (up to 0.2.0) and
 
 ## History
 
+- 2026-11-09: the internal dispatch-byte unique key now includes the verified lineage root (and retains round/attempt for repeated work). Historical global-S keys and indexes are not rewritten: complete original reservation bindings select same-lineage retry/unknown history, while independent tasks do not inherit another lineage's rounds/window. Unknown physical-target occupancy still blocks globally; old records with unverifiable bindings remain conservatively refused. The six external tools and contract schemas are unchanged. Rolling back to an older binary retains its conservative global-S refusal for independent tasks and cannot preserve this isolation fix.
+
 - 2026-10-13: this page was created. The rename has not started; the acceptance Circle commit is 8b2ceb6; foundation/circle is 1.0.4; circle's main line is 1.1.1.
 - Evening of 2026-10-13: 7420 upgraded in place to server-s2 8e212a6 (§5, migration 28); circle mainline 1.2.1; circle-hub and circle-packs relicensed under Apache-2.0 with signed-off commits; circle-packs acceptance pinned at 316760a (products/famx 1.2.0).
 
