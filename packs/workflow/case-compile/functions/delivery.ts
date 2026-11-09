@@ -56,7 +56,9 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; closing?: Closing }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; closing?: Closing; missing?: MissingFact }
+/** What the Hub recorded missing for a case's own plan: in `plan_run` it left `requirement` pending on a data gap with a request. */
+export interface MissingFact { plan_run: string; requirement: string; missing: string }
 export interface Assembly {
   cases: CaseOutcome[];
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
@@ -183,7 +185,7 @@ export function evidenceProblems(notes: Notes, deviceTexts: Record<string, strin
  * At the cap it closes as the model not finding a solution, and the judged paragraphs stay the model's own account.
  */
 export const MAX_ROUNDS = 3;
-export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）' } as const;
+export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）', missing_fact: '缺少 Hub 点名的事实（待补齐）' } as const;
 export type Closing = keyof typeof CLOSING;
 
 /**
@@ -211,10 +213,36 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
   });
   return { cases: closed, problems };
 }
+
+/**
+ * How a case that never went to the bed closes, after the reference engine's exits for a case it could not compile (InfoTest
+ * tools/device/verifiability_tool.py `_credential_gates`): each exit is certified only by what the engine's own checks recorded
+ * in the session, and "a free-text claim that the bed lacks data, certificates, topology, or a helper is not a terminal
+ * credential. Continue authoring the case as written." The exit ported here is the Hub's own record that the case's plan is
+ * blocked by a missing fact: in the latest plan run that holds the case, its latest accepted result leaves a requirement of
+ * the plan (not the workbook's) pending on a data gap with a request (`facts`, found by tools/assemble-delivery.ts). Any other
+ * case never dispatched goes back to authoring.
+ */
+export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFact>): { cases: CaseOutcome[]; problems: string[] } {
+  const problems: string[] = [];
+  const closed = cases.map((outcome) => {
+    if (outcome.status !== 'unrun') return outcome;
+    const fact = facts[outcome.autoid];
+    if (fact) return { ...outcome, closing: 'missing_fact' as const, missing: fact };
+    problems.push(`用例 ${outcome.autoid} 没有上机，Hub 也没有给它的计划记下缺少的事实。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机，按设备原话归因，最多 ${MAX_ROUNDS} 轮。只有它自己的计划交给 Hub 后被判缺原合约事实（Hub 记下数据缺口并点名补证请求）的，才可以不上机定下结论`);
+    return outcome;
+  });
+  return { cases: closed, problems };
+}
+const MISSING_SHOWN = 240;
 /** The closing of a case as one line: what it is and the fact it rests on. */
 export function closingLine(outcome: CaseOutcome): string | null {
   if (outcome.closing === 'authoring_failure') return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
+  if (outcome.closing === 'missing_fact' && outcome.missing) {
+    const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
+    return `${CLOSING.missing_fact}：它的计划在计划运行 ${outcome.missing.plan_run} 交给 Hub，Hub 判它缺少事实并点名了补证请求${said ? `（Hub 原话：${said}）` : ''}；补齐前不生成工作簿、不上机。下面“怎么判断的”是模型自述。`;
+  }
   return null;
 }
 
@@ -236,10 +264,12 @@ export interface ReportInput {
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || `用例 …${autoid.slice(-6)}`;
-/** The closings of the failed cases as one sentence, naming only those that occur; empty when no case failed. */
+/** The closings of the failed cases and of those never dispatched, one sentence each, naming only those that occur; empty when none closed. */
 export function closingCounts(cases: CaseOutcome[]): string {
-  const counts = (Object.keys(CLOSING) as Closing[]).map((closing) => [closing, cases.filter((c) => c.closing === closing).length] as const).filter(([, n]) => n > 0);
-  return counts.length ? `${STATUS.failed}的终态：${counts.map(([closing, n]) => `${CLOSING[closing]} ${n}`).join('，')}。` : '';
+  return (['failed', 'unrun'] as const).map((status) => {
+    const counts = (Object.keys(CLOSING) as Closing[]).map((closing) => [closing, cases.filter((c) => c.status === status && c.closing === closing).length] as const).filter(([, n]) => n > 0);
+    return counts.length ? `${STATUS[status]}的终态：${counts.map(([closing, n]) => `${CLOSING[closing]} ${n}`).join('，')}。` : '';
+  }).join('');
 }
 function head(input: ReportInput): string[] {
   const { totals, pass, unsuccessful } = input.assembly;

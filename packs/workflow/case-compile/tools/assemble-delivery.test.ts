@@ -37,11 +37,24 @@ function planRun(run: string, autoids: string[], exclude: string[], pause?: stri
 }
 const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
 const plan2 = planRun(PLAN2, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
+// The plan run that held CASES[3] before the model left it out of the others.
+const GAP = 'run_01777777777777777777777777', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里';
+type Gap = 'recorded' | 'workbook' | 'unsubmitted' | 'none';
+/** The Hub left the plan of CASES[3] pending on a missing fact with a request (`recorded`), on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`). */
+function gapRun(kind: Exclude<Gap, 'none'>) {
+  const p = planRun(GAP, [CASES[3]], []);
+  const pending = (missing: string) => ({ status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'clarification' }, missing }] });
+  for (const r of p.result.partitions.delivered[0].requirements as Array<Record<string, unknown>>) {
+    if (r.requirement === 'workbook_verified') Object.assign(r, pending('合成：缺少客户端生成的工作簿'));
+    if (kind === 'recorded' && r.requirement === 'contract_methods') Object.assign(r, pending(GAP_WORDS));
+  }
+  return { plan: p, submitted: kind !== 'unsubmitted' };
+}
 const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
-async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = []) {
+async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded') {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
   const jobs = Object.fromEntries(runsInOrder.map((run) => [run, all[run]]));
@@ -57,6 +70,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
     records[run] = { run, pack: 'case-compile@9.9.9', started_at: at(k++), predecessor: plan, parameters: { plan_run: plan }, sources: plans[plan].record.sources };
     previous = run;
   }
+  if (gap !== 'none') { const g = gapRun(gap); records[GAP] = { ...g.plan.record, started_at: '2026-11-08T00:00:30.000Z', predecessor: BOOKING }; if (g.submitted) plans[GAP] = g.plan; }
   const successors: Record<string, unknown[]> = {};
   for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
   const originals = new Map([contract, profile, inventory, log, ...extraOriginals].map((bytes) => [sha256(bytes), bytes]));
@@ -66,6 +80,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
     const jobsOf = /^\/run-export\/(run_\w+)\/jobs$/.exec(url); if (jobsOf && jobs[jobsOf[1]]) { response.end(JSON.stringify({ schema: 'run-jobs@1', run: jobsOf[1], jobs: jobs[jobsOf[1]] })); return; }
     const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url); if (next) { response.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
     const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: records[whole[1]] ?? p.record, result: p.result, submission: p.submission })); return; }
+    if (whole && records[whole[1]]) { response.statusCode = 409; response.end('这个运行还没有已受理的提交\n'); return; }
     if (url === `/run-export/${RECOMPOSE}/run`) { response.end(JSON.stringify({ schema: 'run-export@1', run: recomposed })); return; }
     const alone = /^\/run-export\/(run_\w+)\/run$/.exec(url); if (alone && records[alone[1]]) { response.end(JSON.stringify({ schema: 'run-export@1', run: records[alone[1]] })); return; }
     const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url); if (source && originals.has(source[1])) { response.end(originals.get(source[1])); return; }
@@ -209,7 +224,7 @@ test('the verification runs the model left out are found in the Hub lineage, and
   const printed = JSON.parse(result.stdout);
   assert.deepEqual(printed.runs, [WHOLE, FINAL]);
   assert.deepEqual(printed.added_runs, [WHOLE]);
-  assert.equal(printed.reply, [`交付目录：${out}`, '共 4 条：交付 2，上机未通过 1，上机没有结论 0，没有上机 1。', '上机未通过的终态：声明与设备行为冲突（待仲裁） 1。', ...['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map((name) => `- ${join(out, name)}`)].join('\n'));
+  assert.equal(printed.reply, [`交付目录：${out}`, '共 4 条：交付 2，上机未通过 1，上机没有结论 0，没有上机 1。', '上机未通过的终态：声明与设备行为冲突（待仲裁） 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。', ...['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map((name) => `- ${join(out, name)}`)].join('\n'));
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), new RegExp(`第 1 次上机（核验运行 ${WHOLE}）：失败`));
@@ -282,8 +297,8 @@ test('a failed case goes back to authoring until three authored versions failed;
   assert.deepEqual(JSON.parse(closed.stdout).added_runs, [WHOLE, R2, R3]);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual({ closing: summary.cases[1].closing, label: summary.cases[1].closing_label, rounds: summary.cases[1].rounds }, { closing: 'authoring_failure', label: '模型未找到解决方案', rounds: 3 });
-  assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0 });
-  assert.match(JSON.parse(closed.stdout).reply, /\n上机未通过的终态：模型未找到解决方案 1。\n/);
+  assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1 });
+  assert.match(JSON.parse(closed.stdout).reply, /\n上机未通过的终态：模型未找到解决方案 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。\n/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /上机未通过 1，上机没有结论 0，没有上机 1。上机未通过的终态：模型未找到解决方案 1。/);
   assert.match(report, /- 编号 `990000000000000102` · 状态：上机未通过 · 上机 3 次 · 终态：模型未找到解决方案/);
@@ -332,4 +347,27 @@ test('a pass whose device words carry an execution-failure line its assertions d
   assert.deepEqual(summary.pass_audit, { markers: 1, read: 4, downgraded: [{ run: WHOLE2, item: CASES[2], where: '运行日志', line: 'Failed to run the synthetic command' }], wordless: 0 });
   assert.deepEqual(summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal), ['no_verdict', 'pass']);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /- 通过复核（InfoTest 的执行失败标记，合约声明 1 条）：读了 4 条通过的运行日志，1 条里有本条断言没读的执行失败原话、改记无判定。/);
+});
+
+test('a case never dispatched closes only on a fact the Hub recorded missing for its own plan; a written claim sends it back to authoring', async (t) => {
+  const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
+  const closed = await run(h, await notes(NOTES), out);
+  assert.equal(closed.code, 0, closed.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.cases[3].status, 'unrun');
+  assert.equal(summary.cases[3].closing, 'missing_fact');
+  assert.deepEqual(summary.cases[3].missing, { plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS });
+  assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1 });
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /上机未通过的终态：声明与设备行为冲突（待仲裁） 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。/);
+  assert.ok(report.includes(`**结论**：缺少 Hub 点名的事实（待补齐）：它的计划在计划运行 ${GAP} 交给 Hub，Hub 判它缺少事实并点名了补证请求（Hub 原话：${GAP_WORDS}）；补齐前不生成工作簿、不上机。`));
+  // The missing workbook of a plan run is no missing fact; a plan run with no accepted submission or none holding the case certifies nothing.
+  for (const gap of ['workbook', 'unsubmitted', 'none'] as const) {
+    const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
+    const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
+    const refused = await run(g, await notes(NOTES), refusedOut);
+    assert.equal(refused.code, 1, gap);
+    assert.match(refused.stderr, new RegExp(`用例 ${CASES[3]} 没有上机，Hub 也没有给它的计划记下缺少的事实。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机`), gap);
+    await assert.rejects(readdir(refusedOut), `${gap}: nothing was written`);
+  }
 });

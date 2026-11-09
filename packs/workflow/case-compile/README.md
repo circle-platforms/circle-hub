@@ -296,6 +296,18 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.15: a case never dispatched closes only on a fact the Hub recorded missing
+
+`closeUnrun` in `functions/delivery.ts` ports the first of the reference engine's exits for a case it could not compile
+(`tools/device/verifiability_tool.py` `_credential_gates`): an exit is certified only by what the engine's own checks recorded, and
+a written claim that the bed lacks data, topology or a helper sends the case back ("Continue authoring the case as written"). A case
+that never went to the bed now closes only when, in the latest plan run of the compilation that holds it, the Hub's latest accepted
+result leaves a requirement of its plan (not the workbook's) pending on a data gap with a request to a named audience; it is reported
+as 缺少 Hub 点名的事实（待补齐） with that plan run and the Hub's words. Any other case never dispatched refuses the delivery. In run 17
+two cases were left out before any plan of them was submitted and closed on the model's notes, which said the locked tree had no
+branch for their commands; the tree had both. The skill now says every case is written and submitted as authored, and that the
+length placeholders take any length (`{{domain:N}}`): the example `{{domain:253}}` read as the only length allowed.
+
 ### 3.10.14: back to the reference engine for the pass review and for words a device generates
 
 The owner had both 3.10.12 additions that went beyond InfoTest taken back (2026-11-09). The pass review reads only the run log of a
@@ -350,9 +362,10 @@ topology, or a helper is not a terminal credential. Continue authoring the case 
 that such cases are not reworked. In run 14 one case failed in four authored rounds, each time on the device's refusal of a step its
 own plan wrote, and was delivered as 上机未通过 on the model's judgement that the bed lacked a prerequisite.
 
-Not ported yet: a case never dispatched (excluded) still closes on the model's notes alone, where the reference engine accepts an
-unauthorable report only on two grounds it can recompute; a case whose latest dispatch gave no verdict is not rerun up to three
-times before it closes as a platform limit.
+Not ported yet: of the reference engine's exits for a case it could not compile, only the missing fact the Hub recorded is ported
+(3.10.15); a command-tree refusal bound to an expectation (no CLI equivalent), a refusal by the shared-bed procedure, an author's
+address the bed cannot reach and a contradiction between two authored surfaces are not. A case whose latest dispatch gave no verdict
+is not rerun up to three times before it closes as a platform limit.
 
 ### 3.10.10: one plan directory for every run of the batch
 

@@ -13,7 +13,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, jsonBytes, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
@@ -85,6 +85,23 @@ export function replyText(out: string, totals: Record<string, number>, files: st
   const closings = closingCounts(cases);
   return [`交付目录：${out}`, `共 ${totals.cases} 条：${counts}。`, ...(closings ? [closings] : []), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
 }
+/**
+ * What the Hub recorded missing for item `id` in a plan run's latest accepted result: a requirement of the plan, not the
+ * workbook's (a plan run has no workbook yet), left pending on a data gap with a request to a named audience. Null for anything
+ * else, including a run with no accepted submission.
+ */
+export function missingFactOf(exported: unknown, run: string, id: string): MissingFact | null {
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return null;
+  for (const entries of Object.values(exported.result.partitions)) for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!isRecord(entry) || entry.item !== id || !Array.isArray(entry.requirements)) continue;
+    for (const requirement of entry.requirements) {
+      if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
+      const layer = requirement.layers.find((l) => isRecord(l) && l.attribution === 'data_gap' && isRecord(l.exit) && l.exit.action === 'request');
+      if (isRecord(layer)) return { plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
+    }
+  }
+  return null;
+}
 /** A case's plan in a plan run, as its digest: the slots the model submitted for it (a rerun of the same plan has the same digest). */
 function planDigest(plan: RunInputs, autoid: string): string {
   const item = (plan.run.items as unknown[] ?? []).find((i) => autoidOf(i) === autoid);
@@ -113,7 +130,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     // The runs named are where the walk starts, not the whole list: every verification run of the same compilation (plan runs
     // under the same booking bound to the same recomposition, or the same document without one) is read from the Hub's lineage,
     // so a dispatch the model left out still counts (decision 162).
-    const keys = new Set<string>(), roots = new Set<string>(), started = new Map<string, string>();
+    const keys = new Set<string>(), roots = new Set<string>(), started = new Map<string, string>(), planRuns = new Map<string, string>();
     const runOf = async (run: string): Promise<Record<string, unknown> | null> => { const exported = JSON.parse(decode(await get(`${origin}/run-export/${run}/run`, bearer))); return isRecord(exported) && isRecord(exported.run) && exported.run.run === run ? exported.run : null; };
     const ours = (run: Record<string, unknown> | null, key: string) => !!run && typeof run.pack === 'string' && run.pack.split('@')[0] === 'case-compile' && lineageKey(run) === key;
     for (const d of given.values()) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
@@ -135,7 +152,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       const run = queue.shift()!; if (visited.has(run)) continue; visited.add(run);
       for (const next of await successorsOf(run)) {
         if (next.pack.split('@')[0] !== 'case-compile' || lineageKeyOf(next.sources) !== key) continue;
-        if (typeof next.parameters.plan_run === 'string') started.set(next.run, next.started_at);
+        if (typeof next.parameters.plan_run === 'string') started.set(next.run, next.started_at); else planRuns.set(next.run, next.started_at);
         queue.push(next.run);
       }
     }
@@ -247,9 +264,27 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     for (const outcome of assembly.cases.filter((c) => c.status === 'failed')) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail').map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid))).size;
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts);
-    const unproven = [...evidenceProblems(notes, deviceTexts), ...closed.problems];
+    // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
+    // dispatched is looked up in the latest plan run of this compilation that holds it (closeUnrun in functions/delivery.ts).
+    const facts: Record<string, MissingFact> = {};
+    const unrun = closed.cases.filter((c) => c.status === 'unrun').map((c) => c.autoid);
+    if (unrun.length) {
+      const latestFirst = [...planRuns.keys()].sort((a, b) => (planRuns.get(a)! > planRuns.get(b)! ? -1 : planRuns.get(a)! < planRuns.get(b)! ? 1 : a > b ? -1 : 1));
+      const itemsOf = new Map<string, unknown[]>();
+      for (const run of latestFirst) { try { const record = await runOf(run); itemsOf.set(run, Array.isArray(record?.items) ? record.items : []); } catch { itemsOf.set(run, []); } }
+      for (const autoid of unrun) {
+        const holder = latestFirst.find((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid)); if (!holder) continue;
+        const item = itemsOf.get(holder)!.find((i) => autoidOf(i) === autoid);
+        if (!isRecord(item) || typeof item.id !== 'string') continue;
+        let exported: unknown = null;
+        try { exported = JSON.parse(decode(await get(`${origin}/run-export/${holder}`, bearer))); } catch { /* no accepted submission: the Hub never judged its plan */ }
+        const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
+      }
+    }
+    const settled = closeUnrun(closed.cases, facts);
+    const unproven = [...evidenceProblems(notes, deviceTexts), ...closed.problems, ...settled.problems];
     if (unproven.length) throw new Error(unproven.join('；'));
-    assembly.cases = closed.cases;
+    assembly.cases = settled.cases;
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
     const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless } };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
@@ -261,7 +296,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false } : null,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}) })) })),
     };
     outputs.push({ name: 'delivery.json', bytes: json(summary) });
 
