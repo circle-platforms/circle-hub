@@ -201,7 +201,12 @@ export interface RunDetail {
   latest: { record: string; result: ValidationResult } | null;
   /** The result computed at start_run (submission equals this run record's digest), never a later commentary result. */
   production: { record: string; result: ValidationResult } | null;
+  /** Present only when the read was bounded (RunHistoryOptions): the window of submissions listed and how to reach the older ones. */
+  history?: { limit: number; next: string | null; /** The submission behind the current result when it is older than the window; listed first. */ pinned?: string };
 }
+
+/** Ask for a window of the newest submissions instead of the whole history (the console detail page); results are read for these rows only. */
+export interface RunHistoryOptions { history?: { limit: number; before?: string | null } }
 
 export interface RunListing extends Page<RunRecordView> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
 /** Protected result heads for list rows and aggregate charts, without submission/request detail or display qualifiers. */
@@ -216,7 +221,7 @@ export interface RunsService {
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<Untraced<z.infer<typeof SubmitResultOutput>>>;
   resolveReference(user: Principal, input: z.infer<typeof ResolveReferenceInput>, context: CallContext): Promise<Untraced<z.infer<typeof ResolveReferenceOutput>>>;
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
-  getRun(user: Principal, run: string): Promise<RunDetail | null>;
+  getRun(user: Principal, run: string, options?: RunHistoryOptions): Promise<RunDetail | null>;
   getRunSummary?(user:Principal,run:string):Promise<RunSummary|null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;

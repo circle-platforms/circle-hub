@@ -160,3 +160,8 @@ PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。�
 - 数字的含义：大小是返回行里字符串列的长度之和（`db.bytes`），不是字节数，`jsonb` 列不算，悬停说明写了。异常退出的时间取崩溃报告的时间，`process_events.at` 是下次启动发现它的时间。按发布一次部署一行，算这次部署运行的最后 24 小时，这样新旧发布比的是同样长的一段，和下面一行比。部署旧提交会回到早先的发布：那是新的一行，只算这次部署的调用，下面的行比的仍是它们部署前运行的那一段；重启不算新的一次。数据库没收下启动事件时，进程事件里没有这次运行，这个进程按自己的发布和启动时间写在最上面一行。连接数来自样本，只按客户端名字分：同一名字有多个平台时写在第一行，后面写“同上”。
 - 后台任务的中文名是截图稿的写法，还在 `health.ts` 里，进词表要经集成者改模型；进程事件的名字用 `hub/health` 的 `KIND_TEXT`。
 - 告警、最慢的查询、追踪详情、会话视图和记录页的新功能都不在这一步。最慢的查询先写一句话指向主机上的 `circle-hub db top`。
+
+## Task page history window (B1, #200)
+
+The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (50) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
+

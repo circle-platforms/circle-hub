@@ -1106,3 +1106,8 @@ Deleted owners do not invalidate exact already-frozen workflow evaluation or an 
 declaration. This custody adds no current namespace access or new-run eligibility. MCP lease context resolves historical
 holder and registration-owner names through the generated deleted-account interface label, while stable identity keys
 and stored run bytes stay unchanged.
+
+## Bounded detail history (B1, #200)
+
+`getRun(user, run, {history:{limit, before?}})` returns a window: the newest `limit` (1–200) submissions of the run, listed oldest first, with `history.next` (an opaque cursor for the older ones, null at the end) and `history.pinned` (the submission behind the current result when it is older than the window; listed first, on the newest window only). Results are read for the listed rows only, each by its own index entry and the newest readable one wins, as the unbounded read decides; the production result is read by its own index entry. The withdrawn-grounds state is computed over the results the read shows (the listed rows', the current result and the production result), which the page states. A cursor the store cannot use ends the paging with an empty window. Without the option the read is exactly what it was. Receipt checks of other callers (`hub/server/readers.ts`), `exportRun`, the JSON task view and the result page keep the unbounded read. Not removed: `latestAccepted` still scans backward from the newest result, so the cost of finding the current result is its distance from the end of the history.
+

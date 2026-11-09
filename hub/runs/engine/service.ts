@@ -137,8 +137,8 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     resolveReference(user, input, context) {
       return withDocuments(ctx,context,current=>previewReference(current,user,input,context),user);
     },
-    getRun(user, run): Promise<RunDetail | null> {
-      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>getRun(current, user, run)));
+    getRun(user, run, options): Promise<RunDetail | null> {
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>getRun(current, user, run, options)));
     },
     exportRun(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {

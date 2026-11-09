@@ -288,9 +288,14 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
   ]),'没有有效分享'));
 }
 
+/** How many of a task's newest submissions its page lists at once (the rest by "older" links). */
+export const RUN_HISTORY_LIMIT = 50;
+
 export async function runPage(ctx: PageContext, runId: string): Promise<PageResult> {
   if (!RUN_ID.test(runId)) return neutralPage(ctx);
-  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId);
+  // Issue 200: the page asks for a window of the newest submissions; older ones are reached by cursor, never read all at once.
+  const olderParam = param(ctx, 'older'), before = olderParam !== undefined && olderParam.length <= 512 ? olderParam : null;
+  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: RUN_HISTORY_LIMIT, before } });
   if (detail === null) return neutralPage(ctx);
   const run = detail.run;
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
@@ -364,6 +369,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     ]);
   }
   const submissions = table(['提交记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
+  const paging = detail.history === undefined ? html`` : html`<p class="ch-meta">本页列出 ${detail.submissions.length} 次提交，每页最多 ${detail.history.limit} 次，较早的在上${detail.history.pinned === undefined ? '' : '；第一行是当前结果对应的提交'}；撤回提示按本页列出的结果、当前结果和生产结果判断。${detail.history.next === null ? '' : html` ${link(`/console/runs/${run.run}`, '查看更早的提交', { older: detail.history.next })}`}${before === null ? '' : html` ${link(`/console/runs/${run.run}`, '回到最近的提交')}`}</p>`;
   const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false, cursor:param(ctx,'call_cursor')??null });
   const items = table(
     ['条目', '名称', '位置', '指纹', '可沿用'],
@@ -399,7 +405,7 @@ ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / �
 ${section(axisUiLabel('partition'), results)}
 ${commentary}
 ${await awaitingRequests(ctx, detail.requests ?? [])}
-${section('提交与回执', submissions)}
+${section('提交与回执', html`${paging}${submissions}`)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}
 </div>`, { run: run.run })}`,{inspector:showRecord?null:liveModule('task-inspector',['task.updated','request.updated'],inspector,{run:run.run}),detail:!showRecord,back:link('/console/runs','返回任务')}),
     ),
