@@ -85,6 +85,14 @@ export function describedRun(planRun: string, build: string): string { return `A
 /** The closing case, C a number as in every other row. */
 function closingRow(row: readonly string[]): Array<string | number> { return row.map((value, column) => column === 2 && value !== '' ? Number(value) : value); }
 /** One case's rows; `at` places a pointer inside the case. */
+/**
+ * The check point a PICK step adds before its call (decision 163): the declared literal-found method, and what the call's input
+ * column names, check_point.<attribute> from the runner's match register declaration. Null when either is not declared.
+ */
+export function pickCells(contract: RuntimeContract, profile: RuntimeProfile, pick: { from: string; pattern: string }): { object: string; method: string; input: string } | null {
+  const target = assertionTarget(contract, profile, { operator: 'found', text: pick.pattern, quote: { reference: '', text: '' }, after: 1 });
+  return target && contract.matchRegister ? { object: target.call.object, method: target.call.method, input: `${target.call.object}.${contract.matchRegister.attribute}` } : null;
+}
 function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string) => string): Array<Array<string | number>> {
   const { fields, contract, profile } = input;
   const gaps = typedAuthorityGaps(contract, profile, slots,fields.command_identities,fields.command_catalog,authorTexts(fields),fields.manifest_sha256,fields.bed_services);
@@ -109,7 +117,10 @@ function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string
     const seat = profile.seats.find((v) => v.object === step.object);
     if (seat && seat.ordinal >= profile.device_count) reject(at(`/steps/${i}`), '座位序号超出预检设备数；派发前还须重核实际设备数');
     let g: string; try { g = encodeG(step, gOptions(step.object, step.method, contract, profile)); } catch (e) { return reject(at(`/steps/${i}/G`), e instanceof Error ? e.message : 'G 无法往返'); }
-    rows.push([i === 0 ? fields.autoid : '', i === 0 ? FORMAT.case_priority : '', statement++, stepDescription(i === 0 ? path! : null, step.description), step.object, step.method, g,...(blockMeta(slots)?[step.save_as??'',step.input_register??'']:[])]);
+    const picked = step.pick ? pickCells(contract, profile, step.pick) : null;
+    if (step.pick && (!picked || i === 0)) reject(at(`/steps/${i}`), '取词需要前面的捕获、合约声明的 found 检查点和运行器合约里的检查点命中寄存器');
+    if (picked) rows.push(['', '', statement++, '', picked.object, picked.method, step.pick!.pattern, '', step.pick!.from]);
+    rows.push([i === 0 ? fields.autoid : '', i === 0 ? FORMAT.case_priority : '', statement++, stepDescription(i === 0 ? path! : null, step.description), step.object, step.method, g,...(blockMeta(slots)?[step.save_as??'',picked?picked.input:step.input_register??'']:[])]);
     for (const [k, expect] of slots.expects.entries()) if (expect.after === i + 1) {
       if (!blockMeta(slots)&&!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(at(`/expects/${k}/after`), '期望不能跟在等待或断言之后');
       if (!expect.register&&!hasSingleLineValue(expect.text)) reject(at(`/expects/${k}/text`), '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');

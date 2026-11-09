@@ -116,17 +116,17 @@ test('certified owned reports become qualified judgments only after per-seat pro
   }
 });
 
-test('a row that did not pass names its log and device sessions as sources its runner reads; a passing row names none', async t => {
+test('every row names its log and device sessions as sources its runner reads, a passing row too', async t => {
   for (const outcome of ['good', 'bad']) {
     const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome, log: `synthetic log ${outcome}`, sessions: { 'device-a.txt': 'synthetic session', 'device-b.txt': '' } }] } : value }); t.after(() => c.close());
     await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
     await c.freezeExecutor();
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id); const row = (await report(c, state.result!)).rows[0];
-    if (outcome === 'good') { assert.equal(row.evidence, undefined, JSON.stringify(row)); continue; }
-    // An empty session names no source; the raw report stays readable by functions only.
+    // An empty session names no source; the raw report stays readable by functions only. A pass keeps its words as sources too,
+    // so a reviewer can see whether it rested on a command the device refused.
     assert.match(row.evidence.log, /^src:[a-f0-9]{64}$/); assert.deepEqual(Object.keys(row.evidence.sessions), ['device-a.txt']);
     const text = async (reader: typeof c.owner, reference: string) => { const source = await c.kit.artifacts.source(reader, reference.slice(4)); return source?.bytes ? new TextDecoder().decode(source.bytes) : null; };
-    assert.equal(await text(c.owner, row.evidence.log), 'synthetic log bad'); assert.equal(await text(c.owner, row.evidence.sessions['device-a.txt']), 'synthetic session');
+    assert.equal(await text(c.owner, row.evidence.log), `synthetic log ${outcome}`); assert.equal(await text(c.owner, row.evidence.sessions['device-a.txt']), 'synthetic session');
     const other = await c.kit.principals.createUser(c.admin, '其他合成用户');
     assert.equal(await text(other, row.evidence.log), null);
   }

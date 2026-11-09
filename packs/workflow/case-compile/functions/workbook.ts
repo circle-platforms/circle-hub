@@ -14,7 +14,7 @@ import { parseManifest } from './manifest.ts';
 import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
-import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
+import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, pickCells, type GenerationInput, type GenerationFields } from './generate.ts';
 import { readTemplate, TemplateError, type WorkbookTemplate } from './generated/skills/runner-workbook/workbook-writer/workbook-template.ts';
 import { isRecord, markers, type Outcome, opened } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
@@ -72,12 +72,14 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   const reference = `'${book.sheet.replaceAll("'", "''")}'!$A$${headerRow}:$I$${headerRow}`;
   const ranges = model.definedNames.filter((value) => value.name === book.range_name);
   if (ranges.length !== 1 || ranges[0].scope !== null || ranges[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
-  const expectedLast = headerRow + 2 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + 1, 0);
+  const picks = (value: PlanSlots) => value.steps.filter((step) => step.pick).length;
+  const expectedLast = headerRow + 2 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + picks(value) + 1, 0);
   if (sheet.lastRow !== template.lastRow || [...values].some(([number, cells]) => number > expectedLast && cells.some(Boolean))) issue('closing', '/sheets/0', '收尾行之后不能再有内容，模板的行数不能变');
   if (JSON.stringify(grid(expectedLast)) !== JSON.stringify(book.closing_row)) issue('closing', '/sheets/0', '收尾行与配置不符');
   const description = headerRow + 1;
   if (grid(expectedLast - 1).some(Boolean) || grid(description)[2] !== '0' || grid(description)[3] !== `Author         : ${FORMAT.generator}\n计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(description).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '说明或空行不符合冻结的 plan_run/构建，说明行 E–I 必须为空');
   const defaultAssertion=assertionTarget(recipe.contract,profile);
+  const matchInput=pickCells(recipe.contract,profile,{from:'',pattern:''})?.input??null;
   if (!defaultAssertion) issue('assertion', '/profile/allowed', '缺少唯一的允许字面断言组合');
   // Scan every post-header E–I row, including description, blank and closing rows. Registers live within one case, as in
   // the reference runner: it resets them at every row that starts a case (an autoid in A on a row whose C is not the init
@@ -99,7 +101,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
     if (!assertion && !variable && (/[\r\n\v\f\u0085\u2028\u2029]/.test(g) || g.trim() !== g || /\{(?:0)?\}/.test(g))) issue('execution', at, '普通调用 G 必须是单行最终文字，没有占位符或首尾空白');
     try {
       const decoded = decodeG(g, { literalAssertion: assertion, wait, foldNewlines: profile.fold_newlines.some((v) => v.object === object && v.method === method) });
-      if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable?{input_register:variable,restore_for:0}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
+      if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable&&variable===matchInput?{pick:{from:'',pattern:''}}:variable?{input_register:variable,restore_for:0}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
       if(blockMeta(plan)){
         if(assertion){
           if(h&&!registers.has(h))issue('register',at,'检查点期望寄存器未先捕获');
@@ -109,7 +111,8 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
           if(!g&&!h)issue('assertion',at,'检查点缺字面或期望寄存器');
         }else{
           if(!g)issue('execution',at,'普通调用 G 不能为空');
-          if(variable&&(!registers.has(variable)||!Array.isArray(caps?.restore_methods)||!caps.restore_methods.some((row:any)=>row.object===object&&row.method===method)||decoded.args.length!==1||decoded.args[0]!=='{}'))issue('register',at,'普通 I 仅用于已捕获原文的声明还原守卫');
+          if(variable&&variable===matchInput){if(typeof decoded.args[0]!=='string'||decoded.args[0].split('"{}"').length!==2)issue('register',at,'取词的 I 只填第一个参数里唯一一处带双引号的 "{}"');}
+          else if(variable&&(!registers.has(variable)||!Array.isArray(caps?.restore_methods)||!caps.restore_methods.some((row:any)=>row.object===object&&row.method===method)||decoded.args.length!==1||decoded.args[0]!=='{}'))issue('register',at,'普通 I 仅用于已捕获原文的声明还原守卫');
           if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output==='raw_text'))issue('register',at,'H 捕获必须在本用例内命名唯一并由声明的原文观察产生');else{registers.add(h);if(init)initRegisters.add(h);}}
         }
       }
@@ -117,13 +120,18 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
     } catch (error) { issue('G', at, error instanceof Error ? error.message : 'G 无法按运行器规则读取'); }
   }
   const cases = [...values].filter(([number, cells]) => number > headerRow && number < expectedLast && cells[0] !== '');
-  const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
+  const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + picks(value) + 1; } }
   if (cases.length !== set.length || cases.some(([number, cells], k) => number !== starts[k] || cells[0] !== set[k].fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cells[0]) || !cells[4]) || new Set(set.map((value) => value.fields.autoid)).size !== set.length) issue('autoid', '/sheets/0', set.length === 1 ? '必须只有一个文本 autoid，等于条目且符合形状，首行 E 不能为空' : '每个用例的首行必须依序是它的文本 autoid，符合形状且互不重复，首行 E 不能为空，用例之间不能夹别的 autoid');
   let row = headerRow + 2;
   for (const [k, recipe] of set.entries()) { const plan = plans[k]; let statement = FORMAT.statement_type;
   for (const [i, step] of plan.steps.entries()) {
+    if (step.pick) {
+      const picked = executionByRow.get(row), pickRow = grid(row), expected = pickCells(recipe.contract, profile, step.pick);
+      if (!expected || !picked?.assertion || picked.object !== expected.object || picked.method !== expected.method || pickRow[6] !== step.pick.pattern || pickRow[7] !== '' || pickRow[8] !== step.pick.from || pickRow[0] !== '' || pickRow[1] !== '' || pickRow[3] !== '' || pickRow[2] !== String(statement++)) issue('step', `/sheets/0/rows/${row - 1}`, '取词检查点行与槽位不一致');
+      row++;
+    }
     const actual = executionByRow.get(row); const cells = grid(row);
-    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(statement++) || cells[1] !== (i === 0 ? FORMAT.case_priority : '') || cells[3] !== [i === 0 ? pathCell(recipe.fields.path) : null, step.description].filter((value) => value !== null && value !== undefined).join('\n')||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
+    if (!actual || actual.assertion || actual.object !== step.object || actual.method !== step.method || canonicalJson(actual.args) !== canonicalJson(step.args) || canonicalJson(actual.keywords) !== canonicalJson(step.keywords) || cells[2] !== String(statement++) || cells[1] !== (i === 0 ? FORMAT.case_priority : '') || cells[3] !== [i === 0 ? pathCell(recipe.fields.path) : null, step.description].filter((value) => value !== null && value !== undefined).join('\n')||blockMeta(plan)&&(cells[7]!== (step.save_as??'')||cells[8]!== (step.pick?matchInput??'':step.input_register??''))) issue('step', `/sheets/0/rows/${row - 1}`, '执行行逐个回读后与槽位或原文字段不一致');
     row++;
     const allowed = allowedCall(profile, step.object, step.method);
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {
@@ -136,7 +144,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   if (!plan.expects.length || grid(row).some(Boolean)) issue('execution', `/sheets/0/rows/${row - 1}`, '每个用例之后必须恰好是一行空行，执行行或断言数与计划不一致');
   row++;
   }
-  if (row !== expectedLast || executions.length !== plans.reduce((sum, value) => sum + value.steps.length + value.expects.length, 0)) issue('execution', '/sheets/0', '执行行或断言数与本运行用例计划不一致，可能漏行或多行');
+  if (row !== expectedLast || executions.length !== plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + picks(value), 0)) issue('execution', '/sheets/0', '执行行或断言数与本运行用例计划不一致，可能漏行或多行');
   return problems.length ? { ok: false, problems } : { ok: true, executions, autoids: set.map((value) => value.fields.autoid) };
 }
 function generationFields(value: unknown): GenerationFields | null {

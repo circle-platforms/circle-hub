@@ -1,0 +1,1284 @@
+{
+  "id": "block_pick_negative",
+  "source": "author",
+  "check": "contract_shape",
+  "note": "合成 ORBIT/COMET 块模型；不证明实际运行器已具备能力",
+  "subject": {
+    "item": "synthetic-case",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+    "data": {
+      "bucket": "bed-a",
+      "blocks": [
+        {
+          "kind": "CAPTURE",
+          "id": "baseline",
+          "call": {
+            "object": "ORBIT_0",
+            "method": "command",
+            "args": [
+              "demo show"
+            ],
+            "keywords": {}
+          },
+          "register": "baseline"
+        },
+        {
+          "kind": "PICK",
+          "id": "publish",
+          "from": "baseline",
+          "starts_with": "Kzone.",
+          "call": {
+            "object": "ORBIT_0",
+            "method": "command",
+            "args": [
+              "demo label \"{}\""
+            ],
+            "keywords": {}
+          }
+        },
+        {
+          "kind": "OBSERVE_ASSERT",
+          "id": "observe",
+          "call": {
+            "object": "ORBIT_0",
+            "method": "command",
+            "args": [
+              "demo show"
+            ],
+            "keywords": {}
+          },
+          "assertions": [
+            {
+              "id": "assertA",
+              "output": "observe",
+              "op": "abs_found",
+              "literal": "healthy+ready.[x]",
+              "quote": {
+                "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+                "text": "healthy+ready.[x]"
+              },
+              "expectation": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected"
+            }
+          ]
+        },
+        {
+          "kind": "CONFIG",
+          "id": "cleanup",
+          "call": {
+            "object": "ORBIT_0",
+            "method": "command",
+            "args": [
+              "no demo label"
+            ],
+            "keywords": {}
+          },
+          "cleanup": true
+        }
+      ],
+      "steps": [
+        {
+          "object": "ORBIT_0",
+          "method": "command",
+          "args": [
+            "demo show"
+          ],
+          "keywords": {}
+        }
+      ],
+      "expects": [],
+      "replacements": [],
+      "block_context": {
+        "preconditions": [],
+        "causal_links": [
+          {
+            "from": "publish",
+            "to": "observe",
+            "quote": {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+              "text": "healthy+ready.[x]"
+            }
+          }
+        ],
+        "responders": []
+      },
+      "criteria": [],
+      "obligations": [
+        {
+          "expectation": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+          "status": "asserted",
+          "assertions": [
+            "assertA"
+          ]
+        }
+      ]
+    },
+    "contract": {
+      "schema": "runtime-contract@2",
+      "complete": true,
+      "runtime": {
+        "minimum_version": "synthetic-runtime-v2",
+        "runner_source": "fixture/runtime.py",
+        "runner_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "found_times_supported": true,
+        "checkpoint_two_argument": true,
+        "checkpoint_match_register": {
+          "source": "lib/check_point.py",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attribute": "matched"
+        },
+        "block_model": {
+          "schema": "case-compile.block-runtime@1",
+          "default_assertion": {
+            "object": "check",
+            "method": "literal"
+          },
+          "operators": [
+            {
+              "op": "found",
+              "expected": "literal",
+              "object": "check",
+              "method": "found",
+              "matching": "escaped_literal"
+            },
+            {
+              "op": "not_found",
+              "expected": "literal",
+              "object": "check",
+              "method": "not_found",
+              "matching": "escaped_literal"
+            },
+            {
+              "op": "abs_found",
+              "expected": "literal",
+              "object": "check",
+              "method": "abs_found",
+              "matching": "literal"
+            },
+            {
+              "op": "abs_found",
+              "expected": "register",
+              "object": "check",
+              "method": "abs_found",
+              "matching": "literal"
+            },
+            {
+              "op": "found_times",
+              "expected": "literal",
+              "object": "check",
+              "method": "found_times",
+              "matching": "escaped_literal"
+            }
+          ],
+          "differs": {
+            "object": "check",
+            "method": "differs_literal",
+            "matching": "exact_text"
+          },
+          "capture_registers": true,
+          "checkpoint_expected_register": true,
+          "checkpoint_result_register": true,
+          "reserved_registers": [
+            "synthetic_internal"
+          ],
+          "restore_registers": true,
+          "output_methods": [
+            {
+              "object": "ORBIT_0",
+              "method": "command",
+              "output": "raw_text"
+            },
+            {
+              "object": "client",
+              "method": "shell",
+              "output": "raw_text"
+            }
+          ],
+          "restore_methods": [
+            {
+              "object": "ORBIT_0",
+              "method": "restore_checked",
+              "raw_input": true,
+              "complete_command_parse": true,
+              "role_checks": true,
+              "effect_scope_checks": true,
+              "root_parameter": "root",
+              "target_parameter": "target"
+            }
+          ]
+        }
+      },
+      "source_hashes": {
+        "fixture/runtime.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "objects": [
+        {
+          "e": "ORBIT_0",
+          "status": "enabled"
+        },
+        {
+          "e": "check",
+          "status": "enabled"
+        },
+        {
+          "e": "clock",
+          "status": "enabled"
+        },
+        {
+          "e": "client",
+          "status": "enabled"
+        }
+      ],
+      "entries": [
+        {
+          "e": "ORBIT_0",
+          "f": "command",
+          "python_symbol": "fixture.command",
+          "signature": {
+            "parameters": [
+              {
+                "name": "line",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "line"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "cmd_primitive",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/command",
+            "parameters": {
+              "line": {
+                "type": "text",
+                "role": "device_cli"
+              }
+            },
+            "effects": [
+              "command"
+            ]
+          }
+        },
+        {
+          "e": "check",
+          "f": "literal",
+          "python_symbol": "fixture.literal",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "result",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected",
+              "result"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "checkpoint_two_argument",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/literal",
+            "parameters": {
+              "expected": {
+                "type": "text",
+                "role": "literal_assertion"
+              },
+              "result": {
+                "type": "text",
+                "role": "executor_return"
+              }
+            },
+            "effects": [
+              "checkpoint"
+            ]
+          }
+        },
+        {
+          "e": "check",
+          "f": "found",
+          "python_symbol": "fixture.found",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "result",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected",
+              "result"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "checkpoint_two_argument",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/found",
+            "parameters": {
+              "expected": {
+                "type": "text",
+                "role": "literal_assertion"
+              },
+              "result": {
+                "type": "text",
+                "role": "executor_return"
+              }
+            },
+            "effects": [
+              "checkpoint"
+            ]
+          }
+        },
+        {
+          "e": "check",
+          "f": "not_found",
+          "python_symbol": "fixture.not_found",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "result",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected",
+              "result"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "checkpoint_two_argument",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/not_found",
+            "parameters": {
+              "expected": {
+                "type": "text",
+                "role": "literal_assertion"
+              },
+              "result": {
+                "type": "text",
+                "role": "executor_return"
+              }
+            },
+            "effects": [
+              "checkpoint"
+            ]
+          }
+        },
+        {
+          "e": "check",
+          "f": "abs_found",
+          "python_symbol": "fixture.abs_found",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "result",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected",
+              "result"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "checkpoint_two_argument",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/abs_found",
+            "parameters": {
+              "expected": {
+                "type": "text",
+                "role": "literal_assertion"
+              },
+              "result": {
+                "type": "text",
+                "role": "executor_return"
+              }
+            },
+            "effects": [
+              "checkpoint"
+            ]
+          }
+        },
+        {
+          "e": "check",
+          "f": "found_times",
+          "python_symbol": "fixture.found_times",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "result",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "count",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected",
+              "result",
+              "count"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "checkpoint_two_argument",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/found_times",
+            "parameters": {
+              "expected": {
+                "type": "text",
+                "role": "literal_assertion"
+              },
+              "result": {
+                "type": "text",
+                "role": "executor_return"
+              },
+              "count": {
+                "type": "integer",
+                "role": "checkpoint_count"
+              }
+            },
+            "effects": [
+              "checkpoint"
+            ]
+          }
+        },
+        {
+          "e": "check",
+          "f": "differs_literal",
+          "python_symbol": "fixture.differs_literal",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "result",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected",
+              "result"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "checkpoint_two_argument",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/differs_literal",
+            "parameters": {
+              "expected": {
+                "type": "text",
+                "role": "literal_assertion"
+              },
+              "result": {
+                "type": "text",
+                "role": "executor_return"
+              }
+            },
+            "effects": [
+              "checkpoint"
+            ]
+          }
+        },
+        {
+          "e": "clock",
+          "f": "pause",
+          "python_symbol": "fixture.pause",
+          "signature": {
+            "parameters": [
+              {
+                "name": "seconds",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "seconds"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "builtin_special_case",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/pause",
+            "parameters": {
+              "seconds": {
+                "type": "integer",
+                "role": "wait"
+              }
+            },
+            "effects": [
+              "wait"
+            ]
+          }
+        },
+        {
+          "e": "ORBIT_0",
+          "f": "restore_checked",
+          "python_symbol": "fixture.restore_checked",
+          "signature": {
+            "parameters": [
+              {
+                "name": "payload",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "root",
+                "kind": "keyword_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "target",
+                "kind": "keyword_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "payload",
+              "root",
+              "target"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/restore_checked",
+            "parameters": {
+              "payload": {
+                "type": "text",
+                "role": "captured_restore"
+              },
+              "root": {
+                "type": "text",
+                "role": "root_binding"
+              },
+              "target": {
+                "type": "text",
+                "role": "restore_target"
+              }
+            },
+            "effects": [
+              "restore"
+            ]
+          }
+        },
+        {
+          "e": "client",
+          "f": "shell",
+          "python_symbol": "fixture.shell",
+          "signature": {
+            "parameters": [
+              {
+                "name": "command",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "command"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "typed_authority": {
+            "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/methods/shell",
+            "parameters": {
+              "command": {
+                "type": "text",
+                "role": "host_shell"
+              }
+            },
+            "effects": [
+              "host"
+            ]
+          }
+        }
+      ],
+      "execute_actions": [],
+      "atlas_snapshot": {
+        "fixture": true
+      },
+      "certification": {
+        "schema": "ist.excel.capability-certification-set",
+        "receipt_count": 0
+      },
+      "contract_sha256": "c1dcca696a944612cb7f36abbb9185e57c538fdf72996488968d34436c1626c4",
+      "original": {
+        "contract_sha256": "e81cf7748dec21151ba875ed8346e06b3b6ae3fdd7a0b3817dace36f8f77ce2d",
+        "sha256": "8bd1c147519cb5546bb6cf5a5bf3a8696cd19195d92a54ead15db2930d8e8e03"
+      },
+      "types": {
+        "text": {
+          "declaration": {
+            "name": "synthetic-text",
+            "catalog_type": "string",
+            "declaration": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/types/text",
+            "grammar": "synthetic-types@1"
+          }
+        },
+        "integer": {
+          "declaration": {
+            "name": "synthetic-int",
+            "catalog_type": "int",
+            "declaration": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/types/int",
+            "grammar": "synthetic-types@1"
+          },
+          "minimum": 1,
+          "maximum": 100000
+        }
+      },
+      "roles": {
+        "device_cli": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/device_cli"
+        },
+        "literal_assertion": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/literal_assertion"
+        },
+        "executor_return": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/executor_return"
+        },
+        "checkpoint_count": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/checkpoint_count"
+        },
+        "wait": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/wait"
+        },
+        "captured_restore": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/captured_restore"
+        },
+        "root_binding": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/root_binding"
+        },
+        "restore_target": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/restore_target"
+        },
+        "host_shell": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/roles/host_shell"
+        }
+      },
+      "effects": {
+        "command": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/effects/command",
+          "roles": [
+            "device_cli"
+          ],
+          "budget": 1000,
+          "allowed_literals": [],
+          "command_roles": [],
+          "command_scope": [
+            "/commands/demo",
+            "/commands/no/demo"
+          ]
+        },
+        "checkpoint": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/effects/checkpoint",
+          "roles": [
+            "literal_assertion",
+            "executor_return",
+            "checkpoint_count"
+          ],
+          "budget": 1000,
+          "allowed_literals": [],
+          "command_roles": []
+        },
+        "wait": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/effects/wait",
+          "roles": [
+            "wait"
+          ],
+          "budget": 1000,
+          "allowed_literals": [],
+          "command_roles": []
+        },
+        "restore": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/effects/restore",
+          "roles": [
+            "captured_restore",
+            "root_binding",
+            "restore_target"
+          ],
+          "budget": 1000,
+          "allowed_literals": [],
+          "command_roles": [],
+          "command_scope": [
+            "/commands/demo",
+            "/commands/no/demo"
+          ]
+        },
+        "host": {
+          "source": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/effects/host",
+          "roles": [
+            "host_shell"
+          ],
+          "budget": 1000,
+          "allowed_literals": [
+            "echo SYNTHETIC_READY"
+          ],
+          "command_roles": []
+        }
+      }
+    },
+    "profile": {
+      "schema": "runtime-profile@1",
+      "synthetic": true,
+      "max_wait_seconds": 300,
+      "runtime": {
+        "minimum_version": "synthetic-runtime-v2",
+        "contract_sha256": "e81cf7748dec21151ba875ed8346e06b3b6ae3fdd7a0b3817dace36f8f77ce2d"
+      },
+      "bed": "bed-a",
+      "device_count": 2,
+      "fold_newlines": [],
+      "workbook": {
+        "sheet": "FixtureSheet",
+        "header": [
+          "FixtureId",
+          "FixturePriority",
+          "FixtureType",
+          "FixtureDescription",
+          "FixtureObject",
+          "FixtureMethod",
+          "FixtureData",
+          "FixtureOutput",
+          "FixtureInput"
+        ],
+        "identity_marker": "FixtureIdentity",
+        "range_name": "FixtureRange",
+        "closing_row": [
+          "FixtureEnd",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "autoid_pattern": "^SYN-BLOCK-[0-9]+$",
+        "template": {
+          "sha256": "51a15e758c30ec4040b88e164f1707b8ef135af01ac2a4c0b6065d8548e685f4",
+          "xlsx_base64": "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"
+        }
+      },
+      "seats": [
+        {
+          "object": "ORBIT_0",
+          "device": "dut0",
+          "ordinal": 0
+        }
+      ],
+      "hosts": [
+        {
+          "object": "client",
+          "method": "shell",
+          "device": "client0"
+        }
+      ],
+      "allowed": [
+        {
+          "object": "ORBIT_0",
+          "method": "command",
+          "reviewed": true,
+          "parameters": {
+            "line": "device_cli"
+          }
+        },
+        {
+          "object": "check",
+          "method": "literal",
+          "reviewed": true,
+          "parameters": {
+            "expected": "literal_assertion",
+            "result": "executor_return"
+          }
+        },
+        {
+          "object": "check",
+          "method": "found",
+          "reviewed": true,
+          "parameters": {
+            "expected": "literal_assertion",
+            "result": "executor_return"
+          }
+        },
+        {
+          "object": "check",
+          "method": "not_found",
+          "reviewed": true,
+          "parameters": {
+            "expected": "literal_assertion",
+            "result": "executor_return"
+          }
+        },
+        {
+          "object": "check",
+          "method": "abs_found",
+          "reviewed": true,
+          "parameters": {
+            "expected": "literal_assertion",
+            "result": "executor_return"
+          }
+        },
+        {
+          "object": "check",
+          "method": "found_times",
+          "reviewed": true,
+          "parameters": {
+            "expected": "literal_assertion",
+            "result": "executor_return",
+            "count": "checkpoint_count"
+          }
+        },
+        {
+          "object": "check",
+          "method": "differs_literal",
+          "reviewed": true,
+          "parameters": {
+            "expected": "literal_assertion",
+            "result": "executor_return"
+          }
+        },
+        {
+          "object": "clock",
+          "method": "pause",
+          "reviewed": true,
+          "parameters": {
+            "seconds": "wait"
+          }
+        },
+        {
+          "object": "ORBIT_0",
+          "method": "restore_checked",
+          "reviewed": true,
+          "parameters": {
+            "payload": "captured_restore",
+            "root": "root_binding",
+            "target": "restore_target"
+          }
+        },
+        {
+          "object": "client",
+          "method": "shell",
+          "reviewed": true,
+          "parameters": {
+            "command": "host_shell"
+          }
+        }
+      ],
+      "block_model": true
+    },
+    "manifest": {
+      "schema": "test-bed-manifest@1",
+      "beds": [
+        {
+          "name": "bed-a",
+          "devices": [
+            {
+              "name": "dut0",
+              "type": "load-balancer",
+              "product": "ORBIT",
+              "ipv4": [
+                "192.0.2.10/26",
+                "192.0.2.74/26"
+              ],
+              "ipv6": [
+                "2001:db8:1::10/64"
+              ]
+            },
+            {
+              "name": "dut1",
+              "type": "load-balancer",
+              "product": "ORBIT",
+              "ipv4": [
+                "192.0.2.130/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "router0",
+              "type": "router",
+              "product": null,
+              "ipv4": [
+                "192.0.2.1/26"
+              ],
+              "ipv6": [
+                "2001:db8:1::1/64"
+              ]
+            },
+            {
+              "name": "client0",
+              "type": "client",
+              "product": null,
+              "ipv4": [
+                "192.0.2.80/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "server0",
+              "type": "server",
+              "product": null,
+              "ipv4": [
+                "192.0.2.90/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "console0",
+              "type": "console",
+              "product": null,
+              "ipv4": [
+                "192.0.2.140/26"
+              ],
+              "ipv6": []
+            }
+          ],
+          "services": [
+            {
+              "host": "server0",
+              "ip": "192.0.2.90",
+              "proto": "tcp",
+              "port": 80
+            },
+            {
+              "host": "client0",
+              "ip": "192.0.2.80",
+              "proto": "tcp",
+              "port": 9000
+            }
+          ],
+          "reserved": []
+        }
+      ]
+    },
+    "manifest_sha256": "798aa8c7797918330ae51ad707593545e3652dc56e9da6b4ebd58dd7146f587f",
+    "bed_services": [
+      {
+        "host": "server0",
+        "ip": "192.0.2.90",
+        "proto": "tcp",
+        "port": 80
+      },
+      {
+        "host": "client0",
+        "ip": "192.0.2.80",
+        "proto": "tcp",
+        "port": 9000
+      }
+    ],
+    "case_texts": [],
+    "criteria": [],
+    "expected_nodes": [
+      {
+        "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+        "text": "healthy+ready.[x]",
+        "declaration": {
+          "op": "abs_found",
+          "literal": "healthy+ready.[x]"
+        }
+      }
+    ],
+    "command_catalog": {
+      "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "complete": true,
+      "policy": {
+        "schema": "command-policy@1",
+        "read_only": [
+          "/commands/demo/show"
+        ],
+        "inverse_rules": [
+          {
+            "source_prefix": "/commands/demo",
+            "inverse_prefix": "/commands/no/demo",
+            "leading_parameters": 0
+          },
+          {
+            "source_prefix": "/commands/no/demo",
+            "inverse_prefix": "/commands/demo",
+            "leading_parameters": 0
+          }
+        ]
+      },
+      "entries": [
+        {
+          "words": [
+            "demo",
+            "show"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/demo/show",
+          "signatures": [
+            {
+              "id": "/commands/demo/show",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/demo/show/arguments",
+              "params": []
+            }
+          ]
+        },
+        {
+          "words": [
+            "demo",
+            "label"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/demo/label",
+          "signatures": [
+            {
+              "id": "/commands/demo/label",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/demo/label/arguments",
+              "params": [
+                {
+                  "name": "value",
+                  "type": "string",
+                  "native_type": {
+                    "name": "synthetic-text",
+                    "declaration": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/types/label",
+                    "grammar": "synthetic-tree@1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "words": [
+            "no",
+            "demo",
+            "label"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/no/demo/label",
+          "signatures": [
+            {
+              "id": "/commands/no/demo/label",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/no/demo/label/arguments",
+              "params": []
+            }
+          ]
+        },
+        {
+          "words": [
+            "demo",
+            "set"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/demo/set",
+          "signatures": [
+            {
+              "id": "/commands/demo/set",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/demo/set/arguments",
+              "params": [
+                {
+                  "name": "value",
+                  "type": "int",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "native_type": {
+                    "name": "synthetic-int",
+                    "declaration": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/types/value",
+                    "grammar": "synthetic-tree@1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "words": [
+            "no",
+            "demo",
+            "set"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/no/demo/set",
+          "signatures": [
+            {
+              "id": "/commands/no/demo/set",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/no/demo/set/arguments",
+              "params": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-compile.slots_invalid",
+      "item": "synthetic-case",
+      "tier": "blocking"
+    }
+  ]
+}

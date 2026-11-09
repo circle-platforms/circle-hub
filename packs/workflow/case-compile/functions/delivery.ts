@@ -11,7 +11,9 @@ import { isDynamicTerminal, labelOf } from './generated/vocabulary.ts';
 export const STATUS = { delivered: '交付', failed: '上机未通过', unsettled: '上机没有结论', unrun: '没有上机' } as const;
 export type Status = keyof typeof STATUS;
 
-export interface JobRow { item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> } }
+/** Why a reported pass is not taken as one: the device output it came with and the line in it (see failureLine). */
+export interface RowAudit { where: string; line: string }
+export interface JobRow { item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> }; audit?: RowAudit }
 export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null }
 /** One dispatch that settled: the run it verified, the plan run it was generated from, the workbook digest and each item's verdict. */
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
@@ -54,7 +56,7 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string> }>; leftOut?: string; rounds?: number; closing?: Closing }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; leftOut?: string; rounds?: number; closing?: Closing }
 export interface Assembly {
   cases: CaseOutcome[];
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
@@ -86,7 +88,7 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   if (!pass && lastPassed.length) throw new Error(`还没有一次整卷全部通过、之后也没再失败的上机，${lastPassed.join('、')} 最近一次上机通过了。通过卷要单独整卷上机：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交通过用例的计划，生成、核验、派发，再把那次核验运行加到 --runs 末尾`);
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
-    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}) })));
+    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}), ...(r.audit ? { audit: r.audit } : {}) })));
     if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history };
     const latest = history.at(-1);
     if (!latest) return { autoid, status: 'unrun' as const, history };
@@ -104,6 +106,29 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   for (const c of cases) totals[c.status]++;
   return { cases, pass, unsuccessful, totals };
 }
+
+/**
+ * The reference engine's single-case verdict downgrade (tools/device/batch_tools.py:1091-1158 with the domain grammar's
+ * exec_failure_markers): a pass whose output carries a line with an execution-failure marker that none of the case's own
+ * assertions reads is no verdict there ("broken", a vacuous-pass suspicion). That engine scans the run log of a pass, having
+ * fetched device sessions only for cases that failed; this runner's log holds only the commands it sent, so a pass's device
+ * sessions (gateway 0.4.7, saved by the Hub for every row) are read as well. `texts` maps where (log, session name) to its
+ * text; a line is exempt when one of the assertion texts is part of it. Returns the first such line, or null.
+ */
+export function failureLine(texts: Readonly<Record<string, string>>, markers: readonly string[], assertions: readonly string[]): RowAudit | null {
+  for (const [where, text] of Object.entries(texts)) for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    if (!line || !markers.some((marker) => line.includes(marker))) continue;
+    if (assertions.some((assertion) => assertion.length > 0 && line.includes(assertion))) continue;
+    return { where, line };
+  }
+  return null;
+}
+/** The dispatches with each audited pass, keyed run and item, turned into no verdict with the line that did it. */
+export function auditPasses(dispatches: readonly Dispatch[], hits: ReadonlyMap<string, RowAudit>): Dispatch[] {
+  return dispatches.map((d) => ({ ...d, rows: d.rows.map((r) => { const hit = r.dynamic_terminal === 'pass' ? hits.get(auditKey(d.run, r.item)) : undefined; return hit ? { ...r, dynamic_terminal: 'no_verdict', audit: hit } : r; }) }));
+}
+export const auditKey = (run: string, item: string): string => `${run}\u0000${item}`;
 
 /** The model's notes: one judged paragraph and one fix-or-trade-off paragraph for exactly the cases not delivered. */
 export function readNotes(value: unknown, undelivered: string[]): Notes {
@@ -196,7 +221,7 @@ export const terminalLabel = (terminal: string): string => isDynamicTerminal(ter
 /** What happened, mechanically from the verdict sequence (the reference engine translates its verdict ledger the same way). */
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   if (!outcome.history.length) return excluded ? '没有上机：计划运行用 parameters.exclude 排除了这一条，没有编出可执行的计划。' : '没有上机：没有一次派发包含这一条。';
-  const steps = outcome.history.map((h) => `第 ${h.ordinal} 次上机（核验运行 ${h.run}）：${terminalLabel(h.terminal)}`).join(' → ');
+  const steps = outcome.history.map((h) => `第 ${h.ordinal} 次上机（核验运行 ${h.run}）：${terminalLabel(h.terminal)}${h.audit ? `（运行器报通过，但 ${h.audit.where} 里有执行失败的设备原话“${h.audit.line}”，本条断言没有读它，不算通过）` : ''}`).join(' → ');
   return outcome.leftOut ? `${steps}；最近一次通过了，但不在终验（核验运行 ${outcome.leftOut}）的通过卷里，没有交付。` : steps + '。';
 }
 
@@ -206,6 +231,8 @@ export interface ReportInput {
   files: { pass: { sha256: string } | null; unsuccessful: { sha256: string } | null };
   /** For the long report: the tail of each case's last device log, or why it is not quoted. */
   logs: Record<string, { reference: string; job: string; text: string | null; withheld?: string }>;
+  /** The pass review: how many markers the contracts declared (null: none declared), passes read, turned into no verdict, and passes with no device words saved. */
+  passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || `用例 …${autoid.slice(-6)}`;
 /** The closings of the failed cases as one sentence, naming only those that occur; empty when no case failed. */
@@ -223,6 +250,10 @@ function head(input: ReportInput): string[] {
     unsuccessful && input.files.unsuccessful ? `- 未通过卷 \`unsuccessful_cases.xlsx\`：${unsuccessful.items.length} 个用例，每条用它最后一次上机的计划（计划运行 ${[...new Set(unsuccessful.items.map((item) => unsuccessful.sources[item].plan_run))].join('、')}），没有再上机。` : '- 没有未通过卷：没有带计划却没通过的用例。',
   ];
   if (input.build) lines.push(`- 构建：${input.build}`);
+  const audit = input.passAudit;
+  if (audit) lines.push(audit.markers === null
+    ? '- 通过复核：合约没有声明执行失败标记，通过的条目没有按 InfoTest 的规则复核。'
+    : `- 通过复核（InfoTest 的执行失败标记，合约声明 ${audit.markers} 条）：读了 ${audit.read} 条通过的日志和设备会话，${audit.downgraded} 条里有本条断言没读的执行失败原话、改记无判定${audit.wordless ? `；${audit.wordless} 条通过没有存下设备原话（网关 0.4.7 之前的上机），没有复核` : ''}。`);
   if (input.notes.batch) lines.push('', `> ${input.notes.batch.replace(/\n/g, '\n> ')}`);
   return lines;
 }

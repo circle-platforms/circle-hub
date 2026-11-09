@@ -78,6 +78,17 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
    step.restore_for=target;step.input_register=block.register;
    if(call.args.length!==1||call.args[0]!=='{}')issue(at+'/call/args','捕获还原只接收完整原文参数 {}，由声明的守卫方法核验后执行；不拼接或解析回显');
   }
+  if(block.kind==='PICK'){
+   // The runner keeps what its last regex check point matched (runtime.checkpoint_match_register); the pattern is built here
+   // from the escaped literal and a fixed word class, so no author regex runs. The word fills one quoted "{}" of this call.
+   const source=meta.registers.get(block.from);
+   if(!source||source.step>=steps.length)issue(at+'/from','PICK 的 from 必须是前面块捕获的寄存器');
+   const forms=[block.starts_with,block.after].filter(value=>value!==undefined),literal=forms[0];
+   if(forms.length!==1||typeof literal!=='string'||!literal.length||literal.length>200||literal.trim()!==literal||/[\r\n]/.test(literal))issue(at,'PICK 的 starts_with 和 after 恰好写一个：单行字面，首尾无空白，至多 200 字');
+   const first=typeof call.args[0]==='string'?call.args[0]:'';
+   if(first.split('"{}"').length!==2||/\{(?:0)?\}/.test(first.replace('"{}"','""'))||call.args.slice(1).some(arg=>/\{(?:0)?\}/.test(String(arg)))||Object.values(call.keywords).some(value=>typeof value==='string'&&/\{(?:0)?\}/.test(value)))issue(at+'/call/args','取到的词只能填进第一个参数里唯一一处带双引号的 "{}"，其他位置不写 {} 或 {0}');
+   if(typeof literal==='string')step.pick={from:String(block.from),pattern:block.starts_with!==undefined?'('+escapedLiteral(literal)+'[^\\s"\']*)':escapedLiteral(literal)+'\\s*["\']?([^\\s"\']+)'};
+  }
  }
  const slots:PlanSlots={...(value.recomposition!==undefined?{recomposition:value.recomposition as PlanSlots['recomposition']}:{}),bucket:String(value.bucket),blocks:blocks,steps,expects,replacements:value.replacements as PlanSlots['replacements'],...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(value.block_context!==undefined?{block_context:value.block_context as Record<string,any>}:{}),...(value.criteria!==undefined?{criteria:value.criteria as Array<Record<string,any>>}:{}),...(value.obligations!==undefined?{obligations:value.obligations as Array<Record<string,any>>}:{})};
  normalized.set(slots,meta);return problems.length?{ok:false,problems}:{ok:true,slots};

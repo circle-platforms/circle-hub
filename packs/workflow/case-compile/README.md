@@ -296,6 +296,23 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.10.12: the pass review and words picked at run time
+
+Decision 164. `tools/assemble-delivery.ts` reviews every pass as the reference engine does (`tools/device/batch_tools.py`
+single-case verdict downgrade, markers from its domain grammar's `exec_failure_markers`): a pass whose log or device sessions
+carry a line with a declared execution-failure marker that none of the case's own assertion texts is part of becomes no verdict,
+with the session and the line in the report. The markers are a runtime-contract@2 addition (`exec_failure_markers`: source,
+digest, lines). The reference engine scans only the log of a pass, having fetched device sessions only for failures; this
+runner's log holds only the commands it sent, so the gateway (0.4.7) returns, and the Hub saves, the sessions of every case and
+the review reads them too. A pass dispatched before that has no sessions and is counted as not reviewed.
+
+`PICK` takes a word from a captured output into one quoted `"{}"` of the call that follows (a key file name a device generates,
+say). The runner keeps the part its last regex check point matched in `check_point.matched` (runtime addition
+`checkpoint_match_register`, naming the runner source that does it and its digest); the generator writes a `found` check point on
+the captured register right before the call and puts `check_point.matched` in the call's input column. The pattern is built from
+an escaped literal and a fixed word class, `starts_with` (the word beginning with the literal) or `after` (the word after it), so
+no author regex runs. Without the declaration a PICK plan stays unknown with the maintainer's next step.
+
 ### 3.10.11: a failed case closes by the reference engine's rules
 
 `functions/delivery.ts` `closeFailed` closes a case that failed on the bed as InfoTest's engine does (`compile_engine/remedies.py`

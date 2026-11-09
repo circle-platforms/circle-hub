@@ -80,6 +80,11 @@
         "runner_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "found_times_supported": true,
         "checkpoint_two_argument": true,
+        "checkpoint_match_register": {
+          "source": "lib/check_point.py",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attribute": "matched"
+        },
         "block_model": {
           "schema": "case-compile.block-runtime@1",
           "default_assertion": {
@@ -731,7 +736,7 @@
         "schema": "ist.excel.capability-certification-set",
         "receipt_count": 0
       },
-      "contract_sha256": "2ceebd04e92c7a90754174099c020770f295631953a2fb07b1b51063221bad76",
+      "contract_sha256": "c1dcca696a944612cb7f36abbb9185e57c538fdf72996488968d34436c1626c4",
       "original": {
         "contract_sha256": "e81cf7748dec21151ba875ed8346e06b3b6ae3fdd7a0b3817dace36f8f77ce2d",
         "sha256": "8bd1c147519cb5546bb6cf5a5bf3a8696cd19195d92a54ead15db2930d8e8e03"
@@ -1140,6 +1145,45 @@
             {
               "id": "/commands/demo/show",
               "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/demo/show/arguments",
+              "params": []
+            }
+          ]
+        },
+        {
+          "words": [
+            "demo",
+            "label"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/demo/label",
+          "signatures": [
+            {
+              "id": "/commands/demo/label",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/demo/label/arguments",
+              "params": [
+                {
+                  "name": "value",
+                  "type": "string",
+                  "native_type": {
+                    "name": "synthetic-text",
+                    "declaration": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/json@1/p/types/label",
+                    "grammar": "synthetic-tree@1"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "words": [
+            "no",
+            "demo",
+            "label"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/no/demo/label",
+          "signatures": [
+            {
+              "id": "/commands/no/demo/label",
+              "reference": "src:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/xml@1/x/commands/no/demo/label/arguments",
               "params": []
             }
           ]

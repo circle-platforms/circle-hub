@@ -976,33 +976,37 @@ export class DispatchService {
 
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, build_base:binding.input?.build_base ?? binding.context?.build_base, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
   /**
-   * Where the evidence of every row that did not pass is: the log and the per-device sessions the target reported for it, at
-   * the result's declared pointers, each saved on its own and readable by the runner (the reference compile skill hands the model the failed checks
-   * and the session dumps of every non-pass case to attribute the failure). The raw report stays readable by functions only;
-   * a session the credential scan holds back leaves the other sessions and the verdicts readable.
+   * Where the evidence of every row is: the log and the per-device sessions the target reported for it, at the result's declared
+   * pointers, each saved on its own and readable by the runner. Rows that did not pass also go into the device return the model
+   * reads (the reference compile skill hands the model the failed checks and the session dumps of every non-pass case to
+   * attribute the failure); a passing row's words are saved but kept out of that text, so a reviewer can check that a pass did
+   * not rest on a command the device refused (the reference engine downgrades such a pass) without the answer growing with
+   * every pass. The raw report stays readable by functions only; a session the credential scan holds back leaves the other
+   * sessions and the verdicts readable.
    */
-  private async failureEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<{ found: Map<string, { log?: string; sessions?: Record<string, string> }>; returned: Map<string, ReturnedPiece[]> }> {
+  private async rowEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<{ found: Map<string, { log?: string; sessions?: Record<string, string> }>; returned: Map<string, ReturnedPiece[]> }> {
     const found = new Map<string, { log?: string; sessions?: Record<string, string> }>(), returned = new Map<string, ReturnedPiece[]>();
     if (!d.result.log && !d.result.sessions) return { found, returned };
     // A session name that is no valid source name (empty, over 300 characters, control characters) gets a positional one,
     // and a piece that cannot be saved is logged and left out: this runs after the receipt, so it must not stall the job.
     const sourceName = (name: string, index: number) => name.length > 0 && name.length <= 300 && !/\p{Cc}/u.test(name) && name.isWellFormed() ? name : `session-${index + 1}.txt`;
-    const save = async (id: string, label: string, text: string, name: string): Promise<string | undefined> => {
+    const save = async (id: string, label: string, text: string, name: string, relay: boolean): Promise<string | undefined> => {
       try {
         const { body } = await this.saveText(binding, response.source, text, name);
-        returned.set(id, [...(returned.get(id) ?? []), { name: label, text: body.read_tier === 'retain_only' ? null : text }]);
+        if (relay) returned.set(id, [...(returned.get(id) ?? []), { name: label, text: body.read_tier === 'retain_only' ? null : text }]);
         return `src:${body.sha256}`;
       }
       catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'failure evidence ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
     };
     for (const id of items) {
       const { row, reported } = reportOutcome(response.value, d, id);
-      if (reported === 'pass' || !object(row)) continue;
+      if (!object(row)) continue;
+      const relay = reported !== 'pass';
       const log = d.result.log ? at(row, d.result.log) : undefined;
       const sessions = d.result.sessions ? at(row, d.result.sessions) : undefined;
       const evidence: { log?: string; sessions?: Record<string, string> } = {};
-      if (typeof log === 'string' && log) { const saved = await save(id, '日志', log, 'log.txt'); if (saved) evidence.log = saved; }
-      if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(id, sourceName(name, index), text, sourceName(name, index)); if (saved) (evidence.sessions ??= {})[name] = saved; }
+      if (typeof log === 'string' && log) { const saved = await save(id, '日志', log, 'log.txt', relay); if (saved) evidence.log = saved; }
+      if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(id, sourceName(name, index), text, sourceName(name, index), relay); if (saved) (evidence.sessions ??= {})[name] = saved; }
       if (evidence.log || evidence.sessions) found.set(id, evidence);
     }
     return { found, returned };
@@ -1862,7 +1866,7 @@ export class DispatchService {
     const ownershipObservation={declared:!!attribution,certified:ownershipCertified,matched:ownershipMatched,consistent:!ownershipConflict,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:ownershipReason===undefined?null:ownershipReason,source:response.source};
     const admin=binding.acting_by ?? binding.initiated_by;
     const ownershipFailure=!attribution?{missing_fact:'执行器尚未声明本次结果的归属字段和唯一归属值',next_action:`请管理员 ${admin} 核对 ${response.source} 并登记 result.ownership 的字段、唯一归属值及原因指针声明；本作业保留无判定，不重交`}:!ownershipMatched?{missing_fact:'本结果未报告声明的唯一归属；具体原因见归属观察及原件',next_action:`请管理员 ${admin} 依据 ${response.source} 检查原派发日志、收集器目录和保留证据，恢复归属或登记该版本的能力缺口；本作业保留无判定，不重交`}:ownershipConflict?{missing_fact:'本结果的唯一归属值与原因字段相互矛盾，不能采用为归属事实',next_action:`请管理员 ${admin} 依据 ${response.source} 核对目标协议实现及报告归属，修复肯定值与原因的矛盾或登记能力缺口；本作业保留无判定，不重交`}:{missing_fact:'本结果的归属值相符，但当前目标版本的归属前提尚未认证',next_action:`请管理员 ${admin} 复核 ${response.source} 的归属证据，为该目标版本登记 result_ownership 认证；认证用于后续核验，本作业保留无判定，不重交`};
-    const { found: evidence, returned } = await this.failureEvidence(binding, d, response, input.items);
+    const { found: evidence, returned } = await this.rowEvidence(binding, d, response, input.items);
     const projected = input.items.map(id => {
       const resolution=reportOutcome(response.value,d,id),{row,reported}=resolution;
       if(!resolution.check.resolved)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'result interpretation '+binding.job,detail:JSON.stringify(resolution.check)});}catch{}

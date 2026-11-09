@@ -11,6 +11,7 @@ import { canonicalJson } from '../functions/canonical-json.ts';
 import { GENERATOR, generateWorkbookSet } from '../functions/generate.ts';
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
+import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { generationFixture } from '../testing/workbook.ts';
 import { satisfiedRecipes } from './generate-workbook.ts';
 import { main } from './assemble-delivery.ts';
@@ -24,14 +25,14 @@ const contract = Buffer.from(JSON.stringify(CONTRACT_DOC)), profile = Buffer.fro
 const log = Buffer.from('合成日志：第 3 步断言没有命中\n');
 
 /** A satisfied plan run over `autoids`, as the Hub exports it, with `exclude` frozen in its parameters; `pause` varies the plan (another authored round). */
-function planRun(run: string, autoids: string[], exclude: string[], pause?: string) {
+function planRun(run: string, autoids: string[], exclude: string[], pause?: string, contractBytes: Uint8Array = contract) {
   const recipe = generationFixture();
   if (pause) recipe.slots.steps[2] = { ...recipe.slots.steps[2], args: [pause] };
   const items = autoids.map((autoid) => ({ id: `case-${autoid}`, fields: { ...recipe.fields, autoid, title: `合成用例 ${autoid.slice(-3)}`, path: ['合成文档', '合成分组', `合成用例 ${autoid.slice(-3)}`], steps: [{ text: '合成步骤', expected: ['合成期望'] }] } }));
   const submission = { run, model: 'synthetic-model', items: items.map((item) => ({ item: item.id, handling: 'handled', slots: { plan: [{ data: recipe.slots }] } })) };
-  const record = { run, pack: 'case-compile', predecessor: BOOKING, pack_digest: 'b'.repeat(64), root: (recipe.fields.command_catalog as { root: string }).root, build: recipe.build, parameters: { exclude }, items, requirements: REQUIREMENTS.requirements.map((v) => ({ key: v.key, accepted_producer: v.accepted_producer })), sources: [...Object.entries({ contract, profile, inventory }).map(([slot, bytes]) => ({ slot, role: 'expected', reference: `src:${sha256(bytes)}` })), { slot: 'recomposition_result', role: 'expected', reference: RECOMPOSED }] };
+  const record = { run, pack: 'case-compile', predecessor: BOOKING, pack_digest: 'b'.repeat(64), root: (recipe.fields.command_catalog as { root: string }).root, build: recipe.build, parameters: { exclude }, items, requirements: REQUIREMENTS.requirements.map((v) => ({ key: v.key, accepted_producer: v.accepted_producer })), sources: [...Object.entries({ contract: contractBytes, profile, inventory }).map(([slot, bytes]) => ({ slot, role: 'expected', reference: `src:${sha256(bytes)}` })), { slot: 'recomposition_result', role: 'expected', reference: RECOMPOSED }] };
   const result = { schema: 'validation@1', run, submission: sha256(canonicalJson(submission)), acceptance: 'accepted', errors: [], locks: { pack: GENERATOR, pack_digest: record.pack_digest, root: record.root }, coverage: { complete: true, examined: items.length, total: items.length }, partitions: { delivered: items.map((item) => ({ item: item.id, requirements: REQUIREMENTS.requirements.map((v) => ({ requirement: v.key, status: v.key === 'workbook_verified' ? 'unresolved' : 'satisfied', claims: v.key === 'commands_known' ? [{ statement: { verdict: 'support', data: { command_catalog: recipe.fields.command_catalog } } }] : v.key === 'contract_methods' ? [{ statement: { verdict: 'support', data: { runtime_version: recipe.contract.runtimeVersion, contract_sha256: recipe.contract.pinned.identity } } }] : [] })) })) } };
-  const workbook = generateWorkbookSet(satisfiedRecipes({ run: record, result, submission, contract, profile, inventory }));
+  const workbook = generateWorkbookSet(satisfiedRecipes({ run: record, result, submission, contract: contractBytes, profile, inventory }));
   return { record, result, submission, workbook };
 }
 const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
@@ -40,7 +41,7 @@ const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/$
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
-async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false) {
+async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = []) {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
   const jobs = Object.fromEntries(runsInOrder.map((run) => [run, all[run]]));
@@ -58,7 +59,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   }
   const successors: Record<string, unknown[]> = {};
   for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
-  const originals = new Map([contract, profile, inventory, log].map((bytes) => [sha256(bytes), bytes]));
+  const originals = new Map([contract, profile, inventory, log, ...extraOriginals].map((bytes) => [sha256(bytes), bytes]));
   const server = createServer((request, response) => {
     const url = request.url ?? '';
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
@@ -284,4 +285,41 @@ test('a failed case goes back to authoring until three authored versions failed;
   const candidateReport = await readFile(join(candidateOut, 'unsuccessful_cases.md'), 'utf8');
   assert.match(candidateReport, /· 终态：声明与设备行为冲突（待仲裁）/);
   assert.match(candidateReport, /\*\*缺陷候选\*\*：复现步骤：合成复现：照第 1 步配置后读第 3 步输出\n\n作者期望（原文）：\n```device-evidence\n合成期望\n```\n\n设备实际（原话）：\n```device-evidence\n第 3 步断言没有命中\n```/);
+});
+
+test('a pass whose device words carry an execution-failure line its assertions do not read is no verdict, as the reference engine reviews passes', async (t) => {
+  // InfoTest batch_tools.py single-case downgrade with the contract's exec_failure_markers; the Hub saves every row's words.
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const marked = Buffer.from(JSON.stringify(signTypedRuntime(doc)));
+  const [WHOLE2, FINAL3, PLAN7, PLAN8] = ['run_01yyyyyyyyyyyyyyyyyyyyyyyy', 'run_01zzzzzzzzzzzzzzzzzzzzzzza', 'run_01zzzzzzzzzzzzzzzzzzzzzzzb', 'run_01zzzzzzzzzzzzzzzzzzzzzzzc'];
+  const plan7 = planRun(PLAN7, CASES.slice(0, 3), [CASES[3]], undefined, marked), plan8 = planRun(PLAN8, [CASES[0], CASES[2]], [CASES[1], CASES[3]], undefined, marked);
+  const clean = Buffer.from('seat# configure widget\nseat#\n'), refused = Buffer.from('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
+  const read = Buffer.from('seat# configure widget\n健康检查间隔设置成功 Failed to run the synthetic command\nseat#\n');
+  const words = (session: Uint8Array) => ({ evidence: { log: `src:${sha256(log)}`, sessions: { 'dev-a.txt': `src:${sha256(session)}` } } });
+  const rows = (items: string[], verdicts: string[], sessions: Uint8Array[]) => items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...words(sessions[k]) }));
+  const jobOf = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, r: unknown[]) => ({ ...job(id, run, plan, items, workbook, items.map(() => 'pass')), rows: r });
+  const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
+  const notesPath = await notes({ [CASES[1]]: NOTES[CASES[1]], [CASES[3]]: NOTES[CASES[3]] });
+  // The final verification's pass of CASES[2] rests on a refused command: no pass volume, so the run must exclude it and verify again.
+  const refusedFinal = await hub(undefined, undefined, {
+    [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, refused, clean]))],
+    [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [clean, refused]))],
+  }, { [PLAN7]: plan7, [PLAN8]: plan8 }, [WHOLE2, FINAL3], false, [marked, clean, refused, read]); t.after(refusedFinal.close);
+  const refusedRun = await run(refusedFinal, notesPath, join(dir, 'a'), `${WHOLE2},${FINAL3}`);
+  assert.equal(refusedRun.code, 1);
+  assert.match(refusedRun.stderr, /还没有一次整卷全部通过、之后也没再失败的上机，990000000000000101 最近一次上机通过了/);
+  // The same line inside the text an assertion of the case reads is exempt; a refused pass in an earlier dispatch is reported.
+  const earlier = await hub(undefined, undefined, {
+    [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, clean, refused]))],
+    [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [read, clean]))],
+  }, { [PLAN7]: plan7, [PLAN8]: plan8 }, [WHOLE2, FINAL3], false, [marked, clean, refused, read]); t.after(earlier.close);
+  const out = join(dir, 'b');
+  const passed = await run(earlier, notesPath, out, `${WHOLE2},${FINAL3}`);
+  assert.equal(passed.code, 0, passed.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual(summary.cases.map((c: { status: string }) => c.status), ['delivered', 'failed', 'delivered', 'unrun']);
+  assert.deepEqual(summary.pass_audit, { markers: 1, read: 4, downgraded: [{ run: WHOLE2, item: CASES[2], where: '设备会话 dev-a.txt', line: 'Failed to run the synthetic command' }], wordless: 0 });
+  assert.deepEqual(summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal), ['no_verdict', 'pass']);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /- 通过复核（InfoTest 的执行失败标记，合约声明 1 条）：读了 4 条通过的日志和设备会话，1 条里有本条断言没读的执行失败原话、改记无判定。/);
 });

@@ -31,7 +31,19 @@ export interface RunnerCleanup { source: string; sha256: string; objects: string
  * the locked tree resolves, except these.
  */
 export interface DestructiveCommands { source: string; sha256: string; exact: string[]; prefixes: string[]; segments: string[] }
-export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup; destructive?: DestructiveCommands }
+/**
+ * Lines a device prints when it did not carry out a command (a runtime-contract@2 addition, decision 163). The reference engine
+ * keeps them in its domain grammar (exec_failure_markers) and turns a pass whose output carries one into no verdict; the source
+ * of the declaration and its digest are declared here. Lines are compared as text, a marker is a part of a line.
+ */
+export interface FailureMarkers { source: string; sha256: string; lines: string[] }
+/**
+ * The runner keeps the part of the output its last regex check point matched in an attribute of the check point object (a
+ * runtime-contract@2 runtime addition, decision 163): the first capture group, or the whole match. The next row reads it
+ * through its input column as check_point.<attribute>. The declaration names the runner source file that does it and its digest.
+ */
+export interface MatchRegister { source: string; sha256: string; attribute: string }
+export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup; destructive?: DestructiveCommands; failureMarkers?: FailureMarkers; matchRegister?: MatchRegister }
 /** Whole path segments of a /commands path, or null when it is not one. */
 const segmentsOf = (path: string): string[] | null => /^\/commands(\/[^/]+)*$/.test(path) ? path.split('/').filter(Boolean) : null;
 const under = (path: string, prefix: string): boolean => { const a = segmentsOf(path), b = segmentsOf(prefix); return !!a && !!b && a.length >= b.length && b.every((segment, i) => a[i] === segment); };
@@ -86,14 +98,14 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
   return contract.enabled.find((entry) => entry.object === object && entry.method === method) ?? null;
 }
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
-const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup', 'destructive'];
+const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup', 'destructive', 'exec_failure_markers'];
 /**
  * Runtime members B1 reads that the pinned original contract does not have. That original (canonical identity
- * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model and
- * checkpoint_two_argument are the closed @2 additions; found_times_supported stays. This is not "drop every unknown
- * runtime member".
+ * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model,
+ * checkpoint_two_argument and checkpoint_match_register are the closed @2 additions; found_times_supported stays. This is not
+ * "drop every unknown runtime member".
  */
-export const RUNTIME_ADDITIONS = ['block_model', 'checkpoint_two_argument'] as const;
+export const RUNTIME_ADDITIONS = ['block_model', 'checkpoint_two_argument', 'checkpoint_match_register'] as const;
 function withoutRuntimeAdditions(member: Record<string, unknown>): Record<string, unknown> {
   if (!RUNTIME_ADDITIONS.some((field) => Object.hasOwn(member, field))) return member;
   return Object.fromEntries(Object.entries(member).filter(([field]) => !RUNTIME_ADDITIONS.some((addition) => addition === field)));
@@ -199,6 +211,23 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       destructive = { source: String(d.source), sha256: d.sha256 as string, exact: [...((d.exact as string[] | undefined) ?? [])], prefixes: [...((d.prefixes as string[] | undefined) ?? [])], segments: [...((d.segments as string[] | undefined) ?? [])] };
     }
   }
+  let failureMarkers: FailureMarkers | undefined;
+  if (value.exec_failure_markers !== undefined) {
+    const m = value.exec_failure_markers;
+    const line = (v: unknown): boolean => typeof v === 'string' && v.length > 0 && v.length <= 200 && v === v.trim() && !/[\r\n]/.test(v);
+    if (value.schema !== 'runtime-contract@2' || !isRecord(m) || Object.keys(m).some((key) => !['source', 'sha256', 'lines'].includes(key)) || !nonempty(m.source) || typeof m.sha256 !== 'string' || !SHA.test(m.sha256)
+      || !Array.isArray(m.lines) || m.lines.length === 0 || m.lines.length > 32 || !m.lines.every(line) || new Set(m.lines).size !== m.lines.length) {
+      issue('/exec_failure_markers', '执行失败标记只能是 runtime-contract@2 里的 source、sha256 和 lines（1–32 条不重复的单行文字，每条至多 200 字，首尾无空白）');
+    } else failureMarkers = { source: String(m.source), sha256: m.sha256 as string, lines: [...m.lines as string[]] };
+  }
+  let matchRegister: MatchRegister | undefined;
+  if (runtime.checkpoint_match_register !== undefined) {
+    const r = runtime.checkpoint_match_register;
+    if (value.schema !== 'runtime-contract@2' || !isRecord(r) || Object.keys(r).some((key) => !['source', 'sha256', 'attribute'].includes(key)) || !nonempty(r.source) || typeof r.sha256 !== 'string' || !SHA.test(r.sha256)
+      || typeof r.attribute !== 'string' || !/^[a-z][a-z0-9_]{0,31}$/.test(r.attribute)) {
+      issue('/runtime/checkpoint_match_register', '检查点命中寄存器只能是 runtime-contract@2 里的 source、sha256（运行器源文件及其摘要）和 attribute（小写标识符）');
+    } else matchRegister = { source: String(r.source), sha256: r.sha256 as string, attribute: r.attribute };
+  }
   const promotedPairs = new Set<string>();
   const enabled: RuntimeEntry[] = [];
   const pairs = new Set<string>();
@@ -269,7 +298,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   }
   if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
   if (problems.length) return { ok: false, problems };
-  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}), ...(destructive ? { destructive } : {}) };
+  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}), ...(destructive ? { destructive } : {}), ...(failureMarkers ? { failureMarkers } : {}), ...(matchRegister ? { matchRegister } : {}) };
   sourceDocuments.set(contract, value);
   return { ok: true, contract };
 }

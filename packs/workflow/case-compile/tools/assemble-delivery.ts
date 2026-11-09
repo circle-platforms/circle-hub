@@ -13,7 +13,8 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
-import { assemble, closeFailed, closingCounts, CLOSING, deliveryReport, evidenceProblems, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type Original, type ReportInput } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
+import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, jsonBytes, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
@@ -164,11 +165,39 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (!args.recompose) for (const autoid of excluded) if (!population.includes(autoid)) population.push(autoid);
     population = population.filter((v, k, all) => all.indexOf(v) === k);
 
+    const recipesOf = (plan: RunInputs) => satisfiedRecipes({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
+    // The reference engine's pass review (functions/delivery.ts failureLine): a pass whose words carry an execution-failure line
+    // that the case's own assertions do not read is no verdict. The markers are the contract declaration of each dispatch's plan
+    // run; the words are the log and device sessions the Hub saved for the row, checked against their digests.
+    const texts = new Map<string, string | null>();
+    const textOf = async (run: string, reference: string): Promise<string | null> => {
+      const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) return null;
+      if (!texts.has(found[1])) { try { const bytes = await get(`${origin}/run-export/${run}/sources/${found[1]}`, bearer); texts.set(found[1], sha256(bytes) === found[1] ? new TextDecoder('utf-8').decode(bytes) : null); } catch { texts.set(found[1], null); } }
+      return texts.get(found[1]) ?? null;
+    };
+    const hits = new Map<string, RowAudit>(); let markerCount: number | null = null, read = 0, wordless = 0;
+    for (const d of dispatches) {
+      const plan = plans.get(d.plan_run)!;
+      let markers: string[] = [];
+      try { const parsed = parseRuntimeContract(JSON.parse(decode(plan.originals.contract))); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { /* a contract that does not parse declares no markers */ }
+      if (!markers.length) continue;
+      markerCount = Math.max(markerCount ?? 0, markers.length);
+      const assertionsOf = new Map(recipesOf(plan).map((recipe) => [String(recipe.fields.autoid), recipe.slots.expects.map((expect) => expect.text).filter((text) => typeof text === 'string' && text.length > 0)]));
+      for (const row of d.rows) {
+        if (row.dynamic_terminal !== 'pass') continue;
+        const words: Record<string, string> = {};
+        if (row.evidence?.log) { const text = await textOf(d.run, row.evidence.log); if (text !== null) words['运行日志'] = text; }
+        for (const [name, reference] of Object.entries(row.evidence?.sessions ?? {})) { const text = await textOf(d.run, reference); if (text !== null) words[`设备会话 ${name}`] = text; }
+        if (!Object.keys(row.evidence?.sessions ?? {}).length) wordless++; else read++;
+        const hit = failureLine(words, markers, assertionsOf.get(row.item) ?? []);
+        if (hit) hits.set(auditKey(d.run, row.item), hit);
+      }
+    }
+    dispatches.splice(0, dispatches.length, ...auditPasses(dispatches, hits));
     const assembly = assemble(population, dispatches);
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
 
-    const recipesOf = (plan: RunInputs) => satisfiedRecipes({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [];
     let passFile: { sha256: string } | null = null, unsuccessfulFile: { sha256: string } | null = null;
     if (assembly.pass) {
@@ -220,16 +249,17 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (unproven.length) throw new Error(unproven.join('；'));
     assembly.cases = closed.cases;
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
-    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs };
+    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless } };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
       schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, totals: assembly.totals,
       dispatches: dispatches.map((d) => ({ run: d.run, job: d.job, plan_run: d.plan_run, sha256: d.sha256, items: d.items })),
       added_runs: added,
+      pass_audit: { markers: markerCount, read, downgraded: [...hits.entries()].map(([key, hit]) => { const [run, item] = key.split('\u0000'); return { run, item, where: hit.where, line: hit.line }; }), wordless },
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false } : null,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}) })) })),
     };
     outputs.push({ name: 'delivery.json', bytes: json(summary) });
 
