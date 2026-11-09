@@ -20,15 +20,33 @@ const ABSENT = Buffer.from('没有这个运行或原件，或它不是你的运�
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 export function runExportTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/run-export(?:[\/\\%]|$)/i.test(target ?? ''); }
 
-/** What one of the run's jobs returned, when sha names it: read at the reader's own tier, as any source of theirs. */
+/** How long a digest a run's jobs did not return stays answered from the last listing: a job may have ended since. */
+export const PRODUCED_RECHECK_MS = 10_000;
+/** Runs whose produced digests one process keeps. */
+const PRODUCED_RUNS = 64;
+/** The digests each run's jobs returned, by the runs service that listed them. What a job returned is only appended, so a
+ * digest found once stays found: a client that downloads every log and session of a run lists its jobs once, not once per
+ * file (run 16 downloaded 80 files of one run, each reading every dispatch reservation of the Hub again). */
+const producedBy = new WeakMap<object, Map<string, { digests: Set<string>; at: number }>>();
+/** What one of the run's jobs returned, when sha names it: read at the reader's own tier, as any source of theirs. The caller
+ * has already checked that the reader may export the run. */
 async function jobOutput(deps: ServerDeps, principal: Principal, run: string, sha: string) {
-  const listed = await deps.runs.exportJobs?.(principal, run) ?? null;
-  const produced = new Set<string>();
-  for (const job of listed?.jobs ?? []) for (const reference of [job.result, job.device_return, ...(job.rows ?? []).flatMap((row) => [row.evidence?.log, ...Object.values(row.evidence?.sessions ?? {})])]) {
-    const found = typeof reference === 'string' ? /^src:([0-9a-f]{64})$/.exec(reference) : null;
-    if (found) produced.add(found[1]);
+  let runs = producedBy.get(deps.runs);
+  if (!runs) producedBy.set(deps.runs, runs = new Map());
+  let known = runs.get(run);
+  if (!known?.digests.has(sha) && (!known || Date.now() - known.at >= PRODUCED_RECHECK_MS)) {
+    const listed = await deps.runs.exportJobs?.(principal, run) ?? null;
+    if (!listed) return null;
+    const digests = new Set<string>();
+    for (const job of listed?.jobs ?? []) for (const reference of [job.result, job.device_return, ...(job.rows ?? []).flatMap((row) => [row.evidence?.log, ...Object.values(row.evidence?.sessions ?? {})])]) {
+      const found = typeof reference === 'string' ? /^src:([0-9a-f]{64})$/.exec(reference) : null;
+      if (found) digests.add(found[1]);
+    }
+    known = { digests, at: Date.now() };
+    runs.delete(run); runs.set(run, known);
+    for (const key of runs.keys()) { if (runs.size <= PRODUCED_RUNS) break; runs.delete(key); }
   }
-  return produced.has(sha) ? deps.records.artifacts.source(principal, sha) : null;
+  return known.digests.has(sha) ? deps.records.artifacts.source(principal, sha) : null;
 }
 
 export async function handleRunExport(request: IncomingMessage, response: ServerResponse, deps: ServerDeps, log: (line: string) => void): Promise<void> {
