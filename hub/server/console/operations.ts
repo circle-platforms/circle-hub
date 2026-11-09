@@ -97,14 +97,14 @@ ${card({ title: '在 Hub 主机上发布',hint:'维护人在 Hub 主机上先检
 async function knowledgePage(ctx: PageContext, jobs: JobStore): Promise<Html> {
   const products = [...new Set((await ctx.deps.packs.list(ctx.principal)).filter((pack) => isPackKind(pack.kind) && pack.kind === 'product' && pack.active && !pack.withdrawn).map((pack) => pack.id))];
   const form = actionForm('knowledge-sync', ctx.csrf ?? '', html`<div data-fields>
-${field('产品', html`<input name="product" list="products" required>`, { hint: '已启用的产品知识来源' })}
+${field('产品', html`<input name="product" list="products" required>`, { hint: '已启用的产品知识来源；具体包含哪些材料（例如构建、手册、命令树）由该产品包声明' })}
 ${field('版本线', html`<input name="line" placeholder="可留空">`, { hint: '留空时导入全部版本线' })}
 <label class="check" data-wide-field><input type="checkbox" name="dry_run" value="1"> 试运行：只读取并预览新增、修改、删除的条目，不写入</label>
 <datalist id="products">${products.map((id) => html`<option value="${id}">`)}</datalist>
 </div>`, '开始导入', { primary: true });
   return html`${steps(['选择来源', '试运行', '导入', '发布新版本'], 0)}
 <section class="ch-section" data-columns="2">
-${card({ title: '导入团队知识', hint: '在后台只读导入构建、手册与命令树，每条附来源；Hub 重启时需重新发起，已导入的内容保留。' }, html`${form}`)}
+${card({ title: '按产品来源导入', hint: '从已启用产品包声明的来源，在后台只读导入团队知识，每条附来源；Hub 重启时需重新发起，已导入的内容保留。' }, html`${form}`)}
 ${ctx.deps.knowledge?.spaces ? card({title:'按团队读取原文导入',hint:'无须产品包；管理员填写陈述、文件夹与团队连接读取原文的引用，引文逐条核对'},html`${link('/console/knowledge/space','导入团队知识条目',{space:'team'})}`) : ''}
 ${plannedCard('上传文档导入', '从上传的文档与业务系统按条目导入，导入前预览差异；上线后在此选择来源。', 'book')}
 </section>
