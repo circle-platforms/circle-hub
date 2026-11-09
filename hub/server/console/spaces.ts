@@ -19,7 +19,7 @@ import { code, html, link, page, pageLayout, pre, table, type Html } from './htm
 import { neutralPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import {button,sectionHead} from './ui.ts';
 import {evidence,panel as card,badge as chip,facts as kv,technical,sourceBlock,stat,field as inputField,dialog,actionLink} from './presentation.ts';
-import {knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
+import {VERIFIED_SCOPE,knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
 import {sharingRows} from './sharing-history.ts';
 import {entryProvenance,entryClientName} from './client-provenance.ts';
 import {shareFeedback,NO_TEAM_SHARES} from './feedback.ts';
@@ -126,7 +126,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
     const versionCard=versionLines.length?card({title:'版本记录',meta:versionLines.length},html`<ul class="ch-feed" data-entry-versions>${versionLines.map(line=>html`<li>${line}</li>`)}</ul>`):'';
     const provenanceCard=origin?card({title:'写入来源'},html`${kv(origin.rows.map(([k,v])=>[k,k==='写入时间'?timestamp(String(v)):v]))}${technical(kv(origin.technical))}`):'';
     const signatures=attributions.length?card({title:'来源署名',meta:attributions.length},html`<ul class="ch-feed">${await Promise.all(attributions.map(async row=>html`<li><span>${uiLabelOf('provenance_type','declared')} · 署名人 ${evidence(await ctx.userName(row.by))}${(await ctx.deps.records.principals.get(row.by))?.disabled&&!(await ctx.deps.records.principals.get(row.by))?.deleted_at?html` · ${chip(uiLabelOf('account_status','disabled'),'plain')}`:''}</span>${timestamp(row.at)}</li>`))}</ul>`):'';
-    const details=html`<div class="ch-section" data-area-content data-inspector-content><div class="ch-actions"><span class="ch-tag">${uiLabelOf('entry_kind',entry.body.content.kind)}</span>${knowledgeState(entry.row.status)}</div><h2 class="ch-panel-title">${evidence(entry.body.content.statement)}</h2><p class="ch-meta">${directoryName(path)} · ${timestamp(entry.body.at)}</p>${supersededNotice}${withdrawNotice}
+    const details=html`<div class="ch-section" data-area-content data-inspector-content><div class="ch-actions"><span class="ch-tag">${uiLabelOf('entry_kind',entry.body.content.kind)}</span>${knowledgeState(entry.row.status)}</div><h2 class="ch-panel-title">${evidence(entry.body.content.statement)}</h2><p class="ch-meta">${directoryName(path)} · ${timestamp(entry.body.at)}</p>${entry.row.status==='verified'?html`<p class="ch-meta" data-verified-scope>${VERIFIED_SCOPE}</p>`:''}${supersededNotice}${withdrawNotice}
 ${card({title:'来源',meta:entry.body.grounds.length},sources.length?html`${sources}`:html`<p class="ch-meta">未提供来源</p>`)}
 ${signatures}${card({title:'分享'},html`${audienceLine}${provenance}`)}
 ${versionCard}${provenanceCard}

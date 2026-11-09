@@ -50,6 +50,9 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(textOf(parse(own.body)),/知识库 › 我的 › 方法/);assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
  assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已验证<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>待验证<\/span>/);
+ // Issue 227: the verified status carries its scope beside it in the list and visibly in the entry's own view.
+ assert.match(own.body,/已验证<\/span><span class="ch-tip-bubble"|已验证<\/span>[\s\S]{0,40}ch-tip-bubble/);assert.ok(own.body.includes('已逐字核对来源引文与路径，不代表陈述已获事实确认。'));
+ {const detail=await browser.get(space({space:owner.user.id,path:verified.path,entry:verified.entry}));assert.equal(detail.status,200,detail.body);assert.match(detail.body,/<p class="ch-meta" data-verified-scope>已逐字核对来源引文与路径，不代表陈述已获事实确认。<\/p>/);}
  assert.match(textOf(parse(own.body)),/\/ 上限 1\.0 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
  assert.match(own.body,/<details class="ch-section" id="knowledge-history"><summary[^>]*>知识版本记录<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本记录/);
  assert.match(own.body,/<span class="nowrap" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}">版本 2 · (?:今天 \d{2}:\d{2}|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2})<\/span> ·/);
