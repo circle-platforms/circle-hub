@@ -473,6 +473,14 @@ is kept and disclosed.
   under it, and once every job has an end the booking is released with test-bed release. The confirmation rule no longer
   quotes one product's command, prompt and answer as examples.
 
+### 3.9.19：与已声明命令一致的入门合成案例（#130）
+
+主示例只演示冻结合约/命令树已声明的 `widget health interval 60` 与逐字期望。旧脑图中的查询以及旧计划中的创建、查询、回滚命令不在随附命令树里；它们连同原字节保留在非发布 `testing/undeclared-example.json`，实际引擎仍对四处命令给出catalog拒绝，生成器仍拒绝从该结果生成工作簿。没有扩大冻结授权或将其静态结果解释为真实设备可执行。
+
+`node testing/examples.ts --write` 从新主脑图重算上传摘要、条目号和引文，真实引擎回归从上传/投影/提交走到客户端生成XLSX，再在后继运行冻结已受理计划并逐行/逐字节核验，首个AUTOID行的D列逐字保存根到用例的路径。合成产品、构建和知识目录是测试端口；`start-run.json` 中产品/构建占位符和自备产品包/资源前提继续适用，不是生产现成配置。
+
+依既有包/生成器同版约束，身份同步为 `case-compile@3.9.19`，4个当前工作簿样本以不变recipe重算版本相关模型/摘要，负例错误摘要保留；生成/验证逻辑、runtime-contract/profile/命令树/类型效果来源字节均不变。新核验须使用匹配的包和生成器，旧结果保持原样。
+
 ### 3.9.16: the case's mind-map path on its first row, consistent examples, an everyday description (issues #144, #130, #143)
 
 - Column D of each case's first row (the autoid row) is the case's place in the mind map: the texts of the nodes from the
