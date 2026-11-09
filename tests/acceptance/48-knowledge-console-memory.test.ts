@@ -121,6 +121,8 @@ test('memory modes remain private, reject evidence binding and accept independen
  await hub.hub.knowledge.spaces!.grant(owner.principal,{path:'/',audience:'member',member:reader.user.id});
  assert.equal((await other.call('get_nodes',{memory:{document:memoryDocument}})).isError,true);
  const own=await browser.get(memory({scope:'personal'}));assert.match(own.body,/memory-grants/);
+ // Issue 244: a memory's size reads in the console's unit style with the exact count in its tooltip, not as "N 字节".
+ assert.match(own.body,/<span class="nowrap" title="[\d,]+ 字节">[\d.,]+ (?:B|KB|MB)<\/span>/);assert.doesNotMatch(own.body,/<span class="nowrap">[\d,]+ 字节<\/span>/);
  assert.equal((await browser.post('/console/knowledge/do/memory-grant',{csrf:csrf(own.body),path:'/偏好',audience:'member',member:reader.user.name})).status,303);
  const browsed=await other.call('get_nodes',{memory:{document:memoryDocument}});assert.equal(browsed.isError,false,browsed.text);assert.equal(browsed.out.memory_document?.auto_load_allowed,false);
  assert.equal((await other.call('get_nodes',{memory:{document:memoryDocument,version:memoryVersion,for_session:true}})).isError,true);

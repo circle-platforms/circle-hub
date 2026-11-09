@@ -10,7 +10,10 @@ const memoryTones={enabled:'pass',disabled:'plain',superseded:'incomplete'} sati
 export const knowledgeState=(state:KnowledgeEntryStatus)=>chip(uiLabelOf('knowledge_entry_status',state),knowledgeTones[state]);
 export const memoryState=(state:MemoryStatus)=>chip(uiLabelOf('memory_status',state),memoryTones[state]);
 export const number=(value:number):Html=>html`<span class="num nowrap">${count(value)}</span>`;
-export {size} from './format.ts';
+import {size} from './format.ts';
+export {size};
+/** A byte count in the console's one unit style (1024-based B, KB, MB, …) with the exact count in the tooltip (issue 244). */
+export const exactSize=(bytes:number):Html=>html`<span class="nowrap" title="${count(bytes)} 字节">${size(bytes)}</span>`;
 export {time as timestamp} from './format.ts';
 export const minute=(iso:string|null|undefined)=>fullTime(iso).slice(0,16);
 export const versionName=(at:string,reason?:string,ordinal?:number)=>'版本'+(ordinal===undefined?'':' '+count(ordinal))+' · '+relativeTime(at)+(reason?' · '+reason:'');

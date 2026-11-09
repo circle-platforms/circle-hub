@@ -9,7 +9,7 @@ import {newId,AccessError} from '../../records/api.ts';
 import {html,link,page,pageLayout,pre,table,emptyAction,type Html} from './html.ts';
 import {button} from './ui.ts';
 import {evidence,panel as card,field as inputField,actionLink,dialog} from './presentation.ts';
-import {memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
+import {exactSize,memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
 import {type PageContext,type PageResult,neutralPage} from './pages.ts';
 import {currentAudience,inScope,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {containsDirectory,directoryName} from './audience.ts';
@@ -44,7 +44,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   const toggleForm=form(ctx,'write',html`<input type="hidden" name="space" value="${doc.space==='team'?'team':'personal'}"><input type="hidden" name="document" value="${document}"><input type="hidden" name="expected_version" value="${doc.current_version}"><input type="hidden" name="enabled" value="${doc.state==='enabled'?'false':'true'}"><input type="hidden" name="client_key" value="${newId('evt')}">`,actionLabel(doc.state==='enabled'?'disable_memory':'enable_memory'),false,doc.state==='enabled');
   const manage=html`<footer class="ch-inspector-actions">${own||doc.space==='team'&&ctx.admin?actionLink('#memory-versions','版本记录','ghost'):''}${editable?actionLink('#memory-toggle',doc.state==='enabled'?'停用…':'启用…',doc.state==='enabled'?'danger':'secondary'):''}${own?actionLink(location({scope,document,share:'1'}),'分享到团队…'):''}${editable?actionLink(location({scope,document,edit:'1'}),'编辑','primary'):''}</footer>${editable?dialog('memory-toggle',doc.state==='enabled'?'停用记忆':'启用记忆',html`<p>${doc.state==='enabled'?'停用后不再用于新会话；已有版本保留。':'启用后可用于符合读取权限的会话。'}</p>`,toggleForm):''}`;
   const history=doc.current_version!==null&&(own||doc.space==='team'&&ctx.admin)?await memory.history(ctx.principal,document,ctx.url.searchParams.get('history_cursor')??undefined):null;
-  const versions=history?card({title:actionLabel('history'),hint:'仅本人或团队管理员可浏览版本记录；切换版本不修改正文'},html`${table(['版本','标题','状态','大小','更新时间','记录人'],await Promise.all(history.items.map(async (row,index)=>[link(location({scope,document,version:row.version}),versionLabel(row.at,undefined,history.next?undefined:history.items.length-index)),row.title,memoryState(row.state as typeof doc.state),html`${number(row.bytes)} 字节`,timestamp(row.at),await ctx.userName(row.by)])))}${history.next?link(location({scope,document,history_cursor:history.next}),'更早的版本'):''}`):html``;
+  const versions=history?card({title:actionLabel('history'),hint:'仅本人或团队管理员可浏览版本记录；切换版本不修改正文'},html`${table(['版本','标题','状态','大小','更新时间','记录人'],await Promise.all(history.items.map(async (row,index)=>[link(location({scope,document,version:row.version}),versionLabel(row.at,undefined,history.next?undefined:history.items.length-index)),row.title,memoryState(row.state as typeof doc.state),exactSize(row.bytes),timestamp(row.at),await ctx.userName(row.by)])))}${history.next?link(location({scope,document,history_cursor:history.next}),'更早的版本'):''}`):html``;
   let sharing=html``;
   if(own&&ctx.url.searchParams.get('share')==='1'){
    const target=ctx.url.searchParams.get('team_path')??doc.path,key=ctx.url.searchParams.get('client_key')??newId('evt');
@@ -59,7 +59,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
  }else{
   const owner=ctx.url.searchParams.get('space'),path=ctx.url.searchParams.get('path')??'/';
   const documents=(await memory.items(ctx.principal,scope)).filter(doc=>(!owner||doc.space===owner)&&containsDirectory(path,doc.path));
-  const rows=await Promise.all(documents.map(async doc=>[link(location({scope,document:doc.document}),doc.title),(await currentAudience(ctx,doc.space,doc.path,false,undefined,true)).text,memoryState(doc.state),html`<span class="nowrap">${number(doc.bytes)} 字节</span>`,timestamp(doc.updated_at),directoryName(doc.path)]));
+  const rows=await Promise.all(documents.map(async doc=>[link(location({scope,document:doc.document}),doc.title),(await currentAudience(ctx,doc.space,doc.path,false,undefined,true)).text,memoryState(doc.state),exactSize(doc.bytes),timestamp(doc.updated_at),directoryName(doc.path)]));
   const team=scope==='team',canWrite=!local&&(scope==='personal'||scope==='all')||team&&ctx.admin;
   const usage=scope==='personal'||team&&ctx.admin?await memory.usage(ctx.principal,team?'team':ctx.principal.id):null;
   const controls=canWrite?button(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'),{primary:true}):html``;
