@@ -92,13 +92,14 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const quotes=submitted.items.flatMap((item:{slots:{plan:Array<{quotes:Array<{reference:string;text:string}>}>}})=>item.slots.plan.flatMap(claim=>claim.quotes));
     for(const quote of quotes){const resolved=await hub.service.resolveReference(hub.alice,{run:plan.run,text:quote.text,expect:'quotation'},call());assert.equal(resolved.resolution,'resolved',JSON.stringify(resolved));assert.ok(JSON.stringify(resolved).includes(quote.reference));}
   });
-  it('verifies a complete four-case workbook with one three-MiB frozen contract', {timeout:180_000}, async () => {
-    const contract=structuredClone(CONTRACT_DOC);contract.entries[0].h_semantics='synthetic contract documentation '.repeat(110_000);
+  /** One frozen contract of this many bytes, a whole mind map of this many cases verified in one plan and one workbook, then again against that workbook. */
+  async function verifyWholeWorkbook(cases: number, repeats: number, size: {min: number; max: number}): Promise<void> {
+    const contract=structuredClone(CONTRACT_DOC);contract.entries[0].h_semantics='synthetic contract documentation '.repeat(repeats);
     const original=stripAdditions(contract)!;contract.original.contract_sha256=runtimeDigest(original);original.contract_sha256=contract.original.contract_sha256;
     contract.original.sha256=sha(JSON.stringify(original));contract.contract_sha256=runtimeDigest(contract);
     const parsedContract=parseRuntimeContract(contract);assert.ok(parsedContract.ok,JSON.stringify(parsedContract));
-    const profile=profileDocument(contract),contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>3*1024*1024);
-    const document=map();document.root.data.id='batch-doc';document.root.children=Array.from({length:4},(_,i)=>{
+    const profile=profileDocument(contract),contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>size.min&&contractBytes.length<size.max,String(contractBytes.length));
+    const document=map();document.root.data.id='batch-doc';document.root.children=Array.from({length:cases},(_,i)=>{
       const node=structuredClone(map().root.children[0]);node.data.id='case-'+i;node.data.autoid=String(BigInt(AUTOID)+BigInt(i));
       const step=node.children[0];assert.ok('children' in step);step.data.id='step-'+i;step.children[0].data.id='expected-'+i;return node;
     });
@@ -108,20 +109,30 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
     const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;delete (args.parameters as Partial<typeof args.parameters>).autoid;
     args.inputs.subject.external='agile:mindmap:synthetic-batch';args.inputs.contract.external='doc:doc:synthetic-large-contract';args.inputs.profile.external='doc:doc:synthetic-large-profile';
-    const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,4);
+    const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,cases);
     const send=(run:string)=>({run,model:'synthetic-model',items:plan.items.map((item,i)=>{
       const data=goodData(),leaf=nodes.find(node=>node.data.id==='expected-'+i)!;assert.ok(leaf);data.expects[0].quote.reference=`src:${sha(sourceBytes.toString())}/kityminder@1/${leaf.selector}`;
       return {item:item.id,handling:'handled' as const,slots:{plan:[{text:'合成整卷计划',quotes:data.expects.map(row=>row.quote),data}]}};
     })});
     const submitted=send(plan.run),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
-    const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,4);
+    const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,cases);
     for(const row of rows)for(const requirement of row.requirements.filter(value=>value.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
-    const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,4);
+    const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,cases);
     const workbook=generateWorkbookSet(recipes);const artifact=await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:four-cases'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
     const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
     const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!.run),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
-    const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,4);
-    for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,4);}}
+    const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,cases);
+    for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,cases);}}
+  }
+  it('verifies a complete four-case workbook with one three-MiB frozen contract', {timeout:180_000}, async () => {
+    await verifyWholeWorkbook(4, 110_000, {min: 3*1024*1024, max: Infinity});
+  });
+  // The incident's scale (issue 189): 34 cases and a contract of about 1.2 MiB, end to end through plan, workbook and second verification.
+  // Per-read charging is covered by read-budget.test.ts; this is the whole path at the reported size, where charging the contract once per
+  // case would cost about 40 MiB against the 16 MiB budget. A mutation that makes the budget charge every read in full does not fail it,
+  // so it guards the reported scenario, not that one mechanism (the four-case test above stays under the budget either way, about 12 MiB).
+  it('verifies a whole 34-case workbook with one 1.2-MiB frozen contract inside the read budget', {timeout:420_000}, async () => {
+    await verifyWholeWorkbook(34, 36_000, {min: 1.1*1024*1024, max: 1.4*1024*1024});
   });
   it('resolves complete plan commands for a natural-language case without authored identities', async () => {
     const document = map(); document.root.children[0].children[0].data.text = '开启合成服务，同时添加合成监听';
