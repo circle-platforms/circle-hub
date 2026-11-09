@@ -63,6 +63,9 @@ async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord
   return {latest,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{})};
 }
 
+/** The visibility rule of `getRun`, which answers null exactly when this is false; it reads the run record and its grounds only, never the history. */
+export async function runVisible(ctx:EngineContext,user:Principal,run:string):Promise<boolean>{return await visibleRun(ctx,user,run)!==null;}
+
 /** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
 export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
   const stored=await visibleRun(ctx,user,run);if(!stored)return null;

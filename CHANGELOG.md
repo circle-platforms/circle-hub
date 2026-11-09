@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Decide whether the console live stream may tell an account about a task without reading the task's whole history: the stream called the full detail read for every task event and subscriber, which loads every submission, result and request of the run, and now asks a visibility check that applies the same rule and reads none of them. A synthetic run with 24 historical results of 64 KiB and one production result loads 50 result bodies through the detail read (25 listed, then the same 25 searched for the newest accepted one) and none through the check. This does not shorten the detail page itself or establish a deployed timeout fix.
 - Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
