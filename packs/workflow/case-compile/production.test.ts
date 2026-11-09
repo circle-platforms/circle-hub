@@ -70,18 +70,19 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     assert.equal(receipt.statement.data?.runtime_version, CONTRACT_DOC.runtime.minimum_version);
     assert.ok(!JSON.stringify(result).includes('exec-plan@1')); assert.ok(!JSON.stringify(result).includes('"plan_json"'));
   });
-  it('binds bundled example ids and quotations verbatim without treating undeclared commands as verified',async()=>{
+  it('binds the preserved previous example ids and quotations without treating undeclared commands as verified',async()=>{
     const bytes=(name:string)=>readFileSync(new URL('./examples/'+name,import.meta.url));
     const json=(name:string)=>JSON.parse(bytes(name).toString());const example=json('start-run.json').arguments;
+    const previous=JSON.parse(readFileSync(new URL('./testing/undeclared-example.json',import.meta.url),'utf8')) as {subject:string;submission:string};
     const inputBytes={contract:bytes('runtime-contract-v2.json'),profile:bytes('runtime-profile-v2.json'),inventory:bytes('bed-topology.json')};
     const inputs:Record<string,{reference:string}|{external:string}>={};for(const [slot,source] of Object.entries(inputBytes)){
       const external='doc:doc:synthetic-example-'+slot;hub.external.put(external,{bytes:source,mediaType:'application/json'});inputs[slot]={external};
     }
-    const subject=await hub.kit.artifacts.ingest({bytes:bytes('case-mindmap.json'),mediaType:'application/json',origin:{read:{object:'fixture:example:subject'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});inputs.subject={reference:'src:'+subject.body.sha256};
-    assert.deepEqual(inputs.subject,example.inputs.subject);
+    const subject=await hub.kit.artifacts.ingest({bytes:Buffer.from(previous.subject),mediaType:'application/json',origin:{read:{object:'fixture:example:subject'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});inputs.subject={reference:'src:'+subject.body.sha256};
+    assert.deepEqual(inputs.subject,{reference:'src:'+sha(previous.subject)});
     const args={...example,product:'widget',build:'Fixture_Build_A',inputs};
     const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;
-    const submitted={...json('submit-result.json'),run:plan.run};assert.deepEqual(submitted.items.map((item:{item:string})=>item.item),plan.items.map(item=>item.id));
+    const submitted={...JSON.parse(previous.submission),run:plan.run};assert.deepEqual(submitted.items.map((item:{item:string})=>item.item),plan.items.map(item=>item.id));
     const answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
     const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,1);
     const contractRequirement=rows[0].requirements.find(row=>row.requirement==='contract_methods')!;assert.equal(contractRequirement.status,'unsatisfied');

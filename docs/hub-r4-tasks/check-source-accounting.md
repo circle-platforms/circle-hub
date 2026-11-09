@@ -6,6 +6,7 @@
 
 - `hub/runs/engine/read-budget.ts`、`read-budget.test.ts`、`evaluate.ts`、`README.md`
 - `packs/workflow/case-compile/production.test.ts`、`examples.test.ts`、`README.md`
+- `packs/workflow/case-compile/testing/undeclared-example.json`：保留原脑图/原提交逐字负对照，与#262新增文件一致
 - `docs/hub-r4-tasks/check-source-accounting.md`
 - `CHANGELOG.md`
 
@@ -25,3 +26,9 @@
 - `npm run test:docs`：333通过、0失败、0跳过。
 - `npm run typecheck`：退出0。初轮夹具类型、单用例生成API、输入类型及预览字段误用已修正；不将这些夹具错误称业务缺陷。没有修改正式合约/生成文件、冻结包字节或迁移。
 - 未运行全量仓库unit/acceptance、Linux隔离或真实部署/业务来源；不作线上修复或真实设备验收结论。
+
+## #262 并行集成准备
+
+旧多命令示例原脑图/原提交逐字保存在testing/undeclared-example.json，与#262文件相同；负对照改读该固定夹具，四处拒绝/生成器拒绝/逐字引用解析断言不变。因此#262可替换主示例而不让本分支的负对照误读新正例。未合并或改写#262。此次仅对照夹具引用变化，`node --test packs/workflow/case-compile/production.test.ts hub/runs/engine/read-budget.test.ts`16通过、0失败、0跳过；typecheck退出0。
+
+#189原报告为34用例、1179215字节合约；本批4用例/>3MiB是新的合成压力场景，不是原事故输入的复刻。#262另交付与声明对齐的新主例全链路，本PR历史验证不据其存在自动变为线上修复。
