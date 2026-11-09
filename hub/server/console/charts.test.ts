@@ -39,10 +39,17 @@ test('a curve breaks where nothing was read: no value is invented, the gap is na
  const zero=curve({...base,series:[{label:'合成值',values:[0,0,0,0,0,0]}]}).text;
  assert.doesNotMatch(zero,/gapband/,'0 is a reading, not a gap');assert.match(zero,/<b>0 个<\/b>/);
  const none=curve({...base,series:[{label:'合成值',values:[null,null,null,null,null,null]}]}).text;
- assert.match(none,/class="gapband"/);assert.doesNotMatch(none,/class="line/);assert.doesNotMatch(none,/class="dot/);
+ assert.match(text(none),/此时段暂无可用样本.*观测值未知/);assert.doesNotMatch(none,/<svg/);assert.doesNotMatch(none,/class="line/);assert.doesNotMatch(none,/class="dot/);
  const two=curve({...base,series:[{label:'运行中',className:'s1',values:[1,null,3,4,5,6]},{label:'排队',className:'s2',values:[1,null,null,null,null,null]}]}).text;
  assert.match(two,/class="ch-legend is-line"/);assert.match(two,/class="line s2"/);assert.doesNotMatch(two,/class="wash/,'an area only under a single line');
  assert.equal([...two.matchAll(/class="gapband"/g)].length,1,'a gap is where no series has a value');
+});
+
+test('an entirely missing sampled curve has no numeric scale but retains unknown table values and event instants',()=>{
+ const base:Curve={title:'合成缺测',labels:['昨日','今日'],series:[{label:'合成延迟',values:[null,null]}],max:100,ticks:[0,50,100],tick:String,value:value=>value+' 毫秒',xLabels:[[0,'昨日'],[1,'今日']],marks:[{index:1,label:'合成重启'}],table:{head:['时间','延迟（毫秒）'],rows:[['昨日','未知'],['今日','未知']]}};
+ const missing=curve(base).text;assert.match(text(missing),/此时段暂无可用样本/);assert.match(text(missing),/观测值未知/);assert.doesNotMatch(missing,/<svg|class="tick"/);assert.match(text(missing),/合成重启.*今日/);assert.match(text(missing.slice(missing.indexOf('<table'))),/昨日未知今日未知/);
+ const measured=curve({...base,series:[{label:'合成延迟',values:[0,0]}]}).text;assert.match(measured,/<svg/);assert.doesNotMatch(text(measured),/暂无可用样本/);assert.match(measured,/<b>0 毫秒<\/b>/);
+ const report=curve({...base,points:[{index:1,value:70,label:'合成报告70'}]}).text;assert.match(report,/class="dot pin"/);assert.match(text(report),/合成报告70/);assert.doesNotMatch(text(report),/此时段暂无可用样本/);
 });
 
 test('a curve groups its read-outs, draws its marks and a known value off the line, and keeps its table',()=>{

@@ -89,6 +89,8 @@ function gaps(series:readonly CurveSeries[],points:number):[number,number][]{
 
 /** A line that may break, with the same read-outs and table as chart(); `chart` refuses a value that is not a number. */
 export function curve(input:Curve):Html{
+ const fallbackTable=input.table?html`<details class="ch-tableview"><summary>以表格查看</summary>${table(input.table.head,input.table.rows as unknown[][])}</details>`:'';
+ if(!input.series.some(line=>line.values.some(value=>value!==null))&&!input.points?.length)return html`<figure class="ch-figure"><h3 class="ch-figure-title">${input.note?tooltip(input.title,input.note):input.title}</h3>${legend(input.series,true)}<div class="ch-empty"><p class="ch-empty-title">此时段暂无可用样本</p><p>观测值未知，不能据此判断为零或健康。</p></div>${input.marks?.length?html`<ul>${input.marks.filter(mark=>mark.label).map(mark=>html`<li>${mark.label} · ${input.labels[mark.index]}</li>`)}</ul>`:''}${fallbackTable}</figure>`;
  const pw=CW-CL-CR,ph=CH-CT-CB,n=input.labels.length,every=input.hoverEvery??1;
  const X=(i:number)=>CL+(n<=1?0:i/(n-1)*pw),Y=(v:number)=>CT+ph-Math.min(v,input.max)/input.max*ph;
  const f=(value:number)=>value.toFixed(1);
@@ -114,7 +116,6 @@ export function curve(input:Curve):Html{
   hits.push(html`<g data-chart-index="${slot}" tabindex="${slot===0?0:-1}" role="img" aria-label="${input.labels[start]+'；'+row.map(item=>read(item.value)+' '+item.label).join('；')}"><line class="crosshair" x1="${f(X(mid))}" x2="${f(X(mid))}" y1="${CT}" y2="${CT+ph}"></line><rect class="hit" x="${f(left)}" y="${CT}" width="${f(Math.max(1,right-left))}" height="${ph}"></rect></g>`);
   tips.push(html`<div data-chart-tip="${slot}" hidden><div class="when">${input.labels[start]}</div>${row.map(item=>html`<div class="row ${item.className}"><b>${read(item.value)}</b><span>${item.label}</span></div>`)}</div>`);
  }
- const fallbackTable=input.table?html`<details class="ch-tableview"><summary>以表格查看</summary>${table(input.table.head,input.table.rows as unknown[][])}</details>`:'';
  return html`<figure class="ch-figure" data-chart><h3 class="ch-figure-title">${input.note?tooltip(input.title,input.note):input.title}</h3>${legend(input.series,true)}<div class="ch-plot"><svg class="ch-chart ch-curve" viewBox="0 0 ${CW} ${CH}" role="group" aria-label="${input.title}">${grid}${bands}${lines}${marks}${pins}${axis}${hits}</svg><div class="ch-chart-tip" hidden role="status">${tips}</div></div>${fallbackTable}</figure>`;
 }
 
