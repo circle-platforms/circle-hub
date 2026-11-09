@@ -21,8 +21,8 @@ import { identifyRequest } from '../request-entry.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '../http.ts';
-import { AUTHORIZE_COOKIE, SECURE_AUTHORIZE_COOKIE, issuerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
-import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage } from './authorize.ts';
+import { AUTHORIZATION_REQUEST_TTL_MS, AUTHORIZE_COOKIE, AUTHORIZE_PAGE, DEVICE_PAGE, SECURE_AUTHORIZE_COOKIE, issuerOf, peerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
+import { MAX_DEVICE_CODE_ATTEMPTS, MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, deviceCodePage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage } from './authorize.ts';
 import { connectionsPage } from './connections.ts';
 import { healthPage, type HealthPageSources } from './health.ts';
 import { handleApi, type ApiResult } from './api.ts';
@@ -48,7 +48,7 @@ import { resultPage, resultsPage } from './results.ts';
 import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings.ts';
 import { teamPage } from './team.ts';
 import { stepper } from './ui.ts';
-import { LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
+import { DEVICE_COOKIE, LOGIN_COOKIE, LOGIN_LINK_TTL_MS, SESSION_COOKIE, SECURE_DEVICE_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext, type ConsoleSession, type LoginLinkStore, type SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
 import { runForgetTrial, runTrial } from './trial.ts';
 import { UploadError, boundaryOf, parseMultipart } from './upload.ts';
@@ -407,18 +407,31 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   const decision = form.get('decision');
   if (decision !== 'approve' && decision !== 'deny') return show(400, '请求不正确，请重新选择');
   const to = (params: Record<string, string>): { location: string } => ({ location: responseUri(open.redirectUri, { ...params, state: open.state, iss: open.issuer }) });
+  // A device request is answered at the client's next poll, not by a redirect: the browser stays on this page, which then
+  // says how it was decided.
+  const here = { location: `${AUTHORIZE_PAGE}/${open.id}` };
+  const deviceGone = { status: 409, error: '设备码已过期或已在其他页面处理：请在客户端中重新连接' };
   const decide = async (): Promise<{ location: string } | { status: number; error: string }> => {
     if (decision === 'deny') {
-      open.ended = 'denied';
+      if (open.device !== null) {
+        if (!store!.decideDevice(open, null)) return deviceGone;
+      } else open.ended = 'denied';
       options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）的授权请求被拒绝`);
-      return to({ error: 'access_denied', error_description: 'the request was refused' });
+      return open.device !== null ? here : to({ error: 'access_denied', error_description: 'the request was refused' });
     }
     if (named === null) return { status: 401, error: '请先输入邀请码' };
     // The account must still be the one the page named: signing in as someone else in another tab changes nothing here.
     if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新确认连接' };
+    // An invitation is not spent on a device request that can no longer be decided.
+    if (open.device !== null && !store!.devicePending(open)) return deviceGone;
     if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
       open.invitation = null;
       return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status','disabled')}）：请管理员重新签发` };
+    }
+    if (open.device !== null) {
+      if (!store!.decideDevice(open, named.id)) return deviceGone;
+      options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获设备码授权，账号 ${named.id}`);
+      return here;
     }
     const code = store!.grant(open, named.id);
     if (code === null) return { status: 409, error: '该连接请求已处理' };
@@ -431,6 +444,57 @@ async function authorizePage(request: IncomingMessage, response: ServerResponse,
   if (!('location' in decided)) open.decision = null;
   if ('location' in decided) return go(decided.location);
   return decided.status === 409 && open.invitation === null && named?.via === 'invitation' ? sendHtml(response, 409, identityPage(open, decided.error)) : show(decided.status, decided.error);
+}
+
+/**
+ * The device page (RFC 8628 3.3): a person types the user code a client shows. A code of an undecided device request opens
+ * an authorization request for it, bound to this browser by the same cookie the authorization endpoint sets, and sends the
+ * browser to its authorization page, which names the account and takes the decision. Typed codes count against the
+ * sender, right or wrong, so the codes cannot be guessed at speed.
+ */
+async function devicePage(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, secure: boolean): Promise<void> {
+  const store = options.authorizations;
+  if (store === undefined) {
+    request.resume();
+    return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
+  }
+  const show = (status: number, typed: string, error: string | null): void => {
+    const nonce = options.sessions.issueNonce(secure);
+    sendHtml(response, status, deviceCodePage(typed, nonce, error), { 'set-cookie': cookie(secure ? SECURE_DEVICE_COOKIE : DEVICE_COOKIE, nonce, DEVICE_PAGE, 15 * 60, secure) });
+  };
+  if (request.method === 'GET') {
+    request.resume();
+    return show(200, (url.searchParams.get('user_code') ?? '').slice(0, 20), null);
+  }
+  if (request.method !== 'POST') {
+    request.resume();
+    return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET 和 POST</p>`), { allow: 'GET, POST' });
+  }
+  if (!sameOrigin(request, options.ownOrigins())) {
+    request.resume();
+    return forbidden(response, '设备码表单只能从本控制台的页面提交');
+  }
+  const form = await formOf(request);
+  if (form === 'aborted') return void response.destroy();
+  if (typeof form === 'string') return forbidden(response, '设备码请求的格式不对');
+  const nonce = form.get('csrf') ?? '';
+  if (nonce.length === 0 || cookiesOf(request).get(secure ? SECURE_DEVICE_COOKIE : DEVICE_COOKIE) !== nonce || !options.sessions.takeNonce(nonce, secure)) return forbidden(response, '表单已过期或不是本控制台发出的，请重新打开设备码页面');
+  const typed = (form.get('user_code') ?? '').trim().slice(0, 64);
+  const peer = peerOf(request);
+  if (!options.sessions.takeLoginAttempt('device:' + peer, MAX_DEVICE_CODE_ATTEMPTS)) return show(429, '', '设备码输入次数过多，请在 15 分钟后重试');
+  const device = store.deviceByUserCode(typed);
+  if (device === null || device.secure !== secure) return show(400, typed.slice(0, 20), '设备码不正确或已过期：请核对客户端显示的设备码，或在客户端中重新连接');
+  const opened = store.open({ client: device.client, redirectUri: '', redirectSent: false, state: null, challenge: '', peer, resource: device.resource, issuer: device.issuer, secure, device: { id: device.id, userCode: device.userCode } });
+  if (opened === null) return show(503, typed.slice(0, 20), '当前待处理的授权请求过多，请稍后重试');
+  const path = `${AUTHORIZE_PAGE}/${opened.id}`;
+  setCommonHeaders(response);
+  response.writeHead(303, {
+    location: path,
+    'content-length': '0',
+    'set-cookie': [cookie(secure ? SECURE_AUTHORIZE_COOKIE : AUTHORIZE_COOKIE, opened.browser, path, AUTHORIZATION_REQUEST_TTL_MS / 1000, secure, true), cookie(secure ? SECURE_DEVICE_COOKIE : DEVICE_COOKIE, '', DEVICE_PAGE, 0, secure)],
+    'cache-control': 'no-store',
+  });
+  response.end();
 }
 
 async function logout(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null): Promise<void> {
@@ -833,6 +897,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     return redirect(response,'/console/password?next='+encodeURIComponent(safeNext(url.pathname+url.search)));
   }
   if (segments[0] === 'authorize') return authorizePage(request, response, options, session, secure, segments.slice(1));
+  if (segments[0] === 'device' && segments.length === 1) return devicePage(request, response, url, options, secure);
   if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);
   if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';

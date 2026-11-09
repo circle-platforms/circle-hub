@@ -9,13 +9,15 @@ import {UNREPORTED_CLIENT} from './client-provenance.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
-import { AUTHORIZATION_REQUEST_TTL_MS, UNNAMED_CLIENT, redirectIsLocal } from '../oauth.ts';
+import { AUTHORIZATION_REQUEST_TTL_MS, DEVICE_PAGE, UNNAMED_CLIENT, formatUserCode, redirectIsLocal } from '../oauth.ts';
 import { CONTENT_SECURITY_POLICY, code, definitions, html, page, type Html } from './html.ts';
 import { stepper } from './ui.ts';
 
 const STEPS = ['身份', '确认连接', '完成'] as const;
 /** Wrong invitation codes one authorization request accepts before it ends. */
 export const MAX_INVITATION_FAILURES = 5;
+/** User codes one sender may type on the device page in 15 minutes, right or wrong. */
+export const MAX_DEVICE_CODE_ATTEMPTS = 10;
 
 const chrome = (title: string, hint?: string, heading?: Html) => ({ title, hint, heading, user: null, csrf: null, wide: true });
 
@@ -41,14 +43,16 @@ export function redirectTarget(uri: string): string {
  * leaves the machine; for a private-use scheme, that the app registered for it on this machine receives it.
  */
 function redirectNotice(uri: string, account: string): Html | '' {
-  if (redirectIsLocal(uri)) return '';
+  // A device request has no redirect URI: the code goes nowhere, the client's own poll picks up the decision.
+  if (uri === '' || redirectIsLocal(uri)) return '';
   const target = redirectTarget(uri);
   if (target.startsWith('https://')) return callout('warn', html`<span><b>回调地址不在本机。</b>确认后，连接码发送到 ${target}；该地址的服务可凭它以 ${evidence(account)} 的身份连接本 Hub。仅在确认该服务可信时允许连接。</span>`);
   return callout('info', html`<span>连接码交给本机上处理 ${target} 链接的应用；仅在确认该应用可信时允许连接。</span>`);
 }
 
-/** The console's policy with form-action widened to the redirect URI, so the approval may lead there. */
+/** The console's policy with form-action widened to the redirect URI, so the approval may lead there; unchanged without one. */
 export function authorizeSecurityPolicy(uri: string): string {
+  if (uri === '') return CONTENT_SECURITY_POLICY;
   const target = redirectTarget(uri);
   return CONTENT_SECURITY_POLICY.replace("form-action 'self'", `form-action 'self' ${target}`);
 }
@@ -56,7 +60,7 @@ export function authorizeSecurityPolicy(uri: string): string {
 function facts(request: AuthorizationRequest): Html {
   const values = [
     ['客户端', clientName(request)],
-    ['回调地址', code(request.redirectUri)],
+    request.device ? ['设备码', code(formatUserCode(request.device.userCode))] : ['回调地址', code(request.redirectUri)],
     ['访问范围', '本 Hub 的 MCP 服务（' + request.resource + '）'],
     ['有效期', `连接请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效`],
   ];
@@ -103,6 +107,7 @@ ${error === null ? '' : html`<p class="error">${error}</p>`}
 <p>以 <b data-evidence>${account.name}</b>（${account.role}）的身份允许 ${clientName(request)} 连接本 Hub。</p>
 <section class="ch-section">${facts(request)}</section>
 ${redirectNotice(request.redirectUri, account.name)}
+${!request.device ? '' : callout('warn', html`<span>只在上面的设备码与客户端显示的一致、且连接由本人发起时允许；他人发来的设备码请拒绝。</span>`)}
 ${callout('info', html`<span>确认后，该客户端可以 ${evidence(account.name)} 的身份调用 Hub 的工具，权限与该账号相同。</span>`)}
 ${decide}${other}`);
 }
@@ -110,8 +115,21 @@ ${decide}${other}`);
 /** A request that already ended (the browser came back to it). */
 export function endedPage(request: AuthorizationRequest): Html {
   const approved = request.ended === 'approved';
+  const next = request.device ? '客户端随后自动完成连接，可关闭本页。' : '可关闭本页。';
   return page(chrome(approved ? '已允许连接' : '已拒绝'), html`${stepper(STEPS, 2)}
-<p>${approved ? html`已允许 ${clientName(request)} 连接本 Hub，可关闭本页。` : html`已拒绝 ${clientName(request)} 的连接请求，该客户端未获连接。`}</p>`);
+<p>${approved ? html`已允许 ${clientName(request)} 连接本 Hub，${next}` : html`已拒绝 ${clientName(request)} 的连接请求，该客户端未获连接。`}</p>`);
+}
+
+/** The device page: the user code a client shows is typed here (RFC 8628 3.3); `typed` is kept after a wrong code. */
+export function deviceCodePage(typed: string, nonce: string, error: string | null): Html {
+  return page(chrome('连接客户端', '输入客户端显示的设备码；下一步确认以哪个账号允许连接。'), html`${stepper(STEPS, 0)}
+${error === null ? '' : html`<p class="error">${error}</p>`}
+<form method="post" action="${DEVICE_PAGE}">
+<div class="ch-field"><label class="ch-field-label" for="user-code">设备码</label><div class="ch-input"><input id="user-code" name="user_code" value="${typed}" autocomplete="off" autocapitalize="characters" spellcheck="false" size="12" maxlength="20" required placeholder="XXXX-XXXX"></div></div>
+<input type="hidden" name="csrf" value="${nonce}">
+<button type="submit" class="ch-btn ch-btn--primary">继续</button>
+</form>
+<p class="ch-meta">设备码 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效，Hub 重启后失效。</p>`);
 }
 
 /** A request that does not exist for this browser (expired, ended by too many wrong codes, a restart, another browser's). */

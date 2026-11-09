@@ -11,7 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, RegistrationWindow } from './oauth.ts';
+import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, DEVICE_CODE_GRANT, RegistrationWindow, normalizeUserCode } from './oauth.ts';
 import { LOGIN_LINK_TTL_MS } from './console/session.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -174,7 +174,8 @@ describe('the MCP standard authorization', () => {
     assert.equal(server_.issuer, origin());
     assert.equal(server_.authorization_endpoint, `${origin()}/oauth/authorize`);
     assert.deepEqual(server_.code_challenge_methods_supported, ['S256']);
-    assert.deepEqual(server_.grant_types_supported, ['authorization_code']);
+    assert.deepEqual(server_.grant_types_supported, ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code']);
+    assert.equal(server_.device_authorization_endpoint, `${origin()}/oauth/device_authorization`);
     assert.deepEqual(server_.token_endpoint_auth_methods_supported, ['none']);
     assert.equal((await send('/.well-known/oauth-authorization-server', { method: 'POST', body: '' })).status, 405);
   });
@@ -513,7 +514,7 @@ describe('decisions, names and limits', () => {
     assert.equal(window.take('192.0.2.1'), true, 'the window moves on');
 
     const store = new AuthorizationStore(() => 0);
-    const opened = (client: string, peer: string) => store.open({ client: { id: client, name: client }, redirectUri: 'http://127.0.0.1/cb', redirectSent: true, state: null, challenge: 'c'.repeat(43), peer, resource: 'http://127.0.0.1/mcp', issuer: 'http://127.0.0.1', secure: false })!;
+    const opened = (client: string, peer: string) => store.open({ client: { id: client, name: client }, redirectUri: 'http://127.0.0.1/cb', redirectSent: true, device: null, state: null, challenge: 'c'.repeat(43), peer, resource: 'http://127.0.0.1/mcp', issuer: 'http://127.0.0.1', secure: false })!;
     const victim = opened('cli_victim', '192.0.2.9');
     const flood = [];
     for (let i = 0; i < 101; i++) flood.push(opened(`cli_${i}`, '192.0.2.1'));
@@ -638,5 +639,181 @@ describe('one-time login links', () => {
       body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(page.body), next: '/console/runs?result=passed' }),
     });
     assert.equal(reply.headers.location, '/console/runs?result=passed');
+  });
+});
+
+describe('the device authorization grant (RFC 8628)', () => {
+  interface DeviceCodes { device_code: string; user_code: string; verification_uri: string; verification_uri_complete: string; expires_in: number; interval: number }
+  async function deviceCodes(client: string, extra: Record<string, string> = {}): Promise<DeviceCodes> {
+    const reply = await send('/oauth/device_authorization', { method: 'POST', headers: FORM, body: form({ client_id: client, ...extra }) });
+    assert.equal(reply.status, 200, reply.body);
+    assert.equal(reply.headers['cache-control'], 'no-store');
+    return JSON.parse(reply.body) as DeviceCodes;
+  }
+  const poll = (client: string, deviceCode: string, extra: Record<string, string> = {}): Promise<Reply> => exchange({ grant_type: DEVICE_CODE_GRANT, device_code: deviceCode, client_id: client, ...extra });
+  const errorOf = (reply: Reply): string => JSON.parse(reply.body).error as string;
+  /** Types `typed` on the device page as a browser with `session` (a console session cookie, or none). */
+  async function typeCode(typed: string, session = ''): Promise<Reply> {
+    const pageReply = await send(`/console/device?user_code=${encodeURIComponent(typed)}`, { headers: session ? { cookie: session } : {} });
+    assert.equal(pageReply.status, 200, pageReply.body);
+    const nonce = cookieOf(pageReply, 'circle_hub_device');
+    assert.match(nonce ?? '', /^circle_hub_device=[A-Za-z0-9_-]{43}; Path=\/console\/device; HttpOnly; SameSite=Strict; Max-Age=900$/);
+    return post('/console/device', { csrf: csrfOf(pageReply.body), user_code: typed }, [session, `circle_hub_device=${valueOf(nonce)}`].filter(Boolean).join('; '));
+  }
+  /** A typed code leads to an authorization page bound to this browser; the page and the browser's cookies. */
+  async function devicePage(typed: string, session = ''): Promise<{ path: string; page: Reply; cookie: string }> {
+    const reply = await typeCode(typed, session);
+    assert.equal(reply.status, 303, reply.body);
+    const path = pathOf(reply.headers.location);
+    assert.match(path, /^\/console\/authorize\/[A-Za-z0-9_-]{43}$/);
+    const bound = cookieOf(reply, 'circle_hub_authorize');
+    assert.match(bound ?? '', new RegExp(`^circle_hub_authorize=[A-Za-z0-9_-]{43}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=600$`));
+    const cookie = [session, `circle_hub_authorize=${valueOf(bound)}`].filter(Boolean).join('; ');
+    return { path, page: await send(path, { headers: { cookie } }), cookie };
+  }
+  // Codes typed count per sender for fifteen minutes: each test starts a new window.
+  const newWindow = (): void => {
+    clock += 16 * 60 * 1000;
+  };
+
+  test('user codes are eight letters of twenty consonants, typed in any case with a space or a dash', () => {
+    assert.equal(normalizeUserCode('bcdf-ghjk'), 'BCDFGHJK');
+    assert.equal(normalizeUserCode(' BCDF GHJK '), 'BCDFGHJK');
+    for (const typed of ['BCDF-GHJ', 'BCDF-GHJKL', 'ABCD-EFGH', 'BCDF-GHJ1', '', 'B'.repeat(65)]) assert.equal(normalizeUserCode(typed), null, typed);
+  });
+
+  test('a person approves a code on the device page through an invitation, and the next poll gets the token once', async () => {
+    newWindow();
+    const user = await member();
+    const invitation = await server.records.principals.invite(server.admin.principal, user.user.id);
+    const client = await register(undefined, '终端里的 Circle');
+    const codes = await deviceCodes(client, { resource: `${origin()}/mcp`, scope: 'not used here' });
+    assert.match(codes.user_code, /^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/);
+    assert.match(codes.device_code, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(codes.verification_uri, `${origin()}/console/device`);
+    assert.equal(codes.verification_uri_complete, `${origin()}/console/device?user_code=${codes.user_code}`);
+    assert.equal(codes.expires_in, AUTHORIZATION_REQUEST_TTL_MS / 1000);
+    assert.equal(codes.interval, 5);
+    // Nobody approved yet: pending, and a poll sooner than the interval slows the client down by five seconds.
+    assert.equal(errorOf(await poll(client, codes.device_code)), 'authorization_pending');
+    assert.equal(errorOf(await poll(client, codes.device_code)), 'slow_down');
+    clock += 10_000;
+    assert.equal(errorOf(await poll(client, codes.device_code)), 'authorization_pending');
+
+    // The code typed in lower case with a space; the page asks who the account is, then names it and the code.
+    const { path, page, cookie } = await devicePage(codes.user_code.toLowerCase().replace('-', ' '));
+    assert.match(page.body, /邀请码/);
+    const verified = await post(path, { csrf: csrfOf(page.body), step: 'identity', code: invitation.code }, cookie);
+    assert.equal(verified.status, 303, verified.body);
+    const confirm = await send(path, { headers: { cookie } });
+    assert.match(confirm.body, new RegExp(`以 <b data-evidence>${user.user.name}</b>`));
+    assert.match(confirm.body, new RegExp(`<dt>设备码</dt><dd><code>${codes.user_code}</code>`));
+    assert.match(confirm.body, /与客户端显示的一致/);
+    assert.doesNotMatch(confirm.body, /回调地址/);
+    assert.doesNotMatch(String(confirm.headers['content-security-policy']), /form-action 'self' http/, 'the approval leads nowhere else');
+    const approved = await post(path, approval(confirm.body), cookie);
+    assert.equal(approved.status, 303, approved.body);
+    assert.equal(pathOf(approved.headers.location), path, 'the browser stays here: nothing is sent to the client');
+    assert.match((await send(path, { headers: { cookie } })).body, /客户端随后自动完成连接/);
+
+    clock += 10_000;
+    const reply = await poll(client, codes.device_code, { resource: `${origin()}/mcp` });
+    assert.equal(reply.status, 200, reply.body);
+    assert.equal(reply.headers['cache-control'], 'no-store');
+    const issued = JSON.parse(reply.body);
+    assert.equal(issued.token_type, 'Bearer');
+    assert.deepEqual(await server.records.principals.authenticate(`Bearer ${issued.access_token}`), user.principal);
+    const [token] = (await server.records.principals.tokens(user.user.id)).filter((t) => t.client === client);
+    assert.equal(token.label, '终端里的 Circle');
+    assert.deepEqual(await server.records.principals.checkInvitation(invitation.code), { ok: false, reason: 'used' });
+    clock += 10_000;
+    assert.equal(errorOf(await poll(client, codes.device_code)), 'invalid_grant', 'the approval is answered once');
+  });
+
+  test('a signed-in browser approves for its own account; a refusal answers the next poll with access_denied, once', async () => {
+    newWindow();
+    const user = await member();
+    const session = await signIn(user.token);
+    const client = await register();
+    const first = await deviceCodes(client);
+    const { path, page, cookie } = await devicePage(first.user_code, session);
+    assert.match(page.body, new RegExp(`以 <b data-evidence>${user.user.name}</b>`));
+    assert.match(page.body, /以其他账号连接/);
+    assert.equal((await post(path, approval(page.body), cookie)).status, 303);
+    const reply = await poll(client, first.device_code);
+    assert.equal(reply.status, 200, reply.body);
+    assert.deepEqual(await server.records.principals.authenticate(`Bearer ${JSON.parse(reply.body).access_token}`), user.principal);
+
+    const second = await deviceCodes(client);
+    const other = await devicePage(second.user_code, session);
+    assert.equal((await post(other.path, { ...approval(other.page.body), decision: 'deny' }, other.cookie)).status, 303);
+    assert.match((await send(other.path, { headers: { cookie: other.cookie } })).body, /已拒绝/);
+    assert.equal(errorOf(await poll(client, second.device_code)), 'access_denied');
+    assert.equal(errorOf(await poll(client, second.device_code)), 'invalid_grant', 'a refusal is answered once');
+    const late = await typeCode(second.user_code, session);
+    assert.equal(late.status, 400);
+    assert.match(late.body, /设备码不正确或已过期/);
+  });
+
+  test('two browsers that typed the same code: the first decision counts, and no invitation is spent on the second', async () => {
+    newWindow();
+    const user = await member();
+    const session = await signIn(user.token);
+    const someone = await member();
+    const invitation = await server.records.principals.invite(server.admin.principal, someone.user.id);
+    const client = await register();
+    const codes = await deviceCodes(client);
+    const mine = await devicePage(codes.user_code, session);
+    const theirs = await devicePage(codes.user_code);
+    assert.notEqual(mine.path, theirs.path);
+    assert.equal((await post(theirs.path, { csrf: csrfOf(theirs.page.body), step: 'identity', code: invitation.code }, theirs.cookie)).status, 303);
+    const confirm = await send(theirs.path, { headers: { cookie: theirs.cookie } });
+    assert.equal((await post(mine.path, approval(mine.page.body), mine.cookie)).status, 303);
+    const refused = await post(theirs.path, approval(confirm.body), theirs.cookie);
+    assert.equal(refused.status, 409);
+    assert.match(refused.body, /设备码已过期或已在其他页面处理/);
+    assert.equal((await server.records.principals.checkInvitation(invitation.code)).ok, true, 'the invitation was not spent');
+    const reply = await poll(client, codes.device_code);
+    assert.equal(reply.status, 200, reply.body);
+    assert.deepEqual(await server.records.principals.authenticate(`Bearer ${JSON.parse(reply.body).access_token}`), user.principal);
+  });
+
+  test('the device page and the endpoints refuse wrong, expired, foreign and forged requests, and too many typed codes', async () => {
+    newWindow();
+    const client = await register();
+    const other = await register();
+    const codes = await deviceCodes(client);
+    assert.equal((await typeCode('BBBB-BBBB')).status, 400, 'a code nobody was given');
+    assert.equal((await post('/console/device', { csrf: 'forged', user_code: codes.user_code })).status, 403, 'a form without the page nonce');
+    const crossSite = await send('/console/device', { method: 'POST', headers: { ...FORM, origin: 'http://192.0.2.66' }, body: form({ csrf: 'x', user_code: codes.user_code }) });
+    assert.equal(crossSite.status, 403, 'a form from another origin');
+    assert.equal(errorOf(await poll(other, codes.device_code)), 'invalid_grant', "another client's poll");
+    assert.equal(errorOf(await poll(client, codes.device_code, { resource: 'http://192.0.2.1/mcp' })), 'invalid_target');
+    assert.equal(errorOf(await exchange({ grant_type: DEVICE_CODE_GRANT, client_id: client })), 'invalid_request');
+    assert.equal(errorOf(await exchange({ grant_type: 'password', client_id: client })), 'unsupported_grant_type');
+    assert.equal((await send('/oauth/device_authorization', { method: 'POST', headers: FORM, body: form({ client_id: 'cli_unknown' }) })).status, 401);
+    assert.equal(errorOf(await send('/oauth/device_authorization', { method: 'POST', headers: FORM, body: form({ client_id: client, resource: 'http://192.0.2.1/mcp' }) })), 'invalid_target');
+    assert.equal((await send('/oauth/device_authorization')).status, 405);
+    // After its lifetime the poll says the code expired, and the page no longer takes it.
+    clock += AUTHORIZATION_REQUEST_TTL_MS;
+    assert.equal(errorOf(await poll(client, codes.device_code)), 'expired_token');
+    assert.equal((await typeCode(codes.user_code)).status, 400);
+    // Ten codes from one sender in fifteen minutes, right or wrong: the eleventh is refused even when it is right.
+    for (let typed = 2; typed < 10; typed += 1) assert.equal((await typeCode('CCCC-CCCC')).status, 400);
+    const fresh = await deviceCodes(client);
+    const limited = await typeCode(fresh.user_code);
+    assert.equal(limited.status, 429);
+    assert.match(limited.body, /输入次数过多/);
+    newWindow();
+    const later = await deviceCodes(client);
+    assert.equal((await typeCode(later.user_code)).status, 303, 'a new window takes codes again');
+  });
+
+  test('a client asks for the device grant when it registers; one that does not still gets the authorization code only', async () => {
+    const asked = await send('/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: '设备码客户端', redirect_uris: ['http://127.0.0.1:43123/callback'], grant_types: ['authorization_code', DEVICE_CODE_GRANT] }) });
+    assert.equal(asked.status, 201, asked.body);
+    assert.deepEqual(JSON.parse(asked.body).grant_types, ['authorization_code', DEVICE_CODE_GRANT]);
+    const plain = await send('/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: '浏览器客户端', redirect_uris: ['http://127.0.0.1:43123/callback'] }) });
+    assert.deepEqual(JSON.parse(plain.body).grant_types, ['authorization_code']);
   });
 });

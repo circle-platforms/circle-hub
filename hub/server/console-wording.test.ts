@@ -27,7 +27,7 @@ test('the wording guard rejects Circle as the generic client name but keeps name
 });
 
 test('connection confirmation keeps original client and account names separate from static UI wording',()=>{
- const original='原文未核验Circle42授权',request:AuthorizationRequest={id:'synthetic-request',client:{id:'synthetic-client',name:original},redirectUri:'https://192.0.2.1/callback',redirectSent:true,state:null,challenge:'s'.repeat(43),peer:'127.0.0.1',resource:'http://192.0.2.1/mcp',issuer:'http://192.0.2.1',secure:false,created:0,csrf:'synthetic-csrf',browser:'synthetic-browser',invitation:null,failures:0,ended:null,decision:null};
+ const original='原文未核验Circle42授权',request:AuthorizationRequest={id:'synthetic-request',client:{id:'synthetic-client',name:original},redirectUri:'https://192.0.2.1/callback',redirectSent:true,device:null,state:null,challenge:'s'.repeat(43),peer:'127.0.0.1',resource:'http://192.0.2.1/mcp',issuer:'http://192.0.2.1',secure:false,created:0,csrf:'synthetic-csrf',browser:'synthetic-browser',invitation:null,failures:0,ended:null,decision:null};
  for(const markup of [identityPage(request,null),confirmPage(request,{id:'synthetic-account',name:original,role:'成员'},'session','synthetic-csrf',null),endedPage({...request,ended:'approved'})]){assert.ok(markup.text.includes(original));assert.deepEqual(wordingProblems(markup.text),[]);}
 });
 

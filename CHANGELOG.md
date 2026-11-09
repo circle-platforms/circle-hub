@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Let a client sign in with a device code (RFC 8628), as GitHub's device login does: it shows a user code, a person types it on the console's `/console/device` page and approves on the usual authorization page, and the client's poll of `/oauth/token` gets an ordinary Hub token. Nothing has to open a browser on the client's side or take a redirect back to it, which a desktop client that cannot open the sign-in page needs.
 - Read the reservations of all runs once in a maintenance pass: each run read them all again to find its own jobs, 6 of the 7.5 GB a full pass read on 843 runs. A pass now reads 1.5 GB in 65 seconds instead of 105.
 - Keep a business system's read counts under its name on the console overview: a column of their own squeezed the name to one character per line.
 - Show every workflow briefly in `list_task_packs` when the whole details do not fit one answer: on a deployment with 22 workflows the details filled two pages, 43,000 characters, and a model paged on every question to reach the one it wanted; one answer of under 20,000 characters now holds them all, and an exact `pack_id` reads one in full.
