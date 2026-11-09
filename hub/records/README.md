@@ -1,5 +1,9 @@
 # records
 
+## Short isolated read scopes
+
+`withReadScope(read, {isolated:true})` creates a separate cache even inside an active page scope. Its caches are cleared at completion; parent and child retain one shared retirement generation and active-scope registry. Ordinary scoped writes invalidate parent and sibling caches, and destructive invalidation retires the whole group, so neither adapter can reuse stale values. The default nested behavior is unchanged. This is cache-lifetime control, not an authorization shortcut or a persistent derived-record cache.
+
 ## Personal-pack records and result audiences (decision 134)
 
 Personal publications, grants/revocations, retirements and team transfers are append-only registered records, indexed

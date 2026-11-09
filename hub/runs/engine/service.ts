@@ -1,6 +1,7 @@
 import { createDocumentCache } from '../../refs/api.ts';
 import { background } from '../../telemetry/api.ts';
 import {withQueryReads} from './query-scope.ts';
+import {runStatistics} from '../statistics.ts';
 import {requestReadable} from './grounds.ts';
 import { withRequestPermissions } from '../../records/api.ts';
 import { abandonRun } from './management.ts';
@@ -150,6 +151,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       }));
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},
+    getRunStatistics(user,run){return withQueryReads(ctx,async current=>{const summary=await getRunSummary(current,user,run);return summary?runStatistics(summary):null;},{isolated:true});},
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {

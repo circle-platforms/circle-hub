@@ -206,6 +206,12 @@ export interface RunDetail {
 export interface RunListing extends Page<RunRecordView> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
 /** Protected result heads for list rows and aggregate charts, without submission/request detail or display qualifiers. */
 export type RunSummary=Pick<RunDetail,'run'|'latest'|'production'|'management'>;
+export interface RunStatistics {
+ result:import('../contracts/generated/vocabulary.ts').TaskResult;
+ pending:number;
+ checks:Array<{layer:import('../contracts/generated/vocabulary.ts').Layer;terminal:import('../contracts/generated/vocabulary.ts').StaticTerminal|import('../contracts/generated/vocabulary.ts').DynamicTerminal;unknown:boolean;count:number}>;
+ blockers:Array<{code?:string;reason?:import('../contracts/generated/vocabulary.ts').Reason;count:number}>;
+}
 
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
@@ -218,6 +224,7 @@ export interface RunsService {
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   getRunSummary?(user:Principal,run:string):Promise<RunSummary|null>;
+  getRunStatistics?(user:Principal,run:string):Promise<RunStatistics|null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;

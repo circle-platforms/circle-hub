@@ -1,5 +1,11 @@
 # hub/runs/engine
 
+## Compact verified task statistics
+
+The optional internal `getRunStatistics` reads through the same verified `getRunSummary`, current-head selection, current source permissions and management projection. It then derives only task result/pending counts, layer-terminal counts and blocker code/reason counts, using the public runs reducer also used by the full console status path. An isolated short read scope releases full run/result caches before returning those counts to a page; it does not project unverified database JSON or cache authorization across requests. Full detail/export and the old summary port stay unchanged.
+
+The console retains the four-worker page bound and discards full claims even through older summary/detail-only adapters. The earlier #251 history early-stop patch can be applied independently. Neither small returned statistics nor released child memos prove a fixed heap/latency: page-level listRuns still retains original run views, database/body verification and long history scans remain, and deployment/two-week observation are outstanding.
+
 ## Space locks and citations (decision 133)
 
 New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy
