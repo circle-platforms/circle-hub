@@ -17,5 +17,5 @@ test('start-run, submit-result and case-mindmap examples agree on the subject, t
   const quotes = quotesOf(submission); assert.ok(quotes.length >= 2);
   for (const quote of quotes) assert.equal(quote.reference, derived.references.get(quote.text), `quote ${quote.text} cites its own node of the uploaded mind map`);
   for (const item of submission.items) for (const claim of item.slots.plan) assert.equal(claim.data.bucket, derived.bed, 'the plan names the profile bed');
-  assert.deepEqual(derived.items[0].path, ['合成文档', '健康检查间隔配置与查询测试\nwidget health interval 60\nshow health interval']);
+  assert.deepEqual(derived.items[0].path, ['合成文档', '健康检查间隔配置测试\nwidget health interval 60']);
 });

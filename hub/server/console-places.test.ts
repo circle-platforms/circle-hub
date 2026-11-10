@@ -383,7 +383,9 @@ test('the overview uses a Stat and thin parts bar with labelled counts instead o
  const session=await signIn(server.admin.token),overview=await get('/console/overview',session);
  assert.match(overview.body,/检查项结果/);assert.match(overview.body,/class="ch-stat-value"/);assert.match(overview.body,/class="ch-parts"/);assert.doesNotMatch(overview.body,/donut|donut-hold/);
  for(const area of ['overview','runs','connections','records','team','settings']){
-  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.match(page.body,/aria-label="概况"/);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+  // The overview's duplicate inspector was removed (issue 216, task-first overview); every other area keeps its 概况 inspector.
+  if(area==='overview')assert.doesNotMatch(page.body,/aria-label="概况"/);else assert.match(page.body,/aria-label="概况"/);
  }
 });
 

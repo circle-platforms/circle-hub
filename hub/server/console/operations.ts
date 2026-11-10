@@ -25,7 +25,7 @@ const field=(label:string,control:Html,options:{hint?:string;full?:boolean}={}):
 function memberPage(ctx: PageContext): Html {
   const form = actionForm('member-add', ctx.csrf ?? '', html`<div data-fields>
 ${field('用户名', html`<input name="name" required autocomplete="off" maxlength="200">`, { hint: '在控制台、记录与客户端中显示' })}
-${field('角色', html`<select name="role">${roleOptions()}</select>`, { hint: '管理员可执行四种管理操作并查看全部记录' })}
+${field('角色', html`<select name="role">${roleOptions()}</select>`, { hint: '管理员可管理团队、接入和发布，并查看其有权访问的管理与审计记录。私人内容仍按分享权限控制。' })}
 ${field('连接方式', html`<select name="connect"><option value="invitation" selected>邀请码（MCP 标准连接确认）</option><option value="token">访问令牌</option></select>`, { hint: '客户端不支持 MCP 标准连接确认时选访问令牌' })}
 ${field('令牌标签', html`<input name="label" autocomplete="off" maxlength="200" placeholder="MacBook 上的客户端">`, { hint: '选访问令牌时区分同一成员的多个客户端，可留空' })}
 </div>`, '添加成员', { primary: true });
