@@ -5,6 +5,7 @@ import type { LeaseOp, ProvenanceType } from '../../../../contracts/generated/vo
 // computed from the same frozen manifest and lease view. The lease context the workflow declares gives only keys and
 // ends (RunContext.leases; no tokens, no holders), which is all matchNeed and the address allocation need.
 import { formatIp, nextFree, parseIp, parseSubnet, subnetContains, type Subnet } from './addresses.ts';
+import { bedDeviceKey } from './bed-key.ts';
 import { isRecord } from './common.ts';
 import { bedFacts, declaredSurface } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
@@ -169,7 +170,7 @@ export function observedInstalls(beds: readonly ManifestBed[], observations: rea
       if (pointer === null) continue;
       const seen = observations.filter((o) => o.inventory === inventory && o.device === pointer && o.build !== null).sort((a, b) => (a.observed_at < b.observed_at ? 1 : a.observed_at > b.observed_at ? -1 : 0))[0];
       if (seen === undefined || seen.build === null) continue;
-      installed[`bed/${bed.name}/${device.name}`] = { build: seen.build, source: 'observed', at: seen.observed_at };
+      installed[bedDeviceKey(bed.name, device.name)] = { build: seen.build, source: 'observed', at: seen.observed_at };
       if (seen.base !== null) builds[seen.build] = seen.base;
     }
   }
@@ -222,7 +223,7 @@ export function factsFields(beds: ManifestBed[], installs: Installs, frozen?: Fr
   return beds.map((bed) => {
     const facts = bedFacts(bed);
     const installed = bed.devices.flatMap((device) => {
-      const record = installs.installed[`bed/${bed.name}/${device.name}`];
+      const record = installs.installed[bedDeviceKey(bed.name, device.name)];
       return record === undefined ? [] : [{ device: device.name, build: record.build, base: installs.builds[record.build] ?? null, observed_at: record.at ?? null }];
     });
     const judged = surface ? declaredSurface(bed, surface.declaration, surface.probes) : undefined;
@@ -285,7 +286,7 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
   if (picked.length === 0 && addresses.length === 0) {
     return { ok: false, failure: { code: 'test-bed.nothing_to_lease', message: '没有要取得的设备或地址：need.devices 和 addresses 都是空的', fix: '在 need.devices 里要设备，或在 addresses 里要地址' } };
   }
-  const keys = [...picked.map((device) => `bed/${bed.name}/${device}`), ...addresses.map((address) => `bed/${bed.name}/ip/${address}`)];
+  const keys = [...picked.map((device) => bedDeviceKey(bed.name, device)), ...addresses.map((address) => `bed/${bed.name}/ip/${address}`)];
   const parts = [`预订 ${bed.name}`];
   if (picked.length > 0) parts.push(`设备 ${picked.join('、')}`);
   if (addresses.length > 0) parts.push(`地址 ${addresses.join('、')}`);

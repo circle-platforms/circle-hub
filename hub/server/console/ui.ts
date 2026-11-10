@@ -68,6 +68,10 @@ export function pills(items: readonly Pill[], label: string): Html {
   return html`<nav class="ch-actions" aria-label="${label}">${items.map((p) => html`<a class="ch-chip" href="${href(p.path, p.params)}"${p.on ? html` aria-current="true"` : ''}>${p.label}${p.count === undefined ? '' : html` <span class="ch-count">${p.count}</span>`}</a>`)}</nav>`;
 }
 
+export function pageContents(items:readonly (readonly [string,unknown])[],label:string):Html{
+ return html`<nav class="ch-page-toc" data-page-toc aria-label="${label}"><span class="ch-page-toc-label">本页内容</span><div>${items.map(([anchor,text])=>html`<a href="#${anchor}">${text}</a>`)}</div></nav>`;
+}
+
 /** Anchors within the page, as the segmented control of the design. */
 export function seg(items: readonly (readonly [string, unknown])[], label: string): Html {
   return html`<nav class="ch-seg" aria-label="${label}">${items.map(([anchor, text], i) => html`<a${i === 0 ? html` aria-current="page"` : ''} href="#${anchor}">${text}</a>`)}</nav>`;

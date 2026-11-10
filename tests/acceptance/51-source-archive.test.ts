@@ -17,16 +17,19 @@ test('an owner, a folder grantee and a team reader follow listed original links 
   await spaces.grant(owner.principal,{path:'/方法/认证',audience:'member',member:grantee.user.id});
   const team=await hub.records.artifacts.ingest({bytes:Buffer.from('合成团队列表正文'),mediaType:'text/plain',name:'合成团队列表.txt',origin:{read:{object:'synthetic:record:listed-original'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
   await spaces.archiveSource(hub.admin.principal,{artifact:team.digest,message:'archive:'+team.digest,space:'team',path:'/团队原文'});
-  const follow=async(web:ConsoleClient,path:string,name:string,text:string)=>{
+  const DECLARED='由上传方提供，Hub 没有独立的采集证明；不代表内容已被核实。';
+  const follow=async(web:ConsoleClient,path:string,name:string,text:string,explained=false)=>{
    let listing=await web.get(path);assert.equal(listing.status,200);let row:string|undefined;
    for(let page=0;page<3;page++){
     row=[...listing.body.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)].map(match=>match[0]).find(row=>row.includes(name));if(row)break;
     const next=[...listing.body.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].find(match=>match[2]==='下一页');assert.ok(next,'the target must be reachable through the rendered list pagination');listing=await web.get(next[1].replaceAll('&amp;','&'));assert.equal(listing.status,200);
    }
    assert.ok(row,'the authorized original is listed');const href=/href="([^"]+)"/.exec(row)?.[1]?.replaceAll('&amp;','&');assert.ok(href);assert.equal(new URL(href,hub.url).searchParams.get('view'),'sources');
-   const detail=await web.get(href);assert.equal(detail.status,200,href);assert.doesNotMatch(detail.body,/该内容不存在或无权查看|Hub 内部错误/);assert.match(detail.body,/data-inspector-content/);assert.ok(detail.body.includes(name));assert.ok(detail.body.includes(text));assert.deepEqual(wordingProblems(detail.body),[]);
+   // Issue 228: an uploaded original is 声明; its list row and its detail say beside it what that means.
+   if(explained)assert.ok(listing.body.includes(DECLARED),'the list row explains 声明');
+   const detail=await web.get(href);assert.equal(detail.status,200,href);if(explained)assert.ok(detail.body.includes(DECLARED),'the detail explains 声明');assert.doesNotMatch(detail.body,/该内容不存在或无权查看|Hub 内部错误/);assert.match(detail.body,/data-inspector-content/);assert.ok(detail.body.includes(name));assert.ok(detail.body.includes(text));assert.deepEqual(wordingProblems(detail.body),[]);
   };
-  await follow(author,'/console/knowledge?view=sources&scope=personal','合成列表目标.txt','合成列表目标正文');
+  await follow(author,'/console/knowledge?view=sources&scope=personal','合成列表目标.txt','合成列表目标正文',true);
   await follow(author,'/console/knowledge?'+new URLSearchParams({view:'sources',scope:'personal',space:owner.user.id,path:'/方法/认证'}),'合成列表目标.txt','合成列表目标正文');
   await follow(reader,'/console/knowledge?view=sources&scope=shared','合成列表目标.txt','合成列表目标正文');
   await follow(reader,'/console/knowledge?view=sources&scope=team','合成团队列表.txt','合成团队列表正文');

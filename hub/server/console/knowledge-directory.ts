@@ -29,6 +29,8 @@ export function existingTeamLink(reference:string):Html{
 export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version:SpaceVersion,space:string,own:boolean,showCitations:boolean,actions:Html=html``):Promise<Html>{
  const blocks:Html[]=[];
  for(const node of nodes.nodes){
+  const current=node.path===(ctx.url.searchParams.get('path')??'/'),location={space,root:version.root,path:node.path,scope:ctx.url.searchParams.get('scope')},folder=directoryName(node.path);
+  if(!current&&node.entries.length===0){blocks.push(html`<section class="ch-section" data-empty-child><p>${link('/console/knowledge/space',folder,location)} · 此子文件夹暂无知识</p><p class="ch-meta">进入文件夹查看其子目录${own?'或新建知识':''}。</p></section>`);continue;}
   const headers:Array<string|Html>=[...(own?['选择']:[]),'陈述',html`<span title="${ENTRY_KIND.map(kind=>uiLabelOf('entry_kind',kind)).join('、')}">类型</span>`,'分享范围','状态',...(showCitations?['被引用']:[]),...(space==='team'?['提交人','来源','合并时间']:[])];
   const rows=[],rowLinks:string[]=[];
   for(const entry of node.entries){
@@ -41,9 +43,9 @@ export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version
    rows.push([...(own?[entry.status==='verified'?html`<input type="checkbox" name="selected_entry" value="${entry.entry}" aria-label="选择条目">`:html`<input type="checkbox" disabled aria-label="无法选择条目" title="只有本人的已验证条目可以分享到团队">`]:[]),html`<span data-statement>${link('/console/knowledge/space',evidence(entry.statement),location)}</span>`,labelled('类型',uiLabelOf('entry_kind',entry.kind)),labelled('分享范围',(await currentAudience(ctx,space,node.path,product)).text),labelled('状态',entry.status?knowledgeState(entry.status):'—'),...(showCitations?[labelled('被引用',entry.cited_count==null?'—':number(entry.cited_count))]:[]),...(space==='team'?[labelled('提交人',view?await ctx.userName(view.body.by):'—'),labelled('来源',source),labelled('合并时间',view?timestamp(view.body.at):'—')]:[])]);
   }
   const selectedIndex=node.entries.findIndex(entry=>entry.entry===ctx.url.searchParams.get('entry'));
-  const listing=table(headers,rows,{title:'这个文件夹还没有知识',text:'新建一条知识，或导入文件后从中摘录；每条知识都附带来源。',...(own?{action:emptyAction('/console/knowledge/space','新建',{space,path:node.path,edit:'1',scope:ctx.url.searchParams.get('scope')})}:{})},'knowledge-entries',{selected:selectedIndex,hrefs:rowLinks});
+  const listing=table(headers,rows,{title:`${folder} 中还没有知识`,text:own?'可以在此新建笔记；提供来源时需附逐字引文，没有来源的笔记记为待验证。':'此处显示当前账户可读的知识；没有条目不代表其他文件夹也为空。',...(own?{action:emptyAction('/console/knowledge/space','在此新建知识',{...location,edit:'1'})}:{})},'knowledge-entries',{selected:selectedIndex,hrefs:rowLinks});
   const selected=own?html`<form data-knowledge-selection method="get" action="/console/knowledge/share-batch"><input type="hidden" name="root" value="${version.root}"><input type="hidden" name="path" value="${node.path}"><div class="ch-bulkbar"><span data-bulk-count>已选条目</span><button class="ch-btn ch-btn--primary" type="submit">分享到团队…</button></div>${listing}</form>`:listing;
-  blocks.push(html`${node.path===(ctx.url.searchParams.get('path')??'/')?'':sectionHead(directoryName(node.path))}${node.children.length?table(['子文件夹'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})])):''}${selected}`);
+  blocks.push(html`${current?'':sectionHead(folder)}${node.children.length?table(['子文件夹'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})])):''}${selected}`);
  }
  return card({title:'知识',tail:actions,hint:own?'只有本人的已验证条目可以选择；每条独立预检并在确认时重新检查':'按当前权限显示文件夹、条目和合并来源'},html`${blocks}${nodes.next?link('/console/knowledge/space','下一页',{space,root:version.root,path:ctx.url.searchParams.get('path')??'/',node_cursor:nodes.next}):''}`,'knowledge-directory');
 }

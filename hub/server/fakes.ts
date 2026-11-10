@@ -31,6 +31,7 @@ import type {
   RootDiff,
   RootInfo,
   RunDetail,
+  RunHistoryOptions,
   RunSubmissionView,
   RunsService,
   Untraced,
@@ -836,7 +837,11 @@ export class FakeRuns implements RunsService {
     };
   }
 
-  async getRun(user: Principal, run: string): Promise<RunDetail | null> {
+  /** The options each getRun call carried, for tests of the callers. */
+  readonly runOptions: Array<RunHistoryOptions | undefined> = [];
+
+  async getRun(user: Principal, run: string, options?: RunHistoryOptions): Promise<RunDetail | null> {
+    this.runOptions.push(options);
     const scripted = this.script.take('getRun');
     if (scripted !== undefined) return scripted.value as RunDetail | null;
     const stored = await this.#visible(user, run);
