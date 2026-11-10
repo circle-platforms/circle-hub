@@ -45,3 +45,8 @@ node packs/workflow/test-bed/pack-files.ts --check。源码改动后用 pack-fil
 ## 合线（1.2.17，2026-11-04）
 
 私有集成线在本包上另发了 1.2.11–1.2.16，main 当时是 1.2.10，同号的版本字节不同。本版把集成线的改动带进 main，main 已有的修正保留，版本号高于两边已发布的版本。带进来的改动：在装构建以设备在预订时显示的为准（决定 112、120）；写明哪种截断拒绝了视图、运行锁定哪个根、默认值从哪里选；错误和修正按主张作答（决定 111）；中文名改为自动化测试环境（决定 110）；need 的形状写进声明（决定 114）。装构建包 bed-install 当时没有随本批带进 main；它以 1.0.4 中性化后进了 main（决定 144：升级用例号和镜像扩展名在管理员发布的装构建档案 doc:doc:bed-install-profile 里，收尾标记在执行器定义里），所以这里给出的下一步“整台预订、再用 bed-install 装上”在 main 上照常可走；档案没发布时 bed-install 自己写明缺什么、请管理员发布。
+
+## 读取已冻结的预订（1.2.18，2026-11-10，#110）
+
+其他包读运行里冻结的预订时经本包的 `api.ts`：`frozenBeds`（冻结清单里的台架和设备；没冻结返回 null，读不懂返回问题，不返回空表）、`bookedInstalls`（已预订设备在预订时显示的构建）、`bookedBedLease`（持有台架设备的租约），以及设备租约键的生成与解析 `bedDeviceKey`、`parseBedDeviceKey`。租约键 `bed/<台架>/<设备>` 只在 `functions/bed-key.ts` 里写，`conclude.ts` 和 `match.ts` 的所有写法都经它；`functions/booking.test.ts` 把读取端和写入端（`installsOf`、`devicePointer`）钉在一起，并在源码里再出现手写设备键时失败。行为不变，只改写法。
+

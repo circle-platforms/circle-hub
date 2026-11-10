@@ -50,7 +50,7 @@ test('intent storage failure rolls back the business key and never submits', asy
   };
   const outcome = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(outcome.outcome, 'not_dispatched');
-  assert.equal(await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}:1`), null);
+  assert.equal(await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`), null);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
   assert.ok(c.calls.includes('close_slot'));
 });

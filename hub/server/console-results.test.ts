@@ -50,6 +50,9 @@ test('result page keeps the production record and counts after accepted model co
   assert.match(result.body,new RegExp(original.record));
   assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions,INTERFACE_LABELS)));
   assert.match(result.body,/生产结果记录（start_run 计算）/);
+  // Issue 230: the page says what 生产结果 is (not a result from the production environment) and what its link to the task page is.
+  assert.match(result.body,/由 Hub 在启动任务时按规则算出的结果，是工作流的产物，与生产环境无关/);
+  assert.match(result.body,/>查看任务完整记录（以任务页的记录为准）</);assert.doesNotMatch(result.body,/权威视图/);
   assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续受理的模型评论/);
   assert.ok(!result.body.includes('模型评论独立标记'));
   const run=await send(`/console/runs/${id}`,cookie);
@@ -57,7 +60,7 @@ test('result page keeps the production record and counts after accepted model co
   assert.ok(main.includes(original.record));assert.ok(main.includes(countsLine(original.result.acceptance,original.result.partitions,INTERFACE_LABELS)));
   assert.ok(!main.includes(countsLine(stored.latest!.result.acceptance,stored.latest!.result.partitions,INTERFACE_LABELS)));
   const commentary=run.body.split(/<h2[^>]*>模型评论（判断）<\/h2>/)[1]?.split(/<h2[^>]*>提交与回执<\/h2>/)[0];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
-  for(const title of ['已采用的成果','仍需处理的事项','需要你决定的请求'])assert.ok(!commentary.includes(title),title);
+  for(const title of ['已交付的结果','仍需处理的事项','需要你决定的请求'])assert.ok(!commentary.includes(title),title);
   assert.match(commentary,/模型声明的分区（判断，未采用）/);assert.match(commentary,/模型声明跳过 entry-0/);assert.match(commentary,/合成跳过/);
 
 });
