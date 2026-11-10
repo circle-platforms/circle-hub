@@ -2,6 +2,12 @@
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
+## Source-accounting regression (#189) and example scope (#130)
+
+At baseline `aded2ffd`, a real-engine synthetic regression binds a contract larger than 3 MiB once and verifies all four cases in one submission and one generated workbook, then independently verifies that whole workbook in a successor. It neither raises read limits nor splits the submission. The evaluation budget charges the maximum text bytes per exact reference; separate fragments remain separate references, and a later evaluation has its own budget. This reproduces the reported scale, not the owner's actual source or deployed environment; no current repeat-charge failure was established.
+
+The bundled example ids and quotation source hashes are derived from the same mind map and resolve in the real engine. That establishes the historical identity mismatch is covered, not that the full example is runnable against every catalog. The current synthetic fixture catalog and bundled typed contract declare the interval command, while the example plan also creates, queries and cleans up a record. Those four commands lack corresponding declarations here: the engine rejects them and the offline generator refuses an unsatisfied plan. Complete example/catalog/effect alignment remains follow-up work; do not describe the accepted submission receipt as all requirements satisfied.
+
 ## Frozen inputs and plan
 
 subject is a KityMinder document; contract, inventory and profile are required published expected sources. Without `parameters.autoid` the run takes every case of the document that the rule takes, the author did not exclude and that carries an autoid of the profile's shape, one item each in document order (3.9.0); an autoid of another shape, a duplicate autoid or more cases than one dispatch takes refuse startup, and a case without an autoid is counted in the selection summary (3.9.6). With `autoid`, exactly that case; an absent or duplicate selection refuses startup. Items retain autoid, auto, priority, title and authored steps, each from its own node (a repeated node id takes the node's selector in the item id). Both child-step and case-body/one-leaf layouts preserve source text. Unsafe numeric identifiers cannot be reconstructed.
@@ -472,6 +478,14 @@ is kept and disclosed.
 - SKILL steps 1 and 9: step 1 keeps a whole-bed booking already held (for instance from installing a build), step 9 reruns
   under it, and once every job has an end the booking is released with test-bed release. The confirmation rule no longer
   quotes one product's command, prompt and answer as examples.
+
+### 3.9.19：与已声明命令一致的入门合成案例（#130）
+
+主示例只演示冻结合约/命令树已声明的 `widget health interval 60` 与逐字期望。旧脑图中的查询以及旧计划中的创建、查询、回滚命令不在随附命令树里；它们连同原字节保留在非发布 `testing/undeclared-example.json`，实际引擎仍对四处命令给出catalog拒绝，生成器仍拒绝从该结果生成工作簿。没有扩大冻结授权或将其静态结果解释为真实设备可执行。
+
+`node testing/examples.ts --write` 从新主脑图重算上传摘要、条目号和引文，真实引擎回归从上传/投影/提交走到客户端生成XLSX，再在后继运行冻结已受理计划并逐行/逐字节核验，首个AUTOID行的D列逐字保存根到用例的路径。合成产品、构建和知识目录是测试端口；`start-run.json` 中产品/构建占位符和自备产品包/资源前提继续适用，不是生产现成配置。
+
+依既有包/生成器同版约束，身份同步为 `case-compile@3.9.19`，4个当前工作簿样本以不变recipe重算版本相关模型/摘要，负例错误摘要保留；生成/验证逻辑、runtime-contract/profile/命令树/类型效果来源字节均不变。新核验须使用匹配的包和生成器，旧结果保持原样。
 
 ### 3.9.16: the case's mind-map path on its first row, consistent examples, an everyday description (issues #144, #130, #143)
 

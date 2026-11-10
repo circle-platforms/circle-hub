@@ -29,7 +29,7 @@ test('a process killed during submission is recovered as unknown and never submi
   const c = await setup({ onSubmit: async () => { child!.kill('SIGKILL'); } }); t.after(() => c.close());
   const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
   const exit = await w.exited; assert.equal(exit.signal, 'SIGKILL');
-  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
+  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`);
   assert.ok(intent);
   await observationLockFree(c, intent.body.detail.job);
   const state = await c.service.resume(c.admin, intent.body.detail.job);
@@ -62,7 +62,7 @@ test('an accepted job resumes status reads after restart without a new submissio
   } }); t.after(() => c.close());
   const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
   assert.equal((await w.exited).signal, 'SIGKILL');
-  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
+  const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`);
   const job = intent!.body.detail.job;
   // The killed worker held the job's observation lock on its own database session; PostgreSQL frees it only once it
   // notices that connection is gone. Until then resume rightly reports the job as being observed elsewhere, so wait
@@ -87,7 +87,7 @@ test('a committed intent with a lost acknowledgement is locally proven not dispa
   const transaction = c.kit.store.withTransaction.bind(c.kit.store); let injected = false;
   c.kit.store.withTransaction = async (fn, outer) => {
     const value = await transaction(fn, outer);
-    if (!injected && await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}:1`)) { injected = true; throw new Error('synthetic commit acknowledgement loss'); }
+    if (!injected && await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`)) { injected = true; throw new Error('synthetic commit acknowledgement loss'); }
     return value;
   };
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
@@ -100,7 +100,7 @@ test('a process killed after journal admission resumes by request identity witho
   const c=await setupJournal({lost:true,onSubmit:async()=>{child!.kill('SIGKILL');}});t.after(()=>c.close());
   const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
   assert.equal((await w.exited).signal,'SIGKILL');
-  const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:1`);assert.ok(intent);
+  const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`);assert.ok(intent);
   await observationLockFree(c,intent.body.detail.job);
   const state=await c.service.resume(c.admin,intent.body.detail.job);
   assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);

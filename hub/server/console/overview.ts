@@ -6,12 +6,11 @@ import {dot} from './ui.ts';
 // says so when the window holds more. Nothing here is estimated.
 import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
-import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { step } from '../../telemetry/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
-import { TASK_FILL, primaryResult, taskChip } from './status.ts';
+import { TASK_FILL, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
@@ -48,12 +47,9 @@ export function checkCounts(tasks: readonly TaskRow[]): { label: string; value: 
   const tally = new Map<string, number>();
   let unknown = 0;
   for (const task of tasks) {
-    const primary = task.detail === null ? null : primaryResult(task.detail);
-    if (primary === null || primary.result.acceptance !== 'accepted') continue;
-    for (const item of Object.values(primary.result.partitions).flat()) for (const r of item.requirements) for (const layer of r.layers) {
-      if (isUnknownTerminal(layer)) { unknown += 1; continue; }
-      const key = `${layer.layer}:${layer.terminal}`;
-      tally.set(key, (tally.get(key) ?? 0) + 1);
+    for(const layer of task.statistics?.checks??[]){
+      if(layer.unknown){unknown+=layer.count;continue;}
+      const key=`${layer.layer}:${layer.terminal}`;tally.set(key,(tally.get(key)??0)+layer.count);
     }
   }
   const sum = (keys: readonly string[]) => keys.reduce((n, key) => n + (tally.get(key) ?? 0), 0);
@@ -71,12 +67,9 @@ export function checkCounts(tasks: readonly TaskRow[]): { label: string; value: 
 export function blockers(tasks: readonly TaskRow[]): { label: string; value: number }[] {
   const tally = new Map<string, number>();
   for (const task of tasks) {
-    const primary = task.detail === null ? null : primaryResult(task.detail);
-    if (primary === null || primary.result.acceptance !== 'accepted') continue;
-    const parts = primary.result.partitions;
-    for (const item of [...parts.rejected, ...parts.incomplete, ...parts.quarantined]) {
-      const label = 'code' in item ? item.code : 'reason' in item ? uiLabelOf('reason', item.reason) : null;
-      if (label !== null) tally.set(label, (tally.get(label) ?? 0) + 1);
+    for(const item of task.statistics?.blockers??[]){
+      const label=item.code??(item.reason?uiLabelOf('reason',item.reason):null);
+      if(label!==null)tally.set(label,(tally.get(label)??0)+item.count);
     }
   }
   return [...tally].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 5);

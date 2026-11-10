@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.18",
+  "version": "3.9.19",
   "kind": "workflow",
   "dependencies": [
     {
@@ -31,8 +31,8 @@
     },
     {
       "path": "examples/case-mindmap.json",
-      "sha256": "f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942",
-      "size": 806
+      "sha256": "ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85",
+      "size": 616
     },
     {
       "path": "examples/command-identities-v2.json",
@@ -71,13 +71,13 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "f7747c16ebce06ed8da5cfea7c50cae0febc30651decff1c9f6700ec53dc25d2",
+      "sha256": "d72b39e7c32d13d0f7e23cca30f54d8c60e37ff970974eb5bcbbdfe5f6c31a01",
       "size": 1088
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "d1cb9457b04e7879539341e1cf74e5fe76d9715ac051c7d70de2e58b338813ad",
-      "size": 3152
+      "sha256": "ebb4bb865bbbce653d5b2f9a687f50358415becc484e22abc472eb442fc0d4c6",
+      "size": 1410
     },
     {
       "path": "examples/typed-authority-source.json",
@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "4979dd89f79c33999faa29baaffc844d96a9d56b64211cd5e7912dc1ed756069",
+      "sha256": "14cd22db7bfce9f0d7af6a73a8f3777f8f42164103e8ade41f2dc7072abb5a7f",
       "size": 39780
     },
     {
@@ -411,7 +411,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "1d3539dd39a8bab3b69fe4002de4c883d88fd36e033bf532195da6416d8dc977",
+      "sha256": "8f4a83183cbbf385ef400fde5e2645b9dd7be2a650268ebe5b2384381d0c9f99",
       "size": 39784
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "0dccd0cbbfeac8c86413411bc048639118e06dc7ccec36d2b57fda62479b563b",
+      "sha256": "6aab94ce24d2fb776b8d506d7db4f6013c22900f686fedb152dfe0ec59cb2a8f",
       "size": 39734
     },
     {
@@ -526,7 +526,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "a13af3d021f9424370d2e1320e99fec4a96d64454dba2ab4f1948009986eecfc",
+      "sha256": "c640e70d00777388455058053fb0c4fb2d2891b6a114de760698a8cacf18fc46",
       "size": 39738
     },
     {
@@ -626,7 +626,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "2a29ded39116637bff7bf8cf134c5cee247b7164c057e603679be2e0732aa060",
+      "sha256": "ad968410afd32c5567b1632258ef47bcd6a61e31e666addda2b93642ada0b883",
       "size": 556
     },
     {
