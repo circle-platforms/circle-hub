@@ -68,10 +68,6 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:sources?{view:'sources'}:{})});
   return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)} <span class="ch-count">${(subset?count(place):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
- const recentPacks=packs?.filter(p=>p.kind===place&&inScope(scope,p.space??'team',ctx.principal.id));
- const count= sources?archive?.counts[scope]??0:recentPacks?new Set(recentPacks.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:
-  memory?memories.filter(item=>inScope(scope,item.space,ctx.principal.id)).length:
-  visible.filter(v=>inScope(scope,v.space,ctx.principal.id)).reduce((n,v)=>n+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
- const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${packs?PACK_PLACES[place].title:memory?uiLabelOf('knowledge_view','memory'):sources?uiLabelOf('knowledge_view','sources'):'知识库'}</h2><p class="ch-meta">${uiLabelOf('knowledge_search_scope',scope)}</p></section><div class="ch-stat"><span class="ch-stat-label">${packs?uiLabelOf('pack_kind',place):memory?'记忆':sources?'原文':'知识'}</span><span class="ch-stat-value">${count.toLocaleString('en-US')}</span></div>${recentPacks?.length?html`<section class="ch-section"><h2 class="ch-section-label">最近发布</h2><ul class="ch-feed">${[...recentPacks].sort((a,b)=>b.published_at.localeCompare(a.published_at)).slice(0,5).map(pack=>html`<li>${link(packPath(pack),pack.title,{space:pack.space,scope})}<span class="ch-meta">${pack.published_at.slice(0,10)}</span></li>`)}</ul></section>`:''}`;
- return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector===undefined?overview:content.layout.inspector});
+ // Decision 151: a place's list is not repeated in a side pane. A page that selects one thing passes its own pane.
+ return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector??null});
 }
