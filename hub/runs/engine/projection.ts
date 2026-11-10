@@ -240,6 +240,7 @@ export async function bindExpected(
           miss(read.reason,message);
           continue;
         }
+        if(read.inputError?.code==='SOURCE_PENDING_REVIEW'){out.warnings.push({code:'SOURCE_PENDING_REVIEW',message:`${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         if(read.inputError?.code==='SOURCE_READ_FAILED'){out.warnings.push({code:'SOURCE_READ_FAILED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         if(read.inputError?.code==='SOURCE_READ_LIMIT'){out.warnings.push({code:'SOURCE_READ_LIMIT',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         if(read.redirect && read.inputError) {out.warnings.push({code:'SOURCE_REDIRECT_REFUSED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}

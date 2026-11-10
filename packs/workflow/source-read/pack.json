@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "source-read",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "kind": "workflow",
   "title": "来源原件读取",
   "description": "通用技能包：按系统路由读取平台原件（缺陷、需求、构建、脑图、构建页、规格目录清单、手册文件、SVN 文件），零要求项，返回原件引用与投影",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "fa487e451958a219317a73384b0fc6808118c85516082ecc6555777d0d5c82f8",
-      "size": 7429
+      "sha256": "a89452ce2280f8f34ad3324936d0d9ca77de67f54a6c93bc586a6f9265cac1cb",
+      "size": 8316
     },
     {
       "path": "checks.json",

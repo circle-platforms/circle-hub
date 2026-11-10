@@ -625,6 +625,11 @@
             ],
             "additionalProperties": false
           },
+          "object_route": {
+            "description": "the JSON route whose successful answer is this object itself, not a lookup or a list: held for suspected credentials it still shows the object exists (D05 R[3]); without it a held answer stays neutral",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
           "absent_codes": {
             "description": "Projection error codes that explicitly mean this whole object is absent; valid only with fully readable supporting responses",
             "minItems": 1,

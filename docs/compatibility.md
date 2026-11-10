@@ -9,7 +9,7 @@
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
 | circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；发行 0.3.0（2026-11-04）是重建后的第一个发行，带安装包；此前的 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md)、[当前状态](hub-status-2026-11.md) | 所有者的持久部署自 2026-11-04 起从 main 部署（决定 145），私有集成分支已封存 |
-| 合约 | 通用模型第 41 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
+| 合约 | 通用模型第 42 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
 | MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权（授权码或设备码）或 Bearer 令牌 |
 | Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | Circle main 已合入六项通用 MCP 客户端改进并删去内置 Hub（circle#309，2026-10-26）和按 MCP 标准授权在浏览器登录（circle#396，2026-11-02）；Circle 里不出现 Hub 专用的界面或标签（D06 R[1]）；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
@@ -27,7 +27,6 @@
 
 ## 合约
 
-| 合约 | 定义方 | 使用方 |
 |---|---|---|
 | 通用模型 | `contracts/model.json` | 生成器 `tools/gen-contracts.ts`；`tools/show-element.ts` |
 | 词表、协议码与核心违规码、引用形式、记录种类 | `contracts/generated/vocabulary.ts` 与 `protocol.ts`，由模型和 `contracts/codes.json` 生成 | Hub 的全部包；标签只经 `labelOf` 取得 |
@@ -82,3 +81,4 @@
 - 2026-11-05：合约一行改正为模型第 40 版。AGENTS.md 写明兼容性事实变化时本页和英文页在同一个拉取请求里更新。Hub 的迁移到 31，加运行状况和追踪用的表。Circle 1.14.0 的打包版在模型请求超时后不重试，修复随 Circle 的下一版发布。
 - 2026-11-09：MCP 标准授权加设备码（RFC 8628，所有者当天的决定）：授权服务器元数据声明 `device_authorization_endpoint` 和设备码授权；客户端在 `/oauth/device_authorization` 取设备码和用户码，用户在控制台 `/console/device` 输入用户码，经同一个授权页确认，客户端轮询 `/oauth/token` 取得令牌。授权码流程不变；登记时客户端仍须带回调地址。
 - 2026-11-10：模型到第 41 版（决定 150）：已受理的新提交下发请求时，同一运行此前各次提交下发、仍在等待回应的请求作废；请求显示状态加“已作废”。记录种类、协议码、MCP 工具和迁移都不变，已有的请求记录不改写。
+- 2026-11-10：模型到第 42 版（决定 152，所有者 2026-11-05 定）：业务系统的应答里有未核看的疑似凭据、而这个应答能说明对象存在时答“X 存在，内容待核看”，新增协议码 `SOURCE_PENDING_REVIEW`，`system@1` 加可选读取字段 `object_route`。这项改动在自己的分支上是模型第 41 版、决定 149，合入 main 时顺延。source-read 工作流源码升为 0.1.9：0.1.7（内容待核看）和 0.1.8（规格目录入口）两处改动之和，行为没有再变。

@@ -44,6 +44,7 @@ const FAILURE_CONNECTOR_EVENTS = new Set([
   'login_stopped',
   'credential_refused',
   'secret_echoed',
+  'pending_review_not_asked',
   'accepts_failed',
   'session_store_failed',
   'manifest_shape',

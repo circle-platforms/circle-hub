@@ -5,13 +5,14 @@ import {ReadManifest} from '../../contracts/src/resources.ts';
 import {newId} from '../records/api.ts';
 import {credentialReviewRequests} from './api.ts';
 import {BASE_CATALOG,DEFAULT_PRODUCERS,casesProducer,catalogXml,makeWorld,mindMap,startPostgres} from './test-support.ts';
+import {reconcileCredentialRequests} from './credential-policy.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});
 const name='Rel_ACME_10_6_1_71',flagged='store:mindmap:flagged',good='store:mindmap:good';
 const build={name,family:'ACME',line:'10.6.1',base:name,platform:null,built_at:null,released_at:null,root:null,sources:{tree:'site:tree:synthetic',cases:[flagged,good]}};
-async function setup(t:any,allowed:boolean,echo=false,connectorFailure=false,override?:{systemPack:string;slot:string}[]){
+async function setup(t:any,allowed:boolean,echo=false,connectorFailure=false,override?:{systemPack:string;slot:string}[],knowledge:Record<string,unknown>={}){
  let clock=new Date('2026-10-24T00:00:00.000Z');
- const w=await makeWorld(postgres,{now:()=>clock,pack:{declaration:{producers:[...DEFAULT_PRODUCERS,casesProducer({batch:2})]}},knowledge:{credentialAcceptance:{autoAcceptSources:override??(allowed?[{systemPack:'synthetic-documents',slot:'cases'}]:[])}} as any});t.after(()=>w.close());
+ const w=await makeWorld(postgres,{now:()=>clock,pack:{declaration:{producers:[...DEFAULT_PRODUCERS,casesProducer({batch:2})]}},knowledge:{credentialAcceptance:{autoAcceptSources:override??(allowed?[{systemPack:'synthetic-documents',slot:'cases'}]:[])},...knowledge} as any});t.after(()=>w.close());
  w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
  w.external.set(flagged,{bytes:mindMap({id:'flagged'},[{id:'case',text:'[cmd: system show] password = SyntheticLab72#value'}]),mediaType:'application/json'});
  w.external.set(good,{bytes:mindMap({id:'good'},[{id:'case',text:'[cmd: system show] synthetic clean case'}]),mediaType:'application/json'});
@@ -35,6 +36,42 @@ test('explicit retention never enters automatic acceptance',async t=>{
  const w=await setup(t,true,true,true);const result=await w.knowledge.produceTree({product:w.product,build});
  assert.equal(result.ok,true,result.reason??'');assert.equal(result.skippedCount,1);
  const rows=await w.kit.store.find<any>({key:'action.kind',value:'read',kind:'action',limit:100});assert.ok(rows.items.some(row=>row.body.detail?.credential?.external===flagged));
+});
+const heldCopy=(w:Awaited<ReturnType<typeof setup>>,changing='')=>w.kit.artifacts.ingest({bytes:Buffer.from(`{"note":"password = SyntheticLab72#value","seen":"${changing}"}`),mediaType:'application/json',origin:{read:{object:flagged}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},name:'original',capturedAt:'2026-10-24T00:00:00.000Z'});
+const reviewRows=async(w:Awaited<ReturnType<typeof setup>>)=>(await w.kit.store.find<any>({key:'action.kind',value:'read',kind:'action',limit:100})).items.filter(row=>row.body.detail?.credential?.external===flagged);
+test('a source a reader was told awaits review gets the same named, dated request, once while it stays open',async t=>{
+ const w=await setup(t,false),artifact=await heldCopy(w);
+ await w.knowledge.requestSourceReview(artifact,flagged);await w.knowledge.requestSourceReview(artifact,flagged);
+ const rows=await reviewRows(w);
+ assert.equal(rows.length,1);assert.equal(rows[0].body.detail.audience_user,w.admin.id);assert.equal(rows[0].body.detail.credential.external,flagged);
+ assert.equal(Date.parse(rows[0].body.detail.deadline)-Date.parse(rows[0].body.started_at),72*3600000);
+});
+test('a source that cannot be checked leaves its request open and does not stop the sync that reconciles',async t=>{
+ const w=await setup(t,false),artifact=await heldCopy(w);await w.knowledge.requestSourceReview(artifact,flagged);
+ const context=w.knowledge.__context;
+ const artifacts=new Proxy(context.records.artifacts,{get(target,name){
+  if(name==='source')return async()=>{throw new Error('synthetic lost object');};
+  const value=Reflect.get(target,name);return typeof value==='function'?value.bind(target):value;
+ }});
+ await reconcileCredentialRequests({...context,records:{...context.records,artifacts}});
+ assert.equal((await reviewRows(w)).length,1);
+});
+test('an object whose answer changes from read to read is one request: a reader cannot flood the administrator',async t=>{
+ const w=await setup(t,false);
+ for(const changing of ['first','second','third'])await w.knowledge.requestSourceReview(await heldCopy(w,changing),flagged);
+ assert.equal((await reviewRows(w)).length,1);
+});
+test('an acceptance closes the request at the next reconcile with no configured administrator, and no new request follows',async t=>{
+ const w=await setup(t,false,false,false,undefined,{admin:null}),artifact=await heldCopy(w);
+ await w.knowledge.requestSourceReview(artifact,flagged);
+ await w.kit.artifacts.acceptFindings(w.admin,artifact.body.sha256,'合成示例，核看过');
+ await reconcileCredentialRequests(w.knowledge.__context);
+ const [request]=await reviewRows(w);
+ assert.equal((await w.kit.store.find<any>({key:'knowledge.credential.resolved',value:request.digest,kind:'action',limit:10})).items.length,1);
+ w.advance();await reconcileCredentialRequests(w.knowledge.__context);
+ assert.equal((await reviewRows(w)).length,1,'a closed request does not come back every 72 hours');
+ const again=await heldCopy(w,'changed');await w.knowledge.requestSourceReview(again,flagged);
+ assert.equal((await reviewRows(w)).length,2,'new bytes of the object, held again, ask again once the old request is closed');
 });
 test('unlisted examples create a named 72-hour request and expiry creates a verification request without acceptance',async t=>{
  const w=await setup(t,false);const result=await w.knowledge.produceTree({product:w.product,build});assert.equal(result.ok,true,result.reason??'');assert.equal(result.skippedCount,1);

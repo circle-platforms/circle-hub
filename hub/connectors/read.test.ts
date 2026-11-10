@@ -505,7 +505,9 @@ test('an answer echoing the credential the Hub sent is kept retain_only; neither
   });
   await setSyntheticCredentials(w.k.records,w.k.connectors,w.k.admin,w.resources.plm.id,{username:'reader',password:PASSWORD});
   failure(await w.k.connectors.reader.read('plm:bug:4242', w.ctx), /SOURCE_HTTP_STATUS/);
-  failure(await w.k.connectors.reader.read('plm:story:777', w.ctx), /SOURCE_CREDENTIAL/);
+  const echoed = await w.k.connectors.reader.read('plm:story:777', { ...w.ctx, bindPending: true });
+  failure(echoed, /SOURCE_CREDENTIAL/);
+  assert.ok(!echoed.ok && echoed.inputError === undefined, 'an echo of the Hub\'s credential stays neutral (B02 R[6]), even for a run that only reads');
   const token = debug.requests[0].headers.authorization;
   assert.ok(token.length >= 16);
   const holders = (await w.k.allObjects()).filter((bytes) => bytes.includes(token));
