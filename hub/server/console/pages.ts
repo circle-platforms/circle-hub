@@ -311,14 +311,23 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
 function resultHeadline(result: ValidationResult, commentary = false): string {
   return `${isAbandonedResult(result)?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
 }
+/** The tab of the task page the address asks for; `?view=record` is the old address of the last one. */
+function taskTabOf(ctx: PageContext): TaskTab {
+  const asked = param(ctx, 'tab') ?? (ctx.url.searchParams.get('view') === 'record' ? 'record' : undefined);
+  return (TASK_TABS as readonly string[]).includes(asked ?? '') ? asked as TaskTab : 'requirements';
+}
 /** How many of a task's newest submissions its page lists at once (the rest by "older" links). */
 export const RUN_HISTORY_LIMIT = 50;
 
 export async function runPage(ctx: PageContext, runId: string): Promise<PageResult> {
   if (!RUN_ID.test(runId)) return neutralPage(ctx);
   // Issue 200: the page asks for a window of the newest submissions; older ones are reached by cursor, never read all at once.
-  const olderParam = param(ctx, 'older'), before = olderParam !== undefined && olderParam.length <= 512 ? olderParam : null;
-  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: RUN_HISTORY_LIMIT, before } });
+  // Only the 过程 tab lists submissions. Every other tab shows the current result and the production result, which the read
+  // gives beside the window, so it asks for a window of one: a task with 56 submissions answered each of its tabs after
+  // reading 50 results, most of which no tab but one shows.
+  const tab = taskTabOf(ctx);
+  const olderParam = param(ctx, 'older'), before = tab === 'process' && olderParam !== undefined && olderParam.length <= 512 ? olderParam : null;
+  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: tab === 'process' ? RUN_HISTORY_LIMIT : 1, before } });
   if (detail === null) return neutralPage(ctx);
   const run = detail.run;
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
@@ -369,9 +378,6 @@ ${section('错误与修正', errorsTable(result.errors))}`;
   const requests = (detail.requests ?? []).filter((request) => request.answered_by === null);
   // Decision 151: the page opens with what the task came to and what still waits for someone; everything else is one of six
   // tabs, and a tab works out only what it shows (issue 200: one page used to read the calls, every submission and source).
-  const legacy = ctx.url.searchParams.get('view') === 'record' ? 'record' : undefined;
-  const asked = param(ctx, 'tab') ?? legacy;
-  const tab: TaskTab = (TASK_TABS as readonly string[]).includes(asked ?? '') ? asked as TaskTab : 'requirements';
   const base = `/console/runs/${run.run}`;
   const groups = groupRequests(requests, (ctx.deps.now?.() ?? new Date()).getTime());
   const owing = groups.length === 0
