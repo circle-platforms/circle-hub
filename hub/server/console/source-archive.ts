@@ -47,7 +47,11 @@ export async function originalPage(ctx:PageContext):Promise<PageResult>{
  if(!spaces||!Sha256.safeParse(sha).success||capture&&!Sha256.safeParse(capture).success)return neutralPage(ctx);
  const source=await spaces.source(ctx.principal,sha,undefined,'model',capture);if(!source)return neutralPage(ctx);
  const query=queryOf(ctx,sha,source.artifact.digest),inspector=await originalInspector(ctx,query),title=source.artifact.body.name||'原文';
- const back=query.root&&query.entry&&query.path!==undefined?link('/console/knowledge/space','返回条目',{root:query.root,path:query.path,entry:query.entry}):link('/console/knowledge','返回原文列表',{view:'sources',scope:selectedScope(ctx)});
+ // The way back names the space of the entry the original was opened from. Without it the folder page took the reader's own
+ // space, and the way back from an original of a team entry or of an entry someone shared answered 404.
+ let origin:Awaited<ReturnType<typeof spaces.entry>>|null=null;
+ if(query.root&&query.entry&&query.path!==undefined)try{origin=await spaces.entry(ctx.principal,query.root,query.path,query.entry);}catch{origin=null;}
+ const back=origin?link('/console/knowledge/space','返回条目',{space:origin.body.space,root:query.root,path:query.path,entry:query.entry}):link('/console/knowledge','返回原文列表',{view:'sources',scope:selectedScope(ctx)});
  const listing=html`<ul class="ch-list"><li class="ch-row is-selected" aria-current="true" data-row-href="${ctx.url.pathname+ctx.url.search}"><span class="ch-row-mark" aria-hidden="true"></span><div class="ch-row-body"><a class="ch-row-title" href="${ctx.url.pathname+ctx.url.search}">${evidence(title)}</a><div class="ch-row-meta">${bytes(source.size)} · ${uiLabelOf('provenance_type',source.artifact.body.provenance_type)}</div></div></li></ul>`;
  return {status:200,body:page(ctx.chrome('知识原文',{active:'knowledge'}),pageLayout(listing,{inspector,detail:true,back}))};
 }
