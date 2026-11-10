@@ -205,7 +205,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const due = Date.parse(request.due);
     const overdue = open && Number.isFinite(due) && due < now;
     const audience = /^usr_[0-9a-z]{26}$/.test(request.audience) ? await ctx.userName(request.audience) : request.audience;
-    const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : 'answered');
+    const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : request.superseded ? 'superseded' : 'answered');
     steps.push({
       name: uiLabelOf('request_kind', request.kind),
       sub: `接收人 ${audience} · 期限 ${fullTime(request.due)} · ${state}`,

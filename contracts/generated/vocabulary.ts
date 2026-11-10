@@ -46,7 +46,7 @@ export const AXES = {
   signing: { label: '署名方式', owner: 'D03', values: [{ code: 'own_credential', label: '本人凭据' }, { code: 'service_on_behalf', label: '服务账号代表发起用户' }] },
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', ui: '请求类型', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
-  request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }] },
+  request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }, { code: 'superseded', label: '已作废' }] },
   permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '教训' }] },
@@ -553,10 +553,10 @@ export function isRequestKind(value: unknown): value is RequestKind {
 }
 
 /** 请求状态 (B07) */
-export const REQUEST_STATUS = ['waiting', 'overdue', 'answered'] as const;
+export const REQUEST_STATUS = ['waiting', 'overdue', 'answered', 'superseded'] as const;
 export type RequestStatus = (typeof REQUEST_STATUS)[number];
-export const REQUEST_STATUS_LABEL = { 'waiting': '等待回应中', 'overdue': '已逾期', 'answered': '已回答' } as const satisfies { readonly [K in RequestStatus]: string };
-export const REQUEST_STATUS_UI = { 'waiting': '等待回应中', 'overdue': '已逾期', 'answered': '已回答' } as const satisfies { readonly [K in RequestStatus]: string };
+export const REQUEST_STATUS_LABEL = { 'waiting': '等待回应中', 'overdue': '已逾期', 'answered': '已回答', 'superseded': '已作废' } as const satisfies { readonly [K in RequestStatus]: string };
+export const REQUEST_STATUS_UI = { 'waiting': '等待回应中', 'overdue': '已逾期', 'answered': '已回答', 'superseded': '已作废' } as const satisfies { readonly [K in RequestStatus]: string };
 export const RequestStatusSchema = z.enum(REQUEST_STATUS);
 export function isRequestStatus(value: unknown): value is RequestStatus {
   return (REQUEST_STATUS as readonly unknown[]).includes(value);

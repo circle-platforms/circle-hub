@@ -674,7 +674,11 @@ requirement is named in errors with that reason and remaining rounds; one distin
 requirement. At zero remaining rounds, missing artifact work becomes `repair_exhausted`, not another coverage prompt.
 
 B07 requests are append-only records keyed by the exact run, item, requirement, source and missing fact. Repeating the
-same problem never extends its original due date. Result errors name the request and the existing tool to answer it;
+same problem never extends its original due date. An accepted submission voids the waiting requests the run's earlier
+submissions issued, and their escalations, after it issued its own (R[10], `supersedeEarlierRequests`): its result lists
+everything still missing. When the same content is submitted again after another submission and accepted, the requests it
+had issued and the other voided wait again. A submission that is not accepted voids nothing, and a criterion change's judgment, a dispatched
+job's disposition, a rerun request and a repair asked of the pack's author are left to the step that closes them. Result errors name the request and the existing tool to answer it;
 full replacement submissions remain allowed after exhaustion. Answers reference actual stored records and never
 rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. The request fields
 of `listRuns` read every request the reader may see, whichever page is listed, so a caller that shows none of them passes

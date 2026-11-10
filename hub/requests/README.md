@@ -24,3 +24,11 @@ request storage imports no run engine or product implementation. Callers retain 
 record, or published-pack context); it is not automatically a `rec:` reference. `answered_by` in the read view is the
 actual answer-source **record digest**, not a user id. `answer` verifies that record exists; publication passes the
 `pack_version` record digest, never the manifest digest. Recipients are separately named by `audience`.
+
+`supersede` voids waiting requests because a later accepted result of the same run issued its own (B07 R[10], decision 150).
+It appends the same kind of closing record as an answer, marked `superseded`, so `answered_by` is then the later result's
+record digest and the view carries `superseded: true`: a voided request no longer waits, is not an answer and takes no
+answer afterwards. A request that was answered or voided meanwhile keeps what closed it. `reinstate` appends a closing record
+without an answer to a voided request, so it waits again; it never reopens an answered one. Listings read the newest
+closing record. Which requests a submission voids or reinstates is the caller's rule (`hub/runs/engine/requests.ts`), not
+this module's.
