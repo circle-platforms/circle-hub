@@ -66,12 +66,16 @@ async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord
 /** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
 export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
   const stored=await visibleRun(ctx,user,run);if(!stored)return null;
-  const candidates=await resultsOf(ctx.deps.records.store,run),head=await selectedHead(ctx,user,stored,candidates);
-  let production:RunSummary['production']=null;
-  // Full detail takes the last readable production result, preserving its ordering even for legacy records.
-  for(const candidate of candidates.toReversed())if(candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){
-    production={record:candidate.digest,result:candidate.body};break;
-  }
+  const store=ctx.deps.records.store,technicalLatest=await latestAccepted(store,run,1),head=await selectedHead(ctx,user,stored,technicalLatest?[technicalLatest]:[]);
+  let production:RunSummary['production']=null,cursor:string|null=null;
+  do{
+    const page:Page<StoredRecord<ValidationResult>>=await store.find<ValidationResult>({key:INDEX.resultSubmission,value:run+':'+stored.digest,kind:'validation_result',limit:1,cursor,newestFirst:true});
+    const candidate=page.items[0];
+    if(candidate&&candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){
+      production={record:candidate.digest,result:candidate.body};break;
+    }
+    cursor=page.next;
+  }while(cursor!==null);
   return {run:await withRulingSummary(ctx,stored.body),latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
 }
 
