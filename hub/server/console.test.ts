@@ -470,7 +470,7 @@ describe('pages', () => {
     assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
     assert.ok(!(await get('/console/connections', userSession)).body.includes('http://192.0.2.10:8080'), 'not for a member');
     const packs = await get('/console/packs', session);
-    assert.match(packs.body, new RegExp(`使用范围：[^<]*${user.user.name}`), 'assignments');
+    assert.match(packs.body, new RegExp(`<span data-pack-audience>[^<]*${user.user.name}`), 'assignments');
     await runWithResult(user);
     const calls = await get(`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`, session);
     assert.equal(calls.status, 200);

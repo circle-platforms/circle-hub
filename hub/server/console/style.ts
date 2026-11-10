@@ -234,6 +234,11 @@ const HEALTH_CSS = `
 .ch-tool { white-space: nowrap; }
 /* The knowledge folder list: the table fits its box (the statement wraps, the other columns keep their text on one line) instead of
    scrolling inside it; on a narrow screen each entry is a block with its column names beside the values. */
+/* A pack's requirement table fills the page: its two long columns wrap, the short ones stay on one line. */
+.ch-table[data-view="pack-requirements"] { width: 100%; }
+.ch-table[data-view="pack-requirements"] td:first-child, .ch-table[data-view="pack-requirements"] td:nth-child(n+3):nth-child(-n+6) { white-space: nowrap; }
+.ch-table[data-view="pack-requirements"] td:nth-child(2) { min-width: 18rem; }
+.ch-table[data-view="pack-requirements"] td:nth-child(7) { min-width: 12rem; }
 .ch-table[data-view="knowledge-entries"] { width: 100%; }
 .ch-table[data-view="knowledge-entries"] td { max-width: none; white-space: nowrap; }
 .ch-table[data-view="knowledge-entries"] td:has([data-statement]) { white-space: normal; min-width: 14rem; }

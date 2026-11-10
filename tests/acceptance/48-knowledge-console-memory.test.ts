@@ -110,8 +110,8 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
 test('workflow grants reuse the dialog, hide unavailable team publication and expose no personal external actions', {skip},async()=>{
  const detail=await browser.get('/console/packs/'+pack+'?space='+owner.user.id);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);
  const listing=await browser.get('/console/packs?scope=personal');assert.match(listing.body,new RegExp('href="/console/packs/'+pack+'\\?space='+owner.user.id));
- const team=await browser.get('/console/packs?scope=team');assert.match(team.body,/使用范围：团队/);assert.doesNotMatch(team.body,/使用范围：本人及|使用范围：合成控制台作者/);
- const adminTeam=await adminBrowser.get('/console/packs?scope=team');assert.match(adminTeam.body,/使用范围：合成控制台作者/);
+ const team=await browser.get('/console/packs?scope=team');assert.match(team.body,/<span data-pack-audience>团队<\/span>/);assert.doesNotMatch(team.body,/<span data-pack-audience>(?:本人及|合成控制台作者)/);
+ const adminTeam=await adminBrowser.get('/console/packs?scope=team');assert.match(adminTeam.body,/<span data-pack-audience>合成控制台作者/);
  assert.match(detail.body,/<button[^>]+disabled[^>]+title="没有发布权/);assert.doesNotMatch(detail.body,/name="(?:leases|dispatch|system|named_document)"|cmd-pack-assign/);
  const preview=await browser.post('/console/packs/do/grant',{csrf:csrf(detail.body),pack,audience:'member',member:reader.user.name,preview_grant:'1'});assert.equal(preview.status,303);
  const checked=await browser.get(String(preview.headers.location));assert.equal(checked.status,200,checked.body);
