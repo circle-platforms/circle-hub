@@ -66,8 +66,9 @@ const SHELL_CSS = `
 /* The card's head already names the figure; the figure keeps its title for assistive technology. */
 .ch-card-head+.ch-card-body .ch-figure-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .ch-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-4)}
-.ch-tile{padding:var(--space-4) var(--space-5);text-decoration:none}
-a.ch-tile:hover{box-shadow:inset 0 0 0 1px var(--line-control);text-decoration:none}
+.ch-tile{position:relative;padding:var(--space-4) var(--space-5)}
+.ch-tile-link{position:absolute;inset:0;border-radius:inherit}
+.ch-tile-link:hover{box-shadow:inset 0 0 0 1px var(--line-control)}
 .ch-board{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--space-4);align-items:start}
 .ch-stack{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
 /* Filters of a list: the result chips at the start, the other filters at the end. */

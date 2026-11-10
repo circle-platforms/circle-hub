@@ -93,7 +93,7 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   for (const request of requests) if (request.run) perRun.set(request.run, (perRun.get(request.run) ?? 0) + 1);
   // The four figures of the page; each says what it counts, and the first leads to the list it counts.
   const kpis = html`<section class="ch-tiles" data-overview-kpis>
-${tile(kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs')}
+${tile(kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs', '查看任务列表')}
 ${tile(kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '—' : count(passed), { unit: settled.length === 0 ? '' : `/ ${count(settled.length)}`, note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: settled.length===0?'idle':'ok' }))}
 ${tile(kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) }))}
 ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的客户端中处理', ...(kinds > 0 ? { note: `内容相同的归并后 ${count(kinds)} 类` } : {}), state: requests.length > 0 ? 'warn' : 'idle' }))}
@@ -147,7 +147,7 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
   const rows:Html[]=[];
   for(const task of recent){
     const who=task.run.runner?await ctx.userName(task.run.runner):uiLabelOf('execution_host',task.run.host);
-    rows.push(html`<a class="ch-row" href="${'/console/runs/'+task.run.run}"><span class="ch-row-body"><b>${taskTitle(task.run,titles)}</b><span class="ch-meta">${who} · ${when(task.run.started_at)}</span></span><span class="ch-row-end">${task.result===null?html`<span class="ch-meta">结果暂不可用</span>`:taskChip(task.result)}${owing(task)?html`<span class="ch-meta">${owing(task)}</span>`:''}</span></a>`);
+    rows.push(html`<a class="ch-row" href="${'/console/runs/'+task.run.run}"><span class="ch-row-body"><b>${taskTitle(task.run,titles)}</b> <span class="ch-meta">${who} · ${when(task.run.started_at)}</span></span> <span class="ch-row-end">${task.result===null?html`<span class="ch-meta">结果暂不可用</span>`:taskChip(task.result)}${owing(task)?html` <span class="ch-meta">${owing(task)}</span>`:''}</span></a>`);
   }
   const taskList=html`<section class="ch-section" data-overview-tasks>${box({title:'需要处理',meta:scope,hint:'优先列出有等待回应中的请求、未决项或尚未完成的任务，最多 8 个'},recent.length?html`<div class="ch-list">${rows}</div>`:html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-text">在客户端中运行工作流后，这里显示任务。</p>${link('/console/packs','查看工作流')}</section>`,{flush:recent.length>0,...(recent.length?{foot:link('/console/runs','查看全部任务')}:{})})}</section>`;
   // One question per page (decision 151): what needs attention. The figures first, the tasks beside their statistics; no
