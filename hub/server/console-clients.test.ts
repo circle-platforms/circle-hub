@@ -43,7 +43,7 @@ test('connections, team and settings list each client by the name and version it
  for(const path of ['/console/connections','/console/team']){
   const reply=await admin.get(path);assert.equal(reply.status,200,path);
   const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
-  assert.match(tables,/<th scope="col">客户端<\/th><th scope="col">成员<\/th><th scope="col">连接方式<\/th><th scope="col">最近连接<\/th>/,path);
+  assert.match(tables,/<th scope="col">客户端<\/th><th scope="col">成员<\/th><th scope="col">连接方式<\/th><th scope="col">最近凭据使用<\/th>/,path);
   assert.match(tables,/<span data-evidence>hub-test-real 0\.0\.0<\/span>/,'the name and version from clientInfo, as recorded');
   assert.match(tables,/访问令牌 · <span data-evidence>test<\/span>/,'the token it connected with');
   assert.match(tables,/<span data-evidence>客户端<\/span>[\s\S]*标准连接确认</,'an unnamed registration is 客户端');

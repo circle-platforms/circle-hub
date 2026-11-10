@@ -67,7 +67,7 @@ export interface PageResult {
 export const NEUTRAL = '该内容不存在或无权查看';
 
 export function neutralPage(ctx: PageContext): PageResult {
-  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。'}), html`<p>${link('/console/overview', '返回总览')}</p>`) };
+  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'内容可能已删除，或当前账号没有查看权限，两种情况的显示相同。请返回总览或列表重新进入；仍需要时联系内容所有者或管理员确认。'}), html`<p>${link('/console/overview', '返回总览')}</p>`) };
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -148,7 +148,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
     : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '工作流版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务',undefined,{hrefs:shown.map(task=>'/console/runs/'+task.run.run)})}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', hint: '客户端提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Hub 按工作流要求检查提交结果；适用的检查可能包括引用溯源、原文比对和沙箱复验。每项是否执行及其结果，请查看检查明细。' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
 ${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, true))}`,{inspector:html`<h2 class="ch-panel-title">任务</h2>${stat('本页任务',tasks.length)}${stat('筛选后',shown.length)}${card({title:'任务结果'},html`<ul class="ch-feed">${[...counts].map(([result,count])=>html`<li>${uiLabelOf('task_result',result)}<span class="num">${count}</span></li>`)}</ul>`)}`})),
   };
 }
@@ -201,7 +201,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
  * to be handled (rejected, quarantined, incomplete) and the requests for the viewer to decide (milestone 1 has none).
  */
 const GROUP_OF = { delivered: 'adopted', rejected: 'open', quarantined: 'open', incomplete: 'open' } as const satisfies Record<Partition, 'adopted' | 'open'>;
-const GROUP_TITLE = { adopted: '已采用的成果', open: '仍需处理的事项' } as const;
+const GROUP_TITLE = { adopted: '已交付的结果', open: '仍需处理的事项' } as const;
 
 function partitionGroups(result: ValidationResult, run: RunRecord, renderClaim:typeof claimBlock = claimBlock): Html {
   const names = new Map(run.requirements.map((r) => [r.key, r.name]));
@@ -312,7 +312,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['前驱运行', run.predecessor === undefined ? '—' : link(`/console/runs/${run.predecessor}`, '查看前驱任务')],
     ['会话', run.session ?? '—'],
     ['开始时间', run.started_at],
-    ['提交期限', run.submission_due ?? '旧运行没有记录期限，请以它为前驱开新修订'],
+    ['提交期限', run.submission_due ?? '这次任务未记录提交期限。请从此任务创建新的修订后继续。'],
     ['交付', detail.latest === null ? '尚未交付' : '已有交付结果'],
     ['边界政策', run.policy ?? '—'],
     ['规程内容哈希', technicalCode(run.instructions_digest)],
