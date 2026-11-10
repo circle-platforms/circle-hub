@@ -1,6 +1,6 @@
 import {reportOutcome} from './report-outcome.ts';
 import {REPORT_READ_ATTEMPTS,REPORT_READ_WINDOW_MS,reportPending,reportReadDelay,trustedStatus} from './report-read.ts';
-import {releaseDigest,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
+import {releaseDigest,releaseField,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
 import type {AdminLogEntry} from '../runs/api.ts';
 import {RETRY_RULES} from './retry-policy.ts';
 import {prepareEffectGate,EffectBoundaryError} from './effect-gate.ts';
@@ -58,7 +58,8 @@ import {
 } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
-import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
+import {RunId,Sha256} from '../../contracts/src/common.ts';
+import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort,type VerifiedInput } from './proof.ts';
 
 /** Index of device observations: the inventory digest and the device's JSON Pointer in it, newest first (decision 112). */
 const OBSERVATION_KEY = 'dispatch.device_observation';
@@ -203,11 +204,25 @@ export class DispatchService {
         const applicable=row.resource_kind==='executor'&&row.action==='submit'&&row.effect_class===gate.context.write.effect_class&&row.trigger===gate.context.trigger;
         const report=await gate.inspectRelease(row);rows.push({row_sha256:releaseDigest(row.id),applicable,checks:report.checks});
       }
-      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows,no_verdict};
+      // The gate dispatch applies after every release condition: the run's lineage holds every resource key the executor declares.
+      // Reported beside the clause-3 verdict, not inside it: dispatchAccepted picks its executor by `satisfied` and then lets the dispatch itself refuse and tell the runner.
+      const coverage=await this.explainCoverage(by,run,d);
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows,no_verdict,lease_coverage:coverage};
     }catch(error){
       const proof=await inspectInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
-      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[],no_verdict};
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[],no_verdict,lease_coverage:null as ReleaseCheck|null};
     }
+  }
+  /** The lease-coverage clause of explain-release: read-only, names the declared keys the lineage lacks, never contacts the executor. */
+  private async explainCoverage(by:Principal,run:string,d:ExecutorDefinition):Promise<ReleaseCheck>{
+    const condition='lease.coverage',label='同一谱系持有执行器声明的全部资源键';
+    const proof=await inspectInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
+    if(!proof.input)return {condition,label,satisfied:null,fields:[],missing_fact:'派发前提尚未全部核对通过，无法确定运行的谱系和发起用户，因此还不能判断租约是否覆盖',next_action:'先处理上面未满足的放行条件，再重跑 job explain-release'};
+    try{
+      const {missing}=await this.coverage(proof.input.ancestors,proof.input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);
+      const fields=[releaseField('lease.resources.uncovered',0,missing.length,missing.length===0)];
+      return missing.length===0?{condition,label,satisfied:true,fields}:{condition,label,satisfied:false,fields,missing_fact:`缺少覆盖派发窗口的同血缘有效租约：${missing.join('、')}（执行器共声明 ${d.resources.length} 把）`,next_action:'执行器的目标是这些键所在的整个自动化测试环境：在本运行的预订谱系里取得全部键（整台预订）后，重开计划与核验；只订刚好够用的设备不能派发'};
+    }catch(error){return {condition,label,satisfied:null,fields:[releaseField('exception',undefined,error instanceof Error?{name:error.name}:error,null)],missing_fact:'读不到租约持有记录，无法判断租约是否覆盖',next_action:'管理员恢复租约表的可读性后重跑 job explain-release'};}
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
     await this.registry.admin(by);const current=await this.registry.get(executor);
@@ -433,8 +448,7 @@ export class DispatchService {
       log('error', `${chosen.id}: ${described(error)}`);
       return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
-          // The same bytes are dispatched at most once (V07): that is the runner's matter, not the administrator's.
-          ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后开新运行` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
+          ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一任务血缘的这份字节只派发一次。结果读那个作业；独立的新任务按任务包规程重新核验和取得租约后派发` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用新运行绕过未结束的效果或物理目标占用`
           : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
     }
   }
@@ -451,14 +465,14 @@ export class DispatchService {
     const provisional:JobBinding={run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
     const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
     const input=preflight.input;
-    const previous = await this.options.records.store.getByKey('action', `dispatch.bytes:${input.sha256}`);
-    const allAttempts = (await this.options.records.store.findMany<import('../records/api.ts').ActionBody>({ kind: 'action', key: 'dispatch.bytes', values: [input.sha256] })).filter(e => e.body.detail.phase === 'intent');
+    const previous = await this.options.records.store.getByKey<ActionBody>('action', `dispatch.bytes:${input.sha256}`);
+    const allAttempts = await this.lineageAttempts(input);
     const policy = roundPolicy(gate.detail.run, gate.context.effects, d.proof.requirement);
     const multi = repeats(policy);
     const round = multi ? await this.openRound(allAttempts, policy.count) : 1;
     if (multi && round > policy.count) throw new Error('同一（S，轮次）已派发成功；只能查询或对账，不能重交');
     const attempts = multi ? allAttempts.filter(e => roundOf(e.body.detail) === round) : allAttempts;
-    if (previous) throw new Error('这份字节已有旧版派发意图；只能查询或对账，不能重交');
+    if (previous&&await this.intentMatchesLineage(previous,input)) throw new Error('本血缘的这份字节已有旧版派发意图；只能查询或对账，不能重交');
     for (const prior of attempts) {
       const priorJob = String(prior.body.detail.job); const priorEvents = await this.journal.events(priorJob);
       const end = eventOf(priorEvents,'complete'); const pinned = await this.journal.binding(priorJob);
@@ -563,7 +577,7 @@ export class DispatchService {
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
         const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row:boundary.row.id,effect_duration_ms:d.max_run_ms,intent_key: key, verification_result:currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, ...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, ...(multi ? { round } : {}), not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, ...intentSemantics, on_behalf_of: input.user,
-          before_state_bound: beforeState.bound,before_state:beforeState,fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...precheckSources,...requestSources], bytesKey(input.sha256, round, attempt, multi), tx);
+          before_state_bound: beforeState.bound,before_state:beforeState,fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...precheckSources,...requestSources], bytesKey(input.sha256, round, attempt, multi,input.lineage), tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
       flags.intended = true;
@@ -903,11 +917,16 @@ export class DispatchService {
       }
     });
   }
-  private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
+  /** Which declared keys the lineage does not hold for the whole dispatch window; the one rule dispatch and explain-release share. */
+  private async coverage(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<{ rows: HolderSnapshot[]; missing: string[] }> {
     const rows = await this.options.leases.holderSnapshot(keys);
     const held = (key: string) => rows.some(r => r.key === key && !r.released && r.user === user && ancestors.includes(r.run) && (r.expires_at === null || Date.parse(r.expires_at) > this.now().getTime() + requiredMs));
     const missing = keys.filter(key => !held(key));
-    if (rows.length !== keys.length || missing.length) throw new LeaseCoverageError(missing.length ? missing : keys);
+    return { rows, missing: missing.length ? missing : rows.length !== keys.length ? keys : [] };
+  }
+  private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
+    const { rows, missing } = await this.coverage(ancestors, user, keys, requiredMs);
+    if (missing.length) throw new LeaseCoverageError(missing);
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
@@ -1910,16 +1929,30 @@ export class DispatchService {
     })).sort((left, right) => left.round - right.round);
   }
 
-  private async firstIntentAt(sha: string): Promise<number | null> {
-    const intents = (await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.bytes', values: [sha] })).filter(event => event.body.detail.phase === 'intent' && roundOf(event.body.detail) === 1);
+  private async intentMatchesLineage(event:Event,input:VerifiedInput):Promise<boolean>{
+    const job=Sha256.safeParse(event.body.detail.job);
+    if(!job.success)throw new Error('历史派发意图缺少可核验的作业绑定；请管理员恢复记录并对账，不得重交');
+    const binding=await this.journal.binding(job.data),prior=binding.input;
+    if(binding.job!==job.data||!prior||prior.sha256!==input.sha256||!RunId.safeParse(prior.lineage).success||!Array.isArray(prior.ancestors)||prior.ancestors.length<2||!prior.ancestors.every(id=>RunId.safeParse(id).success)||new Set(prior.ancestors).size!==prior.ancestors.length||prior.ancestors[0]!==prior.run||prior.ancestors[1]!==prior.plan_run||prior.ancestors.at(-1)!==prior.lineage||event.body.run!==prior.run)throw new Error('历史派发意图的血缘绑定不完整或不一致；请管理员恢复记录并对账，不得重交');
+    return prior.lineage===input.lineage;
+  }
+
+  private async lineageAttempts(input:VerifiedInput):Promise<Event[]>{
+    const events=await this.options.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.bytes',values:[input.sha256]}),out:Event[]=[];
+    for(const event of events)if(event.body.detail.phase==='intent'&&await this.intentMatchesLineage(event,input))out.push(event);
+    return out;
+  }
+
+  private async firstIntentAt(input:VerifiedInput): Promise<number | null> {
+    const intents = (await this.lineageAttempts(input)).filter(event => roundOf(event.body.detail) === 1);
     const first = [...intents].sort((left, right) => left.created_at < right.created_at ? -1 : 1)[0];
     const at = first ? Date.parse(first.created_at) : NaN;
     return Number.isFinite(at) ? at : null;
   }
 
-  private async outsideWindow(sha: string, policy: RoundPolicy): Promise<boolean> {
+  private async outsideWindow(input: VerifiedInput, policy: RoundPolicy): Promise<boolean> {
     if (policy.window_seconds === undefined) return false;
-    const first = await this.firstIntentAt(sha);
+    const first = await this.firstIntentAt(input);
     return first !== null && this.now().getTime() >= first + policy.window_seconds * 1000;
   }
 
@@ -1972,7 +2005,7 @@ export class DispatchService {
     }
     for (let next = args.round + 1; next <= policy.count; next++) {
       await this.options.beforeRound?.(next);
-      if (await this.outsideWindow(args.input.sha256, policy)) {
+      if (await this.outsideWindow(args.input, policy)) {
         for (let skipped = next; skipped <= policy.count; skipped++) await this.noteRound(binding, { round: skipped, terminal: 'not_run', meets: null, reason: 'budget_exhausted' });
         break;
       }
@@ -2049,7 +2082,7 @@ export class DispatchService {
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
         const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row: boundary.row.id, effect_duration_ms: d.max_run_ms, intent_key: key, verification_result: currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id, context.lease_token]), attempt, round, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, ...intentSemantics, on_behalf_of: input.user,
-          before_state_bound: false, before_state: { bound: false, sha256: null, reference: null }, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`], bytesKey(input.sha256, round, attempt, true), tx);
+          before_state_bound: false, before_state: { bound: false, sha256: null, reference: null }, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`], bytesKey(input.sha256, round, attempt, true,input.lineage), tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
     } catch (error) {

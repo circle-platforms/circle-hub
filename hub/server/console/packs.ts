@@ -1,3 +1,4 @@
+import {packPurpose} from './pack-display.ts';
 import {memoReadPort} from '../../records/api.ts';
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
@@ -56,7 +57,7 @@ export async function packsPage(ctx: PageContext): Promise<PageResult> {
   const canPublish=await ctx.deps.records.authorizations.canPublish(ctx.principal.id);
   const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope)),listings);
   return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {
-    active: 'packs', hint: '按当前读取权限列出工作流与通用技能',
+    active: 'packs', hint: '工作流用于完成有验收要求的任务，通用技能用于指导客户端做法；这里只列出当前账户可用的内容',
     actions:html`${button('/console/packs/-/publish','发布我的工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的工作流分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
@@ -78,7 +79,7 @@ async function packList(ctx:PageContext,listings:readonly PackListing[],scope:Kn
       rows.push(html`<li class="ch-row${on?' is-selected':''}"${on?html` aria-current="true"`:''} data-row-href="${url}"><span class="ch-row-mark" aria-hidden="true"></span><div class="ch-row-body"><a class="ch-row-title" href="${url}">${pack.title}</a><div class="ch-row-meta">${chip(state.text,state.tone)}<span>使用范围：${await usageAudience(ctx,pack)}</span>${timestamp(pack.published_at)}</div></div></li>`);
     }
     if(group==='shared'&&!rows.length)continue;
-    sections.push(html`<section class="ch-section" id="${group}-${kind}" aria-label="${uiLabelOf('pack_kind',kind)}">${group===scopes[0]?html`<span id="${kind}" aria-hidden="true"></span>`:''}${card({title:uiLabelOf('knowledge_search_scope',group)+' · '+uiLabelOf('pack_kind',kind),meta:`${rows.length} 个`,hint:kind==='workflow'?'规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果':'只规定做法，没有验收要求'},rows.length?html`<ul class="ch-list">${rows}</ul>`:html`<div class="ch-empty"><p class="ch-empty-title">尚无可用的${uiLabelOf('pack_kind',kind)}</p></div>`)}</section>`);
+    sections.push(html`<section class="ch-section" id="${group}-${kind}" aria-label="${uiLabelOf('pack_kind',kind)}">${group===scopes[0]?html`<span id="${kind}" aria-hidden="true"></span>`:''}${card({title:uiLabelOf('knowledge_search_scope',group)+' · '+uiLabelOf('pack_kind',kind),meta:`${rows.length} 个`},html`${group===scopes[0]?html`<p class="ch-meta">${packPurpose(kind)}</p>`:''}${rows.length?html`<ul class="ch-list">${rows}</ul>`:html`<div class="ch-empty"><p class="ch-empty-title">尚无可用的${uiLabelOf('pack_kind',kind)}</p></div>`}`)}</section>`);
   }
   return html`<div class="ch-section" data-area-content>${sections}</div>`;
 }
@@ -115,7 +116,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   ));
   const checks = loaded === null ? html`` : card({ title: '检查项', hint: '阻断项未通过时结果不可用；提示项仅作标记' }, table(
     ['检查项', axisUiLabel('check_tier'), '检查脚本', axisUiLabel('source_role')],
-    loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>${technical(code(c.id),'查看')}`, c.tier === undefined ? '—' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), technical(code(c.function ?? c.interpreter ?? '—'),'查看'), uiLabelOf('source_role', c.judges)]),
+    loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>${technical(code(c.id),'查看')}`, c.tier === undefined ? '—' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), technical(c.function?kv([['模块',code(c.function.module)],['导出',code(c.function.export??'default')]]):code(c.interpreter??'—'),'查看'), uiLabelOf('source_role', c.judges)]),
     '没有检查项',
   ));
   const versionRows = versions.map((v) => {
@@ -141,7 +142,8 @@ ${dialogs.map(commandModal)}<footer class="ch-inspector-actions">${actionLink('#
   const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',anchor:'product-sources'}
     : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',anchor:'system-sources'}
     : {active:'packs' as const,title:uiLabelOf('pack_kind','workflow'),path:'/console/packs',anchor:pack.kind};
-  const breadcrumb = html`${link(home.path,home.title)} › ${link(home.path+'#'+home.anchor,uiLabelOf('pack_kind',pack.kind))} › ${pack.title}`;
+  const kindTitle=uiLabelOf('pack_kind',pack.kind);
+  const breadcrumb = html`${link(home.path,home.title)}${home.title===kindTitle?'':html` › ${link(home.path+'#'+home.anchor,kindTitle)}`} › ${pack.title}`;
   const scope=selectedScope(ctx);
   const listing=await packList(ctx,listings,scope,pack);
   const layout=pageLayout(listing,{inspector:html`<div class="ch-section" data-area-content data-inspector-content>${body}</div>`,detail:true,back:link(home.path,'返回列表',{scope})});

@@ -7,7 +7,7 @@
     "build": "<构建号>",
     "inputs": {
       "subject": {
-        "reference": "src:f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942"
+        "reference": "src:ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85"
       },
       "contract": {
         "external": "doc:doc:fixture-runtime-contract"
