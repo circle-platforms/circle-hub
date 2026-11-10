@@ -43,8 +43,8 @@ export function stat(label: unknown, value: number | string): Html {
   return html`<div class="ch-stat"><span class="ch-stat-label">${label}</span><span class="ch-stat-value">${typeof value === 'number' ? value.toLocaleString('en-US') : value}</span></div>`;
 }
 
-export function field(label: string, control: Html, hint?: string): Html {
-  return html`<label class="ch-field"${hint ? html` title="${hint}"` : ''}><span class="ch-field-label">${hint?tooltip(label,hint):label}</span><span class="ch-input">${control}</span></label>`;
+export function field(label: string, control: Html, hint?: string, error?: Html): Html {
+  return html`<label class="ch-field"${hint ? html` title="${hint}"` : ''}><span class="ch-field-label">${hint?tooltip(label,hint):label}</span><span class="ch-input">${control}</span>${error??''}</label>`;
 }
 
 export function commandLink(dialog:CommandDialog,label:unknown='查看命令…',cls='ch-btn ch-btn--secondary'):Html{

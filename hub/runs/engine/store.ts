@@ -312,10 +312,10 @@ export async function resultFor(store: RecordStore, run: string, submission: str
 export async function resultsOf(store:RecordStore,run:string):Promise<StoredRecord<ValidationResult>[]>{return all(cursor=>store.find<ValidationResult>({key:INDEX.resultRun,value:run,kind:'validation_result',limit:500,cursor}));}
 
 /** The latest accepted validation result of a run (an accepted submission or a production result). */
-export async function latestAccepted(store: RecordStore, run: string): Promise<StoredRecord<ValidationResult> | null> {
+export async function latestAccepted(store: RecordStore, run: string, batchSize=100): Promise<StoredRecord<ValidationResult> | null> {
   let cursor: string | null = null;
   do {
-    const page: Page<StoredRecord<ValidationResult>> = await store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: 100, cursor, newestFirst: true });
+    const page: Page<StoredRecord<ValidationResult>> = await store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: batchSize, cursor, newestFirst: true });
     const found = page.items.find((r) => r.body.acceptance === 'accepted');
     if (found) return found;
     cursor = page.next;

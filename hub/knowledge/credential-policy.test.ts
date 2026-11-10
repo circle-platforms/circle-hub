@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {ReadManifest} from '../../contracts/src/resources.ts';
 import {newId} from '../records/api.ts';
+import {credentialReviewRequests} from './api.ts';
 import {BASE_CATALOG,DEFAULT_PRODUCERS,casesProducer,catalogXml,makeWorld,mindMap,startPostgres} from './test-support.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});
@@ -40,6 +41,7 @@ test('unlisted examples create a named 72-hour request and expiry creates a veri
  const list=async()=>w.kit.store.find<any>({key:'action.kind',value:'read',kind:'action',limit:100});
  const first=(await list()).items.find(row=>row.body.detail?.credential?.external===flagged);assert.ok(first);assert.equal(first.body.detail.audience_user,w.admin.id);
  assert.equal(Date.parse(first.body.detail.deadline)-Date.parse(first.body.started_at),72*3600000);
+ const queue=await credentialReviewRequests(w.kit,w.admin,{now:new Date(first.body.started_at)});const listed=queue.items.find(row=>row.reference===`rec:${first.digest}`);assert.ok(listed);assert.equal(listed.audience,w.admin.id);assert.equal(listed.deadline,first.body.detail.deadline);assert.equal(listed.external,flagged);assert.equal(listed.resolved,false);assert.equal(listed.expired,false);
  w.advance();await w.knowledge.syncProduct(w.product);
  const expired=(await list()).items.find(row=>row.body.detail?.expired_from===first.digest);assert.ok(expired);assert.equal(expired.body.detail.audience_user,w.admin.id);assert.equal(expired.body.detail.request_kind,'clarification');
  assert.equal((await w.kit.artifacts.source(w.admin,first.body.detail.credential.sha256))?.bytes,null);
