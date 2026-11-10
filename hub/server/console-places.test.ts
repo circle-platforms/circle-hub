@@ -254,8 +254,11 @@ describe('operations and commands', () => {
     const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
     assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
     assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
-    assert.match(workflow,/title="规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果"/);
-    assert.match(skills,/title="只规定做法，没有验收要求"/);
+    // The purpose of each kind is visible text on the list (issue 219), not a tooltip.
+    // It is shown once per kind, on the first scope group of the page.
+    assert.match(list.body,/要完成一项有验收要求的任务，选择工作流/);
+    assert.match(list.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);
+    assert.doesNotMatch(workflow,/title="规定做法与验收要求/);
     assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
     const detail=await get('/console/packs/review',admin);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
@@ -380,7 +383,9 @@ test('the overview uses a Stat and thin parts bar with labelled counts instead o
  const session=await signIn(server.admin.token),overview=await get('/console/overview',session);
  assert.match(overview.body,/检查项结果/);assert.match(overview.body,/class="ch-stat-value"/);assert.match(overview.body,/class="ch-parts"/);assert.doesNotMatch(overview.body,/donut|donut-hold/);
  for(const area of ['overview','runs','connections','records','team','settings']){
-  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.match(page.body,/aria-label="概况"/);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+  // The overview's duplicate inspector was removed (issue 216, task-first overview); every other area keeps its 概况 inspector.
+  if(area==='overview')assert.doesNotMatch(page.body,/aria-label="概况"/);else assert.match(page.body,/aria-label="概况"/);
  }
 });
 

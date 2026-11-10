@@ -286,6 +286,10 @@ describe('pages', () => {
     assert.doesNotMatch(page.body, /管理员备注/, 'a user sees no admin note column');
   });
 
+  test('the task overview states applicable verification scope rather than universal completed checks',async()=>{
+    const user=await person(),session=await signIn(user.token),page=await get('/console/runs',session);
+    assert.equal(page.status,200);assert.match(page.body,/按工作流要求检查提交结果/);assert.match(page.body,/每项是否执行及其结果/);assert.doesNotMatch(page.body,/每个结果都经过 Hub 校验/);
+  });
   test('the run page shows each item\'s two cells by conjunction, the three groups and every submission verbatim, marked unverified', async () => {
     const user = await person();
     const run = await runWithResult(user, ['发现<甲>']);
@@ -302,7 +306,8 @@ describe('pages', () => {
     assert.match(page.body, /<span class="t-unknown">？ 引用校验：未检查/);
     assert.match(CONSOLE_CSS.body, /\.t-unknown\{color:/);
     // Display rule 13: the three groups derived from the partition list.
-    const adopted = page.body.indexOf('已采用的成果（已交付');
+    const adopted = page.body.indexOf('已交付的结果（已交付');
+    assert.doesNotMatch(page.body,/已采用的成果/);
     const open = page.body.indexOf('仍需处理的事项（已拒收、派发结果未确认、未完成');
     assert.ok(adopted > 0 && open > adopted, 'adopted and still to handle');
     assert.doesNotMatch(page.body, /未回答的请求/, 'empty request sections stay hidden');
