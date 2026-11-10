@@ -115,7 +115,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   ));
   const checks = loaded === null ? html`` : card({ title: '检查项', hint: '阻断项未通过时结果不可用；提示项仅作标记' }, table(
     ['检查项', axisUiLabel('check_tier'), '检查脚本', axisUiLabel('source_role')],
-    loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>${technical(code(c.id),'查看')}`, c.tier === undefined ? '—' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), technical(code(c.function ?? c.interpreter ?? '—'),'查看'), uiLabelOf('source_role', c.judges)]),
+    loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>${technical(code(c.id),'查看')}`, c.tier === undefined ? '—' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), technical(c.function?kv([['模块',code(c.function.module)],['导出',code(c.function.export??'default')]]):code(c.interpreter??'—'),'查看'), uiLabelOf('source_role', c.judges)]),
     '没有检查项',
   ));
   const versionRows = versions.map((v) => {
@@ -141,7 +141,8 @@ ${dialogs.map(commandModal)}<footer class="ch-inspector-actions">${actionLink('#
   const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',anchor:'product-sources'}
     : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',anchor:'system-sources'}
     : {active:'packs' as const,title:uiLabelOf('pack_kind','workflow'),path:'/console/packs',anchor:pack.kind};
-  const breadcrumb = html`${link(home.path,home.title)} › ${link(home.path+'#'+home.anchor,uiLabelOf('pack_kind',pack.kind))} › ${pack.title}`;
+  const kindTitle=uiLabelOf('pack_kind',pack.kind);
+  const breadcrumb = html`${link(home.path,home.title)}${home.title===kindTitle?'':html` › ${link(home.path+'#'+home.anchor,kindTitle)}`} › ${pack.title}`;
   const scope=selectedScope(ctx);
   const listing=await packList(ctx,listings,scope,pack);
   const layout=pageLayout(listing,{inspector:html`<div class="ch-section" data-area-content data-inspector-content>${body}</div>`,detail:true,back:link(home.path,'返回列表',{scope})});

@@ -42,6 +42,12 @@ const SHELL_CSS = `
 .ch-chart [data-chart-index]:focus-visible .hit{stroke:var(--focus-ring);stroke-width:2}
 .ch-chart [data-row-href] .hit{cursor:pointer}
 .ch-field-error{display:block}
+.ch-app [data-editor-foreground]{width:100%;max-width:850px;min-width:0}
+[data-editor-foreground] form>[data-fields]{grid-template-columns:minmax(0,1fr)}
+[data-editor-foreground] details>div{padding-block:var(--space-3)}
+.ch-editor-actions{position:sticky;bottom:0;z-index:2;background:var(--surface-0);border-top:1px solid var(--line-hairline);padding-block:var(--space-4);flex-wrap:wrap}
+[data-editor-foreground] textarea[name="statement"]{min-height:100px}
+[data-editor-foreground] textarea[name="markdown"]{min-height:160px}
 .ch-overview-details{border-top:1px solid var(--line-hairline);padding-block:var(--space-4)}
 .ch-overview-details>summary{font:500 14px/20px var(--font-sans);color:var(--text-secondary);cursor:pointer}
 .ch-overview-details[open]>summary{margin-bottom:var(--space-4)}
@@ -73,6 +79,9 @@ const SHELL_CSS = `
 /* Bare fields retained by read-only comparison forms use the same Input tokens. */
 :where([data-area-content] form input:not([type=hidden]):not([type=checkbox]):not([type=radio]),[data-area-content] form select,[data-area-content] form textarea):not(.ch-input *) { border:1px solid var(--line-control);border-radius:var(--radius-md);background:var(--surface-sunken);color:var(--text-primary);padding:6px 10px;min-height:var(--control-height);font:inherit;max-width:100%; }
 .ch-dialog .ch-quote { user-select:all; }
+.ch-dialog-panel { overflow:hidden; }
+.ch-dialog-head,.ch-dialog-foot { flex-shrink:0; }
+.ch-dialog-body { min-height:0; overflow-y:auto; overscroll-behavior-y:contain; flex:1 1 auto; }
 .ch-feed li { min-width:0;overflow-wrap:anywhere; }
 .ch-feed time { white-space:nowrap; }
 @media(max-width:1180px){[data-columns="3"],[data-columns="4"]{grid-template-columns:repeat(2,minmax(0,1fr));}}

@@ -5,18 +5,19 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {ReadValues,plainFields} from './read-value.ts';
 import type {RecordStore,FindQuery,Page,StoredRecord,IndexEntry} from './api.ts';
 interface Variant {methods:Set<PropertyKey>;proxy:object}
-interface Scope {active:boolean;generation:number;version:{current:number};ports:WeakMap<object,Variant[]>;stores:WeakMap<object,RecordStore>;values:WeakMap<object,Map<string,Promise<unknown>>>;clearers:Set<()=>void>;data:ReadValues;verified:Map<string,Array<{parts:readonly string[];value:unknown}>>}
+interface Scope {active:boolean;generation:number;version:{current:number;scopes:Set<Scope>};ports:WeakMap<object,Variant[]>;stores:WeakMap<object,RecordStore>;values:WeakMap<object,Map<string,Promise<unknown>>>;clearers:Set<()=>void>;data:ReadValues;verified:Map<string,Array<{parts:readonly string[];value:unknown}>>}
 const scopes=new AsyncLocalStorage<Scope>();
 const current=(scope:Scope)=>scope.active&&scope.generation===scope.version.current;
 const retired=(scope:Scope)=>scope.generation!==scope.version.current;
 /** Retire retained adapters and pending frozen results after a destructive account or payload write. */
-export function retireReadScope():void{const scope=scopes.getStore();if(!scope)return;scope.version.current++;for(const clear of scope.clearers)clear();}
-export function withReadScope<T>(read:()=>T):T{
- const parent=scopes.getStore();if(parent&&current(parent))return read();
- const version=parent?.version??{current:0};
+export function retireReadScope():void{const scope=scopes.getStore();if(!scope)return;scope.version.current++;for(const active of scope.version.scopes)for(const clear of active.clearers)clear();}
+export function withReadScope<T>(read:()=>T,options:{isolated?:boolean}={}):T{
+ const parent=scopes.getStore();if(parent&&current(parent)&&!options.isolated)return read();
+ const version=parent?.version??{current:0,scopes:new Set<Scope>()};
  const scope:Scope={active:true,generation:version.current,version,ports:new WeakMap(),stores:new WeakMap(),values:new WeakMap(),clearers:new Set(),data:new ReadValues(),verified:new Map()};
  scope.clearers.add(()=>{scope.verified.clear();scope.data.clear();});
- const close=()=>{scope.active=false;for(const clear of scope.clearers)clear();};
+ version.scopes.add(scope);
+ const close=()=>{scope.active=false;version.scopes.delete(scope);for(const clear of scope.clearers)clear();};
  return scopes.run(scope,()=>{try{const result=read();if(result&&typeof (result as {then?:unknown}).then==='function')return Promise.resolve(result).finally(close) as T;close();return result;}catch(error){close();throw error;}});
 }
 const scopedValues=new WeakMap<Scope,Map<object,Map<string,unknown>>>();
@@ -93,7 +94,7 @@ export function scopedRecordStore(store:RecordStore):RecordStore{
   if(pendingGets.size)void flushGets();if(pendingFinds.size)void flushFinds();if(pendingCounts.size)void flushCounts();
   gets=new Map();finds=new Map();other=new Map();counts=new Map();
  });
- const clear=()=>{for(const invalidate of scope.clearers)invalidate();};
+ const clear=()=>{for(const active of scope.version.scopes)for(const invalidate of active.clearers)invalidate();};
  const proxy=new Proxy(store,{get(target,key){
   if(key==='get')return async(id:string,tx?:unknown)=>{if(tx||typeof id!=='string'||!current(scope)||scopes.getStore()!==scope)return target.get(id,tx as never);let value=gets.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingGets.set(id,{resolve,reject});if(pendingGets.size===1)queueMicrotask(()=>{void flushGets();});});gets.set(id,value);value.catch(()=>{if(gets.get(id)===value)gets.delete(id);});}const result=await value;return retired(scope)?target.get(id):result;};
   if(key==='find')return async(query:FindQuery,tx?:unknown)=>{if(tx||!current(scope)||scopes.getStore()!==scope)return target.find(query,tx as never);const input=findInput(scope.data,query);if(input===null)return target.find(query,tx as never);const id=input.id;let value=finds.get(id);if(!value){value=new Promise((resolve,reject)=>{pendingFinds.set(id,{query:input.query,resolve,reject});if(pendingFinds.size===1)queueMicrotask(()=>{void flushFinds();});});finds.set(id,value);value.catch(()=>{if(finds.get(id)===value)finds.delete(id);});}const result=await value;return retired(scope)?target.find(input.query):result;};
