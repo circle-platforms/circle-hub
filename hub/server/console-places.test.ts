@@ -263,17 +263,19 @@ describe('operations and commands', () => {
     server.fakes.workflows.packs.push(skill);
     t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
     const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
-    assert.equal(list.status,200);assert.match(list.body,/class="ch-list"/);
-    const workflow=/<section class="ch-section" id="team-workflow" aria-label="工作流">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    assert.ok(workflow);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
+    assert.equal(list.status,200);
+    // Decision 151, step 6: the place is one table; under 全部 a column says whose each row is.
+    const workflow=/<section class="ch-section" id="workflow" aria-label="工作流"[^>]*>([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    assert.ok(workflow);assert.match(workflow,/<table class="ch-table" data-view="packs">/);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);assert.match(workflow,/data-pack-scope="team"/);
+    assert.doesNotMatch(list.body,/class="ch-empty"/,'a group with nothing in it takes no room');
     // Decision 151: the workflows place lists workflows only; skills have their own place.
-    assert.doesNotMatch(list.body,/id="[a-z]+-skill"/);assert.ok(!list.body.includes(skill.title));
+    assert.doesNotMatch(list.body,/id="skill"/);assert.ok(!list.body.includes(skill.title));
     assert.match(list.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
     const skills=await get('/console/skills',admin);
     assert.equal(skills.status,200);
-    const group=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(skills.body)?.[1];
+    const group=/<section class="ch-section" id="skill" aria-label="通用技能"[^>]*>([\s\S]*?)<\/section>/.exec(skills.body)?.[1];
     assert.ok(group);assert.ok(group.includes(skill.title));assert.match(group,/href="\/console\/skills\/synthetic-skill\?scope=all"/);
-    assert.doesNotMatch(skills.body,/id="[a-z]+-workflow"/);assert.doesNotMatch(skills.body,/href="\/console\/packs\/review/);
+    assert.doesNotMatch(skills.body,/id="workflow"/);assert.doesNotMatch(skills.body,/href="\/console\/packs\/review/);
     assert.match(skills.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/);
     assert.match(skills.body,/<h1 class="ch-title">[\s\S]*?技能/);
     // What each kind is for is the hint of its place's title: one place, one kind, one purpose.
@@ -290,6 +292,16 @@ describe('operations and commands', () => {
     const detail=await get('/console/packs/review',admin);
     assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
+    // A pack is a page of its own: its name is the title, no pane stands beside it, and its content is in tabs.
+    assert.match(detail.body,/<h1 class="ch-title">[\s\S]*?合成评审/);assert.doesNotMatch(detail.body,/<aside class="ch-inspector"/);
+    assert.deepEqual([...(/<nav class="ch-seg" aria-label="工作流内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(detail.body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]),
+      [['/console/packs/review',true,'验收要求'],['/console/packs/review?tab=checks',false,'检查项'],['/console/packs/review?tab=versions',false,'版本记录'],['/console/packs/review?tab=technical',false,'技术信息']]);
+    // Identifiers, digests and version numbers stand on the last tab only.
+    assert.doesNotMatch(detail.body,/review@1\.0\.0<\/code>|内容哈希/);
+    const technical=await get('/console/packs/review?tab=technical',admin);assert.match(technical.body,/<code>review@1\.0\.0<\/code>/);assert.match(technical.body,/内容哈希/);
+    const history=await get('/console/packs/review?tab=versions',admin);assert.match(history.body,/当前显示/);assert.doesNotMatch(history.body,/这里显示的是较早的版本/);
+    const skillPage=await get('/console/skills/synthetic-skill',admin);
+    assert.deepEqual([...(/<nav class="ch-seg" aria-label="通用技能内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(skillPage.body)?.[1]??'').matchAll(/<a href="[^"]+"(?: aria-current="page")?>([^<]+)/g)].map(match=>match[1].trim()),['版本记录','技术信息'],'a skill declares no acceptance');
     // Issue 229: the abstract column heads of the requirement table say what they mean.
     assert.ok(detail.body.includes(DONE_RULE_NOTE)&&detail.body.includes(ACCEPTED_PRODUCER_NOTE),'the workflow page explains the delivery rule and the accepted producer');
     assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);

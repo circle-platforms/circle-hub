@@ -16,11 +16,14 @@ test('check descriptors display the module and selected export instead of an obj
   {id:'second',title:'具名导出',function:{module:'functions/named.ts',export:'verify'},judges:'target'},
   {id:'third',title:'解释器',interpreter:'structure@1',judges:'target'},
  ]);
+ // The scripts of the checks are technical values: they stand on the last tab.
+ assert.doesNotMatch(String((await packPage(ctx,'synthetic-detail')).body),/functions\/check\.ts/);
+ ctx.url=new URL(ctx.url.href+'?tab=technical');
  const body=String((await packPage(ctx,'synthetic-detail')).body);
  assert.doesNotMatch(body,/\[object Object\]/);
  assert.match(body,/functions\/check\.ts/);assert.match(body,/default/);
  assert.match(body,/functions\/named\.ts/);assert.match(body,/verify/);assert.match(body,/structure@1/);
- const unsafe=detailContext('workflow',[{id:'escaped',function:{module:'functions/<script>.ts',export:'<unsafe>'},judges:'target'}]);
+ const unsafe=detailContext('workflow',[{id:'escaped',function:{module:'functions/<script>.ts',export:'<unsafe>'},judges:'target'}]);unsafe.url=new URL(unsafe.url.href+'?tab=technical');
  const escaped=String((await packPage(unsafe,'synthetic-detail')).body);
  assert.ok(escaped.includes('functions/&lt;script&gt;.ts'));assert.ok(escaped.includes('&lt;unsafe&gt;'));
 });
@@ -41,23 +44,27 @@ test('received skills stay in their own group and team scopes disclose assignmen
  const ctx={principal:users[0],url:new URL('http://127.0.0.1/console/packs'),userName:async(id:string)=>users.find(user=>user.id===id)?.name??'—',chrome:(title:string)=>({title,user:{name:'合成作者',role:'成员',admin:false}}),deps:{packs:{list:async()=>listings},records:{principals:{list:async()=>users},authorizations:{canPublish:async()=>false,usersOf:async()=>assignments}}}} as unknown as PageContext;
  const render=async(kind:'workflow'|'skill'='workflow')=>String((await packsPage(ctx,kind)).body);
  const body=await render(),skills=await render('skill');
- assert.match(skills,/<section[^>]+id="shared-skill"[^>]*>[\s\S]*?合成受权技能/);
- assert.doesNotMatch(/<section[^>]+id="personal-skill"[^>]*>([\s\S]*?)<\/section>/.exec(skills)?.[1]??'',/合成受权技能/);
+ // One table per place: the row of a skill someone shared says so, and is not counted as the reader's own.
+ const rowOf=(body:string,title:string)=>[...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match=>match[0].includes(title))?.[0]??'';
+ assert.match(rowOf(skills,'合成受权技能'),/data-pack-scope="shared"/);assert.doesNotMatch(skills,/data-pack-scope="personal"/);
+ assert.match(rowOf(body,'合成团队工作流'),/data-pack-scope="team"/);
  // Decision 151: each place lists its own kind only, and a skill's row links into the skills place.
  assert.ok(!body.includes('合成受权技能'));assert.ok(!skills.includes('合成团队工作流'));
  assert.match(skills,/href="\/console\/skills\/synthetic-shared\?/);assert.match(body,/href="\/console\/packs\/synthetic-team\?/);
- assert.match(body,/使用范围：团队/);assert.doesNotMatch(body,/使用范围：合成作者|使用范围：本人及全体管理员/);
+ const audience=(body:string)=>[...body.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]);
+ assert.deepEqual(audience(body),['团队']);
  ctx.admin=true;ctx.principal={...ctx.principal,role:'admin'};
- assert.match(await render(),/使用范围：合成作者/);
- assignments=[];assert.match(await render(),/使用范围：尚未指定成员/);
- assignments=['owner','peer','disabled'];const all=await render();assert.match(all,/使用范围：合成作者、合成协作者/);assert.doesNotMatch(all,/使用范围：[^<]*合成停用成员/);
+ assert.deepEqual(audience(await render()),['合成作者']);
+ assignments=[];assert.deepEqual(audience(await render()),['尚未指定成员']);
+ assignments=['owner','peer','disabled'];assert.deepEqual(audience(await render()),['合成作者、合成协作者'],'a disabled member is not named');
 });
 
 test('workflow and skill details retain the scope counts of their own place without including the other kinds',async()=>{
  const principal={id:'reader',name:'合成成员',role:'user'},base={version:'1.0.0',owner:'admin',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T00:00:00.000Z'};
  const listings=[{...base,id:'workflow-one',title:'合成工作流',kind:'workflow'},{...base,id:'workflow-two',title:'合成第二工作流',kind:'workflow'},{...base,id:'skill-one',title:'合成技能',kind:'skill'},{...base,id:'skill-one',title:'合成旧技能',kind:'skill',version:'0.9.0',withdrawn:true},{...base,id:'system-one',title:'合成系统',kind:'system'},{...base,id:'product-one',title:'合成产品',kind:'product'}];
  const ctx={principal,admin:false,url:new URL('http://127.0.0.1/console/packs?scope=all'),userName:async()=>principal.name,chrome:(title:string,extra:object)=>({title,...extra,csrf:null,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>listings},workflows:{byDigest:async()=>null},records:{authorizations:{canPublish:async()=>false}}}} as unknown as PageContext;
- const counts=(body:string)=>[...body.matchAll(/<span class="ch-count">([^<]+)<\/span>/g)].map(match=>match[1]);
+ // The counts of the scopes beside the navigation; a pack's own page also counts its tabs, which are not these.
+ const counts=(body:string)=>[...body.matchAll(/<a href="\/console\/(?:packs|skills)\?scope=\w+"(?: aria-current="page")?>[^<]*<span class="ch-count">([^<]+)<\/span><\/a>/g)].map(match=>match[1]);
  // All, mine, team: two workflows in one place, one skill (two versions of it) in the other.
  const workflows=String((await packsPage(ctx)).body);assert.deepEqual(counts(workflows),['2','0','2']);
  ctx.url=new URL('http://127.0.0.1/console/skills?scope=all');
@@ -76,8 +83,9 @@ test('member team scopes reveal neither assignment counts nor member names on ca
  const ctx={principal,admin:false,url:new URL('http://127.0.0.1/console/packs?scope=team'),userName:async(id:string)=>{assert.ok(!hidden.includes(id),'member rendering must not resolve assignment names');return id==='admin'?'合成管理员':principal.name;},chrome:(title:string)=>({title,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>[{...pack,assigned_to:assigned}]},workflows:{byDigest:async()=>null},records:{principals:{list:async()=>[principal,{id:'admin',name:'合成管理员',role:'admin'}]},authorizations:{canPublish:async()=>false,usersOf:async()=>{assert.fail('member rendering must not query assignments');}}}}} as unknown as PageContext;
  for(const ids of [[],hidden.slice(0,1),hidden]){
   assigned=ids;const cards=String((await packsPage(ctx)).body);
-  assert.deepEqual([...cards.matchAll(/使用范围：([^<]*)/g)].map(match=>match[1]),['团队']);
+  assert.deepEqual([...cards.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]),['团队']);
   const detail=String((await packPage(ctx,pack.id)).body);
-  for(const body of [cards,detail]){assert.doesNotMatch(body,/使用范围：[^<]*(?:\d|名成员|尚未指定成员)/);for(const id of hidden)assert.ok(!body.includes(id));}
+  assert.deepEqual([...detail.matchAll(/使用范围：([^<]*)/g)].map(match=>match[1]),['团队']);
+  for(const body of [cards,detail]){assert.doesNotMatch(body,/名成员|尚未指定成员/);for(const id of hidden)assert.ok(!body.includes(id));}
  }
 });
