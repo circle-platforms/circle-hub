@@ -108,7 +108,8 @@
 ### 允许路径
 
 - `hub/server/console/{pages.ts,style.ts,testing-task-tabs.ts}`
-- `hub/server/{console.test.ts,console-places.test.ts,console-pagination.test.ts,console-results.test.ts,console-sharing.test.ts,console-criterion.test.ts,console-projection-fields.test.ts}`
+- `hub/server/{console.test.ts,console-places.test.ts,console-pagination.test.ts,console-results.test.ts,console-sharing.test.ts,console-criterion.test.ts,console-projection-fields.test.ts,console-run-history.test.ts,console-environments.test.ts}`
+- `tests/acceptance/support/console.ts` 和 15 个读任务页的验收测试（01、02、03、04、05、08、10、13、15、16、18、19、20、22、T7-4-publish-governance）：只把取任务页的一行改为 `consoleClient.task(run)`
 - `CHANGELOG.md`、本任务页
 
 ### 决定
@@ -131,4 +132,7 @@
 - `hub/server/console-places.test.ts`：结果块在页签之前；默认页签是验收要求，不画过程图，也没有侧栏；过程页签有执行过程、提交与回执、调用日志；条目页签里有且只有一处证据区；`?view=record` 打开技术信息。
 - `hub/server/console-pagination.test.ts`：调用日志的下一页留在过程页签；默认页写“还需处理 · N 条请求等待回应中”和各类内容，但不画请求表；请求页签是归并后的表。
 - `hub/server/console.test.ts`、`console-results.test.ts`、`console-sharing.test.ts`、`console-criterion.test.ts`、`console-projection-fields.test.ts`：原来对整页的检查改为读相应页签或用 `testing-task-tabs.ts` 读全部页签，检查的内容不变（分区与各层终态的写法、转义、逐次提交原文、模型评论与生产结果分开、分享与撤回、判据变更、投影字段）。
+- `console-run-history.test.ts`、`console-environments.test.ts`：提交历史的窗口和翻页、派发步骤的运行环境都在过程页签里读。
+- 验收测试经 `consoleClient.task(run)` 读全部页签；读控制台页面的 19 个验收文件本机 77 项全过。
+- `packs/workflow/case-review/packs.test.ts`（词表检查）和 `npm run test:docs` 在分支顶端通过。
 - 本机真实控制台截图核对六个页签，没有横向溢出。
