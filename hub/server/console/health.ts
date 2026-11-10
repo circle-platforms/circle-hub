@@ -90,6 +90,8 @@ function pointLabel(at: number, now: Date): string {
 
 interface Line {
   label: string;
+  tableLabel?:string;
+  tableValue?:(value:number)=>unknown;
   className?: string;
   field: Exclude<keyof CurvePoint, 'at' | 'last_at' | 'samples' | 'failed' | 'dropped'>;
 }
@@ -107,16 +109,17 @@ function dayCurve(points: readonly CurvePoint[], now: Date, lines: readonly Line
   const axis = [0, 72, 144, 216, CURVE_POINTS - 1].map((index) => [index, pointLabel(stamps[index]!, now).slice(-5)] as const);
   return curve({
     ...head,
+    note:[head.note,`曲线每 5 分钟${least?'取最小值':'取最大值'}；提示每 30 分钟、表格每小时分别${least?'取最小值':'取最大值'}。缺测保持未知。`].filter(Boolean).join(' '),
     labels: stamps.map((at) => pointLabel(at, now)),
     series: lines.map((line) => ({ label: line.label, ...(line.className ? { className: line.className } : {}), values: points.map((point) => point[line.field]) })),
     xLabels: axis,
     hoverEvery: POINTS_PER_READOUT,
     least,
     table: {
-      head: ['时间', ...lines.map((line) => `${line.label}（${least ? '最小' : '最大'}）`)],
+      head: ['时间', ...lines.map((line) => line.tableLabel??`${line.label}（${least ? '最小' : '最大'}）`)],
       rows: hours.map((slice) => [pointLabel(Date.parse(slice[0]!.at), now), ...lines.map((line) => {
         const value = fold(slice.map((point) => point[line.field]));
-        return value === null ? '未知' : head.value(value);
+        return value === null ? '未知' : (line.tableValue??head.value)(value);
       })]),
     },
   });
@@ -150,7 +153,7 @@ function resourceCards(summary: HealthSummary | null, points: readonly CurvePoin
     title: '主线程', value: shown(delay, duration), label: '事件循环延迟最大值 · 最近 10 秒',
     note: html`延迟 p99 ${shown(current('event_loop_delay_p99_ms'), duration)} · 事件循环利用率 ${shown(current('event_loop_utilization'), percent)} · 进程 CPU ${shown(current('process_cpu_ratio'), percent)}（一核为 100%）`,
     failure: failed('event-loop', 'cpu'),
-    figures: dayCurve(points, now, [{ label: '延迟最大值', field: 'event_loop_delay_max_ms' }], { title: '近 24 小时 · 延迟最大值（毫秒）', note: '每 5 分钟取最大值，不取平均，免得把尖峰抹平。10 秒里一次长阻塞只进最大值，不进 p99，所以这里画最大值。', max: delayTop, ticks: ticksOf(delayTop), tick: (value) => count(Math.round(value)), value: duration, marks }),
+    figures: dayCurve(points, now, [{ label: '延迟最大值', field: 'event_loop_delay_max_ms',tableLabel:'延迟最大值（毫秒）',tableValue:value=>value }], { title: '近 24 小时 · 延迟最大值（毫秒）', note: '每 5 分钟取最大值，以保留短时峰值。最近 10 秒内的单次长阻塞可能未体现在 p99 中，因此此处显示延迟最大值。', max: delayTop, ticks: ticksOf(delayTop), tick: (value) => count(Math.round(value)), value: duration, marks }),
   });
   const memory = resourceCard({
     title: '内存', value: shown(heap, size), unit: limit === null ? null : `/ 上限 ${size(limit)}`,
