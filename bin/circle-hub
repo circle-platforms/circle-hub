@@ -5,6 +5,14 @@
 // main is an error, never a silent success.
 import { existsSync } from 'node:fs';
 
+// Before any TypeScript module loads: the Hub needs Node 24 or later (package.json engines). An older Node runs these
+// commands but its permission model has no process.permission.drop, so every pack function is refused by the sandbox
+// while the service looks healthy (issue 291). `#!/usr/bin/env node` takes whatever Node the PATH has.
+if (!(Number(process.versions.node.split('.')[0]) >= 24)) {
+  process.stderr.write(`错误：circle-hub 需要 Node 24 及以上，当前是 ${process.versions.node}（${process.execPath}）\n处理：用安装包自带的 Node 运行服务和命令，或把它放在 PATH 的最前面；低版本的 Node 不能运行包内函数的沙箱\n`);
+  process.exit(1);
+}
+
 const local = (path) => new URL(`../${path}`, import.meta.url);
 try {
   if (existsSync(local('hub/config/guard.ts'))) await import(local('hub/config/guard.ts').href);

@@ -68,3 +68,18 @@ test('a retired CIRCLE_SERVER_* variable stops the command before any CLI is loa
   assert.match(result.err, /不再读取 CIRCLE_SERVER_\*/);
   assert.doesNotMatch(result.err, /must not be loaded/);
 });
+
+test('a Node older than 24 stops the command at once, naming the version, the binary and what to do (issue 291)', async () => {
+  await serverCli('export async function main() { console.log("ran"); return 0; }\n');
+  // The running Node is 24 or later: a preloaded module reports the version of the Node a deployment was found on.
+  const preload = 'data:text/javascript,' + encodeURIComponent("Object.defineProperty(process.versions,'node',{value:'22.22.3'})");
+  const old = spawnSync(process.execPath, ['--import', preload, join(tree, 'bin', 'circle-hub'), 'status'], { env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 60_000 });
+  assert.equal(old.status, 1);
+  assert.equal(old.stdout, '', 'no CLI module was loaded');
+  assert.match(old.stderr, /错误：circle-hub 需要 Node 24 及以上，当前是 22\.22\.3（.+）/);
+  assert.match(old.stderr, /处理：用安装包自带的 Node 运行服务和命令/);
+  assert.ok(old.stderr.includes(process.execPath), 'the message names the Node binary that ran');
+  const current = run(['status']);
+  assert.equal(current.code, 0, current.err);
+  assert.match(current.out, /ran/);
+});

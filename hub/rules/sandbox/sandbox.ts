@@ -13,7 +13,7 @@ import { extname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { addUsage, step } from '../../telemetry/usage.ts';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
-import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
+import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure, isolationFailureText } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
 import { createResidentVerdict, createResidentWatch, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { createSlotPool, type SlotStats } from './slots.ts';
@@ -282,7 +282,8 @@ async function executePack(
   const lim = resolveLimits(limits);
   const os = await osIsolationAvailable();
   if (!os && options.requireOsIsolation !== false) {
-    throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: osIsolationFailure() ?? null });
+    const probe = osIsolationFailure();
+    throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: probe ?? null }, {}, `沙箱现在不能运行包内函数：${isolationFailureText(probe)}`);
   }
   return step('run-function', () => retryFunction(() => {
     const asked = performance.now();
