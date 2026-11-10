@@ -230,7 +230,7 @@ ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSe
       active: 'settings',
       hint: '凭据与 Hub 状态；需人工处理的事项在 Hub 所在主机上完成',
 
-    }),pageLayout(html`${seg([['secrets','凭据'],['hub','Hub 状态']],'设置分区')}${body}`,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.consumers.join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:html`<h2 class="ch-panel-title">设置</h2>${stat('凭据项',secrets.rows?.length??'—')}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用'],['已运行',ctx.hub?duration(Date.now()-ctx.hub.startedAt.getTime()):'—']])}`})),
+    }),pageLayout(html`${seg([['secrets','凭据'],['hub','Hub 状态']],'设置分区')}${body}`,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.consumers.join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };
 }
 
@@ -244,7 +244,7 @@ ${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'�
 </section>
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
 ${await hubState(ctx)}`;
-  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(html`${seg([['mine','我的客户端'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:html`<h2 class="ch-panel-title">我的客户端</h2>${stat('已连接',rows.length)}${card({title:'最近使用'},html`<p>${when(lastUse(active(tokens)))}</p>`)}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用']])}`})) };
+  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(html`${seg([['mine','我的客户端'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:null})) };
 }
 
 /** The old management pages of decision 122 land here; a member gets the neutral page as before. */
