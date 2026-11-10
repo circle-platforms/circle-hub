@@ -141,8 +141,13 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  return {text:body.text.replaceAll(THEME_RUNTIME_TAG,tag(THEME_RUNTIME_TAG)).replaceAll(LIVE_TAG,tag(LIVE_TAG)),policy:policy.replace('script-src ',`script-src 'nonce-${nonce}' `)};
 }
 
-/** The nine places (decision 147); only the current place may expand its authorized navigation. */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'team' | 'settings' | 'health';
+/**
+ * The ten places (decision 151: skills left the workflows place and the places stand in four groups); only the current
+ * place may expand its authorized navigation.
+ */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
+/** The name of the skills place. The kind it lists keeps its vocabulary name (pack_kind skill). */
+export const SKILLS_PLACE = '技能';
 
 export interface PageChrome {
   title: string;
@@ -191,6 +196,7 @@ export const ICONS = {
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5V12l3 2',
   flow: 'M3 6h5c5 0 5 12 10 12h3M3 18h5c2.5 0 3.5-3 4.5-6M15 6h6',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  skill: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z',
 } as const;
 
 /**
@@ -214,12 +220,16 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['tasks', '任务', '/console/runs', 'review'],
   ['knowledge', '知识库', '/console/knowledge', 'book'],
   ['packs', uiLabelOf('pack_kind', 'workflow'), '/console/packs', 'pack'],
+  ['skills', SKILLS_PLACE, '/console/skills', 'skill'],
   ['connections', '连接', '/console/connections', 'sys'],
-  ['records', '记录', '/console/records', 'rec'],
   ['team', '团队', '/console/team', 'users'],
+  ['records', '记录', '/console/records', 'rec'],
   ['settings', '设置', '/console/settings', 'gear'],
   ['health', '运行状况', '/console/health', 'flow'],
 ];
+
+/** The first place of each later group: the overview, the work, the team and its connections, the Hub itself. A line separates the groups. */
+const GROUP_STARTS: ReadonlySet<NavKey> = new Set<NavKey>(['tasks', 'connections', 'settings']);
 
 /** A place only an administrator's navigation lists; its page answers a member as any other administrators' page does. */
 const ADMIN_PLACES: ReadonlySet<NavKey> = new Set<NavKey>(['health']);
@@ -248,7 +258,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const top = html`${layout.detail?'':notice}${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
   const area = areaClass(chrome.active);
-  const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
+  const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`${GROUP_STARTS.has(key) ? html`<hr class="ch-nav-sep">` : ''}<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
   const inspector = layout.inspector;
   return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
 <nav class="ch-nav" aria-label="主导航">
@@ -272,13 +282,13 @@ function themeSwitch(): Html {
 }
 
 function areaClass(active?: NavKey): string {
-  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
+  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' || active === 'skills' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
 }
 
 /** Detail pages without a directory projection still offer scope links, without inventing counts or a selected scope. */
 function scopeNavigation(active: NavKey): Html {
-  if (active !== 'knowledge' && active !== 'packs') return html``;
-  const base = active === 'knowledge' ? '/console/knowledge' : '/console/packs';
+  if (active !== 'knowledge' && active !== 'packs' && active !== 'skills') return html``;
+  const base = active === 'knowledge' ? '/console/knowledge' : active === 'skills' ? '/console/skills' : '/console/packs';
   const values = KnowledgeSearchScopeSchema.enum;
   return html`<div class="ch-nav-sub" aria-label="空间">${[values.all, values.personal, values.shared, values.team].map((scope) => link(base, uiLabelOf('knowledge_search_scope', scope), {scope}))}</div>`;
 }

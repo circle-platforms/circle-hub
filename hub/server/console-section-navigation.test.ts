@@ -25,6 +25,6 @@ test('personal publication explains the two supported purposes without exposing 
 });
 
 test('workflow and publication pages explain purpose without changing declared manifest kind or access boundary',async t=>{
- const hub=await createTestServer();t.after(()=>hub.close());const console=await openConsole(hub,hub.admin.token);const list=await console.get('/console/packs');assert.equal(list.status,200);assert.match(list.body,/要完成一项有验收要求的任务/);assert.match(list.body,/要让客户端遵循一套通用做法/);assert.match(list.body,/技能不设验收要求/);
+ const hub=await createTestServer();t.after(()=>hub.close());const console=await openConsole(hub,hub.admin.token);const list=await console.get('/console/packs');assert.equal(list.status,200);assert.match(list.body,/要完成一项有验收要求的任务/);const skills=await console.get('/console/skills');assert.equal(skills.status,200);assert.match(skills.body,/要让客户端遵循一套通用做法/);assert.match(skills.body,/技能不设验收要求/);
  for(const kind of PACK_KIND){const response=await console.get('/console/operations/pack?kind='+kind);assert.equal(response.status,200,response.body);assert.ok(response.body.includes(packPurpose(kind)),kind);assert.ok(response.body.includes('action="/console/admin/do/pack-stage'+(kind==='workflow'?'':'?kind='+kind)+'"'));assert.match(response.body,/类型仍由 pack.json 声明并按原规则校验/);for(const target of ['workflow','skill','system'])assert.ok(response.body.includes('href="/console/operations/pack?kind='+target+'"'));assert.equal(publishingKind({url:new URL('http://example.invalid/?kind='+kind)} as PageContext),kind);}
 });
