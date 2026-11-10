@@ -18,6 +18,19 @@ test('chart readouts and the accessible table retain every observation, includin
  assert.throws(()=>chart('错列',[{label:'合成',values:[1,2]}],[{label:'合成'}]),RangeError);
 });
 
+test('duration comparisons name the metric in readouts, accessibility text, tables and a single stat',()=>{
+ const rows=[{label:'合成调用甲',value:8},{label:'合成调用乙',value:0}];
+ const markup=comparisons('耗时最长的调用',rows,undefined,'耗时（毫秒）').text;
+ assert.match(markup,/aria-label="合成调用甲；8 耗时（毫秒）"/);
+ assert.match(markup,/<title>合成调用乙；0 耗时（毫秒）<\/title>/);
+ assert.match(markup,/<span>耗时（毫秒）<\/span>/);
+ assert.match(text(markup.slice(markup.indexOf('<table'))),/项目耗时（毫秒）合成调用甲8合成调用乙0/);
+ const one=comparisons('耗时最长的调用',rows.slice(0,1),undefined,'耗时（毫秒）').text;
+ assert.match(text(one),/合成调用甲8 耗时（毫秒）/);
+ const counts=comparisons('合成数量',rows).text;
+ assert.match(counts,/aria-label="合成调用甲；8 合成数量"/);
+});
+
 test('a single comparison is a Stat; composition and temporal spans retain a full data table',()=>{
  const one=comparisons('合成数量',[{label:'合成项目',value:48000}]).text;assert.match(one,/ch-stat-value">48,000/);assert.doesNotMatch(one,/<svg/);
  const bar=parts([{label:'通过',value:3,className:'fill-pass'},{label:'未知',value:0,className:'fill-unknown'}],'合成分布').text;
@@ -25,6 +38,22 @@ test('a single comparison is a Stat; composition and temporal spans retain a ful
  assert.match(bar,/class="ch-parts"/);assert.match(text(bar.slice(bar.indexOf('<table'))),/通过3未知0/);assert.doesNotMatch(bar,/NaN|Infinity|donut/);
  const start=Date.parse('2026-11-01T10:00:00Z');const span=timeline('合成执行',[{label:'合成长步骤',detail:'原始说明 <raw>',start,end:start+1200}]).text;
  assert.ok(span.includes('2026-11-01T10:00:00.000Z'));assert.ok(span.includes('2026-11-01T10:00:01.200Z'));assert.match(text(span),/原始说明 <raw>/);assert.match(span,/<td class="num">1,200<\/td>/);
+});
+
+test('timeline event points disclose an instant and unrecorded duration while measured zero remains zero',()=>{
+ const start=Date.parse('2026-11-01T10:00:00Z');const markup=timeline('合成事件',[
+  {label:'合成检查 <raw>',detail:'原始说明 <script>',start,end:start,point:true},
+  {label:'实测零时长',start,end:start},
+  {label:'实测调用',start,end:start+8},
+ ]).text;
+ const rows=[...markup.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(match=>text(match[1]));
+ assert.ok(rows.some(row=>row.includes('合成检查 <raw>')&&row.includes('记录时间点')&&row.endsWith('未记录')),JSON.stringify(rows));
+ assert.ok(rows.some(row=>row.includes('实测零时长')&&row.endsWith('0')),JSON.stringify(rows));
+ assert.ok(rows.some(row=>row.includes('实测调用')&&row.endsWith('8')),JSON.stringify(rows));
+ const eventTip=markup.slice(markup.indexOf('<div data-chart-tip="0"'),markup.indexOf('<div data-chart-tip="1"'));
+ assert.match(text(eventTip),/2026-11-01T10:00:00\.000Z记录于/);assert.match(text(eventTip),/耗时未记录/);assert.doesNotMatch(text(eventTip),/0 秒/);
+ assert.match(markup,/aria-label="合成检查 &lt;raw&gt;；原始说明 &lt;script&gt;；记录时间点；耗时未记录"/);
+ assert.doesNotMatch(markup,/<script>/);assert.match(markup,/<circle class="dot"/);assert.match(markup,/<b>0 毫秒<\/b>/);assert.match(markup,/<b>8 毫秒<\/b>/);
 });
 
 test('a curve breaks where nothing was read: no value is invented, the gap is named and the read-out says 未知',()=>{
@@ -39,10 +68,17 @@ test('a curve breaks where nothing was read: no value is invented, the gap is na
  const zero=curve({...base,series:[{label:'合成值',values:[0,0,0,0,0,0]}]}).text;
  assert.doesNotMatch(zero,/gapband/,'0 is a reading, not a gap');assert.match(zero,/<b>0 个<\/b>/);
  const none=curve({...base,series:[{label:'合成值',values:[null,null,null,null,null,null]}]}).text;
- assert.match(none,/class="gapband"/);assert.doesNotMatch(none,/class="line/);assert.doesNotMatch(none,/class="dot/);
+ assert.match(text(none),/此时段暂无可用样本.*观测值未知/);assert.doesNotMatch(none,/<svg/);assert.doesNotMatch(none,/class="line/);assert.doesNotMatch(none,/class="dot/);
  const two=curve({...base,series:[{label:'运行中',className:'s1',values:[1,null,3,4,5,6]},{label:'排队',className:'s2',values:[1,null,null,null,null,null]}]}).text;
  assert.match(two,/class="ch-legend is-line"/);assert.match(two,/class="line s2"/);assert.doesNotMatch(two,/class="wash/,'an area only under a single line');
  assert.equal([...two.matchAll(/class="gapband"/g)].length,1,'a gap is where no series has a value');
+});
+
+test('an entirely missing sampled curve has no numeric scale but retains unknown table values and event instants',()=>{
+ const base:Curve={title:'合成缺测',labels:['昨日','今日'],series:[{label:'合成延迟',values:[null,null]}],max:100,ticks:[0,50,100],tick:String,value:value=>value+' 毫秒',xLabels:[[0,'昨日'],[1,'今日']],marks:[{index:1,label:'合成重启'}],table:{head:['时间','延迟（毫秒）'],rows:[['昨日','未知'],['今日','未知']]}};
+ const missing=curve(base).text;assert.match(text(missing),/此时段暂无可用样本/);assert.match(text(missing),/观测值未知/);assert.doesNotMatch(missing,/<svg|class="tick"/);assert.match(text(missing),/合成重启.*今日/);assert.match(text(missing.slice(missing.indexOf('<table'))),/昨日未知今日未知/);
+ const measured=curve({...base,series:[{label:'合成延迟',values:[0,0]}]}).text;assert.match(measured,/<svg/);assert.doesNotMatch(text(measured),/暂无可用样本/);assert.match(measured,/<b>0 毫秒<\/b>/);
+ const report=curve({...base,points:[{index:1,value:70,label:'合成报告70'}]}).text;assert.match(report,/class="dot pin"/);assert.match(text(report),/合成报告70/);assert.doesNotMatch(text(report),/此时段暂无可用样本/);
 });
 
 test('a curve groups its read-outs, draws its marks and a known value off the line, and keeps its table',()=>{

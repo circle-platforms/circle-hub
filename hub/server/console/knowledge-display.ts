@@ -7,10 +7,18 @@ import {badge as chip,tooltip} from './presentation.ts';
 
 const knowledgeTones={verified:'pass',unverified:'plain',withdrawn:'fail',superseded:'incomplete'} satisfies Record<KnowledgeEntryStatus,Tone|'plain'>;
 const memoryTones={enabled:'pass',disabled:'plain',superseded:'incomplete'} satisfies Record<MemoryStatus,Tone|'plain'>;
-export const knowledgeState=(state:KnowledgeEntryStatus)=>chip(uiLabelOf('knowledge_entry_status',state),knowledgeTones[state]);
+/** What the verified status covers, beside the status itself: the quotation and path were checked verbatim; the statement is not thereby a fact (issue 227). */
+export const VERIFIED_SCOPE='已逐字核对来源引文与路径，不代表陈述已获事实确认。';
+export const knowledgeState=(state:KnowledgeEntryStatus)=>{
+ const status=chip(uiLabelOf('knowledge_entry_status',state),knowledgeTones[state]);
+ return state==='verified'?tooltip(status,VERIFIED_SCOPE):status;
+};
 export const memoryState=(state:MemoryStatus)=>chip(uiLabelOf('memory_status',state),memoryTones[state]);
 export const number=(value:number):Html=>html`<span class="num nowrap">${count(value)}</span>`;
-export {size} from './format.ts';
+import {size} from './format.ts';
+export {size};
+/** A byte count in the console's one unit style (1024-based B, KB, MB, …) with the exact count in the tooltip (issue 244). */
+export const exactSize=(bytes:number):Html=>html`<span class="nowrap" title="${count(bytes)} 字节">${size(bytes)}</span>`;
 export {time as timestamp} from './format.ts';
 export const minute=(iso:string|null|undefined)=>fullTime(iso).slice(0,16);
 export const versionName=(at:string,reason?:string,ordinal?:number)=>'版本'+(ordinal===undefined?'':' '+count(ordinal))+' · '+relativeTime(at)+(reason?' · '+reason:'');
