@@ -296,6 +296,20 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
 
+### 3.11.1: the auditor's rules and the long literals' lengths are in the brief; a tool merges the verdicts
+
+Three things the first real audit showed (run 19). The session under audit typed the auditor's rules into each task description:
+verbatim the first time, paraphrased the second, and by the third with sentences that named the verdict ("…判 preserved"); the
+reference engine's auditor has fixed instructions the authoring side cannot touch. The rules are now part of the brief (and so of
+its digest), and the task description is one fixed sentence that names the brief files. An auditor counted an expanded
+253-character name as 249 and returned a false "changed"; the brief now states the measured length of every literal of 32
+characters or more (`literal_lengths`, with the length of each dotted label). The model merged seventeen verdicts into the case
+files by hand and one reached the Hub with the verdict of an earlier plan; `tools/fidelity-apply.ts` merges a verdict only when the
+brief it answered is still the plan's, writes the digest itself and says before submitting what the Hub would send back.
+`tools/fidelity-brief.ts` keeps one brief directory across repairs and lists only the briefs to audit: a brief and its verdict carry
+the first eight digits of the brief's digest in their names, so an unchanged plan keeps its verdict, a changed plan gets a new brief
+file, and nothing is overwritten or renamed. The Hub's check is unchanged apart from the brief's content.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

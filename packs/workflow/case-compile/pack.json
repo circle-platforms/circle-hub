@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.11.0",
+  "version": "3.11.1",
   "kind": "workflow",
   "dependencies": [
     {
@@ -188,8 +188,8 @@
     },
     {
       "path": "functions/fidelity.ts",
-      "sha256": "f972603a206806a998777ebbd17f16b3229926e9d28c9b80ac53abe4099151b0",
-      "size": 12077
+      "sha256": "6ca5a0569152d62e96376a34a814488699fb12e72c593fd630ff4493d407013a",
+      "size": 16407
     },
     {
       "path": "functions/generate.ts",
@@ -428,7 +428,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "408a5ff34c4940b0b9d433b02720e1b267853eeb1bcf2e675341f18f85f64745",
+      "sha256": "f1209551785c72f0d5878c88f2cdae8534002576fa0db98fecaa0be6a197103f",
       "size": 202654
     },
     {
@@ -448,7 +448,7 @@
     },
     {
       "path": "samples/negative/typed-scenario_fidelity.json",
-      "sha256": "d5b4d3270415caa00ab7ee11d7b2f4803536730e0bfabc5fbbbd145d1bc93658",
+      "sha256": "dcdf4f7325c64a7a6392e64cb747c677eb445174499c0a31288719f20a2f86bb",
       "size": 31171
     },
     {
@@ -473,7 +473,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "7d85737221939dd3e683e6cf6a335ca3286545c9e5ebc3f6dff8098ef721abbf",
+      "sha256": "98264b756aa608d3addecba8895805e20888abe11cc4fc9dc91671322251140d",
       "size": 202658
     },
     {
@@ -548,7 +548,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "aa381502bf7d2336a42e7399ae2446a8957d338208fbafb60b010a37f450b9e6",
+      "sha256": "a42a28d13225526cdd071734004818a17d08b83c39e0d4e27287f799cebf817b",
       "size": 202608
     },
     {
@@ -568,7 +568,7 @@
     },
     {
       "path": "samples/positive/typed-scenario_fidelity.json",
-      "sha256": "3d291e115a7f6e22c796b3c2a2cf4a798695e91aa2754c135bd1b76d7083b2e6",
+      "sha256": "00bdcf5e79dace339a92b946d5a555115cceacd7f2238ec7dfac2d2f6c3989fe",
       "size": 31127
     },
     {
@@ -593,7 +593,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "62173eedaf725060947834a07a69d4237a3789ef22115b2774387a82f6ef700f",
+      "sha256": "5469e3b212487664e0e9a27ad66bdc2932e289d121bafe1be682790cdd625b9f",
       "size": 202612
     },
     {
@@ -688,7 +688,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "6dcdc704514bf07cc3675d027f798ea7fe500c25d0f831bf0f1e46976ccce8f7",
+      "sha256": "d9a7f681dca6d79162c0189a85fe11f60655a34c5e5fc907609c417bf7308fcb",
       "size": 406
     },
     {
@@ -717,14 +717,19 @@
       "size": 5343
     },
     {
+      "path": "tools/fidelity-apply.ts",
+      "sha256": "cef26f0faacb642c9c05d93dafc00137d70c2d6392bb1c9eb8fb1485ef972598",
+      "size": 4905
+    },
+    {
       "path": "tools/fidelity-brief.ts",
-      "sha256": "49dc28057b0c4fb7eab4f7d0437d6df7b43a024ddd0fbd1748ff9bf39e769e84",
-      "size": 3905
+      "sha256": "069352cb54547e6fb784c4fd8a91fed8fa88563b108620ac5b2a2d3d0ad31cbd",
+      "size": 5370
     },
     {
       "path": "tools/fidelity.md",
-      "sha256": "651456608c68113a03b6199c0198cabf0fcd7df8c8bcb37c4a016ed424f852aa",
-      "size": 3677
+      "sha256": "c7bcf193a242e7b3c663d14b5f3c77d8a78a9f70a9119a2fa51145782bf3b463",
+      "size": 2538
     },
     {
       "path": "tools/generate-workbook.ts",

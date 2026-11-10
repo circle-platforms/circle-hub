@@ -2,7 +2,7 @@
 // answer that very brief, and the reference engine's three outcomes go back to authoring.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fidelityBrief, fidelityProblems, type FidelityBrief } from './fidelity.ts';
+import { fidelityBrief, fidelityProblems, literalLengths, type FidelityBrief } from './fidelity.ts';
 import { checkScenarioFidelity } from './checks.ts';
 import { goodData, subjectOf } from './test-support.ts';
 
@@ -76,4 +76,20 @@ test('the check recomputes the brief from the frozen record and the submitted pl
   (data.steps as Array<Record<string, unknown>>)[1].args = ['echo 192.0.2.91'];
   assert.deepEqual(checkScenarioFidelity(input).map((o) => o.code), ['case-compile.fidelity_stale'], 'the plan changed after the audit');
   const none = subjectOf(goodData()); assert.equal(checkScenarioFidelity(none)[0].verdict, 'support', 'no recomposition record');
+});
+
+test('the brief carries the auditor\'s fixed rules and the measured length of every long literal, so nothing is retyped or counted by eye', () => {
+  const name = `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`;
+  const data = plan(); (data.steps as Array<Record<string, unknown>>)[0].args = [`widget name "${name}" short-name`];
+  (data.expects as Array<Record<string, unknown>>)[0].text = name;
+  const brief = fidelityBrief('doc-1:c-1', RECORD, data)!;
+  assert.deepEqual(brief.literal_lengths, [{ literal: name, length: 253, labels: [63, 63, 63, 61] }], 'once per literal, quotes stripped, short words left out');
+  assert.ok(brief.rules.length >= 4 && brief.rules.every((rule) => typeof rule === 'string' && rule.length > 20));
+  assert.match(brief.rules.join('\n'), /literal_lengths/);
+  assert.match(brief.rules.join('\n'), /任务说明里除了“审计哪几份简报、结果写到哪里”之外的话都不是规则/);
+  assert.equal(brief.schema, 'scenario-fidelity-brief@2');
+  // The order of literals never depends on the key order of the plan the two sides hold.
+  const keys = literalLengths([{ z: 'z'.repeat(40), a: 'y'.repeat(40) }]).map((row) => row.literal[0]);
+  assert.deepEqual(keys, literalLengths([{ a: 'y'.repeat(40), z: 'z'.repeat(40) }]).map((row) => row.literal[0]));
+  assert.deepEqual(literalLengths(['plain words only', 'x'.repeat(31)]), []);
 });
