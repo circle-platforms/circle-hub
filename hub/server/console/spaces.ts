@@ -63,7 +63,7 @@ ${field('适用条件（可选 JSON）', html `<textarea name="applicability" ro
 </div></details>
 ${ground(0)}
 <details data-editor-sources data-wide-field${grounds.length>1?html` open`:''}><summary>更多来源与逐字引文</summary><div data-fields>${Array.from({length:Math.min(100,Math.max(3,grounds.length+1))-1},(_,i)=>ground(i+1))}</div></details>
-${field('修改原因', html `<input name="reason" maxlength="1000" value="${draft ? '修订知识条目' : space === 'team' ? '团队知识导入' : '我的条目写入'}" required>`)}
+${draft ? field('修改原因', html `<input name="reason" maxlength="1000" value="修订知识条目" required>`) : html`<input type="hidden" name="reason" value="${space === 'team' ? '团队知识导入' : '我的条目写入'}">`}
 `, draft ? '保存修改' : space === 'team' ? '导入条目' : '保存条目',false,false,back))}</section>`;
 }
 export async function spacePage(ctx: PageContext): Promise<PageResult> {

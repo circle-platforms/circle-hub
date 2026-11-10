@@ -316,7 +316,8 @@ describe('operations and commands', () => {
     const direct=await server.records.principals.issueToken(server.admin.principal,user.user.id,'合成 Linux Circle');
     const admin=await signIn(server.admin.token), memberSession=await signIn(user.token);
     for(const path of ['/console/team',`/console/team/${user.user.id}`,'/console/connections']) {
-      const reply=await get(path==='/console/connections'?path+'?tab=clients':path,admin);
+      // The clients are a tab of the team page and of the connections page; a member's own page lists that member's clients in its pane.
+      const reply=await get(path===`/console/team/${user.user.id}`?path:path+'?tab=clients',admin);
       const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
       assert.match(tables,/<th scope="col">客户端<\/th>[\s\S]*<th scope="col">连接方式<\/th>/);
       assert.match(tables,/合成 MacBook Circle/);
@@ -339,6 +340,14 @@ describe('operations and commands', () => {
     assert.ok(team.body.indexOf('href="/console/team"')<team.body.indexOf('href="/console/settings"'));
     assert.match(team.body,/第一个账户是管理员/);
     assert.match(team.body,/添加成员/);
+    // Decision 151, step 7: the team page is two tabs, the members and the clients they connected, one list each.
+    const teamTabs=(body:string)=>[...(/<nav class="ch-seg" aria-label="团队内容" data-team-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]);
+    assert.deepEqual(teamTabs(team.body),[['/console/team',true,'成员'],['/console/team?tab=clients',false,'已连接的客户端']]);
+    assert.match(team.body,/ id="live-members"/);assert.doesNotMatch(team.body,/ id="live-member-circles"/);
+    assert.match(team.body,/<th scope="col">可用的工作流<\/th><th scope="col">客户端<\/th>/,'a row counts the member\'s workflows and clients');
+    const teamClients=await get('/console/team?tab=clients',admin);
+    assert.deepEqual(teamTabs(teamClients.body).map(row=>row[1]),[false,true]);
+    assert.match(teamClients.body,/ id="live-member-circles"/);assert.doesNotMatch(teamClients.body,/ id="live-members"/);
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
     // Decision 151, step 8: 凭据 and Hub 状态 are two addresses, no longer two anchors of one page with the first always marked.
