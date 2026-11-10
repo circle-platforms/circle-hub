@@ -417,6 +417,26 @@ Both come from run 20 and follow the reference engine's timing and words.
   reported only when there is none. It said only that the product pack's author has to declare the inverse, and two cases
   stopped there, one of them on a command the model had put in place of the author's.
 
+### 3.12.4: a command the author named stays in the plan, even when the author wrote no arguments
+
+"可以改参数，不可以删命令" counted only author lines that parse as a whole command of the locked tree. An author's line that is
+a bare command, or a command followed by a description, parsed as nothing and left no obligation: in run 20 a case's author
+wrote a two-word command with no arguments, the plan sent a neighbouring command of the same family in its place, the audit
+model judged the step preserved, and the case closed on a missing fact that only the replacement lacked. The reference engine
+reads the author's procedure on command heads (`mechanical_case_gate.py`, `author_procedure_coverage`): its resolver answers on
+the longest command head whatever the arguments, and an occurrence whose first argument is a description is counted on the head
+alone ("adaptation may rewrite a command's arguments, never remove the command").
+
+`namedCommand` (`functions/command-obligations.ts`) finds, for an author's line that is no whole command, the longest command
+of the locked tree whose words start the line, when nothing follows or what follows is not ASCII. The plan owes that many
+commands of the same path beyond the occurrences the author wrote out in full; a command of another path does not serve.
+Two differences from the reference engine, both on the lenient side: a bare head is counted on the command alone (the
+reference engine holds it to an occurrence written out in the adapted steps), and an occurrence with a literal first argument
+that does not parse as a whole stays uncounted (the reference engine also compares that argument). The Hub's catalog selection
+already reads the author's lines along exact tree edges, so the named command's entry is in the catalog the check receives.
+Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
+refused.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

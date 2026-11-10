@@ -40,6 +40,24 @@ export function authoredAddresses(raw:unknown,sourceTexts:readonly string[]):Set
  for(const text of sourceTexts)for(const line of commandLines(text)){const identity=identityOf(commandIdentity(grammar,line.text));if(!identity)continue;for(const p of identity.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const key=addressKey(String(p.parsed.value.value));if(key)out.add(key);}}
  return out;
 }
+/**
+ * The command a line of the author names without writing its arguments out: the longest command of the locked tree whose words
+ * are the line's leading unquoted tokens, when nothing follows them or what follows is a description, not a CLI literal. The
+ * reference engine reads the author's procedure this way (InfoTest mechanical_case_gate.py author_procedure_coverage: its
+ * resolver answers `hit` on the longest head whatever the arguments, and an occurrence whose first argument is a description is
+ * counted on the head alone, a description being a token that is not ASCII). A bare head is counted the same way here; the
+ * reference engine holds it to an occurrence written out in the adapted steps. An occurrence with a literal first argument that
+ * does not parse as a whole stays uncounted: the reference engine also compares that argument, which this port does not.
+ */
+export function namedCommand(grammar:ReturnType<typeof compileGrammar>,text:string):{path:string;words:string}|null{
+ const tokens=commandTokens(text);if(!tokens?.length)return null;
+ let current=grammar.root,found:{path:string;at:number}|null=null;
+ for(let at=0;at<tokens.length;at++){if(tokens[at].quoted)break;const next=current.children.get(tokens[at].value);if(!next)break;current=next;if(current.path!==null)found={path:current.path,at};}
+ if(!found)return null;
+ const first=tokens[found.at+1];
+ if(first!==undefined&&[...first.value].every(c=>c.charCodeAt(0)<128))return null;
+ return {path:found.path,words:tokens.slice(0,found.at+1).map(token=>token.value).join(' ')};
+}
 export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[],runner?:RunnerCleanup,covered?:RunnerCovered[]):AuthorityGap[]{
  if(!operations.length&&!sourceTexts.length&&!slots.steps.some(step=>step.restore_for!==undefined))return [];
  const policy=readCommandPolicy(isRecord(raw)?raw.policy:undefined);
@@ -53,9 +71,24 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  // Cleanup is an explicit suffix, including host/wait steps; it cannot hide an execution operation after cleanup.
  let inCleanup=false;slots.steps.forEach((step,index)=>{if(step.cleanup===true)inCleanup=true;else if(inCleanup)note('/steps/'+index,'清理段必须是末尾连续步骤，执行步骤不能放在清理段之后');});
  const authored=new Map<string,{identity:CommandIdentity;count:number}>(),planned=new Map<string,number>();
- for(const text of sourceTexts)for(const line of commandLines(text)){const identity=identityOf(commandIdentity(grammar,line.text));if(identity){const key=definitionKey(identity),row=authored.get(key)??{identity,count:0};row.count++;authored.set(key,row);}}
+ const named=new Map<string,{words:string;count:number}>();
+ for(const text of sourceTexts)for(const line of commandLines(text)){
+  const identity=identityOf(commandIdentity(grammar,line.text));
+  if(identity){const key=definitionKey(identity),row=authored.get(key)??{identity,count:0};row.count++;authored.set(key,row);continue;}
+  const head=namedCommand(grammar,line.text);
+  if(head){const row=named.get(head.path)??{words:head.words,count:0};row.count++;named.set(head.path,row);}
+ }
  for(const operation of main){const key=definitionKey(operation.identity!);planned.set(key,(planned.get(key)??0)+1);}
  for(const [key,row]of authored){const actual=planned.get(key)??0;if(actual<row.count)note('/steps',`可以改参数，不可以删命令：${row.identity.path} 作者 ${row.count} 次、计划 ${actual} 次，尚缺 ${row.count-actual} 次`,'refute',{identity:{tree_root:row.identity.tree_root,path:row.identity.path,signature:row.identity.signature},required_count:row.count,planned_count:actual,missing_count:row.count-actual});}
+ // A command the author named without its arguments is owed on the command alone: what the plan sends of that command, beyond
+ // the occurrences the author wrote out in full, must reach the count. Another command of the same family does not serve it
+ // (in run 20 a plan sent a neighbouring command in place of the one the author named, and nothing refused it).
+ for(const [path,row]of named){
+  const sent=main.filter(operation=>operation.identity!.path===path).length;
+  const owed=[...authored.values()].filter(value=>value.identity.path===path).reduce((sum,value)=>sum+value.count,0);
+  const landed=Math.max(0,sent-owed);
+  if(landed<row.count)note('/steps',`可以改参数，不可以删命令：作者写了命令 ${row.words}（没有写出参数）${row.count} 次，计划里这条命令 ${landed} 次，尚缺 ${row.count-landed} 次；换成别的命令不算`,'refute',{identity:{tree_root:raw.root,path},required_count:row.count,planned_count:landed,missing_count:row.count-landed});
+ }
  if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明 command-policy@1 后重新育苗并核验','unknown');return gaps;}
  const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
  const selected=[...new Set([...operations.map(operation=>operation.line),...sourceTexts.flatMap(text=>commandLines(text).map(line=>line.text))])];
