@@ -66,6 +66,9 @@ const SHELL_CSS = `
 /* Bare fields retained by read-only comparison forms use the same Input tokens. */
 :where([data-area-content] form input:not([type=hidden]):not([type=checkbox]):not([type=radio]),[data-area-content] form select,[data-area-content] form textarea):not(.ch-input *) { border:1px solid var(--line-control);border-radius:var(--radius-md);background:var(--surface-sunken);color:var(--text-primary);padding:6px 10px;min-height:var(--control-height);font:inherit;max-width:100%; }
 .ch-dialog .ch-quote { user-select:all; }
+.ch-dialog-panel { overflow:hidden; }
+.ch-dialog-head,.ch-dialog-foot { flex-shrink:0; }
+.ch-dialog-body { min-height:0; overflow-y:auto; overscroll-behavior-y:contain; flex:1 1 auto; }
 .ch-feed li { min-width:0;overflow-wrap:anywhere; }
 .ch-feed time { white-space:nowrap; }
 @media(max-width:1180px){[data-columns="3"],[data-columns="4"]{grid-template-columns:repeat(2,minmax(0,1fr));}}
