@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.12.2",
+  "version": "3.12.3",
   "kind": "workflow",
   "dependencies": [
     {
@@ -168,8 +168,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "f1222a0f20228230a4b2e496780a63ad8f012a55ac3d0231d49228dbd4ee53af",
-      "size": 19807
+      "sha256": "0456d821e6057ec2720e52e7cc4174686dcea0075c48d522f4f4134a1af59de5",
+      "size": 19993
     },
     {
       "path": "functions/delivery.ts",
@@ -433,7 +433,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "a72eb4b8b0955c03a41c24f2d2a109a717b1d62ac817d359f10ca86a2adb7b34",
+      "sha256": "a96169d6861ac4f67b8b483b2a9e051e880216129a92db951104fbeac1037bb0",
       "size": 202654
     },
     {
@@ -478,7 +478,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "54f2e7992aad51d97a7b6c45dd0ce2a74dad1659e91cda2d438914a368796d0b",
+      "sha256": "19b354e039b3cdbe5b8dd7975e801a5a34dc34254c1158a652db440b4ff5a38c",
       "size": 202658
     },
     {
@@ -558,7 +558,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "0d6fdf11124400be62eaa7f547fc5ed0e8951e1b4e64204ecae590816d329778",
+      "sha256": "eed971a9fe5188a54bc9097e5c0935443a65765b75f30cd52e397a61df70564b",
       "size": 202608
     },
     {
@@ -603,7 +603,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "2a9bda8a80a6db68e23ddac5dd0c1ce8f915514382b7b86b8e13b7fb0440bad2",
+      "sha256": "aab85c5115ae349ca58f3d967f7510647c29272766bea2a1a9a18ec02aae6d35",
       "size": 202612
     },
     {
@@ -698,7 +698,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "69bc64714b0a7f2a8e2208c0fb54fd3c5e4bee79064845267c0bd5076d7d83aa",
+      "sha256": "d5f852704c5af9933ce2cce0265f098e707ef3ac3090bca9e1744b4d17046ea2",
       "size": 406
     },
     {
@@ -758,8 +758,8 @@
     },
     {
       "path": "tools/submit-plans.ts",
-      "sha256": "a1e7135df2600cbf99f136ba588f5c9e22aba8bb6a0a2365aea5285f9f903cea",
-      "size": 6687
+      "sha256": "575909030a76bcfd016b3cff9ffcfdfe34c8520d81694efca70f49432ad46c89",
+      "size": 8267
     },
     {
       "path": "workflow.json",

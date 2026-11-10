@@ -20,6 +20,9 @@ test('an inverse path the locked tree lacks is unknown and names the product aut
  assert.equal(row.verdict,'unknown');
  assert.match(row.statement,/\/commands\/no\/demo\/pool\/add/);
  assert.match(row.statement,/产品包作者/);
+ // The reference engine's two ways out (mechanical_case_gate.py missing_teardown): an equivalent construction with an
+ // object-scoped teardown first, the gap reported only when there is none. In run 20 two cases stopped at "wait for the author".
+ assert.match(row.statement,/不猜逆操作，也不改用范围更大的清除；先换一种在锁定树里有逐对象逆操作的等价写法，没有这样的写法才照实报告这个缺口/);
  assert.ok(!rows.some(value=>value.statement.includes('缺同设备、逆序的清理操作')),JSON.stringify(rows));
 });
 

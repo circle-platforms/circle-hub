@@ -64,6 +64,20 @@ test('a skipped case passes through as written', async () => {
   assert.deepEqual(await planItems(await plans({ '01.json': skipped })), [skipped]);
 });
 
+test('a case handed in as skipped is answered with the closing rule after the Hub\'s receipt, as the reference engine answers an exit when it is filed', async () => {
+  const skipped = { item: 'doc:b', handling: 'skipped', reason: '合成理由：环境缺前置' };
+  const stub = await hub(said('回执：已受理；未完成 1（修复轮数用完 1）'));
+  const result = await run(stub.url, await plans({ '01.json': item('doc:a'), '02.json': skipped }));
+  await stub.close();
+  assert.equal(result.code, 0);
+  assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a'), skipped], 'the skip reaches the Hub as written');
+  assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n声明跳过的 1 个条目（doc:b）：声明跳过不是结论。照 InfoTest，说明里写环境缺数据、缺拓扑、缺前置、缺命令，都不能让用例不上机就定结论；回执里这些条目的“修复轮数用完”是 Hub 给声明跳过条目的 plan 要求项的标注，不表示编写过。组交付时没上机的用例只认两种 Hub 记录：.+照用例原样编写这些条目再交\n$/);
+  // No skip, no note.
+  const plain = await hub(said('受理'));
+  assert.doesNotMatch((await run(plain.url, await plans({ '01.json': item('doc:a') }))).out, /声明跳过/);
+  await plain.close();
+});
+
 test('nothing is sent when a file is not an item, two files name one item, or there are no files', async () => {
   for (const [files, message] of [[{ '01.json': { plan: [] } }, /不是一个条目/], [{ '01.json': item('doc:a'), '02.json': item('doc:a') }, /同一个条目/], [{}, /没有 \.json 文件/], [{ '01.json': 'not json' }, /提交失败/]] as const) {
     const stub = await hub(said('受理'));

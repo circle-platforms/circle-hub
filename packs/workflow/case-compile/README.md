@@ -403,6 +403,20 @@ Run 20 delivered twelve cases and showed three places where the closing rules le
   refusal names the case and the line; a notes file that is not valid JSON is named with the place and the text around it
   (it was answered with the shared reader's sentence for a run input, which told the model to export something).
 
+### 3.12.3: two answers given when the model hands something in
+
+Both come from run 20 and follow the reference engine's timing and words.
+
+- `tools/submit-plans.ts` states the closing rule under the Hub's receipt for every case handed in as skipped, as the reference
+  engine answers a case's exit when it is filed ("a free-text claim that the bed lacks data, certificates, topology, or a
+  helper is not a terminal credential. Continue authoring the case as written"). The receipt calls the plan slot of a skipped
+  item "修复轮数用完" with no round used; the model read that as settled and left the case out for the whole run, and the rule
+  reached it only when the delivery was assembled.
+- The message for a configuration command whose inverse is not in the locked tree carries the reference engine's two ways out
+  (`mechanical_case_gate.py`, `missing_teardown`): an equivalent construction with an object-scoped teardown first, the gap
+  reported only when there is none. It said only that the product pack's author has to declare the inverse, and two cases
+  stopped there, one of them on a command the model had put in place of the author's.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

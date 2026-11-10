@@ -1,7 +1,8 @@
 // A whole mind map's plans do not fit in one model message: five cases took 27 KB of tool arguments and a model's output stops
 // near 32k tokens. The model writes one file per case and this tool sends them as the one complete submission a run takes, so a
 // repaired case is rewritten alone and several writers can each own their files. It decides nothing: every file reaches the Hub
-// as written and all checks stay there. The token comes from standard input, as tools/fetch-run.ts reads it. One thing is done
+// as written and all checks stay there. After the answer it states the closing rule for the cases handed in as skipped (see
+// SKIPPED_NOTE). The token comes from standard input, as tools/fetch-run.ts reads it. One thing is done
 // before sending: a literal of a set length written as a placeholder ({{domain:253}}, functions/length-literals.ts) is expanded
 // and the expanded case is written back to its file, so the file is what the Hub receives and the model reads lengths, not counts.
 //   node <skill directory>/tools/submit-plans.ts --hub %HUB_URL% --run <run id> --model <model> --plans <directory> <<'EOF'
@@ -18,6 +19,15 @@ import { isRecord } from '../functions/text.ts';
 export const planItems = itemFiles;
 
 const SHOWN_CHARS = 12_000;
+
+/**
+ * What a declared skip is worth at the delivery, said when the skip is handed in. The reference engine answers a case's exit when
+ * it is filed (tools/device/verifiability_tool.py: "a free-text claim that the bed lacks data, certificates, topology, or a helper
+ * is not a terminal credential. Continue authoring the case as written"), not at the end. Here the rule was only applied by
+ * tools/assemble-delivery.ts, and the Hub's receipt calls the plan slot of a skipped item "修复轮数用完" although no round was
+ * used: in run 20 a case was declared skipped in the first submission, read as settled, and left out for seven hours.
+ */
+export const SKIPPED_NOTE = (items: string[]): string => `声明跳过的 ${items.length} 个条目（${items.join('、')}）：声明跳过不是结论。照 InfoTest，说明里写环境缺数据、缺拓扑、缺前置、缺命令，都不能让用例不上机就定结论；回执里这些条目的“修复轮数用完”是 Hub 给声明跳过条目的 plan 要求项的标注，不表示编写过。组交付时没上机的用例只认两种 Hub 记录：它的计划交上去后被记下数据缺口并点名补证请求，或者交过编写出来的计划、修正轮数真的用完仍没有受理。照用例原样编写这些条目再交\n`;
 
 /**
  * One case file read strictly, with a refusal that names the file, the place and the text around it. The shared reader only said
@@ -83,6 +93,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     await writeNew(path, Buffer.from(text));
     const clipped = text.length > SHOWN_CHARS;
     process.stdout.write(`${items.length} 个条目已提交\n${text.slice(0, SHOWN_CHARS)}\n${clipped ? `Hub 答复共 ${text.length} 字符，全文在 ${path}，用 read_file 分段读完\n` : `全文在 ${path}\n`}`);
+    const skipped = items.filter((item) => item.handling === 'skipped').map((item) => String(item.item));
+    if (skipped.length) process.stdout.write(SKIPPED_NOTE(skipped));
     return failed ? 1 : 0;
   } catch (error) { process.stderr.write(`提交失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
