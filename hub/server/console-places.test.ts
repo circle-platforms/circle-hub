@@ -414,8 +414,8 @@ test('the overview uses a Stat and thin parts bar with labelled counts instead o
  assert.match(overview.body,/检查项结果/);assert.match(overview.body,/class="ch-stat-value"/);assert.match(overview.body,/class="ch-parts"/);assert.doesNotMatch(overview.body,/donut|donut-hold/);
  for(const area of ['overview','runs','connections','records','team','settings']){
   const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.doesNotMatch(page.body,/当前页面|当前账号/);
-  // The summary pane that repeats the page is removed place by place (decision 151): the overview and the task list have none.
-  if(area==='overview'||area==='runs')assert.doesNotMatch(page.body,/aria-label="概况"/);else assert.match(page.body,/aria-label="概况"/);
+  // Decision 151: no place repeats itself in a summary pane; a pane opens only for a selected thing.
+  assert.doesNotMatch(page.body,/aria-label="概况"|<aside class="ch-inspector"/,area);
  }
 });
 

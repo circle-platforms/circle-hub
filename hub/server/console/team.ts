@@ -38,7 +38,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  const selectedDevice=circleId?devices.find(device=>device.id===circleId):undefined;
  if(circleId&&!selectedDevice)return neutralPage(ctx);
  const dialogs:CommandDialog[]=[];
- let inspector:Html,confirmations=html``;
+ let inspector:Html,confirmations=html``,capacityLine=html``;
  if(selectedDevice){
   const revoke=commands.tokenRevoke(selectedDevice.token,selectedDevice.owner);
   if(ctx.admin)dialogs.push(revoke);
@@ -67,10 +67,13 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  }else{
   const usage=ctx.admin&&spaces?await spaces.usage(ctx.principal,'team'):null;
   if(usage)confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,'team',usage)}`;
-  inspector=html`<h2 class="ch-panel-title">团队</h2>${stat(ctx.admin?'成员':'当前可见成员',users.length)}${stat('已启用',users.filter(user=>!user.disabled).length)}${stat('已连接的客户端',devices.length)}${usage?html`${card({title:'团队空间容量'},capacitySummary(usage))}<footer class="ch-inspector-actions">${actionLink('#adjust-team-capacity','调整容量…')}</footer>`:''}`;
+  // Decision 151: with nothing selected there is no pane. The member and client counts are the heads of the two lists; the
+  // team's capacity, the one fact only the pane had, stands above them. Its action is the page's 团队容量… button.
+  if(usage)capacityLine=html`<p class="ch-meta" data-team-capacity>团队空间容量 ${capacitySummary(usage)}</p>`;
+  inspector=html``;
  }
  const selected=!!selectedUser||!!selectedDevice||capacitySelected;
- return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin&&spaces?button('/console/team','团队容量…',{params:{capacity:'team'}}):''}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`
+ return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin&&spaces?button('/console/team','团队容量…',{params:{capacity:'team'}}):''}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`${capacityLine}
  ${liveModule('members',['member.connected'],card({title:'成员',meta:users.length},table(['名字','角色','状态','可用的工作流'],members,'没有可读的成员',undefined,{selected:selectedDevice?-1:users.findIndex(user=>user.id===member),hrefs:users.map(user=>'/console/team/'+user.id)})))}
- ${liveModule('member-circles',['member.connected'],card({title:'已连接的客户端'},table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))})))}`,{inspector:liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`),detail:selected,back:link('/console/team','返回团队')}))};
+ ${liveModule('member-circles',['member.connected'],card({title:'已连接的客户端'},table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))})))}${selected?'':html`${confirmations}${dialogs.map(commandModal)}`}`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回团队')}))};
 }
