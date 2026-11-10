@@ -17,8 +17,8 @@ const text = (node: Node): string => 'value' in node ? node.value : 'childNodes'
 const member = { name: '合成成员', role: '成员', admin: false };
 const bodyOf = (source: string) => elements(parse(source), 'body')[0];
 
-test('all eight areas use one three-column shell, the ordered navigation and a footer theme selector', () => {
-  const areas: NavKey[] = ['overview', 'tasks', 'knowledge', 'packs', 'connections', 'records', 'team', 'settings'];
+test('all nine member areas use one three-column shell, the ordered navigation and a footer theme selector', () => {
+  const areas: NavKey[] = ['overview', 'tasks', 'knowledge', 'packs', 'skills', 'connections', 'team', 'records', 'settings'];
   for (const active of areas) {
     const source = page({ title: '合成页面', active, user: member, csrf: 'synthetic-csrf', actions: html`${button('/secondary', '查看')}${button('/primary', '新建', { primary: true })}` }, pageLayout(html`<p>合成内容</p>`, { inspector: html`<h2 class="ch-panel-title">合成概况</h2><p>知识 3 条</p>` })).text;
     const body = bodyOf(source), all = elements(body);
@@ -27,11 +27,16 @@ test('all eight areas use one three-column shell, the ordered navigation and a f
     assert.equal(elements(shell).filter((el) => has(el, 'ch-pane')).length, 1);
     assert.equal(elements(shell).filter((el) => has(el, 'ch-inspector')).length, 1);
     const nav = all.filter((el) => has(el, 'ch-nav-item'));
-    assert.deepEqual(nav.map(text), ['总览', '任务', '知识库', '工作流', '连接', '记录', '团队', '设置']);
+    assert.deepEqual(nav.map(text), ['总览', '任务', '知识库', '工作流', '技能', '连接', '团队', '记录', '设置']);
+    // Decision 151: four groups, a line before the first place of each later group.
+    assert.deepEqual(all.filter((el) => has(el, 'ch-nav-sep')).length, 3);
+    assert.match(source, /<hr class="ch-nav-sep"><a class="ch-nav-item[^"]*" href="\/console\/runs"/);
+    assert.match(source, /<hr class="ch-nav-sep"><a class="ch-nav-item[^"]*" href="\/console\/connections"/);
+    assert.match(source, /<hr class="ch-nav-sep"><a class="ch-nav-item[^"]*" href="\/console\/settings"/);
     assert.equal(nav.filter((el) => attr(el, 'aria-current') === 'page').length, 1);
     assert.equal(nav[areas.indexOf(active)].attrs.some((a) => a.name === 'aria-current'), true);
     assert.equal((attr(shell, 'class') ?? '').includes('area-knowledge'), active === 'knowledge');
-    assert.equal((attr(shell, 'class') ?? '').includes('area-workflow'), active === 'packs');
+    assert.equal((attr(shell, 'class') ?? '').includes('area-workflow'), active === 'packs' || active === 'skills', 'workflows and skills share one area colour');
     assert.equal((attr(shell, 'class') ?? '').includes('area-task'), active === 'tasks');
     const foot = all.find((el) => has(el, 'ch-nav-foot'))!;
     assert.match(text(foot), /合成成员.*成员/s);
@@ -48,13 +53,13 @@ test('all eight areas use one three-column shell, the ordered navigation and a f
   }
 });
 
-test('运行状况 is the ninth place, listed for administrators only', () => {
+test('运行状况 is the tenth place, listed for administrators only', () => {
   const admin = { name: '合成管理员', role: '管理员', admin: true };
   const nav = (user: typeof admin, active: NavKey) => elements(bodyOf(page({ title: '合成页面', active, user, csrf: 'synthetic-csrf' }, html`<p>合成内容</p>`).text)).filter((el) => has(el, 'ch-nav-item'));
   const places = nav(admin, 'health');
-  assert.deepEqual(places.map(text), ['总览', '任务', '知识库', '工作流', '连接', '记录', '团队', '设置', '运行状况']);
-  assert.equal(attr(places[8], 'href'), '/console/health');
-  assert.equal(attr(places[8], 'aria-current'), 'page');
+  assert.deepEqual(places.map(text), ['总览', '任务', '知识库', '工作流', '技能', '连接', '团队', '记录', '设置', '运行状况']);
+  assert.equal(attr(places[9], 'href'), '/console/health');
+  assert.equal(attr(places[9], 'aria-current'), 'page');
   assert.ok(!nav(member, 'settings').map(text).includes('运行状况'));
 });
 

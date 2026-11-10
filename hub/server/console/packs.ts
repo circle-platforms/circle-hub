@@ -1,4 +1,4 @@
-import {packPurpose} from './pack-display.ts';
+import {packPurpose,packPath,PACK_PLACES,type PlaceKind} from './pack-display.ts';
 import {memoReadPort} from '../../records/api.ts';
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
@@ -6,7 +6,7 @@ import {personalPackControls} from './personal-packs.ts';
 // it), and one pack's requirements, checks, versions and permissions. Publishing runs in the console (the publish
 // operation); changing who may use or maintain a pack, retiring a version and switching a product pack are commands for the
 // administrator's Circle (proposal decision 6 of 2026-10-31).
-import { PACK_KIND, axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { axisUiLabel, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
@@ -53,34 +53,35 @@ async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   return eligible.map(user=>user.name).join('、');
 }
 
-export async function packsPage(ctx: PageContext): Promise<PageResult> {
-  const listings=await ctx.deps.packs.list(ctx.principal),scope=selectedScope(ctx);
+/** The list of one place: workflows, or skills (decision 151). Each place lists only its own kind. */
+export async function packsPage(ctx: PageContext, kind: PlaceKind = 'workflow'): Promise<PageResult> {
+  const listings=await ctx.deps.packs.list(ctx.principal),scope=selectedScope(ctx),place=PACK_PLACES[kind],noun=uiLabelOf('pack_kind',kind);
   const canPublish=await ctx.deps.records.authorizations.canPublish(ctx.principal.id);
-  const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope)),listings);
-  return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'workflow'), {
-    active: 'packs', hint: '工作流用于完成有验收要求的任务，通用技能用于指导客户端做法；这里只列出当前账户可用的内容',
-    actions:html`${button('/console/packs/-/publish','发布我的工作流或通用技能',{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload'}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的工作流分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
+  const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope,undefined,kind)),listings,kind);
+  return { status: 200, body: page(ctx.chrome(place.title, {
+    active: place.active, hint: packPurpose(kind)+'这里只列出当前账户可用的内容。',
+    actions:html`${button('/console/packs/-/publish',`发布我的${noun}`,{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
 
 export const PACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
-async function packList(ctx:PageContext,listings:readonly PackListing[],scope:KnowledgeSearchScope,selected?:PackListing):Promise<Html>{
+async function packList(ctx:PageContext,listings:readonly PackListing[],scope:KnowledgeSearchScope,selected?:PackListing,place:PlaceKind='workflow'):Promise<Html>{
   const groups=byId(listings.filter(pack=>inScope(scope,pack.space??'team',ctx.principal.id)));
   const values=KnowledgeSearchScopeSchema.enum,scopes=scope==='all'?[values.personal,values.shared,values.team]:[scope];
-  const kinds=selected&&(selected.kind==='product'||selected.kind==='system')?[selected.kind]:PACK_KIND.filter(kind=>kind==='workflow'||kind==='skill');
+  const kinds=[selected?.kind??place];
   const sections:Html[]=[];
   for(const kind of kinds)for(const group of scopes){
     const rows:Html[]=[];
     for(const versions of groups.values()){
       const pack=shownVersion(versions);
       if(pack.kind!==kind||!inScope(group,pack.space??'team',ctx.principal.id))continue;
-      const state=stateOf(pack),url=href('/console/packs/'+pack.id,{space:pack.space,scope});
+      const state=stateOf(pack),url=href(packPath(pack),{space:pack.space,scope});
       const on=selected!==undefined&&packIdentity(selected)===packIdentity(pack);
       rows.push(html`<li class="ch-row${on?' is-selected':''}"${on?html` aria-current="true"`:''} data-row-href="${url}"><span class="ch-row-mark" aria-hidden="true"></span><div class="ch-row-body"><a class="ch-row-title" href="${url}">${pack.title}</a><div class="ch-row-meta">${chip(state.text,state.tone)}<span>使用范围：${await usageAudience(ctx,pack)}</span>${timestamp(pack.published_at)}</div></div></li>`);
     }
     if(group==='shared'&&!rows.length)continue;
-    sections.push(html`<section class="ch-section" id="${group}-${kind}" aria-label="${uiLabelOf('pack_kind',kind)}">${group===scopes[0]?html`<span id="${kind}" aria-hidden="true"></span>`:''}${card({title:uiLabelOf('knowledge_search_scope',group)+' · '+uiLabelOf('pack_kind',kind),meta:`${rows.length} 个`},html`${group===scopes[0]?html`<p class="ch-meta">${packPurpose(kind)}</p>`:''}${rows.length?html`<ul class="ch-list">${rows}</ul>`:html`<div class="ch-empty"><p class="ch-empty-title">尚无可用的${uiLabelOf('pack_kind',kind)}</p></div>`}`)}</section>`);
+    sections.push(html`<section class="ch-section" id="${group}-${kind}" aria-label="${uiLabelOf('pack_kind',kind)}">${group===scopes[0]?html`<span id="${kind}" aria-hidden="true"></span>`:''}${card({title:uiLabelOf('knowledge_search_scope',group)+' · '+uiLabelOf('pack_kind',kind),meta:`${rows.length} 个`},html`${rows.length?html`<ul class="ch-list">${rows}</ul>`:html`<div class="ch-empty"><p class="ch-empty-title">尚无可用的${uiLabelOf('pack_kind',kind)}</p></div>`}`)}</section>`);
   }
   return html`<div class="ch-section" data-area-content>${sections}</div>`;
 }
@@ -122,7 +123,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   ));
   const versionRows = versions.map((v) => {
     const s = stateOf(v);
-    return [timestamp(v.published_at), chip(s.text, s.tone), technical(kv([['版本',code(v.version)],['内容哈希',code(v.digest)]]),'查看'), Object.values(v.samples).reduce((sum,n)=>sum+n,0), link('/console/packs/'+pack.id,'选择',{space:pack.space,version:v.version,scope:ctx.url.searchParams.get('scope')})];
+    return [timestamp(v.published_at), chip(s.text, s.tone), technical(kv([['版本',code(v.version)],['内容哈希',code(v.digest)]]),'查看'), Object.values(v.samples).reduce((sum,n)=>sum+n,0), link(packPath(pack),'选择',{space:pack.space,version:v.version,scope:ctx.url.searchParams.get('scope')})];
   });
   const assigned = ctx.admin ? await assignedNames(ctx, pack) : null;
   const permissionActions: Html[] = [];
@@ -131,7 +132,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
     if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); permissionActions.push(commandLink(d, pack.active ? '停用产品知识来源' : '启用产品知识来源')); }
     const d = commands.packMaintainer(pack.id); dialogs.push(d); permissionActions.push(commandLink(d, '调整维护人'));
   }
-  const permissions = card({ title: '版本记录',hint:'使用范围、维护人与下架动作在 Hub 所在主机上执行生成的命令。' }, html`${table(['发布时间', '状态', '查看', '样例', '版本'], versionRows,'没有版本记录',undefined,{selected:versions.indexOf(pack),hrefs:versions.map(version=>href('/console/packs/'+pack.id,{space:pack.space,version:version.version,scope:ctx.url.searchParams.get('scope')}))})}
+  const permissions = card({ title: '版本记录',hint:'使用范围、维护人与下架动作在 Hub 所在主机上执行生成的命令。' }, html`${table(['发布时间', '状态', '查看', '样例', '版本'], versionRows,'没有版本记录',undefined,{selected:versions.indexOf(pack),hrefs:versions.map(version=>href(packPath(pack),{space:pack.space,version:version.version,scope:ctx.url.searchParams.get('scope')}))})}
 ${kv([['所有者', await ctx.userName(pack.owner)], ...(assigned === null ? [] : [['使用范围', assigned.length === 0 ? uiLabelOf('audience_scope','team_unassigned') : assigned.join('、')] as const])])}
 ${permissionActions.length === 0 ? '' : html`<div class="ch-actions"><div class="ch-actions">${permissionActions}</div></div>`}`);
   if(ctx.admin&&!pack.space&&!pack.withdrawn)dialogs.push(commands.packRetire(`${pack.id}@${pack.version}`));
@@ -142,11 +143,12 @@ ${loadFailed ? html`<p class="notice">该版本的验收要求与检查项暂不
 ${dialogs.map(commandModal)}<footer class="ch-inspector-actions">${actionLink('#pack-versions','版本记录','ghost')}${personalControls.actions}${ctx.admin&&!pack.space&&!pack.withdrawn?commandLink(commands.packRetire(`${pack.id}@${pack.version}`),'退役…','ch-btn ch-btn--danger'):''}${ctx.admin&&!pack.space?button('/console/operations/pack','发布新版本…',{primary:true,params:{kind:pack.kind}}):''}</footer>`;
   const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',anchor:'product-sources'}
     : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',anchor:'system-sources'}
-    : {active:'packs' as const,title:uiLabelOf('pack_kind','workflow'),path:'/console/packs',anchor:pack.kind};
+    : {...PACK_PLACES[pack.kind],anchor:pack.kind};
   const kindTitle=uiLabelOf('pack_kind',pack.kind);
-  const breadcrumb = html`${link(home.path,home.title)}${home.title===kindTitle?'':html` › ${link(home.path+'#'+home.anchor,kindTitle)}`} › ${pack.title}`;
+  // A place that lists one kind is not followed by that kind's name again.
+  const breadcrumb = html`${link(home.path,home.title)}${home.title===kindTitle||pack.kind==='skill'?'':html` › ${link(home.path+'#'+home.anchor,kindTitle)}`} › ${pack.title}`;
   const scope=selectedScope(ctx);
   const listing=await packList(ctx,listings,scope,pack);
   const layout=pageLayout(listing,{inspector:html`<div class="ch-section" data-area-content data-inspector-content>${body}</div>`,detail:true,back:link(home.path,'返回列表',{scope})});
-  return { status: 200, body: page(ctx.chrome(home.title, { active: home.active, crumbs:breadcrumb }),home.active==='packs'?await spaceLayout(ctx,layout,listings):layout) };
+  return { status: 200, body: page(ctx.chrome(home.title, { active: home.active, crumbs:breadcrumb }),pack.kind==='workflow'||pack.kind==='skill'?await spaceLayout(ctx,layout,listings,pack.kind):layout) };
 }

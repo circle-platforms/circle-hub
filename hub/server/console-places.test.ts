@@ -253,29 +253,43 @@ describe('operations and commands', () => {
     }
   });
 
-  test('workflows and generic skills have separate lists and acceptance stays above detail controls without a node graph', async t => {
+  test('workflows and skills have separate places, and acceptance stays above detail controls without a node graph', async t => {
     const skill={id:'synthetic-skill',version:'1.0.0',kind:'skill' as const,title:'合成通用技能',description:'合成说明',digest:'f'.repeat(64),owner:null,summary:null};
     server.fakes.workflows.packs.push(skill);
     t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
     const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
     assert.equal(list.status,200);assert.match(list.body,/class="ch-list"/);
     const workflow=/<section class="ch-section" id="team-workflow" aria-label="工作流">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
-    assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
-    // The purpose of each kind is visible text on the list (issue 219), not a tooltip.
-    // It is shown once per kind, on the first scope group of the page.
-    assert.match(list.body,/要完成一项有验收要求的任务，选择工作流/);
-    assert.match(list.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);
+    assert.ok(workflow);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
+    // Decision 151: the workflows place lists workflows only; skills have their own place.
+    assert.doesNotMatch(list.body,/id="[a-z]+-skill"/);assert.ok(!list.body.includes(skill.title));
+    assert.match(list.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
+    const skills=await get('/console/skills',admin);
+    assert.equal(skills.status,200);
+    const group=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(skills.body)?.[1];
+    assert.ok(group);assert.ok(group.includes(skill.title));assert.match(group,/href="\/console\/skills\/synthetic-skill\?scope=all"/);
+    assert.doesNotMatch(skills.body,/id="[a-z]+-workflow"/);assert.doesNotMatch(skills.body,/href="\/console\/packs\/review/);
+    assert.match(skills.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/);
+    assert.match(skills.body,/<h1 class="ch-title">[\s\S]*?技能/);
+    // What each kind is for is the hint of its place's title: one place, one kind, one purpose.
+    assert.match(list.body,/要完成一项有验收要求的任务，选择工作流/);assert.doesNotMatch(list.body,/要让客户端遵循一套通用做法/);
+    assert.match(skills.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);assert.doesNotMatch(skills.body,/要完成一项有验收要求的任务/);
     assert.doesNotMatch(workflow,/title="规定做法与验收要求/);
     assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
+    // A skill's page answers under either path and stands in the skills place; its trail does not repeat the kind.
+    for(const path of ['/console/skills/synthetic-skill','/console/packs/synthetic-skill']){
+      const page=await get(path,admin);assert.equal(page.status,200,path);
+      assert.match(page.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/,path);
+      assert.match(page.body,/<nav class="ch-crumbs" aria-label="位置"><a href="\/console\/skills">技能<\/a> › 合成通用技能<\/nav>/,path);
+    }
     const detail=await get('/console/packs/review',admin);
+    assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
     // Issue 229: the abstract column heads of the requirement table say what they mean.
     assert.ok(detail.body.includes(DONE_RULE_NOTE)&&detail.body.includes(ACCEPTED_PRODUCER_NOTE),'the workflow page explains the delivery rule and the accepted producer');
     assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);
-    const memberSession=await signIn((await member()).token), mine=await get('/console/packs',memberSession);
-    assert.ok(!mine.body.includes(skill.title));
+    const memberSession=await signIn((await member()).token);
+    for(const path of ['/console/packs','/console/skills'])assert.ok(!(await get(path,memberSession)).body.includes(skill.title),path);
   });
 
   test('client tables show registered client names or direct-token labels without token identifiers', async () => {

@@ -133,6 +133,8 @@ const SHELL_CSS = `
 .ch-nav form { margin: 0; }
 .ch-nav .ch-input { width: 100%; }
 .ch-nav-item > span:last-child, .ch-nav-foot .ch-section > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The line between two groups of places (decision 151). */
+.ch-nav-sep { flex: none; width: auto; height: 0; margin: var(--space-2) var(--space-2); border: 0; border-top: 1px solid var(--line-hairline); }
 .ch-nav-sub section { margin: 0; min-width: 0; }
 .ch-inspector > .ch-section { margin: 0; }
 .ch-nav-sub details { margin: 0; min-width: 0; }
