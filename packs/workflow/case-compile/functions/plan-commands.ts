@@ -3,7 +3,7 @@
 import {compileGrammar,commandIdentity,parseCommandState,commandTokens,type CommandDefinition} from './generated/skills/command-tools/command-check/grammar.ts';
 import {isRecord} from './text.ts';
 import {bindArguments} from './binding.ts';
-import {runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
+import {refusedAccess,runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
 import type {RuntimeProfile} from './profile.ts';
 import type {PlanSlots} from './slots.ts';
 import {identityOf,identityKey} from './typed-contract.ts';
@@ -15,9 +15,9 @@ type CommandVerdict = Extract<Verdict, 'unknown' | 'refute'>;
 export interface CommandCatalog {policy?:unknown;authority_entries?:CatalogEntry[];root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[]}
 export interface CommandProblem {document:string;pointer:string;message:string;verdict:CommandVerdict}
 /** Device CLI values of the plan; `answers` are the indexes of confirmation answer steps, which are dialogue, not commands. */
-export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,answers:ReadonlySet<number>=new Set()):Array<{line:string;pointer:string}>{
- const lines:Array<{line:string;pointer:string}>=[];
- for(const [index,step]of slots.steps.entries()){if(answers.has(index))continue;const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)continue;for(const value of bindArguments(entry,step,`/steps/${index}`).values)if(allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string')lines.push({line:value.value,pointer:value.pointer});}
+export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,answers:ReadonlySet<number>=new Set()):Array<{line:string;pointer:string;object:string;method:string}>{
+ const lines:Array<{line:string;pointer:string;object:string;method:string}>=[];
+ for(const [index,step]of slots.steps.entries()){if(answers.has(index))continue;const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)continue;for(const value of bindArguments(entry,step,`/steps/${index}`).values)if(allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string')lines.push({line:value.value,pointer:value.pointer,object:step.object,method:step.method});}
  return lines;
 }
 /** The product's declared confirmations (command-policy@1): a device command under a declared prefix must pass the declared
@@ -46,6 +46,21 @@ export function confirmationSteps(contract:RuntimeContract,profile:RuntimeProfil
  }
  return {answers,problems};
 }
+/**
+ * The access level the locked tree declares for the parsed command against the prompt its method sends at: a refusal only where
+ * the runner contract declares, with evidence, that this method's prompt does not accept commands of that level
+ * (RefusedAccess). The level is read from the signature the identity names; a signature without a level, a method without a
+ * declared refusal, or a level the contract does not list is not checked, and nothing is read from a method's name. The
+ * message names the methods of the same object that send device commands and carry no such refusal.
+ */
+export function accessRefusal(contract:RuntimeContract,profile:RuntimeProfile,catalog:CommandCatalog,identity:CommandIdentity,object:string,method:string):string|null{
+ const refused=refusedAccess(contract,object,method);if(!refused.length)return null;
+ const entry=catalog.entries.find(candidate=>isRecord(candidate)&&Array.isArray(candidate.words)&&'/commands/'+candidate.words.map(encodeURIComponent).join('/')===identity.path);
+ const signature=entry?.signatures.find(candidate=>candidate.reference===identity.signature),level=signature?.access?.name;
+ if(!level||!refused.includes(level))return null;
+ const others=profile.allowed.filter(call=>call.object===object&&call.method!==method&&Object.values(call.parameters).some(role=>role==='device_cli')&&!refusedAccess(contract,object,call.method).includes(level)).map(call=>call.method);
+ return `命令“${entry!.words.join(' ')}”在锁定命令树里的级别是 ${level}，方法 ${method} 下发时所在的提示符不接受这一级别的命令（运行器合约 refused_access），设备会以语法错误拒绝；${others.length?`这台设备上可以下发它的方法：${others.join('、')}`:'这台设备上没有声明可以下发它的方法，缺的是运行器合约的方法声明，由合约维护者补'}`;
+}
 export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null;answers:Set<number>}{
  const dialogue=confirmationSteps(contract,profile,slots,readCommandPolicy(isRecord(raw)?raw.policy:undefined));
  const lines=deviceCommandLines(contract,profile,slots,dialogue.answers),answers=dialogue.answers;
@@ -62,8 +77,8 @@ export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slo
   if(lines.some(({line})=>{const tokens=commandTokens(line);return tokens&&entry.words.every((word,index)=>tokens[index]?.value===word&&!tokens[index].quoted);}))candidates.add(entry as CatalogEntry);
  }
  const grammar=compileGrammar(definitions);
- for(const {line,pointer}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line) as {status:CommandParseStatus;missing?:string},parsed=commandIdentity(grammar,line),identity=parsed?identityOf(parsed):null;
-  if(identity)byLine.set(line,identity);else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
+ for(const {line,pointer,object,method}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line) as {status:CommandParseStatus;missing?:string},parsed=commandIdentity(grammar,line),identity=parsed?identityOf(parsed):null;
+  if(identity){byLine.set(line,identity);const refusal=accessRefusal(contract,profile,catalog,identity,object,method);if(refusal)note(pointer,refusal,'refute');}else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
  }
  const identities=[...new Map([...byLine.values()].map(identity=>[identityKey(identity),identity])).values()];
  declarations(identities);

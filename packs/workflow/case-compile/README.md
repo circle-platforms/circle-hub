@@ -347,6 +347,27 @@ syntax rejection (`syntaxRejections`), naming the commands; the case goes on to 
 finding a solution. The reference engine can still tell a wrong form from a command the build lacks, by asking the device for help
 at the caret; without that read here, such a case is not claimed as a product finding.
 
+### 3.12.0: a command's access level against the prompt its method sends at
+
+The first of three items the owner handed over on 2026-11-10 from the statistics of runs 16 to 19: stop before dispatch what a
+deterministic check can know. Thirteen commands in those runs were answered with a caret, all of them commands of one access
+level typed with the method of the other prompt; the head, the argument count and the types were right each time, which is
+what the locked-tree parse already checks. Three facts decide it, each with its owner:
+
+- the locked tree's level for the command (`CatalogSignature.access`, from the product pack's parser);
+- the runner contract's declaration, with evidence, of the levels the prompt of a method refuses
+  (`refused_access`: `{ source, sha256, rows: [{ object, method, access: [level…] }] }`, a runtime-contract@2 addition that leaves
+  the pinned identity alone; a row for a pair the contract does not enable is refused as stale);
+- the plan's step, which names the object and the method.
+
+`functions/plan-commands.ts accessRefusal` refuses a device command only when all three are there and the level is in the
+method's row; the message names the level, the method and the device methods of the same object without that refusal. A
+signature without a level, a method without a row and a level the row does not list are not checked: only refusals with
+evidence are declared (the same commands' level typed at the other prompt was accepted every time, and two more levels of
+the tree have no evidence either way), and nothing is read from a method's name. The refusal is a plan error
+(`method_forbidden`), not a missing fact. The reference engine has no such check because its compiler leaves the model no
+choice of method; SKILL.md step 2 states that rule for authoring since 3.11.2, and this makes it mechanical.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

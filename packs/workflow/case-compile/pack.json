@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.11.3",
+  "version": "3.12.0",
   "kind": "workflow",
   "dependencies": [
     {
@@ -263,8 +263,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "162d68c0815c7aa0af1521ebf67a2a6fcc755bc932388e581586fed62a414c36",
-      "size": 9505
+      "sha256": "397667178f23ea07ae64ee621a9d9e61f702b8fd65fd40fdf5b14b05d38a5397",
+      "size": 11631
     },
     {
       "path": "functions/profile.ts",
@@ -308,8 +308,8 @@
     },
     {
       "path": "functions/runtime-contract.ts",
-      "sha256": "b06d700aac4ffd98a815b5a78209f65666de25a256db414815190e881ecdb94d",
-      "size": 26805
+      "sha256": "bb5889943410ef1d28f47ea99db0f1f43db563ca275de080bb0b55a12b886a08",
+      "size": 29884
     },
     {
       "path": "functions/schema.ts",
@@ -360,6 +360,11 @@
       "path": "samples/negative/quote.json",
       "sha256": "fcf3219a25127de4b35f26fc90aa77e0e02ecb982fc2bcbd374036413513e5af",
       "size": 694
+    },
+    {
+      "path": "samples/negative/typed-access-level.json",
+      "sha256": "6e9d6060e49dc34427e5f01c63ca4d7cd303a3ab8439d9c257acd4a1f19848f9",
+      "size": 30397
     },
     {
       "path": "samples/negative/typed-address-member.json",
@@ -428,7 +433,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "1b1909a2abd2b4df71f06044f11dd74d5dca67d9e58c50a8c629b2230b14b6b1",
+      "sha256": "09c57fc0b9bd9a4ccae08c466dc3c643760957b72920c45501859415337e2976",
       "size": 202654
     },
     {
@@ -473,13 +478,18 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "bee9b4c75a564aa4237ec90f619f92097c72d169306dd9b4be3fceb3ee6f9130",
+      "sha256": "05c603006e99082b8b76bc746c7e417f2a166a72afca289f2b70c066216fb72d",
       "size": 202658
     },
     {
       "path": "samples/positive/quote.json",
       "sha256": "f35036bc228aa259d4ffb314fe80eee4efd67580efe4958bf06c4d7a98f45ea4",
       "size": 675
+    },
+    {
+      "path": "samples/positive/typed-access-level.json",
+      "sha256": "97e3ecb0ffe67ae8fae1dced958908f7e3977d18477d519c14fd818b379fb5d8",
+      "size": 30349
     },
     {
       "path": "samples/positive/typed-address-member.json",
@@ -548,7 +558,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "573952f9ae10a4d16603d95817517845244978a60340d913e97aa6f3a3f8688d",
+      "sha256": "19e2024d873b4fd04527946d57a8396e56faf067af0f808499354438c4b09687",
       "size": 202608
     },
     {
@@ -593,7 +603,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "d77280458a21b9f0a619c6da97bce6cfc7b1355ce7f9e881253b576512fc0278",
+      "sha256": "c4e3abf1e87b1bb4c4cdd8b9bc570b68c301299b345e26365a1a277bc4618c37",
       "size": 202612
     },
     {
@@ -688,7 +698,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "fda9635137dfa8336b27e495e696f1eeca279efc499aa8d1d0dac255b4e74d33",
+      "sha256": "61796dc5223beabba533a9b5faa095d89d47d0d895b814b4f4813383e679b69d",
       "size": 406
     },
     {

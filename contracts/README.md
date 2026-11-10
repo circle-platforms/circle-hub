@@ -628,3 +628,9 @@ bindings. `skill@1` gains `modules`, `pack@1` gains `embeds`, and both stay opti
 A module is the folder `functions/modules/<module>/` of a skill pack; `tools/gen-contracts.ts` copies it to
 `functions/generated/skills/<skill>/<module>/` of each pack that embeds it, refuses an import that leaves the folder, and
 `--check` reports drift and stale copies. No protocol code, record kind or vocabulary axis is added.
+
+`CatalogSignature.access` (2026-11-10, optional, so every stored catalog entry still parses): the access level the source
+grammar declares for a command, by its native name, with the reference of its declaration and the grammar, shaped like
+`CatalogParam.native_type`. It is source evidence: `catalogCanon` builds a signature from its parameters only, so the level
+is not part of the syntax an impact view compares. No code, record kind or vocabulary axis is added; which prompt accepts
+which level is declared by a runner contract and checked by the workflow pack, not by the core.
