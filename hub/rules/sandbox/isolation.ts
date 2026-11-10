@@ -138,6 +138,25 @@ export function osIsolationFailure(): string | undefined {
   return probe.lastFailure();
 }
 
+/**
+ * A failed probe in the operator's words, with what to do where the probe says it (issue 291: the reason stayed in the
+ * error's detail and the message named four possible causes at once).
+ */
+export function isolationFailureText(reason: string | undefined, node: string = process.version): string {
+  switch (reason) {
+    case 'node_permission_drop_missing': return `运行 Hub 的 Node（${node}）在权限模型下没有 process.permission.drop；需要 Node 24 及以上，用安装包自带的 Node 运行服务和命令`;
+    case 'node_permission_drop_failed': return `运行 Hub 的 Node（${node}）没有按要求收回子进程和写文件的权限`;
+    case 'bubblewrap_or_apparmor_tools_missing': return '没有找到 bubblewrap 或 AppArmor 的工具';
+    case 'bubblewrap_apparmor_or_user_namespace_unavailable': return 'bubblewrap、AppArmor 配置或用户命名空间不可用';
+    case 'linux_runtime_bindings_unavailable': return '读不到 Node 运行库的路径，无法为隔离进程准备只读绑定';
+    case 'bubblewrap_or_apparmor_spawn_failed': return '隔离进程无法启动';
+    case 'platform': return '这个操作系统没有受支持的隔离方式';
+    case 'no_sandbox_exec': return '这台机器上没有 sandbox-exec';
+    case undefined: return '操作系统隔离不可用';
+    default: return `操作系统隔离的探测没有通过（${reason}）`;
+  }
+}
+
 export interface Dependency {
   name: string;
   /** Real path of the package directory. */
