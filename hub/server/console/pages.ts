@@ -129,7 +129,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   for (const task of shown) {
     const run = task.run, waiting = waitingOf.get(run.run) ?? 0;
     rows.push([
-      html`${runLink(run, html`<b>${taskTitle(run, titles)}</b>`)}${technicalCode(run.run)}`,
+      runLink(run, html`<b>${taskTitle(run, titles)}</b>`),
       [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—',
       run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner),
       when(run.started_at),

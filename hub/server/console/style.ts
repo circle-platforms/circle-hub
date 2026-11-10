@@ -49,7 +49,7 @@ const SHELL_CSS = `
 [data-editor-foreground] textarea[name="statement"]{min-height:100px}
 [data-editor-foreground] textarea[name="markdown"]{min-height:160px}
 /* Blocks of the reorganized pages (decision 151): a bordered card, a row of figures, a main column beside a narrower one. */
-.ch-card{display:flex;flex-direction:column;min-width:0;border-radius:var(--radius-lg);background:var(--surface-1);box-shadow:inset 0 0 0 1px var(--line-hairline);color:inherit}
+.ch-card{display:flex;flex-direction:column;min-width:0;box-sizing:border-box;border:1px solid var(--line-hairline);border-radius:var(--radius-lg);background:var(--surface-1);color:inherit}
 .ch-card-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-1) var(--space-3);padding:var(--space-4) var(--space-5) 0}
 .ch-card-title{margin:0;font:600 15px/22px var(--font-sans);color:var(--text-primary)}
 .ch-card-tail{margin-left:auto;font-size:13px}
@@ -75,7 +75,12 @@ const SHELL_CSS = `
 .ch-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3) var(--space-4)}
 .ch-toolbar>[data-filters]{margin-left:auto}
 /* A table inside a card reaches the card's edges; its cells keep the card's inset. */
-.ch-card-body[data-flush] .ch-table-wrap{box-shadow:none;border-radius:0}
+.ch-card-body[data-flush] .ch-table-wrap{box-shadow:none;border-radius:0;background:transparent}
+/* The first cell of a list of things names the thing: it reads as text and the whole row is the link. */
+.ch-card-body[data-flush] .ch-table td:first-child>a{color:var(--text-primary);text-decoration:none}
+.ch-card-body[data-flush] .ch-table td:first-child>a:hover{text-decoration:underline}
+.ch-seg a .ch-count{margin-left:var(--space-2)}
+.ch-toolbar [data-filters] label{display:inline-flex;flex-direction:row;align-items:center;gap:var(--space-2)}
 .ch-card-body[data-flush] .ch-table th:first-child,.ch-card-body[data-flush] .ch-table td:first-child{padding-left:var(--space-5)}
 .ch-card-body[data-flush] .ch-table th:last-child,.ch-card-body[data-flush] .ch-table td:last-child{padding-right:var(--space-5)}
 .ch-table td>p.ch-meta{margin:2px 0 0}
