@@ -137,7 +137,7 @@ describe('scenario 17: hub process restart preserves runs and results', () => {
         },
         bed.reviewer.token,
       );
-      const page = await reconnectedConsole.get(`/console/runs/${run1.run}`);
+      const page = await reconnectedConsole.task(run1.run);
       assert.equal(page.status, 200);
       assert.ok(page.body.includes(run1.run));
     } finally {

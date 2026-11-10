@@ -89,7 +89,7 @@ test('a purge also removes the personal original a run cited; the run shows its 
  assert.equal(await hub.records.artifacts.sourceForRun(owner.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null,'the run-held copy is gone');assert.equal(await hub.records.objects.get(source.body.sha256),null);
  const detail=await hub.hub.runs.getRun(owner.principal,run.out.run!.run);assert.deepEqual(detail?.grounds_purged?.map(row=>row.reference),['src:'+source.body.sha256]);
  assert.deepEqual((await hub.records.store.get(stored.digest))?.body,stored.body,'the run record is unchanged');
- const page=await browser.get('/console/runs/'+run.out.run!.run);assert.equal(page.status,200);assert.match(page.body,/data-grounds-purged><strong>根据不可用<\/strong>；运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除（1 项来源）/);
+ const page=await browser.task(run.out.run!.run);assert.equal(page.status,200);assert.match(page.body,/data-grounds-purged><strong>根据不可用<\/strong>；运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除（1 项来源）/);
  assert.equal(await hub.hub.runs.getRun(hub.admin.principal,run.out.run!.run),null);assert.equal(await hub.records.artifacts.sourceForRun(other.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null);assert.equal(await hub.records.artifacts.mayDeclareUpload(owner.principal,source.digest),false);
 });
 
