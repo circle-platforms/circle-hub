@@ -13,6 +13,7 @@ test('overview shows its figures, then the tasks that need attention beside thei
  // Decision 151: four figures, then the attention list (the main column) with the statistics in the column beside it.
  assert.ok(body.includes('data-overview-tasks'));assert.ok(body.indexOf('id="live-overview-kpis"')<body.indexOf('data-overview-tasks'));assert.ok(body.indexOf('data-overview-tasks')<body.indexOf('data-overview-side'));assert.doesNotMatch(body,/<aside class="ch-inspector"/);
  assert.equal((body.slice(body.indexOf('data-overview-kpis'),body.indexOf('data-overview-tasks')).match(/class="ch-card ch-tile"/g)??[]).length,4);
+ assert.match(body,/<a class="ch-tile-link" href="\/console\/runs" aria-label="查看任务列表"><\/a>/,'the task figure leads to the task list');
  const list=body.slice(body.indexOf('data-overview-tasks'),body.indexOf('data-overview-side'));assert.equal((list.match(/class="ch-row"/g)??[]).length,8);assert.ok(!list.includes('/console/runs/'+latest));for(const id of ids.slice(1,9))assert.ok(list.includes('/console/runs/'+id),id);assert.match(list,/结果暂不可用/);assert.match(list,/查看全部任务/);assert.match(list,/最多 8 个/);
  assert.match(list,/<h2 class="ch-card-title">[\s\S]*?需要处理/);
  // No folded sections, nothing that is only planned, and no chart of the period's call spans.
