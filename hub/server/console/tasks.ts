@@ -9,8 +9,9 @@ import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
-import type { RunDetail, RunRequestView, RunSummary } from '../../ports.ts';
+import type { RunDetail, RunRequestView, RunStatistics } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
+import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
 import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
@@ -20,22 +21,27 @@ import { environmentState } from './connections.ts';
 export interface TaskRow {
   run: RunRecordView;
   /** Null when the run could not be read just now; its result is then not shown. */
-  detail: RunSummary | null;
+  statistics: RunStatistics | null;
   result: TaskResult | null;
   pending: number;
 }
 
 /** The detail of each run, to derive its result; a run that cannot be read is listed without one. */
 export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]): Promise<TaskRow[]> {
-  return Promise.all(runs.map(async (run): Promise<TaskRow> => {
-    let detail: RunSummary | null = null;
+  const rows=new Array<TaskRow>(runs.length);let next=0;
+  await Promise.all(Array.from({length:Math.min(4,runs.length)},async()=>{
+   while(next<runs.length){const index=next++,run=runs[index];
+    let statistics:RunStatistics|null=null;
     try {
-      detail = await (ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal, run.run));
+      if(ctx.deps.runs.getRunStatistics)statistics=await ctx.deps.runs.getRunStatistics(ctx.principal,run.run);
+      else{const detail=await (ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal,run.run));statistics=detail?runStatistics(detail):null;}
     } catch {
-      detail = null;
+      statistics=null;
     }
-    return { run, detail, result: detail === null ? null : taskResultOf(detail), pending: detail === null ? 0 : pendingCount(detail) };
+    rows[index]={run,statistics,result:statistics?.result??null,pending:statistics?.pending??0};
+   }
   }));
+  return rows;
 }
 
 /** The unanswered requests of the listed tasks: a page never needs the requests of any other run. Asked together, its read scope batches them. */
