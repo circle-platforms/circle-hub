@@ -71,6 +71,16 @@ const SHELL_CSS = `
 .ch-tile-link:hover{box-shadow:inset 0 0 0 1px var(--line-control)}
 .ch-board{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--space-4);align-items:start}
 .ch-stack{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
+/* A task's result beside what still waits for someone (decision 151). */
+.ch-result{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.ch-result>div{display:flex;flex-direction:column;gap:var(--space-3);min-width:0;padding:var(--space-4) var(--space-5)}
+.ch-result>div+div{box-shadow:inset 1px 0 0 var(--line-hairline)}
+.ch-result p{margin:0}
+.ch-todo{display:flex;flex-direction:column;gap:var(--space-2);margin:0;padding:0;list-style:none}
+.ch-todo li{display:flex;align-items:baseline;gap:var(--space-3);min-width:0}
+.ch-todo b{font-weight:500;overflow-wrap:anywhere}
+.ch-todo-count{flex:none;min-width:48px;padding:0 var(--space-2);border-radius:var(--radius-sm);background:var(--status-warn-bg);color:var(--status-warn-text);font:600 13px/24px var(--font-sans);text-align:center}
+@media(max-width:1180px){.ch-result{grid-template-columns:minmax(0,1fr)}.ch-result>div+div{box-shadow:inset 0 1px 0 var(--line-hairline)}}
 /* Filters of a list: the result chips at the start, the other filters at the end. */
 .ch-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3) var(--space-4)}
 .ch-toolbar>[data-filters]{margin-left:auto}

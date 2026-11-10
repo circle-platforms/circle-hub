@@ -49,7 +49,7 @@ test('T7-4 author-only sample marks and withdrawn-rule labels remain visible wit
  const detail=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,run.run))!;
  assert.equal(detail.rule_withdrawn,undefined);
  const record=detail.latest!.record,before=JSON.stringify((await bed.hub.records.store.get(record))!.body);
- const page=await consoleClient.get('/console/runs/'+run.run);assert.equal(page.status,200);assert.ok(page.body.includes('仅作者样例'));
+ const page=await consoleClient.task(run.run);assert.equal(page.status,200);assert.ok(page.body.includes('仅作者样例'));
  const [id,version]=run.pack.split('@');
  await bed.hub.hub.registry.unassign(bed.hub.admin.principal,bed.reviewer.user.id,id);
  assert.equal((await bed.hub.deps.runs.getRun(bed.reviewer.principal,run.run))!.rule_withdrawn,undefined,'unassignment is not rule withdrawal');
@@ -60,7 +60,7 @@ await bed.hub.hub.registry.retire(bed.hub.admin.principal,id,version,'合成规�
  assert.equal(JSON.stringify((await bed.hub.records.store.get(record))!.body),before,'withdrawal never edits the stored conclusion');
  const reread=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,run.run))!;
  assert.equal(reread.rule_withdrawn,true);assert.equal(reread.latest!.record,record);assert.equal(JSON.stringify(reread.latest!.result),before);
- const after=await consoleClient.get('/console/runs/'+run.run);assert.equal(after.status,200);
+ const after=await consoleClient.task(run.run);assert.equal(after.status,200);
  assert.ok(after.body.includes('规则已撤回')&&after.body.includes('版本已下架'),'the read view discloses withdrawal without rewriting the historical receipt');
  const resultView=await bed.hub.hub.runs.getResult(bed.reviewer.principal,run.run);
  assert.equal(resultView!.rule_withdrawn,true);assert.equal(resultView!.record,record);assert.equal(JSON.stringify(resultView!.result),before);

@@ -161,7 +161,8 @@ describe('runtime environments', () => {
       { job: job(2), executor: id(2), outcome: 'unknown', frozen: true, phase: 'intent' },
       { job: job(9), outcome: 'not_dispatched', frozen: false, phase: 'boundary_refused' },
     ]);
-    const page = (await send(`/console/runs/${run}`, { headers: { cookie: await signIn(server.admin.token) } })).body;
+    // The dispatch step is part of the execution process, the 过程 tab of the task page (decision 151).
+    const page = (await send(`/console/runs/${run}?tab=process`, { headers: { cookie: await signIn(server.admin.token) } })).body;
     assert.match(page, /运行环境 合成运行环境丙（当前已冻结） · 运行环境已冻结，不可重发/);
     assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待派发结果中，不可重发/);
     assert.equal(page.split('以表格查看')[1].match(/运行环境 合成运行环境/g)?.length, 2, 'a job whose reservation names no environment names none');

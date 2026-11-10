@@ -80,7 +80,7 @@ describe('scenario 8: second product pack reviews with same workflow pack', () =
     assert.equal(submitLog.acceptance, 'accepted');
 
     // Console page shows lumen review
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(run.run));
   });

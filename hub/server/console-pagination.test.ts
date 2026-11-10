@@ -42,8 +42,9 @@ test('run log pagination uses the stored cursor and historical missing exits rem
   for(const items of Object.values(old.partitions))for(const item of items)for(const r of item.requirements)for(const layer of r.layers){delete (layer as {exit?:unknown}).exit;}
   const seen:Array<Record<string,unknown>>=[];
   const deps={runs:{getRun:async()=>({run:runRecord,latest:{record:'c'.repeat(64),result:old},production:{record:'c'.repeat(64),result:old},submissions:[]})},records:{callLog:{query:async(_by:unknown,query:Record<string,unknown>)=>{seen.push(query);return {items:[],next:query.cursor?null:'synthetic-next'};}}}};
-  const first=String((await runPage(context(deps,`/console/runs/${runRecord.run}`),runRecord.run)).body);
-  assert.ok(first.includes('出口未写'));
+  // The item results are one tab and the calls another (decision 151); the call log pages inside its tab.
+  assert.ok(String((await runPage(context(deps,`/console/runs/${runRecord.run}?tab=items`),runRecord.run)).body).includes('出口未写'));
+  const first=String((await runPage(context(deps,`/console/runs/${runRecord.run}?tab=process`),runRecord.run)).body);
   await runPage(context(deps,next(first)),runRecord.run);
   // The waterfall reads the call log too; the paged queries are the ones that carry a cursor.
   const paged=seen.filter(query=>'cursor' in query);
@@ -75,8 +76,10 @@ test('the requests of the listed tasks name their audience and put overdue reque
   assert.match(tasksView,/等待回应中的请求 <span class="ch-count">2<\/span>/);
   assert.doesNotMatch(tasksView,/aria-label="概况"/,'no summary pane repeats the list');
   const detailDeps={records:{callLog:{query:async()=>({items:[],next:null})}},runs:{getRun:async()=>({run:runRecord,latest:null,production:null,submissions:[],requests:[request,future,{...flagged,answered_by:'a'.repeat(64)}]})}};
-  const detail=String((await runPage(context(detailDeps,`/console/runs/${runRecord.run}`),runRecord.run)).body);
+  const detail=String((await runPage(context(detailDeps,`/console/runs/${runRecord.run}?tab=requests`),runRecord.run)).body);
   assert.match(detail,/等待回应中的请求/);
+  const front=String((await runPage(context(detailDeps,`/console/runs/${runRecord.run}`),runRecord.run)).body);
+  assert.match(front,/还需处理 · 2 条请求等待回应中/,'the page opens with how many requests wait');assert.ok(front.includes(request.missing)&&front.includes(future.missing));assert.doesNotMatch(front,/data-requests/);
   assert.doesNotMatch(detail,/<th>所属任务<\/th>|合成列表逾期事实/);
   const empty=String((await runsPage(context({knowledge:{},runs:{listRuns:async()=>({items:[],next:null})}},'/console/runs'))).body);
   assert.doesNotMatch(empty,/等待回应中的请求/);

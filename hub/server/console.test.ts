@@ -15,6 +15,7 @@ import { ACCEPTED_PRODUCER_NOTE, DONE_RULE_NOTE } from './console/pack-display.t
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { everyTaskTab } from './console/testing-task-tabs.ts';
 
 let postgres: TemporaryPostgres;
 let server: TestServer;
@@ -265,13 +266,13 @@ describe('pages', () => {
     const session = await signIn(user.token);
     const list = await get('/console/runs', session);
     assert.ok(list.body.includes(run));
-    const page = await get(`/console/runs/${run}`, session);
+    const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
     // Issue 239: a run recorded without a submission deadline says what the reader can do, in plain words.
     assert.ok(page.body.includes('这次任务未记录提交期限。请从此任务创建新的修订后继续。'));
     assert.ok(!page.body.includes('旧运行没有记录期限'));
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
-    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录', DONE_RULE_NOTE, ACCEPTED_PRODUCER_NOTE]) {
+    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '技术信息', DONE_RULE_NOTE, ACCEPTED_PRODUCER_NOTE]) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
     }
     const blocks = [...page.body.matchAll(/<div class="ch-source"(?: data-evidence)?><dl[^>]*>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
@@ -295,7 +296,7 @@ describe('pages', () => {
     const user = await person();
     const run = await runWithResult(user, ['发现<甲>']);
     const session = await signIn(user.token);
-    const page = await get(`/console/runs/${run}`, session);
+    const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
     // V03 R[3], display rule 4: one cell per layer, the strongest terminal and the counts of the non-pass values.
     // The words are the interface terms of display rule 20: 引用校验 for the static layer, 等待判定中 for a judgment, ….
@@ -326,7 +327,8 @@ describe('pages', () => {
       body: { received: { object: object.sha256, size: text.length, non_canonical_path: '/notes', run } },
     });
     server.fakes.runs.runs.get(run)!.submissions.push({ record: received.digest, received_at: '2026-10-22T00:00:00.000Z', acceptance: 'not_accepted', errors: [], result: null });
-    const again = await get(`/console/runs/${run}`, session);
+    // The submissions are in the 过程 tab of the task page (decision 151).
+    const again = await get(`/console/runs/${run}?tab=process`, session);
     assert.ok(again.body.includes('收到的参数不是规范 JSON，按收到的 JSON 文本保存'));
     assert.ok(again.body.includes('&quot;notes&quot;:&quot;&lt;\\ud800&gt;&quot;'), 'the JSON text as received, escaped');
   });
@@ -342,7 +344,7 @@ describe('pages', () => {
       const user = await person(['review'], 'user', `<b>名字</b>${attribute}`);
       const run = await runWithResult(user, [`发现${payload}`, attribute], `s"><script>x</script>`);
       const session = await signIn(user.token);
-      const page = await get(`/console/runs/${run}`, session);
+      const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
       assert.equal(page.status, 200);
       assert.ok(!page.body.includes('<script>'), 'no script element from stored text');
       assert.ok(!page.body.includes('<img src=x'), 'no element from an attribute payload');

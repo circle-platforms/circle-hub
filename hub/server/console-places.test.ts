@@ -147,7 +147,7 @@ describe('the eight places', () => {
 });
 
 describe('tasks', () => {
-  test('the list filters by task result, the detail shows the execution process above the full record', async () => {
+  test('the list filters by task result, the detail opens with the result and keeps the rest in tabs', async () => {
     const user = await member();
     const run = await runWithResult(user);
     const session = await signIn(user.token);
@@ -160,18 +160,23 @@ describe('tasks', () => {
     const other = TASK_RESULT.find((r) => r !== result)!;
     assert.ok(!(await get(`/console/runs?result=${other}`, session)).body.includes(`/console/runs/${run}"`), 'another result filters it out');
     assert.equal((await get('/console/runs?result=bogus', session)).status, 400);
+    // Decision 151: the page opens with the result and what still waits for someone; the rest is one of six tabs.
     const detail = await get(`/console/runs/${run}`, session);
-    for (const text of ['执行过程', '工具调用', 'Hub 校验', '任务结果', '完整记录', '提交结果', '启动任务']) assert.ok(detail.body.includes(text), text);
-    assert.ok(detail.body.indexOf('执行过程') < detail.body.indexOf('id="task-evidence"'), 'the process stays before the full record section');
-    // Issue 218: the page opens with the task's result, its counts and what waits for someone; the process is a secondary area below.
     const outcome = detail.body.indexOf('data-task-outcome');
     assert.ok(outcome >= 0, 'the page has a result block');
-    assert.ok(outcome < detail.body.indexOf('data-timeline'), 'the result comes before the execution timeline');
-    assert.ok(outcome < detail.body.indexOf('执行过程'), 'and before the process heading');
-    assert.ok(detail.body.indexOf('查看结果分类与完整记录') > outcome && detail.body.indexOf('查看结果分类与完整记录') < detail.body.indexOf('data-timeline'), 'with the way to the evidence inside it');
-    assert.match(detail.body, /href="#task-evidence">查看结果分类与完整记录</);
-    assert.equal((detail.body.match(/id="task-evidence"/g) ?? []).length, 1, 'one evidence section, nothing removed');
-    assert.match(detail.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
+    assert.ok(outcome < detail.body.indexOf('data-task-tabs'), 'the result comes before the tabs');
+    for (const text of ['任务结果', '还需处理', '验收要求', '条目', '请求', '过程', '来源', '技术信息']) assert.ok(detail.body.includes(text), text);
+    assert.match(detail.body, /data-task-tab="requirements"/);
+    assert.doesNotMatch(detail.body, /data-timeline|<aside class="ch-inspector"/, 'the first tab draws no process and the page has no side pane');
+    const process = await get(`/console/runs/${run}?tab=process`, session);
+    for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '提交与回执', '调用日志']) assert.ok(process.body.includes(text), text);
+    assert.match(process.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
+    assert.ok(process.body.indexOf('data-task-outcome') < process.body.indexOf('data-timeline'), 'the result stays above every tab');
+    assert.match(process.body, /<a href="\/console\/runs\/[^"]+\?tab=process" aria-current="page">过程/);
+    const items = await get(`/console/runs/${run}?tab=items`, session);
+    assert.equal((items.body.match(/id="task-evidence"/g) ?? []).length, 1, 'one evidence section, in the 条目 tab');
+    // The old address of the full record opens the technical information.
+    assert.match((await get(`/console/runs/${run}?view=record`, session)).body, /data-task-tab="record"/);
   });
 
   test('a task result follows display rule 20: held, incomplete and rejected first, unknown never passed', () => {
@@ -401,7 +406,7 @@ test('contextual system and call inspectors only select rows in the authorized p
  const refused=await get('/console/connections?system='+encodeURIComponent(resource.id),other),absent=await get('/console/connections?system=synthetic-missing',other);
  assert.equal(refused.status,404);assert.equal(withoutNonces(refused.body),withoutNonces(absent.body));
  const complete=await get('/console/runs/'+run+'?view=record',await signIn(author.token));
- assert.match(complete.body,/data-without-inspector/);assert.match(complete.body,/完整记录/);assert.doesNotMatch(complete.body,/class="ch-app[^\"]*is-detail/);
+ assert.match(complete.body,/data-without-inspector/);assert.match(complete.body,/data-task-tab="record"/);assert.match(complete.body,/技术信息/);assert.doesNotMatch(complete.body,/class="ch-app[^\"]*is-detail/);
 });
 
 test('the overview uses a Stat and thin parts bar with labelled counts instead of a donut and no area renders placeholder inspector facts',async()=>{

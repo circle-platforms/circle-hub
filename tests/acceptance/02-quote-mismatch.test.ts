@@ -101,7 +101,7 @@ describe('scenario 2: quote mismatch', () => {
     assert.ok(runDetail.submissions[1].result, 'second submission has a stored result');
 
     // Console HTML displays the run
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(run.run));
   });
