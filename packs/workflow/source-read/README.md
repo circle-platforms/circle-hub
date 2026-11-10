@@ -1,6 +1,6 @@
 # 来源原件读取通用技能包（source-read）
 
-通用技能包 `source-read`：在任意工作中按系统包路由读取平台原件（缺陷、需求、构建、脑图文档、构建页、手册文件、SVN 文件）。
+通用技能包 `source-read`：在任意工作中按系统包路由读取平台原件（缺陷、需求、构建、脑图文档、构建页、规格目录清单、手册文件、SVN 文件）。
 
 ## 依据与决定
 
@@ -14,7 +14,7 @@
 
 ## 契约与文件结构
 
-- `workflow.json`：声明 8 个可选输入槽位（`defect`、`defect_list`、`story`、`build`、`mindmap`、`build_page`、`manual_file`、`svn_file`），不绑定产品线（`product: { catalogs: [] }`），投影指向 `functions/project.ts`；
+- `workflow.json`：声明 9 个可选输入槽位（`defect`、`defect_list`、`story`、`build`、`mindmap`、`build_page`、`spec_list`、`manual_file`、`svn_file`），不绑定产品线（`product: { catalogs: [] }`），投影指向 `functions/project.ts`；
 - `requirements.json`：零要求项（`requirements: []`）；
 - `checks.json`：零检查项（`checks: []`）；
 - `slots.schema.json`：空槽位模式；
@@ -29,6 +29,12 @@
 4. 改动重签：修改包内声明文件后必须运行 `node packs/workflow/source-read/pack-files.ts --write` 重新计算散列并写入 `pack.json`。
 
 同一来源相同的 `feeding_pending` 文案可能去重，不能将文案里的数字相加当成受影响步骤总数；需要计数时以逐条可读记录为准。
+
+## 规格目录入口（0.1.8，2026-11-09）
+
+`spec_list` 只接受 `manual:spec-list`，显式调用 `manual:spec-list:configured`，沿用 manual-store 的已配置目录直接成员列表。先用运行的确切引用读清单，再由客户端提出候选并显式 `manual_file` 读取准确路径；Hub 不打分、不替模型判断归属，不从知识检索0或需求附件空推断无文档。空清单只覆盖本次已读目录的直接成员，子目录/未读来源保持未知。未配 `spec_folders`、没有启用/获准资源不等于无规格书；不把 `openkm:file` 当未核实部署里的现成下一步。
+
+main 为0.1.6，#190独立未合入提案已用0.1.7，本任务使用0.1.8避免同号异字节；不因此包含#190的运行读取存在性/待核看语义。现有workflow@1/system@1足够，无核心或schema变化；生产资源配置及包发布均另行确认。
 
 ## 查无此物（0.1.6，2026-11-05）
 

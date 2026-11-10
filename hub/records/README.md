@@ -1,5 +1,9 @@
 # records
 
+## Concurrent private-cache retirement
+
+Private extraction caches are removable projections. Member deletion and a publisher discarding its staging directory may remove the same path. Retirement accepts `ENOENT` throughout recursive removal and when opening a vanished directory for its durability sync; permission, I/O and sync errors still fail the deletion rather than claiming storage cleanup completed. The deterministic regression removes a real staged directory after `lstat` but before `chmod`, and separately removes the root before `open`; neither test depends on timing or retries.
+
 ## Personal-pack records and result audiences (decision 134)
 
 Personal publications, grants/revocations, retirements and team transfers are append-only registered records, indexed
