@@ -18,7 +18,7 @@ import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { code, html, link, page, pageLayout, pre, table, type Html } from './html.ts';
 import { neutralPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import {button,sectionHead} from './ui.ts';
-import {evidence,panel as card,badge as chip,facts as kv,technical,sourceBlock,stat,field as inputField,dialog,actionLink} from './presentation.ts';
+import {evidence,panel as card,badge as chip,facts as kv,technical,sourceBlock,stat,field as inputField,dialog,actionLink,tooltip} from './presentation.ts';
 import {VERIFIED_SCOPE,knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
 import {sharingRows} from './sharing-history.ts';
 import {entryProvenance,entryClientName} from './client-provenance.ts';
@@ -55,9 +55,9 @@ function editor(ctx: PageContext, space: string, path: string, draft?: SpaceEntr
   return html`<section class="ch-section" data-editor-foreground>${card({ title, hint }, form(ctx, 'entry', html `
 <input type="hidden" name="space" value="${space}">
 ${draft ? html `<input type="hidden" name="replaces" value="${draft.row.entry}"><input type="hidden" name="expected_version" value="${draft.root}">` : ''}
-${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
-${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
 ${field('陈述', html `<textarea name="statement" required maxlength="262144" rows="4">${content?.statement ?? ''}</textarea>`)}
+${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
+${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
 <details data-editor-advanced data-wide-field${content&&(Object.keys(content.data).length||content.applicability)?html` open`:''}><summary>结构化数据与适用条件</summary><div data-fields>${field('结构化数据（可选 JSON）', html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`, '留空表示没有；填写须是 JSON 对象，例如 {"字段":"值"}')}
 ${field('适用条件（可选 JSON）', html `<textarea name="applicability" rows="2" placeholder="留空表示未声明">${content?.applicability ? JSON.stringify(content.applicability, null, 2) : ''}</textarea>`, '产品线、版本和运行环境等条件，须是 JSON 对象；留空表示未声明，不要求产品包')}
 </div></details>
@@ -171,9 +171,12 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后不能再�
   const folderEntries=await spaces.entries(ctx.principal,version.root,version.body.entries.filter(row=>row.path===path));
   const originals = card({ title: '原文', hint: space === 'team' ? '供团队知识引用的原文，全体成员可读；上传原文须由上传人署名' : '上传的原文保存在所属私人空间，不自动生成条目；可在客户端中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 条条目引用',link('/console/knowledge/source','查看',{sha256:s.sha256,artifact:s.artifact})];})), {title:'这个文件夹还没有原文',text:'导入的文件保存在这里，供条目逐字引用。'})}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
   const context=html`<p class="ch-meta" data-knowledge-context>范围：${title} · 内容：${uiLabelOf('knowledge_view','knowledge')} · 位置：${directoryName(path)}</p>`;
-  const content=html`${knowledgeTabs(ctx)}<div class="ch-section">${context}${audienceLine}${own?html`<p>私人空间 ${capacitySummary(capacity!)} · 本文件夹条目记录（含早期版本及撤回）${number(version.body.entries.filter(r=>r.path===path).length)} · 已验证 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 已分享 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`;
-  const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${parts.at(-1)??'知识库'}</h2><p class="ch-meta">${audience.text}</p></section><div class="ch-stats">${stat('本页当前可读条目',nodes.nodes.reduce((sum,node)=>sum+node.entries.length,0))}</div><p class="ch-meta">只统计本页已加载的当前可读条目；条目记录包含所选版本保留的早期版本及撤回记录，不含子文件夹。</p>${history.items.length?card({title:'最近变化'},html`<ul class="ch-feed">${history.items.slice(0,3).map(item=>html`<li>${link('/console/knowledge/space',item.body.reason||'更新知识',spaceLink(space,item.root,path))}${timestamp(item.body.at)}</li>`)}</ul>`):''}`;
-  return {status:200,body:page(chrome,await spaceLayout(ctx,pageLayout(content,{inspector:overview,actions:controls})))};
+  const listed=nodes.nodes.reduce((sum,node)=>sum+node.entries.length,0);
+  const readable=html`<p class="ch-meta" data-folder-count>${tooltip(`本页当前可读条目 ${number(listed)}`,'只统计本页已加载的当前可读条目；条目记录包含所选版本保留的早期版本及撤回记录，不含子文件夹。')}</p>`;
+  const content=html`${knowledgeTabs(ctx)}<div class="ch-section">${context}${audienceLine}${readable}${own?html`<p>私人空间 ${capacitySummary(capacity!)} · 本文件夹条目记录（含早期版本及撤回）${number(version.body.entries.filter(r=>r.path===path).length)} · 已验证 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 已分享 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`;
+  // Decision 151: no side pane repeats the folder. Its one own fact, how many entries the page lists, stands with the other
+  // counts; the recent changes are the version record below.
+  return {status:200,body:page(chrome,await spaceLayout(ctx,pageLayout(content,{inspector:null,actions:controls})))};
 }
 export async function spaceDiffPage(ctx: PageContext): Promise<PageResult> {
   const spaces = ctx.deps.knowledge.spaces;
