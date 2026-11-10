@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Fix the way to the team's capacity dialog, lost when the team page's summary pane was removed: 团队容量… opened an empty pane and nothing on the page opened the dialog. The capacity line now ends with 调整容量…, which opens the dialog on the page itself, and the button is gone. The credential tab of the settings page no longer carries the three dialogs only its other tab opens, and a check now requires every dialog on a place to have a link that opens it.
 - Fix the way back from an original to its entry: 返回条目 now names the space of the entry. From an original of a team entry, or of an entry another member shared, it answered 404, because the folder page took the reader's own space.
 - Read one submission, not fifty, on every tab of a task but 过程. Only that tab lists submissions; the others show the current and the production result, which the read gives beside the window. A task with 56 submissions answered each of its tabs after reading 50 results.
 - Read the console's notes, table heads, trails and the labels of figures and fields at 13px instead of 12px (decision 151, step 9). Both sizes are steps of the shared design system's type scale, which is unchanged: the console's own style layer uses the small step for text that is read and keeps the caption step for the labels inside controls.
