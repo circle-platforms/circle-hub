@@ -55,9 +55,9 @@ function editor(ctx: PageContext, space: string, path: string, draft?: SpaceEntr
   return html`<section class="ch-section" data-editor-foreground>${card({ title, hint }, form(ctx, 'entry', html `
 <input type="hidden" name="space" value="${space}">
 ${draft ? html `<input type="hidden" name="replaces" value="${draft.row.entry}"><input type="hidden" name="expected_version" value="${draft.root}">` : ''}
-${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
-${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
 ${field('陈述', html `<textarea name="statement" required maxlength="262144" rows="4">${content?.statement ?? ''}</textarea>`)}
+${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
+${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
 <details data-editor-advanced data-wide-field${content&&(Object.keys(content.data).length||content.applicability)?html` open`:''}><summary>结构化数据与适用条件</summary><div data-fields>${field('结构化数据（可选 JSON）', html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`, '留空表示没有；填写须是 JSON 对象，例如 {"字段":"值"}')}
 ${field('适用条件（可选 JSON）', html `<textarea name="applicability" rows="2" placeholder="留空表示未声明">${content?.applicability ? JSON.stringify(content.applicability, null, 2) : ''}</textarea>`, '产品线、版本和运行环境等条件，须是 JSON 对象；留空表示未声明，不要求产品包')}
 </div></details>
