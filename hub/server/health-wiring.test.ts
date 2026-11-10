@@ -322,11 +322,15 @@ test('serve gives the 运行状况 page its readers, and the runtime role may re
     const nonce = /name="csrf" value="([^"]+)"/.exec(await form.text())![1]!;
     const signedIn = await fetch(`${url}/console/login`, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookie(form, 'circle_hub_login') }, body: new URLSearchParams({ username: 'synthetic-admin', password: 'synthetic-password-2026', csrf: nonce }).toString() });
     assert.equal(signedIn.status, 303);
-    const reply = await fetch(`${url}/console/health`, { headers: { cookie: cookie(signedIn, 'circle_hub_session') } });
-    assert.equal(reply.status, 200);
-    const page = await reply.text();
-    assert.doesNotMatch(page, /这次没有读出/, 'no read of the page was refused');
-    assert.match(page, /队列<\/span><span class="ch-stat-value">\d/, 'the trace writer of this process answers');
+    // Each tab of the page makes its own reads (decision 151): every one of them must be allowed.
+    const pages = new Map<string, string>();
+    for (const tab of ['', 'tasks', 'events', 'clients', 'releases', 'self']) {
+      const reply = await fetch(`${url}/console/health${tab === '' ? '' : `?tab=${tab}`}`, { headers: { cookie: cookie(signedIn, 'circle_hub_session') } });
+      assert.equal(reply.status, 200, tab);
+      pages.set(tab, await reply.text());
+      assert.doesNotMatch(pages.get(tab)!, /这次没有读出/, `no read of the tab ${tab || 'resources'} was refused`);
+    }
+    assert.match(pages.get('self')!, /队列<\/span><span class="ch-stat-value">\d/, 'the trace writer of this process answers');
   });
 });
 

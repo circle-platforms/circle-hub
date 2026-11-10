@@ -452,6 +452,11 @@ const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">
 const NO_SAMPLES = emptyBlock({ title: '近 24 小时没有资源样本', text: 'Hub 服务运行后每 10 秒写一个样本，这里会出现主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和 24 小时曲线。' });
 const HINT = '主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和曲线，后台任务，崩溃和重启。只有管理员可见。诊断数据保留 14 天，不作根据。';
 
+/** The tabs of the page, in the order shown. A crash asked for by `event` opens the tab that lists it. */
+const HEALTH_TABS = ['resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
+type HealthTab = typeof HEALTH_TABS[number];
+const HEALTH_TAB_LABEL: Record<HealthTab, string> = { resources: '资源', tasks: '后台任务', events: '崩溃和重启', clients: '按客户端', releases: '按发布', self: '观测自身' };
+
 export async function healthPage(ctx: PageContext, sources: HealthPageSources | undefined, log: (line: string) => void): Promise<PageResult> {
   const now = ctx.deps.now?.() ?? new Date();
   const to = new Date(Math.ceil(now.getTime() / POINT_MS) * POINT_MS);
@@ -468,40 +473,54 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
       return null;
     }
   };
+  // Decision 151, step 8: one part a tab, and a tab reads only what it shows. The page used to make nine reads, one after the
+  // other, for six blocks down one page. The latest sample is read on every tab: it is the line under the title.
+  const asked = ctx.url.searchParams.get('tab');
+  const tab: HealthTab = ctx.url.searchParams.has('event') ? 'events' : HEALTH_TABS.find((key) => key === asked) ?? 'resources';
   // One after the other: the reads share one connection, and a page that reports on load keeps to one at a time.
   const summary = await read('样本', (s) => s.health.summary(by, { since: from }));
-  const curvePoints = await read('曲线', (s) => s.health.curve(by, { from, to, points: CURVE_POINTS }));
-  const events = await read('进程事件', (s) => s.health.events(by, { limit: EVENTS_SHOWN }));
-  const eventTotal = await read('进程事件数', (s) => s.health.eventCount(by, { limit: EVENTS_COUNTED }));
-  const crashes = events?.filter((event) => event.kind === 'abnormal_exit') ?? [];
-  const wanted = Number(ctx.url.searchParams.get('event'));
-  const openEvent = crashes.find((event) => event.seq === wanted) ?? crashes[0] ?? null;
-  let opened: CrashDetail | null = null;
-  if (openEvent !== null) {
-    const end = new Date(crashTime(openEvent));
-    const boot = openEvent.boot;
-    const points = boot === null ? [] : await read('崩溃之前的样本', (s) => s.health.curve(by, { from: new Date(end.getTime() - CRASH_WINDOW_MS), to: end, points: CRASH_POINTS, boot }));
-    const ids = [...new Set((openEvent.requests ?? []).slice(0, REQUESTS_SHOWN).flatMap((request) => (request.user === null ? [] : [request.user])))];
-    const accounts = ids.length === 0 ? new Map<string, string>() : await read('账号', async () => new Map((await ctx.deps.records.principals.some(ids)).map((user) => [user.id, user.deleted_at ? uiLabelOf('account_display_name', 'deleted_member') : user.name])));
-    opened = { event: openEvent, points, names: accounts };
-  }
-  const tasks = await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained }));
-  const clients = await read('客户端', (s) => s.traces.clients(by, { since: from.toISOString(), limit: CLIENTS_SHOWN }));
-  const runs = await read('发布', async (s) => withRunNow(await s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }), ctx.hub, now));
-  // A run ends where the line above it begins.
-  const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { runs: runs.rows.map((run, index) => ({ release: run.release, from: run.first_start, until: runs.rows[index - 1]?.first_start ?? null })), retained, windowMs: DAY_MS }));
-
-  const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));
-  const fresh = summary !== null && curvePoints !== null && summary.samples === 0;
   const uptime = ctx.hub === undefined ? '' : ` · 本次启动已运行 ${duration(now.getTime() - ctx.hub.startedAt.getTime())}`;
   const sub = summary === null ? html`最新样本 ${UNKNOWN}${uptime}` : summary.latest === null ? '近 24 小时没有样本 · Hub 服务运行后每 10 秒写一个' : html`最新样本 ${when(summary.latest, now)} · 每 10 秒一个${uptime}`;
-  const capped = clients?.capped === true && clients.oldest !== null ? stamp(clients.oldest) : null;
-  const body = html`${fresh ? card({ title: '资源' }, NO_SAMPLES) : resourceCards(summary, points, crashes, now)}
-${backgroundTable(tasks, now)}
-${eventList(events, eventTotal, opened, now)}
-${SLOW_QUERIES}
-${clientTable(clients, summary, capped)}
-${releaseTable(runs, releases, ctx.hub?.release ?? null, now)}
-${observation(sources?.writer() ?? null, summary, curvePoints)}`;
+  const curveOf = () => read('曲线', (s) => s.health.curve(by, { from, to, points: CURVE_POINTS }));
+  const eventsOf = () => read('进程事件', (s) => s.health.events(by, { limit: EVENTS_SHOWN }));
+  let content: Html;
+  if (tab === 'resources') {
+    const curvePoints = await curveOf();
+    const crashes = (await eventsOf())?.filter((event) => event.kind === 'abnormal_exit') ?? [];
+    const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));
+    const fresh = summary !== null && curvePoints !== null && summary.samples === 0;
+    content = fresh ? card({ title: '资源' }, NO_SAMPLES) : resourceCards(summary, points, crashes, now);
+  } else if (tab === 'tasks') {
+    content = backgroundTable(await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained })), now);
+  } else if (tab === 'events') {
+    const events = await eventsOf();
+    const eventTotal = await read('进程事件数', (s) => s.health.eventCount(by, { limit: EVENTS_COUNTED }));
+    const crashes = events?.filter((event) => event.kind === 'abnormal_exit') ?? [];
+    const wanted = Number(ctx.url.searchParams.get('event'));
+    const openEvent = crashes.find((event) => event.seq === wanted) ?? crashes[0] ?? null;
+    let opened: CrashDetail | null = null;
+    if (openEvent !== null) {
+      const end = new Date(crashTime(openEvent));
+      const boot = openEvent.boot;
+      const points = boot === null ? [] : await read('崩溃之前的样本', (s) => s.health.curve(by, { from: new Date(end.getTime() - CRASH_WINDOW_MS), to: end, points: CRASH_POINTS, boot }));
+      const ids = [...new Set((openEvent.requests ?? []).slice(0, REQUESTS_SHOWN).flatMap((request) => (request.user === null ? [] : [request.user])))];
+      const accounts = ids.length === 0 ? new Map<string, string>() : await read('账号', async () => new Map((await ctx.deps.records.principals.some(ids)).map((user) => [user.id, user.deleted_at ? uiLabelOf('account_display_name', 'deleted_member') : user.name])));
+      opened = { event: openEvent, points, names: accounts };
+    }
+    content = eventList(events, eventTotal, opened, now);
+  } else if (tab === 'clients') {
+    const clients = await read('客户端', (s) => s.traces.clients(by, { since: from.toISOString(), limit: CLIENTS_SHOWN }));
+    content = clientTable(clients, summary, clients?.capped === true && clients.oldest !== null ? stamp(clients.oldest) : null);
+  } else if (tab === 'releases') {
+    const runs = await read('发布', async (s) => withRunNow(await s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }), ctx.hub, now));
+    // A run ends where the line above it begins.
+    const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { runs: runs.rows.map((run, index) => ({ release: run.release, from: run.first_start, until: runs.rows[index - 1]?.first_start ?? null })), retained, windowMs: DAY_MS }));
+    content = releaseTable(runs, releases, ctx.hub?.release ?? null, now);
+  } else {
+    content = html`${observation(sources?.writer() ?? null, summary, await curveOf())}
+${SLOW_QUERIES}`;
+  }
+  const tabs = html`<nav class="ch-seg" aria-label="运行状况内容" data-health-tabs>${HEALTH_TABS.map((key) => html`<a href="${href('/console/health', key === 'resources' ? {} : { tab: key })}"${key === tab ? html` aria-current="page"` : ''}>${HEALTH_TAB_LABEL[key]}</a>`)}</nav>`;
+  const body = html`<div class="ch-stack" data-health>${tabs}<div data-health-tab="${tab}">${content}</div></div>`;
   return { status: 200, body: page(ctx.chrome('运行状况', { active: 'health', hint: HINT, sub }), body) };
 }

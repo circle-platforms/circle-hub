@@ -22,7 +22,7 @@
 | 5 | 知识库：位置在左、内容在右，知识、记忆、原文、产品知识四个页签；新建只要陈述、类型、位置 | `feat/console-knowledge`（接在第 4 步之后） | 进行中：第一部分已实现 |
 | 6 | 工作流与技能的列表和详情 | `feat/console-pack-pages` | 已实现 |
 | 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs`、`feat/console-records-list` | 进行中：右栏已去掉，连接页和记录页已分页签；团队页的版面未改 |
-| 8 | 设置、运行状况 | `feat/console-admin-panes`、`feat/console-settings-tabs` | 进行中：设置页已分页签；运行状况未改 |
+| 8 | 设置、运行状况 | `feat/console-admin-panes`、`feat/console-settings-tabs`、`feat/console-health-team` | 已实现 |
 | 9 | 字号：正文 14px、辅助信息 13px，随共用设计规范一起改 | 待开 | 未开始 |
 
 ## 第 1 步：导航和技能入口
@@ -307,3 +307,25 @@
 - `hub/server/console-places.test.ts`：两个页签各自的地址和当前项；默认页签没有 Hub 状态和主机操作，Hub 状态页签没有凭据表；成员的 Hub 状态页签没有主机操作和备份命令。
 - `hub/server/console-api.test.ts`：备份份数在 Hub 状态页签上。
 - 读设置页的 6 个测试文件 56 项通过。
+
+## 第 8 步第三部分：运行状况页分页签
+
+### 允许路径
+
+- `hub/server/console/health.ts`
+- `hub/server/{console-health.test.ts,health-wiring.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 运行状况原来是一长页：六块资源、后台任务、崩溃和重启、最慢的查询、按客户端、按发布、观测自身，每次打开依次做九次读取。现在是六个页签，由地址上的 `tab` 决定：资源（默认）、后台任务、崩溃和重启、按客户端、按发布、观测自身。
+- 每个页签只读自己显示的内容。标题下的“最新样本”一行每个页签都有，所以样本摘要每次都读；其余读取按页签分：资源读曲线和进程事件（曲线上要标出崩溃），后台任务、按客户端各读一次，崩溃和重启读事件、事件数和打开的那次崩溃的样本，按发布读发布和各次发布的调用，观测自身读曲线。
+- 地址带 `event` 时打开“崩溃和重启”页签。
+- “最慢的查询”目前只是一句说明，放在观测自身页签。
+- 各块的内容和文字没有改。
+
+### 验收
+
+- `hub/server/console-health.test.ts`：新增一项，逐个页签核对页签的地址、顺序、当前项，以及这个页签实际做了哪些读取；不认识的 `tab` 回到第一个。原有 40 项改为读遍六个页签后核对。
+- `hub/server/health-wiring.test.ts`：运行角色对六个页签的读取都被允许。
+- 两个文件 58 项通过。
