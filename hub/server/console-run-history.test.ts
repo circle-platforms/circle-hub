@@ -33,6 +33,13 @@ test('the task page asks for the newest window, says how many submissions it lis
  const plain=await send(`/console/runs/${id}?tab=process`,cookie);assert.equal(plain.status,200);
  assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:RUN_HISTORY_LIMIT,before:null}},'the page reads a window, never the whole history');
  assert.equal(RUN_HISTORY_LIMIT,50);
+ // Every other tab shows the current and the production result only, and asks for a window of one submission.
+ for(const tab of ['','?tab=items','?tab=requests','?tab=sources','?tab=record','?view=record']){
+  server.fakes.runs.runOptions.length=0;assert.equal((await send(`/console/runs/${id}${tab}`,cookie)).status,200,tab);
+  assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:1,before:null}},tab);
+ }
+ server.fakes.runs.runOptions.length=0;assert.equal((await send(`/console/runs/${id}?older=synthetic-older-cursor`,cookie)).status,200);
+ assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:1,before:null}},'a cursor of the 过程 tab moves no other tab');
  assert.doesNotMatch(plain.body,/查看更早的提交|回到最近的提交/,'no paging note while the fake answers without a window');
  // A windowed answer: older submissions remain, and the first row is the one behind the current result.
  const detail=(await server.fakes.runs.getRun(user.principal,id))!;
@@ -50,6 +57,6 @@ test('the task page asks for the newest window, says how many submissions it lis
  assert.match(older.body,new RegExp(`href="/console/runs/${id}\\?tab=process">回到最近的提交`));assert.doesNotMatch(older.body,/查看更早的提交/,'the oldest window has no older link');
  // A cursor longer than any the store hands out is not passed on.
  server.fakes.runs.runOptions.length=0;
- const hostile=await send(`/console/runs/${id}?older=${'x'.repeat(600)}`,cookie);assert.equal(hostile.status,200);
+ const hostile=await send(`/console/runs/${id}?tab=process&older=${'x'.repeat(600)}`,cookie);assert.equal(hostile.status,200);
  assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:50,before:null}});
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ServerDeps } from './api.ts';
-import { knowledgePage, runsPage, type PageContext } from './console/pages.ts';
+import { knowledgePage, runsPage, type PageContext, productSourcesPage } from './console/pages.ts';
 const member = {id:'usr_01arzte2b0dy6pj8cd4avj118p',name:'合成成员',role:'user' as const};
 function context(deps: unknown, admin = false): PageContext {
   return {deps:{records:{},packs:{list:async()=>[]},...deps as object} as unknown as ServerDeps,principal:admin ? {...member,role:'admin'} : member,admin,url:new URL('http://127.0.0.1/console/knowledge'),userName:async()=>member.name,chrome:(title,extra)=>({title,...extra,user:{name:member.name,role:'用户',admin},csrf:null})};
@@ -64,18 +64,23 @@ test('different versions remain selectable when their knowledge content is ident
   assert.match(to,/selected>3 \/ current-build<\/option>/);
 });
 
-test('with knowledge spaces, as the real assembly always has, the home keeps the product sources and the pending intake on the all and team scopes', async () => {
+test('with knowledge spaces, as the real assembly always has, the product sources and the pending intake are the fourth tab of the place', async () => {
   const todo = {source:{system:'synthetic',id:'source-2'},missing:'合成待补充',next_action:'补充合成出处'};
   const spaces = {visible:async()=>[],recent:async()=>({items:[],total:0}),shareHistory:async()=>({items:[],next:null}),usage:async()=>({knowledge:0,memory:0,used:0,limit:1024 ** 3,remaining:1024 ** 3,over:0})};
   const deps = {products,knowledge:{spaces,feeding:{todos:async()=>[todo]}}};
-  for (const scope of ['all','team']) {
+  // Decision 151: the home is the list of entries. It leads to the sources by the fourth tab and no longer carries them.
+  for (const scope of ['all','team','personal']) {
     const ctx = context(deps, true); ctx.url = new URL(`http://127.0.0.1/console/knowledge?scope=${scope}`);
     const body = String((await knowledgePage(ctx)).body);
-    assert.match(body, /id="product-sources"/, scope); assert.match(body, /知识入库待处理/, scope); assert.ok(body.includes(todo.missing), scope);
+    assert.doesNotMatch(body, /id="(?:live-)?product-sources"|知识入库待处理/, scope);
+    assert.ok(body.includes(`<a href="/console/knowledge/products?scope=${scope}">产品知识来源</a>`), scope);
   }
-  const personal = context(deps, true); personal.url = new URL('http://127.0.0.1/console/knowledge?scope=personal');
-  const body = String((await knowledgePage(personal)).body);
-  assert.doesNotMatch(body, /id="product-sources"|知识入库待处理/);
+  const ctx = context(deps, true); ctx.url = new URL('http://127.0.0.1/console/knowledge/products?scope=all');
+  const body = String((await productSourcesPage(ctx)).body);
+  assert.match(body, /id="live-product-sources"/); assert.match(body, /知识入库待处理/); assert.ok(body.includes(todo.missing));
+  const tabs = /<nav class="ch-seg" aria-label="知识库内容">([\s\S]*?)<\/nav>/.exec(body)?.[1] ?? '';
+  assert.deepEqual([...tabs.matchAll(/<a href="[^"]+"( aria-current="page")?>([^<]+)<\/a>/g)].map((match) => [match[2], !!match[1]]), [['知识', false], ['记忆', false], ['原文', false], ['产品知识来源', true]]);
+  assert.doesNotMatch(body, /<aside class="ch-inspector"/);
 });
 
 test('the knowledge list shows the exact space-filtered count in its head, without uncertainty and without a side pane',async()=>{

@@ -225,8 +225,9 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   } else {
     secretBody = html`<pre class="error">${[...secrets.text.stdout, ...secrets.text.stderr].join('\n')}</pre>`;
   }
+  // The host operations and their dialogs are the Hub tab's; the credential tab carries no dialog nothing on it opens.
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
-  dialogs.push(...stopping);
+  if (hub) dialogs.push(...stopping);
   const content = hub
     ? html`${await hubState(ctx)}
 ${box({title:'主机操作',hint:'控制台不执行这些操作；在 Hub 所在主机上执行。部署与回滚在 Hub 主机上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`

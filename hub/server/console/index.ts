@@ -42,7 +42,7 @@ import {Sha256} from '../../../contracts/src/common.ts';
 import {performMemoryAction} from './memory.ts';
 import {recoverEditor} from './form-recovery.ts';
 import { mediaTypeFor } from '../upload.ts';
-import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
+import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, productSourcesPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
 import { searchPage } from './search.ts';
 import { resultPage, resultsPage } from './results.ts';
@@ -622,7 +622,7 @@ const ROUTES: Record<string, Route> = {
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);
     if (rest.length > 1) return Promise.resolve(neutralPage(ctx));
-    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage,sources:sourceArchivePage,'share-batch':batchSharePage };
+    const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space:spacePage, submissions:shareHistoryPage, 'space-diff':spaceDiffPage, source:spaceSourcePage,sources:sourceArchivePage,'share-batch':batchSharePage, products:productSourcesPage };
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/')==='-/publish'?personalPublishPage(ctx,options.staging):rest.length===1?packPage(ctx,rest[0]):Promise.resolve(neutralPage(ctx))),

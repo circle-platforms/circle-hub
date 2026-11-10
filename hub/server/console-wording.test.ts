@@ -47,6 +47,14 @@ test('synthetic signed-in, anonymous, knowledge, memory, workflow, management an
   const cases=['/console/knowledge','/console/knowledge?scope=personal','/console/knowledge?scope=shared','/console/knowledge?scope=team',folder,entry,entry+'&edit=1',entry+'&share=1',folder+'&directory=1',folder+'#grant-knowledge','/console/knowledge/submissions','/console/knowledge/source?sha256='+source.body.sha256,'/console/knowledge?view=memory&scope=personal','/console/knowledge?view=memory&scope=personal&edit=1','/console/knowledge?view=memory&scope=personal&document='+memory.document,'/console/knowledge?view=memory&scope=personal&document='+memory.document+'&share=1','/console/packs?scope=personal',workflow,workflow+'#grant-pack','/console/packs/-/publish','/console/search?q='+encodeURIComponent('合成')];
   const failures:string[]=[];
   for(const path of cases){const answer=await client.get(path);assert.equal(answer.status,200,path);for(const error of wordingProblems(answer.body))failures.push(path+' '+error);}
+  // Decision 151: the three views and the product knowledge sources are four tabs of one place. Each keeps the place's name
+  // as its title, and none has a pane while nothing is selected (the originals view kept one until this was checked).
+  for(const path of ['/console/knowledge?scope=all','/console/knowledge?view=memory&scope=all','/console/knowledge?view=sources&scope=all','/console/knowledge/products?scope=all']){
+   const answer=await client.get(path);assert.equal(answer.status,200,path);
+   assert.match(answer.body,/<h1 class="ch-title">(?:<[^>]+>)*知识库/,path);assert.doesNotMatch(answer.body,/<aside class="ch-inspector"/,path);
+   assert.deepEqual([...(/<nav class="ch-seg" aria-label="知识库内容">([\s\S]*?)<\/nav>/.exec(answer.body)?.[1]??'').matchAll(/<a href="[^"]+"( aria-current="page")?>([^<]+)<\/a>/g)].filter(match=>match[1]).length,1,path);
+   for(const error of wordingProblems(answer.body))failures.push(path+' '+error);
+  }
   for(const path of ['/console/team/'+owner.user.id,'/console/operations/member','/console/operations/system','/console/operations/pack','/console/operations/knowledge','/console/settings']){const answer=await admin.get(path);assert.equal(answer.status,200,path);for(const error of wordingProblems(answer.body))failures.push(path+' '+error);}
   const bad=await client.post('/console/knowledge/do/quota',{csrf:/name="csrf" value="([^"]+)"/.exec((await client.get(folder)).body)![1],space:owner.user.id,bytes:'-1'});assert.equal(bad.status,404);for(const error of wordingProblems(bad.body))failures.push('forbidden quota '+error);
   const badRange=await admin.get('/console/records?from=bad-time');assert.equal(badRange.status,400);for(const error of wordingProblems(badRange.body))failures.push('bad range '+error);

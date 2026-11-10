@@ -437,6 +437,8 @@ test('the overview uses a Stat and thin parts bar with labelled counts instead o
   const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.doesNotMatch(page.body,/当前页面|当前账号/);
   // Decision 151: no place repeats itself in a summary pane; a pane opens only for a selected thing.
   assert.doesNotMatch(page.body,/aria-label="概况"|<aside class="ch-inspector"/,area);
+  // A dialog on the page is one something on the page opens: none is left behind without a link to it.
+  for(const dialog of page.body.matchAll(/<div class="ch-dialog" id="([^"]+)"/g))assert.ok(page.body.includes('href="#'+dialog[1]+'"'),area+' links to its dialog '+dialog[1]);
  }
 });
 

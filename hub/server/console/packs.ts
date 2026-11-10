@@ -166,7 +166,7 @@ ${pack === current ? '' : html`<p class="notice" data-pack-earlier>这里显示�
   const actions = html`${personalControls.actions}${retire ? commandLink(retire, '退役…', 'ch-btn ch-btn--danger') : ''}${ctx.admin&&!pack.space?button('/console/operations/pack','发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
   const body = html`<div class="ch-stack" data-pack-page>${head}${tabs}<div data-pack-tab="${tab}">${content}</div>${dialogs.map(commandModal)}</div>`;
   // Where the kind is listed: a section of the knowledge page, a tab of the connections page, or a place of its own.
-  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',list:'/console/knowledge#product-sources'}
+  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',list:'/console/knowledge/products'}
     : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',list:'/console/connections?tab=packs'}
     : {...PACK_PLACES[pack.kind],list:PACK_PLACES[pack.kind].path};
   // A place that lists one kind is not followed by that kind's name again.
