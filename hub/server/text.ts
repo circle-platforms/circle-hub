@@ -888,7 +888,8 @@ function startText(v: StartOut, context: TextContext): string {
   const blocks: Block[] = [];
   let supportedBlock:(Block & {entries:readonly Entry[]})|undefined;
   const headClip = new Clip(null, seeConsole(r.run));
-  const head = [`运行 ${r.run}：工作流 ${headClip.field(r.pack, CLIP.name, '工作流编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
+  // The run record first: other runs bind it ("运行记录 rec:" in skills and input descriptions), and a long answer is cut from the end.
+  const head = [`运行 ${r.run}${record !== null ? `（运行记录 ${record}）` : ''}：工作流 ${headClip.field(r.pack, CLIP.name, '工作流编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
   if(r.model_identity!==undefined&&r.session!==undefined)head.push('同一开始会话提交可省略 model 和 model_identity；其他会话须明确声明自己的模型身份');
   const production = v.result ?? null;
   const full = production !== null ? (context.production ?? null) : null;

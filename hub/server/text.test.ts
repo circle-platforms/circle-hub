@@ -400,7 +400,7 @@ describe('start_run text', () => {
       const text = toolText('start_run', startAnswer(run), { ...PAGING, record: RUN_RECORD, unavailable: [{ external: 'toy:broken:offline', role: 'expected' }] });
       withinBudget(text, `start_run ${n}`);
       const lines = linesOf(text);
-      assert.equal(lines[0], `运行 ${RUN}：工作流 toy-review@1.0.0，条目 ${n} 个，要求项 3 个`);
+      assert.equal(lines[0], `运行 ${RUN}（运行记录 ${RUN_RECORD}）：工作流 toy-review@1.0.0，条目 ${n} 个，要求项 3 个`, 'the run record comes first: other runs bind it');
       assert.equal(lines[1], '产品 meadow，版本 2.1，构建 b-2.1-7');
       assert.equal(lines[2], `锁定的知识根 ${H('d')}`);
       const order = ['规程：', '要求项：', '来源：', '条目（', '槽位模式', '示例 submit_result'].map((head) => indexOf(lines, (l) => l.startsWith(head)));

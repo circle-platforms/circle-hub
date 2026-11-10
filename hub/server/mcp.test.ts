@@ -395,7 +395,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(summary.items.length, 3);
     assert.equal(summary.session, 'sess-start-1', 'the service got the session id from the header');
     assert.equal(summary.root, ROOT_1);
-    assert.match(run.content[0].text ?? '', new RegExp(`^运行 ${summary.run}：`));
+    assert.match(run.content[0].text ?? '', new RegExp(`^运行 ${summary.run}（运行记录 rec:[0-9a-f]{64}）：`));
     assert.match(run.content[0].text ?? '', /规程：/);
     const external = await client.call('start_run', { pack: 'review', inputs: { subject: { external: 'tracker:document:42' } } });
     assert.equal(external.isError, false);
