@@ -471,6 +471,13 @@ test('a reading that failed is 未知, the curve breaks there, and the card says
   assert.match(clients, /client-one os-one MCP 1\.0 未知 12 2\.4 秒/);
 });
 
+test('delay tables name milliseconds and disclose all three aggregation intervals without duplicating maximum',async t=>{
+ const w=await world(t);await samples(w.db,1);const page=await shown(w.admin);let main='';
+ walk(parse(page),node=>{if('attrs' in node&&node.nodeName==='section'){const markup=serialize(node as DefaultTreeAdapterMap['parentNode']);if(visible(markup).trim().startsWith('主线程'))main=markup;}return !main;});assert.ok(main);
+ assert.match(main,/延迟最大值（毫秒）/);assert.doesNotMatch(main,/延迟最大值（最大）/);assert.match(main,/每 5 分钟取最大值/);assert.match(main,/每 30 分钟/);assert.match(main,/表格每小时/);
+ assert.match(main,/<td class="num">120<\/td>/);
+});
+
 test('a value the sample never had is 未知, however the other readings went', async (t) => {
   const w = await world(t);
   await samples(w.db, 1);

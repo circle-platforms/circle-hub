@@ -124,7 +124,7 @@ try {
     const privatePack=await writePack(join(dir,'private-workflow'),workflowPack({id:'synthetic-deletion-transfer',title:'合成转移工作流'}));
     const published=await hub.hub.registry.personal!.publish(user.principal,privatePack.dir);assert.equal(published.ok,true);
     const member=hub.url+'/console/team/'+user.user.id;
-    await capture('deletion-preview',member+'?deletion=preview#delete-member-confirm',/确认永久删除成员/);
+    await capture('deletion-preview',member+'?deletion=preview#delete-member-confirm',/预览永久删除的影响/);
     await capture('deletion-refused',hub.url+'/console/team/'+hub.admin.user.id+'?deletion=preview#delete-member-confirm',/至少须保留一名启用的管理员/);
     const blocked=join(dir,'synthetic-cache-root-file');await writeFile(blocked,'synthetic storage failure');hub.records.memberDeletions!.registerCacheRoot(blocked);
     const api=hub.records.memberDeletions!,preview=await api.preview(hub.admin.principal,user.user.id),intent=await api.prepare(hub.admin.principal,{...preview,operation_id:crypto.randomUUID()});

@@ -12,10 +12,10 @@ import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
 import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
-import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
+import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow, RunHistoryOptions } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun } from './readers.ts';
-import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionsOf, INDEX, keyOwner } from './store.ts';
+import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionByDigest, submissionsOf, INDEX, keyOwner } from './store.ts';
 import { isObject, receivedDigest } from './util.ts';
 
 export interface StoredResult {
@@ -63,32 +63,80 @@ async function selectedHead(ctx:EngineContext,user:Principal,stored:StoredRecord
   return {latest,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{})};
 }
 
+/** What a record-level read needs of a run: whether `getRun` would answer, and the fields `canSeeRun` decides on. Never reads the history. */
+export async function runHeader(ctx:EngineContext,user:Principal,run:string):Promise<Pick<RunRecord,'runner'|'host'|'pack_space'>|null>{
+  const stored=await visibleRun(ctx,user,run);if(stored===null)return null;
+  const {runner,host,pack_space}=stored.body;return {host,...(runner===undefined?{}:{runner}),...(pack_space===undefined?{}:{pack_space})};
+}
+/** The visibility rule of `getRun`, which answers null exactly when this is false; it reads the run record and its grounds only, never the history. */
+export async function runVisible(ctx:EngineContext,user:Principal,run:string):Promise<boolean>{return await visibleRun(ctx,user,run)!==null;}
+
 /** Summaries never enumerate receipts, request answers or unrelated historical result grounds to draw a list/chart. */
 export async function getRunSummary(ctx:EngineContext,user:Principal,run:string):Promise<RunSummary|null>{
   const stored=await visibleRun(ctx,user,run);if(!stored)return null;
-  const candidates=await resultsOf(ctx.deps.records.store,run),head=await selectedHead(ctx,user,stored,candidates);
-  let production:RunSummary['production']=null;
-  // Full detail takes the last readable production result, preserving its ordering even for legacy records.
-  for(const candidate of candidates.toReversed())if(candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){
-    production={record:candidate.digest,result:candidate.body};break;
-  }
+  const store=ctx.deps.records.store,technicalLatest=await latestAccepted(store,run,1),head=await selectedHead(ctx,user,stored,technicalLatest?[technicalLatest]:[]);
+  let production:RunSummary['production']=null,cursor:string|null=null;
+  do{
+    const page:Page<StoredRecord<ValidationResult>>=await store.find<ValidationResult>({key:INDEX.resultSubmission,value:run+':'+stored.digest,kind:'validation_result',limit:1,cursor,newestFirst:true});
+    const candidate=page.items[0];
+    if(candidate&&candidate.body.submission===stored.digest&&candidate.body.system_input===undefined&&await resultReadableBy(ctx,stored.body,candidate.body,user)){
+      production={record:candidate.digest,result:candidate.body};break;
+    }
+    cursor=page.next;
+  }while(cursor!==null);
   return {run:await withRulingSummary(ctx,stored.body),latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
 }
 
-export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
+/** The newest readable result of this index value (a submission of the run, or the run's own production), without reading older ones once found. */
+async function newestReadable(ctx:EngineContext,user:Principal,run:RunRecord,value:string):Promise<StoredRecord<ValidationResult>|null>{
+  let cursor:string|null=null;
+  do{
+    const page:Page<StoredRecord<ValidationResult>>=await ctx.deps.records.store.find<ValidationResult>({key:INDEX.resultSubmission,value,kind:'validation_result',limit:4,cursor,newestFirst:true});
+    for(const record of page.items)if(await resultReadableBy(ctx,run,record.body,user))return record;
+    cursor=page.next;
+  }while(cursor!==null);
+  return null;
+}
+
+/**
+ * One window of a run's submissions, newest first by cursor, listed oldest first. The submission behind the current result is pinned
+ * to the newest window when it is older, so the page never shows a result without the submission that produced it. A cursor the store
+ * cannot use ends the paging with an empty window rather than failing the read.
+ */
+async function submissionWindow(ctx:EngineContext,user:Principal,stored:StoredRecord<RunRecord>,history:NonNullable<RunHistoryOptions['history']>,headSubmission:string|undefined){
+  const store=ctx.deps.records.store,limit=Math.max(1,Math.min(200,Math.trunc(history.limit)||1));
+  let items:StoredRecord<unknown>[]=[],next:string|null=null;
+  try{const page=await store.find<unknown>({key:INDEX.submissionRun,value:stored.body.run,kind:'submission',limit,cursor:history.before??null,newestFirst:true});items=page.items.toReversed();next=page.next;}
+  catch(error){if(!(error instanceof TypeError||error instanceof RangeError||error instanceof RecordsError))throw error;}
+  let pinned:string|undefined;
+  if((history.before===undefined||history.before===null)&&headSubmission!==undefined){
+    const behind=await submissionByDigest(store,stored.body.run,headSubmission);
+    if(behind!==null&&!items.some(row=>row.digest===behind.digest)){items=[behind,...items];pinned=behind.digest;}
+  }
+  return {items,next,limit,pinned};
+}
+
+export async function getRun(ctx: EngineContext, user: Principal, run: string, options: RunHistoryOptions = {}): Promise<RunDetail | null> {
   const stored = await visibleRun(ctx, user, run);
   if (stored === null) return null;
   const store = ctx.deps.records.store;
   // A shared view includes accepted validation bodies only; rejected receipts fall back to public action codes.
   const owner = canSeeRun(user, stored.body);
-  const candidates=await resultsOf(store,run),readable=await Promise.all(candidates.map(record=>resultReadableBy(ctx,stored.body,record.body,user)));
-  const results=candidates.filter((_,i)=>readable[i]);
-  const byDigest = new Map(results.filter(r=>r.body.system_input===undefined).map((r) => [r.body.submission, r]));
-  const submissions: RunSubmissionView[] = await Promise.all((await submissionsOf(store,run)).map(async record=>{
+  const window=options.history;
+  // Bounded: the heads first (they decide which submission is pinned), then results for the listed rows only.
+  const boundedHead=window===undefined?null:await selectedHead(ctx,user,stored);
+  const page=window===undefined?null:await submissionWindow(ctx,user,stored,window,boundedHead?.latest?.body.submission);
+  const boundedProduction=window===undefined?undefined:await newestReadable(ctx,user,stored.body,`${run}:${stored.digest}`);
+  const shown=new Map<string,StoredRecord<ValidationResult>>();
+  const candidates=window===undefined?await resultsOf(store,run):[],readable=await Promise.all(candidates.map(record=>resultReadableBy(ctx,stored.body,record.body,user)));
+  const unboundedResults=candidates.filter((_,i)=>readable[i]);
+  const byDigest = new Map(unboundedResults.filter(r=>r.body.system_input===undefined).map((r) => [r.body.submission, r]));
+  const submissions: RunSubmissionView[] = await Promise.all((page===null?await submissionsOf(store,run):page.items).map(async record=>{
     const action = await actionOfSubmission(store, record.digest);
     const detail = action !== null && isObject(action.body.detail) ? action.body.detail : {};
     const submission = typeof detail.submission === 'string' ? detail.submission : isVerbatimObject(record) ? null : receivedDigest(record.body).digest;
-    const result = submission === null ? undefined : byDigest.get(submission);
+    let result = submission === null ? undefined : byDigest.get(submission);
+    if (window !== undefined && submission !== null) { result = await newestReadable(ctx, user, stored.body, `${run}:${submission}`) ?? undefined; if (result !== undefined) shown.set(result.digest, result); }
     const privateReceipt=!owner||stored.body.runner!==user.id&&!await groundsReadableBy(ctx,stored.body,record.body,user);
     const codes = action?.body.codes ?? [];
     const hubError = action?.body.result === 'error' && detail.hub_error === true;
@@ -100,14 +148,16 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
       result: result !== undefined && result.body.acceptance === 'accepted' ? result.digest : null,
     };
   }));
-  const {latest,management}=await selectedHead(ctx,user,stored);
-  const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
+  const {latest,management}=boundedHead??await selectedHead(ctx,user,stored);
+  const production = window===undefined ? unboundedResults.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1) : boundedProduction??undefined;
+  // Withdrawn grounds are judged over the results this read shows: all of them, or the listed rows' results, the current result and the production result.
+  const results = window===undefined ? unboundedResults : [...new Map([...shown,...(latest?[[latest.digest,latest] as const]:[]),...(production?[[production.digest,production] as const]:[])]).values()];
   const notices=await criterionNotices(ctx,stored.body);
   const withdrawn=await withdrawalState(ctx,results.map(row=>row.body),user,true);
   // The reader may already read this run; the purge facts name only its own sources, never another account's content.
   const purged=await ctx.deps.records.personalPayloads?.purgedRunOriginals(stored.digest)??[];
   const grounds_purged=purged.length?stored.body.sources.flatMap(source=>{const hit=purged.find(row=>row.artifact===source.artifact);return hit?[{reference:source.reference,at:hit.at}]:[];}):[];
-  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(page===null?{}:{history:{limit:page.limit,next:page.next,...(page.pinned===undefined?{}:{pinned:page.pinned})}}),...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
