@@ -12,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.9.18'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.9.19'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -73,8 +73,8 @@ test('the client skill makes the model adapt the bed, seed what assertions read 
   const grounded = json('requirements.json').requirements.find((r: any) => r.key === 'expected_grounded');
   for (const phrase of ['可机械核对的输出', '先建好被查记录', '仍以 quote 逐字保留作依据']) assert.ok(grounded.description.includes(phrase), phrase);
 });
-test('the example plan seeds the queried record, asserts mechanically and cleans up in reverse', () => {
-  const data = json('examples/submit-result.json').items[0].slots.plan[0].data;
+test('the preserved undeclared example still seeds the queried record, asserts mechanically and cleans up in reverse', () => {
+  const data = JSON.parse(json('testing/undeclared-example.json').submission).items[0].slots.plan[0].data;
   const texts = data.steps.map((step: any) => step.args[0] ?? '');
   // 前置：查询断言读的记录先建好（第 1 步创建，早于第 3 步的查询）。
   assert.ok(texts[0].includes('record synth-rec-01 create'), texts[0]);

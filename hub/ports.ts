@@ -224,6 +224,8 @@ export interface RunsService {
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   getRunSummary?(user:Principal,run:string):Promise<RunSummary|null>;
+  /** Whether `getRun` would answer for this run, by the same visibility rule and without reading its submissions or results. */
+  runVisible?(user:Principal,run:string):Promise<boolean>;
   getRunStatistics?(user:Principal,run:string):Promise<RunStatistics|null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;

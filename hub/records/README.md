@@ -3,6 +3,9 @@
 ## Short isolated read scopes
 
 `withReadScope(read, {isolated:true})` creates a separate cache even inside an active page scope. Its caches are cleared at completion; parent and child retain one shared retirement generation and active-scope registry. Ordinary scoped writes invalidate parent and sibling caches, and destructive invalidation retires the whole group, so neither adapter can reuse stale values. The default nested behavior is unchanged. This is cache-lifetime control, not an authorization shortcut or a persistent derived-record cache.
+## Concurrent private-cache retirement
+
+Private extraction caches are removable projections. Member deletion and a publisher discarding its staging directory may remove the same path. Retirement accepts `ENOENT` throughout recursive removal and when opening a vanished directory for its durability sync; permission, I/O and sync errors still fail the deletion rather than claiming storage cleanup completed. The deterministic regression removes a real staged directory after `lstat` but before `chmod`, and separately removes the root before `open`; neither test depends on timing or retries.
 
 ## Personal-pack records and result audiences (decision 134)
 

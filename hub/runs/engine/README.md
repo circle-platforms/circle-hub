@@ -5,6 +5,12 @@
 The optional internal `getRunStatistics` reads through the same verified `getRunSummary`, current-head selection, current source permissions and management projection. It then derives only task result/pending counts, layer-terminal counts and blocker code/reason counts, using the public runs reducer also used by the full console status path. An isolated short read scope releases full run/result caches before returning those counts to a page; it does not project unverified database JSON or cache authorization across requests. Full detail/export and the old summary port stay unchanged.
 
 The console retains the four-worker page bound and discards full claims even through older summary/detail-only adapters. The earlier #251 history early-stop patch can be applied independently. Neither small returned statistics nor released child memos prove a fixed heap/latency: page-level listRuns still retains original run views, database/body verification and long history scans remain, and deployment/two-week observation are outstanding.
+## Check source accounting
+
+Each evaluation owns its byte/reference budget and shares only the process-wide read concurrency gate. Repeated reads of one exact reference charge its maximum observed text size once, including across items and checks; larger later reads add only the difference. Different fragments retain different accounting, and other evaluations do not inherit consumed bytes. Limits refuse excess instead of returning a successful empty source. Unit controls cover repeated large sources, growing/shrinking reads, distinct fragments, independent evaluations and a total-byte overflow; case-compile has a separate four-case/large-contract whole-workbook engine regression. These synthetic observations are not deployed or real-source evidence.
+## Summary history reads
+
+A summary reads validation candidates newest-first one body at a time, stopping at the accepted technical head, and reads production candidates separately through the existing run/submission index. The selected management head and current-ground permissions remain the same as full detail: a hidden technical head never falls back to an older success, while production retains its existing last-readable ordering. Every candidate still comes through the integrity-checked records port. The regression inserts large unrelated history and counts exact loaded bodies and bytes rather than measuring wall-clock speed. This does not yet replace full run/result bodies with a verified summary projection or paginate full task detail; rejected or unreadable candidate chains may still require successive reads.
 
 ## Space locks and citations (decision 133)
 
@@ -69,7 +75,7 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `lineage.ts` | the author of the work a run judges (A04): the predecessor chain, the runs of handed-over records, their producers |
 | `terminals.ts`, `partitions.ts`, `independence.ts`, `claims.ts` | the pure rules, tested on their own |
 | `reuse.ts` | carry-over offers and carried items (C08 R[4]) |
-| `preview.ts`, `queries.ts` | resolve_reference; getRun, listRuns, getResult, runsFor |
+| `preview.ts`, `queries.ts` | resolve_reference; getRun, runVisible, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
 
@@ -1112,3 +1118,7 @@ Deleted owners do not invalidate exact already-frozen workflow evaluation or an 
 declaration. This custody adds no current namespace access or new-run eligibility. MCP lease context resolves historical
 holder and registration-owner names through the generated deleted-account interface label, while stable identity keys
 and stored run bytes stay unchanged.
+
+## Run visibility without history (B1)
+
+`runVisible(user, run)` answers whether `getRun` would answer for the run: it applies the same run-visibility rule (`visibleRun`: the account is enabled, the reader may view the run, and the run's grounds are readable) and reads neither submissions, results, requests nor withdrawal state. The console live stream asks it for every run event instead of reading the full detail once per subscriber and run; an engine without the port keeps the old `getRun(...) !== null` answer. The port keeps no verdict of its own (the stream's 30-second verdict cache is unchanged), so a revoked share is seen by the next question. It does not shorten the detail page, the export or the summary reads.
