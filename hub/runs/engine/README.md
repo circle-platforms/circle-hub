@@ -3,6 +3,9 @@
 ## Check source accounting
 
 Each evaluation owns its byte/reference budget and shares only the process-wide read concurrency gate. Repeated reads of one exact reference charge its maximum observed text size once, including across items and checks; larger later reads add only the difference. Different fragments retain different accounting, and other evaluations do not inherit consumed bytes. Limits refuse excess instead of returning a successful empty source. Unit controls cover repeated large sources, growing/shrinking reads, distinct fragments, independent evaluations and a total-byte overflow; case-compile has a separate four-case/large-contract whole-workbook engine regression. These synthetic observations are not deployed or real-source evidence.
+## Summary history reads
+
+A summary reads validation candidates newest-first one body at a time, stopping at the accepted technical head, and reads production candidates separately through the existing run/submission index. The selected management head and current-ground permissions remain the same as full detail: a hidden technical head never falls back to an older success, while production retains its existing last-readable ordering. Every candidate still comes through the integrity-checked records port. The regression inserts large unrelated history and counts exact loaded bodies and bytes rather than measuring wall-clock speed. This does not yet replace full run/result bodies with a verified summary projection or paginate full task detail; rejected or unreadable candidate chains may still require successive reads.
 
 ## Space locks and citations (decision 133)
 
