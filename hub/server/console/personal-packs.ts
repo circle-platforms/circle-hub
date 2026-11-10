@@ -1,3 +1,4 @@
+import {packPurpose} from './pack-display.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 // Member publication uses the same publisher as team packs, with an explicit personal namespace and owner-bound stages.
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
@@ -23,7 +24,7 @@ export async function personalPublishPage(ctx:PageContext,staging:PackStaging):P
  const inspector=stage?html`<div data-inspector-content><span class="ch-tag">发布内容</span><h2 class="ch-panel-title">等待发布中</h2><p>到期时间 ${when(new Date(stage.expires).toISOString())}</p>${technical(code(stage.pack+'@'+stage.version),'查看待发布版本')}<footer class="ch-inspector-actions">${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}</footer></div>`:undefined;
  const upload=card({title:'上传发布内容',hint:'上传含 pack.json 的 zip，校验通过后暂存 30 分钟，确认时再次校验；私人内容不能请求团队资源、租约或外部效果。'},personalPackForm(ctx,'stage',field('发布内容 zip',html`<input type="file" name="archive" accept=".zip,application/zip" required>`),'上传并校验',true));
  const listing=card({title:'等待发布中'},table(['发布内容','到期时间'],stages.map((item,index)=>[link('/console/packs/-/publish','待发布内容 '+(index+1),{stage:item.id}),when(new Date(item.expires).toISOString())]),'没有暂存的发布内容',undefined,{selected:stages.findIndex(item=>item.id===selected),hrefs:stages.map(item=>'/console/packs/-/publish?'+new URLSearchParams({stage:item.id}))}));
- return {status:200,body:page(ctx.chrome('发布我的工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获分享权限者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),pageLayout(html`${upload}${listing}`,{inspector,detail:!!stage,back:link('/console/packs/-/publish','返回发布列表')}))};
+ return {status:200,body:page(ctx.chrome('发布我的工作流或通用技能',{active:'packs',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获分享权限者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),pageLayout(html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose('workflow')}</p><p>${packPurpose('skill')}</p><p class="ch-meta">上传内容的类型由 pack.json 声明；接入具体业务系统请由管理员在连接页配置。</p></section>${upload}${listing}`,{inspector,detail:!!stage,back:link('/console/packs/-/publish','返回发布列表')}))};
 }
 export async function personalPackControls(ctx:PageContext,pack:PackListing):Promise<{body:Html;actions:Html}>{
   const personal=ctx.deps.registry?.personal;if(!personal||pack.space!==ctx.principal.id)return {body:html``,actions:html``};

@@ -21,6 +21,7 @@ import type { HubFacts } from './settings.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, icon, link, liveModule, page, pageLayout, pre, section, table, type Html, type PageChrome } from './html.ts';
+import { pendingCount, taskResultOf } from './status.ts';
 import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell, waitingRequests } from './tasks.ts';
 import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
@@ -66,7 +67,7 @@ export interface PageResult {
 export const NEUTRAL = '该内容不存在或无权查看';
 
 export function neutralPage(ctx: PageContext): PageResult {
-  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。'}), html`<p>${link('/console/overview', '返回总览')}</p>`) };
+  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'内容可能已删除，或当前账号没有查看权限，两种情况的显示相同。请返回总览或列表重新进入；仍需要时联系内容所有者或管理员确认。'}), html`<p>${link('/console/overview', '返回总览')}</p>`) };
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -147,7 +148,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
     : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '工作流版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务',undefined,{hrefs:shown.map(task=>'/console/runs/'+task.run.run)})}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', hint: '客户端提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Hub 按工作流要求检查提交结果；适用的检查可能包括引用溯源、原文比对和沙箱复验。每项是否执行及其结果，请查看检查明细。' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
 ${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, true))}`,{inspector:html`<h2 class="ch-panel-title">任务</h2>${stat('本页任务',tasks.length)}${stat('筛选后',shown.length)}${card({title:'任务结果'},html`<ul class="ch-feed">${[...counts].map(([result,count])=>html`<li>${uiLabelOf('task_result',result)}<span class="num">${count}</span></li>`)}</ul>`)}`})),
   };
 }
@@ -200,7 +201,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
  * to be handled (rejected, quarantined, incomplete) and the requests for the viewer to decide (milestone 1 has none).
  */
 const GROUP_OF = { delivered: 'adopted', rejected: 'open', quarantined: 'open', incomplete: 'open' } as const satisfies Record<Partition, 'adopted' | 'open'>;
-const GROUP_TITLE = { adopted: '已采用的成果', open: '仍需处理的事项' } as const;
+const GROUP_TITLE = { adopted: '已交付的结果', open: '仍需处理的事项' } as const;
 
 function partitionGroups(result: ValidationResult, run: RunRecord, renderClaim:typeof claimBlock = claimBlock): Html {
   const names = new Map(run.requirements.map((r) => [r.key, r.name]));
@@ -288,6 +289,10 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
   ]),'没有有效分享'));
 }
 
+/** What a validation result says in one line: its management disposition or commentary status, then the counts by classification. */
+function resultHeadline(result: ValidationResult, commentary = false): string {
+  return `${isAbandonedResult(result)?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
+}
 /** How many of a task's newest submissions its page lists at once (the rest by "older" links). */
 export const RUN_HISTORY_LIMIT = 50;
 
@@ -311,7 +316,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['前驱运行', run.predecessor === undefined ? '—' : link(`/console/runs/${run.predecessor}`, '查看前驱任务')],
     ['会话', run.session ?? '—'],
     ['开始时间', run.started_at],
-    ['提交期限', run.submission_due ?? '旧运行没有记录期限，请以它为前驱开新修订'],
+    ['提交期限', run.submission_due ?? '这次任务未记录提交期限。请从此任务创建新的修订后继续。'],
     ['交付', detail.latest === null ? '尚未交付' : '已有交付结果'],
     ['边界政策', run.policy ?? '—'],
     ['规程内容哈希', technicalCode(run.instructions_digest)],
@@ -339,7 +344,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     const result = latest.result;
     const management=isAbandonedResult(result);
     const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
-    return html`<p><strong>${management?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}</strong></p>
+    return html`<p><strong>${resultHeadline(result,commentary)}</strong></p>
 ${management?html`<p>技术层未重新验证；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“出口未写”；本投影出口仅引用本次真实处置请求。</p>`:''}
 ${definitions([
   [recordLabel, technicalCode(latest.record)],
@@ -384,6 +389,10 @@ ${section('错误与修正', errorsTable(result.errors))}`;
   const head = await taskHead(ctx, detail, titles);
   // The first page of the call log is the waterfall's too; a later page is not.
   const process = await taskWaterfall(ctx, detail, param(ctx, 'call_cursor') === undefined ? calls.items : undefined);
+  // Issue 218: the page opens with what the task came to and what waits for someone; the process below is the secondary area.
+  const outcome = html`<div data-task-outcome>${card({ title: '任务结果' }, html`<div class="ch-actions">${resultCell({ result: taskResultOf(detail), pending: pendingCount(detail) })}</div>
+${primary === null ? html`<p class="ch-meta">${factOnly ? '没有找到生产结果记录，原因见下方完整记录。' : '还没有校验结果。'}</p>` : html`<p><strong>${resultHeadline(primary.result)}</strong></p>`}
+<p><a class="ch-btn ch-btn--ghost" href="#task-evidence">查看结果分类与完整记录</a></p>`)}${await awaitingRequests(ctx, detail.requests ?? [])}</div>`;
   const showRecord=ctx.url.searchParams.get('view')==='record';
   const sourcePanels=[];for(const source of run.sources)sourcePanels.push(await sourceBlock(ctx,source.reference));
   const inspector=html`<div data-inspector-content>${head}${card({title:'来源',meta:sourcePanels.length},html`${sourcePanels}`)}${card({title:'任务信息'},definitions([['执行人',run.runner?await ctx.userName(run.runner):uiLabelOf('execution_host',run.host)],['开始时间',when(run.started_at)],['交付',detail.latest?'已有交付结果':'尚未交付']]))}${technical(summary)}<footer class="ch-inspector-actions"><a class="ch-btn ch-btn--ghost" href="/console/runs/${run.run}?view=record#task-evidence">查看完整记录</a></footer></div>`;
@@ -391,7 +400,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     status: 200,
     body: page(
       ctx.chrome('任务', { active: 'tasks', sub: html`${link('/console/runs', '全部任务')} · ${taskTitle(run, titles)}` }),
-      pageLayout(html`${liveModule('task', ['task.updated', 'request.updated'], html`${process}`, { run: run.run })}
+      pageLayout(html`${liveModule('task', ['task.updated', 'request.updated'], html`${outcome}${process}`, { run: run.run })}
 ${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="ch-section" id="task-evidence"><h2 class="ch-section-label" title="结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。">完整记录</h2>
 ${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${technical(summary)}
 ${await runSharing(ctx,run)}
@@ -404,7 +413,6 @@ ${projectedFields}
 ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / 请求','条目 / 判据','原断言','旧值 / 新值','状态 / 复核人 / 理由','接收人 / 期限','下一步'],run.criterion_changes.map(change=>[html`${code(change.declaration)}<br>${code(change.request)}`,html`${code(change.item)}<br>${code(change.criterion)}`,change.assertion,html`${pre(change.old)}${pre(change.new)}`,change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.accepted===false?`未接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.expired?'请求已过期，仍在等待作者以外的账号复核；新修订不带这条声明':'等待作者以外的账号复核中',html`${code(change.audience)}<br>${change.due}`,change.next_action]),'没有判据变更声明')):''}
 ${section(axisUiLabel('partition'), results)}
 ${commentary}
-${await awaitingRequests(ctx, detail.requests ?? [])}
 ${section('提交与回执', html`${paging}${submissions}`)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}
 </div>`, { run: run.run })}`,{inspector:showRecord?null:liveModule('task-inspector',['task.updated','request.updated'],inspector,{run:run.run}),detail:!showRecord,back:link('/console/runs','返回任务')}),
