@@ -181,13 +181,49 @@ function section(markup: string, title: string): string {
   return found;
 }
 
-async function shown(client: ConsoleClient, path = '/console/health'): Promise<string> {
+/** The tabs of the page (decision 151): each is an address of its own and reads only what it shows. */
+const TABS = ['resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
+const tabPath = (tab: typeof TABS[number]): string => (tab === 'resources' ? '/console/health' : `/console/health?tab=${tab}`);
+
+async function one(client: ConsoleClient, path: string): Promise<string> {
   const reply = await client.get(path);
   assert.equal(reply.status, 200, reply.body.slice(0, 400));
   return reply.body;
 }
 
+/** One address, or the whole place: what its six tabs show, one after the other. */
+async function shown(client: ConsoleClient, path?: string): Promise<string> {
+  if (path !== undefined) return one(client, path);
+  let all = '';
+  for (const tab of TABS) all += await one(client, tabPath(tab));
+  return all;
+}
+
 // ---------------------------------------------------------------- who may open it
+
+test('six tabs, each an address of its own, and a tab reads only what it shows', async (t) => {
+  const reads: string[] = [];
+  const counted = <T extends object>(name: string, target: T): T => new Proxy(target, { get: (object, key, receiver) => { const value = Reflect.get(object, key, receiver); return typeof value !== 'function' ? value : (...args: unknown[]) => { reads.push(`${name}.${String(key)}`); return (value as (...a: unknown[]) => unknown).apply(object, args); }; } });
+  const w = await world(t, (page) => ({ health: counted('health', healthReader(page)), traces: counted('traces', new TraceReader(page)) }));
+  const tabsOf = (body: string) => [...(/<nav class="ch-seg" aria-label="运行状况内容" data-health-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1] ?? '').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map((match) => [match[1], !!match[2], match[3]]);
+  const expected: Record<typeof TABS[number], { label: string; reads: string[] }> = {
+    resources: { label: '资源', reads: ['health.summary', 'health.curve', 'health.events'] },
+    tasks: { label: '后台任务', reads: ['health.summary', 'traces.background'] },
+    events: { label: '崩溃和重启', reads: ['health.summary', 'health.events', 'health.eventCount'] },
+    clients: { label: '按客户端', reads: ['health.summary', 'traces.clients'] },
+    releases: { label: '按发布', reads: ['health.summary', 'health.releases', 'traces.releases'] },
+    self: { label: '观测自身', reads: ['health.summary', 'health.curve'] },
+  };
+  for (const tab of TABS) {
+    reads.length = 0;
+    const body = await shown(w.admin, tabPath(tab));
+    assert.deepEqual(tabsOf(body), TABS.map((key) => [tabPath(key), key === tab, expected[key].label]), tab);
+    assert.match(body, new RegExp(`data-health-tab="${tab}"`));
+    assert.deepEqual(reads, expected[tab].reads, `the reads of ${tab}`);
+  }
+  reads.length = 0;
+  assert.match(await shown(w.admin, '/console/health?tab=absent'), /data-health-tab="resources"/, 'an unknown tab is the first');
+});
 
 test('运行状况 is an administrator\'s page: listed for them, and a member gets what any other administrators\' page gives', async (t) => {
   const w = await world(t);

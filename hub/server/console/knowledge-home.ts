@@ -20,8 +20,8 @@ function noEntries(ctx:PageContext,scope:string,local:boolean):EmptyState{
 import type {PageContext} from './pages.ts';
 import {currentAudience,inScope,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {containsDirectory,directoryName} from './audience.ts';
-/** The knowledge home; `team` is the team-side content kept beside the spaces (product sources, pending intake), shown on the all and team scopes. */
-export async function knowledgeHome(ctx:PageContext,team:Html=html``):Promise<Html>{
+/** The knowledge home: the entries readable in the chosen scope, and under 全部 what the reader shared to the team. */
+export async function knowledgeHome(ctx:PageContext):Promise<Html>{
  const spaces=ctx.deps.knowledge.spaces!; const scope=selectedScope(ctx);
  const local=await personalLocal(ctx),selectedSync=syncSelected(ctx)&&(scope==='personal'||scope==='all');
  const syncPanel=scope==='personal'||scope==='all'?await personalSyncNotice(ctx):html``;
@@ -42,6 +42,6 @@ export async function knowledgeHome(ctx:PageContext,team:Html=html``):Promise<Ht
  // One list per page (decision 151): what is readable in this scope, newest change first, with its count in the head. No
  // side pane repeats the list; the pane is only the place where the sync setting opens.
  const list=box({title:scope==='all'?'最近变化':uiLabelOf('knowledge_search_scope',scope),meta:`${recent.total.toLocaleString('en-US')} 条`,hint:'按当前分享权限列出可读条目；时间为条目自身的写入时间'},table(['条目','位置','分享范围','状态','更新'],rows.map(row=>row.cells),noEntries(ctx,scope,local),'knowledge'),{flush:rows.length>0});
- const content=html`<div class="ch-toolbar">${knowledgeTabs(ctx)}${search}</div>${selectedSync?'':syncPanel}${capacity?html`<p class="ch-meta">${capacitySummary(capacity)}</p>`:''}${list}${scope==='all'?submissions:''}${scope==='all'||scope==='team'?team:''}`;
+ const content=html`<div class="ch-toolbar">${knowledgeTabs(ctx)}${search}</div>${selectedSync?'':syncPanel}${capacity?html`<p class="ch-meta">${capacitySummary(capacity)}</p>`:''}${list}${scope==='all'?submissions:''}`;
  return spaceLayout(ctx,pageLayout(content,{inspector:selectedSync?syncPanel:null,actions:controls,detail:selectedSync,back:link('/console/knowledge','返回知识库',{scope})}));
 }

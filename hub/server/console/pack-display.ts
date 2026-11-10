@@ -10,7 +10,7 @@ export function publishingKind(ctx: PageContext): PackKind {
 }
 
 export function packHome(kind: PackKind): { active: NonNullable<PageChrome['active']>; path: string } {
-  if (kind === 'product') return { active: 'knowledge', path: '/console/knowledge#product-sources' };
+  if (kind === 'product') return { active: 'knowledge', path: '/console/knowledge/products' };
   if (kind === 'system') return { active: 'connections', path: '/console/connections?tab=packs' };
   return kind === 'skill' ? { active: 'skills', path: PACK_PLACES.skill.path } : { active: 'packs', path: PACK_PLACES.workflow.path };
 }

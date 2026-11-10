@@ -6,7 +6,8 @@ import { digestOf } from '../../records/api.ts';
 // waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isEntryKind, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
-import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
+import { acceptedProducerHead, doneRuleHead, packPurpose } from './pack-display.ts';
+import { knowledgeTabs, spaceLayout } from './space-layout.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
@@ -310,14 +311,23 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
 function resultHeadline(result: ValidationResult, commentary = false): string {
   return `${isAbandonedResult(result)?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
 }
+/** The tab of the task page the address asks for; `?view=record` is the old address of the last one. */
+function taskTabOf(ctx: PageContext): TaskTab {
+  const asked = param(ctx, 'tab') ?? (ctx.url.searchParams.get('view') === 'record' ? 'record' : undefined);
+  return (TASK_TABS as readonly string[]).includes(asked ?? '') ? asked as TaskTab : 'requirements';
+}
 /** How many of a task's newest submissions its page lists at once (the rest by "older" links). */
 export const RUN_HISTORY_LIMIT = 50;
 
 export async function runPage(ctx: PageContext, runId: string): Promise<PageResult> {
   if (!RUN_ID.test(runId)) return neutralPage(ctx);
   // Issue 200: the page asks for a window of the newest submissions; older ones are reached by cursor, never read all at once.
-  const olderParam = param(ctx, 'older'), before = olderParam !== undefined && olderParam.length <= 512 ? olderParam : null;
-  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: RUN_HISTORY_LIMIT, before } });
+  // Only the 过程 tab lists submissions. Every other tab shows the current result and the production result, which the read
+  // gives beside the window, so it asks for a window of one: a task with 56 submissions answered each of its tabs after
+  // reading 50 results, most of which no tab but one shows.
+  const tab = taskTabOf(ctx);
+  const olderParam = param(ctx, 'older'), before = tab === 'process' && olderParam !== undefined && olderParam.length <= 512 ? olderParam : null;
+  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: tab === 'process' ? RUN_HISTORY_LIMIT : 1, before } });
   if (detail === null) return neutralPage(ctx);
   const run = detail.run;
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
@@ -368,9 +378,6 @@ ${section('错误与修正', errorsTable(result.errors))}`;
   const requests = (detail.requests ?? []).filter((request) => request.answered_by === null);
   // Decision 151: the page opens with what the task came to and what still waits for someone; everything else is one of six
   // tabs, and a tab works out only what it shows (issue 200: one page used to read the calls, every submission and source).
-  const legacy = ctx.url.searchParams.get('view') === 'record' ? 'record' : undefined;
-  const asked = param(ctx, 'tab') ?? legacy;
-  const tab: TaskTab = (TASK_TABS as readonly string[]).includes(asked ?? '') ? asked as TaskTab : 'requirements';
   const base = `/console/runs/${run.run}`;
   const groups = groupRequests(requests, (ctx.deps.now?.() ?? new Date()).getTime());
   const owing = groups.length === 0
@@ -549,10 +556,17 @@ async function intakePending(ctx: PageContext): Promise<Html> {
   return todos.length === 0 ? html`` : knowledgeSection('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [technicalCode(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? technicalCode(JSON.stringify(row.detail)) : '—'])));
 }
 
+/** The fourth tab of the knowledge place: the product knowledge sources the reader may see, and what waits for intake. */
+export async function productSourcesPage(ctx: PageContext): Promise<PageResult> {
+  const content = html`${knowledgeTabs(ctx)}${await packSources(ctx, 'product', [], { bare: true })}${await intakePending(ctx)}`;
+  return { status: 200, body: page(ctx.chrome('知识库', { active: 'knowledge', hint: packPurpose('product') }), await spaceLayout(ctx, pageLayout(content, { inspector: null }))) };
+}
+
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='sources')return sourceArchivePage(ctx);
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx,html`${await packSources(ctx, 'product')}${await intakePending(ctx)}`))};
+  // Decision 151: the home is the list of entries; the product knowledge sources and what waits for intake are the fourth tab.
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);

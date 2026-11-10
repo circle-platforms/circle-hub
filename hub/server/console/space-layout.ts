@@ -12,9 +12,15 @@ export function selectedScope(ctx:PageContext):KnowledgeSearchScope{
  const space=ctx.url.searchParams.get('space');return space?space==='team'?'team':space===ctx.principal.id?'personal':'shared':'all';
 }
 export const inScope=(scope:KnowledgeSearchScope,space:string,viewer:string)=>scope==='all'||(scope==='team'?space==='team':scope==='personal'?space===viewer:space!=='team'&&space!==viewer);
+/** Where the product knowledge sources are listed: a page of the knowledge place, beside its three views. */
+export const PRODUCT_SOURCES_PATH='/console/knowledge/products';
+/**
+ * The tabs of the knowledge place: its three views, then the product knowledge sources. The fourth is no view of the
+ * vocabulary: it is the list of the packs of that kind, named by the kind's own label, at a path of its own.
+ */
 export function knowledgeTabs(ctx:PageContext):Html{
- const scope=selectedScope(ctx),current=ctx.url.pathname.endsWith('/sources')?'sources':KnowledgeViewSchema.safeParse(ctx.url.searchParams.get('view')).data??'knowledge';
- return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='knowledge'?{}:{view})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}</nav>`;
+ const scope=selectedScope(ctx),products=ctx.url.pathname===PRODUCT_SOURCES_PATH,current=products?null:ctx.url.pathname.endsWith('/sources')?'sources':KnowledgeViewSchema.safeParse(ctx.url.searchParams.get('view')).data??'knowledge';
+ return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='knowledge'?{}:{view})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}<a href="${PRODUCT_SOURCES_PATH+'?'+new URLSearchParams({scope})}"${products?html` aria-current="page"`:''}>${uiLabelOf('pack_kind','product')}</a></nav>`;
 }
 export async function currentAudience(ctx:PageContext,space:string,path='/',product=false,pack?:string,memory=false){
  const own=space===ctx.principal.id;
