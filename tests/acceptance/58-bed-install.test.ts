@@ -148,7 +148,7 @@ describe('scenario 58: installing a build on a whole booked bed from the publish
     assert.equal(again.result.acceptance, 'accepted', JSON.stringify(again.result.errors));
     const refused = again.result.dispatch?.[0];
     assert.equal(refused?.job, undefined, JSON.stringify(again.result.dispatch));
-    assert.match(refused?.text ?? '', /这份产物已经由作业 [0-9a-f]{64} 派发过，作业已结束；同一份字节只派发一次/);
+    assert.match(refused?.text ?? '', /这份产物已经由作业 [0-9a-f]{64} 派发过，作业已结束；同一任务血缘的这份字节只派发一次/);
     assert.doesNotMatch(refused?.text ?? '', /等管理员/);
     assert.equal(sent.length, 1);
     const retry = await install(booking, { ...REQUEST, attempt: 2 });
