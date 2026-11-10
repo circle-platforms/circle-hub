@@ -130,11 +130,16 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   }
   if(sub==='explain-release'&&values.run&&values.executor&&positionals.length===0){
     const report=await dispatch.explainRelease(by,values.run,values.executor);
-    s.out('只读诊断范围：第 3 款放行条件；派发时仍须完整重核九款');
+    s.out('只读诊断范围：第 3 款放行条件和租约覆盖；派发时仍须完整重核九款');
     for(const check of report.checks)s.out(JSON.stringify(check));
     for(const row of report.rows){s.out(JSON.stringify({row_sha256:row.row_sha256,applicable:row.applicable}));for(const check of row.checks)s.out(JSON.stringify(check));}
     for(const gap of report.no_verdict)s.out(`无判定前提 ${gap.premise}；缺事实：${gap.missing_fact}；下一步：${gap.next_action}`);
-    s.out(`放行条件满足 ${Number(report.satisfied)}`);return report.satisfied?0:1;
+    if(report.lease_coverage)s.out(JSON.stringify(report.lease_coverage));
+    s.out(`放行条件满足 ${Number(report.satisfied)}`);
+    const covered=report.lease_coverage?.satisfied;
+    if(report.lease_coverage)s.out(`租约覆盖 ${covered===null?'未知':Number(covered)}${covered===false?'：派发会被边界拒绝':''}`);
+    // Unknown is not success: the exit code is 0 only when the release conditions hold and the lineage is known to hold every key.
+    return report.satisfied&&covered===true?0:1;
   }
   if (sub === 'conformance' && values.executor && positionals.length === 0) {
     const state = await dispatch.conformance(by,values.executor); output(s,state);

@@ -18,6 +18,19 @@ test('chart readouts and the accessible table retain every observation, includin
  assert.throws(()=>chart('错列',[{label:'合成',values:[1,2]}],[{label:'合成'}]),RangeError);
 });
 
+test('duration comparisons name the metric in readouts, accessibility text, tables and a single stat',()=>{
+ const rows=[{label:'合成调用甲',value:8},{label:'合成调用乙',value:0}];
+ const markup=comparisons('耗时最长的调用',rows,undefined,'耗时（毫秒）').text;
+ assert.match(markup,/aria-label="合成调用甲；8 耗时（毫秒）"/);
+ assert.match(markup,/<title>合成调用乙；0 耗时（毫秒）<\/title>/);
+ assert.match(markup,/<span>耗时（毫秒）<\/span>/);
+ assert.match(text(markup.slice(markup.indexOf('<table'))),/项目耗时（毫秒）合成调用甲8合成调用乙0/);
+ const one=comparisons('耗时最长的调用',rows.slice(0,1),undefined,'耗时（毫秒）').text;
+ assert.match(text(one),/合成调用甲8 耗时（毫秒）/);
+ const counts=comparisons('合成数量',rows).text;
+ assert.match(counts,/aria-label="合成调用甲；8 合成数量"/);
+});
+
 test('a single comparison is a Stat; composition and temporal spans retain a full data table',()=>{
  const one=comparisons('合成数量',[{label:'合成项目',value:48000}]).text;assert.match(one,/ch-stat-value">48,000/);assert.doesNotMatch(one,/<svg/);
  const bar=parts([{label:'通过',value:3,className:'fill-pass'},{label:'未知',value:0,className:'fill-unknown'}],'合成分布').text;

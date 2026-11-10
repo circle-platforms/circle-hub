@@ -42,9 +42,9 @@ export function chart(title:string,points:readonly Point[],series:readonly Serie
  return html`<figure class="ch-figure" data-chart><div><h3 class="ch-figure-title">${note?tooltip(title,note):title}</h3></div>${legend(series,mode==='line')}<div class="ch-plot"><svg class="ch-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${grid}${marks}${dates}${labels}${keyNumbers}${targets}</svg>${tip(points,series)}</div>${fallback(points,series,axisLabel)}</figure>`;
 }
 
-export function comparisons(title:string,rows:readonly {label:string;value:number}[],note?:string):Html{
- if(rows.length===1)return html`<div class="ch-stat"><span class="ch-stat-label">${note?tooltip(rows[0].label,note):rows[0].label}</span><span class="ch-stat-value">${fmt(finite(rows[0].value))}</span></div>`;
- return chart(title,rows.map(row=>({label:row.label,values:[row.value]})),[{label:title}],'bar',note,'项目');
+export function comparisons(title:string,rows:readonly {label:string;value:number}[],note?:string,metric?:string):Html{
+ if(rows.length===1)return html`<div class="ch-stat"><span class="ch-stat-label">${note?tooltip(rows[0].label,note):rows[0].label}</span><span class="ch-stat-value">${fmt(finite(rows[0].value))}${metric?' '+metric:''}</span></div>`;
+ return chart(title,rows.map(row=>({label:row.label,values:[row.value]})),[{label:metric??title}],'bar',note,'项目');
 }
 
 export function parts(rows:readonly {label:string;value:number;className:string}[],title:string):Html{
