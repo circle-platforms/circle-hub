@@ -6,7 +6,8 @@ import { digestOf } from '../../records/api.ts';
 // waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
 // (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isEntryKind, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult, type ValidityStatus } from '../../../contracts/generated/vocabulary.ts';
-import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
+import { acceptedProducerHead, doneRuleHead, packPurpose } from './pack-display.ts';
+import { knowledgeTabs, spaceLayout } from './space-layout.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
@@ -549,10 +550,17 @@ async function intakePending(ctx: PageContext): Promise<Html> {
   return todos.length === 0 ? html`` : knowledgeSection('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [technicalCode(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? technicalCode(JSON.stringify(row.detail)) : '—'])));
 }
 
+/** The fourth tab of the knowledge place: the product knowledge sources the reader may see, and what waits for intake. */
+export async function productSourcesPage(ctx: PageContext): Promise<PageResult> {
+  const content = html`${knowledgeTabs(ctx)}${await packSources(ctx, 'product', [], { bare: true })}${await intakePending(ctx)}`;
+  return { status: 200, body: page(ctx.chrome('知识库', { active: 'knowledge', hint: packPurpose('product') }), await spaceLayout(ctx, pageLayout(content, { inspector: null }))) };
+}
+
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='sources')return sourceArchivePage(ctx);
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx,html`${await packSources(ctx, 'product')}${await intakePending(ctx)}`))};
+  // Decision 151: the home is the list of entries; the product knowledge sources and what waits for intake are the fourth tab.
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);

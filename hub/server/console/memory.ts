@@ -73,7 +73,8 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   const selectedSync=syncSelected(ctx)&&(scope==='personal'||scope==='all'),syncPanel=scope==='personal'||scope==='all'?await personalSyncNotice(ctx):html``;
   content=pageLayout(html`${tabs}${result}${selectedSync?'':syncPanel}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${capacitySize(usage.active)} / ${capacitySize(usage.limits.spaceBytes)} · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${capacitySize(usage.limits.documentBytes)}</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,{title:'还没有记忆',text:'客户端会话写入的记忆和在这里新建的记忆列在这里；启用的记忆可用于新会话。',...(canWrite?{action:emptyAction(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'))}:{})}))}`,{...(selectedSync?{inspector:syncPanel,detail:true,back:link(location({scope}),'返回记忆')}:{}),actions:html`${scope==='personal'&&!local?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
  }
- return {status:200,body:page(ctx.chrome(memoryLabel(),{active:'knowledge',hint:'记忆只用于客户端会话；知识与记忆的分享设置分别管理'}),await spaceLayout(ctx,content))};
+ // The three views are tabs of one place: the place's name is the title, the tab says which view.
+ return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge',hint:'记忆只用于客户端会话；知识与记忆的分享设置分别管理'}),await spaceLayout(ctx,content))};
 }
 
 function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:string;current_version:string;title:string;path:string;markdown:string;state:string}):Html{

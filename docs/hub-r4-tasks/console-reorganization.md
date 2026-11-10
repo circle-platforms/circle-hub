@@ -19,7 +19,7 @@
 | 2 | 总览：四个数字、需要处理的任务、右侧统计与 Hub 状态 | `feat/console-overview`（接在第 1 步之后） | 已实现 |
 | 3 | 任务列表：状态筛选、等待回应中的请求按内容归并 | `feat/console-task-list`（接在第 2 步之后） | 已实现 |
 | 4 | 任务详情：结果与“还需处理”并排，验收要求、条目、请求、过程、来源、技术信息六个页签 | `feat/console-task-detail`（接在第 3 步之后） | 已实现 |
-| 5 | 知识库：位置在左、内容在右，知识、记忆、原文、产品知识四个页签；新建只要陈述、类型、位置 | `feat/console-knowledge`（接在第 4 步之后） | 进行中：第一部分已实现 |
+| 5 | 知识库：位置在左、内容在右，知识、记忆、原文、产品知识四个页签；新建只要陈述、类型、位置 | `feat/console-knowledge`、`feat/console-knowledge-sync-line`、`feat/console-health-team` | 已实现 |
 | 6 | 工作流与技能的列表和详情 | `feat/console-pack-pages` | 已实现 |
 | 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs`、`feat/console-records-list` | 进行中：右栏已去掉，连接页和记录页已分页签；团队页的版面未改 |
 | 8 | 设置、运行状况 | `feat/console-admin-panes`、`feat/console-settings-tabs`、`feat/console-health-team` | 已实现 |
@@ -329,3 +329,24 @@
 - `hub/server/console-health.test.ts`：新增一项，逐个页签核对页签的地址、顺序、当前项，以及这个页签实际做了哪些读取；不认识的 `tab` 回到第一个。原有 40 项改为读遍六个页签后核对。
 - `hub/server/health-wiring.test.ts`：运行角色对六个页签的读取都被允许。
 - 两个文件 58 项通过。
+
+## 第 5 步第二部分（二）：四个页签，原文视图去掉概况栏
+
+### 允许路径
+
+- `hub/server/console/{space-layout.ts,pages.ts,knowledge-home.ts,source-archive.ts,memory.ts,pack-display.ts,packs.ts,index.ts}`
+- `hub/server/{console-knowledge.test.ts,console-wording.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 知识库的页签行多一项“产品知识来源”，地址是 `/console/knowledge/products`。它不是词表里的第四种视图：页签的名称取种类自己的名称（`pack_kind` 的“产品知识来源”），模型没有改。要把它正式列为一种视图，需要给 `knowledge_view` 加一个值，那是要协调的词表变更，这里没有做。
+- 知识首页底部原来接着“产品知识来源”表和“知识入库待处理”，现在这两块在第四个页签里，首页只剩条目列表和“分享到团队记录”。产品知识来源的面包屑和“查看已发布版本”指向这个页签。没有知识空间的旧页面不变。
+- 原文视图在没有选中原文时不再有右栏。那一栏只写范围和原文数量，两者在导航旁边都有。**更正**：第 7、8 步第一部分（#303）写“至此没有任何页面带概况栏”，当时漏了这个视图；现在才是。
+- 记忆和原文两个视图的页面标题原来各是“记忆”“原文”，上面再加一行“知识库”的面包屑；现在三个视图和第四个页签的标题都是“知识库”，由页签说明是哪一个。原文视图进到文件夹里时，标题仍是文件夹名，面包屑照旧。
+
+### 验收
+
+- `hub/server/console-knowledge.test.ts`：首页在全部、团队、我的三个范围下都不再带产品知识来源和知识入库待处理，页签行里有通往第四个页签的链接；第四个页签显示这两块，页签行里只有它是当前项，没有右栏。
+- `hub/server/console-wording.test.ts`：真实装配下四个地址的标题都是“知识库”，都没有右栏，页签行里恰有一个当前项，文案检查通过。
+- 知识、记忆、原文、同步相关的测试文件 89 项通过。
