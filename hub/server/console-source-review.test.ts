@@ -23,10 +23,10 @@ test('administrator source-review queue is paginated, access-checked and readabl
  const canRead=hub.records.artifacts.canRead.bind(hub.records.artifacts);hub.records.artifacts.canRead=async()=>false;assert.deepEqual((await credentialReviewRequests(hub.records,hub.admin.principal,{now})).items,[]);hub.records.artifacts.canRead=canRead;
  assert.equal(all.length,5);assert.ok(!JSON.stringify(all).includes(hidden.digest));assert.equal(all.find(row=>row.reference.endsWith(entries[0].digest))?.resolved,true);assert.equal(all.find(row=>row.reference.endsWith(entries[1].digest))?.superseded,true);assert.ok(all.some(row=>row.expired));assert.equal(all.find(row=>row.reference.endsWith(entries[4].digest))?.external,null);
  assert.ok(!JSON.stringify(all).includes(heldText));assert.equal(await hub.records.store.watermark!(),mark);
- const manager=await openConsole(hub,hub.admin.token),reader=await openConsole(hub,member.token),page=await manager.get('/console/records');assert.equal(page.status,200,page.body);
+ const manager=await openConsole(hub,hub.admin.token),reader=await openConsole(hub,member.token),page=await manager.get('/console/records?tab=reviews');assert.equal(page.status,200,page.body);
  for(const value of ['来源核看请求','合成核看管理员','期限','已有解决记录','已到期并生成后续请求','等待管理员核看','不代表管理员已收到外部通知','circle-hub source held'])assert.ok(page.body.includes(value),value);
  for(const value of [heldText,privateSource.body.sha256,hidden.digest,'SyntheticHidden72'])assert.ok(!page.body.includes(value),value);
- const neutral=await reader.get('/console/records');assert.equal(neutral.status,200);assert.ok(!neutral.body.includes('来源核看请求'));assert.ok(!neutral.body.includes(source.body.sha256));
+ const neutral=await reader.get('/console/records?tab=reviews');assert.equal(neutral.status,200);assert.ok(!neutral.body.includes('来源核看请求'));assert.ok(!neutral.body.includes(source.body.sha256));
  await assert.rejects(credentialReviewRequests(hub.records,member.principal),{code:'SOURCE_UNAVAILABLE'});
  await hub.records.principals.setDisabled(hub.admin.principal,other.user.id,true);await assert.rejects(credentialReviewRequests(hub.records,other.principal),{code:'SOURCE_UNAVAILABLE'});
 });

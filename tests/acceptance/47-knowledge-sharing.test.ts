@@ -271,10 +271,10 @@ test('records disclose member grants only to participants and give administrator
     await hub.records.store.put({kind,schema,provenance:'declared',body:{space:owner.user.id,...object,audience:'member',member:other.user.id,action:'grant',by:owner.user.id,at:new Date().toISOString()},index:[{key,value:'administrators'}]});
   }
   const stranger=await hub.createUser('合成无关记录成员');
-  const ownerPage=await (await openConsole(hub,owner.token)).get('/console/records');
-  const otherPage=await (await openConsole(hub,other.token)).get('/console/records');
-  const adminBrowser=await openConsole(hub,hub.admin.token),adminPage=await adminBrowser.get('/console/records');
-  const absentPage=await (await openConsole(hub,stranger.token)).get('/console/records');
+  const ownerPage=await (await openConsole(hub,owner.token)).get('/console/records?tab=sharing');
+  const otherPage=await (await openConsole(hub,other.token)).get('/console/records?tab=sharing');
+  const adminBrowser=await openConsole(hub,hub.admin.token),adminPage=await adminBrowser.get('/console/records?tab=sharing');
+  const absentPage=await (await openConsole(hub,stranger.token)).get('/console/records?tab=sharing');
   for(const page of [ownerPage,otherPage,adminPage,absentPage])assert.equal(page.status,200,page.body);
   for(const page of [ownerPage,otherPage]){assert.ok(page.body.includes('synthetic-named-grant-audit'));assert.ok(page.body.includes('synthetic-named-audit-workflow'));}
   assert.ok(adminPage.body.includes('synthetic-admin-grant-audit'));assert.ok(adminPage.body.includes('synthetic-admin-audit-workflow'));
@@ -283,9 +283,9 @@ test('records disclose member grants only to participants and give administrator
   assert.ok(adminPage.body.includes('audit-owner-target'));assert.ok(adminPage.body.includes('audit-other-target'));
   assert.ok(ownerPage.body.includes('audit-owner-target'));assert.ok(!ownerPage.body.includes('audit-other-target'));
   assert.ok(otherPage.body.includes('audit-other-target'));assert.ok(!otherPage.body.includes('audit-owner-target'));
-  const filtered=await adminBrowser.get('/console/records?'+new URLSearchParams({user:owner.user.id}));assert.equal(filtered.status,200,filtered.body);assert.ok(filtered.body.includes('audit-owner-target'));assert.ok(!filtered.body.includes('audit-other-target'));assert.ok(!filtered.body.includes('synthetic-named-grant-audit'));assert.ok(!filtered.body.includes('synthetic-named-audit-workflow'));
-  const dated=await adminBrowser.get('/console/records?'+new URLSearchParams({from:'2000-01-01',to:'2000-01-02'}));assert.equal(dated.status,200);assert.ok(!dated.body.includes('audit-owner-target'));assert.ok(!dated.body.includes('synthetic-admin-grant-audit'));
-  const forgedFilter=await (await openConsole(hub,stranger.token)).get('/console/records?'+new URLSearchParams({user:owner.user.id}));assert.equal(forgedFilter.status,200);assert.ok(!forgedFilter.body.includes('synthetic-named-grant-audit'));assert.ok(!forgedFilter.body.includes('audit-owner-target'));
+  const filtered=await adminBrowser.get('/console/records?'+new URLSearchParams({tab:'sharing',user:owner.user.id}));assert.equal(filtered.status,200,filtered.body);assert.ok(filtered.body.includes('audit-owner-target'));assert.ok(!filtered.body.includes('audit-other-target'));assert.ok(!filtered.body.includes('synthetic-named-grant-audit'));assert.ok(!filtered.body.includes('synthetic-named-audit-workflow'));
+  const dated=await adminBrowser.get('/console/records?'+new URLSearchParams({tab:'sharing',from:'2000-01-01',to:'2000-01-02'}));assert.equal(dated.status,200);assert.ok(!dated.body.includes('audit-owner-target'));assert.ok(!dated.body.includes('synthetic-admin-grant-audit'));
+  const forgedFilter=await (await openConsole(hub,stranger.token)).get('/console/records?'+new URLSearchParams({tab:'sharing',user:owner.user.id}));assert.equal(forgedFilter.status,200);assert.ok(!forgedFilter.body.includes('synthetic-named-grant-audit'));assert.ok(!forgedFilter.body.includes('audit-owner-target'));
 });
 
 

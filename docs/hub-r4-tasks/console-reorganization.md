@@ -21,7 +21,7 @@
 | 4 | 任务详情：结果与“还需处理”并排，验收要求、条目、请求、过程、来源、技术信息六个页签 | `feat/console-task-detail`（接在第 3 步之后） | 已实现 |
 | 5 | 知识库：位置在左、内容在右，知识、记忆、原文、产品知识四个页签；新建只要陈述、类型、位置 | `feat/console-knowledge`（接在第 4 步之后） | 进行中：第一部分已实现 |
 | 6 | 工作流与技能的列表和详情 | `feat/console-pack-pages` | 已实现 |
-| 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs` | 进行中：右栏已去掉，连接页已分页签；团队、记录的版面未改 |
+| 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs`、`feat/console-records-list` | 进行中：右栏已去掉，连接页和记录页已分页签；团队页的版面未改 |
 | 8 | 设置、运行状况 | `feat/console-admin-panes` | 进行中：设置页右栏已去掉，运行状况未改 |
 | 9 | 字号：正文 14px、辅助信息 13px，随共用设计规范一起改 | 待开 | 未开始 |
 
@@ -261,3 +261,28 @@
 - `hub/server/console-environments.test.ts`：运行环境页签上方一行写可用数、总数和其他状态的数量。
 - `hub/server/console-systems.test.ts`：业务系统页签上方一行写已启用数、总数和统计时段。
 - `hub/server/console-observation-boundaries.test.ts`、`console-clients.test.ts`、`console-places.test.ts`、`console.test.ts`：原有断言改为读对应的页签。
+
+## 第 7 步第三部分：记录页分页签
+
+### 允许路径
+
+- `hub/server/console/{records.ts,space-records.ts,pages.ts}`
+- `hub/server/{console-places.test.ts,console-source-review.test.ts,console-sync-privacy.test.ts,console-systems.test.ts}`
+- `tests/acceptance/{47-knowledge-sharing.test.ts,07-call-log.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 记录页原来把七块内容排成一长页：时段、四个数字、三张图、调用记录、尝试读取记录、六张分享记录卡片、来源核看请求、一张“规划中”的知识流向卡片。现在是五个页签，由地址上的 `tab` 决定：调用记录（默认）、统计、分享记录、尝试读取记录、来源核看请求；后两个只有管理员有。
+- 时段和筛选在页签下面一行，随页签带着走；页签用不到的筛选项不显示（分享记录和尝试读取记录只有成员、从、到；来源核看请求没有筛选，它本来就独立于调用筛选）。尝试读取记录不再因为设了工具或运行筛选而整块消失。
+- 调用记录的表从十二列减到九列：追踪、会话、参数摘要三列只在点开一行后右侧的技术信息里读。任务详情里的调用日志照旧是完整的列。两处的“用户”一列都改叫“成员”，和筛选项、数字块一致。
+- 四个数字在调用记录和统计两个页签上方；三张图只在统计页签。调用列表只在调用记录页签查询，统计只在这两个页签查询。
+- 分享记录页签里有六组记录；没有内容的一组只占标题下的一行字，不再各占一张空卡片。
+- 去掉“知识流向”的规划中卡片。
+
+### 验收
+
+- `hub/server/console-places.test.ts`：调用记录页签没有图，统计页签有图但不列调用；时段对两者同时生效；查不到的成员不带出别人的统计。
+- `hub/server/console-source-review.test.ts`、`console-systems.test.ts`、`console-sync-privacy.test.ts`、验收 47：原有断言改为读对应的页签；成员请求管理员的页签时落回调用记录，看不到页签名称和内容。
+- 验收 07：调用列表里没有追踪标识，每行链接到自己的调用；点开后能读到追踪标识和会话标识。
+- `node --test "hub/server/**/*.test.ts"`：842 项通过，0 失败，0 跳过；验收 47、07、06：16 项通过。

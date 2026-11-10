@@ -133,11 +133,11 @@ describe('尝试连接', () => {
     const refused = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: member.cookie, origin: origin(), 'x-csrf-token': member.csrf, 'content-type': 'application/json' }, body: JSON.stringify(fields()) });
     assert.equal(refused.status, 404);
     assert.equal(agile.logins, 1, 'nothing sent for a refused request');
-    const records = await send('/console/records', { headers: { cookie: admin.cookie } });
+    const records = await send('/console/records?tab=trials', { headers: { cookie: admin.cookie } });
     assert.match(records.body, /尝试读取记录/);
     assert.match(records.body, /plm-test@1.0.0/);
     assert.match(records.body, /HTTP 200/);
-    const memberRecords = await send('/console/records', { headers: { cookie: member.cookie } });
+    const memberRecords = await send('/console/records?tab=trials', { headers: { cookie: member.cookie } });
     assert.doesNotMatch(memberRecords.body, /尝试读取记录|plm-test@/);
   });
 
