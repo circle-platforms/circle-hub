@@ -48,13 +48,33 @@ const SHELL_CSS = `
 .ch-editor-actions{position:sticky;bottom:0;z-index:2;background:var(--surface-0);border-top:1px solid var(--line-hairline);padding-block:var(--space-4);flex-wrap:wrap}
 [data-editor-foreground] textarea[name="statement"]{min-height:100px}
 [data-editor-foreground] textarea[name="markdown"]{min-height:160px}
-.ch-overview-details{border-top:1px solid var(--line-hairline);padding-block:var(--space-4)}
-.ch-overview-details>summary{font:500 14px/20px var(--font-sans);color:var(--text-secondary);cursor:pointer}
-.ch-overview-details[open]>summary{margin-bottom:var(--space-4)}
+/* Blocks of the reorganized pages (decision 151): a bordered card, a row of figures, a main column beside a narrower one. */
+.ch-card{display:flex;flex-direction:column;min-width:0;border-radius:var(--radius-lg);background:var(--surface-1);box-shadow:inset 0 0 0 1px var(--line-hairline);color:inherit}
+.ch-card-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-1) var(--space-3);padding:var(--space-4) var(--space-5) 0}
+.ch-card-title{margin:0;font:600 15px/22px var(--font-sans);color:var(--text-primary)}
+.ch-card-tail{margin-left:auto;font-size:13px}
+.ch-card-body{min-width:0;padding:var(--space-3) var(--space-5) var(--space-4)}
+.ch-card-body[data-flush]{padding:var(--space-2) 0 var(--space-1)}
+.ch-card-body[data-flush] .ch-list{gap:0}
+.ch-card-body[data-flush] .ch-row{padding:var(--space-3) var(--space-5);border-radius:0;align-items:start}
+.ch-card-body[data-flush] .ch-row+.ch-row{box-shadow:inset 0 1px 0 var(--line-hairline)}
+.ch-card-foot{padding:var(--space-3) var(--space-5);box-shadow:inset 0 1px 0 var(--line-hairline);font-size:13px}
+/* A row of a card is one link: its name reads as text, not as a link among links, and the row answers the pointer. */
+.ch-card-body[data-flush] a.ch-row{color:inherit;text-decoration:none}
+.ch-card-body[data-flush] a.ch-row b{color:var(--text-primary);font-weight:500}
+.ch-card-body[data-flush] a.ch-row:hover{background:var(--surface-hover)}
+/* The card's head already names the figure; the figure keeps its title for assistive technology. */
+.ch-card-head+.ch-card-body .ch-figure-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ch-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-4)}
+.ch-tile{padding:var(--space-4) var(--space-5);text-decoration:none}
+a.ch-tile:hover{box-shadow:inset 0 0 0 1px var(--line-control);text-decoration:none}
+.ch-board{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--space-4);align-items:start}
+.ch-stack{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
+.ch-row-end{display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-left:auto;flex:none;max-width:50%;text-align:right}
+@media(max-width:1180px){.ch-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-board{grid-template-columns:minmax(0,1fr)}}
 [data-overview-tasks] .ch-row-body{min-width:0}
 [data-overview-tasks] .ch-row-body>b{white-space:normal;overflow-wrap:anywhere}
 [data-overview-tasks] .ch-row{align-items:start}
-@media(max-width:760px){[data-area-content] [data-overview-kpis]{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .ch-app[aria-busy="true"] .ch-table tbody{opacity:.9}
 .ch-connection-map{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--space-5)}
 @media(max-width:760px){.ch-connection-map{grid-template-columns:minmax(0,1fr)}}
