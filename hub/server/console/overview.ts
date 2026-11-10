@@ -6,16 +6,15 @@ import {dot} from './ui.ts';
 // says so when the window holds more. Nothing here is estimated.
 import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
-import { isUnknownTerminal } from '../../../contracts/src/validation.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import { step } from '../../telemetry/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
 import { readableLines, type PageContext, type PageResult } from './pages.ts';
-import { TASK_FILL, primaryResult, taskChip } from './status.ts';
+import { TASK_FILL, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
-import { card, clock, count,  kpi, plannedCard, sectionHead, when } from './ui.ts';
+import { card, clock, count,  kpi, plannedCard, when } from './ui.ts';
 
 export const PERIODS = [7, 14, 30] as const;
 export const RECENT_LIMIT = 120;
@@ -48,12 +47,9 @@ export function checkCounts(tasks: readonly TaskRow[]): { label: string; value: 
   const tally = new Map<string, number>();
   let unknown = 0;
   for (const task of tasks) {
-    const primary = task.detail === null ? null : primaryResult(task.detail);
-    if (primary === null || primary.result.acceptance !== 'accepted') continue;
-    for (const item of Object.values(primary.result.partitions).flat()) for (const r of item.requirements) for (const layer of r.layers) {
-      if (isUnknownTerminal(layer)) { unknown += 1; continue; }
-      const key = `${layer.layer}:${layer.terminal}`;
-      tally.set(key, (tally.get(key) ?? 0) + 1);
+    for(const layer of task.statistics?.checks??[]){
+      if(layer.unknown){unknown+=layer.count;continue;}
+      const key=`${layer.layer}:${layer.terminal}`;tally.set(key,(tally.get(key)??0)+layer.count);
     }
   }
   const sum = (keys: readonly string[]) => keys.reduce((n, key) => n + (tally.get(key) ?? 0), 0);
@@ -71,12 +67,9 @@ export function checkCounts(tasks: readonly TaskRow[]): { label: string; value: 
 export function blockers(tasks: readonly TaskRow[]): { label: string; value: number }[] {
   const tally = new Map<string, number>();
   for (const task of tasks) {
-    const primary = task.detail === null ? null : primaryResult(task.detail);
-    if (primary === null || primary.result.acceptance !== 'accepted') continue;
-    const parts = primary.result.partitions;
-    for (const item of [...parts.rejected, ...parts.incomplete, ...parts.quarantined]) {
-      const label = 'code' in item ? item.code : 'reason' in item ? uiLabelOf('reason', item.reason) : null;
-      if (label !== null) tally.set(label, (tally.get(label) ?? 0) + 1);
+    for(const item of task.statistics?.blockers??[]){
+      const label=item.code??(item.reason?uiLabelOf('reason',item.reason):null);
+      if(label!==null)tally.set(label,(tally.get(label)??0)+item.count);
     }
   }
   return [...tally].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, 5);
@@ -117,9 +110,9 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   const pending = tasks.reduce((n, task) => n + task.pending, 0);
   const requests = await step('list-requests', () => waitingRequests(ctx, tasks));
   const scope = more ? `最近 ${days} 天内最近的 ${RECENT_LIMIT} 个任务` : `最近 ${days} 天`;
-  const kpis = html`<section class="ch-section" data-columns="4">
+  const kpis = html`<section class="ch-section" data-columns="4" data-overview-kpis>
 ${kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个`, state: 'info' })}
-${kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '—' : `${Math.round((passed / settled.length) * 100)}`, { unit: settled.length === 0 ? '' : '%', note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: 'ok' })}
+${kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '—' : `${Math.round((passed / settled.length) * 100)}`, { unit: settled.length === 0 ? '' : '%', note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: settled.length===0?'idle':'ok' })}
 ${kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) })}
 ${kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的客户端中处理', state: requests.length > 0 ? 'warn' : 'idle' })}
 </section>`;
@@ -163,20 +156,23 @@ ${kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length),
 <a class="ch-row" href="/console/records">${dot('info')}<span><b>记录</b><span class="ch-meta">仅追加，不可修改</span></span></a>
 </div>`;
   const periods = html`<nav class="ch-seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` aria-current="page"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
-  const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
-${liveModule('overview-today', ['task.updated'], html`<section class="ch-section">${await periodTasks(ctx,today,titles,now,since)}</section>`)}
-${liveModule('overview-results', ['task.updated'], html`<section class="ch-section" data-columns="2"><div class="ch-section">${daily}${resultsTable}</div>${checkCard}</section>`)}
-${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<section class="ch-section" data-columns="3">${stuckCard}${systems}${knowledge}</section>`)}
-${sectionHead('规划中的功能', undefined, undefined, undefined, '已规划、尚未上线的功能，上线后在此处启用')}
-<section class="ch-section" data-columns="3">${plannedCard('多终端协同', '各终端客户端的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section>
-${sectionHead('当前运行状况', undefined, undefined, undefined, '服务、证书、数据库、备份与记录')}
-${health}`;
+  const waiting=new Set(requests.map(request=>request.run));
+  const attention=(task:TaskRow)=>waiting.has(task.run.run)||task.pending>0||task.result!=='passed'&&task.result!=='abandoned';
+  const recent=tasks.map((task,index)=>({task,index})).sort((a,b)=>Number(attention(b.task))-Number(attention(a.task))||a.index-b.index).slice(0,8).map(({task})=>task);
+  const taskList=html`<section class="ch-section" data-overview-tasks>${card({title:'最近任务与待处理事项',meta:scope+' · 优先列出有未回应请求或尚未完成的任务，最多 8 个'},recent.length?html`<div class="ch-list">${recent.map(task=>html`<a class="ch-row" href="${'/console/runs/'+task.run.run}"><span class="ch-row-body"><b>${taskTitle(task.run,titles)}</b><span class="ch-meta">${when(task.run.started_at)}${waiting.has(task.run.run)?' · 有等待回应中的请求':''}</span></span> ${task.result===null?html`<span class="ch-meta">结果暂不可用</span>`:taskChip(task.result)}</a>`)}</div><div class="ch-actions">${link('/console/runs','查看全部任务')}</div>`:html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-text">在客户端中运行工作流后，这里显示任务。</p>${link('/console/packs','查看工作流')}</section>`)}</section>`;
+  const body = html`${liveModule('overview-priority', ['task.updated','request.updated'],taskList)}
+${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
+<details class="ch-overview-details" id="overview-trends"><summary>统计与趋势</summary><div class="ch-section">${liveModule('overview-today', ['task.updated'], html`<section class="ch-section">${await periodTasks(ctx,today,titles,now,since)}</section>`)}
+${liveModule('overview-results', ['task.updated'], html`<section class="ch-section" data-columns="2"><div class="ch-section">${daily}${resultsTable}</div>${checkCard}</section>`)}</div></details>
+<details class="ch-overview-details" id="overview-context"><summary>系统与知识概况</summary>${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<section class="ch-section" data-columns="3">${stuckCard}${systems}${knowledge}</section>`)}</details>
+<details class="ch-overview-details" id="overview-planned"><summary>规划中的功能</summary><p class="ch-meta">已规划、尚未上线的功能，上线后在此处启用。</p><section class="ch-section" data-columns="3">${plannedCard('多终端协同', '各终端客户端的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section></details>
+<details class="ch-overview-details" id="overview-health"><summary>当前运行状况</summary>${health}</details>`;
   return {
     status: 200,
     body: page(ctx.chrome('总览', {
       active: 'overview',
       sub: html`${scope} · 截至 ${when(new Date(now).toISOString())}`,
 
-    }),pageLayout(html`${periods}${body}`,{inspector:html`<h2 class="ch-panel-title">总览</h2><p class="ch-meta">${scope}</p>${kpi('任务',tasks.length)}${kpi('未决项',pending)}${card({title:'最近任务'},html`<ul class="ch-feed">${tasks.slice(0,3).map(task=>html`<li>${link('/console/runs/'+task.run.run,taskTitle(task.run,titles))}${task.result?taskChip(task.result):'结果暂不可用'}</li>`)}</ul>`)}`})),
+    }),pageLayout(html`${periods}${body}`,{inspector:null})),
   };
 }
