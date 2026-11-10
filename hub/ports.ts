@@ -179,7 +179,11 @@ export interface RunSubmissionView {
 
 export interface RunRequestView {
   record:string; answer_action?:ExitAction; run?:string; pack_digest?:string; job?:string; sources?:string[]; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
-  source:string; code:string; item?:string; requirement?:string; answered_by:string|null;
+  source:string; code:string; item?:string; requirement?:string;
+  /** The record that closed the request; null while it waits. */
+  answered_by:string|null;
+  /** Set when a later accepted result of the run voided the request instead of an answer closing it (B07 R[10]). */
+  superseded?:true;
 }
 
 /** Everything the console shows about one run. */
