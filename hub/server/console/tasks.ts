@@ -5,7 +5,7 @@ import {technicalCode} from './presentation.ts';
 // time on one call; the gap before a submission is Circle's own time, which the Hub does not observe), the Hub's checks of
 // the authoritative result, the requests with their audience and due time, the dispatch jobs (administrators only) and the
 // result. A time the Hub did not record is not drawn.
-import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome, type RequestStatus, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
@@ -105,6 +105,8 @@ export interface Step {
   open?: boolean;
   depth: 0 | 1;
   dur: string;
+  /** How many requests one step stands for; absent on every other step. */
+  count?: number;
 }
 
 /** The Chinese name of each of the six tools (contracts/src/tools.ts), by the name the protocol uses. */
@@ -199,24 +201,37 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     }
   }
 
+  // Requests of one kind, to one recipient, in one state are one step with their number (decision 151: equal rows are
+  // merged). A task submitted 56 times had issued 3,920 requests, nearly all of them voided since; each was a row of its
+  // own, drawn three times, after a read of its record. A group reads its first and its last record only: requests are
+  // listed in the order they were issued.
+  const groups = new Map<string, { kind: RunRequestView['kind']; audience: string; state: RequestStatus; rows: RunRequestView[] }>();
   for (const request of detail.requests ?? []) {
-    const created = (await recordTime(request.record)) ?? Date.parse(run.started_at);
-    const open = request.answered_by === null;
-    const due = Date.parse(request.due);
-    const overdue = open && Number.isFinite(due) && due < now;
-    const audience = /^usr_[0-9a-z]{26}$/.test(request.audience) ? await ctx.userName(request.audience) : request.audience;
-    const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : request.superseded ? 'superseded' : 'answered');
+    const open = request.answered_by === null, due = Date.parse(request.due);
+    const state: RequestStatus = open ? (Number.isFinite(due) && due < now ? 'overdue' : 'waiting') : request.superseded ? 'superseded' : 'answered';
+    const key = `${request.kind}\n${request.audience}\n${state}`;
+    const group = groups.get(key) ?? { kind: request.kind, audience: request.audience, state, rows: [] };
+    group.rows.push(request); groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    const first = (await recordTime(group.rows[0].record)) ?? Date.parse(run.started_at);
+    const last = group.rows.length === 1 ? first : (await recordTime(group.rows[group.rows.length - 1].record)) ?? first;
+    const open = group.state === 'waiting' || group.state === 'overdue';
+    const audience = /^usr_[0-9a-z]{26}$/.test(group.audience) ? await ctx.userName(group.audience) : group.audience;
+    const dues = group.rows.map((request) => request.due).sort();
+    const many = group.rows.length > 1;
     steps.push({
-      name: uiLabelOf('request_kind', request.kind),
-      sub: `接收人 ${audience} · 期限 ${fullTime(request.due)} · ${state}`,
+      name: uiLabelOf('request_kind', group.kind),
+      sub: `接收人 ${audience} · ${many ? `${group.rows.length.toLocaleString('en-US')} 条 · 最早期限` : '期限'} ${fullTime(dues[0])} · ${uiLabelOf('request_status', group.state)}`,
       fill: open ? 'fill-wait' : 'fill-pass',
-      dot: open ? (overdue ? 'down' : 'warn') : 'ok',
-      start: created,
-      end: open ? now : created,
-      point: !open,
+      dot: open ? (group.state === 'overdue' ? 'down' : 'warn') : 'ok',
+      start: Math.min(first, last),
+      end: open ? now : Math.max(first, last),
+      point: !open && first === last,
       open,
       depth: 0,
       dur: open ? uiLabelOf('request_status', 'waiting') : '',
+      count: group.rows.length,
     });
   }
 
@@ -268,7 +283,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const open = steps.some((s) => s.open === true);
   const toolCalls = calls.length;
   const pending = pendingCount(detail);
-  const waiting = steps.filter((s) => s.open === true).length;
+  const waiting = steps.filter((s) => s.open === true).reduce((sum, s) => sum + (s.count ?? 1), 0);
   const total = calls.length === 0 ? null : Date.parse([...calls].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0].at) - Math.min(...calls.map((c) => Date.parse(c.at) - c.duration_ms));
   const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'—':duration(total))}</div>`;
   const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；调用间空档未由 Hub 观测，不代表客户端计算耗时或执行位置。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
