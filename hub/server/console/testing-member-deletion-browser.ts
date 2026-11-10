@@ -8,6 +8,7 @@ import { createTestHub } from '../testing-real.ts';
 import { openConsole } from '../../../tests/acceptance/support/console.ts';
 import { wordingProblems } from './testing-wording.ts';
 import {CONSOLE_THEME,CONSOLE_LIVE} from './assets.ts';
+import {workflowPack,writePack} from '../../runs/packs/testing/builder.ts';
 const dir = await mkdtemp(join(tmpdir(), 'circle-hub-finish-block5-browser-')), profile = join(dir, 'profile');
 const hub = await createTestHub({ repositoryPacks: false, stubs: false, mindmapSkill: false, workbookSkill: false, xmlSkill: false, htmlSkill: false });
 let chrome: ReturnType<typeof spawn> | undefined, ws: WebSocket | undefined;
@@ -91,7 +92,10 @@ try {
         }
         if(name==='deletion-preview'){
           assert.match(await evaluate("document.querySelector('#delete-member-confirm pre').textContent"),/--expected-state=/);
-          assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源署名','归档的原文','私人工作流与技能']);
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源署名','归档的原文']);
+          assert.equal(await evaluate("document.querySelector('[data-deletion-handover] h3 .ch-tip').firstChild.textContent"),'转给管理员的私人工作流与技能');
+          assert.match(await evaluate("document.querySelector('[data-deletion-handover]').innerText"),/合成转移工作流/);
+          assert.match(await evaluate("document.querySelector('[data-deletion-handover]').innerText"),/接收人：管理员（执行删除的管理员）/);
           assert.equal(await evaluate("[...document.querySelectorAll('[data-deletion-scope] dt')].every(node=>node.getBoundingClientRect().height<28)"),true,'category names must remain readable on one line');
           assert.ok(await evaluate("document.querySelector('#delete-member-confirm').innerText.includes('在 Hub 所在主机上执行下列命令完成删除；内容变化后须重新检查。')"));
         }
@@ -117,6 +121,8 @@ try {
       await capture('team-capacity',hub.url+'/console/team?capacity=team',/团队空间容量/);
       await capture('team-capacity-dialog',hub.url+'/console/team?capacity=team#adjust-team-capacity',/调整团队容量/);
     }else{
+    const privatePack=await writePack(join(dir,'private-workflow'),workflowPack({id:'synthetic-deletion-transfer',title:'合成转移工作流'}));
+    const published=await hub.hub.registry.personal!.publish(user.principal,privatePack.dir);assert.equal(published.ok,true);
     const member=hub.url+'/console/team/'+user.user.id;
     await capture('deletion-preview',member+'?deletion=preview#delete-member-confirm',/确认永久删除成员/);
     await capture('deletion-refused',hub.url+'/console/team/'+hub.admin.user.id+'?deletion=preview#delete-member-confirm',/至少须保留一名启用的管理员/);
@@ -125,6 +131,8 @@ try {
     await assert.rejects(api.finish(hub.admin.principal,user.user.id,intent.operation_id),/存储清理未完成/);assert.equal((await hub.records.store.list({kind:'member_deletion'})).items.length,0);
     await capture('deletion-pending',member,/等待清除中/);
     await rm(blocked);await api.finish(hub.admin.principal,user.user.id,intent.operation_id);
+    assert.ok(await hub.hub.registry.personal!.resolve(hub.admin.principal,hub.admin.user.id,'synthetic-deletion-transfer'),'the administrator receives the private workflow version');
+    await assert.rejects(hub.hub.registry.personal!.resolve(user.principal,user.user.id,'synthetic-deletion-transfer'),/不存在或无权/,'the deleted identity cannot read its old version');
     await capture('deletion-complete',member,/私人内容已清除/);
     await capture('team-list',hub.url+'/console/team',/已删除的成员/);
     await capture('team-tombstone',hub.url+'/console/knowledge/space?'+new URLSearchParams({space:'team',root:shared.team_root,path:'/',entry:entry.entry}),/已删除的成员/);
