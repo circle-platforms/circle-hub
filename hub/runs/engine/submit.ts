@@ -7,7 +7,7 @@ import { abandonDecision } from './management.ts';
 import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { step } from '../../telemetry/api.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
-import { recordResultRequests, answerRepairedRequests } from './requests.ts';
+import { recordResultRequests, answerRepairedRequests, supersedeEarlierRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
 import { CAPTURED_GROUND } from '../../knowledge/declaration-grade.ts';
 import type { ContributionAppendPlan } from '../../knowledge/contributions.ts';
@@ -331,6 +331,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(incrementalGrowth&&outcome.result.acceptance==='accepted')for(const key of [...outcome.problems])if(unknownOnlyRequirement(outcome.result,key))outcome.problems.delete(key);
   const saved = await keepResult(base, outcome);
   await answerRepairedRequests(ctx,run,saved.result.body,saved.result.digest);
+  await supersedeEarlierRequests(ctx,run,saved.result.body,saved.result.digest);
   await action({
     acceptance: saved.result.body.acceptance,
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],

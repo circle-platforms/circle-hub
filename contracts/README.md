@@ -597,3 +597,10 @@ Decision 147 (owner, 2026-11-04) sets model 40: B08 F[14], the client declaratio
 `initialize` (`clientInfo.platform`). It stays diagnostic data under R[5]: it reaches `trace_spans.client_platform` only.
 `ClientDeclaration` of `contracts/src/spaces.ts`, the name and version bound to a client's writes, does not change, so no
 record, protocol code or MCP tool changes. B08 `changes40` states the change.
+
+Decision 150 (owner, 2026-11-10) sets model 41: B07 R[10] says that when an accepted submission of a run issues its
+requests, the requests the run's earlier submissions issued and nobody answered are void. The request record is not
+rewritten: an appended record points at the later result. The display axis `request_status` gains `superseded` 已作废.
+Requests another step closes are left: a criterion change's judgment, a dispatched job's disposition, a rerun of the run
+and a repair asked of the pack's author. No record kind, protocol code or MCP tool changes. B07 `changes41` states the
+change.
