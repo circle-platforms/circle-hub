@@ -37,7 +37,7 @@ export default function project(input: unknown): ProjectionResult {
       error: {
         code: 'source-read.no_source',
         message: '未提供任何要读取的外部来源',
-        fix: '在 inputs 里至少提供一个来源（defect、defect_list、story、build、mindmap、build_page、manual_file、svn_file）',
+        fix: '在 inputs 里至少提供一个来源（defect、defect_list、story、build、mindmap、build_page、spec_list、manual_file、svn_file）',
       },
       warnings: [],
     };
