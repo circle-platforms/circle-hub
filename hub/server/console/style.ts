@@ -55,6 +55,8 @@ const SHELL_CSS = `
 .ch-card-tail{margin-left:auto;font-size:13px}
 .ch-card-body{min-width:0;padding:var(--space-3) var(--space-5) var(--space-4)}
 .ch-card-body[data-flush]{padding:var(--space-2) 0 var(--space-1)}
+/* An empty list inside a card has the card's edge, not a second one of its own. */
+.ch-card-body .ch-empty{box-shadow:none;padding:var(--space-5)}
 .ch-card-body[data-flush] .ch-list{gap:0}
 .ch-card-body[data-flush] .ch-row{padding:var(--space-3) var(--space-5);border-radius:0;align-items:start}
 .ch-card-body[data-flush] .ch-row+.ch-row{box-shadow:inset 0 1px 0 var(--line-hairline)}

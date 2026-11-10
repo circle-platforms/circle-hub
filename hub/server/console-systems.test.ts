@@ -237,7 +237,7 @@ describe('the reads of the last day', () => {
     const connections = await send('/console/connections', { headers: { cookie: admin.cookie } });
     assert.match(connections.body, /近 24 小时读取/);
     assert.match(connections.body, /3 次（报错 1 次） · 中位 200 毫秒/);
-    assert.match(connections.body, /统计时段 .+ 至 .+；/);
+    assert.match(connections.body, /<p class="ch-meta" data-tab-facts>已启用 \d+ 个，共 \d+ 个 · 统计时段 [^；]+? 至 [^；]+?<\/p>/);
     const overview = await send('/console/overview', { headers: { cookie: admin.cookie } });
     assert.match(overview.body, /4 次（报错 1 次）/, 'the selected seven-day period also includes the read 36 hours ago');
   });

@@ -17,8 +17,8 @@ test('a client record shows registered credentials and observed use without impl
  const unused=await hub.records.principals.issueToken(hub.admin.principal,owner.user.id,'合成尚未使用的编辑器');
  const active=await hub.client(owner.token);t.after(()=>active.close());
  const manager=await openConsole(hub,hub.admin.token),member=await openConsole(hub,owner.token),mark=await hub.records.store.watermark!();
- const page=await manager.get('/console/connections');assert.equal(page.status,200,page.body);
- for(const value of ['已登记的客户端','已登记的连接关系','不代表实时在线','最近凭据使用','未记录不表示离线','hub-test-real','合成尚未使用的编辑器'])assert.ok(page.body.includes(value),value);
+ const page=await manager.get('/console/connections?tab=clients');assert.equal(page.status,200,page.body);
+ for(const value of ['每行对应有效凭据','最近凭据使用不是在线状态','最近凭据使用','未记录不表示离线','hub-test-real','合成尚未使用的编辑器'])assert.ok(page.body.includes(value),value);
  assert.doesNotMatch(page.body,/已连接的客户端|最近连接/);
  const selected=await manager.get('/console/connections?circle='+unused.id);assert.equal(selected.status,200);assert.match(selected.body,/<dt>最近凭据使用<\/dt><dd>未记录<\/dd>/);assert.ok(selected.body.includes('不代表实时在线'));
  const mine=await member.get('/console/connections');assert.equal(mine.status,200);assert.ok(mine.body.includes('合成尚未使用的编辑器'));assert.ok(!mine.body.includes('合成不可越权的其他编辑器'));

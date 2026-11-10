@@ -8,14 +8,27 @@ import {PACK_KIND} from '../../contracts/generated/vocabulary.ts';
 import type {PageContext} from './console/pages.ts';
 import {INTERACTION_SCRIPT} from './console/interaction.ts';
 
-test('connection directory uses unique native section anchors rather than false tab selection for both roles',async t=>{
+test('the connections page is one list a tab, each tab an address of its own, and members see their clients only',async t=>{
  const hub=await createTestServer();t.after(()=>hub.close());const user=await hub.createUser('合成目录读者');
- for(const member of [hub.admin,user]){
-  const console=await openConsole(hub,member.token),response=await console.get('/console/connections');assert.equal(response.status,200,response.body);
-  const nav=response.body.match(/<nav class="ch-page-toc"[^>]*>[\s\S]*?<\/nav>/)?.[0];assert.ok(nav);assert.match(nav,/连接页分区/);assert.match(nav,/本页内容/);assert.doesNotMatch(nav,/ch-seg|role="tab|aria-current="page"/);
-  for(const id of ['system-sources','circles','systems','envs','more']){assert.ok(nav.includes('href="#'+id+'"'));assert.equal((response.body.match(new RegExp(' id="'+id+'"','g'))??[]).length,1,id);}
-  assert.match(response.body,/业务系统接入，再在连接页配置具体系统/);assert.match(response.body,/id="live-system-sources"/);assert.match(response.body,/data-theme-switch/);
-  if(member===user){assert.match(response.body,/业务系统的配置仅管理员可见/);assert.match(response.body,/运行环境仅管理员可见/);assert.doesNotMatch(response.body,/href="\/console\/operations\/system"/);}
+ const admin=await openConsole(hub,hub.admin.token);
+ const tabsOf=(body:string)=>[...(/<nav class="ch-seg" aria-label="连接内容" data-connection-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]);
+ const first=await admin.get('/console/connections');assert.equal(first.status,200,first.body);
+ assert.deepEqual(tabsOf(first.body),[['/console/connections',true,'业务系统'],['/console/connections?tab=packs',false,'业务系统接入'],['/console/connections?tab=clients',false,'客户端'],['/console/connections?tab=environments',false,'运行环境']]);
+ // Decision 151: no directory of anchors down one long page, no diagram that repeats two of its lists, nothing planned.
+ assert.doesNotMatch(first.body,/ch-page-toc|本页内容|已登记的连接关系|多终端协同|消息通知|ch-stats/);
+ const lists={systems:'live-systems',packs:'live-system-sources',clients:'live-circles',environments:'live-environments'};
+ for(const [tab,id] of Object.entries(lists)){
+  const reply=await admin.get('/console/connections'+(tab==='systems'?'':'?tab='+tab));assert.equal(reply.status,200,tab);
+  for(const [other,otherId] of Object.entries(lists))assert.equal(reply.body.includes(' id="'+otherId+'"'),other===tab,tab+' shows '+other);
+  assert.deepEqual(tabsOf(reply.body).filter(row=>row[1]).map(row=>row[0]),['/console/connections'+(tab==='systems'?'':'?tab='+tab)],tab);
+  assert.match(reply.body,/data-theme-switch/);
+ }
+ assert.match((await admin.get('/console/connections?tab=packs')).body,/业务系统接入，再在连接页配置具体系统/);
+ const member=await openConsole(hub,user.token);
+ for(const path of ['/console/connections','/console/connections?tab=systems','/console/connections?tab=environments']){
+  const mine=await member.get(path);assert.equal(mine.status,200,path);assert.deepEqual(tabsOf(mine.body),[],path);
+  assert.match(mine.body,/ id="live-circles"/);assert.doesNotMatch(mine.body,/ id="live-(?:systems|environments|system-sources)"/);
+  assert.match(mine.body,/业务系统和运行环境的配置仅管理员可见/);assert.doesNotMatch(mine.body,/href="\/console\/operations\/system"/);
  }
  assert.doesNotThrow(()=>new Function(INTERACTION_SCRIPT));
 });

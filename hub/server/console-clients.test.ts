@@ -41,7 +41,7 @@ test('connections, team and settings list each client by the name and version it
  await hub.records.principals.issueToken(hub.admin.principal,owner.user.id,UNNAMED_CLIENT,unnamed.id);
  const admin=await openConsole(hub,hub.admin.token),member=await openConsole(hub,owner.token);
  for(const path of ['/console/connections','/console/team']){
-  const reply=await admin.get(path);assert.equal(reply.status,200,path);
+  const reply=await admin.get(path==='/console/connections'?path+'?tab=clients':path);assert.equal(reply.status,200,path);
   const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
   assert.match(tables,/<th scope="col">客户端<\/th><th scope="col">成员<\/th><th scope="col">连接方式<\/th><th scope="col">最近凭据使用<\/th>/,path);
   assert.match(tables,/<span data-evidence>hub-test-real 0\.0\.0<\/span>/,'the name and version from clientInfo, as recorded');

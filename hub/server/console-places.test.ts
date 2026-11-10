@@ -219,10 +219,10 @@ describe('operations and commands', () => {
 
   test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
     const admin=await signIn(server.admin.token);
-    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections',admin);
+    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections?tab=packs',admin);
     assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/packs\/line-a"/);
     assert.ok(knowledge.body.includes(uiLabelOf('pack_kind','product')));assert.match(knowledge.body,/合成产品线/);
-    assert.match(connections.body,/id="system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
+    assert.match(connections.body,/id="live-system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
     assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
     for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
       const detail=await get('/console/packs/'+id,admin);
@@ -249,7 +249,7 @@ describe('operations and commands', () => {
     server.fakes.workflows.packs.push(...sources);
     t.after(() => { for (const source of sources) server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(source), 1); });
     const admin = await signIn(server.admin.token);
-    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections', sources[1], 'retired']] as const) {
+    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections?tab=packs', sources[1], 'retired']] as const) {
       const body = (await get(path, admin)).body;
       const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
       assert.ok(row);
@@ -316,7 +316,7 @@ describe('operations and commands', () => {
     const direct=await server.records.principals.issueToken(server.admin.principal,user.user.id,'合成 Linux Circle');
     const admin=await signIn(server.admin.token), memberSession=await signIn(user.token);
     for(const path of ['/console/team',`/console/team/${user.user.id}`,'/console/connections']) {
-      const reply=await get(path,admin);
+      const reply=await get(path==='/console/connections'?path+'?tab=clients':path,admin);
       const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
       assert.match(tables,/<th scope="col">客户端<\/th>[\s\S]*<th scope="col">连接方式<\/th>/);
       assert.match(tables,/合成 MacBook Circle/);
@@ -371,7 +371,7 @@ describe('operations and commands', () => {
     const circle = await get('/console/team?circle='+token.id,admin);
     assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
-    assert.ok(connections.body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
+    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
     const pack = await get('/console/packs/review', admin);
     assert.ok(pack.body.includes('circle-hub pack retire review@1.0.0'));
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
