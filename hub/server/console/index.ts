@@ -40,6 +40,7 @@ import {withReadScope,memoReadPort} from '../../records/api.ts';
 import {sourceArchivePage} from './source-archive.ts';
 import {Sha256} from '../../../contracts/src/common.ts';
 import {performMemoryAction} from './memory.ts';
+import {recoverEditor} from './form-recovery.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
@@ -952,7 +953,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
           session!.notice=state?(segments[2]==='sync-confirm-purge'?'已确认清除 · ':'')+axisUiLabel('sync_mode')+'：'+uiLabelOf('sync_mode',state.mode):done??'已保存';
         }
         return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);
-      }catch(error){result=spaceActionFailure(ctx,error);}
+      }catch(error){result=(segments[0]==='knowledge'?recoverEditor(ctx,segments[2],values,error):null)??spaceActionFailure(ctx,error);}
     }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;
