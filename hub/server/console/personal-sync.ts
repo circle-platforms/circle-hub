@@ -32,7 +32,11 @@ export async function personalSyncNotice(ctx:PageContext):Promise<Html>{
  const actions=html`<footer class="ch-inspector-actions">${control}</footer>`;
  const pending=local?html``:await purgeRequestPanel(ctx,state.epoch);
  if(selected)return html`<div data-sync-settings data-inspector-content><div class="ch-actions"><span class="ch-tag">${axisUiLabel('sync_mode')}</span>${status}</div><h2 class="ch-panel-title">${uiLabelOf('sync_mode',state.mode)}</h2>${pending}${details}${actions}${confirmation}</div>`;
- return html`<div data-sync-settings>${panel({title:axisUiLabel('sync_mode'),tail:actionLink(location(ctx,'settings'),'更改…','ghost')},html`<p>${uiLabelOf('sync_mode',state.mode)} ${status}</p>${pending}${details}${actions}${confirmation}`)}</div>`;
+ // Decision 151: on the list page the setting is one line of facts with the way to change it; the controls, the
+ // confirmation and the explanation are in the pane that 更改… opens. What needs attention stays visible: a pending purge,
+ // unresolved conflicts, and that the Hub copy is empty, with the one action that state has (sync to the Hub again).
+ const attention=html`${pending}${conflicts?html`<p class="ch-meta">${uiLabelOf('sync_status','conflicted')} ${conflicts.toLocaleString('en-US')}：冲突版本保留，等待客户端选择后同步；未解决的记忆不用于新会话。</p>`:''}${local?html`<p class="ch-meta">Hub 上的当前私人空间为空；本机副本与团队副本保留，运行引用过的私人原文已一并清除。</p>${actions}${confirmation}`:''}`;
+ return html`<div data-sync-settings><p class="ch-meta" data-sync-line>${tooltip(axisUiLabel('sync_mode'),'知识与记忆共用同步方式。同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读。')}：${uiLabelOf('sync_mode',state.mode)} ${status} · ${uiLabelOf('sync_field','last_synced_at')} ${state.last_synced_at?timestamp(state.last_synced_at):'—'} · <a href="${location(ctx,'settings')}">更改…</a></p>${attention}</div>`;
 }
 type Impact={personal_bytes:number;directory_grants:number;team_copies_preserved:number;run_held_originals?:number;affected_runs?:number};
 const purgeFacts=(impact:Impact)=>facts([['清除内容',size(impact.personal_bytes)],['文件夹分享',number(impact.directory_grants)],['保留的团队副本',number(impact.team_copies_preserved)],['运行引用的私人原文',number(impact.run_held_originals??0)],['受影响的运行',number(impact.affected_runs??0)]]);
