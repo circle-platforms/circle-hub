@@ -25,8 +25,8 @@ test('check descriptors display the module and selected export instead of an obj
  assert.ok(escaped.includes('functions/&lt;script&gt;.ts'));assert.ok(escaped.includes('&lt;unsafe&gt;'));
 });
 
-test('breadcrumbs keep distinct classifications without repeating the workflow area',async()=>{
- for(const [kind,labels] of [['workflow',['工作流','合成详情']],['skill',['工作流','通用技能','合成详情']],['product',['知识库','产品知识来源','合成详情']],['system',['连接','业务系统接入','合成详情']]] as const){
+test('breadcrumbs keep distinct classifications without repeating the area a place already names',async()=>{
+ for(const [kind,labels] of [['workflow',['工作流','合成详情']],['skill',['技能','合成详情']],['product',['知识库','产品知识来源','合成详情']],['system',['连接','业务系统接入','合成详情']]] as const){
   const ctx=detailContext(kind);let crumbs='';ctx.chrome=(title,options)=>{crumbs=String(options?.crumbs??'');return {title,user:null,csrf:null};};
   await packPage(ctx,'synthetic-detail');
   assert.deepEqual(crumbs.split(' › ').map(part=>part.replace(/<[^>]*>/g,'')),labels);
@@ -39,10 +39,13 @@ test('received skills stay in their own group and team scopes disclose assignmen
  const base={version:'1.0.0',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T10:41:34.891Z'};
  const listings=[{...base,id:'synthetic-team',kind:'workflow',title:'合成团队工作流',owner:'admin'},{...base,id:'synthetic-shared',kind:'skill',title:'合成受权技能',space:'peer',owner:'peer'}];
  const ctx={principal:users[0],url:new URL('http://127.0.0.1/console/packs'),userName:async(id:string)=>users.find(user=>user.id===id)?.name??'—',chrome:(title:string)=>({title,user:{name:'合成作者',role:'成员',admin:false}}),deps:{packs:{list:async()=>listings},records:{principals:{list:async()=>users},authorizations:{canPublish:async()=>false,usersOf:async()=>assignments}}}} as unknown as PageContext;
- const render=async()=>String((await packsPage(ctx)).body);
- const body=await render();
- assert.match(body,/<section[^>]+id="shared-skill"[^>]*>[\s\S]*?合成受权技能/);
- assert.doesNotMatch(/<section[^>]+id="personal-skill"[^>]*>([\s\S]*?)<\/section>/.exec(body)?.[1]??'',/合成受权技能/);
+ const render=async(kind:'workflow'|'skill'='workflow')=>String((await packsPage(ctx,kind)).body);
+ const body=await render(),skills=await render('skill');
+ assert.match(skills,/<section[^>]+id="shared-skill"[^>]*>[\s\S]*?合成受权技能/);
+ assert.doesNotMatch(/<section[^>]+id="personal-skill"[^>]*>([\s\S]*?)<\/section>/.exec(skills)?.[1]??'',/合成受权技能/);
+ // Decision 151: each place lists its own kind only, and a skill's row links into the skills place.
+ assert.ok(!body.includes('合成受权技能'));assert.ok(!skills.includes('合成团队工作流'));
+ assert.match(skills,/href="\/console\/skills\/synthetic-shared\?/);assert.match(body,/href="\/console\/packs\/synthetic-team\?/);
  assert.match(body,/使用范围：团队/);assert.doesNotMatch(body,/使用范围：合成作者|使用范围：本人及全体管理员/);
  ctx.admin=true;ctx.principal={...ctx.principal,role:'admin'};
  assert.match(await render(),/使用范围：合成作者/);
@@ -50,13 +53,20 @@ test('received skills stay in their own group and team scopes disclose assignmen
  assignments=['owner','peer','disabled'];const all=await render();assert.match(all,/使用范围：合成作者、合成协作者/);assert.doesNotMatch(all,/使用范围：[^<]*合成停用成员/);
 });
 
-test('workflow and skill details retain the unified list scope counts without including system or product packs',async()=>{
+test('workflow and skill details retain the scope counts of their own place without including the other kinds',async()=>{
  const principal={id:'reader',name:'合成成员',role:'user'},base={version:'1.0.0',owner:'admin',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T00:00:00.000Z'};
- const listings=[{...base,id:'workflow-one',title:'合成工作流',kind:'workflow'},{...base,id:'skill-one',title:'合成技能',kind:'skill'},{...base,id:'skill-one',title:'合成旧技能',kind:'skill',version:'0.9.0',withdrawn:true},{...base,id:'system-one',title:'合成系统',kind:'system'},{...base,id:'product-one',title:'合成产品',kind:'product'}];
+ const listings=[{...base,id:'workflow-one',title:'合成工作流',kind:'workflow'},{...base,id:'workflow-two',title:'合成第二工作流',kind:'workflow'},{...base,id:'skill-one',title:'合成技能',kind:'skill'},{...base,id:'skill-one',title:'合成旧技能',kind:'skill',version:'0.9.0',withdrawn:true},{...base,id:'system-one',title:'合成系统',kind:'system'},{...base,id:'product-one',title:'合成产品',kind:'product'}];
  const ctx={principal,admin:false,url:new URL('http://127.0.0.1/console/packs?scope=all'),userName:async()=>principal.name,chrome:(title:string,extra:object)=>({title,...extra,csrf:null,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>listings},workflows:{byDigest:async()=>null},records:{authorizations:{canPublish:async()=>false}}}} as unknown as PageContext;
  const counts=(body:string)=>[...body.matchAll(/<span class="ch-count">([^<]+)<\/span>/g)].map(match=>match[1]);
- const list=String((await packsPage(ctx)).body);assert.deepEqual(counts(list),['2','0','2']);
- for(const id of ['workflow-one','skill-one']){ctx.url=new URL('http://127.0.0.1/console/packs/'+id+'?scope=all');const detail=String((await packPage(ctx,id)).body);assert.deepEqual(counts(detail),counts(list));assert.match(detail,/合成工作流/);assert.match(detail,/合成技能/);assert.doesNotMatch(detail,/合成系统|合成产品/);}
+ // All, mine, team: two workflows in one place, one skill (two versions of it) in the other.
+ const workflows=String((await packsPage(ctx)).body);assert.deepEqual(counts(workflows),['2','0','2']);
+ ctx.url=new URL('http://127.0.0.1/console/skills?scope=all');
+ const skills=String((await packsPage(ctx,'skill')).body);assert.deepEqual(counts(skills),['1','0','1']);
+ assert.match(workflows,/href="\/console\/packs\?scope=team"/);assert.match(skills,/href="\/console\/skills\?scope=team"/);
+ for(const [path,list,own,other] of [['/console/packs/workflow-one',workflows,/合成工作流/,/合成技能/],['/console/skills/skill-one',skills,/合成技能/,/合成工作流/]] as const){
+  ctx.url=new URL('http://127.0.0.1'+path+'?scope=all');const detail=String((await packPage(ctx,path.split('/').at(-1)!)).body);
+  assert.deepEqual(counts(detail),counts(list),path);assert.match(detail,own);assert.doesNotMatch(detail,other);assert.doesNotMatch(detail,/合成系统|合成产品/);
+ }
 });
 
 test('member team scopes reveal neither assignment counts nor member names on cards or detail pages',async()=>{

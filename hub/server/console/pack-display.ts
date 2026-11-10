@@ -1,6 +1,6 @@
 // Navigation and publication presentation only; kind selection never changes the uploaded manifest or its validation.
 import { axisUiLabel, isPackKind, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
-import type { Html, PageChrome } from './html.ts';
+import { SKILLS_PLACE, type Html, type PageChrome } from './html.ts';
 import type { PageContext } from './pages.ts';
 import { tooltip } from './presentation.ts';
 
@@ -12,8 +12,18 @@ export function publishingKind(ctx: PageContext): PackKind {
 export function packHome(kind: PackKind): { active: NonNullable<PageChrome['active']>; path: string } {
   if (kind === 'product') return { active: 'knowledge', path: '/console/knowledge#product-sources' };
   if (kind === 'system') return { active: 'connections', path: '/console/connections#system-sources' };
-  return { active: 'packs', path: '/console/packs' };
+  return kind === 'skill' ? { active: 'skills', path: PACK_PLACES.skill.path } : { active: 'packs', path: PACK_PLACES.workflow.path };
 }
+
+/** The kinds that have a place of their own in the navigation (decision 151), each with its place. */
+export const PACK_PLACES = {
+  workflow: { active: 'packs', path: '/console/packs', title: uiLabelOf('pack_kind', 'workflow') },
+  skill: { active: 'skills', path: '/console/skills', title: SKILLS_PLACE },
+} as const satisfies Partial<Record<PackKind, { active: NonNullable<PageChrome['active']>; path: string; title: string }>>;
+/** A kind with a place of its own: the keys of the table above, never a list of kinds written out again. */
+export type PlaceKind = keyof typeof PACK_PLACES;
+/** The page of one pack: a skill under the skills place, every other kind under the workflows path as before. */
+export const packPath = (pack: { id: string; kind: PackKind }): string => (pack.kind === 'skill' ? PACK_PLACES.skill.path : PACK_PLACES.workflow.path) + '/' + pack.id;
 
 export function packPurpose(kind:PackKind):string{
  if(kind==='workflow')return '要完成一项有验收要求的任务，选择工作流；客户端依照做法执行，Hub 按声明的验收要求核验提交结果。';
