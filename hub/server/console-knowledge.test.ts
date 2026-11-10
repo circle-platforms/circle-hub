@@ -78,10 +78,12 @@ test('with knowledge spaces, as the real assembly always has, the home keeps the
   assert.doesNotMatch(body, /id="product-sources"|知识入库待处理/);
 });
 
-test('the knowledge inspector shows the exact space-filtered count without uncertainty',async()=>{
+test('the knowledge list shows the exact space-filtered count in its head, without uncertainty and without a side pane',async()=>{
  const spaces={visible:async()=>[],recent:async()=>({items:[],total:7}),shareHistory:async()=>({items:[],next:null}),usage:async()=>({knowledge:0,memory:0,used:0,limit:1024**3,remaining:1024**3,over:0})};
  const ctx=context({products,knowledge:{spaces}},true);ctx.url=new URL('http://127.0.0.1/console/knowledge?scope=personal');
  const body=String((await knowledgePage(ctx)).body);
- assert.match(body,/<span class="ch-stat-value">7<\/span>/);
+ // Decision 151: the count stands in the head of the list it counts; no pane repeats it.
+ assert.match(body,/<h2 class="ch-card-title">[\s\S]*?<\/h2><span class="ch-meta">7 条<\/span>/);
+ assert.doesNotMatch(body,/<aside class="ch-inspector"/);
  assert.doesNotMatch(body,/至多|候选记录.*上限/);
 });

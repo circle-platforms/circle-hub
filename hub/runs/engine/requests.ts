@@ -10,7 +10,7 @@ import type { EngineContext } from './deps.ts';
 import { canSeeRun } from './readers.ts';
 import {requestReadable} from './grounds.ts';
 import {queryRead} from './query-scope.ts';
-import { runById, keyOwner } from './store.ts';
+import { runById, keyOwner, submissionByDigest } from './store.ts';
 import { createRequestService, type RequestBody, type RequestScope, type RequestView } from '../../requests/api.ts';
 export { createRequestService, RequestBodySchema, requestKey, requestKeyOf } from '../../requests/api.ts';
 export type { RequestBody, RequestScope, RequestView } from '../../requests/api.ts';
@@ -120,6 +120,30 @@ export async function answerRepairedRequests(ctx:EngineContext,run:RunRecord,res
     const cross=result.cross_item.filter(c=>c.requirement===request.requirement);
     if(settled?.status==='satisfied'||request.item===undefined&&cross.length>0&&!result.errors.some(e=>e.requirement===request.requirement)&&cross.every(c=>c.qualifier.nature!=='unknown'&&c.statement.verdict!=='refute'))await answerRequest(ctx,request.record,record);
   }
+}
+
+/**
+ * B07 R[10]: an accepted submission's result lists everything still missing, so the requests earlier submissions of the run
+ * issued and nobody answered are void, and so are the escalations of those. Requests another step closes stay: a criterion
+ * change's judgment, a dispatched job's disposition, a rerun of the run and a repair asked of the pack's author. When the
+ * accepted submission is an earlier one again, the requests it had issued and a later one voided wait again.
+ */
+export async function supersedeEarlierRequests(ctx:EngineContext,run:Pick<RunRecord,'run'>,result:Pick<ValidationResult,'acceptance'|'submission'>,record:string):Promise<void>{
+  if(result.acceptance!=='accepted')return;
+  const all=await requestRecords(ctx,run.run);
+  // The same content submitted again after another: its own requests, voided meanwhile, state the gaps of the result once more.
+  const back=new Set(all.filter(request=>request.superseded&&request.source===result.submission).map(request=>request.record));
+  for(let grown=back.size>0;grown;){grown=false;for(const request of all)if(request.superseded&&!back.has(request.record)&&back.has(request.source)){back.add(request.record);grown=true;}}
+  await service(ctx).reinstate([...back],record);
+  const open=all.filter(request=>request.answered_by===null&&request.source!==result.submission&&!request.job&&!request.declaration&&!request.answer_action&&!request.pack_digest);
+  if(!open.length)return;
+  // A request of a submission names the digest of what was submitted (ValidationResult.submission), not a record.
+  const submitted=new Set<string>();
+  for(const source of new Set(open.map(request=>request.source)))if(await submissionByDigest(ctx.deps.records.store,run.run,source))submitted.add(source);
+  const voided=new Set(open.filter(request=>submitted.has(request.source)).map(request=>request.record));
+  // An escalation names the request it escalates as its source.
+  for(let grown=true;grown;){grown=false;for(const request of open)if(!voided.has(request.record)&&voided.has(request.source)){voided.add(request.record);grown=true;}}
+  await service(ctx).supersede([...voided],record);
 }
 
 async function hypothesisFor(ctx:EngineContext,request:StoredRecord<RequestBody>,question:string):Promise<string>{

@@ -115,7 +115,7 @@ describe('scenario 5: cross-item fact and judgment resting on it', () => {
     assert.ok(submitLog);
     assert.equal(submitLog.acceptance, 'accepted');
 
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(run.run));
   });

@@ -1,8 +1,30 @@
 // A durable, deduplicated question for a named administrator, with a concrete recovery action.
 import type { RequestKind,Attribution,Reason } from '../../contracts/generated/vocabulary.ts';
-import {canonicalize,sha256Hex} from '../records/api.ts';
+import {canonicalize,sha256Hex,scanForCredentials,isSha256,type Principal,type Page,type ActionBody,type SourceArtifactBody} from '../records/api.ts';
+import type {KnowledgeRecords} from './context.ts';
+import {KnowledgeError} from './errors.ts';
 import type {KnowledgeContext} from './context.ts';
 import {ACTION,COMPONENTS} from './store.ts';
+
+export interface CredentialReviewRow {
+ reference:string;source:string;external:string|null;audience:string;created_at:string;deadline:string;resolved:boolean;expired:boolean;superseded:boolean;
+}
+
+export async function credentialReviewRequests(records:Pick<KnowledgeRecords,'store'|'principals'|'artifacts'>,by:Principal,query:{cursor?:string|null;limit?:number;now?:Date}={}):Promise<Page<CredentialReviewRow>>{
+ const active=await records.principals.get(by.id);if(!active||active.disabled||active.role!=='admin')throw new KnowledgeError('来源核看请求不可用',{code:'SOURCE_UNAVAILABLE'});
+ const limit=query.limit??50;if(!Number.isInteger(limit)||limit<1||limit>100)throw new RangeError('核看请求每页条数须为 1 到 100 的整数');
+ const page=await records.store.find<ActionBody>({key:'knowledge.credential.request.all',value:'1',kind:'action',newestFirst:true,limit,cursor:query.cursor??null});
+ const [resolved,expired]=await Promise.all([records.store.findMany<ActionBody>({key:'knowledge.credential.resolved',values:page.items.map(row=>row.digest),kind:'action'}),records.store.findMany<ActionBody>({key:'knowledge.credential.expired',values:page.items.map(row=>row.digest),kind:'action'})]);
+ const done=new Set(resolved.map(row=>row.body.detail.resolved_request)),past=new Set(expired.map(row=>row.body.detail.expired_request));const items:CredentialReviewRow[]=[];
+ for(const row of page.items){
+  const detail=row.body.detail,credential=detail.credential as {sha256?:unknown;record?:unknown;external?:unknown}|undefined;
+  if(!credential||typeof credential.sha256!=='string'||typeof credential.record!=='string'||!isSha256(credential.record)||!isSha256(credential.sha256)||typeof detail.audience_user!=='string'||typeof detail.deadline!=='string'||!Number.isFinite(Date.parse(detail.deadline)))continue;
+  const source=await records.store.get<SourceArtifactBody>(credential.record);if(!source||source.kind!=='source_artifact'||source.body.sha256!==credential.sha256||!await records.artifacts.canRead(active,source))continue;
+  const external=typeof credential.external==='string'?credential.external:null,scan=external===null?null:scanForCredentials(Buffer.from(external));
+  items.push({reference:`rec:${row.digest}`,source:`src:${credential.sha256}`,external:scan?.inspected&&!scan.truncated&&!scan.findings.length?external:null,audience:detail.audience_user,created_at:row.created_at,deadline:detail.deadline,resolved:done.has(row.digest),expired:Date.parse(detail.deadline)<=(query.now??new Date()).getTime(),superseded:past.has(row.digest)});
+ }
+ return {items,next:page.next};
+}
 
 /** The administrator a request names: the configured one while enabled, else any enabled administrator. */
 export async function namedAdmin(context:KnowledgeContext){

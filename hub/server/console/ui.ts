@@ -31,6 +31,17 @@ export interface CardHead {
 }
 
 export const card=panel;
+/** A bordered block of the reorganized pages (decision 151): an optional head, a body and an optional foot. */
+export function box(head:{title:unknown;hint?:string;meta?:unknown;tail?:unknown}|null,body:unknown,options:{flush?:boolean;foot?:unknown}={}):Html{
+ return html`<section class="ch-card">${head?html`<div class="ch-card-head"><h2 class="ch-card-title">${head.hint?tooltip(head.title,head.hint):head.title}</h2>${head.meta===undefined?'':html`<span class="ch-meta">${head.meta}</span>`}${head.tail===undefined?'':html`<span class="ch-card-tail">${head.tail}</span>`}</div>`:''}<div class="ch-card-body"${options.flush?html` data-flush`:''}>${body}</div>${options.foot===undefined?'':html`<div class="ch-card-foot">${options.foot}</div>`}</section>`;
+}
+/**
+ * One figure of a page's summary row. A figure that leads to the list it counts carries a link over the whole tile, named by
+ * `to`: the label, value and note stay separate texts instead of running together as one link text.
+ */
+export function tile(figure:Html,path?:string,to?:string):Html{
+ return html`<div class="ch-card ch-tile">${figure}${path===undefined?'':html`<a class="ch-tile-link" href="${path}" aria-label="${to??''}"></a>`}</div>`;
+}
 export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
  return html`<div class="ch-stat"><span class="ch-stat-label">${options.state?dot(options.state):''}${options.hint?tooltip(label,options.hint):label}</span><span class="ch-stat-value">${value}${options.unit?html`<span class="ch-stat-unit"> ${options.unit}</span>`:''}</span>${options.note?html`<span class="ch-stat-note">${options.note}</span>`:''}</div>`;
 }
@@ -66,6 +77,10 @@ export interface Pill {
 /** Filters as links: the current one is marked, each with its count. */
 export function pills(items: readonly Pill[], label: string): Html {
   return html`<nav class="ch-actions" aria-label="${label}">${items.map((p) => html`<a class="ch-chip" href="${href(p.path, p.params)}"${p.on ? html` aria-current="true"` : ''}>${p.label}${p.count === undefined ? '' : html` <span class="ch-count">${p.count}</span>`}</a>`)}</nav>`;
+}
+
+export function pageContents(items:readonly (readonly [string,unknown])[],label:string):Html{
+ return html`<nav class="ch-page-toc" data-page-toc aria-label="${label}"><span class="ch-page-toc-label">本页内容</span><div>${items.map(([anchor,text])=>html`<a href="#${anchor}">${text}</a>`)}</div></nav>`;
 }
 
 /** Anchors within the page, as the segmented control of the design. */

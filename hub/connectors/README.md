@@ -1,6 +1,10 @@
 # hub/connectors
 
-Read-only access to external systems. Model elements: **D01** (all rules, including R[9] login and envelope codes and R[10]
+Read-only access to external systems.
+
+The #109 cache/effective-tier controls already exist at `aded2ffd`: both cache insertion and reuse recheck every used capture through the function-tier artifacts port, and response withholding uses the computed held state. Regressions exercise newer scanner findings across equal bytes and withdrawal of an acceptance. A separate explicit retain-only capture stays inaccessible by its own record but does not rewrite a different pinned clean capture; this is distinct from a cross-record scanner finding. The task `docs/hub-r4-tasks/nested-read-tiers.md` records current synthetic verification rather than claiming a new runtime repair.
+
+Model elements: **D01** (all rules, including R[9] login and envelope codes and R[10]
 the route list), **D02** (the read-only premise enforced by the transport), **D03** (read part), **D07** (resources only),
 **B02** provenance, **B05** read actions, **R02**. The package owns `hub/connectors/**` and `contracts/src/resources.ts`.
 Other packages import `hub/connectors/api.ts` (and tests `hub/connectors/testing/api.ts`); it imports only `contracts`,

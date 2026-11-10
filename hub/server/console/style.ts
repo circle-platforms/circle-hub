@@ -42,6 +42,63 @@ const SHELL_CSS = `
 .ch-chart [data-chart-index]:focus-visible .hit{stroke:var(--focus-ring);stroke-width:2}
 .ch-chart [data-row-href] .hit{cursor:pointer}
 .ch-field-error{display:block}
+.ch-app [data-editor-foreground]{width:100%;max-width:850px;min-width:0}
+[data-editor-foreground] form>[data-fields]{grid-template-columns:minmax(0,1fr)}
+[data-editor-foreground] details>div{padding-block:var(--space-3)}
+.ch-editor-actions{position:sticky;bottom:0;z-index:2;background:var(--surface-0);border-top:1px solid var(--line-hairline);padding-block:var(--space-4);flex-wrap:wrap}
+[data-editor-foreground] textarea[name="statement"]{min-height:100px}
+[data-editor-foreground] textarea[name="markdown"]{min-height:160px}
+/* Blocks of the reorganized pages (decision 151): a bordered card, a row of figures, a main column beside a narrower one. */
+.ch-card{display:flex;flex-direction:column;min-width:0;box-sizing:border-box;border:1px solid var(--line-hairline);border-radius:var(--radius-lg);background:var(--surface-1);color:inherit}
+.ch-card-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-1) var(--space-3);padding:var(--space-4) var(--space-5) 0}
+.ch-card-title{margin:0;font:600 15px/22px var(--font-sans);color:var(--text-primary)}
+.ch-card-tail{margin-left:auto;font-size:13px}
+.ch-card-body{min-width:0;padding:var(--space-3) var(--space-5) var(--space-4)}
+.ch-card-body[data-flush]{padding:var(--space-2) 0 var(--space-1)}
+.ch-card-body[data-flush] .ch-list{gap:0}
+.ch-card-body[data-flush] .ch-row{padding:var(--space-3) var(--space-5);border-radius:0;align-items:start}
+.ch-card-body[data-flush] .ch-row+.ch-row{box-shadow:inset 0 1px 0 var(--line-hairline)}
+.ch-card-foot{padding:var(--space-3) var(--space-5);box-shadow:inset 0 1px 0 var(--line-hairline);font-size:13px}
+/* A row of a card is one link: its name reads as text, not as a link among links, and the row answers the pointer. */
+.ch-card-body[data-flush] a.ch-row{color:inherit;text-decoration:none}
+.ch-card-body[data-flush] a.ch-row b{color:var(--text-primary);font-weight:500}
+.ch-card-body[data-flush] a.ch-row:hover{background:var(--surface-hover)}
+/* The card's head already names the figure; the figure keeps its title for assistive technology. */
+.ch-card-head+.ch-card-body .ch-figure-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ch-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-4)}
+.ch-tile{position:relative;padding:var(--space-4) var(--space-5)}
+.ch-tile-link{position:absolute;inset:0;border-radius:inherit}
+.ch-tile-link:hover{box-shadow:inset 0 0 0 1px var(--line-control)}
+.ch-board{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--space-4);align-items:start}
+.ch-stack{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
+/* A task's result beside what still waits for someone (decision 151). */
+.ch-result{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.ch-result>div{display:flex;flex-direction:column;gap:var(--space-3);min-width:0;padding:var(--space-4) var(--space-5)}
+.ch-result>div+div{box-shadow:inset 1px 0 0 var(--line-hairline)}
+.ch-result p{margin:0}
+.ch-todo{display:flex;flex-direction:column;gap:var(--space-2);margin:0;padding:0;list-style:none}
+.ch-todo li{display:flex;align-items:baseline;gap:var(--space-3);min-width:0}
+.ch-todo b{font-weight:500;overflow-wrap:anywhere}
+.ch-todo-count{flex:none;min-width:48px;padding:0 var(--space-2);border-radius:var(--radius-sm);background:var(--status-warn-bg);color:var(--status-warn-text);font:600 13px/24px var(--font-sans);text-align:center}
+@media(max-width:1180px){.ch-result{grid-template-columns:minmax(0,1fr)}.ch-result>div+div{box-shadow:inset 0 1px 0 var(--line-hairline)}}
+/* Filters of a list: the result chips at the start, the other filters at the end. */
+.ch-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3) var(--space-4)}
+.ch-toolbar>[data-filters]{margin-left:auto}
+/* A table inside a card reaches the card's edges; its cells keep the card's inset. */
+.ch-card-body[data-flush] .ch-table-wrap{box-shadow:none;border-radius:0;background:transparent}
+/* The first cell of a list of things names the thing: it reads as text and the whole row is the link. */
+.ch-card-body[data-flush] .ch-table td:first-child>a{color:var(--text-primary);text-decoration:none}
+.ch-card-body[data-flush] .ch-table td:first-child>a:hover{text-decoration:underline}
+.ch-seg a .ch-count{margin-left:var(--space-2)}
+.ch-toolbar [data-filters] label{display:inline-flex;flex-direction:row;align-items:center;gap:var(--space-2)}
+.ch-card-body[data-flush] .ch-table th:first-child,.ch-card-body[data-flush] .ch-table td:first-child{padding-left:var(--space-5)}
+.ch-card-body[data-flush] .ch-table th:last-child,.ch-card-body[data-flush] .ch-table td:last-child{padding-right:var(--space-5)}
+.ch-table td>p.ch-meta{margin:2px 0 0}
+.ch-row-end{display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-left:auto;flex:none;max-width:50%;text-align:right}
+@media(max-width:1180px){.ch-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-board{grid-template-columns:minmax(0,1fr)}}
+[data-overview-tasks] .ch-row-body{min-width:0}
+[data-overview-tasks] .ch-row-body>b{white-space:normal;overflow-wrap:anywhere}
+[data-overview-tasks] .ch-row{align-items:start}
 .ch-app[aria-busy="true"] .ch-table tbody{opacity:.9}
 .ch-connection-map{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--space-5)}
 @media(max-width:760px){.ch-connection-map{grid-template-columns:minmax(0,1fr)}}
@@ -66,6 +123,9 @@ const SHELL_CSS = `
 /* Bare fields retained by read-only comparison forms use the same Input tokens. */
 :where([data-area-content] form input:not([type=hidden]):not([type=checkbox]):not([type=radio]),[data-area-content] form select,[data-area-content] form textarea):not(.ch-input *) { border:1px solid var(--line-control);border-radius:var(--radius-md);background:var(--surface-sunken);color:var(--text-primary);padding:6px 10px;min-height:var(--control-height);font:inherit;max-width:100%; }
 .ch-dialog .ch-quote { user-select:all; }
+.ch-dialog-panel { overflow:hidden; }
+.ch-dialog-head,.ch-dialog-foot { flex-shrink:0; }
+.ch-dialog-body { min-height:0; overflow-y:auto; overscroll-behavior-y:contain; flex:1 1 auto; }
 .ch-feed li { min-width:0;overflow-wrap:anywhere; }
 .ch-feed time { white-space:nowrap; }
 @media(max-width:1180px){[data-columns="3"],[data-columns="4"]{grid-template-columns:repeat(2,minmax(0,1fr));}}
@@ -90,6 +150,12 @@ const SHELL_CSS = `
 [data-grant-controls]:has(option[value="administrators"]:checked) [data-member-input] { display: none; }
 .ch-table-wrap .ch-table [data-technical] { min-width: 4em; }
 .ch-table-wrap .ch-table [data-technical][open] { max-width: 24rem; }
+.ch-page-toc{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2) var(--space-4);padding:var(--space-3) 0;background:var(--surface-1);border-bottom:1px solid var(--line-control)}
+.ch-page-toc-label{font:600 12px/18px var(--font-sans);color:var(--text-secondary)}
+.ch-page-toc>div{display:flex;flex-wrap:wrap;gap:var(--space-2) var(--space-4)}
+.ch-page-toc a{display:inline-flex;align-items:center;min-height:32px;color:var(--text-secondary);font:400 13px/20px var(--font-sans);text-decoration:underline;text-underline-offset:5px;overflow-wrap:anywhere}
+.ch-page-toc a[aria-current="location"]{color:var(--text-primary);font-weight:600;text-decoration-thickness:2px}
+.ch-pane:has([data-page-toc]) [id]{scroll-margin-top:160px}
 .ch-seg a { display: inline-flex; align-items: center; min-height: 28px; padding: 0 var(--space-3); border-radius: var(--radius-sm); font: 500 12px/1 var(--font-sans); color: var(--text-secondary); white-space: nowrap; }
 .ch-seg a[aria-current] { background: var(--surface-2); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--focus-ring); }
 .ch-row[data-row-href], .ch-table tr[data-row-href] { cursor: pointer; }
@@ -111,6 +177,8 @@ const SHELL_CSS = `
 .ch-nav form { margin: 0; }
 .ch-nav .ch-input { width: 100%; }
 .ch-nav-item > span:last-child, .ch-nav-foot .ch-section > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The line between two groups of places (decision 151). */
+.ch-nav-sep { flex: none; width: auto; height: 0; margin: var(--space-2) var(--space-2); border: 0; border-top: 1px solid var(--line-hairline); }
 .ch-nav-sub section { margin: 0; min-width: 0; }
 .ch-inspector > .ch-section { margin: 0; }
 .ch-nav-sub details { margin: 0; min-width: 0; }
@@ -164,6 +232,24 @@ const HEALTH_CSS = `
 [data-area-content] > [data-cards] { margin-top: var(--space-4); }
 [data-area-content] > [data-cards] + .ch-section, [data-area-content] > .ch-section + [data-cards] { margin-top: var(--space-5); }
 .ch-tool { white-space: nowrap; }
+/* The knowledge folder list: the table fits its box (the statement wraps, the other columns keep their text on one line) instead of
+   scrolling inside it; on a narrow screen each entry is a block with its column names beside the values. */
+.ch-table[data-view="knowledge-entries"] { width: 100%; }
+.ch-table[data-view="knowledge-entries"] td { max-width: none; white-space: nowrap; }
+.ch-table[data-view="knowledge-entries"] td:has([data-statement]) { white-space: normal; min-width: 14rem; }
+/* The statement is the row's main content: neutral text with an underline marks it as the way in, so it does not compete with the
+   status and the other links in link colour; hover and keyboard focus bring the link colour back (the focus ring stays). */
+.ch-table[data-view="knowledge-entries"] [data-statement] a { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--text-tertiary); text-underline-offset: 3px; }
+.ch-table[data-view="knowledge-entries"] [data-statement] a:is(:hover, :focus-visible) { color: var(--text-link); text-decoration-color: currentColor; }
+@media (max-width: 760px) {
+ .ch-table[data-view="knowledge-entries"] thead { display: none; }
+ .ch-table[data-view="knowledge-entries"], .ch-table[data-view="knowledge-entries"] tbody, .ch-table[data-view="knowledge-entries"] tr, .ch-table[data-view="knowledge-entries"] td { display: block; }
+ .ch-table[data-view="knowledge-entries"] tr { position: relative; padding: 10px 14px 10px 44px; box-shadow: inset 0 1px 0 var(--line-hairline); }
+ .ch-table[data-view="knowledge-entries"] tr:first-child { box-shadow: none; }
+ .ch-table[data-view="knowledge-entries"] td { padding: 2px 0; box-shadow: none; white-space: normal; min-width: 0; }
+ .ch-table[data-view="knowledge-entries"] [data-label]::before { content: attr(data-label) "："; color: var(--text-tertiary); }
+ .ch-table[data-view="knowledge-entries"] td:has(input[type="checkbox"]) { position: absolute; left: 14px; top: 10px; padding: 0; }
+}
 /* Number columns that hold text with a unit: table() only right-aligns real numbers. */
 :is(.ch-table[data-view="background"] :is(th, td):nth-child(n+2):not(:nth-child(4)):not(:nth-child(6)),
     .ch-table[data-view="clients"] :is(th, td):nth-child(n+5),

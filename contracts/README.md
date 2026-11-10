@@ -598,11 +598,19 @@ Decision 147 (owner, 2026-11-04) sets model 40: B08 F[14], the client declaratio
 `ClientDeclaration` of `contracts/src/spaces.ts`, the name and version bound to a client's writes, does not change, so no
 record, protocol code or MCP tool changes. B08 `changes40` states the change.
 
-Decision 149 (owner, 2026-11-05) sets model 41: D05 R[3] stops answering neutrally when a business system's answer holds
+Decision 150 (owner, 2026-11-10) sets model 41: B07 R[10] says that when an accepted submission of a run issues its
+requests, the requests the run's earlier submissions issued and nobody answered are void. The request record is not
+rewritten: an appended record points at the later result. The display axis `request_status` gains `superseded` 已作废.
+Requests another step closes are left: a criterion change's judgment, a dispatched job's disposition, a rerun of the run
+and a repair asked of the pack's author. No record kind, protocol code or MCP tool changes. B07 `changes41` states the
+change.
+
+Decision 152 (owner, 2026-11-05; numbered 149 and model 41 on its branch, moved on when it reached main on 2026-11-10) sets
+model 42: D05 R[3] stops answering neutrally when a business system's answer holds
 unreviewed suspected credentials and shows that the object exists. The reader of that system gets "X exists, its content awaits
 review" with the new protocol code `SOURCE_PENDING_REVIEW`, a workflow that only reads binds that observation, a run's manifest,
 generated inputs and function views do not name the held answer, and a named administrator is asked to review it (B02 R[4]). `system@1` gets the optional
 read field `object_route`, the JSON route whose answer is the object itself; a read without it, an answer that cannot show the
 object and an echo of a credential the Hub sent stay neutral (B02 R[6]). R02 R[0], the display rule and `SOURCE_UNAVAILABLE`
 follow. The four skill packs that mirror the protocol codes advance with them. No read tier, record kind or MCP tool changes.
-D05 `changes41` states the change.
+D05 `changes42` states the change.

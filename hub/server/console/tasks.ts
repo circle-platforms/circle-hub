@@ -9,8 +9,9 @@ import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome
 import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
-import type { RunDetail, RunRequestView, RunSummary } from '../../ports.ts';
+import type { RunDetail, RunRequestView, RunStatistics } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
+import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
 import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
@@ -20,22 +21,27 @@ import { environmentState } from './connections.ts';
 export interface TaskRow {
   run: RunRecordView;
   /** Null when the run could not be read just now; its result is then not shown. */
-  detail: RunSummary | null;
+  statistics: RunStatistics | null;
   result: TaskResult | null;
   pending: number;
 }
 
 /** The detail of each run, to derive its result; a run that cannot be read is listed without one. */
 export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]): Promise<TaskRow[]> {
-  return Promise.all(runs.map(async (run): Promise<TaskRow> => {
-    let detail: RunSummary | null = null;
+  const rows=new Array<TaskRow>(runs.length);let next=0;
+  await Promise.all(Array.from({length:Math.min(4,runs.length)},async()=>{
+   while(next<runs.length){const index=next++,run=runs[index];
+    let statistics:RunStatistics|null=null;
     try {
-      detail = await (ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal, run.run));
+      if(ctx.deps.runs.getRunStatistics)statistics=await ctx.deps.runs.getRunStatistics(ctx.principal,run.run);
+      else{const detail=await (ctx.deps.runs.getRunSummary?.(ctx.principal,run.run)??ctx.deps.runs.getRun(ctx.principal,run.run));statistics=detail?runStatistics(detail):null;}
     } catch {
-      detail = null;
+      statistics=null;
     }
-    return { run, detail, result: detail === null ? null : taskResultOf(detail), pending: detail === null ? 0 : pendingCount(detail) };
+    rows[index]={run,statistics,result:statistics?.result??null,pending:statistics?.pending??0};
+   }
   }));
+  return rows;
 }
 
 /** The unanswered requests of the listed tasks: a page never needs the requests of any other run. Asked together, its read scope batches them. */
@@ -157,7 +163,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const end = Date.parse(line.at);
     const start = end - line.duration_ms;
     if (line.tool === 'submit_result' && previousEnd !== null && start - previousEnd > 1000) {
-      steps.push({ name: '客户端本机处理', sub: '两次调用之间的时间，Hub 未观测', fill: 'fill-circle', dot: 'idle', start: previousEnd, end: start, depth: 0, dur: duration(start - previousEnd) });
+      steps.push({ name: '调用间未观测区间', sub: '不代表客户端计算耗时或执行位置', fill: 'fill-circle', dot: 'idle', start: previousEnd, end: start, depth: 0, dur: duration(start - previousEnd) });
     }
     steps.push({ name: toolName(line.tool), sub: callSub(line, run), fill: line.call_result === 'ok' ? 'fill-circle' : 'fill-fail', dot: callDot(line), start, end, depth: 0, dur: duration(line.duration_ms) });
     previousEnd = end;
@@ -199,7 +205,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const due = Date.parse(request.due);
     const overdue = open && Number.isFinite(due) && due < now;
     const audience = /^usr_[0-9a-z]{26}$/.test(request.audience) ? await ctx.userName(request.audience) : request.audience;
-    const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : 'answered');
+    const state = uiLabelOf('request_status', open ? (overdue ? 'overdue' : 'waiting') : request.superseded ? 'superseded' : 'answered');
     steps.push({
       name: uiLabelOf('request_kind', request.kind),
       sub: `接收人 ${audience} · 期限 ${fullTime(request.due)} · ${state}`,
@@ -265,9 +271,9 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const waiting = steps.filter((s) => s.open === true).length;
   const total = calls.length === 0 ? null : Date.parse([...calls].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0].at) - Math.min(...calls.map((c) => Date.parse(c.at) - c.duration_ms));
   const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'—':duration(total))}</div>`;
-  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；提交前的空档是客户端本机时间，Hub 不观测这段时间。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
+  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；调用间空档未由 Hub 观测，不代表客户端计算耗时或执行位置。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow=[...calls].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,3);
-  const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),'毫秒'):'';
+  const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),undefined,'耗时（毫秒）'):'';
   return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;
 }
 

@@ -185,7 +185,11 @@ export interface RunSubmissionView {
 
 export interface RunRequestView {
   record:string; answer_action?:ExitAction; run?:string; pack_digest?:string; job?:string; sources?:string[]; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
-  source:string; code:string; item?:string; requirement?:string; answered_by:string|null;
+  source:string; code:string; item?:string; requirement?:string;
+  /** The record that closed the request; null while it waits. */
+  answered_by:string|null;
+  /** Set when a later accepted result of the run voided the request instead of an answer closing it (B07 R[10]). */
+  superseded?:true;
 }
 
 /** Everything the console shows about one run. */
@@ -207,11 +211,22 @@ export interface RunDetail {
   latest: { record: string; result: ValidationResult } | null;
   /** The result computed at start_run (submission equals this run record's digest), never a later commentary result. */
   production: { record: string; result: ValidationResult } | null;
+  /** Present only when the read was bounded (RunHistoryOptions): the window of submissions listed and how to reach the older ones. */
+  history?: { limit: number; next: string | null; /** The submission behind the current result when it is older than the window; listed first. */ pinned?: string };
 }
+
+/** Ask for a window of the newest submissions instead of the whole history (the console detail page); results are read for these rows only. */
+export interface RunHistoryOptions { history?: { limit: number; before?: string | null } }
 
 export interface RunListing extends Page<RunRecordView> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
 /** Protected result heads for list rows and aggregate charts, without submission/request detail or display qualifiers. */
 export type RunSummary=Pick<RunDetail,'run'|'latest'|'production'|'management'>;
+export interface RunStatistics {
+ result:import('../contracts/generated/vocabulary.ts').TaskResult;
+ pending:number;
+ checks:Array<{layer:import('../contracts/generated/vocabulary.ts').Layer;terminal:import('../contracts/generated/vocabulary.ts').StaticTerminal|import('../contracts/generated/vocabulary.ts').DynamicTerminal;unknown:boolean;count:number}>;
+ blockers:Array<{code?:string;reason?:import('../contracts/generated/vocabulary.ts').Reason;count:number}>;
+}
 
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
@@ -222,8 +237,13 @@ export interface RunsService {
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<Untraced<z.infer<typeof SubmitResultOutput>>>;
   resolveReference(user: Principal, input: z.infer<typeof ResolveReferenceInput>, context: CallContext): Promise<Untraced<z.infer<typeof ResolveReferenceOutput>>>;
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
-  getRun(user: Principal, run: string): Promise<RunDetail | null>;
+  getRun(user: Principal, run: string, options?: RunHistoryOptions): Promise<RunDetail | null>;
   getRunSummary?(user:Principal,run:string):Promise<RunSummary|null>;
+  /** The fields run visibility and `canSeeRun` decide on, null exactly when `getRun` answers null; reads no submission, result or request. */
+  runHeader?(user:Principal,run:string):Promise<Pick<RunRecord,'runner'|'host'|'pack_space'>|null>;
+  /** Whether `getRun` would answer for this run, by the same visibility rule and without reading its submissions or results. */
+  runVisible?(user:Principal,run:string):Promise<boolean>;
+  getRunStatistics?(user:Principal,run:string):Promise<RunStatistics|null>;
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;

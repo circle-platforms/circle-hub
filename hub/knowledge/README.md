@@ -1,5 +1,9 @@
 # hub/knowledge: the content-addressed knowledge tree
 
+## Administrator source-review requests
+
+`credentialReviewRequests` pages the existing credential-review request index through the integrity-checked records port, checks an enabled current administrator and each pinned source capture's current ACL, and returns only request/source references, a scanned safe external identity, named recipient, deadline and historical progress flags. It does not read source bytes or finding values. Expiry is not acceptance, and a resolution record does not prove the source remains readable now. A page may be empty while its next cursor still leads through inaccessible captures. This is the existing sync-request index; run-read requests from the separate #190 proposal are not present on main yet.
+
 ## Verified sharing (decision 134)
 
 `spaces.share` accepts only the caller's currently verified personal entry. The ordered checks re-resolve all grounds,

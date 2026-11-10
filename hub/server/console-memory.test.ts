@@ -50,6 +50,26 @@ test('password console forms edit escaped text, manage independent grants and re
  assert.doesNotMatch((await other.get(url(undefined,{scope:'shared'}))).body,/合成控制台记忆/);assert.equal((await other.get(url(document))).status,404);
  const origin=await own.send('/console/knowledge/do/memory-write',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:'csrf='+csrf(grantPage.body)});assert.equal(origin.status,403);
 });
+test('a refused console memory write preserves a safe draft, remains uncommitted and can be corrected',async t=>{
+ const w=await world();t.after(w.close);const own=await openConsole(w.hub,w.owner.token),home=await own.get(url(undefined,{edit:'1'}));
+ const limit=w.hub.records.memoryIndex!.limits.documentBytes;w.hub.records.memoryIndex!.limits.documentBytes=8;
+ const response=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(home.body),space:'personal',title:'合成恢复标题',path:'/draft',markdown:'<script>合成可恢复正文</script>',expected_version:'',client_key:'synthetic-refused-key',enabled:'true'});
+ assert.equal(response.status,400,response.body);assert.match(response.body,/name="markdown"/);assert.match(response.body,/&lt;script&gt;合成可恢复正文&lt;\/script&gt;/);assert.doesNotMatch(response.body,/<script>合成可恢复正文/);
+ assert.equal((await w.memory.items(w.owner.principal,'personal')).length,0);
+ const key=/name="client_key" value="([^"]+)"/.exec(response.body)![1];assert.notEqual(key,'synthetic-refused-key');w.hub.records.memoryIndex!.limits.documentBytes=limit;
+ const saved=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(response.body),space:'personal',title:'合成恢复标题',path:'/draft',markdown:'合成修正正文',expected_version:'',client_key:key,enabled:'true'});assert.equal(saved.status,303,saved.body);assert.equal((await w.memory.items(w.owner.principal,'personal')).length,1);
+});
+
+test('knowledge format failures preserve draft fields and scanner refusals do not echo suspect memory content',async t=>{
+ const w=await world();t.after(w.close);const own=await openConsole(w.hub,w.owner.token),home=await own.get('/console/knowledge/space?'+new URLSearchParams({space:w.owner.user.id,edit:'1'}));
+ const values={csrf:csrf(home.body),space:w.owner.user.id,path:'/draft',kind:'observation',statement:'合成保留陈述',data:'{invalid',applicability:'null',reason:'合成修正'};
+ const refused=await own.post('/console/knowledge/do/entry',values);assert.equal(refused.status,400,refused.body);assert.match(refused.body,/合成保留陈述/);assert.match(refused.body,/\{invalid/);assert.match(refused.body,/aria-describedby="editor-data-error"/);
+ const saved=await own.post('/console/knowledge/do/entry',{...values,csrf:csrf(refused.body),data:'{}'});assert.equal(saved.status,303,saved.body);
+ const secret='DB_PASSWORD='+['Synth3tic','!2948'].join('');
+ const blocked=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(home.body),space:'personal',title:'合成安全标题',markdown:secret,path:'/',expected_version:'',client_key:'synthetic-secret-refusal'});
+ assert.equal(blocked.status,400,blocked.body);assert.ok(!blocked.body.includes(secret));assert.match(blocked.body,/未回填/);assert.match(blocked.body,/合成安全标题/);
+});
+
 test('memory sharing previews write nothing and confirmation rechecks capacity instead of trusting a green page',async t=>{
  const w=await world();t.after(w.close);const own=await openConsole(w.hub,w.owner.token);
  const saved=await w.memory.write(w.owner.principal,{title:'合成共享偏好',markdown:'只陈述合成事实。',expected_version:null,client_key:'share-source'});

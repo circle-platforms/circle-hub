@@ -22,6 +22,8 @@ import {background} from '../telemetry/api.ts';
 import {INDEX,SCHEMAS} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
 import {completeOperationDevice} from './operation-device.ts';
+// What a run froze of a test-bed booking is read through the test-bed pack, which writes it (issue 110).
+import {bookedBedLease,bookedInstalls} from '../../packs/workflow/test-bed/api.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import {requireAdmin,type KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
@@ -50,55 +52,14 @@ interface Visibility {
 }
 function once<T>(cache:Map<string,Promise<T>>,key:string,load:()=>Promise<T>):Promise<T>{let pending=cache.get(key);if(!pending){pending=load();cache.set(key,pending);}return pending;}
 
-interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown; device_observations?: unknown }
-
-function leaseRows(body: LeaseBody | null | undefined): Array<{ lease?: unknown; op?: unknown; keys?: unknown }> {
-  return Array.isArray(body?.leases) ? body.leases.filter((row): row is { lease?: unknown; op?: unknown; keys?: unknown } => row !== null && typeof row === 'object') : [];
-}
-
-/**
- * Installed builds of devices this run actually booked (`bed/<bed>/<device>`): what each device showed when the booking
- * was granted (decision 112). A manifest no longer declares installed builds; a booked device nobody looked at adds none.
- */
-export function bookedInstalls(body: LeaseBody | null | undefined): string[] {
-  const group = Array.isArray(body?.groups) ? body.groups[0] as { manifest?: unknown; inventory?: unknown } | null : undefined;
-  const beds = group?.manifest !== null && typeof group?.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
-  if (!Array.isArray(beds) || typeof group?.inventory !== 'string') return [];
-  const observed = new Map<string, string>();
-  for (const claim of Array.isArray(body?.device_observations) ? body.device_observations as Array<{ statement?: { data?: { inventory?: unknown; device?: unknown; build?: unknown } }; qualifier?: { provenance?: unknown } }> : []) {
-    const data = claim?.statement?.data;
-    if (claim?.qualifier?.provenance === 'observed' && data?.inventory === group.inventory && typeof data.device === 'string' && typeof data.build === 'string' && data.build.length > 0) observed.set(data.device, data.build);
-  }
-  const keys = leaseRows(body).flatMap(row => Array.isArray(row.keys) ? row.keys.filter((key): key is string => typeof key === 'string') : []);
-  const out: string[] = [];
-  for (const key of keys) {
-    const parts = key.split('/');
-    if (parts.length !== 3 || parts[0] !== 'bed') continue;
-    const bi = beds.findIndex(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[1]);
-    const devices = bi >= 0 && Array.isArray((beds[bi] as { devices?: unknown }).devices) ? (beds[bi] as { devices: unknown[] }).devices : [];
-    const di = devices.findIndex(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[2]);
-    const build = di >= 0 ? observed.get(`/beds/${bi}/devices/${di}`) : undefined;
-    if (build !== undefined) out.push(build);
-  }
-  return out;
-}
-
-function bookedLease(body: LeaseBody | null | undefined): string | null {
-  for (const row of leaseRows(body)) {
-    if (typeof row.lease !== 'string' || !Array.isArray(row.keys)) continue;
-    if (row.keys.some(key => typeof key === 'string' && key.startsWith('bed/') && key.split('/').length === 3)) return row.lease;
-  }
-  return null;
-}
-
 /** The acquire lease of this run, or of its predecessor booking, when that lease holds a bed device. */
 export async function reproductionLease(store: Parameters<typeof runById>[0], runId: string): Promise<string | null> {
   const run = await runById(store, runId);
-  const own = bookedLease(run?.body);
+  const own = bookedBedLease(run?.body);
   if (own) return own;
   const predecessor = run?.body.predecessor;
   if (typeof predecessor !== 'string') return null;
-  return bookedLease((await runById(store, predecessor))?.body);
+  return bookedBedLease((await runById(store, predecessor))?.body);
 }
 
 export const FEEDING_BOUNDS={waitMs:250,concurrency:2,queued:32,callMs:5000,rows:1000} as const;

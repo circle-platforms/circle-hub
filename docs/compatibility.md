@@ -9,10 +9,8 @@
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
 | circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；发行 0.3.0（2026-11-04）是重建后的第一个发行，带安装包；此前的 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md)、[当前状态](hub-status-2026-11.md) | 所有者的持久部署自 2026-11-04 起从 main 部署（决定 145），私有集成分支已封存 |
-| 合约 | 通用模型第 40 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
+| 合约 | 通用模型第 42 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
 | MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权（授权码或设备码）或 Bearer 令牌 |
-| 合约 | 通用模型第 41 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
-| MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权或 Bearer 令牌 |
 | Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | Circle main 已合入六项通用 MCP 客户端改进并删去内置 Hub（circle#309，2026-10-26）和按 MCP 标准授权在浏览器登录（circle#396，2026-11-02）；Circle 里不出现 Hub 专用的界面或标签（D06 R[1]）；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | circle-packs | 见其 CHANGELOG | circle-packs 仓库 | 存放已退役服务器用的包（`modules.json`、`product-line/1`、`hub-*/1`），重建后的 Hub 不读取它们；第一个里程碑不改这个仓库 |
@@ -29,7 +27,6 @@
 
 ## 合约
 
-| 合约 | 定义方 | 使用方 |
 |---|---|---|
 | 通用模型 | `contracts/model.json` | 生成器 `tools/gen-contracts.ts`；`tools/show-element.ts` |
 | 词表、协议码与核心违规码、引用形式、记录种类 | `contracts/generated/vocabulary.ts` 与 `protocol.ts`，由模型和 `contracts/codes.json` 生成 | Hub 的全部包；标签只经 `labelOf` 取得 |
@@ -50,6 +47,10 @@
 下列内容属于已退役的任务与审批服务器（截至 0.2.0），对重建后的 Hub 不再成立或不再相关，原表见 [ca66002 的本页](https://github.com/circle-platforms/circle-hub/blob/ca66002fb6bfc3220547d0fdd895bfae83345943/docs/compatibility.md)：验收用的 Circle 运行时 fd8524a 及 `CIRCLE_BIN` / `CIRCLE_COMMIT` 门禁；Circle 发行绑定 v1.7.3 和 hub 扩展的目标基线；hub 扩展所用的客户端接口（[客户端接口交接](client-api-handoff.md)）；hub 验收用的 circle-packs 原件，以及 circle-packs CI 固定的 hub 依赖集；执行网关 cexg；产品包 Tool/Hook 的 macOS seatbelt 进程隔离及其验收路径；`circle-packs/modules/1`、`product-line/1`、`hub-*/1` 与 `/mcp` 端点这些 schema 和契约；“hub 先、circle 的 hub 扩展随后、packs 最后”的旧发布顺序。
 
 ## 历史
+
+- 2026-11-09：派发意图的内部字节唯一键加入核验后的血缘根（多轮仍带轮次/尝试号）；原全局S键和索引不改写，按原reservation完整绑定读取，同血缘保持原重试/未知规则，独立任务不继承别的血缘轮次/窗口。旧未知的物理目标占用仍全局阻止；无法核验归属的旧记录保守拒绝。外部六工具/合约schema不变；旧二进制回滚仍保守地按全局S阻止独立任务，不能用回滚恢复本修复的跨任务隔离。
+- 2026-11-09：case-compile源码升为3.9.19，主合成脑图/计划改为随附冻结合约和命令树已声明的单条间隔配置；ID与引用重新派生，旧多命令样例作为拒绝对照保留。沿用包/生成器同版约束，工作簿生成器身份同步case-compile@3.9.19，四个合成工作簿样本重算版本相关字节/摘要；生成、校验算法与schema未变。新核验须匹配任务包及生成器版本；不重写历史结果、冻结合约/配置/命令来源，不自动升级已部署包。
+- 2026-11-09：source-read 工作流源码升为0.1.8，新增可选 `spec_list` 输入，接受既有 manual-store 的 `manual:spec-list:configured` 只读目录清单；沿用 `workflow@1` / `system@1`，无核心或schema升级。要求启用、获准的手册库资源配置 `spec_folders`，不会自动配置或发布。main此前0.1.6，未合入#190已占0.1.7；0.1.8不包含该提案或证明生产已升级。
 
 - 2026-10-13：建立本页。改名尚未开始；验收 Circle 提交 8b2ceb6；foundation/circle 1.0.4；circle 主线 1.1.1。
 - 2026-10-13 晚：7420 就地升级到 server-s2 8e212a6（§5，迁移 28）；circle 主线 1.2.1；circle-hub 与 circle-packs 改为 Apache-2.0，提交需签署；circle-packs 验收固定提交 316760a（products/famx 1.2.0）。
@@ -79,4 +80,5 @@
 - 2026-11-04：发布 hub v0.3.0，重建后的第一个发行，带 macOS 和 Linux 的一键安装包；所有者的持久部署从这天起由 main 部署（决定 145）；合约一行改正为模型第 37 版。
 - 2026-11-05：合约一行改正为模型第 40 版。AGENTS.md 写明兼容性事实变化时本页和英文页在同一个拉取请求里更新。Hub 的迁移到 31，加运行状况和追踪用的表。Circle 1.14.0 的打包版在模型请求超时后不重试，修复随 Circle 的下一版发布。
 - 2026-11-09：MCP 标准授权加设备码（RFC 8628，所有者当天的决定）：授权服务器元数据声明 `device_authorization_endpoint` 和设备码授权；客户端在 `/oauth/device_authorization` 取设备码和用户码，用户在控制台 `/console/device` 输入用户码，经同一个授权页确认，客户端轮询 `/oauth/token` 取得令牌。授权码流程不变；登记时客户端仍须带回调地址。
-- 2026-11-05：模型第 41 版（决定 149），新增协议码 `SOURCE_PENDING_REVIEW`，同一天的合约一行随之改正。
+- 2026-11-10：模型到第 41 版（决定 150）：已受理的新提交下发请求时，同一运行此前各次提交下发、仍在等待回应的请求作废；请求显示状态加“已作废”。记录种类、协议码、MCP 工具和迁移都不变，已有的请求记录不改写。
+- 2026-11-10：模型到第 42 版（决定 152，所有者 2026-11-05 定）：业务系统的应答里有未核看的疑似凭据、而这个应答能说明对象存在时答“X 存在，内容待核看”，新增协议码 `SOURCE_PENDING_REVIEW`，`system@1` 加可选读取字段 `object_route`。这项改动在自己的分支上是模型第 41 版、决定 149，合入 main 时顺延。source-read 工作流源码升为 0.1.9：0.1.7（内容待核看）和 0.1.8（规格目录入口）两处改动之和，行为没有再变。

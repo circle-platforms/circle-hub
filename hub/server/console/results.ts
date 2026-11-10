@@ -10,6 +10,8 @@ import { INTERFACE_LABELS, NOT_APPLICABLE, coverageText, statusText, terminalKin
 import { countsLine } from '../text.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
 import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, neutralPage, missingProductionResult, type PageContext, type PageResult } from './pages.ts';
+/** What 生产结果 is: a product of the workflow, not a result from the production environment (issue 230). */
+const PRODUCTION_RESULT_HINT = '由 Hub 在启动任务时按规则算出的结果，是工作流的产物，与生产环境无关';
 
 const production = (run: RunRecord): boolean => run.requirements.length > 0 && run.requirements.every((r) => r.accepted_producer === 'fact');
 const param = (ctx: PageContext, key: string): string | undefined => ctx.url.searchParams.get(key) || undefined;
@@ -41,8 +43,8 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   if ((terminal !== undefined && !isStaticTerminal(terminal) && !isDynamicTerminal(terminal)) || !/^(0|[1-9][0-9]*)$/.test(rawOffset) || !Number.isSafeInteger(Number(rawOffset))) {
     return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), html`<p class="error">筛选终态或分页位置不对</p>`) };
   }
-  const authority = html`<p>${link(`/console/runs/${runId}`, '查看运行（权威视图）')}</p>`;
-  if (detail.production === null) return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}` }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${missingProductionResult(detail)}`) };
+  const authority = html`<p>${link(`/console/runs/${runId}`, '查看任务完整记录（以任务页的记录为准）')}</p>`;
+  if (detail.production === null) return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}`, hint: PRODUCTION_RESULT_HINT }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${missingProductionResult(detail)}`) };
   const commentary=detail.latest!==null&&detail.latest.record!==detail.production.record
     ? html`<p class="notice">另有后续受理的模型评论，结果记录 ${technicalCode(detail.latest.record)}；运行页在“模型评论（判断）”中单列，不替代本页生产结果。</p>`:'';
   const result = detail.production.result;
@@ -64,7 +66,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   const terminals=[...new Set([...STATIC_TERMINAL,...DYNAMIC_TERMINAL])];
   const filter = html`<form class="ch-actions" data-filters method="get" action="/console/results/${runId}"><label>任一层终态 <select name="terminal"><option value="">全部</option>${terminals.map((value) => html`<option value="${value}"${value === terminal ? html` selected` : ''}>${isStaticTerminal(value) ? uiLabelOf('static_terminal',value) : uiLabelOf('dynamic_terminal',value)}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
   const nav = html`<p>${offset > 0 ? link(`/console/results/${runId}`, '上一页', { terminal, offset: Math.max(0, offset - 500) }) : ''} ${offset + 500 < filtered.length ? link(`/console/results/${runId}`, '下一页', { terminal, offset: offset + 500 }) : ''}</p>`;
-  return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}` }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${commentary}
+  return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}`, hint: PRODUCTION_RESULT_HINT }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${commentary}
 <p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}</strong></p>
 ${definitions([['覆盖', coverageText(result.coverage) ?? '—'], ['生产结果记录（start_run 计算）', technicalCode(detail.production.record)]])}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : result.cross_item.map(renderClaim))}

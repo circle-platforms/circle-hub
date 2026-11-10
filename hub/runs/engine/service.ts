@@ -1,6 +1,7 @@
 import { createDocumentCache } from '../../refs/api.ts';
 import { background } from '../../telemetry/api.ts';
 import {withQueryReads} from './query-scope.ts';
+import {runStatistics} from '../statistics.ts';
 import {requestReadable} from './grounds.ts';
 import { withRequestPermissions } from '../../records/api.ts';
 import { abandonRun } from './management.ts';
@@ -16,7 +17,7 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { createEngineContext, type EngineContext, type RunsEngineDeps } from './deps.ts';
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
-import { getResult, getRun, getRunSummary, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
+import { getResult, getRun, getRunSummary, listRuns, runHeader, runsFor, resultState, runVisible, type StoredResult } from './queries.ts';
 import { submissionByDigest } from './store.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
@@ -137,8 +138,8 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     resolveReference(user, input, context) {
       return withDocuments(ctx,context,current=>previewReference(current,user,input,context),user);
     },
-    getRun(user, run): Promise<RunDetail | null> {
-      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>getRun(current, user, run)));
+    getRun(user, run, options): Promise<RunDetail | null> {
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>getRun(current, user, run, options)));
     },
     exportRun(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
@@ -150,6 +151,9 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       }));
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},
+    runHeader(user,run){return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runHeader(current,user,run)));},
+    runVisible(user,run){return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runVisible(current,user,run)));},
+    getRunStatistics(user,run){return withQueryReads(ctx,async current=>{const summary=await getRunSummary(current,user,run);return summary?runStatistics(summary):null;},{isolated:true});},
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {

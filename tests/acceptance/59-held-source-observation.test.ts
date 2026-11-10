@@ -1,6 +1,6 @@
 // An object whose answer holds unreviewed suspected credentials, through the real read engine and the run engine: the run that
 // only reads ends normally, and what its reader can reach says the object exists and nothing else of the answer, while a named
-// administrator is asked to review it (D05 R[3], decision 149). Synthetic fixtures only.
+// administrator is asked to review it (D05 R[3], decision 152). Synthetic fixtures only.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { ReadManifest } from '../../contracts/src/resources.ts';

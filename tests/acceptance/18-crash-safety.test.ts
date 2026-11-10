@@ -199,7 +199,7 @@ describe('scenario 18: crash safety when sandbox child process is killed mid-fun
     assert.ok(logPage.items.some((l) => l.tool === 'submit_result'));
 
     // Console page loads cleanly without 500 error
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.match(page.body, new RegExp(run.run));
   });

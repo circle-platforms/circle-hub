@@ -50,6 +50,9 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(textOf(parse(own.body)),/知识库 › 我的 › 方法/);assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
  assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已验证<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>待验证<\/span>/);
+ // Issue 227: the verified status carries its scope beside it in the list and visibly in the entry's own view.
+ assert.match(own.body,/已验证<\/span><span class="ch-tip-bubble"|已验证<\/span>[\s\S]{0,40}ch-tip-bubble/);assert.ok(own.body.includes('已逐字核对来源引文与路径，不代表陈述已获事实确认。'));
+ {const detail=await browser.get(space({space:owner.user.id,path:verified.path,entry:verified.entry}));assert.equal(detail.status,200,detail.body);assert.match(detail.body,/<p class="ch-meta" data-verified-scope>已逐字核对来源引文与路径，不代表陈述已获事实确认。<\/p>/);}
  assert.match(textOf(parse(own.body)),/\/ 上限 1\.0 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
  assert.match(own.body,/<details class="ch-section" id="knowledge-history"><summary[^>]*>知识版本记录<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本记录/);
  assert.match(own.body,/<span class="nowrap" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}">版本 2 · (?:今天 \d{2}:\d{2}|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2})<\/span> ·/);
@@ -60,6 +63,17 @@ test('space panels show all four readable scopes and only verified own knowledge
  const shared=await browser.get(knowledge('shared'));assert.match(shared.body,/来自 合成控制台接收人/);assert.match(shared.body,/合成接收范围观察/);
  const outsider=await adminBrowser.get(knowledge('shared'));assert.doesNotMatch(outsider.body,/合成接收范围观察/);
  const metadata=await adminBrowser.get('/console/team/'+owner.user.id);assert.equal(metadata.status,200,metadata.body);assert.match(metadata.body,/私人空间容量/);assert.doesNotMatch(metadata.body,/合成认证观察|合成待验证笔记|本文件夹条目/);
+});
+
+test('folder statistics disclose historical records separately from the paginated current listing',{skip},async()=>{
+ const spaces=hub.hub.knowledge.spaces!,path='/合成计数',first=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数初稿'});
+ const revised=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数修订',replaces:first.entry,expected_version:first.root});
+ const removed=await spaces.write(owner.principal,{path,kind:'observation',statement:'合成计数撤回'});await spaces.withdraw(owner.principal,removed.entry,owner.user.id);
+ const current=await spaces.current(owner.user.id);assert.ok(current);assert.equal(current.body.entries.filter(row=>row.path===path).length,3);
+ const page=await browser.get(space({space:owner.user.id,path}));assert.equal(page.status,200,page.body);const text=textOf(parse(page.body));
+ assert.match(text,/本文件夹条目记录（含早期版本及撤回）3/);assert.match(text,/本页当前可读条目/);assert.match(text,/只统计本页已加载的当前可读条目/);
+ const rows=rowTexts(parse(page.body));assert.ok(rows.some(row=>row.includes('合成计数修订')));assert.ok(!rows.some(row=>row.includes('合成计数初稿')||row.includes('合成计数撤回')));
+ assert.ok(revised.entry!==first.entry);
 });
 
 test('a duplicate stops the preview before credential scanning and team rows retain their actual source', {skip},async()=>{
@@ -121,6 +135,8 @@ test('memory modes remain private, reject evidence binding and accept independen
  await hub.hub.knowledge.spaces!.grant(owner.principal,{path:'/',audience:'member',member:reader.user.id});
  assert.equal((await other.call('get_nodes',{memory:{document:memoryDocument}})).isError,true);
  const own=await browser.get(memory({scope:'personal'}));assert.match(own.body,/memory-grants/);
+ // Issue 244: a memory's size reads in the console's unit style with the exact count in its tooltip, not as "N 字节".
+ assert.match(own.body,/<span class="nowrap" title="[\d,]+ 字节">[\d.,]+ (?:B|KB|MB)<\/span>/);assert.doesNotMatch(own.body,/<span class="nowrap">[\d,]+ 字节<\/span>/);
  assert.equal((await browser.post('/console/knowledge/do/memory-grant',{csrf:csrf(own.body),path:'/偏好',audience:'member',member:reader.user.name})).status,303);
  const browsed=await other.call('get_nodes',{memory:{document:memoryDocument}});assert.equal(browsed.isError,false,browsed.text);assert.equal(browsed.out.memory_document?.auto_load_allowed,false);
  assert.equal((await other.call('get_nodes',{memory:{document:memoryDocument,version:memoryVersion,for_session:true}})).isError,true);

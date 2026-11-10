@@ -40,6 +40,7 @@ import {withReadScope,memoReadPort} from '../../records/api.ts';
 import {sourceArchivePage} from './source-archive.ts';
 import {Sha256} from '../../../contracts/src/common.ts';
 import {performMemoryAction} from './memory.ts';
+import {recoverEditor} from './form-recovery.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { NEUTRAL, diffPage, knowledgePage, neutralPage, productPage, rootPage, runPage, runsPage, treePage, type PageContext, type PageResult } from './pages.ts';
 import { recordsPage } from './records.ts';
@@ -625,6 +626,8 @@ const ROUTES: Record<string, Route> = {
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/')==='-/publish'?personalPublishPage(ctx,options.staging):rest.length===1?packPage(ctx,rest[0]):Promise.resolve(neutralPage(ctx))),
+  // The skills place (decision 151). A pack's page answers under either path and shows the place of its own kind.
+  skills: (ctx, rest) => (rest.length === 0 ? packsPage(ctx, 'skill') : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
@@ -952,7 +955,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
           session!.notice=state?(segments[2]==='sync-confirm-purge'?'已确认清除 · ':'')+axisUiLabel('sync_mode')+'：'+uiLabelOf('sync_mode',state.mode):done??'已保存';
         }
         return request.headers['circle-hub-form']==='enhanced'?sendJson(response,200,{location:target},{'content-security-policy':"default-src 'none'; frame-ancestors 'none'"}):redirect(response,target);
-      }catch(error){result=spaceActionFailure(ctx,error);}
+      }catch(error){result=(segments[0]==='knowledge'?recoverEditor(ctx,segments[2],values,error):null)??spaceActionFailure(ctx,error);}
     }else if (isAction) {
       result = await action(request, response, options, ctx, session!, segments[2]);
       if (result === null) return;

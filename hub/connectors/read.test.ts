@@ -833,6 +833,23 @@ test('issue 109: a cached nested read is checked again against the effective tie
   assert.ok(!JSON.stringify(inputs).includes('030：演示测试项目'), 'no function gets the held tree content');
 });
 
+test('issue 109: per-capture retention is preserved without treating it as a global credential finding',async t=>{
+ const inputs:unknown[]=[];
+ const wrapped:PackFunctionRunner=async(target,input,kind)=>{inputs.push(input);return(await callPackFunction(target,input,{}, {requireOsIsolation:false})).output;};
+ const w=await world(t,{callFunction:wrapped}),read=()=>w.k.connectors.reader.read(`agile:mindmap:${DOC}`,w.ctx);
+ const first=success(await read()),tree=(await w.k.records.store.get<ReadManifest>((await nestedEntry(w,first.manifest)).manifest!))!;
+ const subtree=tree.body.requests.find(request=>request.key==='subtree')!,original=await w.k.records.store.get<SourceArtifact['body']>(subtree.artifact!);assert.ok(original);
+ const source=await w.k.records.artifacts.source(w.k.user,original.body.sha256,{consumer:'function',record:original.digest});assert.ok(source?.bytes);
+ const cached=success(await read());assert.equal((await nestedEntry(w,cached.manifest)).cached,true);const count=w.agile.count('/agile/get_child_node_task/');
+ const held=await w.k.records.artifacts.ingest({bytes:source.bytes,mediaType:original.body.media_type,origin:{read:{object:'synthetic:document:explicit-hold',resource:w.resources.agile.id,action:null}},author:{user:null},provenanceType:'observed',readTier:'retain_only',visibility:{readers:[w.k.user.id],admins:true,packs:[],shareable:false}});
+ assert.equal(held.body.scan.clean,true);
+ assert.equal((await w.k.records.artifacts.source(w.k.user,held.body.sha256,{consumer:'function',record:held.digest}))?.bytes,null,'the explicitly retained capture remains inaccessible');
+ assert.ok((await w.k.records.artifacts.source(w.k.user,original.body.sha256,{consumer:'function',record:original.digest}))?.bytes,'a clean separate capture does not rewrite the pinned original tier');
+ inputs.length=0;const again=await read(),entry=await nestedEntry(w,(again as {manifest:string}).manifest);
+ assert.equal(entry.cached,true);assert.equal(entry.ok,true);assert.equal(w.agile.count('/agile/get_child_node_task/'),count);
+ assert.ok(!JSON.stringify(inputs).includes(held.digest),'the retained capture is never substituted for the pinned original');
+});
+
 test('issue 109: a cached nested read whose accepted findings are revoked is not served again', async (t) => {
   // Built at run time so the repository holds no credential-shaped literal.
   const secret = ['Ftp', 'Synthetic', '7834'].join('');

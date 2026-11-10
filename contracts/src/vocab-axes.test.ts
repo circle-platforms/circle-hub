@@ -44,9 +44,9 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 41 and the generated vocabulary covers every declared axis', () => {
-  assert.equal(model.version,41);
-  assert.equal(MODEL_VERSION,41);
+test('model version is 42 and the generated vocabulary covers every declared axis', () => {
+  assert.equal(model.version,42);
+  assert.equal(MODEL_VERSION,42);
   assert.equal(model.vocabulary.length, Object.keys(AXES).length);
 });
 
@@ -231,4 +231,14 @@ test('model 39 adds the three B08 axes of the traces, with the values of the des
   assert.ok(b08.changes39?.length);
   assert.match(b08.fields[14]!, /平台/, 'model 40: a client declares its platform as well (decision 147)');
   assert.ok(b08.changes40?.length);
+});
+
+test('model 41: a request can be void, by the rule that a newer accepted submission voids the earlier requests (decision 150)', () => {
+  const status = model.vocabulary.find((axis) => axis.axis === 'request_status')!;
+  assert.deepEqual(status.values.map((value) => value.code), ['waiting', 'overdue', 'answered', 'superseded']);
+  assert.equal(status.values.at(-1)!.label, '已作废');
+  const b07 = (model as unknown as { elements: Array<{ id: string; rules: string[]; changes41?: string[] }> }).elements.find((element) => element.id === 'B07')!;
+  assert.match(b07.rules.at(-1)!, /已受理的新提交下发请求时.*作废/);
+  assert.match(b07.rules.at(-1)!, /不改写/, 'the request record itself is never rewritten');
+  assert.equal(b07.changes41?.length, 2);
 });

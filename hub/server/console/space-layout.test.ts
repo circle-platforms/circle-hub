@@ -9,7 +9,9 @@ test('the shared panel groups only current authorized paths and keeps displayed 
  const ctx={principal:{id:'reader'},url:new URL('http://127.0.0.1/console/knowledge?scope=shared'),userName:async()=> '合成授权人',deps:{packs:{},knowledge:{spaces:{visible:async()=>visible}}}} as unknown as PageContext;
  const layout=await spaceLayout(ctx,pageLayout(html`正文`,{detail:true,back:html`<a href="/console/knowledge?scope=shared">返回列表</a>`})),body=render(layout);
  assert.equal(layout.layout.detail,true);assert.match(layout.layout.back?.text??'',/scope=shared/);
- assert.match(layout.layout.inspector?.text??'',/<span class="ch-stat-value">1<\/span>/,'unreadable private rows do not contribute to the overview count');
+ // Decision 151: the layout adds no summary pane; the count of a scope stands beside the scope in the navigation.
+ assert.equal(layout.layout.inspector,null);
+ assert.match(layout.layout.sidebar?.text??'',/与我共享 <span class="ch-count">1<\/span>/,'unreadable private rows do not contribute to the count of the scope');
  assert.match(body,/合成授权人/);assert.match(body,/<details open>/);assert.match(body,/scope=shared/);assert.doesNotMatch(body,/private/);
  assert.match(body,/>allowed</);assert.match(body,/>child</);assert.doesNotMatch(body,/>\/allowed/);
  assert.match(body,/scope=shared" aria-current="page"/);

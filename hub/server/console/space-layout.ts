@@ -2,6 +2,7 @@
 import {memoReadPort} from '../../records/api.ts';
 import {KnowledgeSearchScopeSchema,KnowledgeViewSchema,isKnowledgeSearchScope,uiLabelOf,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import type {PackListing} from '../../ports.ts';
+import {PACK_PLACES,packPath,type PlaceKind} from './pack-display.ts';
 import type {PageContext} from './pages.ts';
 import {html,link,pageLayout,type Html} from './html.ts';
 import {containsDirectory,directoryName,describeAudience} from './audience.ts';
@@ -29,8 +30,9 @@ export function directoryTree(directories:readonly string[],url:(path:string)=>s
 function ancestors(paths:readonly string[]):string[]{
  const directories=new Set<string>(['/']);for(const path of paths){const parts=path.split('/').filter(Boolean);for(let n=1;n<=parts.length;n++)directories.add('/'+parts.slice(0,n).join('/'));}return [...directories].sort();
 }
-export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly PackListing[]):Promise<Html>{
- const scope=selectedScope(ctx),memory=ctx.url.searchParams.get('view')==='memory',sources=ctx.url.searchParams.get('view')==='sources'||ctx.url.pathname.endsWith('/sources'),base=packs?'/console/packs':'/console/knowledge';
+/** `packs` with the kind of the place that shows them (workflows or skills): counts, the summary and its links stay inside that kind. */
+export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly PackListing[],place:PlaceKind='workflow'):Promise<Html>{
+ const scope=selectedScope(ctx),memory=ctx.url.searchParams.get('view')==='memory',sources=ctx.url.searchParams.get('view')==='sources'||ctx.url.pathname.endsWith('/sources'),base=packs?PACK_PLACES[place].path:'/console/knowledge';
  const memories=memory?await ctx.deps.knowledge.memory?.items(ctx.principal)??[]:[];
  const visible=packs||memory?[]:await ctx.deps.knowledge.spaces?.visible(ctx.principal,'all',undefined,{initialize:false})??[];
  const archive=sources?await ctx.deps.knowledge.spaces?.archive(ctx.principal,{scope:'all',limit:1}):null;
@@ -64,12 +66,8 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
   });
   const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:sources?{view:'sources'}:{})});
-  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)} <span class="ch-count">${(subset?count('workflow')+count('skill'):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
+  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)} <span class="ch-count">${(subset?count(place):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
- const recentPacks=packs?.filter(p=>(p.kind==='workflow'||p.kind==='skill')&&inScope(scope,p.space??'team',ctx.principal.id));
- const count= sources?archive?.counts[scope]??0:recentPacks?new Set(recentPacks.filter(p=>inScope(scope,p.space??'team',ctx.principal.id)).map(p=>(p.space??'team')+':'+p.id)).size:
-  memory?memories.filter(item=>inScope(scope,item.space,ctx.principal.id)).length:
-  visible.filter(v=>inScope(scope,v.space,ctx.principal.id)).reduce((n,v)=>n+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
- const overview=html`<section class="ch-section"><h2 class="ch-panel-title">${packs?uiLabelOf('pack_kind','workflow'):memory?uiLabelOf('knowledge_view','memory'):sources?uiLabelOf('knowledge_view','sources'):'知识库'}</h2><p class="ch-meta">${uiLabelOf('knowledge_search_scope',scope)}</p></section><div class="ch-stat"><span class="ch-stat-label">${packs?'工作流与通用技能':memory?'记忆':sources?'原文':'知识'}</span><span class="ch-stat-value">${count.toLocaleString('en-US')}</span></div>${recentPacks?.length?html`<section class="ch-section"><h2 class="ch-section-label">最近发布</h2><ul class="ch-feed">${[...recentPacks].sort((a,b)=>b.published_at.localeCompare(a.published_at)).slice(0,5).map(pack=>html`<li>${link('/console/packs/'+pack.id,pack.title,{space:pack.space,scope})}<span class="ch-meta">${pack.published_at.slice(0,10)}</span></li>`)}</ul></section>`:''}`;
- return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector===undefined?overview:content.layout.inspector});
+ // Decision 151: a place's list is not repeated in a side pane. A page that selects one thing passes its own pane.
+ return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector??null});
 }
