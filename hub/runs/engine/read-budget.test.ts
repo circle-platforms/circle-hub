@@ -12,6 +12,17 @@ test('concurrent evaluations share a process-wide source gate and release capaci
  }));
  assert.equal(calls,60);assert.equal(peak,CHECK_READ_CONCURRENCY);assert.equal(active,0);
 });
+test('four items reuse one large source while distinct fragments and evaluations retain independent accounting',async()=>{
+ const bytes=3*1024*1024,text='x'.repeat(bytes),reference='src:'+'a'.repeat(64),budget=new CheckReadBudget();
+ for(let item=0;item<4;item++)for(let check=0;check<6;check++)await budget.read(reference,async()=>({text}));
+ assert.equal(budget.references.size,1);assert.equal(budget.bytes,bytes);
+ await budget.read(reference,async()=>({text:text+'more'}));assert.equal(budget.bytes,bytes+4);
+ await budget.read(reference,async()=>({text:'short'}));assert.equal(budget.bytes,bytes+4);
+ const fragment=reference+'/text@1/other';await budget.read(fragment,async()=>({text}));assert.equal(budget.references.size,2);assert.equal(budget.bytes,2*bytes+4);
+ const other=new CheckReadBudget();await other.read(reference,async()=>({text}));assert.equal(other.bytes,bytes);assert.equal(budget.bytes,2*bytes+4);
+ await assert.rejects(budget.read('src:'+'b'.repeat(64),async()=>({text:'y'.repeat(CHECK_READ_TOTAL_BYTES-budget.bytes+1)})),HubReadFailure);
+ assert.equal(budget.bytes,2*bytes+4);
+});
 test('reference and aggregate byte limits refuse excess I/O with missing fact and recovery; duplicates consume once',async()=>{
  const budget=new CheckReadBudget();let calls=0;
  for(let index=0;index<CHECK_READ_REFERENCES;index++)await budget.read('src:'+index,async()=>{calls++;return {text:'fixture'};});
