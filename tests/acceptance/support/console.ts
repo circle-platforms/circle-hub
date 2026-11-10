@@ -2,6 +2,7 @@
 import { request as httpRequest } from 'node:http';
 import type { TestHub } from '../../../hub/server/testing-real.ts';
 import { testConsoleCredentials } from '../../../hub/server/testing.ts';
+import { everyTaskTab } from '../../../hub/server/console/testing-task-tabs.ts';
 
 export interface ConsoleReply {
   status: number;
@@ -13,6 +14,8 @@ export interface ConsoleClient {
   port: number;
   sessionCookie?: string;
   get(path: string): Promise<ConsoleReply>;
+  /** A task's page with every tab read (the page shows one tab at a time, decision 151): what the console says of the task. */
+  task(run: string): Promise<ConsoleReply>;
   post(path: string, fields: Record<string, string>): Promise<ConsoleReply>;
   send(path: string, options?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<ConsoleReply>;
 }
@@ -55,6 +58,10 @@ export async function openConsole<T extends Pick<TestHub,'port'>>(hub: T, token?
     },
     async get(path) {
       return client.send(path, { method: 'GET' });
+    },
+    async task(run) {
+      const all = await everyTaskTab(`/console/runs/${run}`, (path) => client.get(path));
+      return { status: all.status, headers: {}, body: all.body };
     },
     async post(path, fields) {
       const form = new URLSearchParams(fields).toString();

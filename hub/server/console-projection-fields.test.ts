@@ -6,6 +6,7 @@ import {test} from 'node:test';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import type {ServerDeps} from './api.ts';
 import {runPage,type PageContext} from './console/pages.ts';
+import { everyTaskTab } from './console/testing-task-tabs.ts';
 
 test('run pages retain complete projected string fields as escaped read-only text',async()=>{
   const run=structuredClone(runRecord);
@@ -18,10 +19,12 @@ test('run pages retain complete projected string fields as escaped read-only tex
   } as unknown as ServerDeps;
   const context:PageContext={deps,principal:{id:run.runner,name:'合成读者',role:'user'},admin:false,url:new URL('http://127.0.0.1/console/runs/'+run.run),
     userName:async()=> '合成读者',chrome:title=>({title,user:{name:'合成读者',role:'用户',admin:false},csrf:null})};
-  const response=await runPage(context,run.run),body=String(response.body);
+  // The projected fields are technical information: one of the page's tabs (decision 151).
+  const response=await everyTaskTab('http://127.0.0.1/console/runs/'+run.run,(path)=>runPage({...context,url:new URL(path)},run.run)),body=String(response.body);
   assert.equal(response.status,200);assert.match(body,/投影字符串字段/);assert.ok(body.includes(long));
   assert.match(body,/&lt;script src=&quot;\/\/192\.0\.2\.1\/x&quot;&gt;原样&lt;\/script&gt;/);
   const own=LIVE_TAG;assert.ok(withoutNonces(body).includes(own),'the live module of the run page');
-  assert.doesNotMatch(withoutNonces(body).replace(own,'').replace(THEME_TAGS,''),/<script\b|NOT_A_STRING_VALUE/);assert.match(body,/<details/);
+  // Six tabs are six documents: each has the page's own two script tags and no other.
+  assert.doesNotMatch(withoutNonces(body).replaceAll(own,'').replaceAll(THEME_TAGS,''),/<script\b|NOT_A_STRING_VALUE/);assert.match(body,/<details/);
   assert.ok(!body.includes('review_tables'),'the renderer names no workflow-specific field');
 });

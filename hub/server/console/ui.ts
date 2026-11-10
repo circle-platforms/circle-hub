@@ -31,6 +31,17 @@ export interface CardHead {
 }
 
 export const card=panel;
+/** A bordered block of the reorganized pages (decision 151): an optional head, a body and an optional foot. */
+export function box(head:{title:unknown;hint?:string;meta?:unknown;tail?:unknown}|null,body:unknown,options:{flush?:boolean;foot?:unknown}={}):Html{
+ return html`<section class="ch-card">${head?html`<div class="ch-card-head"><h2 class="ch-card-title">${head.hint?tooltip(head.title,head.hint):head.title}</h2>${head.meta===undefined?'':html`<span class="ch-meta">${head.meta}</span>`}${head.tail===undefined?'':html`<span class="ch-card-tail">${head.tail}</span>`}</div>`:''}<div class="ch-card-body"${options.flush?html` data-flush`:''}>${body}</div>${options.foot===undefined?'':html`<div class="ch-card-foot">${options.foot}</div>`}</section>`;
+}
+/**
+ * One figure of a page's summary row. A figure that leads to the list it counts carries a link over the whole tile, named by
+ * `to`: the label, value and note stay separate texts instead of running together as one link text.
+ */
+export function tile(figure:Html,path?:string,to?:string):Html{
+ return html`<div class="ch-card ch-tile">${figure}${path===undefined?'':html`<a class="ch-tile-link" href="${path}" aria-label="${to??''}"></a>`}</div>`;
+}
 export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
  return html`<div class="ch-stat"><span class="ch-stat-label">${options.state?dot(options.state):''}${options.hint?tooltip(label,options.hint):label}</span><span class="ch-stat-value">${value}${options.unit?html`<span class="ch-stat-unit"> ${options.unit}</span>`:''}</span>${options.note?html`<span class="ch-stat-note">${options.note}</span>`:''}</div>`;
 }

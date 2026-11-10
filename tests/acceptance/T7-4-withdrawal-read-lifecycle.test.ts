@@ -56,7 +56,7 @@ test('T7-4 read-time effective conditions survive new-version reassignment and a
   const source=await bed.hub.records.artifacts.source(bed.reviewer.principal,reference.slice(4));assert.ok(source?.bytes);assert.deepEqual(Buffer.from(source.bytes),bytes);
  };
  const read=async()=>{
-  const ordinary=await user.get('/console/runs/'+run.run),administrator=await admin.get('/console/runs/'+run.run);
+  const ordinary=await user.task(run.run),administrator=await admin.task(run.run);
   assert.equal(ordinary.status,200);assert.equal(administrator.status,200);
   const a=conditions(ordinary.body),b=conditions(administrator.body);assert.ok(a.length>0);assert.deepEqual(a,b);
   return a;
@@ -81,7 +81,7 @@ test('T7-4 read-time effective conditions survive new-version reassignment and a
   const fresh=await startReview(client,{product:bed.second.names[0],version:'2.1',inputs:{subject:{reference}}});
   assert.equal(fresh.pack,id+'@'+nextVersion);
   const accepted=await client.call('submit_result',draft(fresh));assert.equal(accepted.out.acceptance,'accepted');
-  const active=await user.get('/console/runs/'+fresh.run);assert.equal(active.status,200);
+  const active=await user.task(fresh.run);assert.equal(active.status,200);
   const activeConditions=conditions(active.body);assert.ok(activeConditions.length>0);assert.ok(activeConditions.every(value=>!value.startsWith(WITHDRAWN)));
   await unchanged();
  });

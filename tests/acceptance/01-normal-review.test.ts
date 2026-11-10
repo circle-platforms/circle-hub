@@ -252,7 +252,7 @@ describe('scenario 1: a normal review', () => {
     assert.ok(typeof submitLog.args_size === 'number' && submitLog.args_size > 0);
 
     // 3. Console HTML: authoritative view of the run
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(run.run), 'console page mentions the run id');
     assert.ok(page.body.includes('已交付'), 'console page contains delivered partition group');
