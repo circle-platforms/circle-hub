@@ -49,7 +49,7 @@ A record on the console (read-only, planned) is laid out in the same five parts:
 4. Evidence: the source fragments and Hub records the grounds point at, the Hub's action records, and the rule's samples;
 5. Extension points: the task pack it comes from and its ownership class.
 
-A failed read is shown as D05 R[3] says: team, product and business-system content shows “X 不存在” (X does not exist) or “X 存在，你没有读取权限” (X exists, you have no read permission, with who can share or assign it); another member's personal-space content and credential or login failures show only “对你不可用” (not available to you) and an empty result of the same shape, with the real cause only in the administrator-visible call log.
+A failed read is shown as D05 R[3] says: team, product and business-system content shows “X 不存在” (X does not exist) or “X 存在，你没有读取权限” (X exists, you have no read permission, with who can share or assign it), or “X 存在，内容待核看” (X exists, its content awaits review) when it holds unreviewed suspected credentials; another member's personal-space content and credential or login failures show only “对你不可用” (not available to you) and an empty result of the same shape, with the real cause only in the administrator-visible call log.
 
 ## 4. B's rules for originals and Evidence
 

@@ -10,7 +10,8 @@
 // Read tier (B02 R[4]): an answer whose effective tier is retain_only (a credential hit no acceptance covers in any record
 // of the same bytes, or the echo of a credential value the Hub sent, which this engine stores at retain_only itself)
 // reaches no function: its view has no json, text or model and `ok: false` (SOURCE_CREDENTIAL); as the original it fails
-// the read with its digest. A derived artifact held the same way gives nested readers no content. A planned request that
+// the read, whose caller learns only that the object exists and awaits review unless it was an echo (D05 R[3]). A derived
+// artifact held the same way gives nested readers no content. A planned request that
 // would carry a sent credential value is refused.
 // Visibility of what a read stores (B02 R[3], D01 R[4]; milestone 1 has shared service credentials only): the reader and
 // admins, never shareable.
@@ -18,9 +19,9 @@ import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
 import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry} from './read-retry.ts';
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import { parseDocument, type ParserRegistry } from '../refs/api.ts';
-import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
+import { pendingReviewLabel, type ExternalArtifact, type ExternalReadContext, type ExternalRedirect, type PackHandle } from '../ports.ts';
 import type { Artifacts, Principal, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
-import { SOURCE_ABSENCE_GENERATOR, canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
+import { SOURCE_ABSENCE_GENERATOR, SOURCE_PENDING_REVIEW_GENERATOR, canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
 import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../contracts/src/common.ts';
@@ -33,6 +34,7 @@ import {
   ReadPlanOutput,
   ReadProjectionOutput,
   SourceAbsent,
+  SourcePendingReview,
   type NestedRead,
   type PlannedRequest,
   type ReadDeclaration,
@@ -92,8 +94,9 @@ export type ReadOutcome =
       meta: unknown;
       coverage:Coverage;
       absent?:SourceAbsent;
+      pending?:SourcePendingReview;
     }
-  | { ok: false; external: string; code: ConnectorErrorCode; reason: string; message?:string; disclosable?:boolean; manifest: string | null;retry?:ReadRetry;redirect?:ExternalRedirect };
+  | { ok: false; external: string; code: ConnectorErrorCode; reason: string; message?:string; disclosable?:boolean; manifest: string | null;pending?:SourcePendingReview;retry?:ReadRetry;redirect?:ExternalRedirect };
 
 export interface ReadEngineOptions {
   readRetrySleep?:(ms:number)=>Promise<void>;
@@ -111,6 +114,8 @@ export interface ReadEngineOptions {
   nestedCacheMs?: number;
   /** Bytes of stored artifacts the nested-read cache keeps at most, default 64 MiB. */
   nestedCacheBytes?: number;
+  /** Asks a named administrator for the review a reader was just told is awaited (B02 R[4]). */
+  pendingReview?: (artifact: SourceArtifact, external: string) => Promise<void>;
 }
 
 export const COMPONENT = 'connectors@1';
@@ -218,6 +223,7 @@ function stringMap(value: Record<string, string> | undefined, key: string): Reco
 
 /** What a function is told of a request that failed for a credential or login reason (D05 R[3], decision 112). */
 const NEUTRAL_PHASE_MESSAGE = '应答对你不可用（原因只记在管理员记录里）';
+const NEUTRAL_CODE = 'SOURCE_UNAVAILABLE';
 
 function zodProblem(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
   return error.issues
@@ -329,6 +335,10 @@ export class ReadEngine {
     /** Records of this read no function may have under the effective tier: answers and derived artifacts. */
     const heldRecords = new Set<string>();
     const visibility: Visibility = { readers: [reader], admins: true, packs: [], shareable: false };
+    // Whoever may view a run reads its manifests, and a bound observation goes with one: of an answer held from them a manifest
+    // says only that one came. A sync read's manifest stays with its reader and the administrator, whose review checks it, and
+    // the sync raises its own review requests.
+    const forRun = RunId.safeParse(context.run).success || context.bindPending === true;
     const responses = new Map<string, ResponseState>();
     const echoedArtifacts=new Set<string>();
     const entries: ReadRequestEntry[] = [];
@@ -345,6 +355,7 @@ export class ReadEngine {
     let meta: unknown = null;
     let complete = false;
     let absent:SourceAbsent|undefined;
+    let pending:SourcePendingReview|undefined;
     let note: string | undefined;
     let failure: ConnectorError | null = null;
 
@@ -359,7 +370,9 @@ export class ReadEngine {
       if (state.view.ok || error === null || error === undefined) return state.view;
       const hidden = Object.hasOwn(CONNECTOR_ERRORS, error.code) && readExit(error.code as ConnectorErrorCode).caller === null;
       const neutral = hidden || state.held === true;
-      return neutral ? { ...state.view, error: { ...error, message: NEUTRAL_PHASE_MESSAGE } } : state.view;
+      if (!neutral) return state.view;
+      const said = { ...state.view, error: { ...error, message: NEUTRAL_PHASE_MESSAGE } };
+      return state.held === true ? { ...said, media_type: null, size: null, sha256: null, etag: null } : said;
     };
     const views = (): Record<string, ReadResponse> => Object.fromEntries(order.flatMap((key) => (responses.has(key) ? [[key, forFunction(responses.get(key)!)]] : [])));
     const nestedViews = (): Record<string, NestedRead> => Object.fromEntries(nestedOrder.flatMap((key) => (nested.has(key) ? [[key, nested.get(key)!.view]] : [])));
@@ -429,7 +442,11 @@ export class ReadEngine {
         return null;
       }
       // Canonical text can spell out what the answer only held escaped, so a value the Hub sent is looked for again (B02 R[6]).
-      if (this.#o.redactor.echoedIn(bytes, 'application/json')) return null;
+      if (this.#o.redactor.echoedIn(bytes, 'application/json')) {
+        echoedArtifacts.add(stored.artifact.body.sha256);
+        this.#event('secret_echoed', { resource: runtime.resource.id, route: route.id, status: reply.status, record: stored.artifact.digest });
+        return null;
+      }
       let artifact: SourceArtifact;
       try {
         artifact = await this.#o.artifacts.ingest({ bytes, mediaType: 'application/json', origin: { generated: { generator: 'hub.kept-parts@1', inputs: [`src:${reply.sha256}`], read_back: null } }, derivedSources: [reply.sha256], author: { user: null }, provenanceType: 'projected', visibility, name: `${read.name}/${key}/kept`, capturedAt: new Date(reply.endedAt).toISOString() });
@@ -538,28 +555,32 @@ export class ReadEngine {
         attempts++;
         const started = this.#o.now().toISOString();
         let received: { exchange: HttpExchange; stored: Stored } | null = null;
-        const entry = (ok: boolean, error: string | null): ReadRequestEntry => ({
-          key: planned.key,
-          attempt:attempts,
-          round,
-          route: route.id,
-          method: route.method,
-          path: entryPath(path),
-          query,
-          ...(planned.body === undefined ? {} : { body: planned.body }),
-          started_at: started,
-          ended_at: this.#o.now().toISOString(),
-          status: received?.exchange.status ?? null,
-          ok,
-          error,
-          sha256: received?.stored.echoed?null:received?.exchange.sha256 ?? null,
-          size: received?.exchange.bytes.byteLength ?? null,
-          media_type: received?.exchange.serverMediaType ?? null,
-          etag: received?.stored.echoed?null:received?.exchange.etag ?? null,
-          ...(received && !received.stored.held?this.#location(received.exchange):{}),
-          artifact: received?.stored.echoed?null:received?.stored.artifact.digest ?? null,
-          after_login: afterLogin,
-        });
+        const entry = (ok: boolean, error: string | null): ReadRequestEntry => {
+          const sealed = received !== null && received.stored.held && forRun;
+          const unlinked = sealed || received?.stored.echoed === true;
+          return {
+            key: planned.key,
+            attempt:attempts,
+            round,
+            route: route.id,
+            method: route.method,
+            path: entryPath(path),
+            query,
+            ...(planned.body === undefined ? {} : { body: planned.body }),
+            started_at: started,
+            ended_at: this.#o.now().toISOString(),
+            status: received?.exchange.status ?? null,
+            ok,
+            error: sealed && error !== null ? NEUTRAL_CODE : error,
+            sha256: unlinked?null:received?.exchange.sha256 ?? null,
+            size: sealed?null:received?.exchange.bytes.byteLength ?? null,
+            media_type: sealed?null:received?.exchange.serverMediaType ?? null,
+            etag: unlinked?null:received?.exchange.etag ?? null,
+            ...(received && !received.stored.held?this.#location(received.exchange):{}),
+            artifact: unlinked?null:received?.stored.artifact.digest ?? null,
+            after_login: afterLogin,
+          };
+        };
         try {
           const reply = await runtime.http.request(
             { route: route.id, method: route.method, path, query, body: planned.body, credential },
@@ -681,7 +702,7 @@ export class ReadEngine {
       nested.set(target.id, {
         view: outcome.ok
           ? { ok: true, coverage:outcome.coverage, revision: outcome.revision, cached, content: outcome.content, meta: outcome.meta, reason: null }
-          : { ok: false, revision: null, cached: false, content: null, meta: null, reason: outcome.reason },
+          : { ok: false, revision: null, cached: false, content: null, meta: null, reason: outcome.disclosable === false ? NEUTRAL_PHASE_MESSAGE : outcome.reason },
         manifest: outcome.manifest,
         artifacts: outcome.ok ? outcome.artifacts.map((a) => a.artifact) : [],
       });
@@ -768,7 +789,7 @@ export class ReadEngine {
         const inputs = [
           ...order.flatMap((key) => {
             const artifact = responses.get(key)?.artifact;
-            return artifact && !echoedArtifacts.has(artifact.body.sha256) ? [`src:${artifact.body.sha256}`] : [];
+            return artifact && !echoedArtifacts.has(artifact.body.sha256) && !heldRecords.has(artifact.digest) ? [`src:${artifact.body.sha256}`] : [];
           }),
           ...nestedOrder.flatMap((key) => (nested.get(key)?.artifacts ?? []).map((artifact) => `src:${artifact.body.sha256}`)),
         ];
@@ -848,6 +869,24 @@ export class ReadEngine {
       } catch(error) {absent=undefined;failure=asConnectorError(error,'PROJECTION_FAILED');}
     }
 
+    // An answer held for scan hits still says the object exists, and nothing else of it (D05 R[3]), when it can show that: the
+    // answer of the route the pack declares to be the object itself (a lookup or a list shows no object), no revision asked for
+    // (no function read one), and an id with no hit of its own, because an answer can repeat the id it was asked for, found or
+    // not. An echo of a credential the Hub sent stays neutral (B02 R[6]), and a failed exchange is not an object seen. A read
+    // below the top leaves this to its parent.
+    const heldOriginal=original===null?undefined:responses.get(original);
+    if(depth===0 && failure!==null && failure.code==='SOURCE_CREDENTIAL' && heldOriginal?.held===true && heldOriginal.view.route===read.object_route && heldOriginal.view.error?.code==='SOURCE_CREDENTIAL' && echoedArtifacts.size===0 && subject.revision===null && scanForCredentials(new TextEncoder().encode(subject.id)).clean) {
+      pending=SourcePendingReview.safeParse({code:'SOURCE_PENDING_REVIEW',system:subject.system,object:subject.id,observed_at:this.#o.now().toISOString()}).data;
+      if(pending && context.bindPending===true) try {
+        content={...pending,message:pendingReviewLabel(pending)};
+        // Nothing of the held answer goes in: its digest would let a reader test a guess at its bytes.
+        const observation=await this.#o.artifacts.ingest({bytes:canonicalBytes(content),mediaType:'application/json',origin:{generated:{generator:SOURCE_PENDING_REVIEW_GENERATOR,inputs:[],read_back:null}},author:{user:null},provenanceType:'projected',visibility,name:'content',capturedAt:pending.observed_at});
+        if(observation.body.read_tier===RETAIN_ONLY || await this.#held(principal, observation))throw new ConnectorError('SOURCE_CREDENTIAL','待核看的观察被凭据扫描保留；请管理员处理后重读');
+        artifacts=[{name:'content',artifact:observation}];
+        meta=null;complete=false;failure=null;revision=null;note=`${labelOf('qualifier_mark','partial')}：内容待核看`;
+      } catch(error) {pending=undefined;failure=asConnectorError(error,'PROJECTION_FAILED');}
+    }
+
     const disclosable=echoedArtifacts.size===0 && ![...responses.values()].some(state=>state.held===true) && !artifacts.some(entry=>entry.artifact.body.read_tier===RETAIN_ONLY || heldRecords.has(entry.artifact.digest));
     // Interpreting a held envelope can itself produce an error containing its text. That text belongs only in
     // the protected original, never in the manifest, diagnostic message or a public protocol error.
@@ -863,8 +902,10 @@ export class ReadEngine {
     // Which responses the count leaves out, by request key and route, with the reason a pack function is given for them
     // (held and hidden classes neutral): coverage names what is missing (A05 R[1], decision 113).
     const unread=order.filter(key=>!covered(key) && !absent?.responses?.includes(key));
-    if(unread.length){const said=`没有读进的应答 ${unread.length} 个：${unread.slice(0,10).map(key=>{const state=responses.get(key);const route=entries.find(entry=>entry.key===key)?.route;return `${key}${route?`（路由 ${route}）`:''}：${state===undefined?'没有发出':forFunction(state).error?.message??'没有读进'}`;}).join('；')}`;note=note?`${said}；${note}`:said;}
+    if(unread.length && !(pending && failure===null)){const said=`没有读进的应答 ${unread.length} 个：${unread.slice(0,10).map(key=>{const state=responses.get(key);const route=entries.find(entry=>entry.key===key)?.route;return `${key}${route?`（路由 ${route}）`:''}：${state===undefined?'没有发出':forFunction(state).error?.message??'没有读进'}`;}).join('；')}`;note=note?`${said}；${note}`:said;}
     const ok = failure === null;
+    // A failure its reader is told neutrally stays neutral in what that reader can read; the cause stays in the administrator's reason.
+    const failed = failure === null ? null : forRun && !disclosable ? NEUTRAL_CODE : failure.code;
     const manifest: ReadManifest = {
       action: 'read',
       run: RunId.safeParse(context.run).success ? (context.run as string) : null,
@@ -879,7 +920,7 @@ export class ReadEngine {
       started_at: startedAt,
       ended_at: this.#o.now().toISOString(),
       result: ok ? 'completed' : 'error',
-      error_code: failure?.code ?? null,
+      error_code: failed,
       external: subject.id,
       revision: ok ? revision : null,
       resource: runtime.resource.id,
@@ -894,9 +935,9 @@ export class ReadEngine {
         return state === undefined ? [] : [{ external, ok: state.view.ok, cached: state.view.cached, revision: state.view.revision, manifest: state.manifest }];
       }),
       original,
-      artifacts: ok ? artifacts.map(({ name, artifact }) => ({ name, record: artifact.digest, sha256: artifact.body.sha256, media_type: artifact.body.media_type, size: artifact.body.size })) : [],
+      artifacts: ok ? artifacts.filter(({ artifact }) => !forRun || !heldRecords.has(artifact.digest)).map(({ name, artifact }) => ({ name, record: artifact.digest, sha256: artifact.body.sha256, media_type: artifact.body.media_type, size: artifact.body.size })) : [],
       coverage: ok && complete && examined === total ? { complete: true, examined, total, ...(note ? { note: this.#o.redactor.text(note).slice(0, 500) } : {}) } : { complete: false, examined, total, ...(note ? { note: this.#o.redactor.text(note).slice(0, 500) } : {}) },
-      reason: failure === null ? null : failure.code,
+      reason: failed,
       warnings,
     };
     // A manifest that is not read-manifest@1 is a programming error: it is never stored under that schema.
@@ -928,6 +969,13 @@ export class ReadEngine {
         if (failure === null) failure = new ConnectorError('STORE_FAILED', '读清单保存失败', { cause: error });
       }
     }
+    // A read that kept no manifest tells nothing as observed. What a run's reader is told awaits review is asked of an
+    // administrator; the reader's answer stands if that fails, and the administrator's list of held sources still shows the source.
+    if(digest===null)pending=undefined;
+    if(pending && forRun && heldOriginal?.artifact) {
+      try {await this.#o.pendingReview?.(heldOriginal.artifact,subject.id);}
+      catch(error) {this.#event('pending_review_not_asked',{resource:runtime.resource.id,record:heldOriginal.artifact.digest,reason:error instanceof Error?error.message:String(error)});}
+    }
     this.#event(ok && failure === null ? 'read_ok' : 'read_failed', {
       resource: runtime.resource.id,
       read: read.name,
@@ -942,9 +990,9 @@ export class ReadEngine {
       const redirect=refusedRedirect?{status:refusedRedirect[1].view.status!,location:refusedRedirect[1].view.location??null,observed_at:this.#o.now().toISOString(),...(refusedRedirect[1].view.location_redacted?{location_redacted:true as const}:{})}:undefined;
       const admin = depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message);
       const command = depth === 0 ? adminCommand(readExit(final.code).admin, runtime.resource.id, secretNamesOf(runtime.resource.credentials)) : '';
-      return { ok: false, external: subject.id, code: final.code, disclosable, message:this.#o.redactor.text(final.message), reason: command === '' ? admin : `${admin}；下一步：${command}`, manifest: digest,...(redirect?{redirect}:{}),...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
+      return { ok: false, external: subject.id, code: final.code, disclosable, message:this.#o.redactor.text(final.message), reason: command === '' ? admin : `${admin}；下一步：${command}`, manifest: digest,...(pending?{pending}:{}),...(redirect?{redirect}:{}),...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
-    const succeeded: ReadOutcome = { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}) };
+    const succeeded: ReadOutcome = { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}),...(pending?{pending}:{}) };
     const used = new Map<string, { artifact: SourceArtifact; held: boolean }>();
     for (const state of responses.values()) if (state.artifact) used.set(state.artifact.digest, { artifact: state.artifact, held: state.held === true });
     for (const { artifact } of artifacts) used.set(artifact.digest, { artifact, held: artifact.body.read_tier === RETAIN_ONLY || heldRecords.has(artifact.digest) || used.get(artifact.digest)?.held === true });

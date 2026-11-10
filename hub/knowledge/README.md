@@ -1101,6 +1101,8 @@ fields 或 only 的具体办法。运行输入经 completeKnowledgeView 续读�
 Knowledge.scheduleSync 是显式启用的进程内周期接口：同产品同步仍串行，周期结束再排下一次，stop
 取消以后不再启动；意外失败登记管理员修复请求。这里只实现和验证接口，没有配置真实部署或定时器。
 
+运行里的读者被告知对象内容待核看时（D05 R[3]），Hub 经 Knowledge.requestSourceReview 给具名管理员发同一种请求，一个对象一条，还开着就不重发；对账时来源已被接受就关闭请求。
+
 凭据处理使用 KnowledgeOptions.credentialAcceptance：autoAcceptSources 逐项指定 systemPack 和生产器 slot，
 默认空名单；deadlineHours 默认 72。系统包身份取自已验证的 read-manifest，不能按外部标识前缀猜。
 仅共享、Hub 原件且原请求档位明确为 model_readable 的普通命中可按名单自动受理；明确 retain_only
