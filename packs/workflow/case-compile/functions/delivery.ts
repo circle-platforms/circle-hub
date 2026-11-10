@@ -136,6 +136,49 @@ export function auditPasses(dispatches: readonly Dispatch[], hits: ReadonlyMap<s
 }
 export const auditKey = (run: string, item: string): string => `${run}\u0000${item}`;
 
+/** A command the device refused to parse, as one of its sessions shows it (see syntaxRejections). */
+export interface SyntaxRejection { command: string; token?: string; prompt?: string }
+const isCaretLine = (line: string): boolean => { const s = line.trim(); return s === '^' || (s.length <= 3 && s.includes('^')); };
+const LEADING_PROMPT = /^([A-Za-z][A-Za-z0-9_.-]{0,20}(?:\([A-Za-z0-9_\- ]+\))?[#>])/;
+const PROMPT_LOOKBACK = 8;
+/** The word of `line` the caret column points at, or the next word after it (the reference engine's locate_caret_token). */
+function wordAt(line: string, column: number): string | null {
+  const words = [...line.matchAll(/\S+/g)];
+  const hit = words.find((w) => w.index <= column && column < w.index + w[0].length) ?? words.find((w) => w.index > column);
+  return hit ? hit[0] : null;
+}
+/**
+ * The reference engine's one mechanical pre-judgement of a failed case (main/ist_core/tools/device/fail_attribution.py
+ * attribute_fail, device_errors.py has_caret_error and parse_caret_positions): a session line that holds only a caret is the
+ * device refusing to parse the command it echoed on the line directly above; the caret stands under the word it stopped at.
+ * That is a fact of the terminal protocol, read by position, and the only cause of failure a program names: the command was
+ * not accepted, so what fails later in the same case mostly follows from it. Everything else stays the model's to attribute.
+ * `prompt` is the prompt the command was typed at, when that line is still in the session. In run 19 one case met the same
+ * caret three rounds running under a command sent at the wrong prompt, read each time as the bed lacking a configuration.
+ */
+export function syntaxRejections(session: string): SyntaxRejection[] {
+  const lines = session.replace(/\r/g, '').split('\n'), found: SyntaxRejection[] = [], seen = new Set<string>();
+  for (let i = 1; i < lines.length; i++) {
+    if (!isCaretLine(lines[i]) || !lines[i - 1].trim()) continue;
+    const above = lines[i - 1], prompted = LEADING_PROMPT.exec(above);
+    const rejection: SyntaxRejection = { command: (prompted ? above.slice(prompted[1].length) : above).trim() };
+    if (!rejection.command) continue;
+    if (prompted) rejection.prompt = prompted[1];
+    else {
+      // The echo shares the caret's columns only when it carries no prompt; the prompt is on the line the command was typed at.
+      const word = wordAt(above, lines[i].indexOf('^'));
+      if (word) rejection.token = word;
+      for (let j = i - 2; j >= 0 && j >= i - PROMPT_LOOKBACK; j--) {
+        const typed = LEADING_PROMPT.exec(lines[j]);
+        if (typed && lines[j].slice(typed[1].length).trim() === rejection.command) { rejection.prompt = typed[1]; break; }
+      }
+    }
+    const key = JSON.stringify([rejection.command, rejection.token ?? null, rejection.prompt ?? null]);
+    if (!seen.has(key)) { seen.add(key); found.push(rejection); }
+  }
+  return found;
+}
+
 /** The model's notes: one judged paragraph and one fix-or-trade-off paragraph for exactly the cases not delivered. */
 export function readNotes(value: unknown, undelivered: string[]): Notes {
   if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件要写成 {"cases":{"<autoid>":{"judged":"…","remedy":"…","evidence":"…"}},"batch":"…"}（batch 可省）');

@@ -310,6 +310,32 @@ brief it answered is still the plan's, writes the digest itself and says before 
 the first eight digits of the brief's digest in their names, so an unchanged plan keeps its verdict, a changed plan gets a new brief
 file, and nothing is overwritten or renamed. The Hub's check is unchanged apart from the brief's content.
 
+### 3.11.2: the device method, the caret, and the wait, each the reference engine's way
+
+Run 19 closed one case after three rounds on the same device answer: a command typed with the method for the other prompt, the
+device's lone caret under its first word, read as the bed lacking a configuration; and the model spent 3550 seconds asleep in
+guessed blocks, 13 minutes of them after the last job had ended. The reference engine has a mechanism for each, and none was here.
+
+- **Method.** Its block compiler lowers every device configuration and observation to one method and leaves the model no
+  choice (`main/case_compiler/blocks.py`); the bed's existing scripts send observations the same way. Step 2 of SKILL.md now says
+  that a device step, configuration or observation, uses the method the runner contract declares for that device's output
+  (`runtime.block_model.output_methods`). It is an instruction, not a check: the reference engine's generic step may still name
+  any enabled method.
+- **Caret.** Its one mechanical pre-judgement of a failed case is the device's syntax rejection
+  (`fail_attribution.attribute_fail`: the command was not accepted, fix it first, later failures in the case mostly follow).
+  `functions/delivery.ts syntaxRejections` reads it by position: a session line holding only a caret, the echoed command on the
+  line directly above, the word under the caret (when the echo carries no prompt) and the prompt the command was typed at (when
+  that line is within eight lines above). `tools/download-returns.ts` lists them per row as `syntax_rejected` in `index.json`,
+  empty when the row's sessions have none, and counts them in its last line. Replayed over run 19's three failed dispatches it
+  names that one case each round and nothing in the other twenty-one failed returns. The device's help at the caret position,
+  which the reference engine also attaches, needs a device read the Hub does not have and is not ported.
+- **Wait.** Its run tool returns when the bed has finished; the model makes one call. Here the Hub runs the job in its own
+  process, sends the client nothing when it ends and asks for the submission to be repeated, and the skill's local tools had no
+  way to wait. `tools/download-returns.ts --wait <seconds>` reads the Hub's job list every 20 seconds until every job of the
+  run has ended, then writes the returns and prints the verdict counts; a read that fails on the way is tried again, a run that
+  shows no job for five minutes is reported as not dispatched, and at the limit nothing is written. Started as a background
+  command, the client tells the model when it exits. The Hub is unchanged.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario
