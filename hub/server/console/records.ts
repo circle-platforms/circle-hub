@@ -13,6 +13,15 @@ import { callTable, names, neutralPage, type PageContext, type PageResult } from
 import { TOOL_LABELS, toolName } from './tasks.ts';
 import { card, count, duration, kpi, plannedCard, sectionHead, seg, when } from './ui.ts';
 import { spaceRecords } from './space-records.ts';
+import {credentialReviewRequests} from '../../knowledge/api.ts';
+
+async function sourceReviews(ctx:PageContext,path:string):Promise<Html>{
+ if(!ctx.admin)return html``;
+ const reviews=await credentialReviewRequests(ctx.deps.records,ctx.principal,{cursor:param(ctx,'review_cursor')??null,now:ctx.deps.now?.()??new Date()});
+ const rows=await Promise.all(reviews.items.map(async row=>[when(row.created_at),row.external??'对象标识未显示',await ctx.userName(row.audience),when(row.deadline),row.resolved?'已有解决记录':row.superseded?'已到期并生成后续请求':row.expired?'已到期，尚无解决记录':'等待管理员核看',technicalCode(row.reference),technicalCode(row.source)]));
+ const next=reviews.next?link(path,'下一页来源核看请求',{...Object.fromEntries(ctx.url.searchParams),review_cursor:reviews.next,call:null}):'';
+ return card({title:'来源核看请求',meta:'独立于调用筛选 · 仅显示当前有权访问的来源 · 本页 '+reviews.items.length+' 项'},html`<p class="ch-meta">这些请求已写入记录，不代表管理员已收到外部通知。到期不算接受；请具名接收人核对来源和当前受理决定，已有解决记录也不等于原文当前可读。</p>${table(['创建时间','来源对象','接收管理员','期限','请求进展','请求引用','原文引用'],rows,'本页没有可显示的来源核看请求')}${next}<p class="ch-meta">在 Hub 主机运行 ${technicalCode('circle-hub source held')} 查看被保留来源，按原文引用的摘要核对扫描与受理；本页不显示原文或凭据命中值。</p>`);
+}
 
 /** Trial actions are administrator-only and separate from the MCP call log and the real reads' statistics. */
 async function trials(ctx: PageContext, path: string, user: string | undefined, from: string | undefined, to: string | undefined): Promise<Html> {
@@ -122,7 +131,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   const list = card({ title: '调用记录', meta: `本页 ${lines.items.length} 条 · 新的在前` }, html`${filters}${callTable(lines.items, ctx.admin, await names(ctx, lines.items),{path,params:Object.fromEntries(ctx.url.searchParams),selected:selected?.digest})}${next}`);
   return {
     status: 200,
-    body: page(chrome,pageLayout(html`<nav class="ch-seg" aria-label="时间范围">${[7,14,30].map(value=>html`<a href="${path+'?'+new URLSearchParams({...user?{user}:{},...tool?{tool}:{},...run?{run}:{},days:String(value)})}"${value===days&&!from&&!to?html` aria-current="page"`:''}>近 ${value} 天</a>`)}</nav>${await statistics(ctx,now,days,{userId,tool,runId:run,from:rangeFrom,to:rangeTo})}<div>${list}</div><div>${await trials(ctx,path,userId,rangeFrom,rangeTo)}</div>${await spaceRecords(ctx,path,userId,rangeFrom,rangeTo)}
+    body: page(chrome,pageLayout(html`<nav class="ch-seg" aria-label="时间范围">${[7,14,30].map(value=>html`<a href="${path+'?'+new URLSearchParams({...user?{user}:{},...tool?{tool}:{},...run?{run}:{},days:String(value)})}"${value===days&&!from&&!to?html` aria-current="page"`:''}>近 ${value} 天</a>`)}</nav>${await statistics(ctx,now,days,{userId,tool,runId:run,from:rangeFrom,to:rangeTo})}<div>${list}</div><div>${await trials(ctx,path,userId,rangeFrom,rangeTo)}</div>${await spaceRecords(ctx,path,userId,rangeFrom,rangeTo)}${await sourceReviews(ctx,path)}
 ${sectionHead('知识流向', undefined, undefined, undefined, '按成员、工作流追踪知识的来源、去向及所用流程')}
 ${plannedCard('知识流向', '记录中已包含每条知识的来源与每次引用；上线后在此将两者关联展示。', 'flow')}`,{inspector,detail:!!selected,back:link(path,'返回记录',Object.fromEntries([...ctx.url.searchParams].filter(([key])=>key!=='call')))})),
   };
