@@ -3,6 +3,7 @@ import type { ProvenanceType } from '../../../../contracts/generated/vocabulary.
 // alias map (a name to the base build it uses, the same base/base writing as the case-location candidates), the
 // lease table (key → until) and now. Pure; the wording of every conclusion says “Hub 记录里”, because Hub records
 // cannot exclude local work on the devices (D02).
+import { bedDeviceKey } from './bed-key.ts';
 import type { ManifestBed } from './manifest.ts';
 
 export interface NeedDevice {
@@ -55,7 +56,7 @@ const baseOf = (builds: Record<string, string>, name: string): string => builds[
 export function pickDevices(bed: ManifestBed, leases: Record<string, LeaseEntry>, now: string, type: string, count: number): { picked: string[]; leasedUntil: Array<string|null> } {
   const of = bed.devices.filter((d) => d.type === type);
   const active=(device:string):LeaseEntry|undefined=>{
-    const row=leases['bed/'+bed.name+'/'+device];return row&&(row.until===null||Date.parse(row.until)>Date.parse(now))?row:undefined;
+    const row=leases[bedDeviceKey(bed.name,device)];return row&&(row.until===null||Date.parse(row.until)>Date.parse(now))?row:undefined;
   };
   const free=of.filter(d=>!active(d.name)).map(d=>d.name).sort(compareText);
   const taken=of.filter(d=>!!active(d.name)).map(d=>d.name).sort(compareText);
@@ -105,7 +106,7 @@ export function matchNeed(
         leaseEnds.push(...pick.leasedUntil);
       }
     }
-    if(need.devices.length===0)for(const device of bed.devices){const row=leases['bed/'+bed.name+'/'+device.name];if(row&&(row.until===null||Date.parse(row.until)>Date.parse(now)))leaseEnds.push(row.until);}
+    if(need.devices.length===0)for(const device of bed.devices){const row=leases[bedDeviceKey(bed.name,device.name)];if(row&&(row.until===null||Date.parse(row.until)>Date.parse(now)))leaseEnds.push(row.until);}
     const occupied=leaseEnds.length>0;
     const earliestFree=leaseEnds.length===0||leaseEnds.includes(null)?null:(leaseEnds as string[]).reduce((a,b)=>a>b?a:b);
     // Build: over the picked devices of the load-balancer type (the device under test), or every picked device
@@ -119,7 +120,7 @@ export function matchNeed(
     let buildText = '';
     if (need.build !== undefined && devicesOk) {
       const want = baseOf(builds, need.build);
-      const records = deciding.map((name) => ({ name, record: installed[`bed/${bed.name}/${name}`] }));
+      const records = deciding.map((name) => ({ name, record: installed[bedDeviceKey(bed.name, name)] }));
       const known = records.filter((r) => r.record !== undefined);
       if (known.length === 0) {
         buildOk = 'unknown';
@@ -195,7 +196,7 @@ export function unmatchedBuildExit(
     const bed = beds.find((candidate) => candidate.name === row.bed);
     if (bed === undefined) continue;
     for (const name of decidingDevices(bed, need, leases, now)) {
-      const record = installed[`bed/${bed.name}/${name}`];
+      const record = installed[bedDeviceKey(bed.name, name)];
       const where = `${bed.name}/${name}`;
       if (record === undefined) absent.push(where);
       else if (baseOf(builds, record.build) !== want) other.push(`${where} 装的是 ${record.build}${record.at ? `（观察于 ${record.at}）` : ''}`);
