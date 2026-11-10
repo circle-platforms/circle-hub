@@ -21,10 +21,10 @@ import type { ServerDeps } from '../api.ts';
 import type { HubFacts } from './settings.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
-import { code, definitions, html, icon, link, liveModule, page, pageLayout, pre, section, table, type Html, type PageChrome } from './html.ts';
+import { code, definitions, html, href, icon, link, liveModule, page, pageLayout, pre, section, table, type Html, type PageChrome } from './html.ts';
 import { pendingCount, taskResultOf } from './status.ts';
 import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell, waitingRequests } from './tasks.ts';
-import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
+import { box, button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
 import { awaitingRequests } from './requests.ts';
 import { packSources } from './pack-sources.ts';
@@ -121,18 +121,20 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const counts = new Map<TaskResult, number>();
   for (const task of tasks) if (task.result !== null) counts.set(task.result, (counts.get(task.result) ?? 0) + 1);
   const shown = wanted === undefined ? tasks : tasks.filter((task) => task.result === wanted);
+  const requests=await waitingRequests(ctx,tasks);
+  const waitingOf = new Map<string, number>();
+  for (const request of requests) if (request.run) waitingOf.set(request.run, (waitingOf.get(request.run) ?? 0) + 1);
+  const view = param(ctx, 'view') === 'requests' ? 'requests' : 'tasks';
   const rows = [];
   for (const task of shown) {
-    const run = task.run;
+    const run = task.run, waiting = waitingOf.get(run.run) ?? 0;
     rows.push([
       html`${runLink(run, html`<b>${taskTitle(run, titles)}</b>`)}${technicalCode(run.run)}`,
-      taskTitle(run,titles),
       [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—',
       run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner),
       when(run.started_at),
       run.items.length,
-      run.session ? technicalCode(run.session) : '—',
-      resultCell(task),
+      html`${resultCell(task)}${waiting > 0 ? html`<p class="ch-meta">${waiting.toLocaleString('en-US')} 条请求${uiLabelOf('request_status', 'waiting')}</p>` : ''}`,
     ]);
   }
   // The dispatch-unconfirmed filter, like every other, appears only while such a task is on the page.
@@ -140,17 +142,26 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
     { label: '全部', count: tasks.length, path: '/console/runs', params: { pack, cursor }, on: wanted === undefined },
     ...TASK_RESULT.filter((result) => (counts.get(result) ?? 0) > 0 || result === wanted).map((result) => ({ label: uiLabelOf('task_result', result), count: counts.get(result) ?? 0, path: '/console/runs', params: { pack, cursor, result }, on: result === wanted })),
   ], '按任务结果筛选');
-  const filter = html`<form class="ch-actions" data-filters method="get" action="/console/runs"><label>按${uiLabelOf('pack_kind','workflow')}筛选 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
+  // The workflows of the tasks on this page by name, instead of a field to type a pack identifier into.
+  const used = new Map<string, string>();
+  for (const task of tasks) used.set(packIdOf(task.run.pack), taskTitle(task.run, titles));
+  if (pack !== undefined && !used.has(pack)) used.set(pack, pack);
+  const filter = used.size < 2 && !filtering ? html`` : html`<form class="ch-actions" data-filters method="get" action="/console/runs"><label>按${uiLabelOf('pack_kind','workflow')}筛选 <select name="pack"><option value="">全部${uiLabelOf('pack_kind','workflow')}</option>${[...used].map(([id, title]) => html`<option value="${id}"${id === pack ? html` selected` : ''}>${title}</option>`)}</select></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
   const next = listing.next === null ? html`` : html`<p>${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
-  const requests=await waitingRequests(ctx,tasks);
   const empty = tasks.length === 0 && !filtering;
   const list = empty
-    ? card({ title: '尚无任务' }, html`<p class="ch-meta">客户端启动任务后在此列出。</p>`)
-    : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '工作流版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务',undefined,{hrefs:shown.map(task=>'/console/runs/'+task.run.run)})}${next}`);
+    ? box(null, html`<div class="ch-empty"><p class="ch-empty-title">尚无任务</p><p class="ch-empty-text">客户端启动任务后在此列出。</p></div>`)
+    : box(null, html`${table(['任务', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '结果'], rows, '本页没有符合筛选的任务','tasks',{hrefs:shown.map(task=>'/console/runs/'+task.run.run)})}`, { flush: true, ...(listing.next === null ? {} : { foot: next }) });
+  // One page, one list (decision 151): the tasks, or the requests that wait on them, never both stacked.
+  const tabs = html`<nav class="ch-seg" aria-label="任务页内容"><a href="${href('/console/runs', { pack, result: wanted, cursor })}"${view === 'tasks' ? html` aria-current="page"` : ''}>任务 <span class="ch-count">${tasks.length.toLocaleString('en-US')}</span></a><a href="${href('/console/runs', { pack, cursor, view: 'requests' })}"${view === 'requests' ? html` aria-current="page"` : ''}>${uiLabelOf('request_status', 'waiting')}的请求 <span class="ch-count">${requests.length.toLocaleString('en-US')}</span></a></nav>`;
+  const waitingList = requests.length === 0 ? box(null, html`<div class="ch-empty"><p class="ch-empty-title">没有${uiLabelOf('request_status', 'waiting')}的请求</p><p class="ch-empty-text">本页任务下发的请求都已回应或已作废。</p></div>`) : await awaitingRequests(ctx, requests, true);
+  // A Hub without a task shows the one fact, with no tabs, filters or zero counts around it.
+  const content = empty ? html`<div>${liveModule('tasks', ['task.updated', 'request.updated'], list)}</div>` : view === 'requests'
+    ? html`${tabs}${liveModule('task-requests', ['request.updated'], waitingList)}`
+    : html`${tabs}<div class="ch-toolbar">${filters}${filter}</div><p class="ch-meta" data-list-facts>本页 ${tasks.length.toLocaleString('en-US')} 个任务${filtering ? `，筛选后 ${shown.length.toLocaleString('en-US')} 个` : ''} · 按开始时间排列</p><div>${liveModule('tasks', ['task.updated', 'request.updated'], list)}</div>`;
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Hub 按工作流要求检查提交结果；适用的检查可能包括引用溯源、原文比对和沙箱复验。每项是否执行及其结果，请查看检查明细。' }), pageLayout(html`${empty ? '' : filters}<div>${liveModule('tasks', ['task.updated'], list)}</div>
-${liveModule('task-requests', ['request.updated'], await awaitingRequests(ctx, requests, true))}`,{inspector:html`<h2 class="ch-panel-title">任务</h2>${stat('本页任务',tasks.length)}${stat('筛选后',shown.length)}${card({title:'任务结果'},html`<ul class="ch-feed">${[...counts].map(([result,count])=>html`<li>${uiLabelOf('task_result',result)}<span class="num">${count}</span></li>`)}</ul>`)}`})),
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Hub 按工作流要求检查提交结果；适用的检查可能包括引用溯源、原文比对和沙箱复验。每项是否执行及其结果，请查看检查明细。' }), pageLayout(content,{inspector:null})),
   };
 }
 

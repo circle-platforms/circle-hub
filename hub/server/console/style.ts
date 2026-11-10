@@ -70,6 +70,14 @@ const SHELL_CSS = `
 a.ch-tile:hover{box-shadow:inset 0 0 0 1px var(--line-control);text-decoration:none}
 .ch-board{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:var(--space-4);align-items:start}
 .ch-stack{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
+/* Filters of a list: the result chips at the start, the other filters at the end. */
+.ch-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3) var(--space-4)}
+.ch-toolbar>[data-filters]{margin-left:auto}
+/* A table inside a card reaches the card's edges; its cells keep the card's inset. */
+.ch-card-body[data-flush] .ch-table-wrap{box-shadow:none;border-radius:0}
+.ch-card-body[data-flush] .ch-table th:first-child,.ch-card-body[data-flush] .ch-table td:first-child{padding-left:var(--space-5)}
+.ch-card-body[data-flush] .ch-table th:last-child,.ch-card-body[data-flush] .ch-table td:last-child{padding-right:var(--space-5)}
+.ch-table td>p.ch-meta{margin:2px 0 0}
 .ch-row-end{display:flex;flex-direction:column;align-items:flex-end;gap:2px;margin-left:auto;flex:none;max-width:50%;text-align:right}
 @media(max-width:1180px){.ch-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.ch-board{grid-template-columns:minmax(0,1fr)}}
 [data-overview-tasks] .ch-row-body{min-width:0}
