@@ -22,7 +22,7 @@
 | 5 | 知识库：位置在左、内容在右，知识、记忆、原文、产品知识四个页签；新建只要陈述、类型、位置 | `feat/console-knowledge`（接在第 4 步之后） | 进行中：第一部分已实现 |
 | 6 | 工作流与技能的列表和详情 | `feat/console-pack-pages` | 已实现 |
 | 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs`、`feat/console-records-list` | 进行中：右栏已去掉，连接页和记录页已分页签；团队页的版面未改 |
-| 8 | 设置、运行状况 | `feat/console-admin-panes` | 进行中：设置页右栏已去掉，运行状况未改 |
+| 8 | 设置、运行状况 | `feat/console-admin-panes`、`feat/console-settings-tabs` | 进行中：设置页已分页签；运行状况未改 |
 | 9 | 字号：正文 14px、辅助信息 13px，随共用设计规范一起改 | 待开 | 未开始 |
 
 ## 第 1 步：导航和技能入口
@@ -286,3 +286,24 @@
 - `hub/server/console-source-review.test.ts`、`console-systems.test.ts`、`console-sync-privacy.test.ts`、验收 47：原有断言改为读对应的页签；成员请求管理员的页签时落回调用记录，看不到页签名称和内容。
 - 验收 07：调用列表里没有追踪标识，每行链接到自己的调用；点开后能读到追踪标识和会话标识。
 - `node --test "hub/server/**/*.test.ts"`：842 项通过，0 失败，0 跳过；验收 47、07、06：16 项通过。
+
+## 第 8 步第二部分：设置页分页签
+
+### 允许路径
+
+- `hub/server/console/{settings.ts,ui.ts,records.ts}`
+- `hub/server/{console-places.test.ts,console-api.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 设置页顶上原来是一条看起来像页签的导航，其实是同一页里的两个锚点，而且永远标着第一个。现在是两个地址：管理员是“凭据”（默认）和“Hub 状态”，成员是“我的客户端”（默认）和“Hub 状态”。做假页签的辅助函数 `seg` 删掉，免得再用。
+- 凭据表的“用于”一列写业务系统的名称，不再是它的内部标识；标识在选中凭据后的技术信息里。读不到业务系统列表时照旧显示标识。
+- Hub 状态是四张卡片，两张一行：服务、证书、备份、数据库，状态写在各自的标题右侧。原来是四个没有边框的窄列，标题前各有一个圆点。“主机操作”在它们下面，只有管理员有。
+- 成员的 Hub 状态页签不读自己的客户端，客户端页签不读 Hub 状态。
+
+### 验收
+
+- `hub/server/console-places.test.ts`：两个页签各自的地址和当前项；默认页签没有 Hub 状态和主机操作，Hub 状态页签没有凭据表；成员的 Hub 状态页签没有主机操作和备份命令。
+- `hub/server/console-api.test.ts`：备份份数在 Hub 状态页签上。
+- 读设置页的 6 个测试文件 56 项通过。

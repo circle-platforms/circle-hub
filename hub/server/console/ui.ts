@@ -84,9 +84,6 @@ export function pageContents(items:readonly (readonly [string,unknown])[],label:
 }
 
 /** Anchors within the page, as the segmented control of the design. */
-export function seg(items: readonly (readonly [string, unknown])[], label: string): Html {
-  return html`<nav class="ch-seg" aria-label="${label}">${items.map(([anchor, text], i) => html`<a${i === 0 ? html` aria-current="page"` : ''} href="#${anchor}">${text}</a>`)}</nav>`;
-}
 
 /** The steps of an operation, the current one marked; a step the backend does not have yet is marked as planned. */
 export function stepper(names: readonly (string | readonly [string, true])[], current: number): Html {

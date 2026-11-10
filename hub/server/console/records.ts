@@ -11,7 +11,7 @@ import type { CallLogLine, Page } from '../../records/api.ts';
 import { href, html, link, page, pageLayout, table, type Html } from './html.ts';
 import { callTable, names, neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { TOOL_LABELS, toolName } from './tasks.ts';
-import { box, card, count, duration, kpi, seg, when } from './ui.ts';
+import { box, card, count, duration, kpi, when } from './ui.ts';
 import { spaceRecords } from './space-records.ts';
 import {credentialReviewRequests} from '../../knowledge/api.ts';
 
