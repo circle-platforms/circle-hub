@@ -229,20 +229,30 @@ export function evidenceProblems(notes: Notes, deviceTexts: Record<string, strin
  * verbatim, and whose last device output holds no syntax rejection (see syntaxRejections); a written judgement that the bed lacks a prerequisite, that the product is at fault or that the cause is undetermined
  * is not a terminal credential ("continue authoring the case as written"; undetermined goes back with a read-only observation).
  * At the cap it closes as the model not finding a solution, and the judged paragraphs stay the model's own account.
+ * A pass the pass review turned into no verdict (failureLine below; the reference engine records it as broken with the subtype
+ * errored) takes the same road: compile_engine/nodes.py author_redispatch_disposition sends failed, contradicted and
+ * broken-errored cases back to the author under the one round cap. In run 20 such a case was left out of the pass volume and
+ * handed over as 上机没有结论 after two authored versions, with no third round and no closing.
  */
 export const MAX_ROUNDS = 3;
 export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）', missing_fact: '缺少 Hub 点名的事实（待补齐）' } as const;
 export type Closing = keyof typeof CLOSING;
 
+/** The line by which the pass review dropped the case's latest pass, when that is how its last dispatch ended. */
+export const droppedPass = (outcome: CaseOutcome): RowAudit | undefined => (outcome.status === 'unsettled' ? outcome.history.at(-1)?.audit : undefined);
+/** Whether the closing rules of a failed case apply: its latest verdict is a failure, or a pass the pass review dropped. */
+export const reworked = (outcome: CaseOutcome): boolean => outcome.status === 'failed' || droppedPass(outcome) !== undefined;
+
 /**
- * Closes every failed case, or says why the delivery cannot be assembled yet. `rounds` holds, per failed case, how many distinct
- * plans of it failed on the bed; `authored` the author's expectation texts of each case; `deviceTexts` its last device output.
+ * Closes every case that failed or whose pass the pass review dropped, or says why the delivery cannot be assembled yet.
+ * `rounds` holds, per such case, how many distinct plans of it did not pass on the bed (a failure or a dropped pass);
+ * `authored` the author's expectation texts of each case; `deviceTexts` its last device output.
  */
 export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<string, number>, authored: Record<string, string[]>, deviceTexts: Record<string, string[]>): { cases: CaseOutcome[]; problems: string[] } {
   const problems: string[] = [];
   const plain = (text: string) => text.replace(/\r/g, '');
   const closed = cases.map((outcome) => {
-    if (outcome.status !== 'failed') return outcome;
+    if (!reworked(outcome)) return outcome;
     const used = rounds[outcome.autoid] ?? 0;
     const candidate = notes.cases[outcome.autoid]?.defect_candidate;
     if (candidate) {
@@ -263,6 +273,11 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
       return outcome;
     }
     if (used >= MAX_ROUNDS) return { ...outcome, rounds: used, closing: 'authoring_failure' as const };
+    const dropped = droppedPass(outcome);
+    if (dropped) {
+      problems.push(`用例 ${outcome.autoid} 最近一次上机运行器报通过，通过复核改记为无判定：${dropped.where}里有执行失败的设备原话“${dropped.line.length > 160 ? `${dropped.line.slice(0, 160)}…` : dropped.line}”，它自己的断言没有读这一行。照 InfoTest，这样的用例和上机没通过的一样回到编写：它没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。让它的断言读到这一行，或换一种不会执行失败的观察，改计划后整卷上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
+      return outcome;
+    }
     problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置这类文字主张不是依据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）可以提前定下结论`);
     return outcome;
   });
@@ -298,7 +313,10 @@ export function closingLine(outcome: CaseOutcome): string | null {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
     return `${CLOSING.authoring_failure}：它的计划在计划运行 ${outcome.missing.plan_run} 交给 Hub，修正轮次用完也没有受理${said ? `（Hub 原话：${said}）` : ''}，没有上机；按 InfoTest 的收口规则，编写每次都被提交规则拒绝、拒满轮次的，记为模型未找到解决方案。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
-  if (outcome.closing === 'authoring_failure') return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+  if (outcome.closing === 'authoring_failure') {
+    const dropped = outcome.history.filter((h) => h.audit).length;
+    return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过${dropped ? `（其中 ${dropped} 次上机运行器报通过，通过复核改记无判定，照 InfoTest 算没通过）` : ''}，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+  }
   if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
   if (outcome.closing === 'missing_fact' && outcome.missing) {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
@@ -325,9 +343,9 @@ export interface ReportInput {
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || `用例 …${autoid.slice(-6)}`;
-/** The closings of the failed cases and of those never dispatched, one sentence each, naming only those that occur; empty when none closed. */
+/** The closings of the failed cases, of those whose pass was dropped and of those never dispatched, one sentence each, naming only those that occur; empty when none closed. */
 export function closingCounts(cases: CaseOutcome[]): string {
-  return (['failed', 'unrun'] as const).map((status) => {
+  return (['failed', 'unsettled', 'unrun'] as const).map((status) => {
     const counts = (Object.keys(CLOSING) as Closing[]).map((closing) => [closing, cases.filter((c) => c.status === status && c.closing === closing).length] as const).filter(([, n]) => n > 0);
     return counts.length ? `${STATUS[status]}的终态：${counts.map(([closing, n]) => `${CLOSING[closing]} ${n}`).join('，')}。` : '';
   }).join('');

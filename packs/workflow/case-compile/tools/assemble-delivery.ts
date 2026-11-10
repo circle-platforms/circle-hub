@@ -13,12 +13,12 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, parseRunJobs, readNotes, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
-import { parseRuntimeContract } from '../functions/runtime-contract.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
-import { bearerFrom, get, hubOrigin, HubReplyError, jsonBytes, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { bearerFrom, get, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
-import { satisfiedRecipes } from './generate-workbook.ts';
+import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
+import { parsedPlanFile } from './submit-plans.ts';
 
 const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false } as const;
 function options(argv: string[]): Record<string, string> {
@@ -88,8 +88,9 @@ export function replyText(out: string, totals: Record<string, number>, files: st
 /**
  * What the Hub recorded for item `id` in a plan run's latest accepted result, on a requirement of the plan, not the workbook's (a
  * plan run has no workbook yet): pending on a data gap with a request to a named audience (a missing fact), or else no accepted
- * plan after the repair rounds were used up (the result's `rounds` says used is not below max). Null for anything else,
- * including a run with no accepted submission and a case handed in as skipped while rounds are left.
+ * plan after the repair rounds were used up (the result's `rounds` says used is not below max, and the item was handed in as an
+ * authored plan). Null for anything else, including a run with no accepted submission and a case handed in as skipped: a
+ * declared skip is a written claim, never an authored attempt, however many rounds the other items of the run used.
  */
 export function missingFactOf(exported: unknown, run: string, id: string): MissingFact | null {
   if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return null;
@@ -105,7 +106,11 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
     // case declared skipped once, with every round still unused, already carried that reason.
     const rounds = isRecord(exported.result.rounds) ? exported.result.rounds : null;
     const spent = !!rounds && Number.isSafeInteger(rounds.used) && Number.isSafeInteger(rounds.max) && (rounds.used as number) >= (rounds.max as number);
-    for (const requirement of spent ? entry.requirements : []) {
+    // The counter is the run's, not the item's: in run 20 the other item's repair used a round while this one was declared
+    // skipped in every submission. The Hub's record tells the two apart: a skipped item's entry carries skip_reason and its
+    // other requirements the reason declared_skip.
+    const skipped = entry.skip_reason !== undefined || entry.requirements.some((r) => isRecord(r) && Array.isArray(r.layers) && r.layers.some((l) => isRecord(l) && l.reason === 'declared_skip'));
+    for (const requirement of spent && !skipped ? entry.requirements : []) {
       if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
       const layer = requirement.layers.find((l) => isRecord(l) && l.reason === 'repair_exhausted');
       if (isRecord(layer)) return { kind: 'repair_exhausted', plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
@@ -132,7 +137,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const args = options(argv);
     const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
     if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) throw new Error('--runs 写按上机先后排列、逗号分隔的核验运行号；--recompose 写重组运行号');
-    const notesValue = jsonBytes(await readBytes(args.notes, 'notes'), 'notes');
+    // The notes are a file the model writes and edits by hand: a break in it is named with its place and the text around it, as
+    // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
+    const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readBytes(args.notes, 'notes'));
     await emptyOrAbsent(args.out);
     const origin = hubOrigin(args.hub);
     const bearer = await bearerFrom(readToken);
@@ -201,7 +208,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (!args.recompose) for (const autoid of excluded) if (!population.includes(autoid)) population.push(autoid);
     population = population.filter((v, k, all) => all.indexOf(v) === k);
 
-    const recipesOf = (plan: RunInputs) => satisfiedRecipes({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
+    const inputsOf = (plan: RunInputs) => ({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
+    const recipesOf = (plan: RunInputs) => satisfiedRecipes(inputsOf(plan));
     // The reference engine's pass review (functions/delivery.ts failureLine): a pass whose words carry an execution-failure line
     // that the case's own assertions do not read is no verdict. The markers are the contract declaration of each dispatch's plan
     // run; the words are the run log the Hub saved for the row, checked against its digest (the reference engine reads only
@@ -214,12 +222,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     };
     const hits = new Map<string, RowAudit>(); let markerCount: number | null = null, read = 0, wordless = 0;
     for (const d of dispatches) {
-      const plan = plans.get(d.plan_run)!;
-      let markers: string[] = [];
-      try { const parsed = parseRuntimeContract(JSON.parse(decode(plan.originals.contract))); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { /* a contract that does not parse declares no markers */ }
+      const { markers, assertions: assertionsOf } = passReviewInputs(inputsOf(plans.get(d.plan_run)!));
       if (!markers.length) continue;
       markerCount = Math.max(markerCount ?? 0, markers.length);
-      const assertionsOf = new Map(recipesOf(plan).map((recipe) => [String(recipe.fields.autoid), recipe.slots.expects.map((expect) => expect.text).filter((text) => typeof text === 'string' && text.length > 0)]));
       for (const row of d.rows) {
         if (row.dynamic_terminal !== 'pass') continue;
         const text = row.evidence?.log ? await textOf(d.run, row.evidence.log) : null;
@@ -230,7 +235,16 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       }
     }
     dispatches.splice(0, dispatches.length, ...auditPasses(dispatches, hits));
-    const assembly = assemble(population, dispatches);
+    // When no dispatch counts as a whole-volume pass, the pass review may be why: the refusal then names the passes it turned
+    // into no verdict and the line that did it (in run 20 the tool only listed the passes that stood, and the model had to find
+    // the missing one and its line by itself).
+    const assembly = (() => {
+      try { return assemble(population, dispatches); } catch (error) {
+        if (!(error instanceof Error) || !hits.size) throw error;
+        const told = [...hits.entries()].slice(-5).map(([key, hit]) => `用例 ${key.split('\u0000')[1]} 的${hit.where}里有一行“${hit.line.length > 160 ? `${hit.line.slice(0, 160)}…` : hit.line}”`);
+        throw new Error(`${error.message}。通过复核把这些通过改记为无判定（合约声明的执行失败原话出现在它的运行日志里，而它自己的断言没有读到这一行）：${told.join('；')}。让这条用例的断言读到这一行，或换一种不会执行失败的观察，再整卷上机`);
+      }
+    })();
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
 
@@ -275,10 +289,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       }
       deviceTexts[outcome.autoid] = texts;
     }
-    // The reference engine's closing rules: a failed case is reworked until three authored versions of it failed on the bed, unless
-    // it closes earlier as a verbatim product-defect candidate (closeFailed in functions/delivery.ts).
+    // The reference engine's closing rules: a case that failed, or whose pass the pass review dropped, is reworked until three
+    // authored versions of it did not pass on the bed, unless it closes earlier as a verbatim product-defect candidate
+    // (closeFailed in functions/delivery.ts). A round is a distinct plan that failed or whose pass was dropped.
     const rounds: Record<string, number> = {};
-    for (const outcome of assembly.cases.filter((c) => c.status === 'failed')) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail').map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid))).size;
+    for (const outcome of assembly.cases.filter(reworked)) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail' || h.audit).map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid))).size;
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts);
     // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never

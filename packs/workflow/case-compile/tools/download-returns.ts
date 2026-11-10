@@ -1,6 +1,7 @@
 // What the bed said, on local disk (decision 164): for one verification run, the Hub's job list, the device return the runner
 // reads and every row's run log and device sessions the Hub saved, each checked against its digest, so the model copies the
-// device's own words into the delivery notes from files instead of from tool answers that may be cut short. It decides nothing.
+// device's own words into the delivery notes from files instead of from tool answers that may be cut short. It applies the
+// reference engine's two judgements made by program when a verdict is read, and nothing else (see the rows below).
 //   node <skill directory>/tools/download-returns.ts --hub %HUB_URL% --run <verification run> --out <directory> [--wait <seconds>] <<'EOF'
 //   %HUB_TOKEN%
 //   EOF
@@ -11,13 +12,19 @@
 // Layout: jobs.json (the Hub's answer), then per job <first 12 of the job id>/device-return.txt and cases/<autoid>/log.txt and
 // cases/<autoid>/<session name>, with index.json listing every row's verdict and files (or why a piece is withheld) and, for a
 // row with sessions, syntax_rejected: the commands the device answered with a lone caret (session, command, the word under the
-// caret, the prompt it was typed at), which is the one cause of failure the reference engine names by program.
+// caret, the prompt it was typed at), which is the one cause of failure the reference engine names by program. A pass whose run
+// log carries an execution-failure line the plan run's contract declares and none of the case's own assertions reads is listed
+// as no_verdict with runner_verdict "pass" and pass_review (where, line): the reference engine downgrades such a pass when it
+// reads the verdict (tools/device/batch_tools.py, broken with the subtype errored) and sends the case back to its author, so the
+// model learns it with the returns and not at the delivery (in run 20 a case was reported as passed twice and dropped at the end).
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseRunJobs, syntaxRejections, type SyntaxRejection } from '../functions/delivery.ts';
+import { failureLine, parseRunJobs, syntaxRejections, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { fetchRunInputs } from './fetch-run.ts';
+import { passReviewInputs } from './generate-workbook.ts';
 
 const SOURCE = /^src:([0-9a-f]{64})$/;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
@@ -83,13 +90,36 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     };
     const index: Array<Record<string, unknown>> = [];
     let refused = 0;
+    // The pass review reads the plan run of each job: the failure lines its contract declares and each case's own assertions.
+    // A plan run that cannot be read leaves its passes unreviewed and says so; the delivery tool reviews them again in any case.
+    const reviews = new Map<string, ReturnType<typeof passReviewInputs> | string>();
+    const reviewOf = async (planRun: string) => {
+      if (!reviews.has(planRun)) {
+        try { const plan = await fetchRunInputs(origin, bearer, planRun); reviews.set(planRun, passReviewInputs({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory })); }
+        catch (error) { reviews.set(planRun, error instanceof Error ? error.message : '读取失败'); }
+      }
+      return reviews.get(planRun)!;
+    };
+    const verdicts: Record<string, number> = {};
+    const passReview = { markers: null as number | null, read: 0, downgraded: 0, wordless: 0, unread: [] as string[] };
     for (const job of jobs) {
       const folder = job.job.slice(0, 12);
       const deviceReturn = await piece(job.device_return, join(folder, 'device-return.txt'));
       const rows: Array<Record<string, unknown>> = [];
+      const review = (job.rows ?? []).some((row) => row.dynamic_terminal === 'pass') ? await reviewOf(job.plan_run) : null;
+      if (typeof review === 'string') passReview.unread.push(`计划运行 ${job.plan_run} 读不出复核要用的合约和断言（${review}），作业 ${folder} 的通过没有复核`);
+      else if (review?.markers.length) passReview.markers = Math.max(passReview.markers ?? 0, review.markers.length);
       for (const row of job.rows ?? []) {
         if (!/^[0-9A-Za-z_-]{1,64}$/.test(row.item)) throw new Error(`作业 ${folder} 的条目编号 ${row.item} 不能做目录名`);
         const log = await piece(row.evidence?.log, join(folder, 'cases', row.item, 'log.txt'));
+        let dropped: RowAudit | null = null;
+        if (row.dynamic_terminal === 'pass' && review && typeof review !== 'string' && review.markers.length) {
+          const bytes = log === null ? undefined : outputs.find((output) => output.name === log)?.bytes;
+          if (!bytes) passReview.wordless++;
+          else { passReview.read++; dropped = failureLine({ 运行日志: new TextDecoder().decode(bytes) }, review.markers, review.assertions.get(row.item) ?? []); if (dropped) passReview.downgraded++; }
+        }
+        const verdict = dropped ? 'no_verdict' : row.dynamic_terminal;
+        verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
         const sessions: Record<string, string | null> = {};
         for (const [k, [name, reference]] of Object.entries(row.evidence?.sessions ?? {}).entries()) {
           const file = SAFE_NAME.test(name) && name !== 'log.txt' ? name : `session-${k + 1}.txt`;
@@ -103,16 +133,14 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
           if (bytes) for (const rejection of syntaxRejections(new TextDecoder().decode(bytes))) rejected.push({ session: name, ...rejection });
         }
         refused += rejected.length;
-        rows.push({ item: row.item, verdict: row.dynamic_terminal, log, sessions, ...(Object.keys(sessions).length ? { syntax_rejected: rejected } : {}) });
+        rows.push({ item: row.item, verdict, ...(dropped ? { runner_verdict: row.dynamic_terminal, pass_review: dropped } : {}), log, sessions, ...(Object.keys(sessions).length ? { syntax_rejected: rejected } : {}) });
       }
       index.push({ job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, rows });
     }
-    outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld }) });
+    outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld, pass_review: passReview }) });
     for (const { name } of outputs) await mkdir(join(args.out, name, '..'), { recursive: true, mode: 0o700 });
     for (const { name, bytes } of outputs) await writeNew(join(args.out, name), bytes);
-    const verdicts: Record<string, number> = {};
-    for (const job of jobs) for (const row of job.rows ?? []) verdicts[row.dynamic_terminal] = (verdicts[row.dynamic_terminal] ?? 0) + 1;
-    process.stdout.write(JSON.stringify({ run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused }) + '\n');
+    process.stdout.write(JSON.stringify({ run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, pass_review: passReview }) + '\n');
     return 0;
   } catch (error) { process.stderr.write(`下载失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }

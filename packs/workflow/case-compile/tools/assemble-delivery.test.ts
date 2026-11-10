@@ -6,13 +6,11 @@ import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import REQUIREMENTS from '../requirements.json' with { type: 'json' };
-import { canonicalJson } from '../functions/canonical-json.ts';
-import { GENERATOR, generateWorkbookSet } from '../functions/generate.ts';
+import { generateWorkbookSet } from '../functions/generate.ts';
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
-import { generationFixture } from '../testing/workbook.ts';
+import { planRunFixture } from '../testing/plan-run.ts';
 import { satisfiedRecipes } from './generate-workbook.ts';
 import { main, planDigest } from './assemble-delivery.ts';
 import { assemble, timeline } from '../functions/delivery.ts';
@@ -24,37 +22,36 @@ const CASES = ['990000000000000101', '990000000000000102', '990000000000000103',
 const contract = Buffer.from(JSON.stringify(CONTRACT_DOC)), profile = Buffer.from(JSON.stringify(PROFILE_DOC)), inventory = Buffer.from(JSON.stringify(MANIFEST_DOC));
 const log = Buffer.from('合成日志：第 3 步断言没有命中\n');
 
-/** A satisfied plan run over `autoids`, as the Hub exports it, with `exclude` frozen in its parameters; `pause` varies the plan (another authored round). */
-function planRun(run: string, autoids: string[], exclude: string[], pause?: string, contractBytes: Uint8Array = contract) {
-  const recipe = generationFixture();
-  if (pause) recipe.slots.steps[2] = { ...recipe.slots.steps[2], args: [pause] };
-  const items = autoids.map((autoid) => ({ id: `case-${autoid}`, fields: { ...recipe.fields, autoid, title: `合成用例 ${autoid.slice(-3)}`, path: ['合成文档', '合成分组', `合成用例 ${autoid.slice(-3)}`], steps: [{ text: '合成步骤', expected: ['合成期望'] }] } }));
-  const submission = { run, model: 'synthetic-model', items: items.map((item) => ({ item: item.id, handling: 'handled', slots: { plan: [{ data: recipe.slots }] } })) };
-  const record = { run, pack: 'case-compile', predecessor: BOOKING, pack_digest: 'b'.repeat(64), root: (recipe.fields.command_catalog as { root: string }).root, build: recipe.build, parameters: { exclude }, items, requirements: REQUIREMENTS.requirements.map((v) => ({ key: v.key, accepted_producer: v.accepted_producer })), sources: [...Object.entries({ contract: contractBytes, profile, inventory }).map(([slot, bytes]) => ({ slot, role: 'expected', reference: `src:${sha256(bytes)}` })), { slot: 'recomposition_result', role: 'expected', reference: RECOMPOSED }] };
-  const result = { schema: 'validation@1', run, submission: sha256(canonicalJson(submission)), acceptance: 'accepted', errors: [], locks: { pack: GENERATOR, pack_digest: record.pack_digest, root: record.root }, coverage: { complete: true, examined: items.length, total: items.length }, partitions: { delivered: items.map((item) => ({ item: item.id, requirements: REQUIREMENTS.requirements.map((v) => ({ requirement: v.key, status: v.key === 'workbook_verified' ? 'unresolved' : 'satisfied', claims: v.key === 'commands_known' ? [{ statement: { verdict: 'support', data: { command_catalog: recipe.fields.command_catalog } } }] : v.key === 'contract_methods' ? [{ statement: { verdict: 'support', data: { runtime_version: recipe.contract.runtimeVersion, contract_sha256: recipe.contract.pinned.identity } } }] : [] })) })) } };
-  const workbook = generateWorkbookSet(satisfiedRecipes({ run: record, result, submission, contract: contractBytes, profile, inventory }));
-  return { record, result, submission, workbook };
-}
+/** A satisfied plan run over `autoids` under this file's booking and recomposition (testing/plan-run.ts). */
+const planRun = (run: string, autoids: string[], exclude: string[], pause?: string, contractBytes: Uint8Array = contract) => planRunFixture({ run, autoids, exclude, pause, contract: contractBytes, profile, inventory, predecessor: BOOKING, recomposed: RECOMPOSED });
 const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
 const plan2 = planRun(PLAN2, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
 // The plan run that held CASES[3] before the model left it out of the others.
 const GAP = 'run_01777777777777777777777777', LATER = 'run_01888888888888888888888888', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里', SPENT_WORDS = '合成：缺少修复后符合要求的产物（修复轮数用完）';
-type Gap = 'recorded' | 'exhausted' | 'skipped' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
+type Gap = 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
 /**
  * The Hub left the plan of CASES[3] pending on a missing fact with a request (`recorded`), without an accepted plan after the
- * repair rounds (`exhausted`), with the same mark while rounds are left, as it does for a case handed in as skipped (`skipped`),
- * on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`).
+ * repair rounds (`exhausted`), handed in as skipped while rounds are left (`skipped`) or after the other items of the run used
+ * them up (`skipped-spent`), on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`). A
+ * skipped item is recorded as the Hub records it: skip_reason on the entry, repair_exhausted on the plan slot (which has no
+ * rounds of its own) and declared_skip on every other requirement.
  */
-function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'workbook' | 'unsubmitted', run = GAP) {
+function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | 'workbook' | 'unsubmitted', run = GAP) {
   const p = planRun(run, [CASES[3]], []);
-  const pending = (missing: string) => ({ status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'clarification' }, missing }] });
-  const spent = { status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'incomplete', reason: 'repair_exhausted', attribution: 'producer_error', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'repair' }, missing: SPENT_WORDS }] };
-  for (const r of p.result.partitions.delivered[0].requirements as Array<Record<string, unknown>>) {
-    if (r.requirement === 'workbook_verified') Object.assign(r, kind === 'exhausted' || kind === 'skipped' ? spent : pending('合成：缺少客户端生成的工作簿'));
+  const exit = (request_kind: string) => ({ action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind });
+  const pending = (missing: string) => ({ status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', exit: exit('clarification'), missing }] });
+  const spent = { status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'incomplete', reason: 'repair_exhausted', attribution: 'producer_error', exit: exit('repair'), missing: SPENT_WORDS }] };
+  const declared = { status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'incomplete', reason: 'declared_skip', attribution: 'unattributed', exit: exit('repair'), missing: '合成：缺少被跳过条目的提交产物（模型声明跳过）' }] };
+  const skip = kind === 'skipped' || kind === 'skipped-spent';
+  const entry = p.result.partitions.delivered[0] as Record<string, unknown>;
+  for (const r of entry.requirements as Array<Record<string, unknown>>) {
+    if (skip) Object.assign(r, r.requirement === 'plan' ? spent : declared);
+    else if (r.requirement === 'workbook_verified') Object.assign(r, kind === 'exhausted' ? spent : pending('合成：缺少客户端生成的工作簿'));
     else if (kind === 'recorded' && r.requirement === 'contract_methods') Object.assign(r, pending(GAP_WORDS));
-    else if (kind === 'exhausted' || kind === 'skipped') Object.assign(r, spent);
+    else if (kind === 'exhausted') Object.assign(r, spent);
   }
-  if (kind === 'exhausted' || kind === 'skipped') (p.result as Record<string, unknown>).rounds = { max: 2, used: kind === 'exhausted' ? 2 : 0 };
+  if (skip) Object.assign(entry, { reason: 'repair_exhausted', skip_reason: '合成：声明跳过的理由' });
+  if (kind === 'exhausted' || skip) (p.result as Record<string, unknown>).rounds = { max: 2, used: kind === 'skipped' ? 0 : 2 };
   return { plan: p, submitted: kind !== 'unsubmitted' };
 }
 const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
@@ -335,7 +332,7 @@ test('a pass whose device words carry an execution-failure line its assertions d
   const jobOf = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, r: unknown[]) => ({ ...job(id, run, plan, items, workbook, items.map(() => 'pass')), rows: r });
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const notesPath = await notes({ [CASES[1]]: NOTES[CASES[1]], [CASES[3]]: NOTES[CASES[3]] });
-  // The final verification's pass of CASES[2] rests on a refused command: no pass volume, so the run must exclude it and verify again.
+  // The final verification's pass of CASES[2] rests on a refused command: no pass volume; the case goes back to authoring (next test).
   const refusedFinal = await hub(undefined, undefined, {
     [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, refused, clean]))],
     [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [clean, refused]))],
@@ -343,6 +340,7 @@ test('a pass whose device words carry an execution-failure line its assertions d
   const refusedRun = await run(refusedFinal, notesPath, join(dir, 'a'), `${WHOLE2},${FINAL3}`);
   assert.equal(refusedRun.code, 1);
   assert.match(refusedRun.stderr, /还没有一次整卷全部通过、之后也没再失败的上机，990000000000000101 最近一次上机通过了/);
+  assert.match(refusedRun.stderr, /通过复核把这些通过改记为无判定（合约声明的执行失败原话出现在它的运行日志里，而它自己的断言没有读到这一行）：用例 990000000000000103 的运行日志里有一行“Failed to run the synthetic command”。让这条用例的断言读到这一行，或换一种不会执行失败的观察，再整卷上机/, 'the refusal names the pass the review did not take and the line');
   // The same line inside the text an assertion of the case reads is exempt; a refused pass in an earlier dispatch is reported.
   const earlier = await hub(undefined, undefined, {
     [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, clean, refused]))],
@@ -356,6 +354,43 @@ test('a pass whose device words carry an execution-failure line its assertions d
   assert.deepEqual(summary.pass_audit, { markers: 1, read: 4, downgraded: [{ run: WHOLE2, item: CASES[2], where: '运行日志', line: 'Failed to run the synthetic command' }], wordless: 0 });
   assert.deepEqual(summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal), ['no_verdict', 'pass']);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /- 通过复核（InfoTest 的执行失败标记，合约声明 1 条）：读了 4 条通过的运行日志，1 条里有本条断言没读的执行失败原话、改记无判定。/);
+});
+
+test('a pass the review dropped goes back to authoring like a failure, counts as a round and closes at three, as the reference engine redispatches a broken-errored case', async (t) => {
+  // InfoTest compile_engine/nodes.py author_redispatch_disposition: failed, contradicted and broken-errored share one round cap.
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const marked = Buffer.from(JSON.stringify(signTypedRuntime(doc)));
+  const [D1, D2, D3, LAST, P1, P2, P3, P4] = ['run_01fffffffffffffffffffffff1', 'run_01fffffffffffffffffffffff2', 'run_01fffffffffffffffffffffff3', 'run_01fffffffffffffffffffffff4', 'run_01fffffffffffffffffffffff5', 'run_01fffffffffffffffffffffff6', 'run_01fffffffffffffffffffffff7', 'run_01fffffffffffffffffffffff8'];
+  const whole = CASES.slice(0, 3), rest = [CASES[0], CASES[1]];
+  const p1 = planRun(P1, whole, [CASES[3]], undefined, marked), p2 = planRun(P2, whole, [CASES[3]], '2', marked), p3 = planRun(P3, whole, [CASES[3]], '3', marked), p4 = planRun(P4, rest, [CASES[2], CASES[3]], '3', marked);
+  const clean = Buffer.from('seat# configure widget\nseat#\n'), refused = Buffer.from('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
+  const rows = (items: string[], verdicts: string[], logs: Uint8Array[]) => items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], evidence: { log: `src:${sha256(verdicts[k] === 'pass' ? logs[k] : log)}` } }));
+  const jobOf = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, r: unknown[]) => ({ ...job(id, run, plan, items, workbook, items.map(() => 'pass')), rows: r });
+  const all = ['pass', 'pass', 'pass'], dropped = [clean, clean, refused];
+  const last = [jobOf('s', LAST, P4, rest, p4.workbook, rows(rest, ['pass', 'pass'], [clean, clean]))];
+  const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
+  const note = { [CASES[2]]: { judged: '合成判断：删除后的重复删除报执行失败', remedy: '合成取舍：不再返工', evidence: 'Failed to run the synthetic command' }, [CASES[3]]: NOTES[CASES[3]] };
+
+  // One authored version whose pass was dropped, then the pass volume without it: refused, with the line and what to change.
+  const once = await hub(undefined, undefined, { [D1]: [jobOf('p', D1, P1, whole, p1.workbook, rows(whole, all, dropped))], [LAST]: last }, { [P1]: p1, [P4]: p4 }, [D1, LAST], false, [marked, clean, refused]); t.after(once.close);
+  const early = await run(once, await notes(note), join(dir, 'a'), `${D1},${LAST}`);
+  assert.equal(early.code, 1);
+  assert.match(early.stderr, /用例 990000000000000103 最近一次上机运行器报通过，通过复核改记为无判定：运行日志里有执行失败的设备原话“Failed to run the synthetic command”，它自己的断言没有读这一行。照 InfoTest，这样的用例和上机没通过的一样回到编写：它没通过的编写轮次是 1，还不到 3 轮（同一份计划重跑不算新的一轮）。让它的断言读到这一行，或换一种不会执行失败的观察，改计划后整卷上机；3 轮未过的记为模型未找到解决方案/);
+
+  // Three authored versions, one failed and two with a dropped pass: it closes as the model not finding a solution.
+  const failedFirst = rows(whole, ['pass', 'pass', 'fail'], dropped);
+  const three = await hub(undefined, undefined, { [D1]: [jobOf('p', D1, P1, whole, p1.workbook, failedFirst)], [D2]: [jobOf('q', D2, P2, whole, p2.workbook, rows(whole, all, dropped))], [D3]: [jobOf('r', D3, P3, whole, p3.workbook, rows(whole, all, dropped))], [LAST]: last }, { [P1]: p1, [P2]: p2, [P3]: p3, [P4]: p4 }, [D1, D2, D3, LAST], false, [marked, clean, refused]); t.after(three.close);
+  const out = join(dir, 'b');
+  const closed = await run(three, await notes(note), out, LAST);
+  assert.equal(closed.code, 0, closed.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual(summary.cases.map((c: { status: string }) => c.status), ['delivered', 'delivered', 'unsettled', 'unrun']);
+  assert.deepEqual({ closing: summary.cases[2].closing, rounds: summary.cases[2].rounds, terminals: summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal) }, { closing: 'authoring_failure', rounds: 3, terminals: ['fail', 'no_verdict', 'no_verdict'] });
+  assert.match(JSON.parse(closed.stdout).reply, /\n上机没有结论的终态：模型未找到解决方案 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。\n/);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /- 编号 `990000000000000103` · 状态：上机没有结论 · 上机 3 次 · 终态：模型未找到解决方案/);
+  assert.match(report, /\*\*结论\*\*：模型未找到解决方案：编写 3 轮，每一轮上机都没通过（其中 2 次上机运行器报通过，通过复核改记无判定，照 InfoTest 算没通过），作者内容未改、没有核对得上的缺陷候选/);
 });
 
 test('a case never dispatched closes only on a fact the Hub recorded missing for its own plan; a written claim sends it back to authoring', async (t) => {
@@ -375,8 +410,9 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   const shadowedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
   assert.equal((await run(shadowed, await notes(NOTES), shadowedOut)).code, 0);
   assert.equal(JSON.parse(await readFile(join(shadowedOut, 'delivery.json'), 'utf8')).cases[3].missing.plan_run, GAP);
-  // The missing workbook of a plan run is no missing fact; a plan run with no accepted submission or none holding the case certifies nothing.
-  for (const gap of ['workbook', 'unsubmitted', 'none', 'skipped'] as const) {
+  // The missing workbook of a plan run is no missing fact; a plan run with no accepted submission or none holding the case certifies
+  // nothing; nor does a declared skip, with rounds left or with the run's rounds used up by its other items (run 20).
+  for (const gap of ['workbook', 'unsubmitted', 'none', 'skipped', 'skipped-spent'] as const) {
     const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);
@@ -404,4 +440,14 @@ test('a case whose plan the Hub refused until the repair rounds were spent close
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /没有上机的终态：模型未找到解决方案 1。/);
   assert.ok(report.includes(`**结论**：模型未找到解决方案：它的计划在计划运行 ${GAP} 交给 Hub，修正轮次用完也没有受理（Hub 原话：${SPENT_WORDS}），没有上机；按 InfoTest 的收口规则`));
+});
+
+test('a notes file that is not valid JSON is named with the place and the text around it, before anything is read from the Hub', async (t) => {
+  const h = await hub(); t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-notes-')), broken = join(dir, 'notes.json');
+  await writeFile(broken, '{"cases":{"990000000000000102":{"judged":"合成判断：设备回 "拒绝"","remedy":"合成修法"}}}');
+  const refused = await run(h, broken, join(dir, 'out'));
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /说明文件 notes\.json 不是合法的 JSON（.+）；出错位置第 \d+ 个字符，附近原文：".*拒绝.*"。常见原因是括号或引号没有成对；改好这个文件再提交/);
+  assert.doesNotMatch(refused.stderr, /重新导出该运行对应输入的原始字节/);
 });

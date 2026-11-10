@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
+import { planRunFixture } from '../testing/plan-run.ts';
+import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { main, POLL_MS, UNDISPATCHED_MS, type Timing } from './download-returns.ts';
 
 const TOKEN = 'synthetic-token-1234', RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', PLAN = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -17,7 +20,7 @@ function jobs(sessionBytes: Uint8Array = session) {
   return { schema: 'run-jobs@1', run: RUN, jobs: [{ job: 'c'.repeat(64), verification_run: RUN, plan_run: PLAN, items: ['990000000000000301', '990000000000000302'], sha256: 'd'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: ref(deviceReturn),
     rows: [{ item: '990000000000000301', dynamic_terminal: 'fail', evidence: { log: ref(log), sessions: { 'dev-a.txt': ref(sessionBytes), '../escape.txt': ref(held) } } }, { item: '990000000000000302', dynamic_terminal: 'pass' }] }] };
 }
-async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[] = []) {
+async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[] = [], plan?: { record: unknown; result: unknown; submission: unknown }) {
   const bytes = new Map(served.map((b) => [sha256(b), b])), denied = new Set(forbidden.map((b) => sha256(b)));
   const server = createServer((request, response) => {
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
@@ -28,6 +31,7 @@ async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[
       if (now === null) { response.statusCode = 503; response.end('稍后\n'); return; }
       response.end(JSON.stringify(now)); return;
     }
+    if (plan && url === `/run-export/${PLAN}`) { response.end(JSON.stringify({ schema: 'run-export@1', run: plan.record, result: plan.result, submission: plan.submission })); return; }
     const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url);
     if (source && denied.has(source[1])) { response.statusCode = 403; response.end('不给\n'); return; }
     if (source && bytes.has(source[1])) { response.end(bytes.get(source[1])); return; }
@@ -77,6 +81,46 @@ test('a command the device answered with a lone caret is listed for its row with
   assert.deepEqual(index.jobs[0].rows[0].syntax_rejected, [{ session: 'dev-a.txt', command: 'widget sync to peer-b', token: 'widget', prompt: 'seat#' }]);
   assert.equal(JSON.parse(done.stdout).syntax_rejected, 1);
   assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'cases', '990000000000000301', 'dev-a.txt')), refused, 'the session itself is written word for word');
+});
+
+test('a pass whose run log carries a declared execution-failure line its assertions do not read is listed as no verdict when the returns are read', async (t) => {
+  // InfoTest tools/device/batch_tools.py downgrades such a pass when it reads the verdict (broken, subtype errored) and the case
+  // goes back to its author; here the model sees it with the returns instead of at the delivery.
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const items = ['990000000000000301', '990000000000000302', '990000000000000303', '990000000000000304'];
+  const plan = planRunFixture({ run: PLAN, autoids: items, exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const clean = text('seat# configure widget\nseat#\n'), unread = text('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
+  const read = text('seat# configure widget\n健康检查间隔设置成功 Failed to run the synthetic command\nseat#\n');
+  const answer = jobs(); answer.jobs[0].items = items;
+  answer.jobs[0].rows = [
+    { item: items[0], dynamic_terminal: 'pass', evidence: { log: ref(clean) } }, { item: items[1], dynamic_terminal: 'pass', evidence: { log: ref(unread) } },
+    { item: items[2], dynamic_terminal: 'pass', evidence: { log: ref(read) } }, { item: items[3], dynamic_terminal: 'pass' },
+  ] as typeof answer.jobs[0]['rows'];
+  const h = await hub(answer, [deviceReturn, clean, unread, read, contract, profile, inventory], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual(index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['pass', 'no_verdict', 'pass', 'pass'], 'the line inside an assertion text of the case is read by it; a pass without a saved log is not reviewed');
+  assert.deepEqual([index.jobs[0].rows[1].runner_verdict, index.jobs[0].rows[1].pass_review], ['pass', { where: '运行日志', line: 'Failed to run the synthetic command' }]);
+  assert.equal('pass_review' in index.jobs[0].rows[0], false);
+  const reviewed = { markers: 1, read: 3, downgraded: 1, wordless: 1, unread: [] };
+  assert.deepEqual(index.pass_review, reviewed);
+  const summary = JSON.parse(done.stdout);
+  assert.deepEqual([summary.verdicts, summary.pass_review], [{ pass: 3, no_verdict: 1 }, reviewed]);
+  assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'cases', items[1], 'log.txt')), unread, 'the log itself is written word for word');
+
+  // A plan run that cannot be read leaves the passes as the runner reported them and says they were not reviewed.
+  const blind = await hub(answer, [deviceReturn, clean, unread, read]); t.after(blind.close);
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const kept = await run(blind.url, other);
+  assert.equal(kept.code, 0, kept.stderr);
+  const unreviewed = JSON.parse(kept.stdout);
+  assert.deepEqual(unreviewed.verdicts, { pass: 4 });
+  assert.deepEqual([unreviewed.pass_review.markers, unreviewed.pass_review.read, unreviewed.pass_review.unread.length], [null, 0, 1]);
+  assert.match(unreviewed.pass_review.unread[0], /^计划运行 run_01b+ 读不出复核要用的合约和断言（.+），作业 c{12} 的通过没有复核$/);
 });
 
 test('bytes that do not match their digest, a run never dispatched and a directory already in use write nothing', async (t) => {

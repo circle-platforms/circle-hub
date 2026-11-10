@@ -378,6 +378,31 @@ declared skipped in the first submission, with both rounds unused, already carri
 attempt. The tool now also requires the result's own counter (`rounds.used` not below `rounds.max`); a case handed in as skipped
 while rounds are left goes back to authoring, as the reference engine's rule says of a written claim.
 
+### 3.12.2: a dropped pass is reworked like a failure, and a declared skip is never an authored attempt
+
+Run 20 delivered twelve cases and showed three places where the closing rules let a case end short of the reference engine's.
+
+- **A pass the pass review drops goes back to its author.** The reference engine downgrades a pass whose log carries an
+  execution-failure marker its assertions do not read when it reads the verdict (`tools/device/batch_tools.py`: `broken`,
+  subtype `errored`), and `compile_engine/nodes.py` `author_redispatch_disposition` sends failed, contradicted and
+  broken-errored cases back to the author under the one round cap. Here the review ran only when the delivery was assembled
+  and the closing rules looked at failed cases only: a case passed twice by the runner's word, was dropped at the end, was left
+  out of the pass volume and handed over as 上机没有结论 after two authored versions. Now `closeFailed` treats a case whose
+  latest verdict is a dropped pass as it treats a failure (three rounds, or a verbatim defect candidate), a round is a distinct
+  plan that failed or whose pass was dropped, and `tools/download-returns.ts` applies the same review when it writes the returns:
+  such a row is listed as `no_verdict` with `runner_verdict` and `pass_review` (where, line), and the printed verdict counts use
+  it. Both tools read the markers and the assertions through one function (`passReviewInputs` in `tools/generate-workbook.ts`).
+  A plan run that cannot be read leaves its passes as the runner reported them and says they were not reviewed. Replayed over
+  run 20's own files, the case is listed as no verdict when its second dispatch is read, an hour and a dispatch earlier.
+- **A declared skip is never an authored attempt.** 3.12.1 asked for the run's round counter beside the `repair_exhausted`
+  mark; the counter is the run's, and in run 20 the other item of the plan run used a round while the case was declared
+  skipped in every submission. The Hub's record tells them apart (the skipped item's entry carries `skip_reason`, its other
+  requirements the reason `declared_skip`), and `missingFactOf` now reads that: only an item handed in as an authored plan
+  and refused until the rounds were used up closes as the model not finding a solution.
+- **The refusals say what to look at.** When no dispatch counts as a whole-volume pass because the review dropped a pass, the
+  refusal names the case and the line; a notes file that is not valid JSON is named with the place and the text around it
+  (it was answered with the shared reader's sentence for a run input, which told the model to export something).
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario
