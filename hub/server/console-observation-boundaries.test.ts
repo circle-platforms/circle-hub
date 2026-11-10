@@ -34,3 +34,23 @@ test('an inter-call gap retains the observed bounds and cannot be attributed to 
  const markup=html`${await taskWaterfall(context,detail,calls)}`.text;assert.match(markup,/调用间空档未由 Hub 观测/);assert.doesNotMatch(markup,/客户端本机处理|空档是客户端本机时间|执行位置：本机 Circle/);assert.ok(markup.includes('59800')||markup.includes('59,800'));
  }finally{await server.close();}
 });
+
+test('requests of one kind, to one recipient, in one state are one step with their number, read by its first and last record',async()=>{
+ const server=await createTestServer();try{
+ const record=(n:number)=>String(n).padStart(64,'0'),times=new Map<string,string>();let reads=0;
+ const request=(n:number,state:'open'|'voided'|'answered')=>{times.set(record(n),new Date(Date.parse('2026-11-09T00:00:00.000Z')+n*1000).toISOString());return {record:record(n),kind:'repair',audience:server.admin.user.id,due:'2026-11-10T00:00:00.000Z',missing:'合成缺失',next_action:'合成下一步',source:'s'.repeat(64),code:'missing_input',answered_by:state==='open'?null:'a'.repeat(64),...(state==='voided'?{superseded:true}:{})};};
+ // Sixty voided, one answered, then the four that still wait: as a task submitted many times leaves them.
+ const requests=[...Array.from({length:60},(_,n)=>request(n+1,'voided')),request(61,'answered'),...Array.from({length:4},(_,n)=>request(n+62,'open'))];
+ const detail={run:{run:'run_00000000000000000000000001',pack:'review@1.0.0',runner:server.admin.user.id,started_at:'2026-11-09T00:00:00.000Z',items:[],requirements:[]},latest:null,production:null,submissions:[],requests} as unknown as RunDetail;
+ const store={...server.deps.records.store,get:async(digest:string)=>{reads++;const at=times.get(digest);return at===undefined?null:{digest,created_at:at};}};
+ const context={admin:false,principal:server.admin.principal,deps:{...server.deps,records:{...server.deps.records,store}},userName:async()=> '合成运行者'} as unknown as PageContext;
+ const now=Date.parse('2026-11-09T00:10:00.000Z'),steps=(await taskSteps(context,detail,[],now)).filter(step=>step.count!==undefined);
+ assert.deepEqual(steps.map(step=>[step.count,step.open===true,step.point===true]),[[60,false,false],[1,false,true],[4,true,false]]);
+ assert.match(steps[0].sub,/^接收人 合成运行者 · 60 条 · 最早期限 .+ · 已作废$/);assert.match(steps[1].sub,/^接收人 合成运行者 · 期限 .+ · 已回答$/);assert.match(steps[2].sub,/· 4 条 · 最早期限 .+ · 等待回应中$/);
+ // A group spans from its first request to its last; one that still waits runs to now.
+ assert.deepEqual([steps[0].start,steps[0].end],[Date.parse(times.get(record(1))!),Date.parse(times.get(record(60))!)]);assert.equal(steps[2].end,now);
+ assert.equal(reads,5,'two records a group of several, one for a single request: not one read a request');
+ const markup=html`${await taskWaterfall(context,detail,[])}`.text;
+ assert.match(markup,/等待回应中<\/span><span class="ch-stat-value">4</,'the figure counts requests, not steps');
+ }finally{await server.close();}
+});

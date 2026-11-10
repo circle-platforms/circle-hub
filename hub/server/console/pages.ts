@@ -253,6 +253,15 @@ async function commentaryHandling(ctx: PageContext, detail: RunDetail, result: N
 
 /** Longest submission text the run page shows; the rest stays in the record. */
 const SHOWN_SUBMISSION_CHARS = 256 * 1024;
+/**
+ * How much of each submission the list of the 过程 tab shows. A page lists up to 50 submissions: at 256 KB each a task with
+ * 56 submissions answered with 7.6 MB. Each row shows its beginning and the one asked for by `submission` shows the rest.
+ */
+const PREVIEW_SUBMISSION_CHARS = 4 * 1024;
+/** How many of a submission's errors its row of the list shows; the row asked for shows them all. */
+const SHOWN_SUBMISSION_ERRORS = 3;
+/** The anchor of one submission's content on the 过程 tab. */
+const submissionAnchor = (digest: string): string => `submission-${digest.slice(0, 12)}`;
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -260,7 +269,8 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
  * A submission as the Hub received and stored it (display rule 3), marked unverified: the arguments of the record, or the
  * JSON text runs kept as an object when the arguments were not canonical JSON (`{received: {object, ...}}`).
  */
-async function submissionContent(ctx: PageContext, digest: string, runId: string): Promise<Html> {
+async function submissionContent(ctx: PageContext, digest: string, runId: string, whole?: { full: boolean; href: string }): Promise<Html> {
+  const full = whole === undefined || whole.full, limit = full ? SHOWN_SUBMISSION_CHARS : PREVIEW_SUBMISSION_CHARS;
   const record = await ctx.deps.records.store.get(digest);
   if (record === null) return html`<p class="empty">提交记录不在</p>`;
   const body = record.body;
@@ -274,15 +284,18 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
   } else {
     text = JSON.stringify(body, null, 2) ?? '';
   }
-  let shown = text;
-  if (text.length > SHOWN_SUBMISSION_CHARS) {
-    let end = SHOWN_SUBMISSION_CHARS;
+  let shown = text, more: Html | string = '';
+  if (text.length > limit) {
+    let end = limit;
     const last = text.charCodeAt(end - 1);
     if (last >= 0xd800 && last <= 0xdbff) end -= 1;
     shown = text.slice(0, end);
-    note = [note, `只显示前 ${end} 个字符，共 ${text.length} 个，全文在记录 ${digest}`].filter(Boolean).join('；');
+    const cut = `只显示前 ${end.toLocaleString('en-US')} 个字符，共 ${text.length.toLocaleString('en-US')} 个`;
+    // A row of the list: the rest is one link away, on the same row. The one asked for: what even that leaves out is in the record.
+    if (full) note = [note, `${cut}，全文在记录 ${digest}`].filter(Boolean).join('；');
+    else { note = [note, cut].filter(Boolean).join('；'); more = html` <a href="${whole!.href}">查看全文</a>`; }
   }
-  return html`<details class="unverified"><summary>提交内容（未经平台验证）</summary>${note ? html`<p class="notice">${note}</p>` : ''}${pre(shown)}</details>`;
+  return html`<details class="unverified" id="${submissionAnchor(digest)}"${whole?.full ? html` open` : ''}><summary>提交内容（未经平台验证）</summary>${note || more ? html`<p class="notice">${note}${more}</p>` : ''}${pre(shown)}</details>`;
 }
 
 /** A visible run may precede its stored production result; ask for a reread before a new run. */
@@ -425,14 +438,19 @@ ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / �
   } else if (tab === 'process') {
     // Display rule 3: what was submitted, unverified, side by side with the platform's receipt and result.
     const submissionRows: unknown[][] = [];
+    // The list shows the beginning of each submission; `submission` names the one shown whole, opened on its own row.
+    const wanted = param(ctx, 'submission');
     for (const s of detail.submissions) {
+      const full = s.record === wanted, whole = `${href(`/console/runs/${run.run}`, { tab: 'process', ...(before === null ? {} : { older: before }), submission: s.record })}#${submissionAnchor(s.record)}`;
+      // A submission of the long task carried 70 errors, 28 KB a row: the list shows the first few and how many more there are.
+      const errors = full ? s.errors : s.errors.slice(0, SHOWN_SUBMISSION_ERRORS);
       submissionRows.push([
         technicalCode(s.record),
         s.received_at,
         s.acceptance === null ? '未校验（Hub 中断）' : uiLabelOf('acceptance', s.acceptance),
-        s.errors.length === 0 ? '' : html`${s.errors.map((e) => html`<div>${code(e.code)} ${e.message}${e.fix ? `；修正：${e.fix}` : ''}${e.rounds_left !== undefined ? `；剩余修复轮数 ${e.rounds_left}` : ''}</div>`)}`,
+        s.errors.length === 0 ? '' : html`${errors.map((e) => html`<div>${code(e.code)} ${e.message}${e.fix ? `；修正：${e.fix}` : ''}${e.rounds_left !== undefined ? `；剩余修复轮数 ${e.rounds_left}` : ''}</div>`)}${errors.length < s.errors.length ? html`<p class="ch-meta" data-more-errors>另有 ${(s.errors.length - errors.length).toLocaleString('en-US')} 条 · <a href="${whole}">查看全部</a></p>` : ''}`,
         s.result ? technicalCode(s.result) : '—',
-        await submissionContent(ctx, s.record, run.run),
+        await submissionContent(ctx, s.record, run.run, { full, href: whole }),
       ]);
     }
     const submissions = table(['提交记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
