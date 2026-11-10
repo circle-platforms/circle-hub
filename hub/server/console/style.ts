@@ -283,4 +283,13 @@ const HEALTH_CSS = `
 }
 `;
 
-export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n${HEALTH_CSS}\n[data-theme-switch][hidden]{display:none}\n`;
+// Decision 151, step 9: text that is read (notes, table heads, the labels of figures and fields, trails, hints) uses the
+// shared scale's small size, 13px, in the console; its caption size, 12px, stays for labels inside controls (badges, chips,
+// tabs, counts, times). The shared design system is unchanged: both sizes are its own. These rules come last, after the
+// rules of the same weight above that they replace.
+const TYPE_CSS = `
+.ch-meta,.ch-row-meta,.ch-crumbs,.ch-stat-label,.ch-stat-note,.ch-stat-unit,.ch-figure-note,.ch-field-label,.ch-field-hint,.ch-field-error,.ch-tip-bubble,.ch-legend,.ch-tableview summary,[data-filters] label,[data-technical] > summary{font-size:13px;line-height:20px}
+.ch-table th,.ch-section-label{font-size:13px;line-height:18px}
+`;
+
+export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n${HEALTH_CSS}\n${TYPE_CSS}\n[data-theme-switch][hidden]{display:none}\n`;

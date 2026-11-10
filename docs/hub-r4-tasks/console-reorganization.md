@@ -23,7 +23,7 @@
 | 6 | 工作流与技能的列表和详情 | `feat/console-pack-pages` | 已实现 |
 | 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs`、`feat/console-records-list` | 进行中：右栏已去掉，连接页和记录页已分页签；团队页的版面未改 |
 | 8 | 设置、运行状况 | `feat/console-admin-panes`、`feat/console-settings-tabs`、`feat/console-health-team` | 已实现 |
-| 9 | 字号：正文 14px、辅助信息 13px，随共用设计规范一起改 | 待开 | 未开始 |
+| 9 | 字号：正文 14px、辅助信息 13px，随共用设计规范一起改 | `feat/console-type-scale` | 控制台一侧已实现；共用设计规范没有改，见该节 |
 
 ## 第 1 步：导航和技能入口
 
@@ -350,3 +350,22 @@
 - `hub/server/console-knowledge.test.ts`：首页在全部、团队、我的三个范围下都不再带产品知识来源和知识入库待处理，页签行里有通往第四个页签的链接；第四个页签显示这两块，页签行里只有它是当前项，没有右栏。
 - `hub/server/console-wording.test.ts`：真实装配下四个地址的标题都是“知识库”，都没有右栏，页签行里恰有一个当前项，文案检查通过。
 - 知识、记忆、原文、同步相关的测试文件 89 项通过。
+
+## 第 9 步：字号
+
+### 允许路径
+
+- `hub/server/console/style.ts`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 正文本来就是 14px。供人阅读的辅助文字从 12px 改为 13px：说明行、列表行的次要信息、面包屑、数字块的标签和附注、图表附注和图例、表单字段的标签与提示、提示气泡、表头、分区标题、筛选项标签、“查看技术信息”。
+- 控件里的文字不动，仍是 12px 或 11px：徽标、标签、页签、计数、时间。
+- **共用设计规范没有改。** 13px 和 12px 都是规范字号表里已有的两级（small 与 caption），这里只是控制台在自己的样式层里对上述文字改用 small。规范的字节和摘要不变，Circle 一侧不受影响。
+- 原计划写的是“随共用设计规范一起改”。规范有改动时两个仓库要同时更新（见 `circle-visual.md`），那需要在 Circle 仓库动手，这次没有做；是否把规范里这些文字的用法也改成 small，留给所有者定。
+
+### 验收
+
+- `hub/server/console/style.test.ts`、`contrast.test.ts`：生成的样式表仍逐字节复现共用规范，对比度检查通过。
+- 本机真实控制台截图核对总览、任务、任务详情、知识库四个页签、运行状况，没有横向溢出。
