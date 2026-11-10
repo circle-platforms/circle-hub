@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.11.2",
+  "version": "3.11.3",
   "kind": "workflow",
   "dependencies": [
     {
@@ -173,8 +173,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "ee2d724b6b791a5149c93091f368d60bcabccf37988ed9edba8a30a336eaa9cb",
-      "size": 34194
+      "sha256": "0a2559ea0dde3d25fc9a27103d764642580abca02e21d397cdfd955367e35bba",
+      "size": 35458
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -428,7 +428,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "ed81275c37e4c9cfe3f119e829ae5e06ebabe6466a0a470b286a73cb04fb55a4",
+      "sha256": "1b1909a2abd2b4df71f06044f11dd74d5dca67d9e58c50a8c629b2230b14b6b1",
       "size": 202654
     },
     {
@@ -473,7 +473,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "ae24ba6d1d2ecf76f6c6ba0f7cc16d78f556d0f887234365a34b670c2af9282c",
+      "sha256": "bee9b4c75a564aa4237ec90f619f92097c72d169306dd9b4be3fceb3ee6f9130",
       "size": 202658
     },
     {
@@ -548,7 +548,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "10613c277b3986980c102c962ab2a0baaa0d4b7d82fb06d0e551dd026b1a3a4a",
+      "sha256": "573952f9ae10a4d16603d95817517845244978a60340d913e97aa6f3a3f8688d",
       "size": 202608
     },
     {
@@ -593,7 +593,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "5253c2a20133b30081bdc1190d2686a73c839df81dce38b1af58615bc6cf1d07",
+      "sha256": "d77280458a21b9f0a619c6da97bce6cfc7b1355ce7f9e881253b576512fc0278",
       "size": 202612
     },
     {
@@ -688,7 +688,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "bb410cdf40d545c4742f0e6865b6b6170a41e2bc5eb15a0178f6ac8158c2aecf",
+      "sha256": "fda9635137dfa8336b27e495e696f1eeca279efc499aa8d1d0dac255b4e74d33",
       "size": 406
     },
     {
@@ -698,8 +698,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "5b8d81783fecd00348513d3e9ab6d5d0270eaba4d9c74874761f6ec3e9e6d136",
-      "size": 7126
+      "sha256": "a8cc8d56e6e8b21a37d892d952f03acdb31baa0e542fb7a2813b994622f7ef2c",
+      "size": 7354
     },
     {
       "path": "tools/download-returns.ts",

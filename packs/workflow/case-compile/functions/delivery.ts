@@ -226,7 +226,7 @@ export function evidenceProblems(notes: Notes, deviceTexts: Record<string, strin
  * max_rounds 3, terminal_outcomes.py, render.py; tools/device/fail_attribution.py and verifiability_tool.py). It goes back to
  * authoring until MAX_ROUNDS authored versions of it failed on the bed (a rerun of the same plan is not a new round). Before that
  * it closes only as a device-defect candidate whose expected text is the author's and whose actual text is the device's, both
- * verbatim; a written judgement that the bed lacks a prerequisite, that the product is at fault or that the cause is undetermined
+ * verbatim, and whose last device output holds no syntax rejection (see syntaxRejections); a written judgement that the bed lacks a prerequisite, that the product is at fault or that the cause is undetermined
  * is not a terminal credential ("continue authoring the case as written"; undetermined goes back with a read-only observation).
  * At the cap it closes as the model not finding a solution, and the judged paragraphs stay the model's own account.
  */
@@ -246,6 +246,15 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
     const used = rounds[outcome.autoid] ?? 0;
     const candidate = notes.cases[outcome.autoid]?.defect_candidate;
     if (candidate) {
+      // A defect candidate is a signed "the author's expectation against what the device did" finding, "not a grammar,
+      // environment, transient, or engine fault" (the reference engine's submit_attribution), and a lone caret is its one
+      // grammar fault named by program: the device did not accept a command of the plan, so the author's scenario was not
+      // realized on it. In run 19 a case closed as a candidate on the caret under a command typed at the wrong prompt.
+      const refused = (deviceTexts[outcome.autoid] ?? []).flatMap((text) => syntaxRejections(text));
+      if (refused.length) {
+        problems.push(`用例 ${outcome.autoid} 的 defect_candidate：它最后一次上机里设备用 ^ 拒绝了命令 ${refused.slice(0, 3).map((r) => `“${r.command.length > 80 ? `${r.command.slice(0, 80)}…` : r.command}”${r.prompt ? `（在 ${r.prompt} 下）` : ''}`).join('、')}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上声明与设备行为冲突：去掉 defect_candidate，先修这条命令再上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
+        return outcome;
+      }
       const wrong: string[] = [];
       if (!(authored[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.expected)))) wrong.push('expected 不是这条用例作者期望原文里的字');
       if (!(deviceTexts[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.actual)))) wrong.push('actual 不是它最后一次上机设备返回里的原话');

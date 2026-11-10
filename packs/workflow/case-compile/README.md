@@ -336,6 +336,17 @@ guessed blocks, 13 minutes of them after the last job had ended. The reference e
   shows no job for five minutes is reported as not dispatched, and at the limit nothing is written. Started as a background
   command, the client tells the model when it exits. The Hub is unchanged.
 
+### 3.11.3: a syntax rejection is not a defect candidate
+
+Run 19 delivered one case as 声明与设备行为冲突（待仲裁） on the caret under a command typed at the wrong prompt: both quotes of its
+candidate verified verbatim, so `closeFailed` took it. The reference engine does not: a lone caret is its grammar-layer fault named
+by program, and a defect candidate "represents a signed expected-vs-device-actual product finding, not a grammar, environment,
+transient, or engine fault" (`submit_attribution`); a product claim needs the author's scenario realized on the device, and a
+command the device did not accept was not. `closeFailed` now refuses a candidate for a case whose last device output holds a
+syntax rejection (`syntaxRejections`), naming the commands; the case goes on to its rounds and at the cap closes as the model not
+finding a solution. The reference engine can still tell a wrong form from a command the build lacks, by asking the device for help
+at the caret; without that read here, such a case is not claimed as a product finding.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

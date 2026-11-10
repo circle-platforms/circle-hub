@@ -2,7 +2,7 @@
 // echoed directly above it (fail_attribution.attribute_fail, device_errors.parse_caret_positions). Synthetic sessions only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { syntaxRejections } from './delivery.ts';
+import { closeFailed, syntaxRejections, type CaseOutcome } from './delivery.ts';
 
 // The shape a bed session has: the command typed at a prompt, the device's echo of it, and the caret under the word it stopped at.
 const TYPED_AT_THE_WRONG_PROMPT = ['seat(config)#exit', '', 'seat#widget sync to peer-b', '', 'widget sync to peer-b ', '^', '', 'seat#widget sync rollback peer-b', '', 'widget sync rollback peer-b ', '^', 'seat#conf ter', ''].join('\n');
@@ -29,4 +29,19 @@ test('what is not a rejection stays out: a caret inside text, a caret with nothi
   assert.deepEqual(syntaxRejections('seat(config)#widget name ok\nseat(config)#\n'), []);
   assert.deepEqual(syntaxRejections(''), []);
   assert.equal(syntaxRejections(`${TYPED_AT_THE_WRONG_PROMPT}\n${TYPED_AT_THE_WRONG_PROMPT}`).length, 2);
+});
+
+test('a case whose last device output holds a syntax rejection does not close as a defect candidate, however verbatim its quotes', () => {
+  const failed = (autoid: string): CaseOutcome => ({ autoid, status: 'failed', history: [] } as unknown as CaseOutcome);
+  const candidate = { repro: '合成复现', expected: '同步成功', actual: 'widget sync to peer-b' };
+  const notes = { cases: { c1: { judged: '合成判断', remedy: '合成修法', defect_candidate: candidate }, c2: { judged: '合成判断', remedy: '合成修法', defect_candidate: { ...candidate, actual: 'sync refused by the peer' } } } };
+  const authored = { c1: ['对端同步成功'], c2: ['对端同步成功'] };
+  const texts = { c1: ['合成日志', TYPED_AT_THE_WRONG_PROMPT], c2: ['合成日志', 'seat(config)#widget sync to peer-b\nsync refused by the peer\nseat(config)#\n'] };
+  const closed = closeFailed([failed('c1'), failed('c2')], notes, { c1: 3, c2: 1 }, authored, texts);
+  assert.deepEqual(closed.cases.map((c) => c.closing), [undefined, 'device_defect'], 'the device accepted the command in c2 and refused to act: a candidate');
+  assert.equal(closed.problems.length, 1);
+  assert.match(closed.problems[0], /用例 c1 的 defect_candidate：它最后一次上机里设备用 \^ 拒绝了命令 “widget sync to peer-b”（在 seat# 下）、“widget sync rollback peer-b”（在 seat# 下）。.*去掉 defect_candidate，先修这条命令再上机；3 轮未过的记为模型未找到解决方案/);
+  // Without the candidate the same case closes by its rounds, as before.
+  const plain = closeFailed([failed('c1')], { cases: { c1: { judged: '合成判断', remedy: '合成修法' } } }, { c1: 3 }, authored, texts);
+  assert.deepEqual([plain.cases[0].closing, plain.problems], ['authoring_failure', []]);
 });
