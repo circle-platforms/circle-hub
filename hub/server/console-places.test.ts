@@ -219,10 +219,10 @@ describe('operations and commands', () => {
 
   test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
     const admin=await signIn(server.admin.token);
-    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections',admin);
+    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections?tab=packs',admin);
     assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/packs\/line-a"/);
     assert.ok(knowledge.body.includes(uiLabelOf('pack_kind','product')));assert.match(knowledge.body,/合成产品线/);
-    assert.match(connections.body,/id="system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
+    assert.match(connections.body,/id="live-system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
     assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
     for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
       const detail=await get('/console/packs/'+id,admin);
@@ -249,7 +249,7 @@ describe('operations and commands', () => {
     server.fakes.workflows.packs.push(...sources);
     t.after(() => { for (const source of sources) server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(source), 1); });
     const admin = await signIn(server.admin.token);
-    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections', sources[1], 'retired']] as const) {
+    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections?tab=packs', sources[1], 'retired']] as const) {
       const body = (await get(path, admin)).body;
       const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
       assert.ok(row);
@@ -316,7 +316,7 @@ describe('operations and commands', () => {
     const direct=await server.records.principals.issueToken(server.admin.principal,user.user.id,'合成 Linux Circle');
     const admin=await signIn(server.admin.token), memberSession=await signIn(user.token);
     for(const path of ['/console/team',`/console/team/${user.user.id}`,'/console/connections']) {
-      const reply=await get(path,admin);
+      const reply=await get(path==='/console/connections'?path+'?tab=clients':path,admin);
       const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
       assert.match(tables,/<th scope="col">客户端<\/th>[\s\S]*<th scope="col">连接方式<\/th>/);
       assert.match(tables,/合成 MacBook Circle/);
@@ -341,6 +341,15 @@ describe('operations and commands', () => {
     assert.match(team.body,/添加成员/);
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
+    // Decision 151, step 8: 凭据 and Hub 状态 are two addresses, no longer two anchors of one page with the first always marked.
+    assert.match(settings.body,/<nav class="ch-seg" aria-label="设置内容" data-settings-tabs><a href="\/console\/settings" aria-current="page">凭据/);
+    assert.match(settings.body,/id="secrets"/);assert.doesNotMatch(settings.body,/data-hub-state|主机操作/);
+    const hubTab=await get('/console/settings?tab=hub',admin);
+    assert.match(hubTab.body,/<a href="\/console\/settings\?tab=hub" aria-current="page">Hub 状态<\/a>/);assert.doesNotMatch(hubTab.body,/<a href="\/console\/settings" aria-current="page">/);
+    assert.match(hubTab.body,/data-hub-state/);assert.match(hubTab.body,/主机操作/);assert.doesNotMatch(hubTab.body,/id="secrets"/);
+    const memberHub=await get('/console/settings?tab=hub',session);
+    assert.match(memberHub.body,/data-hub-state/);assert.doesNotMatch(memberHub.body,/主机操作|备份命令|id="mine"/);
+    assert.match((await get('/console/settings',session)).body,/<a href="\/console\/settings" aria-current="page">我的客户端/);
     const detail=await get(`/console/team/${user.user.id}?workflow=review`,admin);
     assert.match(detail.body,/成员详情|权限|工作流分配|已连接的客户端/);
     assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
@@ -371,7 +380,7 @@ describe('operations and commands', () => {
     const circle = await get('/console/team?circle='+token.id,admin);
     assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
-    assert.ok(connections.body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
+    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
     const pack = await get('/console/packs/review', admin);
     assert.ok(pack.body.includes('circle-hub pack retire review@1.0.0'));
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
@@ -448,7 +457,9 @@ test('record periods constrain the list and chart together, and an unresolved me
  const recent=await put(now-1000,'initialize'),old=await put(now-20*86400000,'list_task_packs');
  const base='/console/records?user='+encodeURIComponent(user.user.name);
  const seven=await get(base+'&days=7',admin),thirty=await get(base+'&days=30',admin);assert.equal(seven.status,200);assert.ok(seven.body.includes(recent.digest));assert.ok(!seven.body.includes(old.digest));assert.ok(thirty.body.includes(old.digest));
- const chart=seven.body.slice(seven.body.indexOf('<figure'),seven.body.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/1 其他/,'protocol calls remain in the Other series instead of disappearing');
+ // Decision 151: the call list and the charts are two tabs of the same period and filters.
+ assert.doesNotMatch(seven.body,/<figure/);const charts=(await get(base+'&days=7&tab=stats',admin)).body;assert.ok(!charts.includes(recent.digest),'the statistics tab lists no call');
+ const chart=charts.slice(charts.indexOf('<figure'),charts.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/1 其他/,'protocol calls remain in the Other series instead of disappearing');
  const store=server.deps.records.store,original=store.countIndexed;let countCalls=0;t.after(()=>{store.countIndexed=original;});store.countIndexed=async()=>{countCalls++;return {count:999,capped:false};};
  const none=await get('/console/records?user=synthetic-nobody&days=30',admin);assert.equal(none.status,200);assert.equal(countCalls,0,'an unresolved member must not count all private refusal records');assert.match(none.body,/ch-stat-value">0/);assert.doesNotMatch(none.body,new RegExp(recent.digest+'|'+old.digest));
  assert.equal((await get(base+'&from=2099-01-01',admin)).status,400);assert.equal((await get(base+'&from=2026-11-02&to=2026-11-01',admin)).status,400);

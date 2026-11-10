@@ -438,7 +438,7 @@ describe('pages', () => {
     for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope='), id);
     for (const id of ['line-a', 'tracker-system']) assert.ok(!all.body.includes('href="/console/packs/'+id+'?scope='), id);
     assert.ok((await get('/console/knowledge', admin)).body.includes('line-a'));
-    assert.ok((await get('/console/connections', admin)).body.includes('tracker-system'));
+    assert.ok((await get('/console/connections?tab=packs', admin)).body.includes('tracker-system'));
     assert.ok(all.body.includes(user.user.name), 'assignments are shown to admins');
   });
 

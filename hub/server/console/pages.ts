@@ -474,8 +474,13 @@ export async function names(ctx: PageContext, lines: readonly CallLogLine[]): Pr
   return out;
 }
 
-export function callTable(lines: readonly CallLogLine[], admin: boolean, users: ReadonlyMap<string, string>,selection?:{path:string;params:Record<string,string>;selected?:string}): Html {
-  const headers = ['时间', '用户', '工具', axisUiLabel('call_result'), axisUiLabel('acceptance'), '错误码', '耗时（毫秒）', '运行', '追踪', '会话', '参数摘要（字节）'];
+/**
+ * The lines of the call log. `compact` is the list of the records page, where a line opens in the pane beside it: the trace,
+ * the session and the digest of the arguments are read there, not in three more columns of every row.
+ */
+export function callTable(lines: readonly CallLogLine[], admin: boolean, users: ReadonlyMap<string, string>,selection?:{path:string;params:Record<string,string>;selected?:string;compact?:boolean}): Html {
+  const compact = selection?.compact === true;
+  const headers = ['时间', '成员', '工具', axisUiLabel('call_result'), axisUiLabel('acceptance'), '错误码', '耗时（毫秒）', '运行', ...(compact ? [] : ['追踪', '会话', '参数摘要（字节）'])];
   if (admin) headers.push('管理员备注');
   return table(
     headers,
@@ -489,9 +494,7 @@ export function callTable(lines: readonly CallLogLine[], admin: boolean, users: 
         line.error_code ?? '',
         line.duration_ms,
         line.run === null ? '' : link(`/console/runs/${line.run}`, '查看任务'),
-        technicalCode(line.trace_id),
-        line.session ?? '',
-        html`${technicalCode(line.args_digest.slice(0, 16))}（${line.args_size}）`,
+        ...(compact ? [] : [technicalCode(line.trace_id), line.session ?? '', html`${technicalCode(line.args_digest.slice(0, 16))}（${line.args_size}）`]),
       ];
       if (admin) row.push(line.admin_reasons?.length?html`${line.admin_note??''}<details><summary>完整理由（${line.admin_reasons.length} 条）</summary><ol>${line.admin_reasons.map(reason=>html`<li><pre>${reason}</pre></li>`)}</ol></details>`:line.admin_note??'');
       return row;

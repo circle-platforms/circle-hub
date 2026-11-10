@@ -21,8 +21,8 @@
 | 4 | 任务详情：结果与“还需处理”并排，验收要求、条目、请求、过程、来源、技术信息六个页签 | `feat/console-task-detail`（接在第 3 步之后） | 已实现 |
 | 5 | 知识库：位置在左、内容在右，知识、记忆、原文、产品知识四个页签；新建只要陈述、类型、位置 | `feat/console-knowledge`（接在第 4 步之后） | 进行中：第一部分已实现 |
 | 6 | 工作流与技能的列表和详情 | `feat/console-pack-pages` | 已实现 |
-| 7 | 连接、团队、记录 | `feat/console-admin-panes` | 进行中：右栏已去掉，页面布局未改 |
-| 8 | 设置、运行状况 | `feat/console-admin-panes` | 进行中：设置页右栏已去掉，运行状况未改 |
+| 7 | 连接、团队、记录 | `feat/console-admin-panes`、`feat/console-connections-tabs`、`feat/console-records-list` | 进行中：右栏已去掉，连接页和记录页已分页签；团队页的版面未改 |
+| 8 | 设置、运行状况 | `feat/console-admin-panes`、`feat/console-settings-tabs` | 进行中：设置页已分页签；运行状况未改 |
 | 9 | 字号：正文 14px、辅助信息 13px，随共用设计规范一起改 | 待开 | 未开始 |
 
 ## 第 1 步：导航和技能入口
@@ -235,3 +235,75 @@
 - `hub/server/console.test.ts`：管理员在列表里看到分配的成员。
 - 验收 47、48、54、12。
 - 本机真实控制台截图核对列表、四个页签、技能详情，以及 1100 像素宽的深色界面，没有横向溢出。
+
+## 第 7 步第二部分：连接页分页签
+
+### 允许路径
+
+- `hub/server/console/{connections.ts,pack-sources.ts,pack-display.ts,packs.ts,style.ts}`
+- `hub/server/{console-section-navigation.test.ts,console-places.test.ts,console.test.ts,console-observation-boundaries.test.ts,console-clients.test.ts,console-environments.test.ts,console-systems.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 连接页原来是一长页：页内目录、业务系统接入表、四个数字、连接关系图、客户端表、业务系统表、运行环境表、两张“规划中”的卡片。现在是四个页签，一个页签一张表，由地址上的 `tab` 决定：业务系统（默认）、业务系统接入、客户端、运行环境。页签上写数量。
+- 选中一个业务系统、客户端或运行环境时，页面停在它所属的页签，详情照旧在右侧打开。
+- 成员只看到自己的客户端，没有页签；下面一行写明业务系统和运行环境的配置仅管理员可见。
+- 去掉：页内目录（内容已不在同一页上）、连接关系图（只是把客户端和业务系统两张表各取前五行再画一遍）、“多终端协同”“消息通知”两张规划中的卡片、四个数字。数字里的事实移到各页签表格上方的一行：业务系统写“已启用几个，共几个”和统计时段，客户端写“24 小时内使用过几个”，运行环境写“可用几个，共几个”和其他状态的数量。“业务系统写操作未开放”移到标题的提示里。
+- 业务系统表的“业务系统接入”一列写接入的名称并链接到它的页面，不再是一个“查看”折叠；它的标识仍在选中后的技术信息里。明文 http 标在对应的访问地址后面，不再把地址重复一遍。
+- 业务系统接入表去掉只放“查看”折叠的版本一列；说明放进“名称”列头的提示。业务系统接入的面包屑和“查看已发布版本”指向这个页签。
+- 近 24 小时的读取统计只在业务系统页签（含选中某个业务系统时）计算。
+- 卡片里的空状态不再有自己的边框（原来是卡片套卡片）。
+
+### 验收
+
+- `hub/server/console-section-navigation.test.ts`：四个页签的地址、顺序和当前项；每个地址只显示自己的那张表；没有页内目录、关系图、规划中的卡片和数字块；成员在三个地址下都只看到客户端表和那一行说明。
+- `hub/server/console-environments.test.ts`：运行环境页签上方一行写可用数、总数和其他状态的数量。
+- `hub/server/console-systems.test.ts`：业务系统页签上方一行写已启用数、总数和统计时段。
+- `hub/server/console-observation-boundaries.test.ts`、`console-clients.test.ts`、`console-places.test.ts`、`console.test.ts`：原有断言改为读对应的页签。
+
+## 第 7 步第三部分：记录页分页签
+
+### 允许路径
+
+- `hub/server/console/{records.ts,space-records.ts,pages.ts}`
+- `hub/server/{console-places.test.ts,console-source-review.test.ts,console-sync-privacy.test.ts,console-systems.test.ts}`
+- `tests/acceptance/{47-knowledge-sharing.test.ts,07-call-log.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 记录页原来把七块内容排成一长页：时段、四个数字、三张图、调用记录、尝试读取记录、六张分享记录卡片、来源核看请求、一张“规划中”的知识流向卡片。现在是五个页签，由地址上的 `tab` 决定：调用记录（默认）、统计、分享记录、尝试读取记录、来源核看请求；后两个只有管理员有。
+- 时段和筛选在页签下面一行，随页签带着走；页签用不到的筛选项不显示（分享记录和尝试读取记录只有成员、从、到；来源核看请求没有筛选，它本来就独立于调用筛选）。尝试读取记录不再因为设了工具或运行筛选而整块消失。
+- 调用记录的表从十二列减到九列：追踪、会话、参数摘要三列只在点开一行后右侧的技术信息里读。任务详情里的调用日志照旧是完整的列。两处的“用户”一列都改叫“成员”，和筛选项、数字块一致。
+- 四个数字在调用记录和统计两个页签上方；三张图只在统计页签。调用列表只在调用记录页签查询，统计只在这两个页签查询。
+- 分享记录页签里有六组记录；没有内容的一组只占标题下的一行字，不再各占一张空卡片。
+- 去掉“知识流向”的规划中卡片。
+
+### 验收
+
+- `hub/server/console-places.test.ts`：调用记录页签没有图，统计页签有图但不列调用；时段对两者同时生效；查不到的成员不带出别人的统计。
+- `hub/server/console-source-review.test.ts`、`console-systems.test.ts`、`console-sync-privacy.test.ts`、验收 47：原有断言改为读对应的页签；成员请求管理员的页签时落回调用记录，看不到页签名称和内容。
+- 验收 07：调用列表里没有追踪标识，每行链接到自己的调用；点开后能读到追踪标识和会话标识。
+- `node --test "hub/server/**/*.test.ts"`：842 项通过，0 失败，0 跳过；验收 47、07、06：16 项通过。
+
+## 第 8 步第二部分：设置页分页签
+
+### 允许路径
+
+- `hub/server/console/{settings.ts,ui.ts,records.ts}`
+- `hub/server/{console-places.test.ts,console-api.test.ts}`
+- `CHANGELOG.md`、本任务页
+
+### 决定
+
+- 设置页顶上原来是一条看起来像页签的导航，其实是同一页里的两个锚点，而且永远标着第一个。现在是两个地址：管理员是“凭据”（默认）和“Hub 状态”，成员是“我的客户端”（默认）和“Hub 状态”。做假页签的辅助函数 `seg` 删掉，免得再用。
+- 凭据表的“用于”一列写业务系统的名称，不再是它的内部标识；标识在选中凭据后的技术信息里。读不到业务系统列表时照旧显示标识。
+- Hub 状态是四张卡片，两张一行：服务、证书、备份、数据库，状态写在各自的标题右侧。原来是四个没有边框的窄列，标题前各有一个圆点。“主机操作”在它们下面，只有管理员有。
+- 成员的 Hub 状态页签不读自己的客户端，客户端页签不读 Hub 状态。
+
+### 验收
+
+- `hub/server/console-places.test.ts`：两个页签各自的地址和当前项；默认页签没有 Hub 状态和主机操作，Hub 状态页签没有凭据表；成员的 Hub 状态页签没有主机操作和备份命令。
+- `hub/server/console-api.test.ts`：备份份数在 Hub 状态页签上。
+- 读设置页的 6 个测试文件 56 项通过。

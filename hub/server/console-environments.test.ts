@@ -94,7 +94,7 @@ const rowOf = (page: string, target: string): string => {
 
 describe('runtime environments', () => {
   test('the connections page shows each state with why, the reported version, the latest dispatch and what each state offers', async () => {
-    const page = (await send('/console/connections', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
     assert.match(rowOf(page, '合成运行环境甲'), /可用/);
     assert.match(rowOf(page, '合成运行环境甲'), /gateway 2\.4\.1/);
     assert.match(page, /响应时间/);
@@ -125,7 +125,9 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境己'), /未知/);
     assert.match(rowOf(page, '合成运行环境庚'), /未知/);
     assert.match(rowOf(page, '合成运行环境庚'), /占用该运行环境的作业暂不可读/);
-    assert.match(page, /可用 \/ 全部；使用中 1，已冻结 2，已停用 1，未知 2/);
+    assert.match(page, /可用 (\d+) 个，共 (\d+) 个；使用中 1，已冻结 2，已停用 1，未知 2/);
+    const [, available, total] = /可用 (\d+) 个，共 (\d+) 个/.exec(page)!;
+    assert.equal(Number(total) - Number(available), 6, 'the other states add up to the rest');
     assert.match(page, /data-live="environment.status"/, 'the environments refresh on their events');
   });
 

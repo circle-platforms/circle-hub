@@ -10,9 +10,9 @@ test('real console receipts and team provenance mask cleared source paths withou
  const entry=await spaces.write(owner.principal,{kind:'observation',statement:'合成团队知识保留',path,grounds:[{reference:'src:'+original.body.sha256,quotation:'保留两份'}]});
  const shared=await spaces.share(owner.principal,{root:entry.root,path,entry:entry.entry,team_path:'/synthetic-team-directory'});assert.equal(shared.status,'merged',JSON.stringify(shared));
  const browser=await openConsole(hub,hub.admin.token),mcp=await connect(hub,owner.token);t.after(()=>mcp.close());
- assert.match((await browser.get('/console/records')).body,/synthetic-private-directory/);
+ assert.match((await browser.get('/console/records?tab=sharing')).body,/synthetic-private-directory/);
  const epoch=(await hub.records.personalPayloads!.inspect(entry.root))!.epoch;await hub.records.personalPayloads!.purge(owner.principal,epoch);
- const recordPage=await browser.get('/console/records');assert.equal(recordPage.status,200,recordPage.body);assert.doesNotMatch(recordPage.body,/synthetic-private-directory/);assert.match(recordPage.body,/已清除的私人文件夹/);
+ const recordPage=await browser.get('/console/records?tab=sharing');assert.equal(recordPage.status,200,recordPage.body);assert.doesNotMatch(recordPage.body,/synthetic-private-directory/);assert.match(recordPage.body,/已清除的私人文件夹/);
  for(const detailed of [false,true]){
   const params:Record<string,string>={space:'team',root:shared.team_root!,path:'/synthetic-team-directory'};if(detailed)params.entry=entry.entry;
   const page=await browser.get('/console/knowledge/space?'+new URLSearchParams(params));assert.equal(page.status,200,page.body);assert.doesNotMatch(page.body,/synthetic-private-directory/);assert.match(page.body,/合成团队知识保留/);
