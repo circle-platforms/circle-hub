@@ -39,20 +39,22 @@ const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
 const plan2 = planRun(PLAN2, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
 // The plan run that held CASES[3] before the model left it out of the others.
 const GAP = 'run_01777777777777777777777777', LATER = 'run_01888888888888888888888888', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里', SPENT_WORDS = '合成：缺少修复后符合要求的产物（修复轮数用完）';
-type Gap = 'recorded' | 'exhausted' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
+type Gap = 'recorded' | 'exhausted' | 'skipped' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
 /**
  * The Hub left the plan of CASES[3] pending on a missing fact with a request (`recorded`), without an accepted plan after the
- * repair rounds (`exhausted`), on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`).
+ * repair rounds (`exhausted`), with the same mark while rounds are left, as it does for a case handed in as skipped (`skipped`),
+ * on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`).
  */
-function gapRun(kind: 'recorded' | 'exhausted' | 'workbook' | 'unsubmitted', run = GAP) {
+function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'workbook' | 'unsubmitted', run = GAP) {
   const p = planRun(run, [CASES[3]], []);
   const pending = (missing: string) => ({ status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'clarification' }, missing }] });
   const spent = { status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'incomplete', reason: 'repair_exhausted', attribution: 'producer_error', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind: 'repair' }, missing: SPENT_WORDS }] };
   for (const r of p.result.partitions.delivered[0].requirements as Array<Record<string, unknown>>) {
-    if (r.requirement === 'workbook_verified') Object.assign(r, kind === 'exhausted' ? spent : pending('合成：缺少客户端生成的工作簿'));
+    if (r.requirement === 'workbook_verified') Object.assign(r, kind === 'exhausted' || kind === 'skipped' ? spent : pending('合成：缺少客户端生成的工作簿'));
     else if (kind === 'recorded' && r.requirement === 'contract_methods') Object.assign(r, pending(GAP_WORDS));
-    else if (kind === 'exhausted') Object.assign(r, spent);
+    else if (kind === 'exhausted' || kind === 'skipped') Object.assign(r, spent);
   }
+  if (kind === 'exhausted' || kind === 'skipped') (p.result as Record<string, unknown>).rounds = { max: 2, used: kind === 'exhausted' ? 2 : 0 };
   return { plan: p, submitted: kind !== 'unsubmitted' };
 }
 const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
@@ -374,7 +376,7 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   assert.equal((await run(shadowed, await notes(NOTES), shadowedOut)).code, 0);
   assert.equal(JSON.parse(await readFile(join(shadowedOut, 'delivery.json'), 'utf8')).cases[3].missing.plan_run, GAP);
   // The missing workbook of a plan run is no missing fact; a plan run with no accepted submission or none holding the case certifies nothing.
-  for (const gap of ['workbook', 'unsubmitted', 'none'] as const) {
+  for (const gap of ['workbook', 'unsubmitted', 'none', 'skipped'] as const) {
     const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);

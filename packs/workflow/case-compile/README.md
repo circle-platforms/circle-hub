@@ -368,6 +368,16 @@ the tree have no evidence either way), and nothing is read from a method's name.
 (`method_forbidden`), not a missing fact. The reference engine has no such check because its compiler leaves the model no
 choice of method; SKILL.md step 2 states that rule for authoring since 3.11.2, and this makes it mechanical.
 
+### 3.12.1: "the repair rounds were used up" is the run's counter, not a reason on one requirement
+
+Since 3.11.0 a case that never went to the bed closes as the model not finding a solution when the Hub left its plan without an
+accepted version after the repair rounds, as the reference engine closes a case whose authored attempts were all refused at its
+cap. `missingFactOf` read that from a requirement layer whose reason is `repair_exhausted`. The Hub writes that reason on a
+requirement that has no repair rounds of its own (the plan slot) the first time an item is handed in as skipped: in run 20 a case
+declared skipped in the first submission, with both rounds unused, already carried it, and would have closed without one authored
+attempt. The tool now also requires the result's own counter (`rounds.used` not below `rounds.max`); a case handed in as skipped
+while rounds are left goes back to authoring, as the reference engine's rule says of a written claim.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.12.0",
+  "version": "3.12.1",
   "kind": "workflow",
   "dependencies": [
     {
@@ -433,7 +433,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "09c57fc0b9bd9a4ccae08c466dc3c643760957b72920c45501859415337e2976",
+      "sha256": "0ac73e28c8f1c18e69ae4bd392bdb744cf5b8c027dc94399608ed22ea6f80884",
       "size": 202654
     },
     {
@@ -478,7 +478,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "05c603006e99082b8b76bc746c7e417f2a166a72afca289f2b70c066216fb72d",
+      "sha256": "3d5244af6e51159fa934efe762768c7d26e0f741a3455ad48cb03de51b94c14a",
       "size": 202658
     },
     {
@@ -558,7 +558,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "19e2024d873b4fd04527946d57a8396e56faf067af0f808499354438c4b09687",
+      "sha256": "938e8dec65c8d250810e9b58898f05c3068000a90527fa18b66ae1f908fec102",
       "size": 202608
     },
     {
@@ -603,7 +603,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "c4e3abf1e87b1bb4c4cdd8b9bc570b68c301299b345e26365a1a277bc4618c37",
+      "sha256": "8c1f57ed1d7fcdc20829c4134cf5aa87d429c604b660747e2d73ca75df76bca6",
       "size": 202612
     },
     {
@@ -698,18 +698,18 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "61796dc5223beabba533a9b5faa095d89d47d0d895b814b4f4813383e679b69d",
+      "sha256": "d71b2c02ccd516373f56eaf1e6e28a3f1245ee87d5994f501ab72a0ef505f60d",
       "size": 406
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "ae926f2f9a33b573db3cf8bb6f74acdd8ac197bca4ef5a91ffb1f98964af7c93",
-      "size": 30052
+      "sha256": "80437eaa10543846a0df0b4a40fdc5e3371010814c290644a405d9e68405aba6",
+      "size": 30763
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "a8cc8d56e6e8b21a37d892d952f03acdb31baa0e542fb7a2813b994622f7ef2c",
-      "size": 7354
+      "sha256": "0c0ac7f497fce29642b2ed01749fd748ea64884dbe191823fa322f4cfc03e0a1",
+      "size": 7492
     },
     {
       "path": "tools/download-returns.ts",

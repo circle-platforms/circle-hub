@@ -88,7 +88,8 @@ export function replyText(out: string, totals: Record<string, number>, files: st
 /**
  * What the Hub recorded for item `id` in a plan run's latest accepted result, on a requirement of the plan, not the workbook's (a
  * plan run has no workbook yet): pending on a data gap with a request to a named audience (a missing fact), or else no accepted
- * plan after the repair rounds were used up. Null for anything else, including a run with no accepted submission.
+ * plan after the repair rounds were used up (the result's `rounds` says used is not below max). Null for anything else,
+ * including a run with no accepted submission and a case handed in as skipped while rounds are left.
  */
 export function missingFactOf(exported: unknown, run: string, id: string): MissingFact | null {
   if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return null;
@@ -99,7 +100,12 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
       const layer = requirement.layers.find((l) => isRecord(l) && l.attribution === 'data_gap' && isRecord(l.exit) && l.exit.action === 'request');
       if (isRecord(layer)) return { kind: 'data_gap', plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
     }
-    for (const requirement of entry.requirements) {
+    // "The repair rounds were used up" is the run's own counter, not the reason alone: the Hub marks a requirement that has no
+    // repair rounds of its own (the plan slot) repair_exhausted the first time an item is handed in as skipped, so in run 20 a
+    // case declared skipped once, with every round still unused, already carried that reason.
+    const rounds = isRecord(exported.result.rounds) ? exported.result.rounds : null;
+    const spent = !!rounds && Number.isSafeInteger(rounds.used) && Number.isSafeInteger(rounds.max) && (rounds.used as number) >= (rounds.max as number);
+    for (const requirement of spent ? entry.requirements : []) {
       if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
       const layer = requirement.layers.find((l) => isRecord(l) && l.reason === 'repair_exhausted');
       if (isRecord(layer)) return { kind: 'repair_exhausted', plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
