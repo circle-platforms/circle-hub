@@ -46,7 +46,7 @@ for (const [name, mutation] of Object.entries(mutations)) test(`independent read
 test('one changed original byte is refused even when the generic parsed model is unchanged', () => {
   const bytes = Buffer.from(generateWorkbook(generationFixture())); bytes[10] ^= 1;
   assert.equal(readWorkbook(coreModel(bytes), generationFixture()).ok, true);
-  const result = check(workbookCheckInput(bytes)); assert.equal(result[0].verdict, 'refute'); assert.match(result[0].statement, /bytes/);
+  const result = check(workbookCheckInput(bytes)); assert.equal(result[0].verdict, 'refute'); assert.match(result[0].statement, /自动化用例 Excel 与重新生成的文件不一致，请重新生成并上传后继续脚本合并/);
 });
 test('verification does not turn a bad plan or invented expectation into a support receipt', () => {
   const input = workbookCheckInput(); input.subject.data = { ...generationFixture().slots, expects: [] };

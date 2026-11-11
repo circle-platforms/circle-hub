@@ -9,6 +9,8 @@
 - `hub/server/source-readable-display.test.ts`
 - `hub/server/text-history.test.ts`
 - `tests/acceptance/support/mcp.ts`
+- `packs/workflow/case-compile/functions/workbook-input.test.ts`
+- `packs/workflow/case-compile/functions/workbook.test.ts`
 - `docs/hub-r4-tasks/codex-1112-server-assertions.md`
 
 不修改生产代码，不新增测试或删除场景。此项只静态同步，不运行测试、类型检查或安装；由集成分支最后唯一一次 `npm test` 验证。
