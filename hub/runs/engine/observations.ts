@@ -1,7 +1,7 @@
 // Device observations as claims (decision 111, B01): what each booked device showed when the booking was granted is an
 // observed claim with the probe output as its ground and its moment as its time bound (A05 R[3]); a device that could not be
 // looked at is an unknown that names why and that the version probe before a dispatch looks again.
-import type { QualifierMark, Reason } from '../../../contracts/generated/vocabulary.ts';
+import { QualifierMarkSchema, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { DeviceHelpPosition, DeviceHelpResult, DeviceObservation } from '../../../contracts/src/pack.ts';
 
@@ -39,7 +39,7 @@ export function observationClaims(result: { observed: DeviceObservation[]; missi
 
 const HELP_RULE = 'dispatch.device_help@1';
 const ASK_RULE = 'runs.ask_devices@1';
-const HELP_MARKS: QualifierMark[] = ['target_reported', 'local_ops_not_excluded'];
+const HELP_MARKS = QualifierMarkSchema.extract(['target_reported', 'local_ops_not_excluded']).options;
 const HELP_PREMISE = '目标这一版的问位置工具只读：不按回车、输入行总是清掉（premises.read_only，已认证）';
 
 export function deviceHelpClaims(results: readonly DeviceHelpResult[], at: string): Claim[] {
