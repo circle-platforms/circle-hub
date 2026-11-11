@@ -437,6 +437,20 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.14.2: one writer per case, all sent out together
+
+The prompt of every run since 17 asks for "每条用例的计划编写……各交给一个子代理去做", and the main session has grouped the
+cases each time. In run 22 six writers shared sixteen cases and the one that held six took twenty minutes; case 03 went to
+nobody. In run 23 the first wave was three writers for nine cases; two finished after 6 and 12 minutes, the one that held
+cases 02 and 03 was still working after 47, the main session waited for it, and the other eight cases had not been started.
+A brief makes one case cheaper to write; it does not decide how many cases are written at once.
+
+The reference engine fans its writers out in code: one brief and one writer per case, all at once up to a ceiling
+(`compile_engine/nodes.py` `_fanout_pool_size(len(_briefs_by_aid))`, `fanout_ceiling.py` `bounded_fanout`), so a hard case
+does not hold the others. Here the client's model does the sending out, so the rule is a sentence of SKILL step 2: a writer
+gets one case and its brief, all writers go out together, no case shares a writer and no batch waits for another (budget
+9060). Nothing else changes.
+
 ### 3.14.1: the brief ends with the envelope of the case's plan file
 
 The Hub takes a plan as one statement in a list, `{text, quotes, data}`; `slots.schema.json` describes only `data`, and the
