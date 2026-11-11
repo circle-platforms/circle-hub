@@ -72,6 +72,13 @@ function comparable(result: ToolCallResult): unknown {
   };
 }
 
+function modelReference(result: ToolCallResult): Record<string, unknown> {
+  assert.equal(result.content[1].type, 'text');
+  const text = result.content[1].text ?? '';
+  assert.ok(text.startsWith('供模型引用\n'));
+  return JSON.parse(text.slice('供模型引用\n'.length)) as Record<string, unknown>;
+}
+
 function firstError(result: ToolCallResult): { code: string; path?: string; message: string; fix?: string } {
   const errors = result.structuredContent.errors as { code: string; path?: string; message: string; fix?: string }[];
   assert.ok(errors.length > 0, 'an error answer names a code');
@@ -647,6 +654,10 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       assert.deepEqual(summary.items.map((item) => [item.id, item.label, item.summary]), Array.from({ length: 60 }, (_, i) => [`doc-9:n${i}`, `合成用例 ${i}`, `摘要 ${i}`]));
       assert.match(summary.slots.sha256, /^[0-9a-f]{64}$/);
       assert.equal(started.structuredContent.record, `rec:${server.fakes.runs.runs.get((started.structuredContent.run as { run: string }).run)!.recordDigest}`);
+      const model = modelReference(started);
+      assert.deepEqual(model.run, started.structuredContent.run);
+      assert.equal(model.record, started.structuredContent.record);
+      assert.deepEqual(model.original_cases, Array.from({ length: 60 }, (_, i) => ({ id: `doc-9:n${i}`, title: `合成用例 ${i}` })));
       assert.deepEqual(summary.slots.schema.properties.findings, { type: 'array', description: '评审发现（合成）', items: { type: 'object', properties: { text: { type: 'string', description: '发现的说明' }, code: { type: 'string' } }, required: ['text'] } });
       assert.doesNotMatch(text, /doc-9:n|src:|rec:|slots|findings|sha256|\"\$schema\"/);
     } finally {
@@ -1161,12 +1172,13 @@ describe('the isError matrix and output schemas', () => {
       assert.equal(result.structuredContent.call_result, expected ? 'error' : 'ok');
       const parsed = output(tool).safeParse(result.structuredContent);
       assert.ok(parsed.success, `${tool} answer conforms: ${parsed.success ? '' : parsed.error.message}`);
-      // D05 R[0], display rule 11: content is one block of plain text; the JSON is the structuredContent only.
-      assert.equal(result.content.length, 1);
+      assert.equal(result.content.length, 2);
       assert.equal(result.content[0].type, 'text');
-      assert.throws(() => JSON.parse(result.content[0].text ?? ''), SyntaxError, 'the content is plain text, not the JSON of the answer');
+      assert.throws(() => JSON.parse(result.content[0].text ?? ''), SyntaxError, 'the first block is reader-facing text');
       assert.doesNotMatch(result.content[0].text ?? '', /^追踪 /m);
-      assert.match(String(result.structuredContent.trace), /^[0-9a-f]{32}$/);
+      const { original_cases: _originals, ...model } = modelReference(result);
+      assert.deepEqual(model, result.structuredContent, 'the model can read the complete validated answer in the second text block');
+      assert.match(String(model.trace), /^[0-9a-f]{32}$/);
     }
     await client.close();
   });
