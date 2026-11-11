@@ -282,7 +282,7 @@ export interface ExtensionApi {
   readonly signal: AbortSignal;
   readonly settings: Json;
   readonly workspace: string;
-  setStatus(text: string | null, lamp?: 'running' | 'ok' | 'error' | 'wait' | 'none'): void;
+  setStatus(text: string | null, lamp?: 'running'): void;
   registerTool(name: string, description: string, parameters: Json, execute: (args: Json, context: ToolContextLike) => unknown, options?: { readOnly?: boolean; approval?: boolean }): void;
   registerSubagent(spec: { name: string; description: string; system_prompt: string }, tools?: string[]): void;
   registerMiddleware(handler: ModelMiddlewareLike, slot?: 'model_call' | 'tool_boundary' | 'after_model'): void;
