@@ -23,8 +23,8 @@ test('memory MCP modes return versioned text without evidence identities or admi
  const catalog=await w.hub.client(w.owner.token);const tools=await catalog.listTools();assert.equal(tools.tools.length,6);await catalog.close();
  const saved=await w.client.call('upload_file',{memory:{title:'合成私有偏好',markdown:'先核对合成事实，再列缺失信息。',expected_version:null,client_key:'mcp-create'}});
  assert.equal(saved.isError,false,saved.text);const doc=saved.out.memory_write!;assert.ok(doc);assert.equal(saved.out.reference,undefined);assert.equal(saved.out.artifact,undefined);
- const listed=await w.client.call('get_nodes',{memory:{scope:'personal',for_session:true}});assert.equal(listed.out.memory_page?.items[0].document,doc.document);
- const read=await w.client.call('get_nodes',{memory:{document:doc.document,version:doc.version,for_session:true}});assert.equal(read.out.memory_document?.markdown,'先核对合成事实，再列缺失信息。');assert.match(read.text,/不作为运行输入或依据/);
+ const listed=await w.client.call('get_nodes',{memory:{scope:'personal',for_session:true}});assert.equal(listed.out.memory_page?.items[0].document,doc.document);assert.match(listed.text,/记忆只供参考，不作为核对原始用例的资料或证据。/);
+ const read=await w.client.call('get_nodes',{memory:{document:doc.document,version:doc.version,for_session:true}});assert.equal(read.out.memory_document?.markdown,'先核对合成事实，再列缺失信息。');assert.match(read.text,/记忆只供参考，不作为核对原始用例的资料或证据。/);
  for(const denied of [w.other,w.admin]){
   const hidden=await denied.call('get_nodes',{memory:{document:doc.document}}),missing=await denied.call('get_nodes',{memory:{document:'f'.repeat(64)}});assert.equal(hidden.isError,true);assert.deepEqual(hidden.out.errors,missing.out.errors);
  }
