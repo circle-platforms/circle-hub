@@ -36,10 +36,10 @@ test('the task page asks for the newest window, says how many submissions it lis
  // Every other tab shows the current and the production result only, and asks for a window of one submission.
  for(const tab of ['','?tab=items','?tab=requests','?tab=sources','?tab=record','?view=record']){
   server.fakes.runs.runOptions.length=0;assert.equal((await send(`/console/runs/${id}${tab}`,cookie)).status,200,tab);
-  assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:1,before:null}},tab);
+  assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:1,before:null},requests:'waiting'},tab+': a tab that lists no settled request asks for the waiting ones (issue 200)');
  }
  server.fakes.runs.runOptions.length=0;assert.equal((await send(`/console/runs/${id}?older=synthetic-older-cursor`,cookie)).status,200);
- assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:1,before:null}},'a cursor of the 过程 tab moves no other tab');
+ assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:1,before:null},requests:'waiting'},'a cursor of the 过程 tab moves no other tab');
  assert.doesNotMatch(plain.body,/查看更早的提交|回到最近的提交/,'no paging note while the fake answers without a window');
  // A windowed answer: older submissions remain, and the first row is the one behind the current result.
  const detail=(await server.fakes.runs.getRun(user.principal,id))!;

@@ -1567,6 +1567,25 @@ CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind
  {version:31,name:'trace_client_platform',sql:`ALTER TABLE public.trace_spans ADD COLUMN client_platform pg_catalog.text;
 CREATE INDEX trace_spans_mcp_releases ON public.trace_spans (release,started_at DESC) WHERE is_root AND origin='mcp';
 `},
+ // Two index entries for the requests and closing records already stored; the request service writes them from now on.
+ // Listing the waiting requests of a run, or its criterion-change declarations, used to read every request and every
+ // closing record: a run that issued thousands of requests, nearly all voided since, paid for all of them on each page.
+ // `runs.request.settled`: a closing record that answers or voids carries the source as detail.answer; one that lets a
+ // request wait again has none and gets no entry. `runs.request.plain`: a request that carries no declaration. A record
+ // left without its entry is still read and looked at, so both listings answer the same with or without this migration.
+ {version:32,name:'request_listing_indexes',sql:`INSERT INTO public.record_index(key,value,digest,record_seq)
+ SELECT 'runs.request.settled',s.value,s.digest,s.record_seq
+ FROM (SELECT i.value,i.digest,i.record_seq,pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'uFFFD')::pg_catalog.json AS b
+   FROM public.record_index i JOIN public.hub_read_records() r ON r.digest=i.digest WHERE i.key='runs.request.answer' AND r.kind='action') s
+ WHERE pg_catalog.json_typeof(s.b->'detail'->'answer')='string'
+ ON CONFLICT DO NOTHING;
+INSERT INTO public.record_index(key,value,digest,record_seq)
+ SELECT 'runs.request.plain',COALESCE(s.b->>'run',s.b->>'pack_digest'),s.digest,s.seq
+ FROM (SELECT r.digest,r.seq,pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'uFFFD')::pg_catalog.json AS b
+   FROM public.hub_read_records() r WHERE r.kind='request') s
+ WHERE (s.b->'declaration' IS NULL OR pg_catalog.json_typeof(s.b->'declaration')='null') AND COALESCE(s.b->>'run',s.b->>'pack_digest') ~ '^[0-9a-z_]{1,128}$'
+ ON CONFLICT DO NOTHING;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */

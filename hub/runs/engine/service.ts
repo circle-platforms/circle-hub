@@ -121,7 +121,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       await maintain({incremental:true});
     },
     async stopMaintenance(options={}){if(timer){clearInterval(timer);timer=null;}if(options.abort===true)aborted=true;stopIndexing.abort();try{await indexing;await ongoing;}finally{aborted=false;}},
-    listRequests(user,run) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>requestsOf(current,user,run))); },
+    listRequests(user,run,options) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>requestsOf(current,user,run,options))); },
     async startRun(user, input, context) {
       return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer,user);
     },

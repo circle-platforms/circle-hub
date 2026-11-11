@@ -151,6 +151,42 @@ export class PgRecordStore implements RecordStore {
     return result.rows.map(row => verifiedRecord<B>(row,tx));
   }
 
+  async findUnsettled<B = unknown>(query: { kind: import('./api.ts').RecordKind; key?: string; values?: readonly string[]; closing: string; closingKind?: import('./api.ts').RecordKind; settled: string }, tx?: Transaction): Promise<StoredRecord<B>[]> {
+    for (const key of [query.closing, query.settled, ...(query.key === undefined ? [] : [query.key])]) if (typeof key !== 'string' || !INDEX_KEY.test(key)) throw new TypeError('invalid index key');
+    for (const kind of [query.kind, ...(query.closingKind === undefined ? [] : [query.closingKind])]) if (!RecordKindSchema.safeParse(kind).success) throw new TypeError('unknown record kind');
+    if ((query.key === undefined) !== (query.values === undefined)) throw new TypeError('an index key and its values are given together');
+    const values = query.values === undefined ? null : [...new Set(query.values.filter(isIndexValue))];
+    if (values !== null && !values.length) return [];
+    // The newest closing record is found as find({newestFirst}) finds it, through the same gated read; whether it settles
+    // its record is the presence of one more index entry on it, so a settled record costs index probes and no body.
+    const result = await this.#db.query(
+      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM hub_read_records() r
+       WHERE r.kind=$1 ${values === null ? '' : 'AND r.digest IN (SELECT i.digest FROM record_index i WHERE i.key=$5 AND i.value=ANY($6::text[]))'}
+         AND NOT EXISTS (
+           SELECT 1 FROM (
+             SELECT c.digest FROM record_index c JOIN hub_read_records() a ON a.digest=c.digest
+              WHERE c.key=$2 AND c.value=r.digest AND ($4::text IS NULL OR a.kind=$4)
+              ORDER BY c.record_seq DESC LIMIT 1
+           ) newest JOIN record_index s ON s.key=$3 AND s.value=r.digest AND s.digest=newest.digest
+         )
+       ORDER BY r.seq`,
+      values === null ? [query.kind, query.closing, query.settled, query.closingKind ?? null] : [query.kind, query.closing, query.settled, query.closingKind ?? null, query.key, values], tx);
+    return result.rows.map(row => verifiedRecord<B>(row,tx));
+  }
+
+  async findLacking<B = unknown>(query: { kind: import('./api.ts').RecordKind; key: string; values: readonly string[]; lacking: string }, tx?: Transaction): Promise<StoredRecord<B>[]> {
+    for (const key of [query.key, query.lacking]) if (typeof key !== 'string' || !INDEX_KEY.test(key)) throw new TypeError('invalid index key');
+    if (!RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!values.length) return [];
+    const result = await this.#db.query(
+      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM hub_read_records() r
+       WHERE r.kind=$1 AND r.digest IN (SELECT i.digest FROM record_index i WHERE i.key=$2 AND i.value=ANY($3::text[]))
+         AND NOT EXISTS (SELECT 1 FROM record_index m WHERE m.digest=r.digest AND m.key=$4)
+       ORDER BY r.seq`, [query.kind, query.key, values, query.lacking], tx);
+    return result.rows.map(row => verifiedRecord<B>(row,tx));
+  }
+
   async addIndex(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number> {
     if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) throw new TypeError('a record digest is 64 hexadecimal characters');
     const index = validateIndex(entries);

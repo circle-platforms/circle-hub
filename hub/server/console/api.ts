@@ -85,7 +85,7 @@ async function overview(ctx: PageContext): Promise<ApiResult> {
   const tasks = await loadTasks(ctx, runs);
   const today = startOfDay(now);
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
-  const requests = (await ctx.deps.runs.listRequests?.(ctx.principal) ?? []).filter((r) => r.answered_by === null);
+  const requests = (await ctx.deps.runs.listRequests?.(ctx.principal, undefined, { waiting: true }) ?? []).filter((r) => r.answered_by === null);
   const daily = Array.from({ length: days }, (_, i) => {
     const start = startOfDay(now - (days - 1 - i) * DAY);
     const end = i + 1 < days ? startOfDay(now - (days - 2 - i) * DAY) : Infinity;

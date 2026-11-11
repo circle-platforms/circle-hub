@@ -4,7 +4,7 @@ import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import type {RunRecord} from '../../../contracts/src/run.ts';
 import type {ValidationResult} from '../../../contracts/src/validation.ts';
 import type {EngineContext} from './deps.ts';
-import {createRequestService,type RequestView} from '../../requests/api.ts';
+import {closingIndex,createRequestService,type RequestView} from '../../requests/api.ts';
 import type {Principal,Transaction,StoredRecord,Page} from '../../records/api.ts';
 import {authorAccountsOf,lineageOf} from './lineage.ts';
 import {runById} from './store.ts';
@@ -26,7 +26,7 @@ async function requestChange(ctx:EngineContext,request:RequestView,tx?:Transacti
 }
 async function safeAnswer(ctx:EngineContext,request:RequestView,source:string,summary:Record<string,unknown>,tx:Transaction,superseded=false):Promise<void>{
  const at=ctx.now().toISOString();
- await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:request.run??null,item:request.item??null,inputs:['rec:'+request.record,'rec:'+source],component:'criterion-change@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request:request.record,answer:source,criterion_answer:summary,...(superseded?{superseded:true}:{})}},index:[{key:'runs.request.answer',value:request.record}]},tx);
+ await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:request.run??null,item:request.item??null,inputs:['rec:'+request.record,'rec:'+source],component:'criterion-change@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request:request.record,answer:source,criterion_answer:summary,...(superseded?{superseded:true}:{})}},index:closingIndex(request.record,true)},tx);
 }
 /** Instructions follow the binding interface: source roots are inputs, exact fragments remain quotations. */
 export function criterionReviewInstruction(run:string,source:string,change:CriterionChange,administrator:string):{next_action:string;unsupported:string[]}{
@@ -148,7 +148,8 @@ export async function freezeCriteria(ctx:EngineContext,previous:RunRecord|null,p
 export async function criterionNotices(ctx:EngineContext,run:RunRecord):Promise<import('../../../contracts/src/criterion.ts').CriterionNotice[]>{
  const result=[] as import('../../../contracts/src/criterion.ts').CriterionNotice[];
  for(const id of run.criterion_requests??[]){const request=await requestService(ctx).inspect(id);if(request){const notice=await noticeAt(ctx,request,run.started_at);if(notice)result.push(notice);}}
- for(const request of await requestService(ctx).all(run.run))if(request.declaration){const notice=await noticeAt(ctx,request,ctx.now().toISOString());if(notice)result.push(notice);}
+ // Only a request that carries a declaration gives a notice: the others, thousands in a run submitted many times, stay unread.
+ for(const request of await requestService(ctx).declared(run.run))if(request.declaration){const notice=await noticeAt(ctx,request,ctx.now().toISOString());if(notice)result.push(notice);}
  return result;
 }
 

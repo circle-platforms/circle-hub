@@ -157,7 +157,7 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string, o
   // The reader may already read this run; the purge facts name only its own sources, never another account's content.
   const purged=await ctx.deps.records.personalPayloads?.purgedRunOriginals(stored.digest)??[];
   const grounds_purged=purged.length?stored.body.sources.flatMap(source=>{const hit=purged.find(row=>row.artifact===source.artifact);return hit?[{reference:source.reference,at:hit.at}]:[];}):[];
-  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(page===null?{}:{history:{limit:page.limit,next:page.next,...(page.pinned===undefined?{}:{pinned:page.pinned})}}),...(management?{management}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(page===null?{}:{history:{limit:page.limit,next:page.next,...(page.pinned===undefined?{}:{pinned:page.pinned})}}),...(management?{management}:{}), requests: await requestsOf(ctx,user,run,{waiting:options.requests==='waiting'}), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
@@ -218,7 +218,7 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
   // These fields read every request the reader may see, whichever page is listed; a caller that shows none of them opts out.
   if(query.requests===false)return {items,next};
-  let requests=(await requestsOf(ctx,user)).filter(r=>r.answered_by===null);
+  let requests=(await requestsOf(ctx,user,undefined,{waiting:true})).filter(r=>r.answered_by===null);
   if(query.pack){const matches=await Promise.all(requests.map(async request=>{const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);return pack?.split('@')[0]===query.pack;}));requests=requests.filter((_,i)=>matches[i]);}
   const overdue_requests=requests.filter(request=>Date.parse(request.due)<=ctx.now().getTime());
   const open=await Promise.all(items.map(async run=>{const superseded=await hasSuccessor(ctx,run);if((superseded||await abandonDecision(ctx,run.run))&&!requests.some(r=>r.run===run.run))return false;const latest=await latestAccepted(ctx.deps.records.store,run.run);return !latest||requests.some(r=>r.run===run.run)||latest.body.partitions.incomplete.length>0||latest.body.partitions.quarantined.length>0||latest.body.errors.some(e=>(e.rounds_left??0)>0);}));

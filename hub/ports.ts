@@ -216,7 +216,11 @@ export interface RunDetail {
 }
 
 /** Ask for a window of the newest submissions instead of the whole history (the console detail page); results are read for these rows only. */
-export interface RunHistoryOptions { history?: { limit: number; before?: string | null } }
+export interface RunHistoryOptions {
+  history?: { limit: number; before?: string | null };
+  /** `waiting` lists the requests still waiting only: a page that shows no answered or voided request leaves those unread. */
+  requests?: 'waiting';
+}
 
 export interface RunListing extends Page<RunRecordView> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
 /** Protected result heads for list rows and aggregate charts, without submission/request detail or display qualifiers. */
@@ -230,7 +234,8 @@ export interface RunStatistics {
 
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
-  listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
+  /** The requests the user may see, of one run or of all; `waiting` leaves out, and does not read, the answered and the voided ones. */
+  listRequests?(user: Principal, run?: string, options?: { waiting?: boolean }): Promise<RunRequestView[]>;
   /** An absent pack or predecessor answers SOURCE_ABSENT, one the user may not use SOURCE_NOT_PERMITTED (D05 R[3]), with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
   /** `args` are the raw arguments of the call: they are stored as received before anything else (W07). */

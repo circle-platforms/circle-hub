@@ -22,12 +22,30 @@ export function requestKeyOf(view:RequestView):string{
   const {record:_record,answered_by:_answer,superseded:_superseded,...body}=view;
   return requestKey(body);
 }
+/**
+ * The index entries of a record that closes a request. Every one is found under `runs.request.answer`; one that answers or
+ * voids the request is also found under `runs.request.settled`, so a listing of the waiting requests leaves a settled one
+ * unread. One that lets a request wait again carries the first entry only. Migration 32 added the second entry to the
+ * closing records already stored; one without it is read as before.
+ */
+export function closingIndex(request:string,settles:boolean):{key:string;value:string}[]{
+  return [{key:'runs.request.answer',value:request},...(settles?[{key:'runs.request.settled',value:request}]:[])];
+}
+/**
+ * A request that carries no criterion-change declaration is found under `runs.request.plain`, so the listing of a run's
+ * declarations reads the others alone. Migration 32 added the entry to the requests already stored; one without it is read
+ * and looked at as before.
+ */
+function plainIndex(body:RequestBody):{key:string;value:string}[]{
+  const bound=body.run??body.pack_digest;
+  return body.declaration||!bound?[]:[{key:'runs.request.plain',value:bound}];
+}
 export async function putRequest(ctx:RequestContext,input:RequestBody):Promise<StoredRecord<RequestBody>>{
   const body=Request.parse(input);
   const key=requestKey(body);
   const old=await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.key',value:key,limit:1},ctx.transaction);
   if(old.items[0])return old.items[0];
-  return ctx.deps.records.store.put({kind:'request',schema:'request@1',provenance:'observed',body,created_at:ctx.now().toISOString(),index:[{key:'runs.request.key',value:key},...(body.run?[{key:'runs.request.run',value:body.run}]:[]),...(body.pack_digest?[{key:'runs.request.pack',value:body.pack_digest}]:[])]},ctx.transaction);
+  return ctx.deps.records.store.put({kind:'request',schema:'request@1',provenance:'observed',body,created_at:ctx.now().toISOString(),index:[{key:'runs.request.key',value:key},...(body.run?[{key:'runs.request.run',value:body.run}]:[]),...(body.pack_digest?[{key:'runs.request.pack',value:body.pack_digest}]:[]),...plainIndex(body)]},ctx.transaction);
 }
 export async function answerRequest(ctx:RequestContext,request:string,source:string):Promise<void>{
   Sha256.parse(source);
@@ -37,7 +55,7 @@ export async function answerRequest(ctx:RequestContext,request:string,source:str
   const old=await ctx.deps.records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:request,limit:1,newestFirst:true},ctx.transaction);
   if(old.items.length){if(old.items[0].body.detail.answer===source)return;throw new ConflictError('请求已有其他作答来源，不覆盖原回答',{fix:'查看原作答；如需另一项回答，另建明确的请求'});}
   const at=ctx.now().toISOString();
-  await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:record.body.run??null,item:record.body.item??null,inputs:[`rec:${request}`,`rec:${source}`],component:'requests@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request,answer:source}},index:[{key:'runs.request.answer',value:request}]},ctx.transaction);
+  await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:record.body.run??null,item:record.body.item??null,inputs:[`rec:${request}`,`rec:${source}`],component:'requests@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request,answer:source}},index:closingIndex(request,true)},ctx.transaction);
 }
 /**
  * B07 R[10]: voids waiting requests because `source`, a later accepted result of the same run, issued its own. A request that
@@ -83,7 +101,7 @@ export async function reinstateRequests(ctx:RequestContext,requests:readonly str
 async function closing(ctx:RequestContext,request:string,record:StoredRecord<RequestBody>|undefined,source:string,detail:Record<string,unknown>):Promise<void>{
   if(record?.kind!=='request')throw new Error('请求记录不存在');
   const at=ctx.now().toISOString();
-  await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:record.body.run??null,item:record.body.item??null,inputs:[`rec:${request}`,`rec:${source}`],component:'requests@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail},index:[{key:'runs.request.answer',value:request}]},ctx.transaction);
+  await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:record.body.run??null,item:record.body.item??null,inputs:[`rec:${request}`,`rec:${source}`],component:'requests@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail},index:closingIndex(request,typeof detail.answer==='string')},ctx.transaction);
 }
 const REQUEST_PAGE=500;
 const SCOPE_BATCH=128;
@@ -96,6 +114,38 @@ export async function requestRecords(ctx:RequestContext,run?:string):Promise<Req
     for(const record of requests)out.push(viewOf(record.body,record.digest,answers.get(record.digest)));
     cursor=page.next;
   }while(cursor!==null);
+  return out;
+}
+/**
+ * The requests still waiting, of one run or of all: the same views requestRecords gives for them, in the same order. The
+ * index names the requests nothing has settled, and what closed a request is read for those alone, so a run that issued
+ * thousands of requests since voided costs what its waiting ones cost. A store without that index answers from all of them.
+ */
+export async function waitingRequestRecords(ctx:RequestContext,run?:string):Promise<RequestView[]>{
+  const store=ctx.deps.records.store;
+  if(!store.findUnsettled)return (await requestRecords(ctx,run)).filter(request=>request.answered_by===null);
+  const open=(await store.findUnsettled<RequestBody>({kind:'request',...(run===undefined?{}:{key:'runs.request.run',values:[run]}),closing:'runs.request.answer',closingKind:'action',settled:'runs.request.settled'},ctx.transaction)).filter(record=>record.schema==='request@1');
+  const out:RequestView[]=[];
+  for(let at=0;at<open.length;at+=REQUEST_PAGE){
+    const page=open.slice(at,at+REQUEST_PAGE),answers=await newestAnswers(ctx,page.map(record=>record.digest));
+    // The index only spares reads: whether a request waits is still what its newest closing record says.
+    for(const record of page){const view=viewOf(record.body,record.digest,answers.get(record.digest));if(view.answered_by===null)out.push(view);}
+  }
+  return out;
+}
+/**
+ * The requests of a run that carry a criterion-change declaration, waiting or closed: the views requestRecords gives for
+ * them, in the same order. Nearly every request carries none and is marked so at writing; those are not read.
+ */
+export async function declaredRequestRecords(ctx:RequestContext,run:string):Promise<RequestView[]>{
+  const store=ctx.deps.records.store;
+  if(!store.findLacking)return (await requestRecords(ctx,run)).filter(request=>request.declaration);
+  const declared=(await store.findLacking<RequestBody>({kind:'request',key:'runs.request.run',values:[run],lacking:'runs.request.plain'},ctx.transaction)).filter(record=>record.schema==='request@1'&&record.body.declaration);
+  const out:RequestView[]=[];
+  for(let at=0;at<declared.length;at+=REQUEST_PAGE){
+    const page=declared.slice(at,at+REQUEST_PAGE),answers=await newestAnswers(ctx,page.map(record=>record.digest));
+    for(const record of page)out.push(viewOf(record.body,record.digest,answers.get(record.digest)));
+  }
   return out;
 }
 /** A narrowed read of the requests: those bound to these runs or packs, and these requests themselves. */
@@ -144,8 +194,8 @@ async function newestAnswers(ctx:RequestContext,requests:readonly string[]):Prom
   }
   return out;
 }
-export async function requestsOf(ctx:RequestContext,user:Principal,run?:string):Promise<RequestView[]>{
-  const records=await requestRecords(ctx,run);
+export async function requestsOf(ctx:RequestContext,user:Principal,run?:string,options:{waiting?:boolean}={}):Promise<RequestView[]>{
+  const records=options.waiting?await waitingRequestRecords(ctx,run):await requestRecords(ctx,run);
   const allowed=await Promise.all(records.map(request=>user.role==='admin'?true:request.run?ctx.canReadRun?.(user,request.run):request.audience===user.id));
   return records.filter((_,i)=>allowed[i]);
 }
@@ -157,9 +207,11 @@ export function createRequestService(records:Pick<RecordsKit,'store'>,now:()=>Da
     // inspect/all/within are trusted internal reads, never untrusted client entry points.
     inspect:async(id:string):Promise<RequestView|null>=>{if(!Sha256.safeParse(id).success)return null;const record=await records.store.get(id);if(record?.kind!=='request'||record.schema!=='request@1')return null;const parsed=Request.safeParse(record.body);if(!parsed.success)return null;const answer=await records.store.find<{detail:{answer:string;superseded?:unknown}}>({kind:'action',key:'runs.request.answer',value:id,limit:1,newestFirst:true});return viewOf(parsed.data,id,closingOf(answer.items[0]?.body.detail));},
     all:(run?:string)=>requestRecords(ctx,run),
+    waiting:(run?:string)=>waitingRequestRecords(ctx,run),
+    declared:(run:string)=>declaredRequestRecords(ctx,run),
     within:(scope:RequestScope)=>requestRecordsIn(ctx,scope),
     write:(input:RequestBody)=>putRequest(ctx,input),
-    list:(by:Principal,run?:string)=>requestsOf(ctx,by,run),
+    list:(by:Principal,run?:string,options:{waiting?:boolean}={})=>requestsOf(ctx,by,run,options),
     answer:(request:string,source:string)=>answerRequest(ctx,request,source),
     supersede:(requests:readonly string[],source:string)=>supersedeRequests(ctx,requests,source),
     reinstate:(requests:readonly string[],source:string)=>reinstateRequests(ctx,requests,source),
