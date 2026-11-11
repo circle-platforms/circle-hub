@@ -1158,6 +1158,30 @@ cleanup order stay fixed; valid quoting is read through the existing command gra
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
 
+### Persistence channels and forbidden combinations
+
+`command_policy` can also declare where commands leave state that the runner's per-case cleanup does not remove, and which
+command sets the product documentation forbids on one volume together. Both are exact prefixes of the locked command tree,
+matched by whole path segments against the commands the tree parsed from a plan; nothing is read from command text.
+
+```json
+"persistence_channels": [
+  {"id": "disk", "commands": [{"prefix": "/commands/demo/store"}], "source": "the manual's statement that a stored file stays on the unit"},
+  {"id": "peer", "commands": [{"prefix": "/commands/demo/mirror/push"}, {"prefix": "/commands/demo/link/rank", "with_parameter": 3}], "source": "the manual's statement that a push also writes the peer's saved configuration"}
+],
+"forbidden_combinations": [
+  {"id": "boot_reload", "side_a": [{"prefix": "/commands/demo/mirror/boot/on"}], "side_b": [{"prefix": "/commands/demo/reload"}, {"prefix": "/commands/demo/mirror/push"}], "source": "the manual's warning to switch the boot sync off first"}
+]
+```
+
+A case with a command of any channel runs after the other cases of its volume (they keep their order), and the workbook, the
+run's support and the delivery report say which cases were placed last. A volume with a command of side A and a command of side
+B, in one case or two, is refused, naming the cases, the commands and the `source`. `with_parameter` (zero-based position of a
+signature's parameter) counts a command only when that optional parameter was written, for a command that writes the peer only
+when it is given a peer. The declaration is product data: this repository's `product.json` declares none, because the commands
+that write state are the real product's and are kept in its data outside the repository (the reading is in the skill
+`command-tools`, the use in case-compile's `functions/channels.ts`).
+
 ### The directory walk moved to the adoc-format skill (1.7.47)
 
 Owner decision 136 item 9 (option two): the fixed-revision SVN directory walk that sync's source plan, the manual
