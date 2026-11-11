@@ -203,12 +203,22 @@ export async function spaceSearch(ctx: PageContext): Promise<Html> {
   if (!text.trim())
     return card({ title: '知识全文搜索', hint: '搜索陈述、结构化数据与已记录的引文；范围按当前分享权限过滤，结果只作为线索' }, form);
   let found:Awaited<ReturnType<typeof spaces.search>>;
-  try{found=await spaces.search(ctx.principal, text, requested, ctx.url.searchParams.get('knowledge_cursor'));}
+  // A link to a further page binds the knowledge and the reader's access as they were when its page was made. When either
+  // changed since (someone wrote an entry, a share was withdrawn), the link no longer fits: the search starts again at its
+  // first page and says so, instead of an error page that loses the search.
+  const cursor=ctx.url.searchParams.get('knowledge_cursor');let restarted=false;
+  try{
+    try{found=await spaces.search(ctx.principal, text, requested, cursor);}
+    catch(error){
+      if(cursor===null||!(error instanceof KnowledgeError||error instanceof RecordsError)||error.code!=='SPACE_ENTRY_INVALID')throw error;
+      found=await spaces.search(ctx.principal, text, requested, null);restarted=true;
+    }
+  }
   catch(error){
     if(!(error instanceof KnowledgeError||error instanceof RecordsError)||error.code!=='SPACE_INDEX_LIMIT')throw error;
     return card({title:'知识全文搜索'},html`${form}<p class="notice">${error.code}：${error.message}；${error.fix}</p><p>当前知识范围未检索，请调整限额后从第一页重试。</p>`);
   }
-  return card({ title: '知识全文搜索', hint: '先按当前空间权限过滤，再进行分页；搜索结果只是线索，不进入任务判定' }, html `${form}${found.warnings?.map(warning=>html`<p class="notice">${warning.code}：${warning.message}；${warning.fix}</p>`)??''}${table(['范围', '类型', '陈述', '状态'], await Promise.all(found.matches.map(async (hit) => [hit.space === 'team' ? uiLabelOf('knowledge_space_kind', 'team') : hit.space === ctx.principal.id ? uiLabelOf('knowledge_space_kind', 'personal') : `${uiLabelOf('knowledge_search_scope', 'shared')}：${await ctx.userName(hit.space)}`, uiLabelOf('entry_kind', hit.kind), link('/console/knowledge/space', [...hit.statement].length > 240 ? [...hit.statement].slice(0, 240).join('') + '…' : hit.statement, { ...spaceLink(hit.space, hit.root, hit.path), entry: hit.entry }), uiLabelOf('knowledge_entry_status', hit.status)])), '没有可读的匹配条目')}${found.next ? link('/console/search', '更多知识', { q: text, scope: requested, knowledge_cursor: found.next }) : ''}`);
+  return card({ title: '知识全文搜索', hint: '先按当前空间权限过滤，再进行分页；搜索结果只是线索，不进入任务判定' }, html `${form}${restarted?html`<p class="notice" role="status">知识或分享范围在翻页期间有变化，已从第一页重新搜索。</p>`:''}${found.warnings?.map(warning=>html`<p class="notice">${warning.code}：${warning.message}；${warning.fix}</p>`)??''}${table(['范围', '类型', '陈述', '状态'], await Promise.all(found.matches.map(async (hit) => [hit.space === 'team' ? uiLabelOf('knowledge_space_kind', 'team') : hit.space === ctx.principal.id ? uiLabelOf('knowledge_space_kind', 'personal') : `${uiLabelOf('knowledge_search_scope', 'shared')}：${await ctx.userName(hit.space)}`, uiLabelOf('entry_kind', hit.kind), link('/console/knowledge/space', [...hit.statement].length > 240 ? [...hit.statement].slice(0, 240).join('') + '…' : hit.statement, { ...spaceLink(hit.space, hit.root, hit.path), entry: hit.entry }), uiLabelOf('knowledge_entry_status', hit.status)])), '没有可读的匹配条目')}${found.next ? link('/console/search', '更多知识', { q: text, scope: requested, knowledge_cursor: found.next }) : ''}`);
 }
 /** A successful owner/admin operation returns a local URL for post/redirect/get. */
 export async function performSpaceAction(ctx: PageContext, action: string, values: URLSearchParams | Map<string, string>, upload?: {

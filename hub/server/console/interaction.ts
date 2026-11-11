@@ -70,6 +70,8 @@ export const INTERACTION_SCRIPT = `(() => {
  window.addEventListener('scroll',scheduleContents,{passive:true});window.addEventListener('resize',scheduleContents);
  const initialize = () => {
   controlTips();focusOriginal();updateBulk(document);syncDialog();scheduleContents();
+  // A row of page tabs that does not fit scrolls in its own box: bring the current tab into it, without moving the page.
+  for (const current of document.querySelectorAll('main nav.ch-seg a[aria-current]')) { const row = current.parentElement; if (row.scrollWidth > row.clientWidth) row.scrollLeft += current.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - current.offsetWidth) / 2; }
   document.dispatchEvent(new Event('circle-hub:render'));
   for (const toast of document.querySelectorAll('[data-toast-success]')) {
    if (successful.has(toast)) continue;successful.add(toast);
@@ -151,7 +153,7 @@ export const INTERACTION_SCRIPT = `(() => {
   if (point && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) { const list = [...point.closest('[data-chart]').querySelectorAll('[data-chart-index]')],at = list.indexOf(point),next = list[Math.max(0,Math.min(list.length-1,at+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1)))];event.preventDefault();next.focus();showChart(next);return; }
   const row = target.closest('[data-row-href]') || (target.closest('.ch-inspector') ? document.querySelector('[data-row-href].is-selected,[data-row-href][aria-current="true"]') : null);
   if (!row) return;
-  if (event.key === 'Enter' && !target.closest('a')) { event.preventDefault();void navigate(row.dataset.rowHref);return; }
+  if (event.key === 'Enter' && !event.isComposing && !target.closest('a,button,input,select,textarea,summary')) { event.preventDefault();void navigate(row.dataset.rowHref);return; }
   if (!['ArrowUp','ArrowDown'].includes(event.key)) return;
   const rows = [...row.parentElement.children].filter(node => node.hasAttribute('data-row-href')),at = rows.indexOf(row),next = rows[at+(event.key === 'ArrowUp'?-1:1)];
   if(next) { event.preventDefault();void navigate(next.dataset.rowHref); }
