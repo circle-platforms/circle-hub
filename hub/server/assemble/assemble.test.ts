@@ -91,9 +91,12 @@ describe('start-up order and failure modes', () => {
     const calls: string[] = [];
     const assembly = async (): Promise<AssemblyModule> => {
       const module = await realAssembly();
+      // Where the sandbox cannot isolate (a runner without the tools) the production assembly refuses to start (issue 291).
+      // This test is about the order of listening and maintenance, so there it assembles without requiring isolation.
+      const assemble = (await osIsolationAvailable()) ? module.assemble : createAssembly({ requireOsIsolation: false });
       return {
         assemble: async (config, records) => {
-          const deps = await module.assemble(config, records);
+          const deps = await assemble(config, records);
           // A first pass that does not end until it is asked to stop: serve must not wait for it to listen.
           deps.maintenance = {
             startMaintenance: async () => { calls.push('start'); await held; },
