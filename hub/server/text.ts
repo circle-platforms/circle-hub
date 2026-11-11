@@ -450,7 +450,6 @@ function startText(v: StartOut, context: TextContext): string {
     const words = claim.statement.data?.help;
     if (typeof words === 'string') lines.push('设备输出', ...words.split(/\r\n|\r|\n/).map(visibly));
   }
-  if (run.instructions) lines.push('核对说明', run.instructions);
   return lines.join('\n');
 }
 

@@ -830,7 +830,7 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   return {
     content: [
       { type: 'text', text },
-      { type: 'text', text: '供模型引用\n' + JSON.stringify({ ...value, original_cases: context.items?.map(item => ({ id: item.id, autoid: item.fields.autoid ?? item.fields.case_id ?? null, title: item.fields.title ?? null })) }) },
+      { type: 'text', text: '供模型引用\n' + JSON.stringify({ ...value, original_cases: context.items?.map(item => ({ id: item.id, autoid: item.fields.autoid ?? item.fields.case_id ?? null, title: item.fields.title ?? null })), source_context: context.unavailable === undefined && context.gaps === undefined ? undefined : { unavailable: context.unavailable, gaps: context.gaps } }) },
     ],
     structuredContent: value,
     isError: value.call_result === 'error',
