@@ -24,7 +24,8 @@ import type { Principal, RecordsKit } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
-import { osIsolationAvailable, type SandboxOptions } from '../../rules/api.ts';
+import { isolationFailureText, osIsolationAvailable, osIsolationFailure, type SandboxOptions } from '../../rules/api.ts';
+import { AssemblyError } from './errors.ts';
 import {
   createPackCatalog,
   createPackRegistry,
@@ -56,8 +57,10 @@ export interface AssemblyOptions {
    * Hub does not start (default false).
    */
   command?: boolean;
-  /** Probe operating-system isolation at start-up and say when pack functions cannot run (default false; serve does it). */
+  /** Probe operating-system isolation at start-up and refuse to start when pack functions cannot run (default false; serve does it). */
   checkSandbox?: boolean;
+  /** The probe `checkSandbox` asks; default the sandbox's own. A test gives one that fails. */
+  isolation?: { available(): Promise<boolean>; failure(): string | undefined };
   /** Transport of the connectors; default the global fetch. Tests reach only loopback stubs. */
   fetch?: FetchLike;
   /** Clock of every package and of the server's call log and console sessions. */
@@ -112,10 +115,19 @@ const stderrLog = (line: string): void => {
   process.stderr.write(`${line}\n`);
 };
 
-/** A bounded, platform-specific recovery instruction; no tool output or local paths enter the log. */
-export function sandboxUnavailableNotice(platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'linux') return '这台机器上没有可用的 bubblewrap/AppArmor 隔离：发布内容中的脚本都不会运行，相关的调用会失败；下一步：管理员检查 bubblewrap、已加载的 Hub AppArmor 策略和用户命名空间，修复后重启 Hub';
-  return '这台机器上没有可用的 sandbox-exec：发布内容中的脚本都不会运行，相关的调用会失败';
+/**
+ * Why a Hub whose sandbox cannot run pack functions does not start, and what the operator does next (issue 291; owner,
+ * 2026-11-11). It used to start with a notice in its log, answer its health check, and fail every call that ran a pack
+ * function: knowledge sync, seeding and feeding all failed on a production Hub that looked healthy. The reason is the
+ * probe's own; no tool output or local path enters the message.
+ */
+export function sandboxRefusal(reason: string | undefined, platform: NodeJS.Platform = process.platform): { message: string; hint: string } {
+  const hint = platform === 'linux'
+    ? '管理员检查 bubblewrap、已加载的 Hub AppArmor 策略和用户命名空间，并确认服务用安装包自带的 Node 运行；修复后再启动 Hub'
+    : platform === 'darwin'
+      ? '确认这台机器上有 sandbox-exec、Hub 没有运行在另一层沙箱里，并且服务用安装包自带的 Node 运行；修复后再启动 Hub'
+      : 'Hub 只支持 macOS 和 Linux';
+  return { message: `沙箱不能运行包内函数，Hub 不启动：${isolationFailureText(reason)}`, hint };
 }
 
 export async function assembleHub(config: HubConfig, records: RecordsKit, options: AssemblyOptions = {}): Promise<AssembledHub> {
@@ -127,8 +139,12 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
 
   const now = options.now;
   const sandbox: SandboxOptions = { requireOsIsolation: options.requireOsIsolation ?? true };
-  if (options.checkSandbox === true && sandbox.requireOsIsolation === true && !(await osIsolationAvailable())) {
-    notices.push(sandboxUnavailableNotice());
+  if (options.checkSandbox === true && sandbox.requireOsIsolation === true) {
+    const isolation = options.isolation ?? { available: osIsolationAvailable, failure: osIsolationFailure };
+    if (!(await isolation.available())) {
+      const refusal = sandboxRefusal(isolation.failure());
+      throw new AssemblyError(refusal.message, refusal.hint);
+    }
   }
 
   // 2. Package lifecycle and the installed, sandboxed format capabilities.
@@ -267,8 +283,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
 }
 
 /**
- * The AssembleFunction `serve` uses: the vault key required, sandbox-exec probed, and every notice written to the operator's
- * log once at start-up. For `serve` only: a CLI command's dependencies come from createCommandAssembly.
+ * The AssembleFunction `serve` uses: the vault key required, the sandbox's isolation probed (the Hub does not start without
+ * it), and every notice written to the operator's log once at start-up. For `serve` only: a CLI command's dependencies come from createCommandAssembly.
  */
 export function createAssembly(options: AssemblyOptions = {}): AssembleFunction {
   return async (config, records) => {
