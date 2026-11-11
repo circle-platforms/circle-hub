@@ -1,0 +1,20 @@
+{
+  "schema": "pack@1",
+  "id": "wecom-robot",
+  "version": "0.1.0",
+  "kind": "system",
+  "title": "企业微信智能机器人（系统包）",
+  "description": "企业微信智能机器人的只读系统包：通讯录成员与应用群会话两条读路由；发送不在路由里，外发走执行器写声明在部署时登记",
+  "files": [
+    {
+      "path": "functions/wecom.ts",
+      "sha256": "ef588633ac44f9d57f1969b2ff604e741b974f9fa0920889accd678c0ab4b26d",
+      "size": 4710
+    },
+    {
+      "path": "system.json",
+      "sha256": "765a7c3b4ce01f10d55f559a29f49742ab9c3d6c153ad98cb31931a610221868",
+      "size": 3970
+    }
+  ]
+}
