@@ -29,7 +29,7 @@
 
 这些不是“内容”，而是 Hub 自己写下或保存的东西，仍然用探测器，不让凭据写进去：
 
-- 调用日志（`hub/records/calllog.ts`）、备注（`findingsNote`）、控制台表单回填（`hub/server/console/form-recovery.ts`）、沙箱诊断（`hub/refs/sandbox-diagnostic.ts`）。
+- 调用日志（`hub/records/calllog.ts`）、备注（`findingsNote`）、控制台表单回填（`hub/server/console/form-recovery.ts`）、沙箱诊断（`hub/refs/sandbox-diagnostic.ts`）、包函数出错时写进投喂记录的那句错误信息（`hub/knowledge/feeding-errors.ts`）。
 - 变量和资源、执行器配置（`hub/records/variables.ts`、`hub/server/variables.ts`、`hub/connectors/resources.ts`、`hub/dispatch/executors.ts`）：凭据应当存进保管库，由配置引用。
 - 放弃任务的理由（`hub/runs/engine/management.ts`）、读取位置的脱敏（`hub/connectors/read.ts`）、凭据申请里的外部标识（`hub/knowledge/requests.ts`）。
 - **包文件**（`hub/runs/packs/validate.ts`、`hub/runs/packs/personal.ts`）：包里有像凭据的内容仍然不能发布。包是分发给每个使用者的配置，使用时需要的凭据按所有者的话由客户端变量提供。如果这一处也要放开，改法和上面相同，一行即可。
@@ -55,7 +55,7 @@
 
 - `contracts/model.json`、`contracts/generated/**`（生成）、`contracts/src/{model-b02-content.test.ts,result-summary.test.ts,model-w04-w10-v07.test.ts,vocab-axes.test.ts}`、`contracts/README.md`
 - `hub/records/{content-scan.ts,api.ts,artifacts.ts,personal-sync.ts}` 及其测试，`hub/testing/records.ts`
-- `hub/knowledge/{spaces.ts,memory.ts,feeding.ts,feeding-errors.ts,contributions.ts,personal-sync/service.ts}`
+- `hub/knowledge/{spaces.ts,memory.ts,feeding.ts,contributions.ts,personal-sync/service.ts}`
 - `hub/runs/engine/start.ts`、`hub/dispatch/content.ts`
 - 给旧流程测试加开关的测试文件（`hub/**`、`packs/system/plm/opened-build-hub.test.ts`）
 - `docs/hub-r4-progress.md`、`docs/compatibility.md`、`docs/compatibility.en.md`、`CHANGELOG.md`、本任务页

@@ -1,5 +1,6 @@
 // Owner rulings 1 and 2 on issue 141 over real HTTP on a temporary PostgreSQL: single-item sharing from 仅保存在本机
 // and the never_synced fact a client needs for its first-connection notice. Synthetic accounts and texts only.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomUUID} from 'node:crypto';
@@ -75,7 +76,7 @@ test('a team-marked entry is shared alone from 仅保存在本机: verified like
  const rows=(await hub.hub.knowledge.spaces!.current('team'))!.body.entries.filter(row=>row.path==='/团队规则');assert.deepEqual(rows.map(row=>row.status).sort(),['superseded','verified']);
 });
 
-test('single-item sharing refuses what normal sharing refuses and anything beyond the item and its sources',async t=>{
+test('single-item sharing refuses what normal sharing refuses and anything beyond the item and its sources',async t=>{ credentialDetectorsFor(t);
  const hub=await createTestHub(options);t.after(()=>hub.close());const owner=await hub.createUser('合成单条拒收');const local=await goLocal(hub,owner.principal);
  const send=(item:ReturnType<typeof localItem>,extra:Record<string,unknown>={})=>http(hub,owner.token,'/share',{schema:'personal-sync-share@1',epoch:local.epoch,operation_id:randomUUID(),team_mark:true,item:item.objects[0].id,path:'/本机',objects:item.objects,...extra});
  const wrong=await send(localItem('合成第一行\n合成第二行\n','不在原文里的话','合成错误引文'));assert.equal(wrong.status,200);assert.equal(wrong.json.status,'rejected');assert.equal(wrong.json.code,'SHARE_QUOTE_MISMATCH');
