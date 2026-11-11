@@ -7,6 +7,7 @@
 // the seedling@1 record (the three sources with their original digests and the fixed adoc revisions, and the parent
 // seedling) and moves the line's seedling pointer by compare-and-set. The old per-build roots are not touched. Between the
 // record and the move, the line's existing fed cases are re-projected onto the new root (FeedingLayer.reproject).
+import type { DirectorySkill } from './directory-sources.ts';
 import type { ProductHandle } from '../ports.ts';
 import { KnowledgeError, describeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
@@ -47,6 +48,8 @@ export interface ProduceSeedlingInput {
   revisions?: { cli: string | null; app: string | null };
   /** Directory roles for this production only. The stored build keeps list names, not the ids, so the seedling supplies them. */
   sources?: BuildInfo['sources'];
+  /** The skill whose walk bound `sources` (issue 34): recorded with the production. */
+  directorySkill?: DirectorySkill;
 }
 
 export interface SeedlingResult {
@@ -144,7 +147,7 @@ export async function produceSeedling(context: KnowledgeContext, knowledge: Know
 
   // The production: the ordinary per-build pipeline over the released build, with only the three named producers.
   const only = [...new Set(ROLES.map((role) => input.roles[role].producer))];
-  const production = await knowledge.produceTree({ product, build, by: input.by, producers: only, ...(input.sources ? { sources: input.sources } : {}) });
+  const production = await knowledge.produceTree({ product, build, by: input.by, producers: only, ...(input.sources ? { sources: input.sources } : {}), ...(input.directorySkill ? { directorySkill: input.directorySkill } : {}) });
   if (!production.ok || production.root === null || production.composition === null || production.action === null) {
     return fail(production.reason ?? '生产没有产出根', build.name, production, parent);
   }

@@ -637,3 +637,16 @@ readable record. The rules elsewhere in the model about ordinary-source hits (re
 requests, refused uploads, refused memory and space writes) apply to those earlier records only. No record kind, protocol
 code, MCP tool or vocabulary axis changes; the codes of the old refusals stay registered. The administrator's masking
 dictionary is a later step. B02 `changes44` states the change.
+
+Decision 157 (owner, 2026-11-11, issue 34) sets model 45: the generic skill pack is written into the prose. C02's
+definition and R[2] say that a capability of the generic class that is deterministic, reusable and independent of any
+product (parsing a file format, walking a directory) lands in a generic skill pack with its own version and digest; T01's
+definition names the generic skill pack as a distribution unit (the `skill` value of `pack_kind` was in the vocabulary
+already). C02 R[3] is new: the Hub core imports no product pack code; what is particular to a product is declared by the
+product pack and carried out by the skill; where the core needs a generic capability directly it uses the skill pack
+through its public entry and writes the pack's id, version and the SHA-256 of the module it used into the record that
+results. A knowledge production whose sources the Hub's own directory walk bound carries `directory_skill`; the same
+capability run inside a product pack's sandbox is the product pack's generated copy, covered by the product pack digest
+the production already records. Productions recorded before have no such field and are not rewritten. There is no
+transition form, and an old product pack must reproduce the same trees under the new implementation. No record kind,
+protocol code, MCP tool or vocabulary axis changes. C02 and T01 `changes45` state the change.
