@@ -6,7 +6,7 @@ import { join, isAbsolute } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, test } from 'node:test';
 import { StartRunInput, StartRunOutput, UploadFileOutput, GetNodesOutput } from '../../../contracts/src/tools.ts';
-import { toolText } from '../../../hub/server/text.ts';
+import { toolText, type TextContext } from '../../../hub/server/text.ts';
 import type { Turn } from '../scripted-model.ts';
 import { caseNodesOf, parseMindMap } from '../gold/cases.ts';
 import { parseItemLine, parseSummary, sha256Of, summaryOfGetNodes, truncationReference, uploadIdOf, default as build } from './template-gap-metamorphic-circle.ts';
@@ -29,7 +29,7 @@ function goldOf(): { gold: any; dir: string } {
 }
 interface CopyInfo { name: string; tree: MindTree; sha: string; document: number; kind: string; category?: string; ordinal?: number }
 interface Answer { count: number; missing: Set<string> }
-interface FakeOptions { mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean; dropSingleRow?: boolean; prelude?: string; corruptSummaryLength?: boolean }
+interface FakeOptions { clipSummaries?: boolean; mutate?: (info: CopyInfo, answer: Answer) => Answer; hide?: string; badUpload?: boolean; refuseStart?: boolean; dropRows?: boolean; dropSingleRow?: boolean; prelude?: string; corruptSummaryLength?: boolean }
 function truth(tree: MindTree): Answer {
   const map = parseMindMap(tree); const raw: any[] = []; const walk = (node: any) => { raw.push(node); (node.children ?? []).forEach(walk); }; walk(tree.root);
   const cases = caseNodesOf(map); const present = new Set<string>();
@@ -40,6 +40,16 @@ function summaryOf(answer: Answer): string {
   const missing = CATEGORIES.filter(c => answer.missing.has(c.id));
   const compose = (named: boolean) => `用例 ${answer.count} 个；${missing.length ? `缺 ${missing.length} 个模板类别${named ? '' : '（只列编号）'}：${missing.map(c => named ? `${c.label}（${c.id}）` : c.id).join('、')}` : '24 个模板类别都已覆盖'}；模板类别出现 ${24 - missing.length}/24 个；用例规则：标签或标记；其中 0 个只靠标记识别（没有标签）`;
   const named = compose(true); return named.length <= 480 ? named : compose(false);
+}
+function resultText(name: 'upload_file' | 'start_run' | 'get_nodes', value: Record<string, unknown>, context: TextContext = {}): string {
+  return toolText(name, value, context) + '\n供模型引用\n' + JSON.stringify(value);
+}
+function uploadText(sha: string): string {
+  return resultText('upload_file', UploadFileOutput.parse({ call_result: 'ok', trace: '1'.repeat(32), errors: [], acceptance: 'accepted', reference: `src:${sha}`, sha256: sha, size: 0 }));
+}
+function startText(items: Array<{ id: string; label: string; summary: string; location: string; fields: Record<string, unknown> }>, run: number, record: string, token = '1'.repeat(32)): string {
+  const value = StartRunOutput.parse({ call_result: 'ok', trace: token, errors: [], record, run: { run: `run_${run.toString(36).padStart(26, '0')}`, pack: 'template-gap@1.0.0', pack_digest: sha256Of('synthetic-pack'), target_basis: [], sources: [], requirements: [], items, instructions: '合成规程', instructions_digest: sha256Of('synthetic-instructions'), started_at: '2026-01-01T00:00:00.000Z' }, result: { reference: `rec:${sha256Of(`synthetic-result-${run}`)}`, counts: { delivered: items.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } });
+  return resultText('start_run', value, { paging: true, record });
 }
 function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) => string, options: FakeOptions = {}) {
   const dir = dirs[dirs.length - 1]!; const work = join(dir, 'work'); scenario.prepare?.(work);
@@ -62,28 +72,27 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
         const info: CopyInfo = { name, tree, sha, document: Number((match ?? single)![1]) - 1, kind: single ? 'c' : match![2]!, ...(single ? { ordinal: Number(single[2]) - 1 } : match?.[3] ? { category: match[3] } : {}) }; infos.push(info);
         const reported = options.badUpload ? 'f'.repeat(64) : sha; accepted.set(reported, info);
         const value = UploadFileOutput.parse({ call_result: 'ok', trace: token, errors: [], acceptance: 'accepted', reference: `src:${reported}`, sha256: reported, size: bytes.length, media_type: 'application/json', structure: { parser: 'kityminder@1', summary: { nodes: parseMindMap(tree).nodes.length } } });
-        text = toolText('upload_file', value);
+        text = resultText('upload_file', value);
       } else if (call.tool === 'hub_start_run') {
         const parsed = StartRunInput.safeParse(call.input); const docs = parsed.success ? (parsed.data.inputs.documents as { reference: string }[]) : [];
         const copies = docs.map(doc => accepted.get(doc.reference?.slice(4)));
         if (!parsed.success || options.refuseStart || copies.some(copy => !copy) || new Set(copies.map(copy => copy?.tree.root.data.id)).size !== copies.length) {
-          isError = true; text = toolText('start_run', { call_result: 'error', trace: token, errors: [{ code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成拒绝', fix: '核对输入' }] });
+          isError = true; text = resultText('start_run', { call_result: 'error', trace: token, errors: [{ code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成拒绝', fix: '核对输入' }] });
         } else {
           const record = `rec:${sha256Of(`synthetic-run-${++run}`)}`;
           const items = copies.filter((copy): copy is CopyInfo => !!copy).reverse().map((info, at) => {
             let answer = truth(info.tree); if (options.hide) answer.missing.add(options.hide); if (options.mutate) answer = options.mutate(info, answer);
             const summary = answerText?.(info.name) ?? summaryOf(answer); full.set(`${record}#/items/${at}/summary`, summary);
-            return { id: uploadIdOf(info.sha), label: String(info.tree.root.data.text), summary, location: `src:${info.sha}`, fields: {} };
+            return { id: uploadIdOf(info.sha), label: String(info.tree.root.data.text), summary: options.clipSummaries ? `${summary.slice(0, 30)}…（共 ${summary.length} 个字符，全文 ${record}#/items/${at}）` : summary, location: `src:${info.sha}`, fields: {} };
           });
-          const value = StartRunOutput.parse({ call_result: 'ok', trace: token, errors: [], run: { run: `run_${run.toString(36).padStart(26, '0')}`, pack: 'template-gap@1.0.0', pack_digest: sha256Of('synthetic-pack'), target_basis: [], sources: [], requirements: [], items: options.dropRows ? [] : options.dropSingleRow && copies.some(c=>c?.kind==='c') ? items.filter(item=>item.id!==uploadIdOf(copies.find(c=>c?.kind==='c' && c.document===0)!.sha)) : items, instructions: '合成规程', instructions_digest: sha256Of('synthetic-instructions'), started_at: '2026-01-01T00:00:00.000Z' }, result: { reference: `rec:${sha256Of(`synthetic-result-${run}`)}`, counts: { delivered: items.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } });
-          text = toolText('start_run', value, { paging: true, record });
+          text = startText(options.dropRows ? [] : options.dropSingleRow && copies.some(c=>c?.kind==='c') ? items.filter(item=>item.id!==uploadIdOf(copies.find(c=>c?.kind==='c' && c.document===0)!.sha)) : items, run, record, token);
         }
       } else {
         assert.equal(call.tool, 'hub_get_nodes'); const reference = String(call.input.reference); const summary = full.get(reference);
-        if (summary === undefined) { isError = true; text = toolText('get_nodes', { call_result: 'error', trace: token, errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用' }] }); }
+        if (summary === undefined) { isError = true; text = resultText('get_nodes', { call_result: 'error', trace: token, errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用' }] }); }
         else {
-          text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: summary } }), { paging: true });
-          if (options.corruptSummaryLength) text = text.replace(/原文（\d+ 个字符）/, '原文（1 个字符）');
+          text = resultText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: JSON.stringify(summary) } }), { paging: true });
+          if (options.corruptSummaryLength) text = `内容 ${reference}：模型可读\n原文（1 个字符）：\n${summary}\n追踪 ${token}`;
         }
       }
       if (call.tool === 'hub_get_nodes' && !isError && text.split('\n').some(line=>line.startsWith('用例 '))) rawSummaryReads++;
@@ -150,7 +159,7 @@ test('the scenario walks the three phases with batch-bounded replies', () => {
 
 test('hook-prefixed real-shaped results complete all phases and full-summary reads', () => {
   const { gold } = goldOf(); gold.batch = 4;
-  const result = drive(build(gold), undefined, { prelude: 'Hook allowed this call.\n\n' });
+  const result = drive(build(gold), undefined, { clipSummaries: true, prelude: 'Hook allowed this call.\n\n' });
   assert.ok(result.rawSummaryReads >= 4);
   assert.equal(result.done, '检查完成。');
   assert.ok(result.checks.every(check => check.ok), JSON.stringify(result.checks.filter(check => !check.ok)));
@@ -159,7 +168,7 @@ test('hook-prefixed real-shaped results complete all phases and full-summary rea
 test('a wrong summary character count names the missing full text and reference-based recovery', () => {
   const { gold } = goldOf(); gold.batch = 4;
   const scenario = build(gold);
-  const result = drive(scenario, undefined, { prelude: 'Hook allowed this call.\n\n', corruptSummaryLength: true });
+  const result = drive(scenario, undefined, { clipSummaries: true, prelude: 'Hook allowed this call.\n\n', corruptSummaryLength: true });
   assert.ok(result.rawSummaryReads >= 4);
   assert.ok(result.checks.some(check => !check.ok));
   const report = JSON.stringify(scenario.sections);
@@ -179,7 +188,7 @@ test('a request with no tool results after the start neither restarts nor advanc
   const first = scenario.respond(turn(0)) as Array<{ tool: string; input: Record<string, unknown> }>;
   const upResults = first.map((c, i) => {
     const bytes = readFileSync(join(dirs[dirs.length - 1]!, 'work', String(c.input.file_path)), 'utf8');
-    return { id: `u${i}`, text: `已上传 src:${sha256Of(bytes)}`, isError: false };
+    return { id: `u${i}`, text: uploadText(sha256Of(bytes)), isError: false };
   });
   const second = scenario.respond(turn(1, upResults)) as Array<{ tool: string; input: Record<string, unknown> }>;
   void second;
@@ -254,7 +263,7 @@ test('review 1: start_run uses the actual strict reference binding contract', as
     const reply = scenario.respond(turn(index, results)) as Array<{ tool: string; input: Record<string, unknown> }>;
     const start = reply.find(call => call.tool === 'hub_start_run');
     if (start) { assert.equal(StartRunInput.safeParse(start.input).success, true); return; }
-    results = reply.map((call, i) => ({ id: `upload-${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false }));
+    results = reply.map((call, i) => ({ id: `upload-${i}`, text: uploadText(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))), isError: false }));
   }
   assert.fail('no start_run call');
 });
@@ -289,18 +298,18 @@ test('review 6: every clipped answer is consumed before the next full-summary re
   const uploads = scenario.respond(turn(0)) as Array<{ tool: string; input: Record<string, unknown> }>;
   const shas = uploads.map(call => sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path)))));
   const full = new Map<string, string>();
-  const start = scenario.respond(turn(1, shas.map((sha, i) => ({ id: `u${i}`, text: `已上传 src:${sha}`, isError: false })))) as any[];
+  const start = scenario.respond(turn(1, shas.map((sha, i) => ({ id: `u${i}`, text: uploadText(sha), isError: false })))) as any[];
   assert.equal(start[0].tool, 'hub_start_run');
   const rows = shas.map((sha, i) => {
     const reference = `rec:${'a'.repeat(64)}#/items/${i}`;
     full.set(`${reference}/summary`, `用例 ${2} 个；24 个模板类别都已覆盖`);
-    return `- upload-${sha.slice(0, 12)} | 合成 | 用例 99 个；缺…（共 480 个字符，全文 ${reference}） | 位置 /`;
+    return { id: uploadIdOf(sha), label: '合成', summary: `用例 99 个；缺…（共 480 个字符，全文 ${reference}）`, location: `src:${sha}`, fields: {} };
   });
-  let reply = scenario.respond(turn(2, [{ id: 'run', text: rows.join('\n'), isError: false }])) as any[];
+  let reply = scenario.respond(turn(2, [{ id: 'run', text: startText(rows, 1, `rec:${'a'.repeat(64)}`), isError: false }])) as any[];
   let index = 3; let reads = 0;
   while (reply[0]?.tool === 'hub_get_nodes') {
     const reference = String(reply[0].input.reference); reads++;
-    reply = scenario.respond(turn(index++, [{ id: 'full', text: `内容 ${reference}：模型可读\n本页字符 0-${full.get(reference)!.length}\n${full.get(reference)}\n追踪 ${index}`, isError: false }])) as any[];
+    reply = scenario.respond(turn(index++, [{ id: 'full', text: resultText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: String(index).padStart(32, '0'), errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: JSON.stringify(full.get(reference)) } })), isError: false }])) as any[];
   }
   assert.equal(reads, 4);
   assert.equal(scenario.check([]).find(check => check.name.endsWith('原件用例数'))?.ok, true);
@@ -334,7 +343,7 @@ test('review 10: upload replies match by source digest even when their order is 
   const { gold, dir } = goldOf(); (gold as { batch: number }).batch = 4;
   const scenario = build(gold as never); scenario.prepare?.(join(dir, 'work'));
   const uploads = scenario.respond(turn(0)) as any[];
-  const results = uploads.map((call, i) => ({ id: `u${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false })).reverse();
+  const results = uploads.map((call, i) => ({ id: `u${i}`, text: uploadText(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))), isError: false })).reverse();
   scenario.respond(turn(1, results));
   assert.equal(scenario.check([]).find(check => check.name.endsWith('上传字节'))?.ok, true);
 });
@@ -345,7 +354,7 @@ test('review 10: a later refusal cannot erase failed upload evidence or bind tho
     const reply = scenario.respond(turn(index, results)) as any[];
     if (reply[0]?.text === '检查完成。') break;
     results = reply.map((call, i) => {
-      if (call.tool === 'hub_upload_file') { failed.add(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))); return { id: `u${i}`, text: `已上传 src:${'f'.repeat(64)}`, isError: false }; }
+      if (call.tool === 'hub_upload_file') { failed.add(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))); return { id: `u${i}`, text: uploadText('f'.repeat(64)), isError: false }; }
       if (call.tool === 'hub_start_run') bound.push(...call.input.inputs.documents.map((d: { reference: string }) => d.reference.slice(4)));
       return { id: `r${i}`, text: '调用结果：出错', isError: true };
     });
@@ -360,7 +369,7 @@ test('review 9: absent Hub outputs cannot pass any result-dependent check', () =
   for (let index = 0; index < 100; index++) {
     const reply = scenario.respond(turn(index, results)) as any[]; if (reply[0]?.text === '检查完成。') break;
     results = reply.map((call, i) => {
-      if (call.tool === 'hub_upload_file') return { id: `u${i}`, text: `已上传 src:${sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))}`, isError: false };
+      if (call.tool === 'hub_upload_file') return { id: `u${i}`, text: uploadText(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))), isError: false };
       if (call.tool === 'hub_start_run') starts++;
       return { id: `r${i}`, text: '调用结果：出错', isError: true };
     });
@@ -491,7 +500,7 @@ test('closure every anonymous unknown count names its own executable next action
 });
 
 test('closure honest three-phase driver exercises raw summary string records', () => {
- const {gold}=goldOf();const run=drive(build(gold));assert.ok(run.checks.every(check=>check.ok));
+ const {gold}=goldOf();const run=drive(build(gold),undefined,{clipSummaries:true});assert.ok(run.checks.every(check=>check.ok));
  assert.ok(run.rawSummaryReads>0,'at least one complete summary uses the real raw-string record layout');
 });
 
