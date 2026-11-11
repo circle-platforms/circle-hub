@@ -6,6 +6,8 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const MAX_BYTES = 16 * 1024 * 1024;
+/** A run's knowledge root comes whole: tens of megabytes for a product line's command tree and manuals. */
+const KNOWLEDGE_MAX_BYTES = 256 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 const SUBMIT_TIMEOUT_MS = 300_000;
 const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,7 +38,7 @@ export class HubReplyError extends Error { readonly status: number; constructor(
 
 // A failure to reach the Hub is reported as what it is, never as a malformed answer (a submission that never arrived is told apart
 // from one whose results could not be read).
-export async function get(url: string, bearer: string): Promise<Uint8Array> {
+async function fetchBytes(url: string, bearer: string, limit: number): Promise<{ bytes: Uint8Array; digest: string | null }> {
   let reply: Response; let bytes: Uint8Array;
   try {
     reply = await fetch(url, { headers: { authorization: `Bearer ${bearer}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -47,12 +49,57 @@ export async function get(url: string, bearer: string): Promise<Uint8Array> {
     throw new Error(`Hub 不可达（${String(cause).slice(0, 120)}）；核对 --hub 是 MCP 条目的地址、网络可达后重取`);
   }
   if (!reply.ok) throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
-  if (bytes.length > MAX_BYTES) throw new Error('Hub 答复超过 16 MiB 上限');
-  return bytes;
+  if (bytes.length > limit) throw new Error(`Hub 答复超过 ${Math.floor(limit / (1024 * 1024))} MiB 上限`);
+  // content-digest: sha-256=:<base64>: (RFC 9530), as the Hub's export routes send it.
+  const digest = /^sha-256=:([A-Za-z0-9+/=]+):$/.exec(reply.headers.get('content-digest') ?? '');
+  return { bytes, digest: digest ? Buffer.from(digest[1], 'base64').toString('hex') : null };
 }
+export async function get(url: string, bearer: string): Promise<Uint8Array> { return (await fetchBytes(url, bearer, MAX_BYTES)).bytes; }
 
 const SOURCE_REFERENCE = /^src:([0-9a-f]{64})(?:\/|$)/;
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
+
+const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
+export interface RunKnowledge { root: string; composition: string | null; nodes: number; entries: number; sha256: string; files: string[] }
+/**
+ * The files of a run's knowledge root, from the Hub's one batch (GET /run-export/<run>/knowledge: a head line, then one node a
+ * line as a subtree read gives it): `knowledge/nodes.jsonl` is the answer byte for byte; one text file per top-level node of
+ * the root (`knowledge/<name>.txt`) holds every node below it as a block for reading and searching: `# <path>`, the names of
+ * its children, then each entry's statement as the Hub holds it, word for word, followed by its reference (the one to cite)
+ * and its conditions when it declares any; `knowledge/index.json` lists the root, the counts and the files. The root is
+ * immutable, so nothing here goes stale during the run.
+ */
+export function knowledgeFiles(bytes: Uint8Array, run: string): { outputs: Array<{ name: string; bytes: Uint8Array }>; knowledge: RunKnowledge } {
+  let lines: unknown[];
+  try { lines = new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n').filter((line) => line.length > 0).map((line) => JSON.parse(line)); }
+  catch { throw new Error('Hub 给的知识根不是逐行的 UTF-8 JSON，什么都没有写入'); }
+  const [head, ...nodes] = lines;
+  if (!isRecord(head) || head.schema !== 'run-knowledge@1' || head.run !== run || typeof head.root !== 'string' || head.nodes !== nodes.length) throw new Error(`Hub 给的知识根不是 --run 指定的 ${run} 的，或行数与首行不符，什么都没有写入`);
+  const texts = new Map<string, string[]>(); let entries = 0;
+  for (const node of nodes) {
+    if (!isRecord(node) || typeof node.path !== 'string' || !node.path.startsWith('/') || !Array.isArray(node.children) || !Array.isArray(node.entries)) throw new Error('Hub 给的知识根里有不合式的节点，什么都没有写入');
+    const top = node.path.split('/')[1] ?? '';
+    const file = top === '' ? 'root.txt' : `${SAFE_FILE.test(top) ? top : `subtree-${sha256(top).slice(0, 12)}`}.txt`;
+    const block = texts.get(file) ?? []; texts.set(file, block);
+    block.push(`# ${node.path}`);
+    const children = node.children.filter(isRecord).map((child) => String(child.name));
+    if (children.length) block.push(`  子节点 ${children.length} 个：${children.join('、')}`);
+    for (const entry of node.entries) {
+      if (!isRecord(entry) || typeof entry.statement !== 'string' || typeof entry.reference !== 'string') throw new Error('Hub 给的知识根里有不合式的条目，什么都没有写入');
+      entries++;
+      block.push(`· ${entry.statement}`);
+      if (typeof entry.applicability === 'string' && entry.applicability) block.push(`  适用 ${entry.applicability}`);
+      block.push(`  引用 ${entry.reference}`);
+    }
+    block.push('');
+  }
+  const outputs: Array<{ name: string; bytes: Uint8Array }> = [{ name: join('knowledge', 'nodes.jsonl'), bytes }];
+  const files: Array<{ file: string; bytes: number }> = [];
+  for (const [file, block] of texts) { const text = Buffer.from(block.join('\n') + '\n'); outputs.push({ name: join('knowledge', file), bytes: text }); files.push({ file, bytes: text.length }); }
+  const knowledge: RunKnowledge = { root: head.root, composition: typeof head.composition === 'string' ? head.composition : null, nodes: nodes.length, entries, sha256: sha256(bytes), files: files.map((f) => f.file) };
+  outputs.push({ name: join('knowledge', 'index.json'), bytes: json({ run, root: knowledge.root, composition: knowledge.composition, nodes: knowledge.nodes, entries, sha256: knowledge.sha256, files }) });
+  return { outputs, knowledge };
+}
 
 /**
  * A run on local disk, so a model reads it with its own file tools instead of one Hub call per item: `run.json` (the run record,
@@ -60,9 +107,13 @@ const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\
  * `sources/<sha256>` (the original bytes of every source the run binds, each checked against its digest) and `sources.json`
  * (each binding: slot, role, reference, label, media type, file). A source the reader's tier gives no bytes for is listed as
  * withheld, never guessed. Everything is fetched and checked before anything is written; the directory must be new or empty.
- * It reads the run alone, so it works before anything is submitted; it decides nothing about the content.
+ * It reads the run alone, so it works before anything is submitted; it decides nothing about the content. A run that locked a
+ * product knowledge root gets that root too, fetched in one batch and written under `knowledge/` (knowledgeFiles): the design
+ * has three knowledge interactions for a run (lock the root, fetch the subtree, verify the references at delivery), and under
+ * a digest the content does not change, so it is read locally instead of page by page from the Hub. `knowledge` is null
+ * when the run locked no root, the reader may not read it, or the Hub has no such route.
  */
-export async function downloadRun(origin: string, bearer: string, run: string, out: string): Promise<{ run: string; out: string; items: number; sources: number; withheld: string[]; files: Record<string, string> }> {
+export async function downloadRun(origin: string, bearer: string, run: string, out: string): Promise<{ run: string; out: string; items: number; sources: number; withheld: string[]; knowledge: RunKnowledge | null; files: Record<string, string> }> {
   let exported: unknown;
   try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${run}/run`, bearer))); }
   catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是完整的 UTF-8 JSON'); }
@@ -90,13 +141,21 @@ export async function downloadRun(origin: string, bearer: string, run: string, o
     const state = sha === undefined ? undefined : fetched.get(sha);
     return { slot: binding.slot ?? null, role: binding.role ?? null, reference: binding.reference, label: binding.label ?? null, media_type: binding.media_type ?? null, file: state === 'file' ? `sources/${sha}` : null, ...(state === 'withheld' ? { withheld: '你的读取层级不给这份原件的字节' } : {}) };
   })) });
+  let knowledge: RunKnowledge | null = null;
+  try {
+    const batch = await fetchBytes(`${origin}/run-export/${run}/knowledge`, bearer, KNOWLEDGE_MAX_BYTES);
+    if (batch.digest === null || sha256(batch.bytes) !== batch.digest) throw new Error('知识根的字节与 Hub 给的摘要不符，什么都没有写入');
+    const made = knowledgeFiles(batch.bytes, run);
+    outputs.push(...made.outputs); knowledge = made.knowledge;
+  } catch (error) { if (!(error instanceof HubReplyError && error.status === 404)) throw error; }
   const present = await readdir(out).catch(() => []);
   if (present.length) throw new Error(`--out 目录 ${out} 里已有文件（${present.slice(0, 3).join('、')}），不覆盖；另选一个新目录重取`);
   await mkdir(join(out, 'items'), { recursive: true, mode: 0o700 }); await mkdir(join(out, 'sources'), { recursive: true, mode: 0o700 });
+  if (knowledge) await mkdir(join(out, 'knowledge'), { recursive: true, mode: 0o700 });
   const files: Record<string, string> = {}, written: string[] = [];
   try { for (const { name, bytes } of outputs) { const path = join(out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
   catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
-  return { run, out, items: items.length, sources: [...fetched.values()].filter((state) => state === 'file').length, withheld, files };
+  return { run, out, items: items.length, sources: [...fetched.values()].filter((state) => state === 'file').length, withheld, knowledge, files };
 }
 
 /** The token from standard input, refused when it is Circle's placeholder or plainly no token. */

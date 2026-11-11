@@ -115,3 +115,46 @@ test("a run's job outputs are found with one listing of its jobs, not one per fi
   assert.equal((await get(Buffer.from('合成：没有哪个作业返回过'))).status, 404); assert.equal(listings, 3);
   assert.equal((await get(files[0], 'other-token')).status, 404, 'a reader who may not export the run gets nothing from the kept digests');
 });
+
+test('the run\'s locked knowledge root comes as one batch, kept by the process and still asked for each reader\'s permission', async (t) => {
+  // K05: a batch fetch of the subtree the run locked; D06 R[2]: lock the root, fetch the subtree, verify at delivery.
+  const ROOT = 'a'.repeat(64), COMPOSITION = 'c'.repeat(64);
+  const nodes = [
+    { path: '/', reference: `tree:${ROOT}/`, name: '', level: 'trunk', digest: ROOT, children: [{ name: 'widgets', path: '/widgets', digest: 'b'.repeat(64) }], entries: [] },
+    { path: '/widgets', reference: `tree:${ROOT}/widgets`, name: 'widgets', level: 'leaf', digest: 'b'.repeat(64), children: [], entries: [{ entry: 'e'.repeat(64), kind: 'definition', statement: '合成条目：widget health interval', reference: `tree:${ROOT}/widgets@${'e'.repeat(64)}`, data: { words: ['widget', 'health', 'interval'] } }] },
+  ];
+  const asked: Array<{ root: string; composition: string | null; reader: string }> = []; const checked: string[] = []; let readable = true;
+  const d = deps();
+  (d.runs as unknown as { exportRun: unknown }).exportRun = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run: { run: RUN, root: ROOT, target_basis: [{ statement: { data: { root: ROOT, composition: COMPOSITION } } }], sources: [] }, result: null, submission: null } : null;
+  (d as unknown as { knowledge: unknown }).knowledge = {
+    subtree: async (query: { root: string; composition: string | null }, reader: { id: string }) => { asked.push({ root: query.root, composition: query.composition, reader: reader.id }); return readable ? nodes : null; },
+    treeReader: () => ({ hasRoot: async (root: string, reader: { user: string }) => { checked.push(`${reader.user}:${root.slice(0, 4)}`); return readable; } }),
+  };
+  const s = await serve(d); t.after(s.close);
+  const read = () => fetch(`${s.origin}/run-export/${RUN}/knowledge`, { headers: { authorization: 'Bearer runner-token' } });
+  const first = await read();
+  assert.equal(first.status, 200);
+  assert.match(first.headers.get('content-type') ?? '', /^application\/x-ndjson/);
+  const body = Buffer.from(await first.arrayBuffer());
+  assert.equal(first.headers.get('content-digest'), `sha-256=:${createHash('sha256').update(body).digest('base64')}:`);
+  const lines = body.toString('utf8').trimEnd().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(lines[0], { schema: 'run-knowledge@1', run: RUN, root: ROOT, composition: COMPOSITION, nodes: 2, entries: 1 });
+  assert.deepEqual(lines.slice(1), nodes, 'each node as the subtree read gives it, in its order');
+  assert.deepEqual(asked, [{ root: ROOT, composition: COMPOSITION, reader: 'u_runner' }], 'the composition the run locked for that root');
+  // A second read of the same root is served from what the process kept, after the reader's permission is asked again.
+  const again = await read();
+  assert.deepEqual(Buffer.from(await again.arrayBuffer()), body);
+  assert.equal(asked.length, 1);
+  assert.deepEqual(checked, ['u_runner:aaaa']);
+  readable = false;
+  assert.equal((await read()).status, 404, 'a reader who lost the permission gets nothing of what is kept');
+  // Other readers and unauthenticated requests are answered as for every export.
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge`)).status, 401);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge/extra`, { headers: { authorization: 'Bearer runner-token' } })).status, 404);
+});
+
+test('a run that locked no root, or a Hub without the batch read, answers the knowledge route as absent', async (t) => {
+  const s = await serve(deps()); t.after(s.close);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge`, { headers: { authorization: 'Bearer runner-token' } })).status, 404);
+});

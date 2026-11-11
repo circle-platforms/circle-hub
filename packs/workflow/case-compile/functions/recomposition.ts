@@ -32,7 +32,7 @@ export function recompositionProblem(runInput: any, resultInput: any, context: a
     const how = 'recomposition_run 绑重组运行的运行记录（rec:），recomposition_result 绑重组运行号（run_…，Hub 换成该运行已受理的结果）';
     if (!run) return `recomposition_run 绑的是 ${kindOf(runInput)} 记录 ${named(runInput)}，不是重组运行的运行记录${same ? '：两个槽写成了同一个引用' : ''}；${how}`;
     if (!result) return `recomposition_result 绑的是 ${kindOf(resultInput)} ${named(resultInput)}，不是重组运行已受理的结果；${how}`;
-    if (run.body.pack !== T.packs.stage + '@1.1.2') return `recomposition_run 是 ${run.body.pack} 的运行，不是 ${T.packs.stage}@1.1.2 的重组运行`;
+    if (run.body.pack !== T.packs.stage + '@1.1.3') return `recomposition_run 是 ${run.body.pack} 的运行，不是 ${T.packs.stage}@1.1.3 的重组运行`;
     if (result.body.schema !== 'validation@1' || result.body.run !== run.body.run) return `recomposition_result 不是重组运行 ${run.body.run} 的结果（它属于 ${result.body.run}）`;
     if (result.body.acceptance !== 'accepted') return `重组运行 ${run.body.run} 的这份结果没有被受理；按它的回执改正重交，受理后再绑定`;
     if (result.body.locks?.pack !== run.body.pack || result.body.locks?.pack_digest !== run.body.pack_digest) return `重组结果锁定的包和重组运行 ${run.body.run} 的包不一致`;

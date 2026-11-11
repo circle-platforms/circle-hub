@@ -338,6 +338,14 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       for(const node of page.nodes){const relevant=rows.filter(row=>row.validity==='valid'&&row.body.root===query.root&&(row.body.path===node.path||row.body.path===null&&node.path==='/'||Array.isArray(row.body.commands)&&row.body.commands.some((command:Record<string,unknown>)=>command.path===node.path)));const references=[];for(const row of relevant){if(references.length===100)break;const ref={object:row.body.object,reference:'rec:'+row.record};if(canonicalSize(page)+canonicalSize(references)+canonicalSize(ref)>context.limits.pageBytes-1024)break;references.push(ref);}if(relevant.length){node.feeding_objects=references;node.feeding_complete=references.length===relevant.length;if(!node.feeding_complete)page.coverage={...page.coverage,complete:false,note:[page.coverage.note,'喂入引用达到本页预算；从知识 index/facets 视图读取完整范围'].filter(Boolean).join('；')};}}
       return withoutEmptyConditions(page);
     }),
+    subtree: (query, reader) => withReadCache(async () => {
+      if (await spaces.version(query.root)) return null;
+      const nodes = await reading.subtreeNodes(query, reader);
+      if (nodes === null) return null;
+      const out: NodesPage['nodes'] = [];
+      for await (const node of nodes) out.push({ ...node, entries: node.entries.map(withoutEmptyApplicability) });
+      return out;
+    }),
     diffRoots: (from, to): Promise<RootDiff | null> => withReadCache(()=>reading.diff(from, to)),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => withReadCache(()=>reading.diffEntries(from, to, diffOptions)),
 

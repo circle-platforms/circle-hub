@@ -437,6 +437,22 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.13.0: the knowledge root comes with the run, once, and is read locally
+
+The design model has three knowledge interactions for a run (D06 R[2]: lock the root, fetch the subtree, verify the references
+at delivery) and says how the second goes (K05: "按包声明一次批量取回子树，Circle 按摘要缓存"; under a digest the content does
+not change, so it is not checked against the Hub piece by piece). The flow read the root page by page instead: run 21 made 126
+`get_nodes` calls in its first two hours, 97 of them command-tree subtrees and 23 manual pages, each about two minutes on the
+Hub's side, for a root whose every entry exports in under three seconds.
+
+`tools/download-run.ts` (module `hub-client` of `run-tools` 1.0.2, shared with the recomposition stage, now 1.1.3) asks
+`GET /run-export/<run>/knowledge` once and writes the locked root under `knowledge/`: `nodes.jsonl` (the Hub's answer byte for
+byte, checked against its digest), one text file per top-level node of the root (`# <path>`, its children, each entry's
+statement word for word followed by its reference) and `index.json`. SKILL step 2 names the folder; a quote is copied from
+those files with the reference under it, and the Hub verifies it at submission as before. A run that locked no root, a reader
+who may not read it and a Hub without the route leave `knowledge` null and nothing else changes. What the root does not hold
+(back-references, contributions, feeding) is still read from the Hub.
+
 ### 3.11.0: the reference engine's scenario fidelity, audit and effects first
 
 Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario

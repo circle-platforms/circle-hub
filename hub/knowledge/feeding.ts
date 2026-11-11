@@ -670,14 +670,27 @@ export class FeedingLayer {
  /**
   * visible() for many object ids. An id without object records asks for its bytes, as visible does; otherwise its records are
   * checked in order and the first visible one decides, a batched round per position, so no record is checked that the
-  * sequential loop would not check.
+  * sequential loop would not check (the first record of an object is asked once more when it did not decide).
   */
  private async objectsVisible(ids:readonly string[],session:Visibility):Promise<Map<string,boolean>>{
   const out=new Map<string,boolean>(),wanted=[...new Set(ids)];
   if(!wanted.length)return out;
-  const groups=await this.indexed<ClaimBody>(OBJECT,wanted,'claim',Number.MAX_SAFE_INTEGER);
+  // The first record of an object decides for nearly every object, so it is read alone first, and only an object it does
+  // not decide has all its records read. With every record of every object read up front, each answer of a run that had
+  // used 188 objects read 63,427 records (235 MB) before it was sent: every tool call that names a run lists its objects.
+  let undecided=wanted;
+  {
+   const first=new Map<string,StoredRecord<ClaimBody>>();
+   for(let start=0;start<wanted.length;start+=128)for(const [id,record] of await this.context.records.store.findFirstMany<ClaimBody>({key:OBJECT,values:wanted.slice(start,start+128),kind:'claim'}))first.set(id,record);
+   const have=wanted.filter(id=>first.has(id));
+   const shown=have.length?await this.recordsVisible(have.map(id=>({record:first.get(id)!,body:this.body(first.get(id)!)})),session):[];
+   for(const [k,id] of have.entries())if(shown[k])out.set(id,true);
+   undecided=wanted.filter(id=>!out.has(id));
+   if(!undecided.length)return out;
+  }
+  const groups=await this.indexed<ClaimBody>(OBJECT,undecided,'claim',Number.MAX_SAFE_INTEGER);
   let open:Array<{id:string;rows:IndexedRecord<ClaimBody>[];next:number}>=[];
-  for(const id of wanted){
+  for(const id of undecided){
    const rows=groups.get(id)??[];
    if(rows.length)open.push({id,rows,next:0});
    else out.set(id,Boolean((await this.context.records.artifacts.source(session.principal,id,{consumer:'model'}))?.bytes));

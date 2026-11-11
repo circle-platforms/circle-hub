@@ -187,3 +187,30 @@ test('the single-key lookups of a frozen cut, a node page, run usages and a view
   assert.ok(large.cut.total <= 16, `a frozen cut over ${large.records} usages took ${large.cut.total} SQL executions`);
   assert.ok(large.page.total <= 12, `a node page took ${large.page.total} SQL executions`);
 });
+
+test('the usages of a run ask the first record of each object and read no other record of an object that one decides', { timeout: 300_000 }, async t => {
+  // Every tool answer that names a run lists the run's feeding objects. In production one such answer read 63,427 records
+  // (235 MB) for the 188 objects of a run, because every record of every object was read before the first one was asked.
+  const postgres = await startPostgres();
+  let close = async (): Promise<void> => {};
+  t.after(async () => { await close(); await postgres.stop(); });
+  const w = await world(postgres, false, undefined, TREE);
+  const layer = w.knowledge.feeding!;
+  close = async () => { await layer.drain(); await w.close(); };
+  const documents = [await document(w, 0, [w.user.id]), await document(w, 1, [w.user.id])];
+  const run = await readAll(w, w.user, documents);
+  const context = w.knowledge.__context;
+  const scans: string[] = [], firsts: number[] = [];
+  const spied = new Proxy(context.records.store, { get(target, key) {
+    const value = Reflect.get(target, key, target);
+    if (key === 'findIndexed') return (query: { key: string }, tx?: unknown) => { scans.push(query.key); return (value as Function).call(target, query, tx); };
+    if (key === 'findFirstMany') return (query: { key: string; values: readonly string[] }, tx?: unknown) => { if (query.key === 'knowledge.feeding.object') firsts.push(query.values.length); return (value as Function).call(target, query, tx); };
+    return typeof value === 'function' ? value.bind(target) : value;
+  } }) as RecordStore;
+  const watched = { ...context, records: { ...context.records, store: spied } };
+  const listed = await new FeedingLayer(watched, new TreeReading(watched)).usages(w.user, run);
+  assert.deepEqual(listed, await layer.usages(w.user, run), 'the same objects as before');
+  assert.equal(listed.length, 80, 'forty cases of each of two documents');
+  assert.deepEqual(firsts, [80], 'one lookup of the first record of each object');
+  assert.ok(!scans.includes('knowledge.feeding.object'), `no scan of every record of the objects: ${scans.join(', ')}`);
+});

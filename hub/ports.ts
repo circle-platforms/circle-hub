@@ -414,6 +414,12 @@ export interface KnowledgePort {
   treeReader(lock?: { composition?: string | null; compositions?: string[] } | null): TreeReader;
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
+  /**
+   * K05: every node under the given paths of a product root, to the leaves, as getNodes shows each for the same root and
+   * composition, without paging and without the layers that change after the root. Null where getNodes answers null, for
+   * an empty scope and for a root that is a knowledge space (read by its own interface).
+   */
+  subtree?(query: { root: string; paths?: readonly string[]; composition?: string | null }, reader: Principal): Promise<NodeViews | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;
   /**
    * Paths whose own entries of `kinds` differ between the roots: added (only in `to`), removed (only in `from`) or modified,
