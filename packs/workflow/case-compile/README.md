@@ -1098,3 +1098,9 @@ is kept and disclosed.
 The stage packs recompose, recompose-authority and recompose-adjudication moved to 1.0.3 with 3.9.18 (the integration
 line's 1.0.2 and main's 1.0.1 hold different bytes): `functions/recompose-evidence.ts` accepts stage evidence of exactly that
 version, so the pin moves with them (in the parent, the three copies, `testing/recompose.ts` and the recompose samples).
+
+## Case writers
+
+`tools/case-writers/` is a Circle extension for one writer per case, started together. Copy the folder into the chosen Circle home's `extensions/` directory and reload extensions; installation is an operator action and was not performed here. The optional `max_parallel` setting limits concurrent writers.
+
+The extension gets the task tool from `model_call` middleware because Circle has no documented extension call for starting a subagent. Local tests use scripted writers and do not establish installed-client behavior. The owner must decide whether to keep this client interface or wait for a public subagent API. No Hub model calls are introduced.

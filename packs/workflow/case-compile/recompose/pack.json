@@ -54,6 +54,11 @@
       "size": 11347
     },
     {
+      "path": "functions/generated/skills/command-tools/command-check/value-domain.ts",
+      "sha256": "5b5d4cfe103931868f74b93e64b332d9dcde565d6148a5bd2ea7ce5b999f3a93",
+      "size": 20716
+    },
+    {
       "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
       "sha256": "cda38095f6ebf28363c002c09894fd9e88a0531102c97fca592ac6d24df46f5f",
       "size": 14816
